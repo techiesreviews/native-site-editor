@@ -1,0 +1,90 @@
+.repository-menu {
+  min-width: 0;
+}
+
+.repository-menu__trigger {
+  anchor-name: --repository-menu;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(38vw, 360px);
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.repository-menu__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-menu__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.repository-menu__repository {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.repository-menu__trigger:hover,
+.repository-menu__trigger[aria-expanded="true"] {
+  background: var(--background);
+}
+
+.repository-menu__popover {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.repository-menu__project {
+  padding: 10px 10px 14px;
+}
+
+.repository-menu__project .branch-row {
+  margin-top: 12px;
+}
+
+.repository-menu__integration {
+  padding: 0 10px 12px;
+}
+
+.repository-menu__integration-state {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.repository-menu__integration-action {
+  width: 100%;
+}
+
+.repository-menu__action {
+  display: block;
+  width: 100%;
+  padding: 11px 10px;
+  border-radius: 4px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.repository-menu__action:hover,
+.repository-menu__action:focus-visible {
+  background: var(--background);
+}
+
+@media (max-width: 650px) {
+  .repository-menu__trigger {
+    max-width: 65vw;
+  }
+}

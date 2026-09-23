@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "slots": [
+    {
+      "path": "src/pages/index.astro",
+      "parentTag": "div",
+      "parentClass": "button-wrapper",
+      "allowed": ["button"],
+      "buttonBaseClass": "btn"
+    }
+  ]
+}

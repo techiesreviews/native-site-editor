@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true
+  },
+  "include": [
+    "playwright.browser-structural-preview.config.ts",
+    "tests/browser-structural-preview.test.ts",
+    "tests/heading-bar/browser-structural-preview.spec.ts"
+  ]
+}

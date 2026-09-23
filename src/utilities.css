@@ -1,0 +1,107 @@
+/* Shared utility foundation. Component styles may override these defaults. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin-block: 0;
+}
+
+/* Section spacing */
+.section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 5rem 2rem;
+}
+
+/* Content width */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+  max-width: 50rem;
+  margin-inline: auto;
+}
+
+/* Media */
+.image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  border-radius: 1rem;
+  aspect-ratio: 1 / 1;
+}
+
+/* Content grouping */
+.content {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Layouts */
+.layout-grid {
+  --_columns: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--_columns), minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.layout-flex {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* Example typography defaults */
+.heading-style-h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  line-height: 1.1;
+}
+
+.heading-style-h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.15;
+}
+
+.heading-style-h4 {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.text-style-small {
+  margin-block: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  background: #111;
+  color: #fff;
+  text-decoration: none;
+}

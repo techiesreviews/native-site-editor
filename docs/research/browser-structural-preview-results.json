@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-22",
+  "baseCommit": "73c51c9",
+  "branch": "prototype/browser-structural-preview",
+  "browserScenarios": {
+    "passed": 6,
+    "total": 6,
+    "durationSeconds": 41.8
+  },
+  "unitTests": {
+    "passed": 109,
+    "total": 109
+  },
+  "checks": {
+    "typescript": "passed",
+    "proofTypescript": "passed",
+    "isolatedOverlay": "passed",
+    "productionUiBuild": "passed",
+    "diffWhitespace": "passed"
+  },
+  "existingRegressionSelection": {
+    "passed": 15,
+    "total": 17,
+    "failuresReproducedOnUnchangedBase": [
+      "format-continuity.spec.ts:123",
+      "format-continuity.spec.ts:148"
+    ]
+  },
+  "latency": {
+    "allSamplesMs": [
+      167.3734910000021,
+      104.18640099999902,
+      301.135836999998,
+      108.59311399999933,
+      91.69962299999679,
+      90.520956999997,
+      113.89355000000069,
+      92.72936099999788,
+      89.21127500000148
+    ],
+    "minMs": 89.21127500000148,
+    "medianMs": 104.18640099999902,
+    "maxMs": 301.135836999998,
+    "measurement": "Measured after the code pane is focused, from Monaco source replacement start to fresh structural ack, visible rendered target, and readonly cleared; old ack count is captured before each replacement.",
+    "operations": [
+      "heading add",
+      "heading move",
+      "heading delete",
+      "paragraph add",
+      "paragraph move",
+      "paragraph delete",
+      "button add",
+      "button move",
+      "button delete"
+    ]
+  },
+  "limitations": [
+    "Local browser proof with intercepted repository APIs; no hosted latency claim.",
+    "Initial Astro compilation required; unsupported edits retain full-build fallback.",
+    "Opt-in only; production integration bundle not regenerated; not deployed."
+  ]
+}

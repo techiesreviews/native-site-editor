@@ -1,0 +1,26 @@
+@import "./resize-handle.css";
+
+.sidebar {
+  position: relative;
+}
+.sidebar-resize {
+  position: absolute;
+  inset: 0 -5px 0 auto;
+  width: 10px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resize:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.workspace--resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+@media (max-width: 650px) {
+  .sidebar-resize {
+    display: none;
+  }
+}

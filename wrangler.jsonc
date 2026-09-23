@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "astro-site-editor",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": false,
+  "routes": [{ "pattern": "astro.techies.tools", "custom_domain": true }],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*", "/mcp"],
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionStore"] }],
+}

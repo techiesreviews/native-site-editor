@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Native Preview Prototype</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: #f6f7f3;
+        color: #20231f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      button,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        padding: 18px 24px 14px;
+        border-bottom: 1px solid #d9ddd1;
+        background: #fffef9;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(22px, 3vw, 34px);
+        letter-spacing: 0;
+      }
+
+      .intro {
+        margin: 0;
+        max-width: 980px;
+        color: #555f52;
+        line-height: 1.5;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        padding: 6px 10px;
+        border: 1px solid #c8d4c0;
+        border-radius: 999px;
+        background: #eef6e9;
+        color: #315226;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      main {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+      }
+
+      .editor,
+      .preview-wrap {
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .editor {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        padding: 16px;
+        border-right: 1px solid #d9ddd1;
+        background: #fbfaf4;
+      }
+
+      .toolbar,
+      .actions,
+      .state {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      label {
+        display: grid;
+        gap: 5px;
+        color: #555f52;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      select {
+        min-width: 210px;
+        padding: 9px 10px;
+        border: 1px solid #cdd3c6;
+        border-radius: 6px;
+        background: white;
+      }
+
+      button {
+        min-height: 38px;
+        padding: 8px 12px;
+        border: 1px solid #b9c5b0;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #1f2c1d;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: #365f31;
+        color: white;
+        border-color: #365f31;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 0;
+        resize: none;
+        padding: 14px;
+        border: 1px solid #cdd3c6;
+        border-radius: 8px;
+        background: #11150f;
+        color: #f2f6ee;
+        line-height: 1.45;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 13px;
+        tab-size: 2;
+      }
+
+      .state {
+        min-height: 58px;
+        padding: 10px;
+        border: 1px solid #d6dbce;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #4d5749;
+        font-size: 13px;
+      }
+
+      .state strong {
+        color: #20231f;
+      }
+
+      .preview-wrap {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background: #e5e8df;
+      }
+
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #ccd1c4;
+        background: #f7f8f3;
+      }
+
+      .route-buttons {
+        display: flex;
+        gap: 8px;
+      }
+
+      .route-buttons button[aria-current="page"] {
+        background: #20231f;
+        color: #fff;
+        border-color: #20231f;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        min-height: 520px;
+        border: 0;
+        background: white;
+      }
+
+      @media (max-width: 920px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        .editor {
+          border-right: 0;
+          border-bottom: 1px solid #d9ddd1;
+          min-height: 620px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Browser-native preview prototype</h1>
+        <p class="intro">
+          Question: can a small browser-native runtime cover simple routing,
+          shared header/footer/card templates, and fast HTML/CSS editing while a
+          sandboxed preview iframe stays alive and keeps its scroll position?
+        </p>
+        <span class="badge">Prototype/sample only/no saving</span>
+      </header>
+
+      <main>
+        <section class="editor" aria-label="Editor">
+          <div class="toolbar">
+            <label>
+              File
+              <select id="fileSelect">
+                <option value="homeHtml">Home HTML</option>
+                <option value="aboutHtml">About HTML</option>
+                <option value="siteCss">site.css</option>
+                <option value="headerTemplate">Header template</option>
+                <option value="footerTemplate">Footer template</option>
+                <option value="cardTemplate">Card template</option>
+              </select>
+            </label>
+            <button id="resetButton" type="button">Reset</button>
+            <button id="addCardButton" class="primary" type="button">
+              Add card
+            </button>
+          </div>
+
+          <textarea
+            id="editor"
+            spellcheck="false"
+            aria-label="Selected file source"
+          ></textarea>
+
+          <div class="state" aria-live="polite">
+            <span>Route: <strong id="routeState">home</strong></span>
+            <span>File: <strong id="fileState">Home HTML</strong></span>
+            <span>Update: <strong id="updateState">pending</strong></span>
+            <span>Frame loads: <strong id="frameLoads">0</strong></span>
+          </div>
+        </section>
+
+        <section class="preview-wrap" aria-label="Preview">
+          <div class="preview-bar">
+            <div class="route-buttons" aria-label="Preview route">
+              <button id="homeRoute" type="button" aria-current="page">
+                Home
+              </button>
+              <button id="aboutRoute" type="button">About</button>
+            </div>
+            <span>input-to-update estimate: <strong id="metric">-</strong></span>
+          </div>
+          <iframe
+            id="preview"
+            title="Sandboxed preview"
+            sandbox="allow-scripts"
+          ></iframe>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const defaults = Object.freeze({
+        homeHtml: `<section class="hero" data-key="home-hero">
+  <p class="eyebrow">Browser native route</p>
+  <h1>Fast edits without rebuilding the preview frame.</h1>
+  <p>
+    Type in this document or site.css. The same iframe stays mounted, so
+    scroll position and running component state survive source edits.
+  </p>
+</section>
+
+<section class="cards" data-key="home-cards">
+  <project-card data-key="alpha" title="Shared card one">
+    <p slot="body">This card and the next card use the same template.</p>
+  </project-card>
+  <project-card data-key="beta" title="Shared card two">
+    <p slot="body">Edit Card template and both cards update together.</p>
+  </project-card>
+</section>
+
+<section class="long-copy" data-key="home-scroll-proof">
+  <h2>Scroll proof</h2>
+  <p>Scroll here, then edit text or CSS. Source edits should not reload the iframe.</p>
+  <p>Extra space keeps this page tall enough to notice scroll jumps.</p>
+</section>`,
+        aboutHtml: `<section class="hero compact" data-key="about-hero">
+  <p class="eyebrow">About route</p>
+  <h1>Hash routing proves the browser can switch pages locally.</h1>
+  <p>
+    Back and Forward work in this prototype. Hash routes are a demo shortcut,
+    not a production SEO answer.
+  </p>
+</section>
+
+<section class="plain" data-key="about-copy">
+  <h2>What this is testing</h2>
+  <p>
+    Header, footer, and cards are Custom Elements. Page HTML stays plain
+    browser markup, so there is no Astro syntax in the editable source.
+  </p>
+</section>`,
+        siteCss: `:root {
+  --ink: #1c241b;
+  --muted: #5e6b59;
+  --paper: #fffdf6;
+  --brand: #3f6f38;
+  --line: #d7dece;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+a {
+  color: var(--brand);
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+main {
+  padding: 32px clamp(18px, 5vw, 58px);
+}
+
+.hero {
+  max-width: 860px;
+  padding: 32px 0;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(38px, 7vw, 72px);
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+.hero p {
+  max-width: 720px;
+  font-size: 18px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.hero.compact h1 {
+  font-size: clamp(32px, 5vw, 54px);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--brand);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  max-width: 850px;
+}
+
+.plain,
+.long-copy {
+  max-width: 720px;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.long-copy {
+  min-height: 720px;
+  padding-top: 80px;
+}`,
+        headerTemplate: `<style data-component-css></style>
+<header class="site-header" data-key="header-inner">
+  <a class="brand" href="#/">Native Preview</a>
+  <nav aria-label="Primary">
+    <a data-route="home" href="#/">Home</a>
+    <a data-route="about" href="#/about">About</a>
+  </nav>
+</header>`,
+        footerTemplate: `<style data-component-css></style>
+<footer class="site-footer" data-key="footer-inner">
+  <p>Prototype runtime. In-memory state only. Refresh resets everything.</p>
+</footer>`,
+        cardTemplate: `<style data-component-css></style>
+<article class="project-card" data-key="card-shell">
+  <h2><slot name="title"></slot></h2>
+  <div class="body"><slot name="body"></slot></div>
+</article>`,
+      });
+
+      const componentCss = `
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px clamp(18px, 5vw, 58px);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 90%, white);
+}
+
+.brand {
+  color: var(--ink);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  gap: 14px;
+}
+
+nav a {
+  color: var(--muted);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+nav a[aria-current="page"] {
+  color: var(--brand);
+}
+
+.site-footer {
+  margin-top: 40px;
+  padding: 24px clamp(18px, 5vw, 58px);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  background: #f3f5ef;
+}
+
+.project-card {
+  display: block;
+  min-height: 180px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 10px 24px rgba(31, 42, 28, 0.08);
+}
+
+.project-card h2 {
+  margin: 0 0 10px;
+  font-size: 23px;
+  letter-spacing: 0;
+}
+
+.project-card .body {
+  color: var(--muted);
+  line-height: 1.55;
+}
+`;
+
+      const files = structuredClone(defaults);
+      let currentFile = "homeHtml";
+      let route = location.hash === "#/about" ? "about" : "home";
+      let pendingEdit = null;
+      let editStartedAt = 0;
+      let ackById = new Map();
+      let frameReady = false;
+      let frameLoads = 0;
+
+      const fileSelect = document.querySelector("#fileSelect");
+      const editor = document.querySelector("#editor");
+      const routeState = document.querySelector("#routeState");
+      const fileState = document.querySelector("#fileState");
+      const updateState = document.querySelector("#updateState");
+      const frameLoadsNode = document.querySelector("#frameLoads");
+      const metric = document.querySelector("#metric");
+      const preview = document.querySelector("#preview");
+      const homeRoute = document.querySelector("#homeRoute");
+      const aboutRoute = document.querySelector("#aboutRoute");
+
+      const labels = {
+        homeHtml: "Home HTML",
+        aboutHtml: "About HTML",
+        siteCss: "site.css",
+        headerTemplate: "Header template",
+        footerTemplate: "Footer template",
+        cardTemplate: "Card template",
+      };
+
+      const previewDocument = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Preview Frame</title>
+  </head>
+  <body>
+    <div id="root" class="shell" data-key="shell">
+      <site-header data-key="site-header"></site-header>
+      <main id="page" data-key="page"></main>
+      <site-footer data-key="site-footer"></site-footer>
+    </div>
+    <script>
+      let state = null;
+      let route = "home";
+      let styleElement = null;
+      const shadowRoots = new Set();
+
+      function sanitizeFragment(fragment) {
+        fragment.querySelectorAll("script").forEach((el) => el.remove());
+        fragment.querySelectorAll("meta[http-equiv]").forEach((el) => {
+          if ((el.getAttribute("http-equiv") || "").toLowerCase() === "refresh") {
+            el.remove();
+          }
+        });
+        fragment.querySelectorAll("*").forEach((el) => {
+          Array.from(el.attributes).forEach((attr) => {
+            const name = attr.name.toLowerCase();
+            const value = (attr.value || "").replace(/\\s+/g, "").toLowerCase();
+            if (name.startsWith("on")) {
+              el.removeAttribute(attr.name);
+              return;
+            }
+            if (
+              (name === "href" ||
+                name === "src" ||
+                name === "xlink:href" ||
+                name === "action" ||
+                name === "formaction") &&
+              value.startsWith("javascript:")
+            ) {
+              el.removeAttribute(attr.name);
+            }
+          });
+        });
+        return fragment;
+      }
+
+      function createTemplateElement(html) {
+        const template = document.createElement("template");
+        template.innerHTML = html;
+        sanitizeFragment(template.content);
+        return template;
+      }
+
+      function nodeKey(node) {
+        return node.nodeType === Node.ELEMENT_NODE
+          ? node.getAttribute("data-key")
+          : null;
+      }
+
+      function sameNodeKind(a, b) {
+        if (!a || !b || a.nodeType !== b.nodeType) return false;
+        if (a.nodeType === Node.TEXT_NODE) return true;
+        return a.nodeType === Node.ELEMENT_NODE && a.tagName === b.tagName;
+      }
+
+      function reconcileChildren(target, fragment) {
+        const desired = Array.from(fragment.childNodes);
+        const keyed = new Map();
+        Array.from(target.childNodes).forEach((node) => {
+          const key = nodeKey(node);
+          if (key) keyed.set(key, node);
+        });
+
+        desired.forEach((nextNode, index) => {
+          const key = nodeKey(nextNode);
+          const currentAtIndex = target.childNodes[index] || null;
+          let existing = key ? keyed.get(key) : currentAtIndex;
+
+          if (!sameNodeKind(existing, nextNode)) {
+            target.insertBefore(nextNode, currentAtIndex);
+            if (currentAtIndex && !keyed.has(nodeKey(currentAtIndex))) {
+              currentAtIndex.remove();
+            }
+            return;
+          }
+
+          reconcileNode(existing, nextNode);
+          if (target.childNodes[index] !== existing) {
+            target.insertBefore(existing, target.childNodes[index] || null);
+          }
+        });
+
+        while (target.childNodes.length > desired.length) {
+          target.lastChild.remove();
+        }
+      }
+
+      function reconcileNode(existing, desired) {
+        if (existing.nodeType === Node.TEXT_NODE) {
+          if (existing.textContent !== desired.textContent) {
+            existing.textContent = desired.textContent;
+          }
+          return;
+        }
+
+        syncAttributes(existing, desired);
+
+        if (existing.tagName === "SCRIPT") return;
+        reconcileChildren(existing, desired);
+      }
+
+      function syncAttributes(existing, desired) {
+        Array.from(existing.attributes).forEach((attribute) => {
+          if (!desired.hasAttribute(attribute.name)) {
+            existing.removeAttribute(attribute.name);
+          }
+        });
+        Array.from(desired.attributes).forEach((attribute) => {
+          if (existing.getAttribute(attribute.name) !== attribute.value) {
+            existing.setAttribute(attribute.name, attribute.value);
+          }
+        });
+      }
+
+      function syncSharedStyles() {
+        if (!state) return;
+        if (!styleElement) {
+          styleElement = document.createElement("style");
+          styleElement.dataset.siteCss = "true";
+          document.head.append(styleElement);
+        }
+        styleElement.textContent = state.siteCss;
+        shadowRoots.forEach((root) => {
+          root.querySelectorAll("style[data-component-css]").forEach((style) => {
+            style.textContent = state.siteCss + "\\n" + state.componentCss;
+          });
+        });
+      }
+
+      function hydrateShadow(host, html) {
+        const root = host.shadowRoot || host.attachShadow({ mode: "open" });
+        shadowRoots.add(root);
+        const template = createTemplateElement(html);
+        const cssSlot = template.content.querySelector("style[data-component-css]");
+        if (cssSlot) cssSlot.textContent = state.siteCss + "\\n" + state.componentCss;
+        reconcileChildren(root, template.content.cloneNode(true));
+      }
+
+      class SiteHeader extends HTMLElement {
+        connectedCallback() {
+          this.render();
+        }
+        render() {
+          if (!state) return;
+          hydrateShadow(this, state.headerTemplate);
+          this.shadowRoot.querySelectorAll("a[href]").forEach((link) => {
+            const name = link.dataset.route;
+            link.setAttribute("aria-current", name === route ? "page" : "false");
+          });
+        }
+      }
+
+      class SiteFooter extends HTMLElement {
+        connectedCallback() {
+          this.render();
+        }
+        render() {
+          if (state) hydrateShadow(this, state.footerTemplate);
+        }
+      }
+
+      class ProjectCard extends HTMLElement {
+        static observedAttributes = ["title"];
+        connectedCallback() {
+          this.render();
+        }
+        attributeChangedCallback() {
+          this.render();
+        }
+        render() {
+          if (!state) return;
+          ensureTitleSlot(this);
+          hydrateShadow(this, state.cardTemplate);
+        }
+      }
+
+      function ensureTitleSlot(host) {
+        let title = host.querySelector("[slot='title']");
+        if (!title) {
+          title = document.createElement("span");
+          title.slot = "title";
+          host.prepend(title);
+        }
+        title.textContent = host.getAttribute("title") || "Untitled card";
+      }
+
+      customElements.define("site-header", SiteHeader);
+      customElements.define("site-footer", SiteFooter);
+      customElements.define("project-card", ProjectCard);
+
+      function renderPage() {
+        const page = document.querySelector("#page");
+        const html = route === "about" ? state.aboutHtml : state.homeHtml;
+        const template = createTemplateElement(html);
+        template.content.querySelectorAll("script").forEach((script) => script.remove());
+        reconcileChildren(page, template.content.cloneNode(true));
+        document.querySelectorAll("site-header, site-footer, project-card").forEach((node) => {
+          if (node.render) node.render();
+        });
+      }
+
+      function apply(payload) {
+        state = payload.files;
+        route = payload.route;
+        syncSharedStyles();
+        renderPage();
+      }
+
+      document.addEventListener("click", (event) => {
+        // Links inside a component's open shadow root retarget to the host at
+        // document level, so event.target.closest() misses them. Walk the
+        // composed path to find the anchor across shadow boundaries.
+        const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+        let link = null;
+        for (const node of path) {
+          if (node instanceof HTMLAnchorElement && node.hasAttribute("href")) {
+            link = node;
+            break;
+          }
+        }
+        if (!link && event.target && event.target.closest) {
+          link = event.target.closest("a[href]");
+        }
+        if (!link) return;
+        // Prevent all in-frame anchor navigation so the frame stays alive.
+        event.preventDefault();
+        const href = link.getAttribute("href");
+        if (href === "#/" || href === "#/about") {
+          parent.postMessage({ type: "route", route: href === "#/about" ? "about" : "home" }, "*");
+        }
+      });
+
+      document.addEventListener("submit", (event) => {
+        event.preventDefault();
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== parent) return;
+        const message = event.data || {};
+        if (message.type !== "update") return;
+        apply(message.payload);
+        requestAnimationFrame(() => {
+          parent.postMessage({ type: "ack", id: message.id }, "*");
+        });
+      });
+
+      parent.postMessage({ type: "ready" }, "*");
+    <\/script>
+  </body>
+</html>`;
+
+      preview.addEventListener("load", () => {
+        frameLoads += 1;
+        frameLoadsNode.textContent = String(frameLoads);
+      });
+      preview.srcdoc = previewDocument;
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== preview.contentWindow) return;
+        const message = event.data || {};
+        if (message.type === "ready") {
+          frameReady = true;
+          sendUpdate("initial");
+        }
+        if (message.type === "route") {
+          setRoute(message.route, true);
+        }
+        if (message.type === "ack") {
+          const startedAt = ackById.get(message.id);
+          if (!startedAt) return;
+          ackById.delete(message.id);
+          const elapsed = performance.now() - startedAt;
+          metric.textContent = elapsed.toFixed(1) + " ms";
+          updateState.textContent = "applied";
+        }
+      });
+
+      function payload() {
+        return {
+          route,
+          files: {
+            ...files,
+            componentCss,
+          },
+        };
+      }
+
+      function sendUpdate(reason, startAt) {
+        if (!frameReady) return;
+        const id = crypto.randomUUID();
+        // Start the clock from the caller-supplied moment (the input event for
+        // edits) so the metric spans the parent RAF queue too, not just the
+        // postMessage round trip.
+        ackById.set(id, typeof startAt === "number" ? startAt : performance.now());
+        updateState.textContent = reason === "route" ? "route change" : "updating";
+        preview.contentWindow.postMessage(
+          { type: "update", id, payload: payload() },
+          "*",
+        );
+      }
+
+      function scheduleEdit() {
+        // Record the first input of a coalesced burst; the RAF may fire a frame
+        // or more later, and we want that queue latency included in the metric.
+        if (!pendingEdit) editStartedAt = performance.now();
+        if (pendingEdit) cancelAnimationFrame(pendingEdit);
+        updateState.textContent = "queued";
+        pendingEdit = requestAnimationFrame(() => {
+          pendingEdit = null;
+          sendUpdate("edit", editStartedAt);
+        });
+      }
+
+      function setRoute(nextRoute, push) {
+        route = nextRoute;
+        if (push) {
+          const nextHash = route === "about" ? "#/about" : "#/";
+          if (location.hash !== nextHash) history.pushState(null, "", nextHash);
+        }
+        renderChrome();
+        sendUpdate("route");
+      }
+
+      function renderChrome() {
+        editor.value = files[currentFile];
+        fileSelect.value = currentFile;
+        routeState.textContent = route;
+        fileState.textContent = labels[currentFile];
+        homeRoute.setAttribute("aria-current", route === "home" ? "page" : "false");
+        aboutRoute.setAttribute("aria-current", route === "about" ? "page" : "false");
+      }
+
+      fileSelect.addEventListener("change", () => {
+        currentFile = fileSelect.value;
+        renderChrome();
+      });
+
+      editor.addEventListener("input", () => {
+        files[currentFile] = editor.value;
+        scheduleEdit();
+      });
+
+      document.querySelector("#resetButton").addEventListener("click", () => {
+        Object.assign(files, structuredClone(defaults));
+        route = "home";
+        history.pushState(null, "", "#/");
+        renderChrome();
+        sendUpdate("reset");
+      });
+
+      document.querySelector("#addCardButton").addEventListener("click", () => {
+        const count = (files.homeHtml.match(/<project-card/g) || []).length + 1;
+        const marker = `</section>\n\n<section class="long-copy"`;
+        const insertion = `  <project-card data-key="extra-${count}" title="Freeplay card ${count}">
+    <p slot="body">Added from the prototype controls.</p>
+  </project-card>
+</section>
+
+<section class="long-copy"`;
+        editStartedAt = performance.now();
+        files.homeHtml = files.homeHtml.replace(marker, insertion);
+        currentFile = "homeHtml";
+        renderChrome();
+        scheduleEdit();
+      });
+
+      homeRoute.addEventListener("click", () => setRoute("home", true));
+      aboutRoute.addEventListener("click", () => setRoute("about", true));
+
+      window.addEventListener("popstate", () => {
+        route = location.hash === "#/about" ? "about" : "home";
+        renderChrome();
+        sendUpdate("route");
+      });
+
+      if (!location.hash) history.replaceState(null, "", "#/");
+      renderChrome();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+/* Shared resize-handle grip indicator for all three splitters (sidebar width,
+   code height, code pane width). Each handle keeps its own hit area, cursor,
+   focus outline, pointer capture and visibility rules; only the indicator is
+   unified: an empty rounded pill in the brand selected-background, centered in
+   the hit area, shown on hover/focus/drag. No glyph, no permanent line. */
+.sidebar-resize::after,
+.code-resize::after,
+.code-width-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--selected);
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Vertical handles get an upright pill; the horizontal handle a flat one. */
+.sidebar-resize::after,
+.code-width-resize::after {
+  width: 6px;
+  height: 28px;
+}
+.code-resize::after {
+  width: 28px;
+  height: 6px;
+}
+.sidebar-resize:hover::after,
+.sidebar-resize:focus-visible::after,
+.workspace--resizing .sidebar-resize::after,
+.code-resize:hover::after,
+.code-resize:focus-visible::after,
+.code-resizing .code-resize::after,
+.code-width-resize:hover::after,
+.code-width-resize:focus-visible::after,
+.code-width-resizing .code-width-resize::after {
+  opacity: 1;
+}

@@ -1,0 +1,17 @@
+---
+import '../styles/site.css';
+const { title = 'A little space on the web' } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header><a href="/" class="wordmark">Tere</a><nav aria-label="Main"><a href="/">Home</a><a href="/about/">About</a></nav></header>
+    <main><slot /></main>
+    <footer>A small site, made with Astro.</footer>
+  </body>
+</html>

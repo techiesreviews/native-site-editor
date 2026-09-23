@@ -1,0 +1,58 @@
+.agent-menu {
+  justify-self: end;
+}
+.agent-menu__panel {
+  padding: 18px;
+  width: min(390px, calc(100vw - 32px));
+}
+.agent-menu__panel p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.agent-menu__panel button {
+  margin: 5px 8px 5px 0;
+}
+.agent-menu__endpoint {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--surface-input);
+  color: var(--text);
+  font:
+    12px ui-monospace,
+    monospace;
+}
+.agent-menu__panel [hidden] {
+  display: none;
+}
+@supports (position-area: bottom) {
+  .agent-menu__panel {
+    position-area: bottom span-left;
+    justify-self: end;
+  }
+}
+@media (max-width: 650px) {
+  .agent-menu {
+    margin-left: auto;
+  }
+}
+
+.agent-menu--embedded > .text-button {
+  display: block;
+  width: 100%;
+  padding: 11px 10px;
+  text-align: left;
+  text-decoration: none;
+  border-radius: 4px;
+}
+.agent-menu--embedded > .text-button:hover {
+  background: var(--hover);
+}
+.agent-menu--embedded .agent-menu__panel {
+  width: 100%;
+  padding: 10px;
+}
+.repository-menu__popover:has(.agent-menu__panel:not([hidden])) {
+  width: min(390px, calc(100vw - 32px));
+}

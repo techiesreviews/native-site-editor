@@ -1,0 +1,53 @@
+.commit-history {
+  display: grid;
+  gap: 12px;
+}
+.commit-history .changes-window__title,
+.commit-history p,
+.commit-history h3 {
+  margin: 0;
+}
+.commit-history__location,
+.commit-history__notice,
+.commit-history__message,
+.commit-history__confirmation p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.commit-history__navigation,
+.commit-history__actions,
+.commit-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.commit-history__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.commit-history__item,
+.commit-history__confirmation {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.commit-history__subject {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.commit-history__meta {
+  font-size: 11px;
+}
+.commit-history__confirmation h3 {
+  font-size: 14px;
+}
+.commit-history [hidden] {
+  display: none;
+}

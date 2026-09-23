@@ -1,0 +1,110 @@
+/* App palette. Imported after the shared, frozen prototype stylesheet.
+   Change this primary to recolor the editor, including Monaco.
+   The connected website keeps its own framework and colors. */
+:root {
+  --color-primary: oklch(54.6% 0.215 262.9);
+  /* Lex's shade curve: fixed lightness, proportional chroma, relative hue.
+     The default base reproduces the supplied light/dark palette. */
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+
+  --semantic-primary: var(--color-primary);
+  /* Bound action lightness/chroma so a bright brand still has legible buttons. */
+  --semantic-action: oklch(from var(--semantic-primary) min(l, 0.5) min(c, 0.18) h);
+  --semantic-action-hover: oklch(from var(--semantic-action) calc(l * 0.85) c h);
+  --semantic-on-action: var(--color-primary-lightest);
+  --semantic-surface: var(--color-primary-lightest);
+  --semantic-background: oklch(from var(--color-primary-lighter) 97% c h);
+  --semantic-surface-subtle: var(--color-primary-lighter);
+  --semantic-surface-raised: var(--color-primary-light);
+  --semantic-surface-input: var(--color-primary-lightest);
+  --semantic-surface-toolbar: oklch(from var(--color-primary-lighter) 92% c h);
+  --semantic-hover: oklch(from var(--color-primary-light) 91% c h);
+  --semantic-selected: var(--color-primary-light);
+  --semantic-text: var(--color-primary-darkest);
+  --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
+  --semantic-link: var(--color-primary-dark);
+  --semantic-border: var(--color-primary-light);
+  --semantic-focus: var(--semantic-action);
+  --semantic-preview-focus: var(--semantic-action);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) l c h / 0.18);
+
+  /* Status hues retain their meaning when the brand changes. */
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --semantic-warning-surface: oklch(from var(--color-warning) 96% 0.03 h);
+  --semantic-warning-text: oklch(from var(--color-warning) 38% 0.07 h);
+  --semantic-success-surface: oklch(from var(--color-success) 96% 0.03 h);
+  --semantic-success-text: oklch(from var(--color-success) 38% 0.07 h);
+
+  /* Compatibility aliases keep all component styling on one palette. */
+  --surface: var(--semantic-surface);
+  --background: var(--semantic-background);
+  --surface-subtle: var(--semantic-surface-subtle);
+  --surface-raised: var(--semantic-surface-raised);
+  --surface-input: var(--semantic-surface-input);
+  --surface-toolbar: var(--semantic-surface-toolbar);
+  --hover: var(--semantic-hover);
+  --selected: var(--semantic-selected);
+  --text: var(--semantic-text);
+  --line: var(--semantic-border);
+  --muted: var(--semantic-text-muted);
+  --green: var(--semantic-link);
+  --primary: var(--semantic-action);
+  --primary-hover: var(--semantic-action-hover);
+  --on-primary: var(--semantic-on-action);
+  --focus: var(--semantic-focus);
+  --preview-focus: var(--semantic-preview-focus);
+  --warning-bg: var(--semantic-warning-surface);
+  --warning-fg: var(--semantic-warning-text);
+  --success-bg: var(--semantic-success-surface);
+  --success-fg: var(--semantic-success-text);
+  --shadow: 0 12px 32px var(--semantic-shadow);
+}
+
+/* App overrides for the legacy utility foundation, without changing the
+   frozen prototype that imports that foundation independently. */
+.button {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.button:disabled,
+.button:disabled:hover {
+  background: var(--primary);
+  cursor: default;
+  opacity: 0.45;
+}
+.secondary {
+  background: var(--surface);
+  color: inherit;
+}
+.changes-window {
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --semantic-surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+    --semantic-background: var(--color-primary-darkest);
+    --semantic-surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+    --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+    --semantic-surface-input: oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h);
+    --semantic-surface-toolbar: oklch(from var(--color-primary-darker) l min(c, 0.025) h);
+    --semantic-hover: oklch(from var(--color-primary-darker) 30% min(c, 0.04) h);
+    --semantic-selected: oklch(from var(--color-primary-darker) 35% min(c, 0.05) h);
+    --semantic-text: var(--color-primary-lighter);
+    --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+    --semantic-link: var(--color-primary-light);
+    --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+    --semantic-focus: var(--color-primary-light);
+    --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+    --semantic-warning-surface: oklch(from var(--color-warning) 28% 0.03 h);
+    --semantic-warning-text: oklch(from var(--color-warning) 87% 0.08 h);
+    --semantic-success-surface: oklch(from var(--color-success) 28% 0.03 h);
+    --semantic-success-text: oklch(from var(--color-success) 87% 0.08 h);
+  }
+}

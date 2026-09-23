@@ -1,0 +1,26 @@
+.dropdown-panel {
+  position: fixed;
+  inset: 64px auto auto 20px;
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  max-height: calc(100dvh - 90px);
+  overflow: auto;
+}
+@supports (position-area: bottom) {
+  .dropdown-panel {
+    inset: auto;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-inline, flip-block;
+    justify-self: start;
+    margin-top: 6px;
+  }
+  .explorer.dropdown-panel {
+    position-area: bottom;
+    justify-self: anchor-center;
+  }
+}

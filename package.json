@@ -1,0 +1,52 @@
+{
+  "name": "astro-site-editor",
+  "private": true,
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run build:ui && wrangler dev",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build:ui": "vite build",
+    "build": "npm run check && npm run build:ui && wrangler deploy --dry-run",
+    "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
+    "generate:integration": "node scripts/generate-integration-files.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "playwright test",
+    "test:browser-structural-preview": "playwright test -c playwright.browser-structural-preview.config.ts",
+    "test:browser-structural-overlay": "node --import tsx scripts/browser-structural-preview-overlay-check.mjs",
+    "test:browser-structural-types": "tsc -p tsconfig.browser-structural-preview.json --noEmit",
+    "deploy": "npm run build:ui && wrangler deploy",
+    "setup": "node scripts/setup-browser.mjs",
+    "setup:manual": "bash scripts/setup-github.sh",
+    "setup:browser": "node scripts/setup-browser.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260917.1",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.3",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20260916.0-alpha",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "wrangler": "^4.133.0"
+  },
+  "dependencies": {
+    "@astrojs/compiler": "^4.0.0",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "monaco-editor": "^0.56.0",
+    "typescript-language": "npm:typescript@^5.9.3",
+    "zod": "^4.6.5"
+  },
+  "overrides": {
+    "monaco-editor": {
+      "dompurify": "3.4.15"
+    }
+  }
+}

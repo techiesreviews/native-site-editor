@@ -1,0 +1,6 @@
+{
+  "provider": "cloudflare-workers-assets",
+  "worker": "astro-editor-starter",
+  "subdomain": "lexvd.workers.dev",
+  "revisionPath": "/.astro-editor/revision.json"
+}

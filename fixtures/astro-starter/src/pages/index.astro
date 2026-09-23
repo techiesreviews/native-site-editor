@@ -1,0 +1,20 @@
+---
+import { Image } from 'astro:assets';
+import Layout from '../layouts/Layout.astro';
+import Counter from '../components/Counter.tsx';
+import gradient from '../assets/gradient.png';
+---
+<Layout>
+  <p class="eyebrow">A WORK IN PROGRESS</p>
+  <h1>A little space on the web, updated.</h1>
+  <p class="lead">A place for ideas, experiments, and things worth sharing.</p>
+  <div class="button-wrapper">
+    <a class="button" href="/about/">Get to know this project ↗</a>
+  </div>
+  <section><h2>Start with something simple.</h2><p>This is an ordinary Astro site. Its pages, layout, and styles are yours to change.</p></section>
+  <section class="media">
+    <img src="/images/mark.svg" alt="Fieldnotes mark" width="96" height="96" />
+    <Image src={gradient} alt="A soft gradient" width={64} height={40} />
+  </section>
+  <section><h2>Say hello.</h2><Counter client:load /></section>
+</Layout>

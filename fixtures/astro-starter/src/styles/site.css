@@ -1,0 +1,140 @@
+@import "./framework.css";
+
+:root {
+  font-family: system-ui, sans-serif;
+  color: #263d30;
+  background: #f4f5ed;
+  --btn-space: .875em 1.25em;
+  --primary: #2c5139;
+  --secondary: #d4dfcb;
+  --primary-l-3: #b8d8c2;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 0 30px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px 0;
+  border-bottom: 1px solid #dce1d4;
+}
+a {
+  color: inherit;
+}
+.wordmark {
+  font-weight: 700;
+  text-decoration: none;
+}
+nav {
+  display: flex;
+  gap: 24px;
+}
+main {
+  padding: 90px 0;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+}
+h1 {
+  max-width: 720px;
+  font-size: clamp(40px, 7vw, 78px);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 1.08;
+}
+.lead {
+  max-width: 500px;
+  font-size: 19px;
+  line-height: 1.7;
+  color: #6b7968;
+}
+.btn,
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3xs);
+  padding: var(--btn-space);
+  background: var(--btn-main-color);
+  color: white;
+  font-size: var(--text-m);
+  font-weight: 600;
+  border-radius: var(--radius-m);
+  border: 2px solid var(--btn-main-color);
+  transition: all .25s ease-in-out;
+  outline: 0;
+  cursor: pointer;
+  text-decoration: none;
+  width: fit-content;
+  margin: 18px 0;
+  --btn-color: var(--primary);
+  --btn-main-color: var(--btn-color);
+
+  &:hover {
+    --btn-main-color: color-mix(in oklch, var(--btn-color), black 20%);
+    transform: translateY(-.1rem);
+  }
+
+  &.small {
+    font-size: var(--text-s);
+  }
+
+  &.large {
+    font-size: var(--text-l);
+  }
+
+  &.ghost {
+    --btn-color: var(--primary);
+    background: transparent;
+    color: var(--btn-main-color);
+
+    &:hover {
+      background: color-mix(in oklch, var(--btn-main-color) 10%, transparent);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+  }
+
+  &.secondary {
+    --btn-color: var(--secondary);
+    color: black;
+  }
+
+  &:focus {
+    outline: 4px solid var(--primary-l-3);
+    outline-offset: 2px;
+  }
+
+  &.no-bg {
+    background: transparent;
+    box-shadow: none;
+    border-color: transparent;
+    color: var(--btn-color);
+
+    &:hover {
+      color: color-mix(in oklch, var(--btn-color), black 20%);
+    }
+  }
+}
+section {
+  margin-top: 80px;
+  max-width: 550px;
+  line-height: 1.8;
+}
+footer {
+  border-top: 1px solid #dce1d4;
+  padding: 25px 0;
+  color: #77836f;
+  font-size: 13px;
+}
+
+.media { display: flex; gap: 1.5rem; align-items: center; }
+.counter { display: inline-flex; gap: 0.75rem; align-items: center; }
+.counter output { font-weight: 700; }

@@ -1,0 +1,51 @@
+@import "./resize-handle.css";
+
+.code-resize {
+  position: absolute;
+  inset: -5px 0 auto 0;
+  height: 10px;
+  /* Above the vertical width splitter so the horizontal handle wins at their
+     crossing point; vertical handles stay at 2 elsewhere. */
+  z-index: 3;
+  cursor: row-resize;
+  touch-action: none;
+}
+.code-resize:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.code-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+main:not(.has-preview) .code-resize {
+  display: none;
+}
+
+/* Vertical splitter between the code panes. A narrow, transparent hit target
+   (no decorative divider line); the shared grip appears on hover/focus. */
+.code-width-resize {
+  position: relative;
+  flex: 0 0 6px;
+  align-self: stretch;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.code-width-resize[hidden] {
+  display: none;
+}
+.code-width-resize::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+  cursor: col-resize;
+}
+.code-width-resize:focus-visible::before {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.code-width-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
