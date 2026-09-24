@@ -39,6 +39,30 @@ interface UpdateInput {
   sources?: Record<string, string>;
   componentStyles?: Record<string, string>;
   route?: string;
+  // The component whose template is open: the preview shows a page that uses
+  // it, or the component alone when no page does.
+  component?: string;
+}
+
+// The pseudo-route on which a component renders by itself.
+const componentRoute = (tag: string) => `/__component__/${tag}/`;
+const usesTag = (html: string, tag: string) => new RegExp(`<${tag}[\\s>/]`, "i").test(html);
+
+// Whether the page at `routePath` shows `tag`, directly or inside another
+// component's template (a note inside a card inside the page).
+function routeUsesTag(manifest: NativeManifest, sources: Record<string, string>, routePath: string, tag: string) {
+  const seen = new Set<string>();
+  const queue = [sources[manifest.routes[routePath]] ?? ""];
+  while (queue.length) {
+    const html = queue.pop()!;
+    if (usesTag(html, tag)) return true;
+    for (const [name, path] of Object.entries(manifest.components)) {
+      if (seen.has(name) || !usesTag(html, name)) continue;
+      seen.add(name);
+      queue.push(sources[path] ?? "");
+    }
+  }
+  return false;
 }
 
 // Which element the runtime should select once the next update has rendered:
@@ -105,6 +129,7 @@ function composePayload(
   sources: Record<string, string>,
   componentStyles: Record<string, string>,
   route: string,
+  alone: string | undefined,
   context: string,
   selectNode: NativeNodeRequest | undefined,
   selectText: { start: number; end: number } | undefined,
@@ -115,6 +140,12 @@ function composePayload(
     pagePaths[routePath] = filePath;
   for (const [routePath, filePath] of Object.entries(manifest.routes))
     pages[routePath] = sources[filePath] ?? "";
+  // A component on its own: a page of just one instance, belonging to no
+  // file, so only clicks inside the component select anything.
+  if (alone) {
+    pages[componentRoute(alone)] = `<${alone} data-key="${alone}"></${alone}>`;
+    pagePaths[componentRoute(alone)] = "";
+  }
   const components: Record<string, string> = {};
   const componentPaths: Record<string, string> = {};
   for (const [tag, filePath] of Object.entries(manifest.components))
@@ -170,6 +201,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let sources: Record<string, string> = {};
   let componentStyles: Record<string, string> = {};
   let route = "/";
+  // The component shown by itself, when its template is open and no page uses it.
+  let alone: string | undefined;
   let context = "";
   let renderVersion = 0;
   // A click reported against an older render. The runtime re-reports its
@@ -200,7 +233,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!manifest || !ready || !mounted) return;
-    const payload = composePayload(manifest, sources, componentStyles, route, context, selectNode, selectText);
+    const payload = composePayload(manifest, sources, componentStyles, route, alone, context, selectNode, selectText);
     selectNode = undefined;
     selectText = undefined;
     frame.contentWindow?.postMessage(
@@ -214,6 +247,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     context = [
       renderVersion,
       route,
+      alone ?? "",
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
     ].join("\n");
     if (rafHandle) return;
@@ -386,6 +420,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!candidate) return false;
     if (candidate !== route) {
       route = candidate;
+      alone = undefined;
       insertControls.clear();
       clearSelection();
       schedule();
@@ -406,7 +441,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** Show the pane and adopt a manifest. Idempotent for the same manifest. */
     activate(next: NativeManifest) {
       manifest = next;
-      route = Object.hasOwn(next.routes, route) ? route : nativeDefaultRoute(next);
+      if (!Object.hasOwn(next.routes, route)) {
+        route = nativeDefaultRoute(next);
+        alone = undefined;
+      }
       if (!mounted) {
         mounted = true;
         host.classList.add("has-preview");
@@ -417,8 +455,26 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     update(input: UpdateInput) {
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
-      if (input.route && manifest && Object.hasOwn(manifest.routes, input.route) && input.route !== route) {
+      if (manifest && input.component && Object.hasOwn(manifest.components, input.component)) {
+        // The page already on show wins; then any page that uses the component; else the component alone.
+        const tag = input.component;
+        const uses = (routePath: string) => routeUsesTag(manifest!, sources, routePath, tag);
+        const next = alone !== tag && Object.hasOwn(manifest.routes, route) && uses(route)
+          ? route
+          : Object.keys(manifest.routes).find(uses) ?? componentRoute(tag);
+        if (next !== route) {
+          route = next;
+          insertControls.clear();
+          // Quietly: the runtime reports the lost selection after the render,
+          // and a click here would cancel the file open that led to this.
+          staleClick = false;
+          editBar.hide();
+          postClearSelection();
+        }
+        alone = next === componentRoute(tag) ? tag : undefined;
+      } else if (input.route && manifest && Object.hasOwn(manifest.routes, input.route) && input.route !== route) {
         route = input.route;
+        alone = undefined;
         insertControls.clear();
       }
       schedule();

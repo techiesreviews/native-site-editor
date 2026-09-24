@@ -914,6 +914,7 @@ function updateNativePreview() {
     sources: nativeSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     route: nativeRouteForPath(currentPath),
+    component: currentPath ? nativeComponentTagForPath(currentPath) : undefined,
   });
 }
 

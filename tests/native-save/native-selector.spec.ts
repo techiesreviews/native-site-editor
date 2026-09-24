@@ -439,4 +439,27 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await (await explorerItem(page, "feature-block.html")).click();
   await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+  // No page uses it, so the preview shows the component by itself, still editable.
+  const frame = page.frameLocator(".native-preview-frame");
+  const featureTitle = frame.locator("feature-block h2");
+  await expect(featureTitle).toHaveText("A feature worth sharing");
+  await expect(frame.locator(".hero h1")).toHaveCount(0);
+  await featureTitle.click();
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
+  await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
+  // Editing the template renders in place.
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await page.keyboard.press("Enter");
+  await expect(featureTitle).toHaveText("A feature worth sharing!");
+  await expect(page.locator("#content .view-lines")).toContainText("A feature worth sharing!</slot>");
+
+  // Opening a page brings its route back.
+  await page.locator("#explorer-toggle").click();
+  const pages = await explorerItem(page, "pages");
+  if ((await pages.getAttribute("aria-expanded")) === "false") await pages.click();
+  await (await explorerItem(page, "index.html")).click();
+  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(frame.locator(".hero h1")).toBeVisible();
+  await expect(frame.locator("feature-block")).toHaveCount(0);
 });

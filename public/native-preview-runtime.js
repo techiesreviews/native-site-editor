@@ -499,6 +499,8 @@
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
     for (var i = 0; i < path.length; i++) {
       var n = path[i];
+      // A slot is how a template shows text, not an element of its own: its parent is the target.
+      if (n instanceof HTMLSlotElement) continue;
       if (n instanceof Element && n !== document.documentElement && n !== document.body && !n.hasAttribute("data-native-selection-box")) return n;
     }
     return e.target instanceof Element ? e.target : null;
@@ -743,11 +745,15 @@
   // the element's text before and after on Enter, on blur and before a format
   // shortcut, and writes the difference into the source.
   var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
-  var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd)$/;
+  var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
   function editableText(el) {
     if (!el || !TEXT_TAGS.test(el.localName) || !(el.textContent || "").trim()) return false;
     var all = el.querySelectorAll("*");
-    for (var i = 0; i < all.length; i++) if (!INLINE_TAGS.test(all[i].localName)) return false;
+    for (var i = 0; i < all.length; i++) {
+      if (!INLINE_TAGS.test(all[i].localName)) return false;
+      // A slot showing the page's own text: that text is the thing to edit, not the template's fallback.
+      if (all[i] instanceof HTMLSlotElement && all[i].assignedNodes().length) return false;
+    }
     return true;
   }
   function startEditing(el) {
