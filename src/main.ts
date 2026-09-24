@@ -18,14 +18,17 @@ import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize } from "./components/sidebar-resize";
-import { createNativePreview, type NativePreviewSelection } from "./components/native-preview";
+import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextSelection } from "./components/native-preview";
 import {
   parseNativeManifest,
   nativeManifestPaths,
   nativeDefaultRoute,
   type NativeManifest,
 } from "./native-manifest";
-import { locateNativeElement } from "./native-source-location";
+import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround } from "./native-source-location";
+import type { EditBarControl, EditBarModel } from "./components/edit-bar";
+import type { InsertChoice, InsertPoint } from "./components/insert-controls";
+import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -189,6 +192,13 @@ function mountWorkspace() {
   nativePreview = createNativePreview(element("main"), {
     onSelect: (selection) => void selectNativeSource(selection),
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
+    onTextSelection: (text) => {
+      nativeTextSelection = text && lastNativeSelection?.node ? { ...text, path: lastNativeSelection.path, node: lastNativeSelection.node } : undefined;
+      if (lastNativeSelection) renderNativeEditBar(lastNativeSelection);
+    },
+    onFormat: (format) => nativeFormatActions[format]?.(),
+    insertChoices: nativeSectionChoices,
+    onInsert: (point, choice) => void insertNativeComponent(point, choice),
   });
 }
 
@@ -509,11 +519,262 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   editorModule?.markElement(selection.path, tag, reveal);
 }
 
+// What the edit bar shows for a selected element: a kind label in the
+// user's words, or the tag itself for components and anything else.
+function nativeKindLabel(tag: string) {
+  if (/^h[1-6]$/.test(tag)) return "Heading";
+  const labels: Record<string, string> = {
+    p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
+    ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
+    footer: "Footer", nav: "Navigation", main: "Main", aside: "Aside", figure: "Figure", blockquote: "Quote",
+    table: "Table", form: "Form", span: "Text", strong: "Text", em: "Text", slot: "Slot", div: "Block",
+  };
+  return labels[tag] ?? tag;
+}
+
+// Text sizes the bar offers, written as an inline `font-size` on the element.
+const nativeTextSizes = [
+  { value: "xs", label: "XS", css: "0.75rem" },
+  { value: "s", label: "S", css: "0.875rem" },
+  { value: "m", label: "M", css: "1rem" },
+  { value: "l", label: "L", css: "1.25rem" },
+  { value: "xl", label: "XL", css: "1.5rem" },
+  { value: "2xl", label: "2XL", css: "2rem" },
+  { value: "3xl", label: "3XL", css: "2.5rem" },
+  { value: "4xl", label: "4XL", css: "3rem" },
+];
+
+// Elements whose whole content the bar can make bold or italic.
+const nativeTextTags = new Set([
+  "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "li", "button", "blockquote", "figcaption",
+  "small", "label", "td", "th", "dt", "dd", "div", "summary", "legend", "caption",
+]);
+
+// Split an inline style into declarations, keeping their order.
+function styleDeclarations(style: string) {
+  return style.split(";").map((part) => part.trim()).filter(Boolean);
+}
+
+// Whether `inner` is exactly one `tags` element (plus whitespace), the bar's
+// notion of "the whole element is bold/italic"; returns that wrapper's range.
+function wholeWrapper(inner: string, tags: string[]) {
+  const template = document.createElement("template");
+  template.innerHTML = inner;
+  const nodes = [...template.content.childNodes].filter((n) => n.nodeType !== Node.TEXT_NODE || n.textContent?.trim());
+  const only = nodes.length === 1 && nodes[0] instanceof Element ? nodes[0] : undefined;
+  if (!only || !tags.includes(only.localName)) return undefined;
+  const open = inner.search(new RegExp(`<(${tags.join("|")})[\\s>]`, "i"));
+  const closeAt = inner.toLowerCase().lastIndexOf(`</${only.localName}`);
+  const closeEnd = inner.indexOf(">", closeAt);
+  if (open < 0 || closeAt < 0 || closeEnd < 0) return undefined;
+  const openEnd = inner.indexOf(">", open);
+  return { open, openEnd: openEnd + 1, closeAt, closeEnd: closeEnd + 1 };
+}
+
+let lastNativeSelection: NativePreviewSelection | undefined;
+// Text selected inside the selected element, bound to that element.
+let nativeTextSelection: (NativeTextSelection & { path: string; node: number[] }) | undefined;
+// What B and I do for the current selection, for the keyboard shortcuts.
+let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
+
+// Controls for the selected element. Structural actions need the element's
+// exact outer source range; when that cannot be told (implied end tags,
+// stray markup) they stay out rather than edit the wrong HTML.
+function renderNativeEditBar(selection: NativePreviewSelection) {
+  const preview = nativePreview;
+  const editor = editorModule;
+  const { path, node, rect } = selection;
+  // The page's `main` container has nothing the bar can do; it stays out of the way.
+  if (!preview || !editor || !path || !rect || currentPath !== path || !editor.isMounted(path) || selection.tag === "main") {
+    nativeFormatActions = {};
+    preview?.hideEditBar();
+    return;
+  }
+  const source = nativeSources()[path] ?? "";
+  const range = node ? locateNativeElementRange(source, node) : undefined;
+  const kind = nativeKindLabel(selection.tag);
+  const announce = (text: string) => { element("status").textContent = text; };
+  // One verified source change, as one undo step; `next` is the element to
+  // select once the preview has rendered it.
+  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
+    preview.selectAfterUpdate(next ? { path, node: next } : undefined);
+    try {
+      editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
+      announce(message);
+    } catch (error) {
+      preview.selectAfterUpdate(undefined);
+      errorMessage(error);
+    }
+  };
+  const controls: EditBarControl[] = [];
+  nativeFormatActions = {};
+  if (/^h[1-6]$/.test(selection.tag) && range?.close && range.tag.name === selection.tag) {
+    const close = range.close;
+    const length = range.tag.name.length;
+    controls.push({
+      kind: "select",
+      label: "Heading level",
+      options: [1, 2, 3, 4, 5, 6].map((level) => ({ label: `H${level}`, value: `h${level}` })),
+      value: selection.tag,
+      onChange: (value) => change([
+        { start: range.tag.start + 1, end: range.tag.nameEnd, text: value },
+        { start: close.start + 2, end: close.start + 2 + length, text: value },
+      ], node, `Heading level ${value.toUpperCase()}`),
+    });
+  }
+  const textual = range?.close && !selection.tag.includes("-") && selection.tag !== "slot";
+  if (range && textual) {
+    const tag = range.tag;
+    const style = startTagAttribute(source, tag, "style");
+    const declarations = style ? styleDeclarations(style.value) : [];
+    const current = declarations.find((declaration) => /^font-size\s*:/i.test(declaration));
+    const currentCss = current?.replace(/^font-size\s*:\s*/i, "").trim();
+    const value = !currentCss ? "default" : nativeTextSizes.find((size) => size.css === currentCss)?.value ?? "custom";
+    const options = [{ label: "Default", value: "default" }, ...nativeTextSizes.map((size) => ({ label: size.label, value: size.value }))];
+    if (value === "custom") options.push({ label: "Custom", value: "custom" });
+    controls.push({
+      kind: "select",
+      label: "Text size",
+      options,
+      value,
+      onChange: (next) => {
+        if (next === "custom") return;
+        const size = nativeTextSizes.find((item) => item.value === next);
+        const kept = declarations.filter((declaration) => declaration !== current);
+        if (size) kept.push(`font-size: ${size.css}`);
+        const text = kept.join("; ");
+        // A new attribute goes last in the start tag, before `>` or `/>`.
+        const insertAt = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
+        const edit = !style
+          ? { start: insertAt, end: insertAt, text: ` style="${text}"` }
+          : text ? { start: style.valueStart, end: style.valueEnd, text }
+            : { start: style.start, end: style.end, text: "" };
+        change([edit], node, size ? `Text size ${size.label}` : "Default text size");
+      },
+    });
+  }
+  if (range?.close && nativeTextTags.has(selection.tag)) {
+    const close = range.close;
+    const inner = source.slice(range.tag.end, close.start);
+    const text = nativeTextSelection && nativeTextSelection.path === path && node &&
+      nativeTextSelection.node.join(".") === node.join(".") ? nativeTextSelection : undefined;
+    for (const format of [
+      { label: "B", name: "Bold", tag: "strong" as const, also: ["strong", "b"] },
+      { label: "I", name: "Italic", tag: "em" as const, also: ["em", "i"] },
+    ]) {
+      // Offsets inside `inner` to insert or delete, keeping the same text selected.
+      const changeInner = (edits: { start: number; end: number; text: string }[], message: string) => {
+        if (text) preview.selectTextAfterUpdate({ start: text.start, end: text.end });
+        change(edits.map((edit) => ({ ...edit, start: range.tag.end + edit.start, end: range.tag.end + edit.end })), node, message);
+      };
+      let pressed: boolean;
+      let action: () => void;
+      if (text) {
+        // Selected text: wrap just that range, or unwrap the wrapper it sits in.
+        const enclosing = text.wrappers.find((name) => format.also.includes(name));
+        pressed = Boolean(enclosing);
+        action = () => {
+          if (enclosing) {
+            const wrapper = wrapperAround(inner, text.start, format.also);
+            if (!wrapper?.close) { announce(`${format.name} could not be removed here.`); return; }
+            changeInner([
+              { start: wrapper.tag.start, end: wrapper.tag.end, text: "" },
+              { start: wrapper.close.start, end: wrapper.close.end, text: "" },
+            ], `${format.name} off`);
+            return;
+          }
+          const span = textRangeInSource(inner, text.start, text.end, text.text);
+          if (!span) { announce(`Select text within one element to make it ${format.name.toLowerCase()}.`); return; }
+          changeInner([
+            { start: span.start, end: span.start, text: `<${format.tag}>` },
+            { start: span.end, end: span.end, text: `</${format.tag}>` },
+          ], `${format.name} on`);
+        };
+      } else {
+        // No text selected: the whole element's content.
+        const wrapper = wholeWrapper(inner, format.also);
+        pressed = Boolean(wrapper);
+        action = () => wrapper
+          ? changeInner([
+            { start: wrapper.open, end: wrapper.openEnd, text: "" },
+            { start: wrapper.closeAt, end: wrapper.closeEnd, text: "" },
+          ], `${format.name} off`)
+          : changeInner([
+            { start: 0, end: 0, text: `<${format.tag}>` },
+            { start: inner.length, end: inner.length, text: `</${format.tag}>` },
+          ], `${format.name} on`);
+      }
+      nativeFormatActions[format.tag] = action;
+      controls.push({
+        kind: "button",
+        label: format.label,
+        ariaLabel: format.name,
+        title: `${format.name} (Ctrl+${format.label})`,
+        pressed,
+        className: `edit-bar__format edit-bar__format--${format.tag}`,
+        onPress: action,
+      });
+    }
+  }
+  if (selection.link !== undefined && preview.canFollow(selection.link)) {
+    const href = selection.link;
+    controls.push({ kind: "button", label: "Follow link", title: href, onPress: () => void preview.follow(href) });
+  }
+  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.() };
+  preview.showEditBar(model, rect);
+}
+
+// Components that fit between page sections: those whose template is a
+// single <section>, read from their current source so a draft counts.
+function nativeSectionChoices(): InsertChoice[] {
+  if (!nativeManifest) return [];
+  const sources = nativeSources();
+  return Object.entries(nativeManifest.components)
+    .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
+    .map(([tag]) => ({ tag, label: componentLabel(tag) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Puts a new instance of a section component into the page at `point`, as
+// one undo step, and selects it. The page file opens first when another
+// file is in the editor, since edits go through the mounted editor.
+async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
+  const path = point.path;
+  if (!nativePreview || !nativeManifest || !Object.values(nativeManifest.routes).includes(path)) return;
+  if (currentPath !== path || !editorModule?.isMounted(path)) {
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false });
+    if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path)) return;
+  }
+  const editor = editorModule;
+  const preview = nativePreview;
+  if (!editor || !preview) return;
+  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag);
+  if (!edit) {
+    errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
+    return;
+  }
+  preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
+  try {
+    editor.replaceActiveRanges([{ path, ...edit, expected: "" }]);
+    element("status").textContent = `${choice.label} added`;
+  } catch (error) {
+    preview.selectAfterUpdate(undefined);
+    errorMessage(error);
+  }
+}
+
 async function selectNativeSource(selection: NativePreviewSelection) {
   const reveal = selection.reason !== "refresh";
+  lastNativeSelection = selection.path ? selection : undefined;
+  if (!selection.path) nativePreview?.hideEditBar();
   if (!reveal) {
-    if (!selection.path || currentPath !== selection.path) return;
+    if (!selection.path || currentPath !== selection.path) {
+      nativePreview?.hideEditBar();
+      return;
+    }
     markNativeElement(selection, false);
+    renderNativeEditBar(selection);
     void linkNativeStyles(selection, false);
     return;
   }
@@ -536,6 +797,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     if (request !== linkedStyleRequest || epoch !== generation || currentPath !== selection.path) return;
   }
   markNativeElement(selection, true);
+  renderNativeEditBar(selection);
   void linkNativeStyles(selection, reveal);
 }
 
@@ -1256,6 +1518,9 @@ async function mountSource(
     onSessionExpired: () =>
       errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
   });
+  // Another file opened over the selected page: its controls would edit the
+  // wrong file, so the bar waits for the next preview click.
+  if (nativeModeActive() && lastNativeSelection?.path !== path) nativePreview?.hideEditBar();
   // Checked before the file-generation guard: handling that click is what
   // superseded this open.
   const pending = pendingNativeSelection;

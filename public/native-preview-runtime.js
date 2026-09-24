@@ -58,20 +58,28 @@
 
   function reconcileChildren(target, fragment) {
     var desired = Array.prototype.slice.call(fragment.childNodes);
+    // Existing nodes per key, in order: a key that appears twice in the
+    // source (a duplicated element) pairs with its own existing node instead
+    // of folding both into one.
     var keyed = new Map();
+    var keyedNodes = new Set();
     Array.prototype.slice.call(target.childNodes).forEach(function (n) {
       var k = nodeKey(n);
-      if (k) keyed.set(k, n);
+      if (!k) return;
+      if (!keyed.has(k)) keyed.set(k, []);
+      keyed.get(k).push(n);
+      keyedNodes.add(n);
     });
     desired.forEach(function (next, index) {
       var key = nodeKey(next);
       var currentAtIndex = target.childNodes[index] || null;
-      var existing = key ? keyed.get(key) : currentAtIndex;
+      var existing = key ? (keyed.get(key) || [])[0] || null : currentAtIndex;
       if (!sameKind(existing, next)) {
         target.insertBefore(next, currentAtIndex);
-        if (currentAtIndex && !keyed.has(nodeKey(currentAtIndex))) currentAtIndex.remove();
+        if (currentAtIndex && !keyedNodes.has(currentAtIndex)) currentAtIndex.remove();
         return;
       }
+      if (key) keyed.get(key).shift();
       reconcileNode(existing, next);
       if (target.childNodes[index] !== existing) target.insertBefore(existing, target.childNodes[index] || null);
     });
@@ -175,6 +183,7 @@
     reconcileChildren(pageEl, t.content.cloneNode(true));
     renderInstances();
     updateBoxes();
+    scheduleInsertPoints();
   }
 
   function stylesList() {
@@ -232,6 +241,7 @@
   function apply(payload) {
     hadError = false;
     renderDepth = 0;
+    var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
     state = {
       pages: payload.pages || {},
       pagePaths: payload.pagePaths || {},
@@ -240,15 +250,31 @@
       styles: Array.isArray(payload.styles) ? payload.styles : [],
       componentStyles: payload.componentStyles || {},
       route: payload.route || "/",
+      sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
       context: String(payload.context || "")
     };
     Object.keys(state.components).forEach(defineTag);
     syncStyles();
     renderPage();
     if (!hadError) emit("clear-error");
-    if (selected && !selected.isConnected) selected = null;
+    var hadSelection = !!selected;
+    // An edit may replace the selected element (a renamed heading, an undo):
+    // the same position is selected again, unless the host asks for another.
+    if (selected && !selected.isConnected) selected = (previous && previous.node && resolveNodePath(previous)) || null;
+    if (payload.selectNode) {
+      var requested = resolveNodePath(payload.selectNode);
+      if (requested) {
+        selected = requested;
+        if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
+      }
+    }
+    lastInsertPoints = "";
     updateBoxes();
     if (selected) emitSelection(selected, "refresh");
+    else if (hadSelection) emit("select", { path: "", tag: "", text: "", reason: "refresh", selectors: [] });
+    // Text the host just formatted stays selected, so the next format applies to it too.
+    if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
+    reportTextSelection(true);
     requestAnimationFrame(requestComponentStyles);
   }
 
@@ -304,6 +330,116 @@
     ensureBoxes();
     drawBox(hoverBox, hovered);
     drawBox(selectBox, selected);
+    scheduleRect();
+  }
+
+  // Places a section can be inserted: every gap between the children of a
+  // page element (or the page root) that holds a <section> or a section
+  // component, plus before the first and after the last child. Reported in
+  // frame-viewport coordinates with the page element's index path, so the
+  // editor can draw plus buttons over the frame and find the source position.
+  function sectionLike(el) {
+    return el.localName === "section" || (state && state.sectionTags.indexOf(el.localName) >= 0);
+  }
+
+  function itemLabel(el) {
+    var heading = el.matches("h1,h2,h3,h4,h5,h6") ? el : el.querySelector("h1,h2,h3,h4,h5,h6");
+    if (!heading && el.shadowRoot) heading = el.shadowRoot.querySelector("h1,h2,h3,h4,h5,h6");
+    var text = ((heading || el).textContent || "").replace(/\s+/g, " ").trim();
+    return (text || "<" + el.localName + ">").slice(0, 60);
+  }
+
+  function insertPoints() {
+    var out = [];
+    if (!pageEl || !state) return out;
+    [pageEl].concat(Array.prototype.slice.call(pageEl.querySelectorAll("*"))).forEach(function (container) {
+      var children = Array.prototype.slice.call(container.children);
+      if (!children.some(sectionLike)) return;
+      var parentPath = container === pageEl ? [] : elementIndexPath(container);
+      if (!parentPath) return;
+      var box = container.getBoundingClientRect();
+      var rects = children.map(function (child) { return child.getBoundingClientRect(); });
+      for (var i = 0; i <= children.length; i++) {
+        var prev = rects[i - 1];
+        var next = rects[i];
+        out.push({
+          parent: parentPath,
+          index: i,
+          top: prev && next ? (prev.bottom + next.top) / 2 : next ? next.top : prev.bottom,
+          left: box.left,
+          width: box.width,
+          before: next ? itemLabel(children[i]) : ""
+        });
+      }
+    });
+    return out;
+  }
+
+  var insertFrame = 0;
+  var lastInsertPoints = "";
+  function scheduleInsertPoints() {
+    if (insertFrame) return;
+    insertFrame = requestAnimationFrame(function () {
+      insertFrame = 0;
+      var points = insertPoints();
+      var key = JSON.stringify(points);
+      if (key === lastInsertPoints) return;
+      lastInsertPoints = key;
+      emit("insert-points", { path: String(state && state.pagePaths[state.route] || ""), points: points });
+    });
+  }
+
+  function rectOf(el) {
+    var r = el.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+  }
+
+  // The selected element's frame-viewport rectangle, sent when it may have
+  // moved (scroll, resize, render) and only when it actually changed.
+  var rectFrame = 0;
+  var lastRect = "";
+  function scheduleRect() {
+    if (rectFrame) return;
+    rectFrame = requestAnimationFrame(function () {
+      rectFrame = 0;
+      if (!selected || !selected.isConnected) { lastRect = ""; return; }
+      var rect = rectOf(selected);
+      var key = JSON.stringify(rect);
+      if (key === lastRect) return;
+      lastRect = key;
+      emit("selection-rect", { rect: rect });
+    });
+  }
+
+  // The element at `node` (element-child indexes, injected styles not
+  // counted) under the page root or under the shadow root of the component
+  // whose template is `path`, preferring the currently selected instance.
+  function resolveNodePath(request) {
+    if (!state || !request || !Array.isArray(request.node)) return null;
+    var path = String(request.path || "");
+    var root = null;
+    if (state.pagePaths[state.route] === path) root = pageEl;
+    else {
+      var tag = Object.keys(state.componentPaths || {}).find(function (t) { return state.componentPaths[t] === path; });
+      if (!tag) return null;
+      var current = selected && selected.getRootNode && selected.getRootNode();
+      if (current instanceof ShadowRoot && current.host && current.host.localName === tag) root = current;
+      else {
+        var host = Array.from(instances).find(function (el) { return el.localName === tag && el.isConnected && el.shadowRoot; });
+        root = host ? host.shadowRoot : null;
+      }
+    }
+    if (!root) return null;
+    var el = root;
+    for (var i = 0; i < request.node.length; i++) {
+      var wanted = request.node[i];
+      var child = el.firstElementChild;
+      var seen = 0;
+      while (child && (injectedStyle(child) || seen++ < wanted)) child = child.nextElementSibling;
+      if (!child) return null;
+      el = child;
+    }
+    return el instanceof Element && el !== root ? el : null;
   }
 
   function deepestElement(e) {
@@ -414,6 +550,8 @@
     var node = elementIndexPath(el);
     if (node) payload.node = node;
     if (link !== undefined) payload.link = link;
+    payload.rect = rectOf(el);
+    lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
   }
 
@@ -465,6 +603,82 @@
     return null;
   }
 
+  // A text selection inside the selected element, as offsets into that
+  // element's text content, so the host can wrap or unwrap that range.
+  function selectionRangeIn(el) {
+    var sel = null;
+    var root = el.getRootNode && el.getRootNode();
+    if (root instanceof ShadowRoot && typeof root.getSelection === "function") sel = root.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) sel = document.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0);
+    return el.contains(range.commonAncestorContainer) ? range : null;
+  }
+  function textOffset(el, container, offset) {
+    var pre = document.createRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(container, offset);
+    return pre.cloneContents().textContent.length;
+  }
+  function wrappersAround(el, node) {
+    var out = [];
+    var current = node.nodeType === 1 ? node : node.parentElement;
+    while (current && current !== el) { out.push(current.localName); current = current.parentElement; }
+    return out;
+  }
+  var textFrame = 0;
+  var lastText = "";
+  function reportTextSelection(force) {
+    if (force) lastText = "";
+    if (textFrame) return;
+    textFrame = requestAnimationFrame(function () {
+      textFrame = 0;
+      var payload = null;
+      if (selected && selected.isConnected) {
+        var range = selectionRangeIn(selected);
+        if (range) {
+          var start = textOffset(selected, range.startContainer, range.startOffset);
+          var end = textOffset(selected, range.endContainer, range.endOffset);
+          if (end > start) payload = { start: start, end: end, text: range.cloneContents().textContent, wrappers: wrappersAround(selected, range.commonAncestorContainer) };
+        }
+      }
+      var key = JSON.stringify(payload);
+      if (key === lastText) return;
+      lastText = key;
+      emit("text-selection", { selection: payload });
+    });
+  }
+  function setTextSelection(el, start, end) {
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    var seen = 0, from = null, to = null, node, last = null;
+    while ((node = walker.nextNode())) {
+      var length = node.textContent.length;
+      last = { node: node, offset: length };
+      // A start on a boundary belongs to the node that follows, so a range
+      // around a just-wrapped word sits inside its new wrapper.
+      if (from === null && start < seen + length) from = { node: node, offset: start - seen };
+      if (end <= seen + length) { to = { node: node, offset: end - seen }; break; }
+      seen += length;
+    }
+    if (from === null && last && start === seen) from = last;
+    if (from === null || to === null) return;
+    var sel = document.getSelection();
+    if (!sel) return;
+    var range = document.createRange();
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  document.addEventListener("selectionchange", function () { reportTextSelection(false); });
+  document.addEventListener("keydown", function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    var key = e.key.toLowerCase();
+    if (key !== "b" && key !== "i") return;
+    e.preventDefault();
+    emit("format", { format: key === "b" ? "strong" : "em" });
+  });
+
   function clearSelectionState() {
     hovered = null;
     selected = null;
@@ -502,8 +716,8 @@
     hovered = null;
     updateBoxes();
   });
-  window.addEventListener("scroll", updateBoxes, true);
-  window.addEventListener("resize", updateBoxes);
+  window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
+  window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });
   document.addEventListener("submit", function (e) { e.preventDefault(); });
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;
@@ -518,5 +732,7 @@
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");
+  // Layout can shift without a render (fonts, component CSS arriving).
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(scheduleInsertPoints).observe(pageEl);
   parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
 })();

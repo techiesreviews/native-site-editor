@@ -75,10 +75,50 @@ export function markStartTags(html: string, tags = startTags(html)) {
   return out + html.slice(from);
 }
 
-// The start tag of the element at `path` (element-child indexes from the root
-// of `html`), or of its deepest ancestor the parser kept a source tag for.
-export function locateNativeElement(html: string, path: number[]): StartTag | undefined {
-  if (!path.length) return undefined;
+// Elements with no end tag, whose source range is the start tag alone.
+const VOID_ELEMENTS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+]);
+
+export interface ElementRange {
+  tag: StartTag;
+  // Outer source range: from the start tag's `<` to just past the end tag's
+  // `>` (or past the start tag for a void element).
+  start: number;
+  end: number;
+  // The end tag, absent for void elements.
+  close?: { start: number; end: number };
+}
+
+// The outer range of the element whose start tag is `tags[tagIndex]`.
+// `boundary` is where the first later start tag that is not a descendant
+// begins (or the end of the source), so the end tag lies before it. Fails
+// closed (undefined) when the end tag is implied or cannot be told apart from
+// a same-named descendant's, since a guessed range would edit the wrong HTML.
+export function elementEnd(html: string, tags: StartTag[], tagIndex: number, boundary: number): ElementRange | undefined {
+  const tag = tags[tagIndex];
+  if (!tag) return undefined;
+  if (VOID_ELEMENTS.has(tag.name)) return { tag, start: tag.start, end: tag.end };
+  let opens = 0;
+  for (let i = tagIndex + 1; i < tags.length && tags[i].start < boundary; i++)
+    if (tags[i].name === tag.name) opens++;
+  const span = html.slice(tag.end, boundary).toLowerCase();
+  const needle = `</${tag.name}`;
+  const closes: number[] = [];
+  for (let at = span.indexOf(needle); at >= 0; at = span.indexOf(needle, at + 1)) {
+    const after = span[at + needle.length];
+    if (after === undefined || after === ">" || /\s/.test(after)) closes.push(at);
+  }
+  // Every same-named descendant closes before this element does, so exactly
+  // one extra end tag belongs here, and it is the last one.
+  if (closes.length !== opens + 1) return undefined;
+  const closeStart = tag.end + closes[closes.length - 1];
+  const gt = html.indexOf(">", closeStart);
+  if (gt < 0 || gt >= boundary) return undefined;
+  return { tag, start: tag.start, end: gt + 1, close: { start: closeStart, end: gt + 1 } };
+}
+
+function parseMarked(html: string) {
   const tags = startTags(html);
   const template = document.createElement("template");
   template.innerHTML = markStartTags(html, tags);
@@ -87,14 +127,190 @@ export function locateNativeElement(html: string, path: number[]): StartTag | un
   template.content.querySelectorAll("meta[http-equiv]").forEach((el) => {
     if ((el.getAttribute("http-equiv") ?? "").toLowerCase() === "refresh") el.remove();
   });
-  let parent: ParentNode = template.content;
+  return { tags, root: template.content };
+}
+
+function tagOf(tags: StartTag[], el: Element | null | undefined) {
+  if (!el?.hasAttribute(MARK)) return undefined;
+  return tags[Number(el.getAttribute(MARK))];
+}
+
+// The start tag of the element at `path` (element-child indexes from the root
+// of `html`), or of its deepest ancestor the parser kept a source tag for.
+export function locateNativeElement(html: string, path: number[]): StartTag | undefined {
+  if (!path.length) return undefined;
+  const { tags, root } = parseMarked(html);
+  let parent: ParentNode = root;
   let found: StartTag | undefined;
   for (const index of path) {
     const child = parent.children[index];
     if (!child) break;
-    const tag = tags[Number(child.getAttribute(MARK))];
+    const tag = tagOf(tags, child);
     if (tag) found = tag;
     parent = child;
   }
   return found;
+}
+
+// The exact outer source range of the element at `path`, for edits that
+// touch its tags or content. Undefined unless the element itself and its end
+// tag map to the source unambiguously.
+export function locateNativeElementRange(html: string, path: number[]): ElementRange | undefined {
+  if (!path.length) return undefined;
+  const { tags, root } = parseMarked(html);
+  let parent: ParentNode = root;
+  let el: Element | undefined;
+  for (const index of path) {
+    const child = parent.children[index];
+    if (!child) return undefined;
+    el = child;
+    parent = child;
+  }
+  return el ? markedRange(html, tags, root, el) : undefined;
+}
+
+// The outer range of a marked element in a parsed source.
+function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element): ElementRange | undefined {
+  const tag = tagOf(tags, el);
+  if (!tag) return undefined;
+  // The element's end tag precedes the next start tag outside its subtree.
+  const marked = [...root.querySelectorAll(`[${MARK}]`)];
+  const following = marked.slice(marked.indexOf(el) + 1).find((other) => !el.contains(other));
+  const boundary = tagOf(tags, following)?.start ?? html.length;
+  return elementEnd(html, tags, tags.indexOf(tag), boundary);
+}
+
+// The innermost element named in `names` around the text offset `at` of the
+// inner source `inner` (offsets as in the element's DOM text content).
+export function wrapperAround(inner: string, at: number, names: string[]): ElementRange | undefined {
+  const { tags, root } = parseMarked(inner);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let seen = 0;
+  let node: Node | null = null;
+  for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+    const length = text.textContent?.length ?? 0;
+    node = text;
+    if (at < seen + length) break;
+    seen += length;
+  }
+  let el = node?.parentElement ?? null;
+  while (el && !names.includes(el.localName)) el = el.parentElement;
+  return el ? markedRange(inner, tags, root, el) : undefined;
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: "\u00a0", copy: "\u00a9", reg: "\u00ae",
+  hellip: "\u2026", mdash: "\u2014", ndash: "\u2013", lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201c",
+  rdquo: "\u201d", laquo: "\u00ab", raquo: "\u00bb", middot: "\u00b7", bull: "\u2022", trade: "\u2122",
+  euro: "\u20ac", pound: "\u00a3", yen: "\u00a5", deg: "\u00b0", times: "\u00d7", shy: "\u00ad",
+};
+
+function decodeEntity(source: string, at: number): { text: string; length: number } | undefined {
+  const match = /^&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z][a-zA-Z0-9]*));/.exec(source.slice(at, at + 12));
+  if (!match) return undefined;
+  if (match[3] !== undefined) {
+    const named = NAMED_ENTITIES[match[3]];
+    return named === undefined ? undefined : { text: named, length: match[0].length };
+  }
+  const code = Number.parseInt(match[1] ?? match[2], match[1] !== undefined ? 10 : 16);
+  if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return undefined;
+  return { text: String.fromCodePoint(code), length: match[0].length };
+}
+
+export interface SourceSpan {
+  start: number;
+  end: number;
+}
+
+// Maps a range of an element's DOM text content (`start`..`end`, UTF-16
+// units, which is how a preview selection is reported) to offsets in its
+// inner source, skipping tags and comments and decoding entities. Undefined
+// when the mapped source does not decode to `text`, or when the span would
+// cut through a tag, so a wrapper is only ever inserted around balanced HTML.
+export function textRangeInSource(inner: string, start: number, end: number, text: string): SourceSpan | undefined {
+  if (start < 0 || end <= start) return undefined;
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let decoded = "";
+  let i = 0;
+  const unit = (piece: string, from: number, to: number) => {
+    for (let k = 0; k < piece.length; k++) { starts.push(from); ends.push(to); }
+    decoded += piece;
+  };
+  while (i < inner.length && starts.length < end) {
+    const char = inner[i];
+    if (char === "<") {
+      if (inner.startsWith("<!--", i)) {
+        const close = inner.indexOf("-->", i + 4);
+        i = close < 0 ? inner.length : close + 3;
+        continue;
+      }
+      if (/[a-zA-Z/!?]/.test(inner[i + 1] ?? "")) {
+        const tag = startTags(inner.slice(i))[0];
+        if (tag && tag.start === 0) i += tag.end;
+        else {
+          const close = inner.indexOf(">", i + 1);
+          i = close < 0 ? inner.length : close + 1;
+        }
+        continue;
+      }
+    }
+    if (char === "&") {
+      const entity = decodeEntity(inner, i);
+      if (entity) {
+        unit(entity.text, i, i + entity.length);
+        i += entity.length;
+        continue;
+      }
+    }
+    if (char === "\r") {
+      if (inner[i + 1] !== "\n") unit("\n", i, i + 1);
+      i++;
+      continue;
+    }
+    unit(char, i, i + 1);
+    i++;
+  }
+  if (starts.length < end) return undefined;
+  if (decoded.slice(start, end) !== text) return undefined;
+  const span = { start: starts[start], end: ends[end - 1] };
+  return balanced(inner.slice(span.start, span.end)) ? span : undefined;
+}
+
+// Whether every element opened in `html` closes in it and vice versa.
+function balanced(html: string) {
+  const stack: string[] = [];
+  const pattern = /<!--[\s\S]*?-->|<\/([a-zA-Z][^\s/>]*)[^>]*>|<([a-zA-Z][^\s/>]*)(?:"[^"]*"|'[^']*'|[^'">])*>/g;
+  for (const match of html.matchAll(pattern)) {
+    if (match[2] !== undefined) {
+      const name = match[2].toLowerCase();
+      if (!VOID_ELEMENTS.has(name) && !match[0].endsWith("/>")) stack.push(name);
+    } else if (match[1] !== undefined) {
+      if (stack.pop() !== match[1].toLowerCase()) return false;
+    }
+  }
+  return stack.length === 0;
+}
+
+export interface TagAttribute {
+  // The attribute with its leading whitespace, for removal.
+  start: number;
+  end: number;
+  valueStart: number;
+  valueEnd: number;
+  value: string;
+}
+
+// The named attribute inside a start tag, when present.
+export function startTagAttribute(html: string, tag: StartTag, name: string): TagAttribute | undefined {
+  const text = html.slice(tag.nameEnd, tag.end);
+  const pattern = new RegExp(`\\s+${name}(?:\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+)))?(?=[\\s/>])`, "i");
+  const match = pattern.exec(text);
+  if (!match) return undefined;
+  const value = match[1] ?? match[2] ?? match[3] ?? "";
+  const start = tag.nameEnd + match.index;
+  const end = start + match[0].length;
+  // The value ends just before its closing quote, or at the attribute's end when bare or absent.
+  const valueEnd = match[3] !== undefined || match[1] === undefined && match[2] === undefined ? end : end - 1;
+  return { start, end, valueStart: valueEnd - value.length, valueEnd, value };
 }

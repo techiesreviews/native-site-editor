@@ -4,6 +4,9 @@ import {
   nativeManifestPaths,
   type NativeManifest,
 } from "../native-manifest";
+import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
+import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
+import { isSectionTemplate } from "../native-insert";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders plain
@@ -38,6 +41,13 @@ interface UpdateInput {
   route?: string;
 }
 
+// Which element the runtime should select once the next update has rendered:
+// element-child indexes under the page root or the component's shadow root.
+export interface NativeNodeRequest {
+  path: string;
+  node: number[];
+}
+
 export interface NativeSelectedRule {
   path: string;
   selector: string;
@@ -52,11 +62,32 @@ export interface NativePreviewSelection {
   selectors: NativeSelectedRule[];
   // Element-child indexes from the owning file's root to the selected element.
   node?: number[];
+  // The nearest enclosing link's href, when the selection sits inside one.
+  link?: string;
+  // Frame-viewport rectangle of the selected element.
+  rect?: SelectionRect;
 }
+
+// A text selection inside the selected element: offsets into its DOM text
+// content, the selected text, and the inline wrappers around it (innermost first).
+export interface NativeTextSelection {
+  start: number;
+  end: number;
+  text: string;
+  wrappers: string[];
+}
+
+export type NativeFormat = "strong" | "em";
 
 interface NativePreviewHandlers {
   onSelect?: (selection: NativePreviewSelection) => void;
   onComponentStyles?: (tags: string[]) => void;
+  onTextSelection?: (selection: NativeTextSelection | undefined) => void;
+  // Ctrl/⌘+B or +I pressed inside the preview.
+  onFormat?: (format: NativeFormat) => void;
+  // Components offered between page sections, and what to do with a choice.
+  insertChoices?: () => InsertChoice[];
+  onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
 }
 
 function composePayload(
@@ -65,6 +96,8 @@ function composePayload(
   componentStyles: Record<string, string>,
   route: string,
   context: string,
+  selectNode: NativeNodeRequest | undefined,
+  selectText: { start: number; end: number } | undefined,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -84,7 +117,9 @@ function composePayload(
     stylesByComponent[tag] = { path, source: sources[path] ?? "" };
   }
   const styles = manifest.styles.map((path) => ({ path, source: sources[path] ?? "" }));
-  return { pages, pagePaths, components, componentPaths, styles, componentStyles: stylesByComponent, route, context };
+  // Section components count as sections when the runtime looks for places to insert one.
+  const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
+  return { pages, pagePaths, components, componentPaths, styles, componentStyles: stylesByComponent, sectionTags, route, context, selectNode, selectText };
 }
 
 function routeCandidate(manifest: NativeManifest, href: string) {
@@ -115,6 +150,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   errorBox.setAttribute("role", "alert");
   errorBox.hidden = true;
   pane.append(errorBox, frameHost);
+  const editBar = createEditBar(pane, frame);
+  const insertControls = createInsertControls(pane, frame, {
+    choices: () => handlers.insertChoices?.() ?? [],
+    onInsert: (point, choice) => handlers.onInsert?.(point, choice),
+  });
 
   let manifest: NativeManifest | undefined;
   let sources: Record<string, string> = {};
@@ -133,6 +173,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // A load/manifest failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
+  let selectNode: NativeNodeRequest | undefined;
+  let selectText: { start: number; end: number } | undefined;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -148,7 +190,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!manifest || !ready || !mounted) return;
-    const payload = composePayload(manifest, sources, componentStyles, route, context);
+    const payload = composePayload(manifest, sources, componentStyles, route, context, selectNode, selectText);
+    selectNode = undefined;
+    selectText = undefined;
     frame.contentWindow?.postMessage(
       { source: "astro-native-preview-host", type: "update", id: ++messageId, payload },
       "*",
@@ -191,13 +235,44 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     // A link click inside the preview (including inside shadow roots) navigates
     // the preview only, keeping the current source edits untouched.
-    if (data.type === "route" && typeof data.route === "string" && manifest) {
-      const candidate = routeCandidate(manifest, `#${data.route}`);
-      if (candidate && candidate !== route) {
-        route = candidate;
-        clearSelection();
-        schedule();
-      }
+    if (data.type === "route" && typeof data.route === "string" && manifest) followRoute(`#${data.route}`);
+    if (data.type === "insert-points" && manifest) {
+      const raw = data as unknown as { path?: unknown; points?: unknown };
+      const path = raw.path;
+      if (typeof path !== "string" || manifest.routes[route] !== path || !Array.isArray(raw.points)) return;
+      const indexes = (value: unknown): value is number[] =>
+        Array.isArray(value) && value.length <= 500 && value.every((index) => Number.isInteger(index) && index >= 0);
+      const points = raw.points.slice(0, 500).flatMap((item): InsertPoint[] => {
+        if (!item || typeof item !== "object") return [];
+        const point = item as Record<string, unknown>;
+        if (!indexes(point.parent) || !Number.isInteger(point.index) || (point.index as number) < 0) return [];
+        if (!["top", "left", "width"].every((key) => typeof point[key] === "number" && Number.isFinite(point[key]))) return [];
+        return [{
+          path,
+          parent: point.parent,
+          index: point.index as number,
+          top: point.top as number,
+          left: point.left as number,
+          width: point.width as number,
+          before: typeof point.before === "string" ? point.before.slice(0, 60) : "",
+        }];
+      });
+      insertControls.update(points);
+      return;
+    }
+    if (data.type === "text-selection") {
+      handlers.onTextSelection?.(readTextSelection((data as { selection?: unknown }).selection));
+      return;
+    }
+    if (data.type === "format") {
+      const format = (data as { format?: unknown }).format;
+      if (format === "strong" || format === "em") handlers.onFormat?.(format);
+      return;
+    }
+    if (data.type === "selection-rect") {
+      const rect = readRect((data as { rect?: unknown }).rect);
+      if (rect) editBar.move(rect);
+      return;
     }
     if (data.type === "select" && manifest) {
       const raw = data as unknown as {
@@ -207,9 +282,18 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         selectors?: unknown;
         reason?: unknown;
         node?: unknown;
+        link?: unknown;
+        rect?: unknown;
       };
       const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
+      // The runtime lost its selection in a re-render (the element was
+      // removed or replaced) and nothing was requested in its place.
+      if (raw.path === "" && reason === "refresh") {
+        editBar.hide();
+        handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
+        return;
+      }
       if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
       const allowedSelectorPaths = new Set([...nativeManifestPaths(manifest), ...Object.values(componentStyles)]);
       const selectors = Array.isArray(raw.selectors)
@@ -236,6 +320,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           raw.node.every((index) => Number.isInteger(index) && index >= 0)
           ? raw.node as number[]
           : undefined,
+        link: typeof raw.link === "string" ? raw.link : undefined,
+        rect: readRect(raw.rect),
       });
       return;
     }
@@ -248,11 +334,43 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
   }
   window.addEventListener("message", onMessage);
+  function readRect(raw: unknown): SelectionRect | undefined {
+    if (!raw || typeof raw !== "object") return undefined;
+    const rect = raw as Record<string, unknown>;
+    const keys = ["top", "left", "width", "height", "bottom", "right"] as const;
+    if (!keys.every((key) => typeof rect[key] === "number" && Number.isFinite(rect[key]))) return undefined;
+    return Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
+  }
+  function readTextSelection(raw: unknown): NativeTextSelection | undefined {
+    if (!raw || typeof raw !== "object") return undefined;
+    const value = raw as Record<string, unknown>;
+    if (!Number.isInteger(value.start) || !Number.isInteger(value.end) || typeof value.text !== "string") return undefined;
+    const start = value.start as number;
+    const end = value.end as number;
+    if (start < 0 || end <= start || value.text.length > 100_000) return undefined;
+    const wrappers = Array.isArray(value.wrappers)
+      ? value.wrappers.filter((name): name is string => typeof name === "string").slice(0, 50)
+      : [];
+    return { start, end, text: value.text, wrappers };
+  }
+  function followRoute(href: string) {
+    if (!manifest) return false;
+    const candidate = routeCandidate(manifest, href);
+    if (!candidate) return false;
+    if (candidate !== route) {
+      route = candidate;
+      insertControls.clear();
+      clearSelection();
+      schedule();
+    }
+    return true;
+  }
   function postClearSelection() {
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "clear-selection" }, "*");
   }
   function clearSelection() {
     staleClick = false;
+    editBar.hide();
     postClearSelection();
     handlers.onSelect?.({ path: "", tag: "", text: "", reason: "click", selectors: [] });
   }
@@ -272,8 +390,34 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     update(input: UpdateInput) {
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
-      if (input.route && manifest && Object.hasOwn(manifest.routes, input.route)) route = input.route;
+      if (input.route && manifest && Object.hasOwn(manifest.routes, input.route) && input.route !== route) {
+        route = input.route;
+        insertControls.clear();
+      }
       schedule();
+    },
+    /** Select this element once the next update (the one carrying an edit) has rendered. */
+    selectAfterUpdate(request: NativeNodeRequest | undefined) {
+      selectNode = request;
+    },
+    /** Re-select this text range (offsets into the selected element's text) after the next update. */
+    selectTextAfterUpdate(range: { start: number; end: number } | undefined) {
+      selectText = range;
+    },
+    /** Whether `href` (a `#route` link) can be followed in the preview. */
+    canFollow(href: string) {
+      return Boolean(manifest && routeCandidate(manifest, href));
+    },
+    /** Navigate the preview to a `#route` link; the current source edits stay. */
+    follow(href: string) {
+      return followRoute(href);
+    },
+    /** Show the edit bar for the current selection. */
+    showEditBar(model: EditBarModel, rect: SelectionRect) {
+      editBar.show(model, rect);
+    },
+    hideEditBar() {
+      editBar.hide();
     },
     setError(message: string | undefined) {
       loadError = Boolean(message);
@@ -285,6 +429,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       manifest = undefined;
       componentStyles = {};
       loadError = false;
+      insertControls.clear();
       clearSelection();
       pane.remove();
       host.classList.remove("has-preview");
@@ -296,6 +441,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     destroy() {
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
+      editBar.destroy();
+      insertControls.destroy();
       pane.remove();
       host.classList.remove("has-preview");
     },

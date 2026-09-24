@@ -33,7 +33,9 @@ test("accepts the native-starter fixture manifest", () => {
     nativeManifestPaths(manifest).sort(),
     [
       "src/components/card-note/card-note.html",
+      "src/components/feature-block/feature-block.html",
       "src/components/project-card/project-card.html",
+      "src/components/site-button/site-button.html",
       "src/components/site-footer/site-footer.html",
       "src/components/site-header/site-header.html",
       "src/pages/about.html",
