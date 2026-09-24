@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { componentLabel, insertBesideEdit, isSectionTemplate, uniqueDataKey } from "../src/native-insert.ts";
+import { componentLabel, insertBesideEdit, instanceMarkup, isSectionTemplate, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
 
 test("a component fits between sections only when its template is one section", () => {
   assert.equal(isSectionTemplate(`<section class="feature"><h2>Hi</h2><section>x</section></section>\n`), true);
@@ -39,4 +39,30 @@ test("inserted markup gets its own line with the neighbour's indentation", () =>
   const only = { start: 6, end: inline.indexOf("</main>") };
   const edit = insertBesideEdit(inline, only, "after", "<x-a></x-a>");
   assert.equal(inline.slice(0, edit.start) + edit.text + inline.slice(edit.end), `<main><section>a</section>\n<x-a></x-a></main>`);
+});
+
+test("a new instance carries its own copy of the template's text slots", () => {
+  const template = `<section>
+  <h2><slot name="title">What we <em>offer</em></slot></h2>
+  <p><slot name="action"><a href="#/about/">Get in touch</a></slot></p>
+  <div><slot name="items"><p>Add items.</p></slot></div>
+  <slot>Default</slot>
+  <slot name="empty"><!-- none --></slot>
+</section>`;
+  assert.deepEqual(slotMarkup(template), [
+    `<span slot="title">What we <em>offer</em></span>`,
+    `<span slot="action"><a href="#/about/">Get in touch</a></span>`,
+  ]);
+  assert.equal(
+    instanceMarkup("", "feature-section", template),
+    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <span slot="action"><a href="#/about/">Get in touch</a></span>\n</feature-section>`,
+  );
+  assert.equal(instanceMarkup("", "site-hero", `<section><h2>Fixed</h2></section>`), `<site-hero data-key="site-hero"></site-hero>`);
+  // Every line of a multi-line instance takes the neighbour's indentation.
+  const source = `<main>\n  <section>a</section>\n</main>`;
+  const edit = insertBesideEdit(source, { start: 9, end: 29 }, "after", "<x-a>\n  <span slot=\"t\">T</span>\n</x-a>");
+  assert.equal(
+    source.slice(0, edit.start) + edit.text + source.slice(edit.end),
+    `<main>\n  <section>a</section>\n  <x-a>\n    <span slot="t">T</span>\n  </x-a>\n</main>`,
+  );
 });

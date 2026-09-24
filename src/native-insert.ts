@@ -4,7 +4,9 @@
 // element: a feature or testimonial block fits, a button or card does not.
 // There is no separate declaration; the template's own root says what the
 // component is. Inserting writes a new instance tag into the page source on
-// its own line, indented like its neighbour, as one range edit.
+// its own line, indented like its neighbour, as one range edit. The new
+// instance carries its own copy of each text slot, so typing in the preview
+// changes this page alone and the shared template stays as it is.
 
 import { locateNativeElementRange, startTags } from "./native-source-location";
 
@@ -46,14 +48,48 @@ export function uniqueDataKey(source: string, tag: string) {
   return `${tag}-${n}`;
 }
 
-/** Inserts `markup` on its own line before or after the element at `anchor`, matching its indentation. */
+const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small", "code", "mark", "sub", "sup", "br", "wbr", "abbr", "time", "cite", "q", "kbd"]);
+
+/**
+ * Per-instance content for a template's slots: a `<span slot="…">` for each
+ * named slot, holding the template's own fallback, so the text lives in the
+ * page. A slot whose fallback is not plain text and inline markup (a list of
+ * items, another component) is left to the template.
+ */
+export function slotMarkup(template: string) {
+  const out: string[] = [];
+  for (const match of template.matchAll(/<slot\b([^>]*)>([\s\S]*?)<\/slot\s*>/gi)) {
+    const name = /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[1]);
+    const slot = (name?.[1] ?? name?.[2] ?? name?.[3] ?? "").trim();
+    const content = match[2].replace(COMMENTS, "").trim();
+    if (!content || !slot || !textOnly(content)) continue;
+    out.push(`<span slot="${slot}">${content.replace(/\s+/g, " ")}</span>`);
+  }
+  return out;
+}
+
+function textOnly(html: string) {
+  const plain = html.replace(COMMENTS, "");
+  return startTags(plain).every((tag) => INLINE.has(tag.name)) &&
+    [...plain.matchAll(/<\/([a-zA-Z][^\s>]*)/g)].every((match) => INLINE.has(match[1].toLowerCase()));
+}
+
+/** Inserts `markup` (one or more lines) on its own line before or after the element at `anchor`, matching its indentation. */
 export function insertBesideEdit(source: string, anchor: { start: number; end: number }, where: "before" | "after", markup: string) {
   const lineStart = source.lastIndexOf("\n", anchor.start - 1) + 1;
   const lead = source.slice(lineStart, anchor.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
+  const text = markup.split("\n").join(`\n${indent}`);
   return where === "before"
-    ? { start: anchor.start, end: anchor.start, text: `${markup}\n${indent}` }
-    : { start: anchor.end, end: anchor.end, text: `\n${indent}${markup}` };
+    ? { start: anchor.start, end: anchor.start, text: `${text}\n${indent}` }
+    : { start: anchor.end, end: anchor.end, text: `\n${indent}${text}` };
+}
+
+/** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots. */
+export function instanceMarkup(source: string, tag: string, template: string) {
+  const open = `<${tag} data-key="${uniqueDataKey(source, tag)}">`;
+  const slots = slotMarkup(template);
+  return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join("\n") : `${open}</${tag}>`;
 }
 
 /**
@@ -61,8 +97,8 @@ export function insertBesideEdit(source: string, anchor: { start: number; end: n
  * under `parent` (element-child indexes from the page root). Undefined when
  * neither neighbour's exact source range can be told.
  */
-export function nativeInsertEdit(source: string, parent: number[], index: number, tag: string) {
-  const markup = `<${tag} data-key="${uniqueDataKey(source, tag)}"></${tag}>`;
+export function nativeInsertEdit(source: string, parent: number[], index: number, tag: string, template = "") {
+  const markup = instanceMarkup(source, tag, template);
   const next = locateNativeElementRange(source, [...parent, index]);
   if (next) return insertBesideEdit(source, next, "before", markup);
   // Past the last child, or the next element's range is ambiguous: right

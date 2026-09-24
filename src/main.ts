@@ -808,7 +808,8 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview) return;
-  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag);
+  const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
+  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag, template);
   if (!edit) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
