@@ -396,3 +396,47 @@ test("code-pane splitters resize the preview and the primary pane", async ({ pag
   await drag(page, ".code-width-resize", -120, 0);
   await expect.poll(async () => Math.abs((await box(page, "#main .code-pane")).width - primaryBefore.width)).toBeGreaterThan(80);
 });
+
+// The explorer: a folder only opens or closes in the tree; a component file
+// opens with its own stylesheet beside it and the preview stays.
+async function explorerItem(page: Page, name: string) {
+  const item = page.locator("#explorer").getByRole("button", { name, exact: true }).first();
+  await expect(item).toBeVisible({ timeout: 20_000 });
+  return item;
+}
+
+test("folders only expand, and a component file opens beside its own CSS", async ({ page }) => {
+  await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+  await page.locator("#explorer-toggle").click();
+  await expect(page.locator("#explorer")).toBeVisible();
+  for (const part of ["src", "components", "project-card"]) {
+    const item = await explorerItem(page, part);
+    if ((await item.getAttribute("aria-expanded")) === "false") await item.click();
+    await expect(item).toHaveAttribute("aria-expanded", "true");
+    // The open page and its stylesheet are untouched by browsing folders.
+    await expect(page.locator("#current-page")).toHaveText(indexPath);
+    await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+    await expect(page.locator("#content [role=\"textbox\"]").first()).toBeAttached();
+  }
+  // Collapsing a folder changes nothing either.
+  await (await explorerItem(page, "project-card")).click();
+  await expect(await explorerItem(page, "project-card")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await (await explorerItem(page, "project-card")).click();
+
+  await (await explorerItem(page, "project-card.html")).click();
+  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(page.locator("#content .view-lines")).toContainText("project-card__title", { timeout: 20_000 });
+  await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
+  await expect(page.locator("#content-secondary .view-lines")).toContainText("project-card");
+  await expect(page.locator(".native-preview-frame")).toBeVisible();
+  await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
+
+  // A component without its own stylesheet opens beside the shared one.
+  await page.locator("#explorer-toggle").click();
+  const featureFolder = await explorerItem(page, "feature-block");
+  if ((await featureFolder.getAttribute("aria-expanded")) === "false") await featureFolder.click();
+  await (await explorerItem(page, "feature-block.html")).click();
+  await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
+  await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+});

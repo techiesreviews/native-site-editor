@@ -1395,24 +1395,19 @@ function renderEntries(
     row.title = path;
     if (directory) row.setAttribute("aria-expanded", "false");
     let childList: HTMLUListElement | undefined;
-    let loadedDirectory: Directory | undefined;
     row.addEventListener("click", async () => {
       if (epoch !== generation || !currentRepo) return;
       clearError();
-      files
-        .querySelectorAll(".selected")
-        .forEach((el) => el.classList.remove("selected"));
-      row.classList.add("selected");
+      // A folder only opens or closes in the tree; the open file, the preview
+      // and the linked stylesheet stay as they are.
       if (directory) {
         if (childList) {
           childList.hidden = !childList.hidden;
           icon.textContent = childList.hidden ? "▸" : "▾";
           row.setAttribute("aria-expanded", String(!childList.hidden));
-          showDirectory(loadedDirectory!, path);
           return;
         }
         row.disabled = true;
-        const selection = ++fileGeneration;
         status(`Loading ${path}…`);
         try {
           const result = await api<Directory>("tree", {
@@ -1420,23 +1415,23 @@ function renderEntries(
             sha: entry.sha,
           });
           if (epoch !== generation) return;
-          loadedDirectory = result;
           childList = renderEntries(result.entries, path, epoch);
           if (!result.entries.length)
             childList.append(node("li", "muted empty-folder", "Empty folder"));
           item.append(childList);
           icon.textContent = "▾";
           row.setAttribute("aria-expanded", "true");
-          if (selection === fileGeneration) {
-            showDirectory(result, path);
-            status(`Opened ${path}.`);
-          }
+          status(`Opened ${path}.`);
         } catch (error) {
           if (epoch === generation) errorMessage(error);
         } finally {
           row.disabled = false;
         }
       } else {
+        files
+          .querySelectorAll(".selected")
+          .forEach((el) => el.classList.remove("selected"));
+        row.classList.add("selected");
         await openEntry(entry, path, epoch);
       }
     });
@@ -1601,7 +1596,35 @@ async function mountSource(
     linkedStyle = undefined;
     closeSecondary();
   }
-  if (nativeModeActive() && !linkedStyle && options.linkDefaultStyle !== false) void openDefaultLinkedStyle(path);
+  if (nativeModeActive() && !linkedStyle && options.linkDefaultStyle !== false) {
+    // A component opens with its own stylesheet beside it; a page with the shared one.
+    if (nativeComponentTagForPath(path)) void openComponentLinkedStyle(path);
+    else void openDefaultLinkedStyle(path);
+  }
+}
+
+// The component whose template is `path`, per the manifest.
+function nativeComponentTagForPath(path: string) {
+  if (!nativeManifest) return undefined;
+  return Object.entries(nativeManifest.components).find(([, file]) => file === path)?.[0];
+}
+
+// The component's same-named `.css` in the secondary pane, with no rule chips
+// until an element is selected; the shared stylesheet when it has none.
+async function openComponentLinkedStyle(page: string) {
+  const css = nativeComponentCssPath(page);
+  const request = ++linkedStyleRequest;
+  const epoch = generation;
+  const entry = await findEntry(css);
+  if (request !== linkedStyleRequest || epoch !== generation || currentPath !== page) return false;
+  if (!entry) return openDefaultLinkedStyle(page);
+  nativeLinkedStyleMatches = [];
+  selectedStyleSelectors = [];
+  linkedStyle = { page, css, rules: linkedStyleIdle };
+  if (!(await openSecondary(css))) return false;
+  if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
+  renderLinkedStyle();
+  return true;
 }
 
 function updateAgentContext() {
