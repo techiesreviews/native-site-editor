@@ -126,11 +126,42 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+.edit-bar__address {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+}
+.edit-bar__icon {
+  display: block;
+  flex: none;
+}
+.edit-bar__address[aria-expanded="true"] {
+  background: var(--selected);
+  color: var(--primary);
+}
+.edit-bar__options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+.edit-bar__options[hidden] {
+  display: none;
+}
+.edit-bar__option[aria-selected="true"] {
+  background: var(--selected);
+  color: var(--primary);
+}
+.edit-bar__option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
 .edit-bar__field--warning {
   color: var(--warning-fg);
   font-weight: 620;
 }
-.edit-bar__field--warning::before {
+.edit-bar__field--warning:not(.edit-bar__address)::before {
   content: "⚠ ";
 }
 .edit-bar__field-label {

@@ -523,14 +523,15 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
 
 // What the edit bar shows for a selected element: a kind label in the
 // user's words, or the tag itself for components and anything else.
-// The range of the selected element when it is a link, else of the nearest
-// ancestor link within the same source (a link around a component's slotted
-// text lives in the page; one around the component lives outside it).
-function nearestLinkRange(source: string, node: number[], range: ElementRange | undefined) {
-  if (range?.tag.name === "a") return range;
+// The selected element when it is a link, else the nearest ancestor link
+// within the same source (a link around a component's slotted text lives in
+// the page; one around the component lives outside it), with its index path.
+function nearestLink(source: string, node: number[], range: ElementRange | undefined) {
+  if (range?.tag.name === "a") return { range, node };
   for (let depth = node.length - 1; depth > 0; depth--) {
-    const ancestor = locateNativeElementRange(source, node.slice(0, depth));
-    if (ancestor?.tag.name === "a") return ancestor;
+    const ancestor = node.slice(0, depth);
+    const found = locateNativeElementRange(source, ancestor);
+    if (found?.tag.name === "a") return { range: found, node: ancestor };
   }
   return undefined;
 }
@@ -736,33 +737,41 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
   const attribute = (name: string) => (range ? startTagAttribute(source, range.tag, name) : undefined);
   // Links: the selected link, or the nearest link around the selection in
-  // this file, takes a page of the site from the Page menu or any address.
+  // this file, takes an address as it is typed: a page of the site picked
+  // from the suggestions, or any address. Each keystroke rewrites the href
+  // from the source as it is now, in one undo step until the field closes.
   // (Ctrl/⌘+click in the preview follows a link.)
-  const link = selection.link !== undefined && node ? nearestLinkRange(source, node, range) : undefined;
-  if (link && nativeManifest) {
-    const tag = link.tag;
-    const href = startTagAttribute(source, tag, "href");
+  const link = selection.link !== undefined && node ? nearestLink(source, node, range) : undefined;
+  if (link && node && nativeManifest) {
+    const selected = node;
+    const href = startTagAttribute(source, link.range.tag, "href");
     const current = href?.value.trim() ?? "";
-    const routes = Object.keys(nativeManifest.routes);
-    const setHref = (value: string, message: string) => change([setAttributeEdit(source, tag, "href", value)], node, message);
+    const manifest = nativeManifest;
     controls.push({
-      kind: "menu",
-      label: "Page",
-      title: "Link to a page of this site",
-      items: routes.map((route) => {
-        const title = nativeManifest?.pages[route]?.title;
-        const same = current === `#${route}` || (route === "/" && current === "#");
-        return { label: title ? `${title} (#${route})` : `#${route}`, current: same, disabled: same, onSelect: () => setHref(`#${route}`, "Link changed") };
-      }),
-    });
-    controls.push({
-      kind: "field",
+      kind: "address",
       label: "Address",
       warning: current ? undefined : "No address",
       value: href?.value ?? "",
-      placeholder: "#/about/ or https://…",
-      hint: "A page of this site as #/route/, or a full web address.",
-      onApply: (value) => { if (value.trim()) setHref(value.trim(), "Link changed"); },
+      placeholder: "Page or web address",
+      suggestions: Object.keys(manifest.routes).map((route) => {
+        const title = manifest.pages[route]?.title;
+        return { label: title ? `${title} (#${route})` : `#${route}`, value: `#${route}` };
+      }),
+      onInput: (value) => {
+        const latest = nativeSources()[path] ?? "";
+        const tag = locateNativeElementRange(latest, link.node)?.tag;
+        if (!tag || tag.name !== "a") { announce("The link could not be found in the source."); return; }
+        const edit = setAttributeEdit(latest, tag, "href", value);
+        preview.selectAfterUpdate({ path, node: selected });
+        try {
+          editor.replaceActiveRange({ path, ...edit, expected: latest.slice(edit.start, edit.end) }, true);
+          announce("Link changed");
+        } catch (error) {
+          preview.selectAfterUpdate(undefined);
+          errorMessage(error);
+        }
+      },
+      onClose: () => editor.closeActiveEditGroup(path),
     });
   }
   // Heading levels that skip (H2 to H4): one press puts the heading in order.

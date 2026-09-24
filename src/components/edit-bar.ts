@@ -57,7 +57,41 @@ export type EditBarControl =
       // An extra action beside Apply, e.g. "Decorative" for an empty alt.
       extra?: { label: string; onPress: () => void };
       onApply: (value: string) => void;
+    }
+  | {
+      // A link-icon button opening one text field that applies as you type,
+      // with suggestions (pages of the site) filtered by what is typed. Picking
+      // a suggestion applies its value and closes; Enter closes (or picks the
+      // one suggestion left); Escape closes. `onClose` ends the undo group.
+      kind: "address";
+      label: string;
+      warning?: string;
+      value: string;
+      placeholder?: string;
+      suggestions: { label: string; value: string }[];
+      onInput: (value: string) => void;
+      onClose?: () => void;
     };
+
+type AddressControl = Extract<EditBarControl, { kind: "address" }>;
+
+function linkIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("edit-bar__icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+  return svg;
+}
 
 export interface EditBarModel {
   // Short kind label shown first: Heading, Paragraph, Link, Component…
@@ -81,6 +115,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   popover.hidden = true;
   pane.append(popover);
   let popoverButton: HTMLButtonElement | undefined;
+  // The open address field, kept across re-renders while its control persists.
+  let openAddress: { label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
 
   function focusable() {
     return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > select")];
@@ -89,11 +125,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   function closePopover(restoreFocus: boolean) {
     if (popover.hidden) return;
     const trigger = popoverButton;
+    const address = openAddress;
+    openAddress = undefined;
     popover.hidden = true;
     popover.replaceChildren();
     popoverButton = undefined;
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
+    address?.control.onClose?.();
   }
   function openPopover(trigger: HTMLButtonElement, content: HTMLElement[], role: string) {
     closePopover(false);
@@ -103,6 +142,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     popover.setAttribute("aria-label", trigger.getAttribute("aria-label") ?? trigger.textContent ?? "");
     popover.replaceChildren(...content);
     popover.hidden = false;
+    placePopover(trigger);
+  }
+  function placePopover(trigger: HTMLElement) {
     // Under the button, kept inside the frame's width.
     const paneRect = pane.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
@@ -204,8 +246,104 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   resize.observe(pane);
   resize.observe(bar);
 
+  // The address field's suggestion list: pages matching the typed text, all
+  // of them while the field still holds the value it opened with; the one
+  // equal to the value is marked.
+  function renderSuggestions(address: NonNullable<typeof openAddress>) {
+    const value = address.input.value.trim();
+    const typed = value === address.opened ? "" : value.toLowerCase();
+    const matches = address.control.suggestions.filter((entry) =>
+      !typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed));
+    address.list.replaceChildren(...matches.map((entry) => {
+      const option = button(entry.label, () => {
+        address.input.value = entry.value;
+        address.control.onInput(entry.value);
+        closePopover(true);
+      }, "edit-bar__menu-item edit-bar__option");
+      option.setAttribute("role", "option");
+      option.tabIndex = -1;
+      if (entry.value === address.input.value.trim()) option.setAttribute("aria-selected", "true");
+      return option;
+    }));
+    address.list.hidden = !matches.length;
+    address.input.setAttribute("aria-expanded", String(matches.length > 0));
+    return matches;
+  }
+  function openAddressField(item: HTMLButtonElement, control: AddressControl) {
+    const label = node("label", "edit-bar__field-label", control.label);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "edit-bar__field-input";
+    input.value = control.value;
+    input.placeholder = control.placeholder ?? "";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    label.append(input);
+    const list = node("div", "edit-bar__options");
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Pages of this site");
+    list.id = "edit-bar-address-options";
+    input.setAttribute("aria-controls", list.id);
+    const address = { label: control.label, opened: control.value.trim(), input, list, control };
+    input.addEventListener("input", () => {
+      renderSuggestions(address);
+      // Applied as typed, as one undo step until the field closes.
+      address.control.onInput(input.value.trim());
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const matches = renderSuggestions(address);
+        if (matches.length === 1 && matches[0].value !== input.value.trim()) {
+          input.value = matches[0].value;
+          address.control.onInput(matches[0].value);
+        }
+        closePopover(true);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        list.querySelector<HTMLButtonElement>("[role='option']")?.focus();
+      }
+    });
+    list.addEventListener("keydown", (event) => {
+      const options = [...list.querySelectorAll<HTMLButtonElement>("[role='option']")];
+      const index = options.indexOf(event.target as HTMLButtonElement);
+      if (index < 0) return;
+      if (event.key === "ArrowDown") { event.preventDefault(); options[Math.min(index + 1, options.length - 1)]?.focus(); }
+      else if (event.key === "ArrowUp") { event.preventDefault(); if (index === 0) input.focus(); else options[index - 1]?.focus(); }
+      else if (event.key === "Home") { event.preventDefault(); options[0]?.focus(); }
+      else if (event.key === "End") { event.preventDefault(); options[options.length - 1]?.focus(); }
+      else if (event.key.length === 1 || event.key === "Backspace") input.focus();
+    });
+    openPopover(item, [label, list], "dialog");
+    openAddress = address;
+    renderSuggestions(address);
+    input.focus();
+    input.select();
+  }
+  function addressButton(control: AddressControl) {
+    const item = button("", () => {
+      if (popoverButton === item) { closePopover(true); return; }
+      openAddressField(item, control);
+    }, `edit-bar__button edit-bar__address${control.warning ? " edit-bar__field--warning" : ""}`);
+    item.append(linkIcon());
+    if (control.warning) item.append(document.createTextNode(control.warning));
+    item.setAttribute("aria-label", control.label);
+    item.setAttribute("aria-haspopup", "dialog");
+    item.setAttribute("aria-expanded", "false");
+    item.title = control.warning ? `${control.label}: ${control.warning}` : control.value ? `${control.label}: ${control.value}` : control.label;
+    return item;
+  }
+
   function render(model: EditBarModel) {
-    closePopover(false);
+    // An open address field stays open while the new model still offers it
+    // (the source re-renders after each keystroke); its handlers move over.
+    const kept = openAddress && model.controls.find((control): control is AddressControl =>
+      control.kind === "address" && control.label === openAddress?.label);
+    if (kept && openAddress) openAddress.control = kept;
+    else closePopover(false);
     onFormat = model.onFormat;
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
     for (const control of model.controls) {
@@ -232,6 +370,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
         item.setAttribute("aria-haspopup", "menu");
         item.setAttribute("aria-expanded", "false");
         if (control.title) item.title = control.title;
+        bar.append(item);
+      } else if (control.kind === "address") {
+        const item = addressButton(control);
+        if (kept === control && openAddress) {
+          popoverButton = item;
+          item.setAttribute("aria-expanded", "true");
+          renderSuggestions(openAddress);
+        }
         bar.append(item);
       } else if (control.kind === "field") {
         const item = button(control.warning ?? control.label, () => {
@@ -283,6 +429,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
       }
     }
     bar.dataset.model = "1";
+    if (kept && popoverButton) placePopover(popoverButton);
   }
 
   return {
