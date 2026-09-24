@@ -19,6 +19,7 @@ const segment = encodeURIComponent;
 const apiRoot = "https://api.github.com";
 const maxPages = 50;
 const maxFileBytes = 128 * 1024;
+const maxAssetBytes = 2 * 1024 * 1024;
 export const maxBatchFiles = 64;
 const batchConcurrency = 8;
 
@@ -297,6 +298,22 @@ export class GitHub {
     } catch {
       throw new HttpError(415, "This file is not UTF-8 text.");
     }
+  }
+
+  /** A blob's bytes as base64 (an image for the preview), up to `maxAssetBytes`. */
+  async raw(repo: Repository, sha: string): Promise<{ content: string; size: number }> {
+    if (!/^[a-f0-9]{40}$/.test(sha))
+      throw new HttpError(400, "Invalid file revision.");
+    const data = await this.get<{
+      size: number;
+      encoding: string;
+      content: string;
+    }>(`${this.base(repo)}/git/blobs/${sha}`, maxAssetBytes * 2);
+    if (data.size > maxAssetBytes)
+      throw new HttpError(413, "Images in the preview are limited to 2 MB.");
+    if (data.encoding !== "base64")
+      throw new HttpError(415, "This file cannot be read.");
+    return { content: data.content.replace(/\s/g, ""), size: data.size };
   }
 
   /** Reads several blobs concurrently; the first failure rejects the batch. */

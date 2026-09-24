@@ -89,3 +89,10 @@ body {
   border-top: 1px solid #d9ddd1;
   color: var(--muted);
 }
+
+.hero-image {
+  display: block;
+  width: 160px;
+  height: auto;
+  margin-top: 16px;
+}

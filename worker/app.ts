@@ -524,6 +524,7 @@ async function route(
         "/api/tree",
         "/api/file",
         "/api/files",
+        "/api/raw",
         "/api/history",
       ].includes(path)
     )
@@ -551,6 +552,8 @@ async function route(
       return json(
         await github.directory(repo, url.searchParams.get("sha") ?? ""),
       );
+    if (path === "/api/raw")
+      return json(await github.raw(repo, url.searchParams.get("sha") ?? ""));
     if (path === "/api/files")
       return json({
         files: await github.files(

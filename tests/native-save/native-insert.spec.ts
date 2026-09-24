@@ -45,11 +45,13 @@ test("a plus between sections inserts a section component, and only those are of
   // One plus per gap among <main>'s sections, including both ends.
   await expect(page.locator(".insert-point__plus")).toHaveCount(4);
   const before = plus(page, "Add a section before “Scroll to verify”");
+  // The gap between the cards and the filler sits below the frame's first screen.
+  await frame.locator("section.filler h2").scrollIntoViewIfNeeded();
   await hoverIn(page, "section.cards");
   await expect(shown(page)).toHaveCount(2);
   await expect(shown(page).first()).toHaveAccessibleName(/^Add a section before “Reusable cards/);
   await expect(before).toBeVisible();
-  await expect(plus(page, "Add a section before “A native browser preview”")).toHaveCSS("pointer-events", "none");
+  await expect(page.locator(".insert-point:not(.is-near) .insert-point__plus").first()).toHaveCSS("pointer-events", "none");
   await hoverIn(page, "section.filler h2");
   await expect(shown(page)).toHaveCount(2);
   await expect(shown(page).first()).toHaveAccessibleName("Add a section before “Scroll to verify”");

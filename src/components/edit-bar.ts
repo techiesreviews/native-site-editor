@@ -35,6 +35,28 @@ export type EditBarControl =
       options: { label: string; value: string }[];
       value: string;
       onChange: (value: string) => void;
+    }
+  | {
+      // A button that opens a menu of actions (More, Replace).
+      kind: "menu";
+      label: string;
+      title?: string;
+      items: { label: string; onSelect: () => void; disabled?: boolean; current?: boolean }[];
+    }
+  | {
+      // A button that opens one text field with Apply (Alt text, Label).
+      kind: "field";
+      label: string;
+      // Shown on the button instead of the label when the value needs attention.
+      warning?: string;
+      value: string;
+      // Prefilled suggestion shown instead of `value` (Apply then applies it).
+      initial?: string;
+      placeholder?: string;
+      hint?: string;
+      // An extra action beside Apply, e.g. "Decorative" for an empty alt.
+      extra?: { label: string; onPress: () => void };
+      onApply: (value: string) => void;
     };
 
 export interface EditBarModel {
@@ -54,10 +76,76 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
 
   let rect: SelectionRect | undefined;
   let onFormat: EditBarModel["onFormat"];
+  // The open menu or field, under its button.
+  const popover = node("div", "edit-bar__popover");
+  popover.hidden = true;
+  pane.append(popover);
+  let popoverButton: HTMLButtonElement | undefined;
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>("button:not([disabled]), select")];
+    return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > select")];
   }
+
+  function closePopover(restoreFocus: boolean) {
+    if (popover.hidden) return;
+    const trigger = popoverButton;
+    popover.hidden = true;
+    popover.replaceChildren();
+    popoverButton = undefined;
+    trigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger?.focus();
+  }
+  function openPopover(trigger: HTMLButtonElement, content: HTMLElement[], role: string) {
+    closePopover(false);
+    popoverButton = trigger;
+    trigger.setAttribute("aria-expanded", "true");
+    popover.setAttribute("role", role);
+    popover.setAttribute("aria-label", trigger.getAttribute("aria-label") ?? trigger.textContent ?? "");
+    popover.replaceChildren(...content);
+    popover.hidden = false;
+    // Under the button, kept inside the frame's width.
+    const paneRect = pane.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const anchor = trigger.getBoundingClientRect();
+    const width = popover.offsetWidth;
+    const left = Math.max(frameRect.left - paneRect.left + 8, Math.min(anchor.left - paneRect.left, frameRect.right - paneRect.left - width - 8));
+    const below = anchor.bottom - paneRect.top + 4;
+    const fits = below + popover.offsetHeight <= frameRect.bottom - paneRect.top - 4;
+    popover.style.left = `${left}px`;
+    popover.style.top = `${fits ? below : Math.max(frameRect.top - paneRect.top + 4, anchor.top - paneRect.top - 4 - popover.offsetHeight)}px`;
+  }
+  popover.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closePopover(true);
+      return;
+    }
+    if (popover.getAttribute("role") !== "menu") return;
+    const items = [...popover.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not([disabled])")];
+    const index = items.indexOf(event.target as HTMLButtonElement);
+    let next: number | undefined;
+    if (event.key === "ArrowDown") next = (index + 1) % items.length;
+    else if (event.key === "ArrowUp") next = (index - 1 + items.length) % items.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    items[next]?.focus();
+  });
+  popover.addEventListener("focusout", (event) => {
+    const to = event.relatedTarget as Node | null;
+    if (to && (popover.contains(to) || popoverButton?.contains(to))) return;
+    queueMicrotask(() => {
+      if (!popover.contains(document.activeElement)) closePopover(false);
+    });
+  });
+  function onPointerDown(event: PointerEvent) {
+    const target = event.target as Node;
+    if (popover.hidden || popover.contains(target) || popoverButton?.contains(target)) return;
+    closePopover(false);
+  }
+  document.addEventListener("pointerdown", onPointerDown, true);
 
   bar.addEventListener("keydown", (event) => {
     const target = event.target as HTMLElement;
@@ -117,6 +205,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   resize.observe(bar);
 
   function render(model: EditBarModel) {
+    closePopover(false);
     onFormat = model.onFormat;
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
     for (const control of model.controls) {
@@ -126,6 +215,59 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
         if (control.title) item.title = control.title;
         if (control.pressed !== undefined) item.setAttribute("aria-pressed", String(control.pressed));
         item.disabled = Boolean(control.disabled);
+        bar.append(item);
+      } else if (control.kind === "menu") {
+        const item = button(control.label, () => {
+          if (popoverButton === item) { closePopover(true); return; }
+          const items = control.items.map((entry) => {
+            const option = button(entry.label, () => { closePopover(false); entry.onSelect(); }, "edit-bar__menu-item");
+            option.setAttribute("role", "menuitem");
+            option.disabled = Boolean(entry.disabled);
+            if (entry.current) option.setAttribute("aria-current", "true");
+            return option;
+          });
+          openPopover(item, items, "menu");
+          items.find((option) => !option.disabled)?.focus();
+        }, "edit-bar__button edit-bar__menu");
+        item.setAttribute("aria-haspopup", "menu");
+        item.setAttribute("aria-expanded", "false");
+        if (control.title) item.title = control.title;
+        bar.append(item);
+      } else if (control.kind === "field") {
+        const item = button(control.warning ?? control.label, () => {
+          if (popoverButton === item) { closePopover(true); return; }
+          const label = node("label", "edit-bar__field-label", control.label);
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "edit-bar__field-input";
+          input.value = control.initial ?? control.value;
+          input.placeholder = control.placeholder ?? "";
+          label.append(input);
+          const apply = () => {
+            const value = input.value;
+            closePopover(true);
+            // Unchanged applies nothing.
+            if (value !== control.value) control.onApply(value);
+          };
+          input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") { event.preventDefault(); apply(); }
+          });
+          const actions = node("div", "edit-bar__field-actions");
+          actions.append(button("Apply", apply, "edit-bar__field-apply"));
+          if (control.extra) {
+            const extra = control.extra;
+            actions.append(button(extra.label, () => { closePopover(true); extra.onPress(); }, "edit-bar__field-extra"));
+          }
+          const content: HTMLElement[] = [label];
+          if (control.hint) content.push(node("p", "edit-bar__field-hint", control.hint));
+          content.push(actions);
+          openPopover(item, content, "dialog");
+          input.focus();
+          input.select();
+        }, `edit-bar__button edit-bar__field${control.warning ? " edit-bar__field--warning" : ""}`);
+        item.setAttribute("aria-haspopup", "dialog");
+        item.setAttribute("aria-expanded", "false");
+        if (control.warning) item.title = `${control.label}: ${control.warning}`;
         bar.append(item);
       } else {
         const select = document.createElement("select");
@@ -161,6 +303,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
       position();
     },
     hide() {
+      closePopover(false);
       rect = undefined;
       delete bar.dataset.model;
       bar.hidden = true;
@@ -168,6 +311,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     },
     destroy() {
       resize.disconnect();
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      popover.remove();
       bar.remove();
     },
   };

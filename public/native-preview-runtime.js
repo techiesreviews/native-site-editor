@@ -46,10 +46,25 @@
     return fragment;
   }
 
+  // Repository image paths (as written in `src`, or with a leading "/" or
+  // "./") shown from the data URLs the host read for them.
+  function assetFor(src) {
+    if (!state || !state.assets || typeof src !== "string") return null;
+    var key = src.replace(/^\.?\//, "").split(/[?#]/)[0];
+    return Object.prototype.hasOwnProperty.call(state.assets, key) ? state.assets[key] : null;
+  }
+  function resolveAssets(fragment) {
+    fragment.querySelectorAll("img[src]").forEach(function (el) {
+      var url = assetFor(el.getAttribute("src"));
+      if (url) el.setAttribute("src", url);
+    });
+  }
+
   function makeTemplate(html) {
     var t = document.createElement("template");
     t.innerHTML = html || "";
     sanitize(t.content);
+    resolveAssets(t.content);
     return t;
   }
 
@@ -257,6 +272,7 @@
       componentPaths: payload.componentPaths || {},
       styles: Array.isArray(payload.styles) ? payload.styles : [],
       componentStyles: payload.componentStyles || {},
+      assets: payload.assets || {},
       route: payload.route || "/",
       sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
       context: String(payload.context || "")

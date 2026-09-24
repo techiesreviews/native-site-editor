@@ -29,6 +29,7 @@ import { locateNativeElement, locateNativeElementRange, startTagAttribute, textR
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
+import { altFromPath, duplicateEdit, isImagePath, previousHeadingLevel, removeEdit, setAttributeEdit, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -723,6 +724,130 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const href = selection.link;
     controls.push({ kind: "button", label: "Follow link", title: href, onPress: () => void preview.follow(href) });
   }
+  // Edits sorted by position, as one undo step.
+  const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
+  const attribute = (name: string) => (range ? startTagAttribute(source, range.tag, name) : undefined);
+  // Heading levels that skip (H2 to H4): one press puts the heading in order.
+  if (range && /^h[2-6]$/.test(selection.tag) && range.close && range.tag.name === selection.tag) {
+    const level = Number(selection.tag[1]);
+    const previous = previousHeadingLevel(source, range.tag.start);
+    if (previous > 0 && level > previous + 1) {
+      const close = range.close;
+      const fixed = `h${previous + 1}`;
+      controls.push({
+        kind: "button",
+        label: `Use ${fixed.toUpperCase()}`,
+        title: `Heading levels skip from H${previous} to H${level}; the next level after H${previous} is H${previous + 1}.`,
+        className: "edit-bar__warning",
+        onPress: () => change([
+          { start: range.tag.start + 1, end: range.tag.nameEnd, text: fixed },
+          { start: close.start + 2, end: close.start + 2 + 2, text: fixed },
+        ], node, `Heading level ${fixed.toUpperCase()}`),
+      });
+    }
+  }
+  // Images: Replace from the repository, an address, and alt text. Alt text
+  // follows the file name when it was never written or still matches the
+  // previous file's name; a decorative image keeps its empty alt.
+  if (range && selection.tag === "img") {
+    const tag = range.tag;
+    const src = attribute("src");
+    const alt = attribute("alt");
+    const currentSrc = (src?.value ?? "").replace(/^\.?\//, "").split(/[?#]/)[0];
+    const replaceWith = (next: string) => {
+      const edits = [setAttributeEdit(source, tag, "src", next)];
+      const previousName = altFromPath(src?.value ?? "");
+      if (!alt || (alt.value && alt.value === previousName)) edits.push(setAttributeEdit(source, tag, "alt", altFromPath(next)));
+      change(ordered(edits), node, "Image replaced");
+    };
+    const images = (snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path);
+    if (images.length) {
+      controls.push({
+        kind: "menu",
+        label: "Replace",
+        title: "Replace with an image from this repository",
+        items: images.map((image) => ({ label: image, current: image === currentSrc, disabled: image === currentSrc, onSelect: () => replaceWith(image) })),
+      });
+    }
+    controls.push({
+      kind: "field",
+      label: "Address",
+      value: src?.value ?? "",
+      placeholder: "https://… or src/images/photo.jpg",
+      hint: "A path in this repository or a full web address.",
+      onApply: (value) => { if (value.trim()) replaceWith(value.trim()); },
+    });
+    const suggestion = altFromPath(src?.value ?? "");
+    controls.push({
+      kind: "field",
+      label: "Alt text",
+      warning: alt ? undefined : "Alt text missing",
+      value: alt?.value ?? "",
+      initial: alt ? undefined : suggestion,
+      placeholder: "What the image shows",
+      hint: "Read aloud in place of the image. Apply with nothing to mark it decorative.",
+      extra: { label: "Decorative", onPress: () => change([setAttributeEdit(source, tag, "alt", "")], node, "Image marked decorative") },
+      onApply: (value) => change([setAttributeEdit(source, tag, "alt", value.trim())], node, value.trim() ? "Alt text updated" : "Image marked decorative"),
+    });
+  }
+  // Links and buttons need a name; containers get a label when they carry no heading.
+  if (range && (selection.tag === "a" || selection.tag === "button") && !selection.text.trim() && !attribute("aria-label")) {
+    const tag = range.tag;
+    controls.push({
+      kind: "field",
+      label: "Name",
+      warning: "Needs a name",
+      value: "",
+      placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} does`,
+      hint: "It has no text, so screen readers need a name for it.",
+      onApply: (value) => { if (value.trim()) change([setAttributeEdit(source, tag, "aria-label", value.trim())], node, "Name added"); },
+    });
+  }
+  if (range?.close && ["section", "nav", "aside"].includes(selection.tag)) {
+    const tag = range.tag;
+    const label = attribute("aria-label");
+    const hasHeading = /<h[1-6][\s>]/i.test(source.slice(tag.end, range.close.start));
+    controls.push({
+      kind: "field",
+      label: "Label",
+      warning: !label && !hasHeading ? "No heading or label" : undefined,
+      value: label?.value ?? "",
+      placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} is about`,
+      hint: "Names the landmark for screen readers; a heading inside it does the same.",
+      onApply: (value) => change([setAttributeEdit(source, tag, "aria-label", value.trim() || undefined)], node, value.trim() ? "Label updated" : "Label removed"),
+    });
+  }
+  // More: move (sections), duplicate and remove, as one undo step each.
+  if (range && node && !["main", "slot", "html", "body"].includes(selection.tag)) {
+    const parent = node.slice(0, -1);
+    const index = node[node.length - 1];
+    const sectionTemplate = selection.tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[selection.tag] ?? ""] ?? "");
+    const movable = selection.tag === "section" || sectionTemplate;
+    const items: { label: string; onSelect: () => void; disabled?: boolean }[] = [];
+    if (movable) {
+      const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
+      const after = locateNativeElementRange(source, [...parent, index + 1]);
+      items.push({
+        label: "Move up",
+        disabled: !before,
+        onSelect: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
+      });
+      items.push({
+        label: "Move down",
+        disabled: !after,
+        onSelect: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
+      });
+    }
+    items.push({
+      label: "Duplicate",
+      onSelect: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
+    });
+    items.push({
+      label: "Remove",
+      onSelect: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
+    });
+    controls.push({ kind: "menu", label: "More", title: "More actions", items });
+  }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.() };
   preview.showEditBar(model, rect);
 }
@@ -922,7 +1047,61 @@ function updateNativePreview() {
 // the preview is on About (with a different file open) does not snap it Home.
 function updateNativePreviewSources() {
   if (!nativeManifest || !nativePreview) return;
-  nativePreview.update({ sources: nativeSources(), componentStyles: Object.fromEntries(nativeComponentStyles) });
+  nativePreview.update({ sources: nativeSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets) });
+  void loadNativeAssets();
+}
+
+// Images the pages and components refer to, read once per path as data URLs
+// so the sandboxed frame can show them; a path that is not in the branch
+// (or not an image) is remembered as missing and left as written.
+const nativeAssets = new Map<string, string>();
+const nativeMissingAssets = new Set<string>();
+const nativeAssetRequests = new Set<string>();
+const IMAGE_TYPES: Record<string, string> = {
+  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
+};
+const imageType = (path: string) => IMAGE_TYPES[path.split(".").pop()?.toLowerCase() ?? ""];
+function referencedImages(sources: Record<string, string>) {
+  const out = new Set<string>();
+  for (const source of Object.values(sources)) {
+    for (const match of source.matchAll(/<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)) {
+      const raw = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+      if (!raw || /^(?:[a-z]+:|\/\/)/i.test(raw)) continue;
+      const path = raw.replace(/^\.?\//, "").split(/[?#]/)[0];
+      if (path && imageType(path)) out.add(path);
+    }
+  }
+  return out;
+}
+async function loadNativeAssets() {
+  if (!nativeManifest || !currentRepo || !snapshot) return;
+  const repo = currentRepo.full_name;
+  const request = nativeSourcesRequest;
+  const epoch = generation;
+  const wanted = [...referencedImages(nativeSources())].filter((path) =>
+    !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
+  if (!wanted.length) return;
+  wanted.forEach((path) => nativeAssetRequests.add(path));
+  let loaded = false;
+  try {
+    for (const path of wanted) {
+      const entry = await findEntry(path);
+      if (epoch !== generation || request !== nativeSourcesRequest) return;
+      if (!entry) { nativeMissingAssets.add(path); continue; }
+      try {
+        const blob = await api<{ content: string }>("raw", { repo, sha: entry.sha });
+        if (epoch !== generation || request !== nativeSourcesRequest) return;
+        nativeAssets.set(path, `data:${imageType(path)};base64,${blob.content}`);
+        loaded = true;
+      } catch {
+        nativeMissingAssets.add(path);
+      }
+    }
+  } finally {
+    wanted.forEach((path) => nativeAssetRequests.delete(path));
+  }
+  if (loaded && epoch === generation && request === nativeSourcesRequest) updateNativePreviewSources();
 }
 
 // After a successful save, the committed content becomes the new clean baseline.
@@ -954,6 +1133,8 @@ function deactivateNative() {
   nativeComponentStyles.clear();
   nativeMissingComponentStyles.clear();
   nativeComponentStyleRequests.clear();
+  nativeAssets.clear();
+  nativeMissingAssets.clear();
   nativeSourcesRequest++;
   nativePreview?.deactivate();
 }
@@ -1042,6 +1223,8 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   nativeComponentStyles.clear();
   nativeMissingComponentStyles.clear();
   nativeComponentStyleRequests.clear();
+  nativeAssets.clear();
+  nativeMissingAssets.clear();
   try {
     // Resolve every referenced file, then read them all in one round trip.
     const sources: { path: string; sha: string }[] = [];
@@ -1070,6 +1253,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     componentStyles: Object.fromEntries(nativeComponentStyles),
     route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(manifest),
   });
+  void loadNativeAssets();
   return true;
 }
 

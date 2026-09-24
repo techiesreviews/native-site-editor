@@ -39,6 +39,8 @@ const RUNTIME_DOC = `<!doctype html>
 interface UpdateInput {
   sources?: Record<string, string>;
   componentStyles?: Record<string, string>;
+  // Repository image paths to data URLs, so `<img src>` shows in the frame.
+  assets?: Record<string, string>;
   route?: string;
   // The component whose template is open: the preview shows a page that uses
   // it, or the component alone when no page does.
@@ -135,6 +137,7 @@ function composePayload(
   manifest: NativeManifest,
   sources: Record<string, string>,
   componentStyles: Record<string, string>,
+  assets: Record<string, string>,
   route: string,
   alone: string | undefined,
   context: string,
@@ -168,7 +171,7 @@ function composePayload(
   const styles = manifest.styles.map((path) => ({ path, source: sources[path] ?? "" }));
   // Section components count as sections when the runtime looks for places to insert one.
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
-  return { pages, pagePaths, components, componentPaths, styles, componentStyles: stylesByComponent, sectionTags, route, context, selectNode, selectText };
+  return { pages, pagePaths, components, componentPaths, styles, componentStyles: stylesByComponent, assets, sectionTags, route, context, selectNode, selectText };
 }
 
 function routeCandidate(manifest: NativeManifest, href: string) {
@@ -208,6 +211,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let manifest: NativeManifest | undefined;
   let sources: Record<string, string> = {};
   let componentStyles: Record<string, string> = {};
+  let assets: Record<string, string> = {};
   let route = "/";
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
@@ -241,7 +245,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!manifest || !ready || !mounted) return;
-    const payload = composePayload(manifest, sources, componentStyles, route, alone, context, selectNode, selectText);
+    const payload = composePayload(manifest, sources, componentStyles, assets, route, alone, context, selectNode, selectText);
     selectNode = undefined;
     selectText = undefined;
     frame.contentWindow?.postMessage(
@@ -257,6 +261,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       route,
       alone ?? "",
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
+      Object.keys(assets).join("|"),
     ].join("\n");
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
@@ -463,6 +468,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     update(input: UpdateInput) {
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
+      if (input.assets) assets = input.assets;
       if (manifest && input.component && Object.hasOwn(manifest.components, input.component)) {
         // The page already on show wins; then any page that uses the component; else the component alone.
         const tag = input.component;

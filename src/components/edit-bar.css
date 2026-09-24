@@ -75,3 +75,111 @@
   background: var(--selected);
   color: var(--primary);
 }
+
+/* Menu or field opened from a bar button, under it. */
+.edit-bar__popover {
+  position: absolute;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+.edit-bar__popover[hidden] {
+  display: none;
+}
+.edit-bar__menu-item {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+.edit-bar__menu-item:hover,
+.edit-bar__menu-item:focus-visible {
+  background: var(--hover);
+}
+.edit-bar__menu-item:disabled {
+  opacity: 0.45;
+  background: transparent;
+}
+.edit-bar__menu-item[aria-current="true"] {
+  background: var(--selected);
+  color: var(--primary);
+}
+.edit-bar__menu-item:focus-visible,
+.edit-bar__field-input:focus-visible,
+.edit-bar__field-apply:focus-visible,
+.edit-bar__field-extra:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.edit-bar__field--warning {
+  color: var(--warning-fg);
+  font-weight: 620;
+}
+.edit-bar__field--warning::before {
+  content: "⚠ ";
+}
+.edit-bar__field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px;
+  font-weight: 620;
+}
+.edit-bar__field-input {
+  width: 260px;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--surface-input);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+.edit-bar__field-hint {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--muted);
+}
+.edit-bar__field-actions {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+}
+.edit-bar__field-apply,
+.edit-bar__field-extra {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+.edit-bar__field-apply {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.edit-bar__warning {
+  color: var(--warning-fg);
+  font-weight: 620;
+}
+.edit-bar__warning::before {
+  content: "⚠ ";
+}
