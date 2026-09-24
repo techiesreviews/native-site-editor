@@ -1488,9 +1488,17 @@ let snapshot: Snapshot | undefined;
 let generation = 0;
 let fileGeneration = 0;
 
+let lastStatus = "";
 function status(message: string) {
   const target = document.getElementById("status");
-  if (target) target.textContent = message;
+  if (target) target.textContent = lastStatus = message;
+}
+// A load-progress announcement ("Viewing…", "Up to date…") lands after async
+// work; if the user has acted meanwhile (a field edit, a section move writes
+// the live region directly) their announcement is newer and must stand.
+function settleStatus(message: string) {
+  const target = document.getElementById("status");
+  if (target && target.textContent === lastStatus) status(message);
 }
 function clearError() {
   element("notice").hidden = true;
@@ -1869,7 +1877,7 @@ async function openEntry(
       selection,
       options,
     );
-    status(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
+    settleStatus(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
   } catch (error) {
     if (epoch === generation && selection === fileGeneration) {
       content.replaceChildren(
@@ -2243,7 +2251,7 @@ async function loadSnapshot(
       });
     if (open) await restoreFile(open, epoch);
     if (epoch !== generation) return;
-    status(
+    settleStatus(
       `Up to date with ${branch} · ${result.commit.slice(0, 7)}. Refresh to check for new commits.`,
     );
   } catch (error) {
