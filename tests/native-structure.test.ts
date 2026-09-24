@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -47,6 +47,35 @@ test("swap exchanges two siblings and keeps what lies between", () => {
   const swapped = apply(page, swapEdits(page, a, b));
   assert.equal(swapped, `<main>\n  <section class="b" data-key="b"><p>B</p></section>\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <img src="x.png" alt="">\n</main>`);
   assert.deepEqual(swapEdits(page, a, a), []);
+});
+
+test("moveEdit carries an element's lines to another gap among its siblings", () => {
+  // Siblings of <main>: section a (0), section b (1), img (2); start-tag indexes 1, 3 and 5.
+  const sibling = (at: number) => [1, 3, 5][at] === undefined ? undefined : rangeAt(page, [1, 3, 5][at]);
+  const a = sibling(0)!;
+  const img = sibling(2)!;
+  // A to the end (gap 3): one removal, one insertion, ascending, not overlapping.
+  const down = moveEdit(page, a, 0, 3, sibling);
+  assert.equal(down.length, 2);
+  assert.ok(down[0].end <= down[1].start);
+  assert.equal(apply(page, down), `<main>\n  <section class="b" data-key="b"><p>B</p></section>\n  <img src="x.png" alt="">\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n</main>`);
+  // The image to the front (gap 0).
+  assert.equal(apply(page, moveEdit(page, img, 2, 0, sibling)), `<main>\n  <img src="x.png" alt="">\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <section class="b" data-key="b"><p>B</p></section>\n</main>`);
+  // A to gap 2 (between b and the image) is the same as one step down.
+  assert.equal(apply(page, moveEdit(page, a, 0, 2, sibling)), apply(page, swapEdits(page, a, sibling(1)!)));
+  // Its own gap, the gap right after it, a gap that is not there: nothing moves.
+  assert.deepEqual(moveEdit(page, a, 0, 0, sibling), []);
+  assert.deepEqual(moveEdit(page, a, 0, 1, sibling), []);
+  assert.deepEqual(moveEdit(page, a, 0, 4, sibling), []);
+  assert.deepEqual(moveEdit(page, img, 2, 3, sibling), []);
+  // Indentation travels with the element, and a neighbour that ends its line
+  // without a newline gets the newline before the moved block.
+  const tight = `<div>\n    <p>one</p>\n    <p>two</p></div>`;
+  const tightSibling = (at: number) => rangeAt(tight, at + 1);
+  assert.equal(apply(tight, moveEdit(tight, tightSibling(0), 0, 2, tightSibling)), `<div>\n    <p>two</p>\n    <p>one</p></div>`);
+  const inline = `<p><b>x</b><i>y</i><u>z</u></p>`;
+  const inlineSibling = (at: number) => rangeAt(inline, at + 1);
+  assert.equal(apply(inline, moveEdit(inline, inlineSibling(2), 2, 0, inlineSibling)), `<p><u>z</u><b>x</b><i>y</i></p>`);
 });
 
 test("attributes are set, added, quoted and removed on the start tag", () => {

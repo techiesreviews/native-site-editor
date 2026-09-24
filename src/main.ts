@@ -30,7 +30,7 @@ import { locateNativeElement, locateNativeElementRange, startTagAttribute, textR
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
+import { altFromPath, duplicateEdit, isImagePath, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -219,6 +219,9 @@ function mountWorkspace() {
     onPageMetaClose: () => editorModule?.closeActiveEditGroup(NATIVE_MANIFEST_PATH),
     onMove: (path, item, direction) =>
       isNativeSectionTag(item.tag) ? (moveNativeSection({ path, node: item.node, tag: item.tag }, direction) ? "moved" : "stayed") : undefined,
+    canDrag: (item) => isNativeSectionTag(item.tag),
+    onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
+    announce: (text) => { element("status").textContent = text; },
   });
 }
 
@@ -940,6 +943,30 @@ function moveNativeSection(target: { path: string; node?: number[]; tag: string 
   if (!range || !other) return false;
   const edits = direction === "up" ? swapEdits(source, other, range) : swapEdits(source, range, other);
   return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down");
+}
+
+// Moves a whole section to another gap among its siblings (`index` counted
+// as the insert points are: before the sibling at that index, or the count
+// for the end), as one undo step, keeping it selected: a drag in the page
+// structure or the canvas ends here. "stayed" when the gap is the one the
+// section already fills (announced, nothing recorded); nothing for another
+// parent, for anything but a section, or when the ranges cannot be told.
+function moveNativeSectionTo(target: { path: string; node?: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined {
+  const { path, node } = target;
+  if (!path || !node?.length || currentPath !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
+  const own = node.slice(0, -1);
+  if (own.length !== parent.length || own.some((step, at) => step !== parent[at])) return undefined;
+  const source = nativeSources()[path] ?? "";
+  const range = locateNativeElementRange(source, node);
+  if (!range) return undefined;
+  const from = node[node.length - 1];
+  if (index === from || index === from + 1) {
+    element("status").textContent = "Section stayed in place";
+    return "stayed";
+  }
+  const edits = moveEdit(source, range, from, index, (at) => locateNativeElementRange(source, [...parent, at]));
+  if (!edits.length) return undefined;
+  return applyNativeChange(path, source, edits, [...parent, index > from ? index - 1 : index], "Section moved") ? "moved" : undefined;
 }
 
 // Writes text typed into a preview element into its source, as one undo

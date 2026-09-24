@@ -8,7 +8,10 @@ import "./page-structure.css";
 // preview selection marks its row. Rows with children fold; the folded
 // state is kept per element while the same page stays on show. Above the
 // tree, a Page block holds the route's title and description from the
-// manifest; they apply as typed.
+// manifest; they apply as typed. A section row can be dragged with the
+// pointer onto another gap among its siblings (7 px of movement starts the
+// drag, so a plain press still selects); only the rows sharing its parent
+// take the drop.
 
 export type PageMetaField = "title" | "description";
 
@@ -33,10 +36,23 @@ export interface PageStructureHandlers {
    * for other elements, which do not move.
    */
   onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | undefined;
+  /** Whether this element's row can be dragged to another position (a whole section). */
+  canDrag?: (item: NativeStructureItem) => boolean;
+  /**
+   * A row was dropped on the gap `index` among its siblings (before the
+   * sibling at that index; the sibling count for the end): "moved", "stayed"
+   * for the gap it already fills, nothing when the move could not be made.
+   */
+  onMoveTo?: (path: string, item: NativeStructureItem, index: number) => "moved" | "stayed" | undefined;
+  /** Status text for the screen reader. */
+  announce?: (text: string) => void;
 }
 
 const HINT_NO_PAGE = "Open a page of a native project to see its sections and content here.";
 const HINT_COMPONENT = "The preview shows a component by itself. Open a page to see its structure.";
+const HINT_DRAG = "Drag to reorder within a page or slot. Alt + \u2191/\u2193 moves sections.";
+// Pointer travel before a press on a row becomes a drag.
+const DRAG_THRESHOLD = 7;
 
 const key = (node: number[]) => node.join(".");
 
@@ -67,7 +83,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Page structure");
   tree.hidden = true;
-  host.append(hint, meta, tree);
+  const dragHint = node("p", "muted page-structure__hint", HINT_DRAG);
+  dragHint.hidden = true;
+  // The line between rows that shows where a dragged row will go.
+  const drop = node("div", "page-structure__drop");
+  drop.hidden = true;
+  host.append(hint, meta, tree, dragHint);
 
   // The Page fields for the page on show; a field being typed in keeps its text.
   function renderMeta(path: string) {
@@ -86,6 +107,118 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The row to focus once the next render shows a section that just moved.
   let focusAfterRender: string | undefined;
 
+  // A press on a draggable row, and the drag it becomes after 7 px: the
+  // sibling rows (with their subtrees) whose gaps take the drop, the group
+  // element that holds them, and the gap under the pointer.
+  interface RowDrag {
+    pointerId: number;
+    item: NativeStructureItem;
+    el: HTMLElement;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    siblings: HTMLElement[];
+    group: HTMLElement;
+    target: number | undefined;
+  }
+  let drag: RowDrag | undefined;
+  // The click that follows a drag's release must not select the row again.
+  let suppressClick = false;
+
+  // A row's subtree on show: from its top to the bottom of its open group.
+  function subtreeBounds(el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    const group = el.nextElementSibling;
+    const bottom = group instanceof HTMLElement && group.getAttribute("role") === "group" && !group.hidden
+      ? group.getBoundingClientRect().bottom
+      : rect.bottom;
+    return { top: rect.top, bottom };
+  }
+
+  function dragTarget(current: RowDrag, clientY: number) {
+    const box = current.group.getBoundingClientRect();
+    if (clientY < box.top || clientY > box.bottom) return undefined;
+    for (let index = 0; index < current.siblings.length; index++) {
+      const { top, bottom } = subtreeBounds(current.siblings[index]);
+      if (clientY < (top + bottom) / 2) return index;
+    }
+    return current.siblings.length;
+  }
+
+  function showDrop(current: RowDrag) {
+    const { siblings, target } = current;
+    if (target === undefined || !siblings.length) {
+      drop.hidden = true;
+      return;
+    }
+    const y = target < siblings.length ? subtreeBounds(siblings[target]).top : subtreeBounds(siblings[siblings.length - 1]).bottom;
+    drop.style.top = `${y - tree.getBoundingClientRect().top}px`;
+    drop.style.setProperty("--depth", siblings[0].style.getPropertyValue("--depth"));
+    drop.hidden = false;
+  }
+
+  function onDragKey(event: KeyboardEvent) {
+    if (event.key !== "Escape" || !drag) return;
+    event.preventDefault();
+    event.stopPropagation();
+    finishDrag(false);
+  }
+
+  function endDrag() {
+    const current = drag;
+    drag = undefined;
+    if (!current) return;
+    window.removeEventListener("keydown", onDragKey, true);
+    if (current.el.hasPointerCapture(current.pointerId)) current.el.releasePointerCapture(current.pointerId);
+    current.el.classList.remove("is-drag-source");
+    tree.classList.remove("is-dragging");
+    drop.hidden = true;
+  }
+
+  function finishDrag(commit: boolean) {
+    const current = drag;
+    endDrag();
+    if (!current?.dragging) return;
+    suppressClick = true;
+    if (!commit || current.target === undefined || !structure?.path) {
+      handlers.announce?.("Section drag cancelled");
+      return;
+    }
+    const outcome = handlers.onMoveTo?.(structure.path, current.item, current.target);
+    if (outcome === "moved") {
+      const from = current.item.node[current.item.node.length - 1];
+      focusAfterRender = key([...current.item.node.slice(0, -1), current.target > from ? current.target - 1 : current.target]);
+    } else if (!outcome) handlers.announce?.("Section drag cancelled");
+  }
+
+  function pressRow(event: PointerEvent, item: NativeStructureItem, el: HTMLElement) {
+    suppressClick = false;
+    if (event.button !== 0 || drag || !structure?.path || !handlers.canDrag?.(item)) return;
+    if ((event.target as HTMLElement).classList.contains("page-structure__toggle")) return;
+    const parentKey = key(item.node.slice(0, -1));
+    const parentRow = rows.get(parentKey);
+    const group = parentRow ? parentRow.nextElementSibling : tree;
+    if (!(group instanceof HTMLElement)) return;
+    const siblings = [...group.children].filter((child): child is HTMLElement => child instanceof HTMLElement && child.getAttribute("role") === "treeitem");
+    drag = { pointerId: event.pointerId, item, el, startX: event.clientX, startY: event.clientY, dragging: false, siblings, group, target: undefined };
+    el.setPointerCapture(event.pointerId);
+    window.addEventListener("keydown", onDragKey, true);
+  }
+
+  function moveRow(event: PointerEvent) {
+    const current = drag;
+    if (!current || event.pointerId !== current.pointerId) return;
+    if (!current.dragging) {
+      if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < DRAG_THRESHOLD) return;
+      current.dragging = true;
+      current.el.classList.add("is-drag-source");
+      tree.classList.add("is-dragging");
+    }
+    event.preventDefault();
+    current.target = dragTarget(current, event.clientY);
+    showDrop(current);
+  }
+
   function row(item: NativeStructureItem, level: number): HTMLElement[] {
     const id = key(item.node);
     const el = node("div", "page-structure__row");
@@ -102,7 +235,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     label.append(node("span", "page-structure__kind", kind));
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
+    el.addEventListener("pointerdown", (event) => pressRow(event, item, el));
+    el.addEventListener("pointermove", moveRow);
+    el.addEventListener("pointerup", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(true); });
+    el.addEventListener("pointercancel", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(false); });
+    el.addEventListener("lostpointercapture", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(false); });
     el.addEventListener("click", (event) => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
       if (event.target === toggle && item.children.length) {
         fold(item, el, !folded.has(id));
         return;
@@ -203,6 +345,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
 
   function render() {
+    // The rows are about to be replaced: a drag in progress has nothing to land on.
+    finishDrag(false);
     rows.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
     focusAfterRender = undefined;
@@ -211,13 +355,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       hint.hidden = false;
       meta.hidden = true;
       tree.hidden = true;
+      dragHint.hidden = true;
       tree.replaceChildren();
       return;
     }
     hint.hidden = true;
     renderMeta(structure.path);
     tree.hidden = false;
-    tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)));
+    dragHint.hidden = false;
+    tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
     setSelected(selected);
     if (focused && rows.has(focused)) {
       for (const el of rows.values()) el.tabIndex = -1;
@@ -253,9 +399,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (structure?.path) renderMeta(structure.path);
     },
     destroy() {
+      endDrag();
       hint.remove();
       meta.remove();
       tree.remove();
+      dragHint.remove();
     },
   };
 }

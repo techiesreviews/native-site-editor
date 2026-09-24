@@ -87,6 +87,38 @@ export function swapEdits(source: string, a: ElementRange, b: ElementRange): Ran
   ];
 }
 
+/**
+ * Moves the element at `index` among its siblings to the gap `target`, where
+ * the gaps are numbered as the insert points are: `target` = before the
+ * sibling at that index, the sibling count = after the last one. `sibling`
+ * gives the exact range of the sibling at an index (nothing when it cannot
+ * be told, in which case nothing moves). The element travels with its own
+ * lines, so its indentation is kept; the two edits do not overlap. The gap
+ * the element already fills, before or after itself, moves nothing.
+ */
+export function moveEdit(
+  source: string,
+  range: ElementRange,
+  index: number,
+  target: number,
+  sibling: (at: number) => ElementRange | undefined,
+): RangeEdit[] {
+  if (target === index || target === index + 1 || target < 0) return [];
+  const lines = wholeLines(source, range);
+  const block = source.slice(lines.start, lines.end);
+  const neighbour = sibling(target < index ? target : target - 1);
+  if (!neighbour || (neighbour.start < range.end && neighbour.end > range.start)) return [];
+  const at = target < index ? wholeLines(source, neighbour).start : wholeLines(source, neighbour).end;
+  if (at > lines.start && at < lines.end) return [];
+  // The block ends with its newline; after a neighbour that ends its line
+  // without one (the last child before the parent's end tag) the newline
+  // goes first instead.
+  const text = block.endsWith("\n") && at > 0 && source[at - 1] !== "\n" ? `\n${block.slice(0, -1)}` : block;
+  const remove = { start: lines.start, end: lines.end, text: "" };
+  const insert = { start: at, end: at, text };
+  return at < lines.start ? [insert, remove] : [remove, insert];
+}
+
 /** Sets (or, with `value` undefined, removes) an attribute on a start tag. */
 export function setAttributeEdit(source: string, tag: StartTag, name: string, value: string | undefined): RangeEdit {
   const current = startTagAttribute(source, tag, name);
