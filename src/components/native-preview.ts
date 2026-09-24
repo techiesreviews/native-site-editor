@@ -81,6 +81,13 @@ export interface NativeNodeRequest {
   node: number[];
 }
 
+/** A text range (offsets into the selected element's text) to select after an update, optionally editing it. */
+export interface NativeTextRequest {
+  start: number;
+  end: number;
+  edit?: boolean;
+}
+
 export interface NativeSelectedRule {
   path: string;
   selector: string;
@@ -150,8 +157,9 @@ interface NativePreviewHandlers {
   onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
-  // Components offered between page sections, and what to do with a choice.
-  insertChoices?: () => InsertChoice[];
+  // What is offered at an insert point (components between page sections;
+  // atoms and non-section components inside a section), and what to do with a choice.
+  insertChoices?: (point: InsertPoint) => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
 }
 
@@ -168,7 +176,7 @@ function composePayload(
   alone: string | undefined,
   context: string,
   selectNode: NativeNodeRequest | undefined,
-  selectText: { start: number; end: number } | undefined,
+  selectText: NativeTextRequest | undefined,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -230,7 +238,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   pane.append(errorBox, frameHost);
   const editBar = createEditBar(pane, frame);
   const insertControls = createInsertControls(pane, frame, {
-    choices: () => handlers.insertChoices?.() ?? [],
+    choices: (point) => handlers.insertChoices?.(point) ?? [],
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
   });
 
@@ -255,7 +263,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
   let selectNode: NativeNodeRequest | undefined;
-  let selectText: { start: number; end: number } | undefined;
+  let selectText: NativeTextRequest | undefined;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -346,6 +354,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           left: point.left as number,
           width: point.width as number,
           before: typeof point.before === "string" ? point.before.slice(0, 60) : "",
+          kind: point.kind === "section" ? "section" : "page",
+          container: typeof point.container === "string" ? point.container.slice(0, 60) : "",
         }];
       });
       insertControls.update(points);
@@ -567,8 +577,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectAfterUpdate(request: NativeNodeRequest | undefined) {
       selectNode = request;
     },
-    /** Re-select this text range (offsets into the selected element's text) after the next update. */
-    selectTextAfterUpdate(range: { start: number; end: number } | undefined) {
+    /** Re-select this text range (offsets into the selected element's text) after the next update; with `edit`, start editing it too. */
+    selectTextAfterUpdate(range: NativeTextRequest | undefined) {
       selectText = range;
     },
     /** Whether `href` (a `#route` link) can be followed in the preview. */

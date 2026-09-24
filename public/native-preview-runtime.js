@@ -327,8 +327,16 @@
     reportHover();
     if (selected) emitSelection(selected, "refresh");
     else if (hadSelection) emit("select", { path: "", tag: "", text: "", reason: "refresh", selectors: [] });
-    // Text the host just formatted stays selected, so the next format applies to it too.
-    if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
+    // Text the host just formatted stays selected, so the next format applies
+    // to it too; a placeholder the host just inserted starts being edited,
+    // fully selected, so typing replaces it.
+    if (selected && payload.selectText && typeof payload.selectText.start === "number") {
+      if (payload.selectText.edit && !editing) {
+        startEditing(selected);
+        if (editing === selected) selected.focus();
+      }
+      setTextSelection(selected, payload.selectText.start, payload.selectText.end);
+    }
     reportTextSelection(true);
     reportStructure();
     requestAnimationFrame(requestComponentStyles);
@@ -389,13 +397,24 @@
     scheduleRect();
   }
 
-  // Places a section can be inserted: every gap between the children of a
+  // Places something can be inserted: every gap between the children of a
   // page element (or the page root) that holds a <section> or a section
-  // component, plus before the first and after the last child. Reported in
-  // frame-viewport coordinates with the page element's index path, so the
-  // editor can draw plus buttons over the frame and find the source position.
+  // component (kind "page"), and of a plain <section> in the page's own
+  // markup (kind "section": its children are the items), plus before the
+  // first and after the last child. Reported in frame-viewport coordinates
+  // with the page element's index path, so the editor can draw plus buttons
+  // over the frame and find the source position.
   function sectionLike(el) {
     return el.localName === "section" || (state && state.sectionTags.indexOf(el.localName) >= 0);
+  }
+  // Whether the element's children are items with gaps between them, and which kind.
+  function containerKind(el) {
+    if (Array.prototype.some.call(el.children, sectionLike)) return "page";
+    return el.localName === "section" ? "section" : "";
+  }
+  function containerName(el) {
+    var heading = el.querySelector("h1,h2,h3,h4,h5,h6");
+    return heading ? (heading.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) : "";
   }
 
   function itemLabel(el) {
@@ -410,9 +429,11 @@
     if (!pageEl || !state) return out;
     [pageEl].concat(Array.prototype.slice.call(pageEl.querySelectorAll("*"))).forEach(function (container) {
       var children = Array.prototype.slice.call(container.children);
-      if (!children.some(sectionLike)) return;
+      var kind = containerKind(container);
+      if (!kind) return;
       var parentPath = container === pageEl ? [] : elementIndexPath(container);
       if (!parentPath) return;
+      var name = kind === "section" ? containerName(container) : "";
       var box = container.getBoundingClientRect();
       var rects = children.map(function (child) { return child.getBoundingClientRect(); });
       for (var i = 0; i <= children.length; i++) {
@@ -425,6 +446,8 @@
         out.push({
           parent: parentPath,
           index: i,
+          kind: kind,
+          container: name,
           top: prev && next ? (prev.bottom + next.top) / 2 : next ? next.top : prev.bottom,
           left: left,
           width: right - left,
@@ -436,8 +459,9 @@
   }
 
   // The item under the pointer among the children of a section-holding
-  // element (sections themselves, from inside their shadow trees too), so the
-  // editor shows only the plus buttons just above and below it.
+  // element (sections themselves, from inside their shadow trees too) or of
+  // a plain section, so the editor shows only the plus buttons just above
+  // and below it.
   function hoveredItem() {
     if (!pageEl) return null;
     var current = hovered;
@@ -448,7 +472,7 @@
         current = root instanceof ShadowRoot ? root.host : null;
         continue;
       }
-      if ((parentNode === pageEl || pageEl.contains(parentNode)) && Array.prototype.some.call(parentNode.children, sectionLike)) {
+      if ((parentNode === pageEl || pageEl.contains(parentNode)) && containerKind(parentNode)) {
         var parentPath = parentNode === pageEl ? [] : elementIndexPath(parentNode);
         if (!parentPath) return null;
         return { parent: parentPath, index: Array.prototype.indexOf.call(parentNode.children, current) };

@@ -29,7 +29,7 @@ import {
 import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
-import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
+import { ATOMS, atomMarkup, atomText, componentLabel, insertMarkupEdit, isSectionTemplate, nativeInsertEdit, newHeadingLevel, type AtomKind } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
@@ -853,6 +853,25 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onClose: () => editor.closeActiveEditGroup(path),
     });
   }
+  // A button inside a plain section: + Button puts another `Learn more`
+  // right after it, editing with its text selected (BUTTON-03).
+  if (range?.close && node && (selection.tag === "a" || selection.tag === "button")) {
+    const parent = node.slice(0, -1);
+    const index = node[node.length - 1];
+    const container = parent.length ? locateNativeElementRange(source, parent) : undefined;
+    if (container?.tag.name === "section") {
+      const edit = insertMarkupEdit(source, parent, index + 1, atomMarkup(source, "button"));
+      if (edit) controls.push({
+        kind: "button",
+        label: "+ Button",
+        title: "Add a button after this one",
+        onPress: () => {
+          preview.selectTextAfterUpdate({ start: 0, end: atomText.button.length, edit: true });
+          if (!change([edit], [...parent, index + 1], "Button added")) preview.selectTextAfterUpdate(undefined);
+        },
+      });
+    }
+  }
   if (range?.close && ["section", "nav", "aside"].includes(selection.tag)) {
     const label = attribute("aria-label");
     const hasHeading = /<h[1-6][\s>]/i.test(source.slice(range.tag.end, range.close.start));
@@ -1029,20 +1048,35 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   }
 }
 
-// Components that fit between page sections: those whose template is a
-// single <section>, read from their current source so a draft counts.
-function nativeSectionChoices(): InsertChoice[] {
+// What fits at an insert point. Between page sections: components whose
+// template is a single <section>, read from their current source so a draft
+// counts. Inside a section: the atoms (heading, text, button, image) and
+// the other components, since those fit inside a section.
+function nativeSectionChoices(point: InsertPoint): InsertChoice[] {
   if (!nativeManifest) return [];
   const sources = nativeSources();
-  return Object.entries(nativeManifest.components)
-    .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
+  const inSection = point.kind === "section";
+  const components = Object.entries(nativeManifest.components)
+    .filter(([, path]) => isSectionTemplate(sources[path] ?? "") !== inSection)
     .map(([tag]) => ({ tag, label: componentLabel(tag) }))
     .sort((a, b) => a.label.localeCompare(b.label));
+  const atoms = inSection ? ATOMS.map((atom) => ({ tag: atom.kind, label: atom.label, description: atom.description })) : [];
+  return [...atoms, ...components];
 }
 
-// Puts a new instance of a section component into the page at `point`, as
-// one undo step, and selects it. The page file opens first when another
-// file is in the editor, since edits go through the mounted editor.
+const isAtom = (tag: string): tag is AtomKind => ATOMS.some((atom) => atom.kind === tag);
+
+// The repository image a new image starts with: the starter's placeholder
+// when the branch has it, else its first image, else none.
+function nativePlaceholderImage() {
+  const images = (snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path);
+  return images.find((image) => image === "src/images/placeholder.svg") ?? images[0] ?? "";
+}
+
+// Puts a new atom or component instance into the page at `point`, as one
+// undo step, and selects it; a new heading or text starts being edited with
+// its placeholder selected, so typing replaces it. The page file opens first
+// when another file is in the editor, since edits go through the mounted editor.
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
   if (!nativePreview || !nativeManifest || !Object.values(nativeManifest.routes).includes(path)) return;
@@ -1054,18 +1088,28 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview) return;
-  const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
-  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag, template);
+  const source = nativeSources()[path] ?? "";
+  let edit: { start: number; end: number; text: string } | undefined;
+  if (isAtom(choice.tag)) {
+    const section = point.kind === "section" ? locateNativeElementRange(source, point.parent) : undefined;
+    const markup = atomMarkup(source, choice.tag, { level: newHeadingLevel(source, section), image: nativePlaceholderImage() });
+    edit = insertMarkupEdit(source, point.parent, point.index, markup);
+  } else {
+    const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
+    edit = nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
+  }
   if (!edit) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
   }
   preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
+  if (choice.tag === "heading" || choice.tag === "text") preview.selectTextAfterUpdate({ start: 0, end: atomText[choice.tag].length, edit: true });
   try {
     editor.replaceActiveRanges([{ path, ...edit, expected: "" }]);
     element("status").textContent = `${choice.label} added`;
   } catch (error) {
     preview.selectAfterUpdate(undefined);
+    preview.selectTextAfterUpdate(undefined);
     errorMessage(error);
   }
 }

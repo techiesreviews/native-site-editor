@@ -1,15 +1,17 @@
 import { node, button } from "../ui/dom";
 import "./insert-controls.css";
 
-// Plus buttons between page sections and the picker they open. The preview
-// runtime reports each place a section can go (the gaps between the children
-// of a page element that holds sections); the buttons sit over the frame on
+// Plus buttons between page sections (and between the items inside a
+// section) and the picker they open. The preview runtime reports each place
+// something can go (the gaps between the children of a page element that
+// holds sections, and of a plain section); the buttons sit over the frame on
 // those gaps, shown only just above and below the item under the pointer
 // (or while focused or open). While a section is dragged in the preview,
 // every gap of its parent shows instead, the one under the pointer expanded
-// and labelled "Drop section here". The picker lists only components that fit a section slot and
-// follows the User Editor INSERT contract: title, exact position, search,
-// arrow keys, Enter, Escape back to the plus.
+// and labelled "Drop section here". The picker lists what fits the point
+// (section components between sections; atoms and the other components
+// inside a section) and follows the User Editor INSERT contract: title,
+// exact position, search, arrow keys, Enter, Escape back to the plus.
 
 export interface InsertPoint {
   // Page file the point belongs to.
@@ -24,15 +26,22 @@ export interface InsertPoint {
   width: number;
   // Label of the item the insertion goes before; empty at the end.
   before: string;
+  // A gap between page sections, or between the items inside a section.
+  kind: "page" | "section";
+  // The section's heading text for a section gap; empty when it has none.
+  container: string;
 }
 
 export interface InsertChoice {
+  // A component's tag, or the atom's kind (heading, text, button, image).
   tag: string;
   label: string;
+  // Shown in place of the tag: the placeholder an atom starts with.
+  description?: string;
 }
 
 interface InsertHandlers {
-  choices(): InsertChoice[];
+  choices(point: InsertPoint): InsertChoice[];
   onInsert(point: InsertPoint, choice: InsertChoice): void;
 }
 
@@ -116,8 +125,11 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       }
       const plus = row.querySelector<HTMLButtonElement>(".insert-point__plus")!;
       const where = point.before ? `before “${point.before}”` : "at the end";
-      plus.setAttribute("aria-label", `Add a section ${where}`);
-      plus.title = `Add a section ${where}`;
+      const name = point.kind === "section"
+        ? `Add to ${point.container || "the section"} ${where}`
+        : `Add a section ${where}`;
+      plus.setAttribute("aria-label", name);
+      plus.title = name;
       row.hidden = point.top < 0 || point.top > frameRect.height;
       row.classList.toggle("is-near", Boolean(near && near.parent === point.parent.join(".") &&
         (point.index === near.index || point.index === near.index + 1)));
@@ -179,15 +191,19 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   function renderPicker(focusSearch: boolean) {
     const at = point();
     if (!at) return;
-    const all = handlers.choices();
+    const all = handlers.choices(at);
     const needle = query.trim().toLowerCase();
     const matches = all.filter((choice) => !needle ||
-      choice.label.toLowerCase().includes(needle) || choice.tag.includes(needle));
-    const title = node("h2", "insert-picker__title", "Add to the page");
+      choice.label.toLowerCase().includes(needle) || choice.tag.includes(needle) ||
+      choice.description?.toLowerCase().includes(needle));
+    const inSection = at.kind === "section";
+    const title = node("h2", "insert-picker__title", inSection ? `Add to ${at.container || "the section"}` : "Add to the page");
     title.id = "insert-picker-title";
     picker.setAttribute("aria-labelledby", title.id);
     const position = node("p", "insert-picker__position", at.before ? `Goes before “${at.before}”` : "Goes at the end");
-    const scope = node("p", "insert-picker__scope", "Components whose template is a single section.");
+    const scope = node("p", "insert-picker__scope", inSection
+      ? "Headings, text, buttons, images and components that fit inside a section."
+      : "Components whose template is a single section.");
     const children: HTMLElement[] = [title, position];
     if (!all.length) {
       children.push(node("p", "insert-picker__empty",
@@ -218,7 +234,9 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     if (!matches.length) {
       const empty = node("div", "insert-picker__empty");
       empty.append(
-        node("p", "", `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
+        node("p", "", inSection
+          ? `Nothing matches “${query.trim()}”. Only what fits inside a section is listed.`
+          : `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
         button("Clear search", () => {
           query = "";
           renderPicker(true);
@@ -232,7 +250,10 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       for (const choice of matches) {
         const option = button("", () => choose(choice), "insert-picker__option");
         option.setAttribute("role", "option");
-        option.append(node("span", "insert-picker__name", choice.label), node("code", "insert-picker__tag", `<${choice.tag}>`));
+        option.append(
+          node("span", "insert-picker__name", choice.label),
+          choice.description ? node("span", "insert-picker__tag", choice.description) : node("code", "insert-picker__tag", `<${choice.tag}>`),
+        );
         list.append(option);
       }
       children.push(list);
@@ -322,7 +343,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   }
 
   return {
-    /** The runtime reported where sections can go on the current page. */
+    /** The runtime reported where things can go on the current page. */
     update(next: InsertPoint[]) {
       points = next;
       layout();

@@ -35,15 +35,32 @@ async function scrollFrame(page: Page, to: "top" | "bottom") {
 const plus = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 // Plus buttons show only above and below the item under the pointer.
 const shown = (page: Page) => page.locator(".insert-point.is-near .insert-point__plus");
-async function hoverIn(page: Page, selector: string) {
-  await page.frameLocator(".native-preview-frame").locator(selector).first().hover();
+// Hovers a section on its own area, in the gap between two of its children
+// (below the first, or beside it when they share a row; `gap` counts from
+// the last pair when negative), since hovering a child shows that child's
+// own pair inside the section instead.
+async function hoverIn(page: Page, selector: string, gap = 0) {
+  const section = page.frameLocator(".native-preview-frame").locator(selector).first();
+  const box = (await section.boundingBox())!;
+  const [first, second] = await section.evaluate((el, at) => {
+    const children = [...el.children];
+    const from = at < 0 ? children.length - 1 + at : at;
+    return children.slice(from, from + 2).map((child) => { const r = child.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; });
+  }, gap);
+  const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+  const point = second.top > first.bottom
+    ? { x: first.left + 8, y: (first.bottom + second.top) / 2 }
+    : { x: (first.right + second.left) / 2, y: first.bottom - 8 };
+  await section.hover({ position: { x: point.x + frameBox.x - box.x, y: point.y + frameBox.y - box.y } });
 }
 const picker = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 
 test("a plus between sections inserts a section component, and only those are offered", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
-  // One plus per gap among <main>'s sections, including both ends.
-  await expect(page.locator(".insert-point__plus")).toHaveCount(4);
+  // One plus per gap among <main>'s sections, including both ends (the gaps
+  // inside each section have their own, named "Add to …").
+  const pagePlus = page.locator(".insert-point__plus[aria-label^='Add a section']");
+  await expect(pagePlus).toHaveCount(4);
   const before = plus(page, "Add a section before “Scroll to verify”");
   // The gap between the cards and the filler sits below the frame's first screen.
   await frame.locator("section.filler h2").scrollIntoViewIfNeeded();
@@ -52,7 +69,7 @@ test("a plus between sections inserts a section component, and only those are of
   await expect(shown(page).first()).toHaveAccessibleName(/^Add a section before “Reusable cards/);
   await expect(before).toBeVisible();
   await expect(page.locator(".insert-point:not(.is-near) .insert-point__plus").first()).toHaveCSS("pointer-events", "none");
-  await hoverIn(page, "section.filler h2");
+  await hoverIn(page, "section.filler");
   await expect(shown(page)).toHaveCount(2);
   await expect(shown(page).first()).toHaveAccessibleName("Add a section before “Scroll to verify”");
   // Centred over the sections, in the middle of the gap between them.
@@ -103,7 +120,7 @@ test("a plus between sections inserts a section component, and only those are of
   await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => editorText(page, "#content")).toBe(inserted);
   // Its own gap now has plus buttons on both sides.
-  await expect(page.locator(".insert-point__plus")).toHaveCount(5);
+  await expect(pagePlus).toHaveCount(5);
 
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+Z");
@@ -116,7 +133,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   // Plus buttons scrolled out of the frame are hidden.
   await expect(end).toBeHidden();
   await scrollFrame(page, "bottom");
-  await hoverIn(page, "section.filler p:last-child");
+  await hoverIn(page, "section.filler", -1);
   await end.click();
   const search = picker(page).getByRole("searchbox", { name: "Search components" });
   await expect(picker(page)).toContainText("Goes at the end");
