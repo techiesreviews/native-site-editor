@@ -7,6 +7,7 @@ import {
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import { isSectionTemplate } from "../native-insert";
+import { startTags } from "../native-source-location";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders plain
@@ -42,6 +43,12 @@ interface UpdateInput {
   // The component whose template is open: the preview shows a page that uses
   // it, or the component alone when no page does.
   component?: string;
+}
+
+// The home page's `<main …>` start tag, or a plain one when it has none.
+function pageContainer(pageHtml: string) {
+  const main = startTags(pageHtml).find((tag) => tag.name === "main");
+  return main ? pageHtml.slice(main.start, main.end) : `<main class="page">`;
 }
 
 // The pseudo-route on which a component renders by itself.
@@ -141,9 +148,10 @@ function composePayload(
   for (const [routePath, filePath] of Object.entries(manifest.routes))
     pages[routePath] = sources[filePath] ?? "";
   // A component on its own: a page of just one instance, belonging to no
-  // file, so only clicks inside the component select anything.
+  // file, so only clicks inside the component select anything. It sits in
+  // the same page container the home page uses, so it gets the page's width.
   if (alone) {
-    pages[componentRoute(alone)] = `<${alone} data-key="${alone}"></${alone}>`;
+    pages[componentRoute(alone)] = `${pageContainer(pages[nativeDefaultRoute(manifest)] ?? "")}\n  <${alone} data-key="${alone}"></${alone}>\n</main>`;
     pagePaths[componentRoute(alone)] = "";
   }
   const components: Record<string, string> = {};

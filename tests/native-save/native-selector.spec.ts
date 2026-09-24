@@ -444,6 +444,9 @@ test("folders only expand, and a component file opens beside its own CSS", async
   const featureTitle = frame.locator("feature-block h2");
   await expect(featureTitle).toHaveText("A feature worth sharing");
   await expect(frame.locator(".hero h1")).toHaveCount(0);
+  // Inside the page container, so it is no wider than a page section.
+  await expect(frame.locator("main.page > feature-block")).toHaveCount(1);
+  expect((await frame.locator("feature-block").boundingBox())!.width).toBeLessThanOrEqual(960);
   await featureTitle.click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
