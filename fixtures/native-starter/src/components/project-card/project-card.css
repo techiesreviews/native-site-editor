@@ -1,0 +1,7 @@
+.project-card {
+  border-left: 4px solid rgb(47, 109, 58);
+}
+
+.project-card__title {
+  letter-spacing: 0.01em;
+}

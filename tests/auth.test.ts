@@ -171,7 +171,7 @@ test("all repository data endpoints recheck the selected repository boundary", a
     avatar_url: "",
     expiresAt: Date.now() + 60_000,
   });
-  for (const endpoint of ["branches", "snapshot", "tree", "file"]) {
+  for (const endpoint of ["branches", "snapshot", "tree", "file", "files"]) {
     const response = await handle(
       request(
         `/api/${endpoint}?repo=other/private&sha=${"a".repeat(40)}`,

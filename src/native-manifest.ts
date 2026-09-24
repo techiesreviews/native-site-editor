@@ -1,8 +1,9 @@
 // Opt-in browser-native preview manifest (`.astro-editor/native.json`).
 //
 // A native project renders entirely in the browser from plain source files —
-// `src/pages/*.html` routes, `src/components/*.html` custom-element templates,
-// and `src/styles/*.css` — with no Astro build. The manifest is the explicit,
+// `src/pages/*.html` routes, custom-element templates under `src/components/`
+// (either flat `<name>.html` or one folder per component, `<name>/<name>.html`),
+// and `src/styles/*.css` — with no build step. The manifest is the explicit,
 // versioned contract that maps those files; it is validated defensively because
 // it comes from repository contents that the editor does not control.
 
@@ -10,7 +11,11 @@ export interface NativeManifest {
   version: 1;
   /** Route path (e.g. "/", "/about/") to a `src/pages/*.html` source file. */
   routes: Record<string, string>;
-  /** Custom-element tag (e.g. "site-header") to a `src/components/*.html` file. */
+  /**
+   * Custom-element tag (e.g. "site-header") to an HTML file under
+   * `src/components/`. The path may be flat (`src/components/<name>.html`) or
+   * use one folder per component (`src/components/<name>/<name>.html`).
+   */
   components: Record<string, string>;
   /** Shared stylesheet source files under `src/styles/`. */
   styles: string[];
@@ -87,7 +92,7 @@ export function parseNativeManifest(text: string): NativeManifestResult {
       if (RESERVED_TAGS.has(tag))
         return { ok: false, error: `native.json component tag ${JSON.stringify(tag)} is a reserved element name and cannot be defined.` };
       if (typeof path !== "string" || !safePath(path) || !COMPONENT_PATH.test(path))
-        return { ok: false, error: `native.json component ${JSON.stringify(tag)} must point to a src/components/*.html file.` };
+        return { ok: false, error: `native.json component ${JSON.stringify(tag)} must point to an .html file under src/components/, either src/components/<name>.html or src/components/<name>/<name>.html.` };
       components[tag] = path;
     }
   }

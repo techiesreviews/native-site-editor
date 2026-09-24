@@ -5,22 +5,17 @@ import { expect, test, type Page } from "@playwright/test";
 const fixture = "fixtures/native-starter";
 const indexPath = "src/pages/index.html";
 const cssPath = "src/styles/site.css";
-const cardPath = "src/components/project-card.html";
+const cardPath = "src/components/project-card/project-card.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const cssSource = readFileSync(resolve(fixture, cssPath), "utf8");
 const cardSource = readFileSync(resolve(fixture, cardPath), "utf8");
 
-const nativeHash = `#repo=77&branch=main&file=${encodeURIComponent(indexPath)}`;
-const draftPosts: string[] = [];
+const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page, baseURL }) => {
-  draftPosts.length = 0;
   pageErrors.length = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("request", (request) => {
-    if (request.url().includes("/api/draft-preview")) draftPosts.push(`${request.method()} ${request.url()}`);
-  });
   await page.goto(`${baseURL}/${nativeHash}`);
   await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
@@ -80,11 +75,9 @@ test("renders native pages, components and shared chrome without a build", async
   // Header and footer are shared custom elements rendered from templates.
   await expect(frame.getByText("Native Studio")).toBeVisible();
   await expect(frame.getByText(/Shared footer across every route/)).toBeVisible();
-  // The native path never touches the Astro draft-build endpoint.
-  expect(draftPosts).toEqual([]);
   // srcdoc is set, and the frame never navigates via src.
   expect(await page.locator(".native-preview-frame").getAttribute("src")).toBeNull();
-  expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toContain("astro-native-preview");
+  expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toContain("/native-preview-runtime.js");
 });
 
 test("HTML and CSS edits patch the live preview in place, same window, scroll kept", async ({ page }) => {
@@ -96,13 +89,13 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
   const win = await frameWindow(page);
   const before = await win.evaluate(() => {
     (window as unknown as { __nativeId?: string }).__nativeId = "sentinel-" + Math.random();
-    (document.scrollingElement as Element).scrollTop = 200;
+    (document.scrollingElement as Element).scrollTop = 120;
     return {
       id: (window as unknown as { __nativeId: string }).__nativeId,
       scroll: (document.scrollingElement as Element).scrollTop,
     };
   });
-  expect(before.scroll).toBe(200);
+  expect(before.scroll).toBe(120);
 
   await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Edited in place"));
   await expect(frame.getByRole("heading", { name: "Edited in place" })).toBeVisible();
@@ -112,24 +105,23 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
     scroll: (document.scrollingElement as Element).scrollTop,
   }));
   expect(after.id).toBe(before.id); // same window object → no reload
-  expect(after.scroll).toBe(200); // scroll preserved across the edit
+  expect(after.scroll).toBe(120); // scroll preserved across the edit
 
   await openFile(page, cssPath, "--accent");
   await pasteSource(page, "--accent", cssSource.replace("--muted: #5c665a;", "--muted: rgb(190, 20, 40);"));
   await expect
     .poll(() => frame.locator(".lead").evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(190, 20, 40)");
-  // Still the same never-navigated window after two edits, no draft build.
+  // Still the same never-navigated window after two edits.
   const afterCss = await win.evaluate(() => (window as unknown as { __nativeId?: string }).__nativeId);
   expect(afterCss).toBe(before.id);
-  expect(draftPosts).toEqual([]);
 });
 
 test("editing while the preview is on About does not snap it back Home", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   // Navigate the preview to About while index.html stays the open file.
-  await frame.getByRole("link", { name: "About", exact: true }).click();
+  await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   // A source edit to the still-open index.html must not change the preview route.
   await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Edited home while on about"));
@@ -157,8 +149,8 @@ test("nested shared-component template edits reach every instance", async ({ pag
   await expect(frame.getByText("Reusable cards")).toBeVisible({ timeout: 30_000 });
   // card-note is nested inside project-card's shadow root, three instances deep.
   await expect(frame.locator(".card-note")).toHaveCount(3);
-  await openFile(page, "src/components/card-note.html", "card-note");
-  const noteSource = readFileSync(resolve(fixture, "src/components/card-note.html"), "utf8");
+  await openFile(page, "src/components/card-note/card-note.html", "card-note");
+  const noteSource = readFileSync(resolve(fixture, "src/components/card-note/card-note.html"), "utf8");
   await pasteSource(page, "card-note", noteSource.replace('class="card-note"', 'class="card-note edited-note"'));
   await expect(frame.locator(".card-note.edited-note")).toHaveCount(3);
 });
@@ -184,17 +176,9 @@ test("Undo and Redo drive the preview, and saved drafts survive reload", async (
 test("preview route links switch pages while preserving the frame", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
-  await frame.getByRole("link", { name: "About", exact: true }).click();
+  await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   expect(await page.locator(".native-preview-frame").getAttribute("src")).toBeNull();
-  await frame.getByRole("link", { name: "Home", exact: true }).click();
+  await frame.getByRole("link", { name: "Home", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible();
-});
-
-test("the Astro sample still opens on the ordinary preview path", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=42&branch=main&file=${encodeURIComponent("src/pages/index.astro")}`);
-  await expect(page.locator("#current-page")).toHaveText("src/pages/index.astro", { timeout: 30_000 });
-  // The ordinary Astro preview panel is used (its own iframe), not the native one.
-  await expect(page.locator(".preview-frame--after")).toHaveCount(1, { timeout: 30_000 });
-  await expect(page.locator(".native-preview-frame")).toHaveCount(0);
 });

@@ -7,6 +7,15 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  console.error(
+    "The inherited browser setup helper is disabled for this Native Site Editor Pages slice. Configure the GitHub App and Cloudflare Pages/Session Worker manually from docs/NATIVE-PROJECT.md; this script still targets the older Workers onboarding flow.",
+  );
+  process.exit(1);
+}
 // Self-hosters: the deployed editor origin comes from the custom domain in
 // wrangler.jsonc, or from EDITOR_ORIGIN when using a workers.dev address.
 export function readEditorOrigin(env = process.env, configText) {
@@ -19,10 +28,9 @@ export function readEditorOrigin(env = process.env, configText) {
     "Set EDITOR_ORIGIN to the deployed editor URL, or add a custom domain route to wrangler.jsonc.",
   );
 }
-const editorOrigin = readEditorOrigin();
-const appName =
-  process.env.GITHUB_APP_NAME ??
-  `Astro Site Editor (${new URL(editorOrigin).hostname})`;
+function readAppName(editorOrigin, env = process.env) {
+  return env.GITHUB_APP_NAME ?? `Native Site Editor (${new URL(editorOrigin).hostname})`;
+}
 const escape = (value) =>
   String(value).replace(
     /[&<>"']/g,
@@ -32,9 +40,9 @@ const escape = (value) =>
       ],
   );
 
-export function manifest(callbackOrigin) {
+export function manifest(callbackOrigin, { editorOrigin = readEditorOrigin() } = {}) {
   return {
-    name: appName,
+    name: readAppName(editorOrigin),
     url: editorOrigin,
     redirect_url: `${callbackOrigin}/callback`,
     callback_urls: [
@@ -62,6 +70,7 @@ export function createSetupServer({
   port = 8790,
   initialCredentials,
   publicOrigin,
+  editorOrigin = readEditorOrigin(),
 } = {}) {
   if (
     publicOrigin &&
@@ -149,7 +158,7 @@ export function createSetupServer({
       return respond(
         200,
         "Connect this editor to GitHub",
-        `<p>This is a one-time setup for the editor owner. GitHub will ask you to confirm an App name; permissions and return addresses are already filled in.</p><p>After confirmation, this helper saves the credentials privately and configures your Cloudflare deployment automatically.</p><form action="https://github.com/settings/apps/new?state=${state}" method="post"><input type="hidden" name="manifest" value="${escape(JSON.stringify(manifest(origin)))}"><button>Create GitHub App</button></form><p><small>Future users only sign in and choose repositories. They do not create an App.</small></p>`,
+        `<p>This is a one-time setup for the editor owner. GitHub will ask you to confirm an App name; permissions and return addresses are already filled in.</p><p>After confirmation, this helper saves the credentials privately and configures your Cloudflare deployment automatically.</p><form action="https://github.com/settings/apps/new?state=${state}" method="post"><input type="hidden" name="manifest" value="${escape(JSON.stringify(manifest(origin, { editorOrigin })))}"><button>Create GitHub App</button></form><p><small>Future users only sign in and choose repositories. They do not create an App.</small></p>`,
       );
     }
     const callback =
@@ -230,6 +239,7 @@ export function createSetupServer({
 }
 
 async function deploySecrets(values) {
+  const editorOrigin = readEditorOrigin();
   await new Promise((resolvePromise, reject) => {
     const child = spawn(
       process.execPath,

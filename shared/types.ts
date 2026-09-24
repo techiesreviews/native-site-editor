@@ -15,26 +15,37 @@ export interface TreeEntry {
   size?: number;
 }
 
-export interface Detection {
-  status: "detected" | "ambiguous" | "not-detected";
-  message: string;
-  version?: string;
-}
-
 export interface Directory {
   entries: TreeEntry[];
-  detection: Detection;
 }
 
 export interface Snapshot extends Directory {
   commit: string;
   branch: string;
+  /**
+   * Every entry in the commit, with full paths, when GitHub returned the
+   * recursive tree completely. Absent for very large repositories; callers
+   * then walk directories with `/api/tree`.
+   */
+  tree?: TreeEntry[];
+}
+
+/** `/api/files`: blob contents keyed by SHA, fetched in one round trip. */
+export interface FilesResult {
+  files: Record<string, string>;
 }
 
 export interface SessionInfo {
   configured: boolean;
   user: { login: string; avatar_url: string } | null;
   installUrl: string | null;
+  ownerSetupUrl?: string | null;
+  /**
+   * Selected repositories, included for signed-in users so the workspace can
+   * open without a second round trip. Null when the listing failed; the
+   * browser then requests `/api/repositories` itself.
+   */
+  repositories?: Repository[] | null;
 }
 
 export interface PublishFile {
@@ -76,30 +87,6 @@ export interface RestoreResult {
   commit: string;
   branch: string;
   url: string;
-  unchanged: boolean;
-}
-
-export type EditorIntegrationState =
-  | "current"
-  | "outdated"
-  | "incomplete"
-  | "custom";
-
-export interface EditorIntegration {
-  state: EditorIntegrationState;
-  message: string;
-  files: {
-    path: string;
-    status: "current" | "outdated" | "missing" | "custom" | "malformed";
-    sha?: string;
-  }[];
-  canUpdate: boolean;
-}
-
-export interface EditorIntegrationUpdateResult {
-  branch: string;
-  commit: string;
-  compareUrl: string;
   unchanged: boolean;
 }
 

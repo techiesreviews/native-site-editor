@@ -8,7 +8,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   outputDir: ".scratch/native-preview/results",
   use: {
-    baseURL: "http://127.0.0.1:5196",
+    baseURL: "http://127.0.0.1:5207",
     viewport: { width: 1440, height: 1000 },
     colorScheme: "light",
     reducedMotion: "reduce",
@@ -18,8 +18,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "ASE_WARM_PREVIEW_APP_PORT=5196 ASE_WARM_PREVIEW_PORT=5197 tsx tests/warm-preview/server.ts",
-      url: "http://127.0.0.1:5196/api/session",
+      command: "ASE_NATIVE_SAVE_PORT=5207 tsx tests/native-save/server.ts",
+      url: "http://127.0.0.1:5207/api/session",
       reuseExistingServer: false,
       timeout: 120_000,
     },

@@ -1,0 +1,114 @@
+# Native Site Editor
+
+Independent project at `/home/ubulex/Projects/native-site-editor`; canonical domain `editor.techies.tools` (custom domain on the Pages project; `native-site-editor.pages.dev` remains as fallback).
+
+## Lineage
+
+Copied 224 source files from `/home/ubulex/Projects/astro-site-editor-shared-preview`, branch `experiment/shared-preview`, including its uncommitted native implementation, on 2026-09-23. The source checkout, DNS, deployments and dirty state were left untouched. Local baseline commit `9ebcee2` records the import. This repo has no GitHub remote. `node_modules` is a local symlink to the source checkout's installed tooling; do not edit dependencies through that symlink.
+
+## Current Slice
+
+Working:
+
+- Browser-native preview for `.astro-editor/native.json`: persistent sandboxed iframe, HTML/CSS/component patching, shared styles, native slots, nested shadow DOM components, route-preserving source updates, and no Astro build per edit.
+- Native preview click-to-select: a plain click on any preview element selects it immediately and opens the owning page/component source plus rendered matching CSS rules from the current document or shadow tree without reloading the frame. There is no mode button. Ctrl/⌘+click follows a `#route` link. The preview has no toolbar; the frame fills the pane above the code split.
+- Component CSS: each component lives in `src/components/<name>/<name>.html` and may have a same-named `<name>.css` beside it. It is not listed in `native.json`. The runtime reports which component tags are connected and lack CSS; the editor then looks the sibling file up in the branch snapshot, fetches it on demand, and sends it back so the runtime injects one `<style data-native-component-css>` after the shared styles inside only that component's shadow roots (not the document, not other components). Component CSS drafts render live, are included in Save to GitHub, and their matching rules open as chips or in the secondary editor. At equal specificity the component stylesheet wins the cascade and is ranked as the winner in the editor.
+- Existing Monaco editor, explorer, scoped local drafts, Undo/Redo, conflicts, and optimistic Worker Git commit path reused.
+- Native save UI is explicit **Save to GitHub**. It commits selected files through `/api/publish`, shows a commit link, and says deployment status is not tracked by this editor. A connected host may deploy the commit automatically.
+- Successful native save updates the clean native source baseline after draft reconciliation, including when the original editor was disposed by a file switch. Guarding uses account, repository id, branch, and generation/snapshot checks.
+- Production CSP keeps `script-src` without `unsafe-inline`; the native frame uses `srcdoc` plus `/native-preview-runtime.js`.
+
+Simulated in tests/demo:
+
+- `tests/native-save/server.ts` uses the real Worker handler and publish flow, but fakes sessions and the GitHub REST boundary with per-browser in-memory Git models. It rejects non-fast-forward ref updates.
+- Test-only controls `/__demo/slow` and `/__demo/external-edit` are per-session and disabled in public demo mode.
+- Remote demo is simulated, not real GitHub auth or durable writes.
+
+Missing or limited:
+
+- Live GitHub App sign-in and real native repository save are not verified.
+- Static export, preview/output parity, user-site publishing, deployment status, custom domain onboarding, CRUD for pages/components/styles/assets, route history, and multiplayer are absent.
+- Native visual selection maps to owner files and matching rendered CSS rules. Exact HTML source offsets, full cascade winner analysis, `:host`/`::slotted` selector mapping, and a complete CSS parser are still absent; ambiguous or unsupported CSS rule identity should fail closed instead of highlighting the wrong source.
+- Known selector limits: after deleting the last matching rule or changing the winning stylesheet, the user may need to select the element again to refresh rule chips; inline-only selection refresh is not complete. A selection refresh never switches the secondary editor, so if an element is clicked before its component CSS has arrived (it normally loads right after first render), the shared stylesheet stays open until the element is clicked again. Equal-specificity ties between several shared stylesheets are ordered by path, not by manifest order.
+- Component CSS limits: a sibling CSS file that is missing from the branch is remembered as missing for the current snapshot; it is re-checked after a reload or snapshot refresh, not when a draft appears. Only `#route` links can be followed; external links are selectable but not navigable inside the sandboxed frame.
+- Manifest edits do not live-reparse the preview; reopen or reload to adopt changed `.astro-editor/native.json`.
+- Save snapshot refresh updates the repository snapshot and saved files, but this slice does not claim complete remote refresh/parity for unedited files that changed elsewhere.
+- The sanitizer removes obvious scripts/handlers/`javascript:` URLs, but is not a general arbitrary-HTML security boundary. Binary assets and component removal semantics need later design.
+
+## Architecture
+
+1. **Editor hosting:** Cloudflare Pages serves `dist` and Pages Functions delegate `/api/*`, `/auth/*`, and `/mcp` to the existing `worker/app.ts` handler. Pages cannot own a Durable Object class, so `native-site-editor-sessions` is a separate Worker owning the SQLite `SessionStore`; Pages binds to it by `script_name`.
+2. **Unpublished preview:** source files and browser drafts render instantly inside the editor. Editing does not wait for GitHub, build jobs, or deployments.
+3. **User website publishing:** later exporter should generate standalone site files and let each user own a separate Git-backed Pages project. Save-to-GitHub and website deployment remain separate operations.
+
+Relevant limits checked 2026-09-23: Pages Free has 500 builds/month, one concurrent build, 20,000 files/site, 25 MiB/file, and 100 projects/account; Pages Functions share Workers Free request limits; SQLite Durable Objects are available on Workers Free with quota limits; GitHub App user tokens are bounded by both user access and App permissions; GitHub authenticated REST is normally 5,000 requests/hour. Pages Git integration can deploy pushed branches; Direct Upload projects cannot later switch to Git integration, so choose the production project type deliberately. No paid services were enabled.
+
+Sources: [Pages limits](https://developers.cloudflare.com/pages/platform/limits/), [Pages Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/), [Pages bindings and Durable Objects](https://developers.cloudflare.com/pages/functions/bindings/#durable-objects), [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/), [GitHub App user tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app), [GitHub REST rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api), [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/), [Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/).
+
+## Config
+
+- `wrangler.sessions.jsonc`: production Worker `native-site-editor-sessions` at `https://editor.techies.tools` (Workers custom domain), `worker/index.ts`, static assets from `dist` with `run_worker_first` for `/api/*`, `/auth/*`, `/mcp`, SQLite Durable Object migration. Deploy with `npm run deploy`.
+- `wrangler.jsonc`: legacy Pages project `native-site-editor` (`native-site-editor.pages.dev` fallback), output `dist`, `SESSIONS` binding to the Worker above by `script_name`.
+- `public/_routes.json`: Functions only for `/api/*`, `/auth/*`, and `/mcp`.
+- Hosted owner setup lives at `/auth/setup` on the canonical origin `https://editor.techies.tools` (the `native-site-editor.pages.dev` address stays as a secondary OAuth callback only) and requires a private URL fragment capability from `OWNER_SETUP_TOKEN`. Open the full private setup link, including its `#...` fragment; the bare `/auth/setup` page stays locked because it does not grant owner access by itself. If a locked setup tab is already open, opening the private link in that same tab verifies the fragment and then removes it from the address bar. The browser uses a short HttpOnly setup cookie and posts GitHub's manifest conversion code server-side. The resulting Client ID, client secret and App slug are stored once in the `native-site-editor-sessions` Durable Object config record; environment credentials still take precedence when present. Private keys and webhook secrets from GitHub are discarded.
+- `scripts/setup-browser.mjs` and `scripts/setup-github.sh`: retained only as older local helpers. The hosted native setup does not require a terminal wizard or copying GitHub secrets.
+
+## Remote State
+
+As of 2026-09-23, deployment authorization was already granted for the native Pages slice and the following external state exists:
+
+- Production is the Worker `native-site-editor-sessions` at `https://editor.techies.tools` since 2026-09-24 (version `f323ae0a-919c-4a17-ba1b-c16ab2164887`, Workers custom domain id `7c46f392a99f7c02ec1cc05ada401d79f85ed16f`). It serves the UI as static assets and owns the SessionStore Durable Object. Verified live: `/` 200 with the production CSP, `/api/session` `configured: true`, `/native-preview-runtime.js` 200.
+- The Pages project `native-site-editor` remains deployed at `https://native-site-editor.pages.dev` as a fallback (deployment `72c7e48d`, 2026-09-24) and shares the same Durable Object, so the GitHub App config and sessions are common to both addresses. The code treats `editor.techies.tools` as the canonical origin, so `/auth/setup` returns 403 on `pages.dev`.
+- `OWNER_SETUP_TOKEN` is set only on the Pages project, not on the Worker, so `/auth/setup` on `editor.techies.tools` returns 404 ("not enabled"). Owner setup already completed, so this is intentional; add the secret to the Worker with `wrangler secret put OWNER_SETUP_TOKEN --config wrangler.sessions.jsonc` only if setup must be rerun.
+- Private GitHub repository `https://github.com/techiesreviews/native-site-editor-starter` exists with repository id `1384109830`, initial commit `14e09f7`, and current `main` commit `6ef0a28` (2026-09-24, pushed non-force; intermediate commit `3462b9a`). `3462b9a` added the sibling stylesheet `src/components/project-card.css` and expanded the starter `README.md` with the layout, the shared-styles and component CSS conventions, the `#/route/` hash link requirement, and click-to-select, Ctrl/⌘+click, and **Follow link**. `6ef0a28` moved every component into its own folder `src/components/<name>/<name>.html` with a same-named `<name>.css`, adding stylesheets for `site-header`, `site-footer`, and `card-note`; `.astro-editor/native.json` changed only where the four component paths point, and component CSS is still absent from the manifest. The starter now matches `fixtures/native-starter` file for file. No editor behaviour code changed for the folder layout: `COMPONENT_PATH` in `src/native-manifest.ts` already accepts nested paths and `nativeComponentCssPath` in `src/main.ts` is a plain `.html`→`.css` extension swap, so the flat layout also still validates. No website deployment is connected for that starter repository, and real GitHub sign-in and save through the editor remain unverified.
+- DNS for `editor.techies.tools` is managed by the Workers custom domain (Cloudflare-proxied). Wrangler's OAuth token cannot write plain DNS records, and the earlier pending Pages custom domain had to be deleted (and Lex removed a leftover record) before the Workers domain could be attached.
+- GitHub App credentials are configured in the hosted Durable Object config. Real sign-in and real save to GitHub still need a live owner-flow verification after deployment.
+- If GitHub manifest conversion succeeds but Durable Object config saving fails, the GitHub code is consumed and setup may need owner inspection before retrying. The UI reports that credentials were not saved and does not expose the client secret.
+
+Remote hosting checks passed on 2026-09-23:
+
+- `https://native-site-editor.pages.dev/` returned 200 with a production CSP that keeps script sources free of `unsafe-inline`.
+- `/native-preview-runtime.js` returned 200.
+- `/api/session` returned 200 with `configured: true`.
+- A valid-format nonexistent session cookie reached the Durable Object path and returned 200 with `user: null`.
+- An invalid OAuth state redirected with an error.
+- A foreign-origin publish attempt returned 403.
+- Playwright reported no page errors. Screenshot evidence: `.scratch/native-real-hosting.png`.
+- Live owner setup smoke passed on the deployed Pages site: a locked setup tab accepted the same-tab private fragment link, unlocked setup, removed the URL fragment, refresh retained the setup state, the GitHub manifest was private with Contents write and Metadata read permissions, CSP allowed the GitHub manifest POST, bad state and foreign-origin setup requests returned 403, and the page had no browser errors. The GitHub App creation POST was route-intercepted, so no App was created by this smoke. Screenshot evidence: `.scratch/hosted-owner-setup.png`.
+- Lead remote selector smoke passed on the deployed Pages site: selecting `.hero h1` opened the rendered CSS rule, the secondary editor copied the actual matched CSS selector line rather than the top of the stylesheet, and the page had no browser errors. Screenshot evidence: `.scratch/native-selector-remote.png`.
+- Deployment `b1202a01` checks on 2026-09-23: `/` returned 200 with `script-src 'self' 'wasm-unsafe-eval'` (no `unsafe-inline`); `/native-preview-runtime.js` returned 200 and contains the `component-styles`, `clear-selection`, and `data-native-component-css` code; the main bundle contains the **Follow link** button and hint and no longer contains **Select element**; `/api/session` returned `configured: true`; a Playwright load of the login page reported no page or console errors. Screenshot: `.scratch/native-pages-deploy-v2.png`. The selection and component CSS behaviour itself could not be exercised on `pages.dev` because that requires a real GitHub sign-in, which remains unverified.
+- The simulated demo tunnel serves source live, so `.scratch/remote-native-selector-check.mjs --skip-component-css` passed there: no **Select element** button, a plain click on the About link selected the header component instead of navigating, **Follow link** navigated to About, Ctrl/⌘+click navigated home, and selecting the card title opened its rules with no page errors. The demo's in-memory Git model was built before `project-card.css` existed, so component CSS was not checked remotely; it is covered by the local Playwright suite. Restarting the demo unit would pick the file up.
+
+Deploy scripts exist but are explicit only:
+
+```sh
+npm run deploy:sessions
+npm run deploy:pages
+```
+
+Do not run them without an explicit deployment request.
+
+## Verification
+
+Local focused checks on 2026-09-23:
+
+- `npm run check` passed.
+- `npx playwright test -c playwright.native-save.config.ts tests/native-save/native-selector.spec.ts` passed 6/6 (run twice) for immediate click selection, owner mapping, rendered CSS rule opening, shared CSS live edits, Undo/Redo, stale message filtering, Ctrl/⌘+click navigation, link selection plus **Follow link**, on-demand component CSS scoped to the owning shadow root with live edits and Undo, slotted light DOM ownership, and secondary-editor caret stability.
+- `npx tsx --test tests/native-selector-style-index.test.ts` passed 4/4 for native CSS rule identity, inactive duplicate selectors, keyframes fail-closed behavior, source range lookup, and component-CSS-over-shared ranking at equal specificity.
+- `npx tsx --test tests/owner-setup-browser.test.ts tests/owner-setup.test.ts` passed 6/6 for the same-tab private fragment unlock regression and hosted owner setup coverage.
+- `npx tsx --test tests/owner-setup.test.ts tests/auth.test.ts tests/auth-runtime.test.ts` passed 12/12 for hosted owner setup and OAuth regression coverage.
+- `npx playwright test -c playwright.native-save.config.ts` passed 16/16 on port 5206 after this slice (the save spec now follows the About link with Ctrl/⌘+click).
+- `npm run build` passed, including Vite production build and `wrangler pages functions build --outdir .scratch/pages-functions`.
+- `npx playwright test tests/browser/workspace.spec.ts` initially passed 28/29 with a stale reused local server serving old built assets for the unconfigured-login copy assertion. The deployed login copy and private setup link were later verified by the live owner setup smoke above.
+- `npx playwright test -c playwright.native-preview.config.ts` now runs on the native-save server (port 5207); the inherited Astro warm-preview server, draft builds, integration files, project intelligence and the astro-starter fixture were removed on 2026-09-24.
+
+Remote simulated demo:
+
+- Tunnel: `https://hop-carriers-handmade-dozens.trycloudflare.com/#repo=501&branch=main&file=src%2Fpages%2Findex.html`
+- User systemd units: `native-editor-milestone-demo-v2` on port 5208 and `native-editor-milestone-tunnel`.
+- Started with `ASE_NATIVE_SAVE_PUBLIC_ORIGIN=https://hop-carriers-handmade-dozens.trycloudflare.com`.
+- Lead remote verification passed: production CSP top document, component instances update/save/reload, iframe identity and scroll preservation, About route stays put after save, unsaved recovery, two-browser Git isolation, demo controls return 404, foreign origin rejected, no page errors, no build requests. Evidence: `.scratch/remote-native-save-check.mjs` and `.scratch/native-remote-verified.png`.
+
+## Next Step
+
+Next useful slice: sign in with the configured GitHub App, install/authorize it on the selected starter repository if needed, and verify real OAuth plus native save against `native-site-editor-starter`. Use `https://editor.techies.tools` for this. This path should require no terminal commands and no copying GitHub secrets. Real OAuth and real native save are still unverified until that owner flow completes.

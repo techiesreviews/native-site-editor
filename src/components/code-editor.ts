@@ -11,21 +11,18 @@ import { textHash, type AgentCommand } from "../../shared/agent";
 import type { EditorContext } from "../../shared/types";
 import type { PublishResult } from "../../shared/types";
 import { button, node } from "../ui/dom";
-import {
-  connectProject,
-  closeProject,
-  type ProjectContext,
-} from "../intelligence/project";
 
 export interface SourceFile {
   key: string;
   path: string;
   source: string;
   readOnly?: boolean;
-  project?: ProjectContext;
+  onSessionExpired?: () => void;
   scope?: DraftScope;
   baseSha?: string | null;
-  onPublished?: (result: PublishResult) => void;
+  onPublished?: (result: PublishResult, submitted: SavedDraft[]) => void;
+  /** Native save UI relabels the publish menu to "Save to GitHub" wording. */
+  saveLabels?: boolean;
   onDiscardNew?: () => void;
   onContextChange?: (
     file: EditorContext["file"],
@@ -42,7 +39,6 @@ interface Draft {
   original: string;
   model: monaco.editor.ITextModel;
   view: monaco.editor.ICodeEditorViewState | null;
-  projectKey?: string;
   path: string;
   scope?: DraftScope;
   baseSha?: string | null;
@@ -209,7 +205,6 @@ export function changedFiles() {
     .map((d) => ({ path: d.path, created: d.baseSha === null, scopeKey: d.scope ? `${d.scope.repoId}:${d.scope.branch}` : "" }));
 }
 export function clearDrafts() {
-  closeProject();
   for (const draft of drafts.values()) draft.model.dispose();
   drafts.clear();
   visualHistory.clear();
@@ -233,7 +228,6 @@ function languageFor(path: string) {
   return (
     (
       {
-        astro: "astro",
         ts: "typescript",
         tsx: "typescript",
         js: "javascript",
@@ -272,7 +266,6 @@ export function mountCodeEditor(
         monaco.Uri.parse(`inmemory://editor/${++serial}/${file.path}`),
       ),
       view: null,
-      projectKey: file.project?.key,
       path: file.path,
       scope: file.scope,
       baseSha: saved ? saved.baseSha : file.baseSha,
@@ -280,7 +273,6 @@ export function mountCodeEditor(
     drafts.set(file.key, draft);
   }
   const current = draft;
-  current.projectKey = file.project?.key;
   // A successful publish whose response was lost is recognized on reopening.
   if (
     file.baseSha !== null &&
@@ -516,14 +508,15 @@ export function mountCodeEditor(
       ? createPublishMenu({
           scope: file.scope,
           currentPath: file.path,
-          onExpired: () => file.project?.onSessionExpired?.(),
+          saveLabels: file.saveLabels,
+          onExpired: () => file.onSessionExpired?.(),
           onPublished: (result, submitted) => {
             reconcilePublished(result, submitted);
+            file.onPublished?.(result, submitted);
             if (!disposed) {
               conflict = false;
               update();
               render(mode);
-              file.onPublished?.(result);
             }
           },
         })
@@ -562,18 +555,6 @@ export function mountCodeEditor(
     acceptLatest,
   );
   const body = node("div", "code-editor__body");
-  const disconnectIntelligence =
-    file.project && !file.readOnly
-      ? connectProject(
-          file.project,
-          [...drafts.values()]
-            .filter((d) => d.projectKey === file.project!.key)
-            .map((d) => ({ path: d.path, model: d.model })),
-          (status) => {
-            if (status.includes("unavailable")) console.warn(status);
-          },
-        )
-      : () => {};
   // toolbarHost: element → toolbar lives there; null → secondary pane without toolbar.
   if (toolbarHost) {
     toolbar.classList.add("code-editor__toolbar--hosted");
@@ -693,7 +674,6 @@ export function mountCodeEditor(
     markers.dispose();
     file.onContextChange?.(null);
     publisher?.destroy();
-    disconnectIntelligence();
     subscription.dispose();
     document.removeEventListener("keydown", historyShortcut);
     destroyView();

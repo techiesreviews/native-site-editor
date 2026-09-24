@@ -79,9 +79,7 @@ See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration
 
 ## Test repository
 
-The reference deployment uses [techiesreviews/astro-editor-starter](https://github.com/techiesreviews/astro-editor-starter). `fixtures/astro-starter/` is an independent static Astro project with a home page, About page, shared layout and stylesheet. Copy its source and lockfile into a separate GitHub repository; do not copy `node_modules`, `dist`, or `.astro`. The starter's `package.json` should be at the new repository root. Install the GitHub App on that repository.
-
-The starter uses npm 9.6.5+ and Node 22.12+. It builds with `npm ci && npm run build` from its own directory, independently of the editor.
+`fixtures/native-starter/` is a complete native site: two pages, four custom-element components with their own stylesheets, a shared stylesheet, and the `.astro-editor/native.json` manifest that maps them. Copy it into a separate GitHub repository with the manifest at the repository root and install the GitHub App on that repository. There is no build step.
 
 ## Verification and current limits
 
@@ -90,10 +88,11 @@ npm test
 npm run build
 npx playwright install chromium
 npm run test:browser
+npm run test:browser-preview
 ```
 
-Unit/API tests cover OAuth state, session expiry/logout, repository access boundaries, pagination, commit snapshots, detection and error handling. Browser tests use explicitly mocked GitHub API responses to exercise navigation, text escaping, branch switching, refresh, mobile layout and stale-response handling. They do **not** establish live GitHub authorization or private-repository isolation with real accounts; test those after App registration.
+Unit/API tests cover OAuth state, session expiry/logout, repository access boundaries, pagination, commit snapshots and error handling. The two browser suites run the real Worker request handler over a fake GitHub API backed by `fixtures/native-starter`: saving, conflict handling, the native preview, selection and linked styles. They do **not** establish live GitHub authorization or private-repository isolation with real accounts; test those after App registration.
 
-The file tree loads one directory at a time and rejects truncated upstream responses. Detection reads `package.json` as data without executing code; nested projects are detected when their folder is opened. Text previews are limited to 128 KB. Symlink targets are shown as text and submodules are not followed. Branches and repositories are paginated with an explicit 5,000-result ceiling rather than silently truncating.
+A snapshot lists the whole commit in one request when GitHub returns it completely, and otherwise loads one directory at a time; truncated upstream responses are rejected. Text previews are limited to 128 KB. Symlink targets are shown as text and submodules are not followed. Branches and repositories are paginated with an explicit 5,000-result ceiling rather than silently truncating.
 
-Refresh checks the selected branch's latest commit; the current view otherwise stays pinned to its loaded commit. There is no background polling of unopened branches and no embedded agent. Committed-revision site preview and visual text editing are available once a repository carries the editor's preview workflow; see [connecting a repository's preview](repository-preview.md). The editor does not run a general uncommitted-draft build service in production: `scripts/draft-preview-runtime.ts` is a local, fixed-fixture opt-in proof only, and the deployed Worker exposes no `/api/draft-preview` endpoint.
+Refresh checks the selected branch's latest commit; the current view otherwise stays pinned to its loaded commit. There is no background polling of unopened branches and no embedded agent. The preview renders in the browser from the repository's own HTML and CSS; the editor runs no site build and tracks no deployment.

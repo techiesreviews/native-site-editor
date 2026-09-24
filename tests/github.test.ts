@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GitHub, HttpError, detectAstro } from "../worker/github.ts";
+import { GitHub, HttpError } from "../worker/github.ts";
 import type { Repository } from "../shared/types.ts";
 
 const sha = "a".repeat(40);
@@ -63,6 +63,108 @@ test("branch slashes are encoded and the tree is fetched from one resolved commi
   assert.ok(paths[2].endsWith("b".repeat(40)));
 });
 
+test("snapshot lists the whole commit from the branch's tree and the recursive listing", async () => {
+  const paths: string[] = [];
+  const github = new GitHub("secret", async (input) => {
+    const url = new URL(String(input));
+    paths.push(url.pathname + url.search);
+    if (url.pathname.includes("/branches/"))
+      return reply({ commit: { sha, commit: { tree: { sha: "b".repeat(40) } } } });
+    return reply({
+      truncated: false,
+      tree: [
+        { path: "src", type: "tree", mode: "040000", sha: "1".repeat(40) },
+        { path: "src/pages", type: "tree", mode: "040000", sha: "2".repeat(40) },
+        { path: "src/pages/index.html", type: "blob", mode: "100644", sha: "3".repeat(40), size: 10 },
+        { path: "README.md", type: "blob", mode: "100644", sha: "4".repeat(40), size: 5 },
+      ],
+    });
+  });
+  const snapshot = await github.snapshot(repo, "main");
+  assert.equal(paths.length, 2, "no separate commit lookup when the branch carries the tree");
+  assert.ok(paths[1].endsWith(`/git/trees/${"b".repeat(40)}?recursive=1`));
+  assert.deepEqual(snapshot.entries.map((entry) => entry.path), ["src", "README.md"]);
+  assert.deepEqual(snapshot.tree?.map((entry) => entry.path), ["README.md", "src", "src/pages", "src/pages/index.html"]);
+});
+
+test("a listing that does not descend into folders is not presented as the whole commit", async () => {
+  const github = new GitHub("secret", async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("/branches/")) return reply({ commit: { sha } });
+    if (url.pathname.includes("/git/commits/")) return reply({ tree: { sha: "b".repeat(40) } });
+    if (url.search.includes("recursive"))
+      return reply({ truncated: false, tree: [{ path: "src", type: "tree", mode: "040000", sha: "1".repeat(40) }] });
+    return reply({ truncated: false, tree: [{ path: "src", type: "tree", mode: "040000", sha: "1".repeat(40) }] });
+  });
+  const snapshot = await github.snapshot(repo, "main");
+  assert.equal(snapshot.tree, undefined);
+  assert.equal(snapshot.entries.length, 1);
+  const truncated = new GitHub("secret", async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("/branches/")) return reply({ commit: { sha } });
+    if (url.pathname.includes("/git/commits/")) return reply({ tree: { sha: "b".repeat(40) } });
+    return reply({ truncated: url.search.includes("recursive"), tree: [] });
+  });
+  assert.equal((await truncated.snapshot(repo, "main")).tree, undefined);
+});
+
+test("selected repositories are rechecked by default and shared briefly on request", async () => {
+  let listings = 0;
+  const fetcher: typeof fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") {
+      listings++;
+      return reply({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
+    }
+    return reply({ repositories: [repo] });
+  };
+  const github = new GitHub("token-a", fetcher);
+  await Promise.all([
+    github.authorizeRepository("lex", repo.full_name, 60_000),
+    github.authorizeRepository("lex", repo.full_name, 60_000),
+  ]);
+  assert.equal(listings, 1, "concurrent reads share one in-flight listing");
+  await github.authorizeRepository("lex", repo.full_name, 60_000);
+  assert.equal(listings, 1);
+  await github.authorizeRepository("lex", repo.full_name);
+  assert.equal(listings, 2, "the default always rechecks membership");
+  await new GitHub("token-b", fetcher).authorizeRepository("lex", repo.full_name, 60_000);
+  assert.equal(listings, 3, "another token never shares a listing");
+  await new GitHub("token-a", async (input) => fetcher(input)).authorizeRepository("lex", repo.full_name, 60_000);
+  assert.equal(listings, 4, "another fetch implementation never shares a listing");
+  const failing = new GitHub("token-c", async () => reply({ message: "nope" }, 500));
+  await assert.rejects(() => failing.authorizeRepository("lex", repo.full_name, 60_000));
+  let recovered = 0;
+  const later = new GitHub("token-c", async () => {
+    recovered++;
+    return reply({ installations: [] });
+  });
+  await assert.rejects(() => later.authorizeRepository("lex", repo.full_name, 60_000), (error: HttpError) => error.status === 403);
+  assert.ok(recovered >= 1, "a failed listing is not remembered");
+});
+
+test("batched file reads run concurrently and validate every revision", async () => {
+  let inFlight = 0, peak = 0;
+  const github = new GitHub("secret", async (input) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight--;
+    const blob = new URL(String(input)).pathname.split("/").pop()!;
+    return reply({ content: btoa(`file ${blob[0]}`), encoding: "base64", size: 6 });
+  });
+  const shas = ["1", "2", "3", "4"].map((digit) => digit.repeat(40));
+  const files = await github.files(repo, [...shas, shas[0]]);
+  assert.deepEqual(files, Object.fromEntries(shas.map((sha) => [sha, `file ${sha[0]}`])));
+  assert.ok(peak > 1, "blobs are read in parallel");
+  await assert.rejects(() => github.files(repo, ["not-a-sha"]), (error: HttpError) => error.status === 400);
+  await assert.rejects(() => github.files(repo, []), (error: HttpError) => error.status === 400);
+  await assert.rejects(
+    () => github.files(repo, Array.from({ length: 65 }, (_, index) => index.toString(16).padStart(40, "0"))),
+    (error: HttpError) => error.status === 400,
+  );
+});
+
 test("truncated directories are never presented as complete", async () => {
   const github = new GitHub("secret", async () =>
     reply({ tree: [], truncated: true }),
@@ -71,45 +173,6 @@ test("truncated directories are never presented as complete", async () => {
     () => github.tree(repo, sha),
     (error: HttpError) => error.status === 413,
   );
-});
-
-test("Astro detection distinguishes dependency, workspace and supporting-file evidence", () => {
-  assert.equal(
-    detectAstro({ dependencies: { astro: "^7.3.3" } }, []).status,
-    "detected",
-  );
-  assert.equal(detectAstro({ workspaces: ["apps/*"] }, []).status, "ambiguous");
-  assert.equal(
-    detectAstro(null, [
-      { path: "astro.config.mjs", type: "blob", sha, mode: "100644" },
-    ]).status,
-    "ambiguous",
-  );
-  assert.equal(
-    detectAstro({ dependencies: { vite: "8" } }, []).status,
-    "not-detected",
-  );
-});
-
-test("invalid manifests are ambiguous, and symlink manifests are not followed", async () => {
-  for (const mode of ["100644", "120000"]) {
-    let blobReads = 0;
-    const github = new GitHub("secret", async (input) => {
-      if (String(input).includes("/git/trees/"))
-        return reply({
-          tree: [{ path: "package.json", type: "blob", sha, mode, size: 20 }],
-          truncated: false,
-        });
-      blobReads++;
-      return reply({ content: btoa("not json"), encoding: "base64", size: 8 });
-    });
-    const directory = await github.directory(repo, sha);
-    assert.equal(
-      directory.detection.status,
-      mode === "100644" ? "ambiguous" : "not-detected",
-    );
-    assert.equal(blobReads, mode === "100644" ? 1 : 0);
-  }
 });
 
 test("file reader rejects binary and oversized responses", async () => {

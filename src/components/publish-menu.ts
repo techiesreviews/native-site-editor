@@ -9,18 +9,37 @@ export function createPublishMenu(options: {
   currentPath: string;
   onPublished: (result: PublishResult, submitted: SavedDraft[]) => void;
   onExpired: () => void;
+  /** Native projects relabel the menu as "Save to GitHub" and do not track deployment status. */
+  saveLabels?: boolean;
 }) {
+  const labels = options.saveLabels
+    ? {
+        trigger: "Save to GitHub",
+        panelAria: "Save files to GitHub",
+        heading: `Save to ${options.scope.branch}`,
+        submit: "Save selected files",
+        idle: "Selected files are committed together. A connected host may deploy this commit automatically.",
+        pending: "Saving to GitHub…",
+      }
+    : {
+        trigger: "Publish",
+        panelAria: "Publish files",
+        heading: `Publish to ${options.scope.branch}`,
+        submit: "Publish selected files",
+        idle: "Selected files are committed together. Site deployment requires a connected build pipeline.",
+        pending: "Publishing to GitHub…",
+      };
   const root = node("div", "publish-menu");
   const panel = node("div", "publish-menu__panel");
   panel.id = "publish-files";
-  panel.setAttribute("aria-label", "Publish files");
-  const trigger = node("button", "button primary", "Publish");
+  panel.setAttribute("aria-label", labels.panelAria);
+  const trigger = node("button", "button primary", labels.trigger);
   trigger.type = "button";
-  const heading = node("strong", "", `Publish to ${options.scope.branch}`);
+  const heading = node("strong", "", labels.heading);
   const list = node("div", "publish-menu__files");
   const message = node("p", "muted publish-menu__message");
   message.setAttribute("role", "status");
-  const submit = button("Publish selected files", () => void send(), "button primary");
+  const submit = button(labels.submit, () => void send(), "button primary");
   panel.append(heading, list, message, submit);
   root.append(trigger, panel);
   const dropdown = mountDropdown({ trigger, panel, anchor: "--publish-files" });
@@ -42,14 +61,14 @@ export function createPublishMenu(options: {
       label.append(checkbox, node("span", "", draft.path)); list.append(label);
     }
     submit.disabled = !records.some(record => selection.has(record.path));
-    if (resetMessage) message.textContent = "Selected files are committed together. Site deployment requires a connected build pipeline.";
+    if (resetMessage) message.textContent = labels.idle;
   }
   async function send() {
     const submitted = draftStore().list(options.scope).filter(draft => selection.has(draft.path));
     if (pending || !submitted.length) return;
     pending = true; trigger.disabled = true; submit.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
-    message.textContent = "Publishing to GitHub…";
+    message.textContent = labels.pending;
     try {
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
@@ -64,7 +83,16 @@ export function createPublishMenu(options: {
       message.replaceChildren(node("span", "", "Saved to GitHub. "));
       const commit = link("View commit ↗", data.url, "text-link");
       commit.target = "_blank"; commit.rel = "noopener noreferrer";
-      message.append(commit, node("span", "", " The status in the top bar follows the build."));
+      message.append(
+        commit,
+        node(
+          "span",
+          "",
+          options.saveLabels
+            ? " Deployment status is not tracked by this editor."
+            : " The status in the top bar follows the build.",
+        ),
+      );
     } catch (error) {
       if (!disposed) message.textContent = error instanceof Error ? error.message : "Publishing failed. Your drafts are kept.";
     } finally {

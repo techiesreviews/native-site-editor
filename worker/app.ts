@@ -11,12 +11,21 @@ import {
 import { handleMcp } from "./mcp";
 import { publish } from "./publish";
 import { history, restore } from "./history";
-import { detectEditorIntegration, updateEditorIntegration } from "./integration";
 import { GitHub, HttpError } from "./github";
 import {
-  createDraftPreview,
-  draftPreviewAvailability,
-} from "./draft-preview";
+  configuredApp,
+  convertManifest,
+  githubAppManifest,
+  canonicalOrigin,
+  hasOwnerSetup,
+  isOwnerSetupState,
+  ownerSetupHtml,
+  ownerSetupJs,
+  setupPayload,
+  validOwnerToken,
+  writeConfiguredApp,
+  type OwnerSetupState,
+} from "./owner-setup";
 
 interface Session {
   kind: "user";
@@ -30,6 +39,7 @@ interface OAuthState {
   expiresAt: number;
 }
 export type StoredSession = Session | OAuthState | AgentGrant;
+export type StoredValue = StoredSession | OwnerSetupState;
 
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -40,13 +50,16 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
+  OWNER_SETUP_TOKEN?: string;
 }
 
-function configured(env: Env) {
-  return Boolean(
-    env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET && env.GITHUB_APP_SLUG,
-  );
+async function config(env: Env) {
+  return configuredApp(env);
 }
+// Editor read endpoints accept a selected-repository listing up to this old,
+// so the burst of reads after sign-in shares one membership check. Writes and
+// agent requests always recheck.
+const readAuthorizationMaxAge = 60_000;
 function json(body: unknown, status = 200) {
   return Response.json(body, { status });
 }
@@ -75,11 +88,23 @@ function redirect(location: string, cookies: string[] = []) {
   for (const value of cookies) headers.append("Set-Cookie", value);
   return new Response(null, { status: 302, headers });
 }
+function html(body: string, headers?: HeadersInit) {
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy":
+        "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; form-action https://github.com; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      ...headers,
+    },
+  });
+}
 async function store(
   env: Env,
   id: string,
   method = "GET",
-  value?: StoredSession,
+  value?: StoredValue,
   consume = false,
 ) {
   return env.SESSIONS.get(env.SESSIONS.idFromName(id)).fetch(
@@ -167,13 +192,90 @@ async function route(
     !(
       (path === "/api/publish" ||
         path === "/api/restore" ||
-        path === "/api/editor-integration/update" ||
-        path === "/api/draft-preview" ||
+        path === "/auth/setup/unlock" ||
         path.startsWith("/api/agent/")) &&
       request.method === "POST"
     )
   )
     throw new HttpError(405, "Method not allowed.");
+
+  if (path.startsWith("/auth/setup")) {
+    if (url.origin !== canonicalOrigin)
+      throw new HttpError(403, "Owner setup uses the canonical editor origin.");
+    if (!hasOwnerSetup(env) && path !== "/auth/setup.js")
+      throw new HttpError(404, "Owner setup is not enabled.");
+    if (path === "/auth/setup.js")
+      return new Response(ownerSetupJs(), {
+        headers: {
+          "Content-Type": "text/javascript; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+        },
+      });
+    if (path === "/auth/setup/unlock") {
+      if (request.headers.get("Origin") !== url.origin)
+        throw new HttpError(403, "Invalid request origin.");
+      if (await config(env))
+        throw new HttpError(409, "This editor already has a GitHub App.");
+      const token = await setupPayload(request);
+      if (!validOwnerToken(token) || token !== env.OWNER_SETUP_TOKEN)
+        throw new HttpError(403, "Invalid owner setup link.");
+      const id = randomId();
+      await store(env, id, "PUT", {
+        kind: "owner-setup",
+        expiresAt: Date.now() + 600_000,
+      });
+      const response = json({ ok: true, state: id });
+      response.headers.append("Set-Cookie", setCookie(url, "setup", id, 600));
+      return response;
+    }
+    if (path === "/auth/setup/status") {
+      const app = await config(env);
+      return json({
+        configured: Boolean(app),
+        installUrl: app
+          ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
+          : null,
+      });
+    }
+    const app = await config(env);
+    const installUrl = app
+      ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
+      : undefined;
+    const setupId = cookie(request, "setup");
+    let setupState = "";
+    if (setupId && !app) {
+      const stateResponse = await store(env, setupId);
+      if (stateResponse.ok) {
+        const state = (await stateResponse.json()) as StoredValue;
+        if (isOwnerSetupState(state) && state.expiresAt > Date.now())
+          setupState = setupId;
+      }
+    }
+    if (path === "/auth/setup")
+      return html(ownerSetupHtml(url.origin, { state: setupState, installUrl }));
+    if (path === "/auth/setup/manifest") return json(githubAppManifest(url.origin));
+    if (path === "/auth/setup/callback") {
+      if (app) return redirect("/auth/setup");
+      if (!setupId || setupId !== url.searchParams.get("state"))
+        throw new HttpError(403, "Owner setup expired.");
+      const stateResponse = await store(env, setupId, "POST", undefined, true);
+      if (!stateResponse.ok) throw new HttpError(403, "Owner setup expired.");
+      const state = (await stateResponse.json()) as StoredValue;
+      if (
+        !isOwnerSetupState(state) ||
+        state.expiresAt <= Date.now()
+      )
+        throw new HttpError(403, "Owner setup expired.");
+      const next = await convertManifest(
+        url.searchParams.get("code") ?? "",
+        fetcher,
+      );
+      await writeConfiguredApp(env, next);
+      return redirect("/auth/setup", [setCookie(url, "setup", "", 0)]);
+    }
+    throw new HttpError(404, "Owner setup endpoint not found.");
+  }
 
   if (path === "/mcp") {
     if (
@@ -266,10 +368,11 @@ async function route(
     throw new HttpError(404, "Agent endpoint not found.");
   }
   if (path === "/auth/login") {
-    if (!configured(env))
+    const app = await config(env);
+    if (!app)
       throw new HttpError(
         503,
-        "GitHub connection is not configured. Run npm run setup in the editor project.",
+        "GitHub connection is not configured. Use the owner setup link for this editor.",
       );
     const id = randomId();
     await store(env, id, "PUT", {
@@ -277,7 +380,7 @@ async function route(
       expiresAt: Date.now() + 600_000,
     });
     const target = new URL("https://github.com/login/oauth/authorize");
-    target.searchParams.set("client_id", env.GITHUB_CLIENT_ID!);
+    target.searchParams.set("client_id", app.clientId);
     target.searchParams.set("redirect_uri", `${url.origin}/auth/callback`);
     target.searchParams.set("state", id);
     return redirect(target.href, [setCookie(url, "oauth", id, 600)]);
@@ -296,7 +399,8 @@ async function route(
     if (state.kind !== "oauth" || state.expiresAt <= Date.now())
       throw new HttpError(400, "GitHub sign-in expired. Connect again.");
     const code = url.searchParams.get("code");
-    if (!code || code.length > 512 || !configured(env))
+    const app = await config(env);
+    if (!code || code.length > 512 || !app)
       throw new HttpError(
         400,
         "GitHub access was not granted. Connect again when ready.",
@@ -310,8 +414,8 @@ async function route(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          client_id: env.GITHUB_CLIENT_ID,
-          client_secret: env.GITHUB_CLIENT_SECRET,
+          client_id: app.clientId,
+          client_secret: app.clientSecret,
           code,
           redirect_uri: `${url.origin}/auth/callback`,
         }),
@@ -349,13 +453,26 @@ async function route(
     ]);
   }
   if (path === "/api/session") {
-    const user = await session(request, env);
+    const [user, app] = await Promise.all([
+      session(request, env),
+      config(env),
+    ]);
+    // A signed-in session also carries the selected repositories so the
+    // workspace opens in one round trip. A listing failure is not a session
+    // failure; the browser retries through /api/repositories and shows the error.
+    const repositories = user
+      ? await new GitHub(user.token, fetcher)
+          .repositories(user.login)
+          .catch(() => null)
+      : undefined;
     return json({
-      configured: configured(env),
+      configured: Boolean(app),
       user: user ? { login: user.login, avatar_url: user.avatar_url } : null,
-      installUrl: env.GITHUB_APP_SLUG
-        ? `https://github.com/apps/${encodeURIComponent(env.GITHUB_APP_SLUG)}/installations/new`
+      installUrl: app
+        ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
         : null,
+      ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
+      ...(user ? { repositories } : {}),
     });
   }
   if (path === "/api/publish") {
@@ -393,51 +510,6 @@ async function route(
     );
     return json(await restore(github, repo, data));
   }
-  if (path === "/api/editor-integration/update") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Use POST to update integration.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
-    if (!request.headers.get("Content-Type")?.startsWith("application/json"))
-      throw new HttpError(415, "Send a JSON integration update request.");
-    const user = await session(request, env);
-    if (!user)
-      throw new HttpError(401, "Connect GitHub to update integration.");
-    const data = await requestJson(request, 4096);
-    const github = new GitHub(user.token, fetcher);
-    const repo = await github.authorizeRepository(
-      user.login,
-      url.searchParams.get("repo") ?? "",
-    );
-    return json(await updateEditorIntegration(github, repo, data));
-  }
-  if (path === "/api/draft-preview") {
-    if (!["GET", "POST"].includes(request.method))
-      throw new HttpError(405, "Method not allowed.");
-    const user = await session(request, env);
-    if (!user)
-      throw new HttpError(401, "Connect GitHub to preview draft changes.");
-    const github = new GitHub(user.token, fetcher);
-    const repo = await github.authorizeRepository(
-      user.login,
-      url.searchParams.get("repo") ?? "",
-    );
-    if (request.method === "GET")
-      return json(
-        await draftPreviewAvailability(
-          github,
-          repo,
-          url.searchParams.get("branch") ?? "",
-          url.searchParams.get("baseCommit") ?? "",
-        ),
-      );
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
-    if (!request.headers.get("Content-Type")?.startsWith("application/json"))
-      throw new HttpError(415, "Send a JSON draft preview request.");
-    const data = await requestJson(request, 2 * 1024 * 1024);
-    return json(await createDraftPreview(github, repo, data), 202);
-  }
   if (path.startsWith("/api/")) {
     const user = await session(request, env);
     if (!user)
@@ -451,14 +523,15 @@ async function route(
         "/api/snapshot",
         "/api/tree",
         "/api/file",
+        "/api/files",
         "/api/history",
-        "/api/editor-integration",
       ].includes(path)
     )
       throw new HttpError(404, "Endpoint not found.");
     const repo = await github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
+      readAuthorizationMaxAge,
     );
     if (path === "/api/branches") return json(await github.branches(repo));
     if (path === "/api/snapshot")
@@ -474,18 +547,17 @@ async function route(
           page: url.searchParams.get("page") ?? undefined,
         }),
       );
-    if (path === "/api/editor-integration")
-      return json(
-        await detectEditorIntegration(
-          github,
-          repo,
-          url.searchParams.get("branch") ?? "",
-        ),
-      );
     if (path === "/api/tree")
       return json(
         await github.directory(repo, url.searchParams.get("sha") ?? ""),
       );
+    if (path === "/api/files")
+      return json({
+        files: await github.files(
+          repo,
+          (url.searchParams.get("shas") ?? "").split(",").filter(Boolean),
+        ),
+      });
     return json({
       content: await github.file(repo, url.searchParams.get("sha") ?? ""),
     });

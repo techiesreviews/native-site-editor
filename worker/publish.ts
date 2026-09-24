@@ -172,7 +172,7 @@ export async function publish(
       `${base}/git/commits`,
       "POST",
       {
-        message: `Update ${changes.length === 1 ? changes[0].path : `${changes.length} files`} with Astro Site Editor`,
+        message: `Update ${changes.length === 1 ? changes[0].path : `${changes.length} files`} with Native Site Editor`,
         tree: tree.sha,
         parents: [head],
       },

@@ -1,17 +1,21 @@
 {
+  // Legacy Cloudflare Pages project (`native-site-editor.pages.dev`), kept only
+  // as a fallback address. Production is the Worker in `wrangler.sessions.jsonc`
+  // serving https://editor.techies.tools with static assets; deploy that with
+  // `npm run deploy`. This project still binds to that Worker's SessionStore
+  // Durable Object by `script_name`, so both addresses share one session store.
+  // Deploy here with `npm run deploy:pages` only if the fallback must be updated.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "astro-site-editor",
-  "main": "worker/index.ts",
+  "name": "native-site-editor",
   "compatibility_date": "2026-09-17",
-  "workers_dev": false,
-  "routes": [{ "pattern": "astro.techies.tools", "custom_domain": true }],
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/auth/*", "/mcp"],
-  },
+  "pages_build_output_dir": "dist",
   "durable_objects": {
-    "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],
+    "bindings": [
+      {
+        "name": "SESSIONS",
+        "class_name": "SessionStore",
+        "script_name": "native-site-editor-sessions",
+      },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionStore"] }],
 }

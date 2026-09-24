@@ -1,5 +1,4 @@
 import type {
-  Detection,
   Directory,
   Repository,
   Snapshot,
@@ -20,6 +19,20 @@ const segment = encodeURIComponent;
 const apiRoot = "https://api.github.com";
 const maxPages = 50;
 const maxFileBytes = 128 * 1024;
+export const maxBatchFiles = 64;
+const batchConcurrency = 8;
+
+// Selected-repository listings are remembered briefly per access token so the
+// editor's burst of requests after sign-in (branches, snapshot, files) does not
+// pay for two GitHub round trips each. Entries are scoped to the fetch
+// implementation, so tests and fakes with their own fetcher never share state.
+// Callers opt in with `maxAge`; the default rechecks membership every request.
+interface RepositoryListing {
+  fetchedAt: number;
+  repos: Promise<Repository[]>;
+}
+const listings = new WeakMap<typeof fetch, Map<string, RepositoryListing>>();
+const maxListings = 500;
 
 export async function boundedJson(
   response: Response,
@@ -61,47 +74,6 @@ export async function boundedJson(
       "GitHub returned an unreadable response. Try again.",
     );
   }
-}
-
-export function detectAstro(
-  manifest: unknown,
-  entries: TreeEntry[],
-): Detection {
-  if (manifest && typeof manifest === "object" && !Array.isArray(manifest)) {
-    const pkg = manifest as Record<string, any>;
-    const version = pkg.dependencies?.astro ?? pkg.devDependencies?.astro;
-    if (typeof version === "string")
-      return {
-        status: "detected",
-        version,
-        message:
-          "Astro dependency found. Build compatibility has not been tested.",
-      };
-    if (pkg.workspaces)
-      return {
-        status: "ambiguous",
-        message:
-          "Workspace repository. Open a package folder to look for its Astro setup.",
-      };
-  }
-  if (
-    entries.some(
-      (entry) =>
-        /^astro\.config\.(js|mjs|cjs|ts|mts)$/.test(entry.path) ||
-        entry.path.endsWith(".astro"),
-    )
-  ) {
-    return {
-      status: "ambiguous",
-      message:
-        "Astro files found, but no Astro dependency in this folder’s package.json.",
-    };
-  }
-  return {
-    status: "not-detected",
-    message:
-      "No Astro dependency detected in this folder. Nested folders are checked when opened.",
-  };
 }
 
 export class GitHub {
@@ -163,7 +135,7 @@ export class GitHub {
       if (response.status === 409)
         throw new HttpError(
           409,
-          "This repository is empty. Add your Astro starter on GitHub first.",
+          "This repository is empty. Add your site files on GitHub first.",
         );
       throw new HttpError(
         502,
@@ -191,7 +163,30 @@ export class GitHub {
     );
   }
 
-  async repositories(login: string): Promise<Repository[]> {
+  async repositories(login: string, maxAge = 0): Promise<Repository[]> {
+    const fetcher = this.fetcher;
+    let byToken = listings.get(fetcher);
+    if (!byToken) listings.set(fetcher, (byToken = new Map()));
+    const key = `${login.toLowerCase()}\n${this.token}`;
+    const cached = byToken.get(key);
+    const now = Date.now();
+    if (cached && maxAge > 0 && now - cached.fetchedAt <= maxAge)
+      return cached.repos;
+    if (byToken.size >= maxListings) {
+      for (const [entry, listing] of byToken)
+        if (now - listing.fetchedAt > 60_000) byToken.delete(entry);
+      if (byToken.size >= maxListings)
+        byToken.delete(byToken.keys().next().value!);
+    }
+    const repos = this.listRepositories(login);
+    byToken.set(key, { fetchedAt: now, repos });
+    repos.catch(() => {
+      if (byToken!.get(key)?.repos === repos) byToken!.delete(key);
+    });
+    return repos;
+  }
+
+  private async listRepositories(login: string): Promise<Repository[]> {
     const installations = await this.pages<{
       id: number;
       account: { type: string; login: string };
@@ -230,11 +225,14 @@ export class GitHub {
   async authorizeRepository(
     login: string,
     fullName: string,
+    maxAge = 0,
   ): Promise<Repository> {
     if (!/^[\w.-]+\/[\w.-]+$/.test(fullName))
       throw new HttpError(400, "Choose a repository.");
-    // Recheck installation membership for every request, including public repos and cached SHAs.
-    const repo = (await this.repositories(login)).find(
+    // Recheck installation membership for every request, including public
+    // repos and cached SHAs, unless the caller accepts a listing up to
+    // `maxAge` old (the editor's own read endpoints do; agents never do).
+    const repo = (await this.repositories(login, maxAge)).find(
       (repo) => repo.full_name === fullName,
     );
     if (!repo)
@@ -301,60 +299,102 @@ export class GitHub {
     }
   }
 
-  async directory(repo: Repository, sha: string): Promise<Directory> {
-    const entries = await this.tree(repo, sha);
-    const manifest = entries.find(
-      (entry) =>
-        entry.path === "package.json" &&
-        entry.type === "blob" &&
-        entry.mode !== "120000",
-    );
-    let parsed: unknown = null;
-    if (manifest) {
-      if ((manifest.size ?? Infinity) > 64 * 1024) {
-        return {
-          entries,
-          detection: {
-            status: "ambiguous",
-            message: "package.json exceeds the 64 KB detection limit.",
-          },
-        };
-      }
-      try {
-        parsed = JSON.parse(await this.file(repo, manifest.sha));
-      } catch (error) {
-        if (
-          error instanceof SyntaxError ||
-          (error instanceof HttpError && [413, 415].includes(error.status))
-        ) {
-          return {
-            entries,
-            detection: {
-              status: "ambiguous",
-              message:
-                "package.json could not be inspected. It must be valid UTF-8 JSON.",
-            },
-          };
+  /** Reads several blobs concurrently; the first failure rejects the batch. */
+  async files(repo: Repository, shas: string[]): Promise<Record<string, string>> {
+    const unique = [...new Set(shas)];
+    if (!unique.length) throw new HttpError(400, "Choose files to read.");
+    if (unique.length > maxBatchFiles)
+      throw new HttpError(400, `Read at most ${maxBatchFiles} files at once.`);
+    for (const sha of unique)
+      if (!/^[a-f0-9]{40}$/.test(sha))
+        throw new HttpError(400, "Invalid file revision.");
+    const result: Record<string, string> = {};
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(batchConcurrency, unique.length) }, async () => {
+        while (next < unique.length) {
+          const sha = unique[next++];
+          result[sha] = await this.file(repo, sha);
         }
-        throw error;
-      }
-    }
-    return { entries, detection: detectAstro(parsed, entries) };
+      }),
+    );
+    return result;
+  }
+
+  async directory(
+    repo: Repository,
+    sha: string,
+    listed?: TreeEntry[],
+  ): Promise<Directory> {
+    return { entries: listed ?? (await this.tree(repo, sha)) };
+  }
+
+  /**
+   * The whole commit in one listing when GitHub can return it completely.
+   * Returns `undefined` when the listing is truncated or does not actually
+   * descend into folders (a fake or proxy ignoring `recursive`), in which case
+   * the caller falls back to the top-level directory.
+   */
+  private async recursiveTree(
+    repo: Repository,
+    sha: string,
+  ): Promise<TreeEntry[] | undefined> {
+    if (!/^[a-f0-9]{40}$/.test(sha))
+      throw new HttpError(400, "Invalid revision. Refresh the repository.");
+    const data = await this.get<{ tree: TreeEntry[]; truncated: boolean }>(
+      `${this.base(repo)}/git/trees/${sha}?recursive=1`,
+    );
+    if (data.truncated) return undefined;
+    // Git has no empty directories, so a complete recursive listing has at
+    // least one descendant for every folder it names.
+    const folders = data.tree.filter((entry) => entry.type === "tree");
+    if (
+      folders.some(
+        (folder) => !data.tree.some((entry) => entry.path.startsWith(`${folder.path}/`)),
+      )
+    )
+      return undefined;
+    return data.tree
+      .map(({ path, mode, type, sha, size }) =>
+        size === undefined ? { path, mode, type, sha } : { path, mode, type, sha, size },
+      )
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async snapshot(repo: Repository, branch: string): Promise<Snapshot> {
     if (!branch || branch.length > 255)
       throw new HttpError(400, "Choose a branch.");
-    const ref = await this.get<{ commit: { sha: string } }>(
-      `${this.base(repo)}/branches/${segment(branch)}`,
-    );
-    const commit = await this.get<{ tree: { sha: string } }>(
-      `${this.base(repo)}/git/commits/${ref.commit.sha}`,
-    );
+    const ref = await this.get<{
+      commit: { sha: string; commit?: { tree?: { sha?: string } } };
+    }>(`${this.base(repo)}/branches/${segment(branch)}`);
+    // The branch listing already carries the commit's tree; only look the
+    // commit up when a minimal response leaves it out.
+    let treeSha = ref.commit.commit?.tree?.sha;
+    if (!treeSha || !/^[a-f0-9]{40}$/.test(treeSha)) {
+      const commit = await this.get<{ tree: { sha: string } }>(
+        `${this.base(repo)}/git/commits/${ref.commit.sha}`,
+      );
+      treeSha = commit.tree.sha;
+    }
+    const tree = await this.recursiveTree(repo, treeSha);
+    if (!tree)
+      return {
+        ...(await this.directory(repo, treeSha)),
+        commit: ref.commit.sha,
+        branch,
+      };
+    const entries = tree
+      .filter((entry) => !entry.path.includes("/"))
+      .sort(
+        (a, b) =>
+          Number(b.type === "tree") - Number(a.type === "tree") ||
+          a.path.localeCompare(b.path),
+      );
     return {
-      ...(await this.directory(repo, commit.tree.sha)),
+      ...(await this.directory(repo, treeSha, entries)),
       commit: ref.commit.sha,
       branch,
+      tree,
     };
   }
 }

@@ -1,0 +1,526 @@
+// Native Site Editor save test / demo server.
+//
+// Unlike the warm-preview server, this needs NO Astro build. It serves the real
+// editor UI through Vite and routes every `/api/*`, `/auth/*` and `/mcp` request
+// through the REAL Worker request handler (`worker/app.ts`, `handle`). The only
+// boundaries that are faked are:
+//
+//   1. Sessions — an in-memory SessionStore that speaks the same DO protocol as
+//      `worker/index.ts`, pre-seeded with one demo user per browser session.
+//   2. GitHub — a fake `fetch` implementing the subset of the GitHub REST API
+//      that `worker/github.ts` and `worker/publish.ts` use, backed by a small
+//      in-memory git model built from `fixtures/native-starter`. The optimistic
+//      commit path (git/trees, git/commits, PATCH refs, conflict on stale
+//      baseSha) runs for real; only the network is simulated. There is no real
+//      token and no real write ever leaves the machine.
+//
+// Each browser session gets its own isolated git clone, so concurrently exposed
+// demo browsers never see each other's saves.
+//
+// Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
+// (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
+// that all saves are simulated.
+
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { createServer, type Connect, type Plugin } from "vite";
+import { handle, type Env } from "../../worker/app.ts";
+
+const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
+const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
+const projectRoot = process.cwd();
+const fixtureRoot = resolve(projectRoot, "fixtures/native-starter");
+
+const DEMO_LOGIN = "native-demo-user";
+const DEMO_REPO = {
+  id: 501,
+  name: "native-demo",
+  full_name: `${DEMO_LOGIN}/native-demo`,
+  private: true,
+  default_branch: "main",
+  owner: { login: DEMO_LOGIN, type: "User" },
+};
+
+// ---------------------------------------------------------------------------
+// In-memory git model (per session).
+// ---------------------------------------------------------------------------
+
+interface TreeEntry {
+  path: string;
+  sha: string;
+  type: "blob" | "tree";
+  mode: string;
+  size?: number;
+}
+interface Change {
+  segments: string[];
+  mode: string;
+  content: string;
+}
+interface Git {
+  blobs: Map<string, string>;
+  trees: Map<string, TreeEntry[]>;
+  commits: Map<string, { tree: string; parents: string[] }>;
+  head: string;
+}
+
+const encoder = new TextEncoder();
+
+function blobSha(content: string): string {
+  const body = encoder.encode(content);
+  const hash = createHash("sha1");
+  hash.update(encoder.encode(`blob ${body.length}\0`));
+  hash.update(body);
+  return hash.digest("hex");
+}
+function treeSha(entries: TreeEntry[]): string {
+  const serialized = entries
+    .map((e) => `${e.mode} ${e.type} ${e.sha} ${e.path}`)
+    .sort()
+    .join("\n");
+  return createHash("sha1").update(`tree\0${serialized}`).digest("hex");
+}
+function commitSha(tree: string): string {
+  return createHash("sha1").update(`commit\0${tree}`).digest("hex");
+}
+
+function publicOrigin(): string {
+  const configured = process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN;
+  if (configured) {
+    const origin = new URL(configured);
+    if (origin.protocol !== "https:" || origin.origin !== configured)
+      throw new Error("ASE_NATIVE_SAVE_PUBLIC_ORIGIN must be an HTTPS origin without a path.");
+    return origin.origin;
+  }
+  return `http://127.0.0.1:${appPort}`;
+}
+
+// Recursively read the fixture into a git model, computing real git blob shas so
+// a file's baseSha (loaded via /api/file) matches publish's own blobSha — an
+// unchanged file never falsely conflicts.
+function buildTree(
+  git: Git,
+  root: string,
+  relative: string,
+): { sha: string; entries: TreeEntry[] } {
+  const entries: TreeEntry[] = [];
+  for (const dirent of readdirSync(join(root, relative), { withFileTypes: true })) {
+    if (dirent.name === "node_modules" || dirent.name === ".git") continue;
+    const rel = relative ? `${relative}/${dirent.name}` : dirent.name;
+    if (dirent.isDirectory()) {
+      const child = buildTree(git, root, rel);
+      entries.push({ path: dirent.name, sha: child.sha, type: "tree", mode: "040000" });
+    } else {
+      const content = readFileSync(join(root, rel), "utf8");
+      const sha = blobSha(content);
+      git.blobs.set(sha, content);
+      entries.push({
+        path: dirent.name,
+        sha,
+        type: "blob",
+        mode: "100644",
+        size: encoder.encode(content).length,
+      });
+    }
+  }
+  const sha = treeSha(entries);
+  git.trees.set(sha, entries);
+  return { sha, entries };
+}
+
+function buildInitialGit(): Git {
+  const git: Git = { blobs: new Map(), trees: new Map(), commits: new Map(), head: "" };
+  const root = buildTree(git, fixtureRoot, "");
+  const commit = commitSha(root.sha);
+  git.commits.set(commit, { tree: root.sha, parents: [] });
+  git.head = commit;
+  return git;
+}
+
+// Deep clone so each session mutates its own git only.
+function cloneGit(source: Git): Git {
+  return {
+    blobs: new Map(source.blobs),
+    trees: new Map([...source.trees].map(([k, v]) => [k, v.map((e) => ({ ...e }))])),
+    commits: new Map([...source.commits].map(([key, value]) => [key, { tree: value.tree, parents: [...value.parents] }])),
+    head: source.head,
+  };
+}
+
+// Apply full-path changes over a base tree, rebuilding nested trees (GitHub's
+// git/trees semantics), and return the new root tree sha.
+function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
+  function recurse(currentSha: string | undefined, group: Change[]): string {
+    const entries = (currentSha ? git.trees.get(currentSha) ?? [] : []).map((e) => ({ ...e }));
+    const byFirst = new Map<string, Change[]>();
+    for (const change of group) {
+      const first = change.segments[0];
+      if (!byFirst.has(first)) byFirst.set(first, []);
+      byFirst.get(first)!.push(change);
+    }
+    for (const [name, sub] of byFirst) {
+      const leaves = sub.filter((c) => c.segments.length === 1);
+      const deeper = sub.filter((c) => c.segments.length > 1);
+      let entry: TreeEntry;
+      if (leaves.length) {
+        const change = leaves[leaves.length - 1];
+        const sha = blobSha(change.content);
+        git.blobs.set(sha, change.content);
+        entry = {
+          path: name,
+          sha,
+          type: "blob",
+          mode: change.mode,
+          size: encoder.encode(change.content).length,
+        };
+      } else {
+        const existing = entries.find((e) => e.path === name && e.type === "tree");
+        const childSha = recurse(
+          existing?.sha,
+          deeper.map((c) => ({ ...c, segments: c.segments.slice(1) })),
+        );
+        entry = { path: name, sha: childSha, type: "tree", mode: "040000" };
+      }
+      const index = entries.findIndex((e) => e.path === name);
+      if (index >= 0) entries[index] = entry;
+      else entries.push(entry);
+    }
+    const sha = treeSha(entries);
+    git.trees.set(sha, entries);
+    return sha;
+  }
+  return recurse(baseTreeSha, changes);
+}
+
+function base64(content: string): string {
+  return Buffer.from(encoder.encode(content)).toString("base64");
+}
+
+// A fake `fetch` bound to one session's git model.
+function githubFetch(git: Git): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    const path = url.pathname;
+    const method = (init?.method ?? "GET").toUpperCase();
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const jsonResponse = (value: unknown, status = 200) =>
+      new Response(JSON.stringify(value), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    if (path === "/user/installations")
+      return jsonResponse({
+        installations: [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }],
+      });
+    if (path === "/user/installations/1/repositories")
+      return jsonResponse({ repositories: [DEMO_REPO] });
+
+    const repoBase = `/repos/${DEMO_REPO.owner.login}/${DEMO_REPO.name}`;
+    if (path === `${repoBase}/branches`) return jsonResponse([{ name: "main" }]);
+    if (path === `${repoBase}/branches/main`)
+      return jsonResponse({ commit: { sha: git.head } });
+    if (path.startsWith(`${repoBase}/git/commits/`) && method === "GET") {
+      const sha = path.slice(`${repoBase}/git/commits/`.length);
+      const commit = git.commits.get(sha);
+      if (!commit) return jsonResponse({ message: "Not Found" }, 404);
+      return jsonResponse({ tree: { sha: commit.tree }, parents: commit.parents.map((sha) => ({ sha })) });
+    }
+    if (path.startsWith(`${repoBase}/git/trees/`) && method === "GET") {
+      const sha = path.slice(`${repoBase}/git/trees/`.length);
+      const entries = git.trees.get(sha);
+      if (!entries) return jsonResponse({ message: "Not Found" }, 404);
+      if (url.searchParams.get("recursive") !== "1")
+        return jsonResponse({ sha, tree: entries, truncated: false });
+      // GitHub's recursive listing: every entry with its full path.
+      const flat: TreeEntry[] = [];
+      const descend = (list: TreeEntry[], prefix: string) => {
+        for (const entry of list) {
+          flat.push({ ...entry, path: prefix + entry.path });
+          if (entry.type === "tree") descend(git.trees.get(entry.sha) ?? [], `${prefix}${entry.path}/`);
+        }
+      };
+      descend(entries, "");
+      return jsonResponse({ sha, tree: flat, truncated: false });
+    }
+    if (path.startsWith(`${repoBase}/git/blobs/`) && method === "GET") {
+      const sha = path.slice(`${repoBase}/git/blobs/`.length);
+      const content = git.blobs.get(sha);
+      if (content === undefined) return jsonResponse({ message: "Not Found" }, 404);
+      return jsonResponse({
+        sha,
+        size: encoder.encode(content).length,
+        encoding: "base64",
+        content: base64(content),
+      });
+    }
+    if (path === `${repoBase}/git/trees` && method === "POST") {
+      const changes: Change[] = (body.tree as { path: string; mode: string; content: string }[]).map(
+        (t) => ({ segments: t.path.split("/"), mode: t.mode, content: t.content }),
+      );
+      const sha = writeTree(git, body.base_tree, changes);
+      return jsonResponse({ sha });
+    }
+    if (path === `${repoBase}/git/commits` && method === "POST") {
+      const parents = Array.isArray(body.parents) ? body.parents.map(String) : [];
+      const sha = commitSha(body.tree + ":" + parents.join(",") + ":" + Date.now());
+      git.commits.set(sha, { tree: body.tree, parents });
+      return jsonResponse({ sha });
+    }
+    if (path === `${repoBase}/git/refs/heads/main` && method === "PATCH") {
+      const next = git.commits.get(String(body.sha));
+      if (!next || body.force || !next.parents.includes(git.head))
+        return jsonResponse({ message: "Reference update failed" }, 409);
+      git.head = body.sha;
+      return jsonResponse({ ref: "refs/heads/main", object: { sha: body.sha } });
+    }
+    return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+  }) as typeof fetch;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory session store speaking the worker/index.ts DO protocol.
+// ---------------------------------------------------------------------------
+
+interface StoredSession {
+  kind: "user" | "oauth";
+  token?: string;
+  login?: string;
+  avatar_url?: string;
+  expiresAt: number;
+}
+interface SessionSlot {
+  value: StoredSession;
+  git: Git;
+}
+const sessions = new Map<string, SessionSlot>();
+let initialGit: Git;
+
+function newSessionId(): string {
+  return createHash("sha256").update(`${Date.now()}:${Math.random()}`).digest("hex");
+}
+
+function env(): Env {
+  return {
+    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+    GITHUB_CLIENT_ID: "demo-client-id",
+    GITHUB_CLIENT_SECRET: "demo-client-secret",
+    GITHUB_APP_SLUG: "native-site-editor-demo",
+    SESSIONS: {
+      idFromName: (name: string) => name,
+      get: (id: string) => ({
+        fetch: async (request: Request): Promise<Response> => {
+          const slot = sessions.get(id);
+          const url = new URL(request.url);
+          if (request.method === "PUT") {
+            const value = (await request.json()) as StoredSession;
+            sessions.set(id, { value, git: slot?.git ?? cloneGit(initialGit) });
+            return new Response(null, { status: 204 });
+          }
+          if (request.method === "DELETE") {
+            sessions.delete(id);
+            return new Response(null, { status: 204 });
+          }
+          if (!slot || slot.value.expiresAt <= Date.now())
+            return new Response(null, { status: 404 });
+          if (url.pathname === "/consume") sessions.delete(id);
+          return Response.json(slot.value);
+        },
+      }),
+    },
+  } as unknown as Env;
+}
+
+// ---------------------------------------------------------------------------
+// Vite middleware bridging Node http <-> the Worker handler.
+// ---------------------------------------------------------------------------
+
+function readBody(req: Connect.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolveBody) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on("end", () => resolveBody(Buffer.concat(chunks)));
+  });
+}
+
+function toRequest(req: Connect.IncomingMessage, bodyBuffer: Buffer): Request {
+  const url = `${publicOrigin()}${req.url ?? "/"}`;
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (Array.isArray(value)) for (const v of value) headers.append(key, v);
+    else if (value !== undefined) headers.set(key, value);
+  }
+  const method = req.method ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD" && bodyBuffer.length > 0;
+  return new Request(url, { method, headers, body: hasBody ? bodyBuffer : undefined });
+}
+
+function sessionCookieName() {
+  return publicOrigin().startsWith("https://") ? "__Host-ase_session" : "ase_session";
+}
+
+function sessionCookie(req: Connect.IncomingMessage): string | null {
+  const name = sessionCookieName();
+  const match = (req.headers.cookie ?? "")
+    .split(";")
+    .map((p) => p.trim())
+    .find((p) => p.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : null;
+}
+
+function mintSession(): string {
+  const id = newSessionId();
+  sessions.set(id, {
+    value: {
+      kind: "user",
+      token: "demo-token",
+      login: DEMO_LOGIN,
+      avatar_url: "",
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    },
+    git: cloneGit(initialGit),
+  });
+  return id;
+}
+
+// Test-only latency injected before the worker handles a publish, scoped to the
+// browser session. Public demo mode does not expose this control channel.
+const publishDelays = new Map<string, number>();
+
+function workerMiddleware(): Connect.NextHandleFunction {
+  return async (req, res, next) => {
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${appPort}`);
+    const path = url.pathname;
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    );
+
+    // Test control channel (never part of the real product, never public demo).
+    if (path.startsWith("/__demo/")) {
+      if (demoMode) {
+        res.statusCode = 404;
+        return res.end();
+      }
+      const bodyBuffer = await readBody(req);
+      const id = sessionCookie(req);
+      if (!id || !sessions.has(id)) {
+        res.statusCode = 401;
+        return res.end();
+      }
+      if (path === "/__demo/slow") {
+        publishDelays.set(id, Math.max(0, Number(url.searchParams.get("ms") ?? "0") || 0));
+        res.statusCode = 204;
+        return res.end();
+      }
+      if (path === "/__demo/external-edit") {
+        // Simulate an external commit that advances the branch, so the next save
+        // of that file with a now-stale baseSha conflicts.
+        const { path: filePath, content } = JSON.parse(bodyBuffer.toString() || "{}");
+        const git = sessions.get(id)!.git;
+        const tree = writeTree(git, git.commits.get(git.head)!.tree, [
+          { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
+        ]);
+        const commit = commitSha(tree + ":external:" + Date.now());
+        git.commits.set(commit, { tree, parents: [git.head] });
+        git.head = commit;
+        res.statusCode = 204;
+        return res.end();
+      }
+      res.statusCode = 404;
+      return res.end();
+    }
+
+    const isWorkerPath =
+      path.startsWith("/api/") || path.startsWith("/auth/") || path === "/mcp";
+
+    // A top-level document with no session cookie mints an isolated demo session.
+    const accept = req.headers.accept ?? "";
+    const isDocument = req.method === "GET" && accept.includes("text/html");
+    let mintedCookie: string | undefined;
+    if (!isWorkerPath) {
+      const existingSession = sessionCookie(req);
+      const slot = existingSession ? sessions.get(existingSession) : undefined;
+      if (isDocument && (!existingSession || !slot || slot.value.expiresAt <= Date.now())) {
+        const id = mintSession();
+        const cookieName = sessionCookieName();
+        mintedCookie = `${cookieName}=${id}; Path=/; HttpOnly; SameSite=Lax${publicOrigin().startsWith("https://") ? "; Secure" : ""}`;
+        // Make the freshly minted cookie visible to same-request worker calls.
+        req.headers.cookie = `${req.headers.cookie ? req.headers.cookie + "; " : ""}${cookieName}=${id}`;
+        res.setHeader("Set-Cookie", mintedCookie);
+      }
+      return next();
+    }
+
+    const bodyBuffer = await readBody(req);
+    const request = toRequest(req, bodyBuffer);
+    const id = sessionCookie(req);
+    const git = (id && sessions.get(id)?.git) || initialGit;
+    const delay = id ? (publishDelays.get(id) ?? 0) : 0;
+    if (path === "/api/publish" && delay > 0)
+      await new Promise((r) => setTimeout(r, delay));
+    const response = await handle(request, env(), githubFetch(git));
+
+    res.statusCode = response.status;
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.end(buffer);
+  };
+}
+
+// Demo banner: injected into index.html only in demo mode. It marks the demo
+// account/repo and that saves are simulated, so the exposed demo is never
+// mistaken for a real GitHub write.
+function demoBannerPlugin(): Plugin {
+  return {
+    name: "ase-native-save-demo-banner",
+    apply: "serve",
+    transformIndexHtml(html) {
+      if (!demoMode) return html;
+      const banner = `<div style="position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#2d2a24;color:#f6f6f3;font:600 13px/1.4 system-ui,sans-serif;padding:6px 12px;text-align:center">Demo — signed in as <strong>${DEMO_LOGIN}</strong> on <strong>${DEMO_REPO.full_name}</strong>. Saves commit to a simulated in-memory GitHub only. No real token, no real writes.</div>`;
+      return html.replace("<body>", `<body>\n${banner}`);
+    },
+  };
+}
+
+async function main() {
+  initialGit = buildInitialGit();
+  const app = await createServer({
+    configFile: false,
+    root: projectRoot,
+    cacheDir: resolve(projectRoot, `.scratch/native-save/vite-cache-${appPort}`),
+    plugins: [
+      { name: "ase-native-save-worker", apply: "serve", configureServer(server) {
+        server.middlewares.use(workerMiddleware());
+      } },
+      demoBannerPlugin(),
+    ],
+    server: {
+      host: "127.0.0.1",
+      port: appPort,
+      strictPort: true,
+      watch: {
+        ignored: ["**/.scratch/**", "**/test-results/**", "**/playwright-report/**"],
+      },
+      allowedHosts: process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN
+        ? [new URL(process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN).hostname]
+        : undefined,
+      fs: { allow: [projectRoot, realpathSync(join(projectRoot, "node_modules"))] },
+    },
+  });
+  await app.listen();
+  const cleanup = async () => {
+    await app.close().catch(() => undefined);
+  };
+  process.once("SIGTERM", () => void cleanup().finally(() => process.exit(0)));
+  process.once("SIGINT", () => void cleanup().finally(() => process.exit(0)));
+  // eslint-disable-next-line no-console
+  console.log(`native-save server listening on http://127.0.0.1:${appPort} (demo=${demoMode})`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

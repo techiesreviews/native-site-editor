@@ -198,22 +198,9 @@ select {
   display: grid;
   gap: 8px;
 }
-.changes-window__edit {
-  display: grid;
-  gap: 2px;
-  font-size: 13px;
-}
 .changes-window__where {
   font-size: 11px;
   color: var(--muted);
-}
-.changes-window__edit del {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-.changes-window__edit ins {
-  text-decoration: none;
-  font-weight: 550;
 }
 .changes-window__back {
   margin-top: 14px;
@@ -291,9 +278,6 @@ select {
 }
 .code-pane > .workspace-content {
   flex: 1;
-}
-.changes-window__compare {
-  margin: 0 0 4px;
 }
 .small-dot {
   width: 5px;
@@ -600,20 +584,6 @@ h1 {
   background: var(--surface-subtle);
   padding: 4px 9px;
   border-radius: 20px;
-}
-.badge.detected {
-  background: var(--success-bg);
-
-  color: var(--success-fg);
-}
-.badge.ambiguous {
-  background: var(--warning-bg);
-  color: var(--warning-fg);
-}
-.version {
-  font-size: 12px;
-  font-family: ui-monospace, monospace;
-  color: var(--green);
 }
 .project-meta {
   margin-top: 30px;

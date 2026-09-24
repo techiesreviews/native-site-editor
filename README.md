@@ -1,6 +1,8 @@
-# Astro Site Editor
+> Current architecture, audit and checkpoint: [docs/NATIVE-PROJECT.md](docs/NATIVE-PROJECT.md). The sections below record the project's origin as an Astro editor; the Astro build, preview and intelligence code has since been removed, and the editor now works only with native HTML/CSS sites described by `.astro-editor/native.json`.
 
-A browser-based editor for Astro websites stored in GitHub, hosted on Cloudflare's free plan. Built in public; MIT licensed. Reference deployment: **https://astro.techies.tools**. Status: early, but usable; source editing, committed branch previews, and visual editing of literal text (headings, paragraphs, links and buttons) all work. Layout- and component-level visual editing remain under investigation.
+# Native Site Editor
+
+A browser-based editor for plain HTML and CSS websites stored in GitHub, hosted on Cloudflare's free plan. Built in public; MIT licensed. Reference deployment: **https://editor.techies.tools**. Pages, custom-element components and shared stylesheets render live in a sandboxed preview as you type, with no site build; selected files save straight to the branch.
 
 Run your own copy: see [setting up your own editor](docs/setup.md). Everything below documents the reference deployment and the project's direction.
 
@@ -10,9 +12,9 @@ Discovery started with Lex on 2026-09-17, inspired by UnblockWP and the modern W
 
 The editor connects a GitHub App, browses selected personal repositories and branches, shows their file trees, and detects Astro dependencies. Monaco provides editing, diff review, undo, discard, and downloads. Draft content and its GitHub baseline persist in this browser across reloads, scoped by account, repository ID, branch, and path. Selected existing files can be published together as one direct GitHub commit. Unrelated remote changes are preserved; overlapping edits stop publication for review. GitHub App Contents write permission is required. See [publishing and recovery](docs/publishing.md). A **Preview** toggle embeds the branch's built site when the repository carries the editor's preview workflow; see [connecting a repository's preview](docs/repository-preview.md) and [preview proof](docs/research/preview-proof.md). Repositories using the unchanged starter preview workflow can render source drafts through a separate GitHub preview branch before Publish; other integrations keep committed previews. The workspace splits into resizable code and preview panes, and their widths persist between visits.
 
-Inside the preview, clicking a literal heading, paragraph, link or button selects its exact source and edits it in place. Text edits, size changes, bold/italic within a heading or paragraph, link retargeting, and heading-level changes map back to the precise source bytes and record as draft edits; Undo and Redo (Ctrl/Cmd+Z, Ctrl+Y) reach into that history; see [source proof](docs/research/source-proof.md). File history can restore the open file from an earlier commit without changing other files. Broader layout and component editing remains later work.
+Inside the preview, clicking an element opens its page or component source and the stylesheet rules that style it, side by side. Edits to any of those files patch the live preview as you type; Undo and Redo (Ctrl/Cmd+Z, Ctrl+Y) reach across both panes.
 
-Refresh restores the last accessible repository, branch and file for the signed-in account, including local drafts. Without saved navigation, a single accessible repository opens automatically on its default branch. Astro project intelligence runs in a browser worker: repository files and drafts drive imported component prop suggestions, mapped type errors, and hover information. Relative imports and root tsconfig path aliases are supported. The current index is limited to 200 files, 100 folders, 3 MB total source, and 128 KB per file. External dependency types, framework integrations, nested project configurations, and some Astro global APIs remain limited. See [implementation and limitations](docs/research/astro-browser-intellisense.md).
+Refresh restores the last accessible repository, branch and file for the signed-in account, including local drafts. Without saved navigation, a single accessible repository opens automatically on its default branch, and a native site opens on its home page.
 
 The address bar tracks the selected repository ID, branch and file, for example `/#repo=123&branch=main&file=src%2Fpages%2Findex.astro`. Bookmark or copy this URL to reopen that file. Explicit links take priority over remembered navigation and survive GitHub sign-in in the same tab. Links grant no access: the signed-in account still needs repository permission. Fragments are not sent with HTTP requests; draft contents and agent credentials never appear in the URL. New unpublished files can only reopen where their browser-local draft exists.
 
@@ -26,7 +28,7 @@ npm run setup
 npm run dev
 ```
 
-Open http://127.0.0.1:8787. The app runs without credentials but needs GitHub App registration for a live connection. See [setup and deployment](docs/setup.md) for the guided setup, Cloudflare deployment, tests and limitations. A standalone test site lives in [fixtures/astro-starter](fixtures/astro-starter/README.md).
+Open http://127.0.0.1:8787. The app runs without credentials but needs GitHub App registration for a live connection. See [setup and deployment](docs/setup.md) for the guided setup, Cloudflare deployment, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
 
 ## Starting context
 

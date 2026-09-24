@@ -14,7 +14,7 @@ A project opts in with a validated, versioned manifest at
 {
   "version": 1,
   "routes": { "/": "src/pages/index.html", "/about/": "src/pages/about.html" },
-  "components": { "site-header": "src/components/site-header.html" },
+  "components": { "site-header": "src/components/site-header/site-header.html" },
   "styles": ["src/styles/site.css"]
 }
 ```

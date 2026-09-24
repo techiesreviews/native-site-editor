@@ -8,6 +8,12 @@
 
 set -euo pipefail
 
+cat >&2 <<'EOF'
+The inherited manual setup wizard is disabled for this Native Site Editor Pages slice.
+It still describes the older Astro/Workers onboarding flow. Use docs/NATIVE-PROJECT.md for the current Pages + session Worker architecture.
+EOF
+exit 1
+
 # ──────────────────────────────────────────────────────────────────────────
 # Wizard library: delightful, consistent UX, identical across every wizard.
 # ──────────────────────────────────────────────────────────────────────────

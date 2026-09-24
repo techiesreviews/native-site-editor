@@ -233,7 +233,7 @@ export async function restore(
     `${base}/git/commits`,
     "POST",
     {
-      message: `Restore ${data.path} from ${data.target.slice(0, 7)} with Astro Site Editor`,
+      message: `Restore ${data.path} from ${data.target.slice(0, 7)} with Native Site Editor`,
       tree: tree.sha,
       parents: [head],
     },

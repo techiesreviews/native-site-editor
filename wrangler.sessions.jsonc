@@ -1,0 +1,27 @@
+{
+  // Production Worker for the Native Site Editor at https://editor.techies.tools.
+  //
+  // It owns the SQLite-backed SessionStore Durable Object, runs the request
+  // handler in `worker/app.ts` for `/api/*`, `/auth/*` and `/mcp`, and serves the
+  // built UI from `dist` as static assets (with `public/_headers` applied).
+  //
+  // The name stays `native-site-editor-sessions` because the Pages project
+  // (`wrangler.jsonc`, kept as the `native-site-editor.pages.dev` fallback)
+  // binds to this Worker's Durable Object by `script_name`; renaming it would
+  // break that binding. Deploy with `npm run deploy`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "native-site-editor-sessions",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": false,
+  "routes": [{ "pattern": "editor.techies.tools", "custom_domain": true }],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*", "/mcp"],
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionStore"] }],
+}

@@ -1,5 +1,5 @@
 {
-  "name": "astro-site-editor",
+  "name": "native-site-editor",
   "private": true,
   "license": "MIT",
   "version": "0.1.0",
@@ -8,18 +8,18 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "npm run build:ui && wrangler dev",
+    "dev": "npm run build:ui && wrangler pages dev dist",
     "dev:ui": "vite --host 127.0.0.1",
     "build:ui": "vite build",
-    "build": "npm run check && npm run build:ui && wrangler deploy --dry-run",
+    "build:functions": "wrangler pages functions build --outdir .scratch/pages-functions",
+    "build": "npm run check && npm run build:ui && npm run build:functions",
     "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
-    "generate:integration": "node scripts/generate-integration-files.mjs",
+    "deploy": "npm run build:ui && wrangler deploy --config wrangler.sessions.jsonc",
+    "deploy:sessions": "wrangler deploy --config wrangler.sessions.jsonc",
+    "deploy:pages": "npm run build:ui && wrangler pages deploy dist --project-name native-site-editor",
     "test": "tsx --test tests/*.test.ts",
-    "test:browser": "playwright test",
-    "test:browser-structural-preview": "playwright test -c playwright.browser-structural-preview.config.ts",
-    "test:browser-structural-overlay": "node --import tsx scripts/browser-structural-preview-overlay-check.mjs",
-    "test:browser-structural-types": "tsc -p tsconfig.browser-structural-preview.json --noEmit",
-    "deploy": "npm run build:ui && wrangler deploy",
+    "test:browser": "playwright test -c playwright.native-save.config.ts",
+    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
     "setup": "node scripts/setup-browser.mjs",
     "setup:manual": "bash scripts/setup-github.sh",
     "setup:browser": "node scripts/setup-browser.mjs"
@@ -37,11 +37,8 @@
     "wrangler": "^4.133.0"
   },
   "dependencies": {
-    "@astrojs/compiler": "^4.0.0",
-    "@jridgewell/trace-mapping": "^0.3.31",
     "@modelcontextprotocol/server": "^2.0.0",
     "monaco-editor": "^0.56.0",
-    "typescript-language": "npm:typescript@^5.9.3",
     "zod": "^4.6.5"
   },
   "overrides": {

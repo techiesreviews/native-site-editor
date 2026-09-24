@@ -88,7 +88,7 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   };
 }
 
-// Vertical splitter between the Astro/CSS code panes. Only active while the
+// Vertical splitter between the page/CSS code panes. Only active while the
 // secondary pane is open; the split ratio persists and is restored on reopen.
 // Independent of the horizontal height resizer above.
 export function mountCodeWidthResize(split: HTMLElement, primary: HTMLElement, secondary: HTMLElement) {

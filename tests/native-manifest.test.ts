@@ -26,21 +26,35 @@ test("accepts the native-starter fixture manifest", () => {
   assert.equal(manifest.version, 1);
   assert.deepEqual(manifest.routes["/"], "src/pages/index.html");
   assert.deepEqual(manifest.routes["/about/"], "src/pages/about.html");
-  assert.equal(manifest.components["site-header"], "src/components/site-header.html");
+  assert.equal(manifest.components["site-header"], "src/components/site-header/site-header.html");
   assert.deepEqual(manifest.styles, ["src/styles/site.css"]);
   assert.equal(nativeDefaultRoute(manifest), "/");
   assert.deepEqual(
     nativeManifestPaths(manifest).sort(),
     [
-      "src/components/card-note.html",
-      "src/components/project-card.html",
-      "src/components/site-footer.html",
-      "src/components/site-header.html",
+      "src/components/card-note/card-note.html",
+      "src/components/project-card/project-card.html",
+      "src/components/site-footer/site-footer.html",
+      "src/components/site-header/site-header.html",
       "src/pages/about.html",
       "src/pages/index.html",
       "src/styles/site.css",
     ],
   );
+});
+
+test("accepts a flat component path", () => {
+  const manifest = ok(
+    '{"version":1,"routes":{"/":"src/pages/index.html"},"components":{"header-bar":"src/components/header-bar.html"}}',
+  );
+  assert.equal(manifest.components["header-bar"], "src/components/header-bar.html");
+});
+
+test("accepts a per-component folder path", () => {
+  const manifest = ok(
+    '{"version":1,"routes":{"/":"src/pages/index.html"},"components":{"header-bar":"src/components/header-bar/header-bar.html"}}',
+  );
+  assert.equal(manifest.components["header-bar"], "src/components/header-bar/header-bar.html");
 });
 
 test("rejects reserved custom-element names", () => {

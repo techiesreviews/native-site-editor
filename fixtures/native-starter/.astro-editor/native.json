@@ -5,10 +5,10 @@
     "/about/": "src/pages/about.html"
   },
   "components": {
-    "site-header": "src/components/site-header.html",
-    "site-footer": "src/components/site-footer.html",
-    "project-card": "src/components/project-card.html",
-    "card-note": "src/components/card-note.html"
+    "site-header": "src/components/site-header/site-header.html",
+    "site-footer": "src/components/site-footer/site-footer.html",
+    "project-card": "src/components/project-card/project-card.html",
+    "card-note": "src/components/card-note/card-note.html"
   },
   "styles": ["src/styles/site.css"]
 }

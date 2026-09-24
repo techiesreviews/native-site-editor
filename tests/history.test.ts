@@ -243,7 +243,7 @@ test("restore creates a single-file commit and fast-forwards the current head", 
     (call) => call.method === "POST" && call.path.endsWith("/git/commits"),
   )!;
   assert.deepEqual(commit.body, {
-    message: `Restore src/index.astro from ${target.slice(0, 7)} with Astro Site Editor`,
+    message: `Restore src/index.astro from ${target.slice(0, 7)} with Native Site Editor`,
     tree: created,
     parents: [head],
   });

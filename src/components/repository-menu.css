@@ -55,20 +55,6 @@
   margin-top: 12px;
 }
 
-.repository-menu__integration {
-  padding: 0 10px 12px;
-}
-
-.repository-menu__integration-state {
-  margin: 0 0 8px;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.repository-menu__integration-action {
-  width: 100%;
-}
-
 .repository-menu__action {
   display: block;
   width: 100%;

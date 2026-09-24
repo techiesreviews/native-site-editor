@@ -1,9 +1,0 @@
-{
-  // Astro Site Editor preview host. Static assets only; no Worker script.
-  // Delete the .astro-editor directory and the editor workflow to stop using the editor.
-  "name": "astro-editor-starter",
-  "compatibility_date": "2026-09-17",
-  "workers_dev": true,
-  "preview_urls": true,
-  "assets": { "directory": "../dist", "not_found_handling": "404-page" },
-}

@@ -3,8 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSetupServer, manifest } from "../scripts/setup-browser.mjs";
 
+const editorOrigin = "https://astro.techies.tools";
+
 test("manifest contains hosted sign-in and Contents write and Metadata read permissions", () => {
-  const value = manifest("http://127.0.0.1:8790");
+  const value = manifest("http://127.0.0.1:8790", { editorOrigin });
   assert.equal(value.redirect_url, "http://127.0.0.1:8790/callback");
   assert.ok(
     value.callback_urls.includes("https://astro.techies.tools/auth/callback"),
@@ -38,6 +40,7 @@ test("browser setup requires its launch link, browser cookie and matching state;
     deploy: async (values) => {
       deployed = values;
     },
+    editorOrigin,
   });
   const launch = await setup.listen();
   t.after(() => setup.server.close());
@@ -95,6 +98,7 @@ test("a failed Cloudflare upload can be retried without registering another App"
     deploy: async () => {
       if (++uploads === 1) throw new Error("do not expose secret-value");
     },
+    editorOrigin,
   });
   const launch = await setup.listen();
   t.after(() => setup.server.close());
@@ -131,7 +135,7 @@ test("a failed Cloudflare upload can be retried without registering another App"
 
 test("tunnel setup uses its HTTPS callback, secure cookie and rejects other hosts", async (t) => {
   const publicOrigin = "https://setup-example.trycloudflare.com";
-  const setup = createSetupServer({ port: 0, publicOrigin });
+  const setup = createSetupServer({ port: 0, publicOrigin, editorOrigin });
   const launch = await setup.listen();
   t.after(() => setup.server.close());
   const local = `http://127.0.0.1:${setup.server.address().port}`;

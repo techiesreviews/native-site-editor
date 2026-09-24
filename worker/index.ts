@@ -1,7 +1,8 @@
 import { agentOperation } from "./agent-operations";
 import { HttpError } from "./github";
 import { DurableObject } from "cloudflare:workers";
-import { handle, type Env, type StoredSession } from "./app";
+import { handle, type Env, type StoredSession, type StoredValue } from "./app";
+import type { GitHubAppConfig } from "./owner-setup";
 
 export class SessionStore extends DurableObject {
   async fetch(request: Request): Promise<Response> {
@@ -32,17 +33,30 @@ export class SessionStore extends DurableObject {
       });
     }
     if (request.method === "PUT") {
-      const value = (await request.json()) as StoredSession;
+      if (new URL(request.url).pathname === "/config") {
+        return this.ctx.blockConcurrencyWhile(async () => {
+          const existing = await storage.get<GitHubAppConfig>("config");
+          if (existing) return new Response(null, { status: 409 });
+          await storage.put("config", await request.json());
+          return new Response(null, { status: 204 });
+        });
+      }
+      const value = (await request.json()) as StoredValue;
       await storage.put("session", value);
       await storage.setAlarm(value.expiresAt);
       return new Response(null, { status: 204 });
     }
     if (request.method === "DELETE") {
-      await storage.deleteAll();
+      await storage.delete("session");
+      await storage.deleteAlarm();
       return new Response(null, { status: 204 });
     }
     const read = async () => {
-      const value = await storage.get<StoredSession>("session");
+      if (new URL(request.url).pathname === "/config") {
+        const value = await storage.get<GitHubAppConfig>("config");
+        return value ? Response.json(value) : new Response(null, { status: 404 });
+      }
+      const value = await storage.get<StoredValue>("session");
       if (!value || value.expiresAt <= Date.now())
         return new Response(null, { status: 404 });
       if (new URL(request.url).pathname === "/consume")
@@ -52,7 +66,7 @@ export class SessionStore extends DurableObject {
     return this.ctx.blockConcurrencyWhile(read);
   }
   async alarm() {
-    await this.ctx.storage.deleteAll();
+    await this.ctx.storage.delete("session");
   }
 }
 
