@@ -183,8 +183,9 @@ test("a selected link offers Follow link, and the bar hides when scrolled away o
   await child!.evaluate(() => window.scrollTo(0, 0));
   await expect(bar(page)).toBeVisible();
 
-  // Roving focus along the bar: Heading level, Text size, B, I, More.
-  await bar(page).getByRole("button", { name: "More" }).focus();
+  // Roving focus along the bar: Heading level, Text size, B, I. A heading has no More.
+  await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Italic" }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
@@ -192,10 +193,7 @@ test("a selected link offers Follow link, and the bar hides when scrolled away o
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
-  await expect(bar(page).getByRole("button", { name: "More" })).toBeFocused();
-  await bar(page).getByRole("button", { name: "Italic" }).focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(bar(page).getByRole("button", { name: "More" })).toBeFocused();
+  await expect(bar(page).getByRole("button", { name: "Italic" })).toBeFocused();
 
   // A section gets a bar without text controls; the page's main container none at all.
   await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());

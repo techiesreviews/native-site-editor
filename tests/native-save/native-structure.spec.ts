@@ -86,6 +86,8 @@ test("an image shows in the preview, and Replace and Alt text edit its tag", asy
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await image.click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
+  // Only whole sections move, duplicate or go away.
+  await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
 
   // No alt attribute: the field warns and suggests the file's name.
   const altButton = bar(page).getByRole("button", { name: "Alt text missing" });

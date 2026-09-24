@@ -817,27 +817,25 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onApply: (value) => change([setAttributeEdit(source, tag, "aria-label", value.trim() || undefined)], node, value.trim() ? "Label updated" : "Label removed"),
     });
   }
-  // More: move (sections), duplicate and remove, as one undo step each.
-  if (range && node && !["main", "slot", "html", "body"].includes(selection.tag)) {
+  // More: whole sections (a <section> or a section component) move, duplicate
+  // and remove, as one undo step each. Nothing else can be removed this way.
+  const sectionTemplate = selection.tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[selection.tag] ?? ""] ?? "");
+  if (range && node && (selection.tag === "section" || sectionTemplate)) {
     const parent = node.slice(0, -1);
     const index = node[node.length - 1];
-    const sectionTemplate = selection.tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[selection.tag] ?? ""] ?? "");
-    const movable = selection.tag === "section" || sectionTemplate;
+    const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
+    const after = locateNativeElementRange(source, [...parent, index + 1]);
     const items: { label: string; onSelect: () => void; disabled?: boolean }[] = [];
-    if (movable) {
-      const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
-      const after = locateNativeElementRange(source, [...parent, index + 1]);
-      items.push({
-        label: "Move up",
-        disabled: !before,
-        onSelect: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
-      });
-      items.push({
-        label: "Move down",
-        disabled: !after,
-        onSelect: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
-      });
-    }
+    items.push({
+      label: "Move up",
+      disabled: !before,
+      onSelect: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
+    });
+    items.push({
+      label: "Move down",
+      disabled: !after,
+      onSelect: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
+    });
     items.push({
       label: "Duplicate",
       onSelect: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
