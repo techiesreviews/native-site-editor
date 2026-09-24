@@ -795,9 +795,6 @@ dd {
   max-height: 40dvh;
   min-height: 80px;
 }
-#structure {
-  flex: 1;
-}
 @media (max-width: 650px) {
   .login-card {
     padding: 27px 24px;

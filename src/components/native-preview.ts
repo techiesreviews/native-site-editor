@@ -114,6 +114,21 @@ export type NativeFormat = "strong" | "em";
 
 // Text typed into a selected element in the preview: its whole text content
 // before and after the change.
+/** One page element in the structure the runtime reports after a render. */
+export interface NativeStructureItem {
+  tag: string;
+  node: number[];
+  text: string;
+  heading: string;
+  slot: string;
+  children: NativeStructureItem[];
+}
+export interface NativeStructure {
+  /** The page file the items belong to; empty for a component shown by itself. */
+  path: string;
+  items: NativeStructureItem[];
+}
+
 export interface NativeTextEdit {
   path: string;
   node: number[];
@@ -128,6 +143,8 @@ interface NativePreviewHandlers {
   // Ctrl/⌘+B or +I pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
+  // The rendered page's own elements, after each render.
+  onStructure?: (structure: NativeStructure | undefined) => void;
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
@@ -338,6 +355,25 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       handlers.onTextSelection?.(readTextSelection((data as { selection?: unknown }).selection));
       return;
     }
+    if (data.type === "structure" && manifest) {
+      const raw = data as unknown as { path?: unknown; items?: unknown };
+      const path = typeof raw.path === "string" && (raw.path === "" || manifest.routes[route] === raw.path) ? raw.path : undefined;
+      if (path === undefined) return;
+      let count = 0;
+      const readItems = (value: unknown, depth: number): NativeStructureItem[] => {
+        if (!Array.isArray(value) || depth > 12) return [];
+        return value.flatMap((entry): NativeStructureItem[] => {
+          if (!entry || typeof entry !== "object" || ++count > 2000) return [];
+          const item = entry as Record<string, unknown>;
+          if (typeof item.tag !== "string" || !Array.isArray(item.node) || item.node.length > 500 ||
+            !item.node.every((index) => Number.isInteger(index) && index >= 0)) return [];
+          const text = (key: string) => (typeof item[key] === "string" ? (item[key] as string).slice(0, 80) : "");
+          return [{ tag: item.tag.slice(0, 100), node: item.node as number[], text: text("text"), heading: text("heading"), slot: text("slot"), children: readItems(item.children, depth + 1) }];
+        });
+      };
+      handlers.onStructure?.({ path, items: readItems(raw.items, 0) });
+      return;
+    }
     if (data.type === "format") {
       const format = (data as { format?: unknown }).format;
       if (format === "strong" || format === "em") handlers.onFormat?.(format);
@@ -493,6 +529,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
       schedule();
     },
+    /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
+    selectNode(request: NativeNodeRequest) {
+      if (!mounted) return;
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request }, "*");
+    },
     /** Select this element once the next update (the one carrying an edit) has rendered. */
     selectAfterUpdate(request: NativeNodeRequest | undefined) {
       selectNode = request;
@@ -532,6 +573,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       loadError = false;
       insertControls.clear();
       clearSelection();
+      handlers.onStructure?.(undefined);
       pane.remove();
       host.classList.remove("has-preview");
       showBanner(undefined, false);

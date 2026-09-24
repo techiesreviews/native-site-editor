@@ -316,6 +316,7 @@
     else if (editing && editing !== selected) stopEditing(false);
     else if (editing && !typing) { editingText = editing.textContent; editingHtml = editing.innerHTML; }
     lastInsertPoints = "";
+    lastStructure = "";
     lastHover = null;
     updateBoxes();
     reportHover();
@@ -324,6 +325,7 @@
     // Text the host just formatted stays selected, so the next format applies to it too.
     if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
     reportTextSelection(true);
+    reportStructure();
     requestAnimationFrame(requestComponentStyles);
   }
 
@@ -471,6 +473,74 @@
       lastInsertPoints = key;
       emit("insert-points", { path: String(state && state.pagePaths[state.route] || ""), points: points });
     });
+  }
+
+  // The page's own elements as a tree of index paths, for the editor's page
+  // structure sidebar: the light DOM under the page root, not the inside of
+  // component shadow roots (those belong to the template, not the page).
+  // Each item carries its tag, a snippet of its own text, and the text of
+  // the first heading within it (into a component's shadow root too).
+  function structureItems(container, depth) {
+    var out = [];
+    if (depth > 12) return out;
+    var children = Array.prototype.slice.call(container.children);
+    for (var i = 0; i < children.length && out.length < 500; i++) {
+      var child = children[i];
+      if (injectedStyle(child)) continue;
+      var path = elementIndexPath(child);
+      if (!path) continue;
+      var heading = ownHeading(child);
+      out.push({
+        tag: child.localName,
+        node: path,
+        text: (child.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+        heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",
+        slot: child.getAttribute("slot") || "",
+        children: structureItems(child, depth + 1)
+      });
+    }
+    return out;
+  }
+  // The heading that names a container: the first one inside it that no
+  // nested section, article or other landmark claims first (so <main> is not
+  // named by its first section's heading). For a component instance, the
+  // first heading at the top of its template.
+  var SECTIONING = "section,article,main,header,footer,nav,aside";
+  function ownHeading(el) {
+    if (el.matches("h1,h2,h3,h4,h5,h6")) return null;
+    var list = el.querySelectorAll("h1,h2,h3,h4,h5,h6");
+    for (var i = 0; i < list.length; i++) {
+      var owner = list[i].closest(SECTIONING);
+      if (owner === el || !el.contains(owner)) return list[i];
+    }
+    if (!el.shadowRoot) return null;
+    var inner = el.shadowRoot.querySelectorAll("h1,h2,h3,h4,h5,h6");
+    for (var j = 0; j < inner.length; j++) {
+      var root = inner[j].closest(SECTIONING);
+      if (!root || root.parentNode === el.shadowRoot) return inner[j];
+    }
+    return null;
+  }
+  // Text as shown: a slot reads as what the page assigned it, else its fallback.
+  function slotAwareText(n) {
+    if (n.nodeType === 3) return n.nodeValue || "";
+    if (n instanceof HTMLSlotElement) {
+      var assigned = n.assignedNodes({ flatten: true });
+      if (assigned.length) return assigned.map(slotAwareText).join("");
+    }
+    var out = "";
+    for (var c = n.firstChild; c; c = c.nextSibling) out += slotAwareText(c);
+    return out;
+  }
+  var lastStructure = "";
+  function reportStructure() {
+    if (!pageEl || !state) return;
+    var items = structureItems(pageEl, 0);
+    var path = String(state.pagePaths[state.route] || "");
+    var key = path + "\n" + JSON.stringify(items);
+    if (key === lastStructure) return;
+    lastStructure = key;
+    emit("structure", { path: path, items: items });
   }
 
   function rectOf(el) {
@@ -962,6 +1032,19 @@
     if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "clear-selection") {
       clearSelectionState();
+      return;
+    }
+    // The editor's page structure asks for an element by index path: it is
+    // selected like a click and brought to the middle of the frame.
+    if (msg.type === "select-node") {
+      var wanted = resolveNodePath(msg.request);
+      if (!wanted) return;
+      if (editing && editing !== wanted) stopEditing(true);
+      selected = wanted;
+      updateBoxes();
+      var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+      emitSelection(wanted, "click");
       return;
     }
     if (msg.type !== "update") return;

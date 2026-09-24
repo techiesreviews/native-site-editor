@@ -1,7 +1,6 @@
 import "./utilities.css";
 import "./style.css";
 import "./theme.css";
-import "./components/structure-placeholder.css";
 import { node, link, button } from "./ui/dom";
 import {
   readWorkspace,
@@ -19,6 +18,7 @@ import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
+import { createPageStructure } from "./components/page-structure";
 import {
   parseNativeManifest,
   nativeManifestPaths,
@@ -29,7 +29,7 @@ import { locateNativeElement, locateNativeElementRange, startTagAttribute, textR
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, previousHeadingLevel, removeEdit, setAttributeEdit, swapEdits } from "./native-structure";
+import { altFromPath, duplicateEdit, isImagePath, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -122,17 +122,7 @@ function mountWorkspace() {
     <div class="workspace">
       <aside class="sidebar" aria-label="Page structure">
         <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span></div>
-        <div id="structure" class="structure-placeholder">
-          <div class="structure-placeholder__tree" aria-hidden="true">
-            <div>▾ <span>▤</span><i></i></div>
-            <div>│　▾ <span>▧</span><i></i></div>
-            <div>│　　<span>Ｔ</span><i></i></div>
-            <div>│　　<span>▧</span><i></i></div>
-            <div>└　<span>▤</span><i></i></div>
-          </div>
-          <p class="structure-placeholder__title">Your page structure</p>
-          <p class="muted sidebar-hint">Sections, components, and content will appear here when visual editing is available.</p>
-        </div>
+        <div id="structure" class="page-structure"></div>
       </aside>
       <main id="main">
         <div id="code-split" class="code-split">
@@ -201,6 +191,11 @@ function mountWorkspace() {
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
+    onStructure: (structure) => pageStructure?.update(structure),
+  });
+  pageStructure = createPageStructure(element("structure"), {
+    label: (item) => structureLabel(item, Boolean(nativeManifest && Object.hasOwn(nativeManifest.components, item.tag))),
+    onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
   });
 }
 
@@ -521,8 +516,6 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   editorModule?.markElement(selection.path, tag, reveal);
 }
 
-// What the edit bar shows for a selected element: a kind label in the
-// user's words, or the tag itself for components and anything else.
 // The selected element when it is a link, else the nearest ancestor link
 // within the same source (a link around a component's slotted text lives in
 // the page; one around the component lives outside it), with its index path.
@@ -534,17 +527,6 @@ function nearestLink(source: string, node: number[], range: ElementRange | undef
     if (found?.tag.name === "a") return { range: found, node: ancestor };
   }
   return undefined;
-}
-
-function nativeKindLabel(tag: string) {
-  if (/^h[1-6]$/.test(tag)) return "Heading";
-  const labels: Record<string, string> = {
-    p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
-    ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
-    footer: "Footer", nav: "Navigation", main: "Main", aside: "Aside", figure: "Figure", blockquote: "Quote",
-    table: "Table", form: "Form", span: "Text", strong: "Text", em: "Text", slot: "Slot", div: "Block",
-  };
-  return labels[tag] ?? tag;
 }
 
 // Text sizes the bar offers, written as an inline `font-size` on the element.
@@ -1004,6 +986,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 async function selectNativeSource(selection: NativePreviewSelection) {
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
+  pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
   if (!selection.path) nativePreview?.hideEditBar();
   if (!reveal) {
     if (!selection.path || currentPath !== selection.path) {
@@ -1039,6 +1022,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
+let pageStructure: ReturnType<typeof createPageStructure> | undefined;
 // The validated `.astro-editor/native.json` of the loaded project, when present.
 let nativeManifest: NativeManifest | undefined;
 // True whenever the project carries a `.astro-editor/native.json`, even when

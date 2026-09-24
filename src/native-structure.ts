@@ -3,7 +3,42 @@
 // overlap) computed from the element's exact source range, never a re-serialisation.
 
 import { startTagAttribute, startTags, type ElementRange, type StartTag } from "./native-source-location";
-import { uniqueDataKey } from "./native-insert";
+import { componentLabel, uniqueDataKey } from "./native-insert";
+
+// What the edit bar and the page structure call an element: a kind in the
+// user's words, or the tag itself for anything else.
+export function nativeKindLabel(tag: string) {
+  if (/^h[1-6]$/.test(tag)) return "Heading";
+  const labels: Record<string, string> = {
+    p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
+    ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
+    footer: "Footer", nav: "Navigation", main: "Main", aside: "Aside", figure: "Figure", blockquote: "Quote",
+    table: "Table", form: "Form", span: "Text", strong: "Text", em: "Text", slot: "Slot", div: "Block",
+  };
+  return labels[tag] ?? tag;
+}
+
+/** One rendered page element as the runtime reports it for the page structure. */
+export interface StructureItemInfo {
+  tag: string;
+  text: string;
+  heading: string;
+  children: { length: number };
+}
+
+/**
+ * The row for a page element in the page structure: its kind (a component's
+ * name for an instance) and the text that tells it apart. A container (an
+ * element with children, or a component instance) is named by the first
+ * heading inside it, since its own text is everything it holds; an atom by
+ * its own text.
+ */
+export function structureLabel(item: StructureItemInfo, component: boolean) {
+  const kind = component ? componentLabel(item.tag) : nativeKindLabel(item.tag);
+  const container = component || item.children.length > 0;
+  const text = container ? item.heading : item.text;
+  return { kind, text: text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text };
+}
 
 export interface RangeEdit {
   start: number;

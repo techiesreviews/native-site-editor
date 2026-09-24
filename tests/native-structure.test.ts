@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, previousHeadingLevel, removeEdit, setAttributeEdit, swapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -68,4 +68,24 @@ test("alt text from a file name, and the heading level before a point", () => {
   const source = `<h1>a</h1><p>x</p><h2>b</h2><h4>c</h4>`;
   assert.equal(previousHeadingLevel(source, source.indexOf("<h4")), 2);
   assert.equal(previousHeadingLevel(source, 0), 0);
+});
+
+test("nativeKindLabel names elements in the user's words and leaves other tags as they are", () => {
+  assert.equal(nativeKindLabel("h3"), "Heading");
+  assert.equal(nativeKindLabel("p"), "Paragraph");
+  assert.equal(nativeKindLabel("section"), "Section");
+  assert.equal(nativeKindLabel("project-card"), "project-card");
+});
+
+test("structureLabel names a container by its first heading and an atom by its own text", () => {
+  const none = { length: 0 };
+  assert.deepEqual(structureLabel({ tag: "section", text: "Intro Hello there", heading: "Intro", children: { length: 2 } }, false), { kind: "Section", text: "Intro" });
+  assert.deepEqual(structureLabel({ tag: "section", text: "Only text", heading: "", children: { length: 1 } }, false), { kind: "Section", text: "" });
+  assert.deepEqual(structureLabel({ tag: "p", text: "Hello there", heading: "", children: none }, false), { kind: "Paragraph", text: "Hello there" });
+  // A component instance is a container even without slotted children.
+  assert.deepEqual(structureLabel({ tag: "project-card", text: "Reusable cards", heading: "Reusable cards", children: none }, true), { kind: "Project card", text: "Reusable cards" });
+  assert.deepEqual(structureLabel({ tag: "site-header", text: "", heading: "", children: none }, true), { kind: "Site header", text: "" });
+  // Long text is cut with an ellipsis.
+  const long = "x".repeat(70);
+  assert.equal(structureLabel({ tag: "p", text: long, heading: "", children: none }, false).text, `${"x".repeat(59)}…`);
 });
