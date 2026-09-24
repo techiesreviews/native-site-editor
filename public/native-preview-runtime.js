@@ -11,6 +11,11 @@
   var renderDepth = 0;
   var MAX_DEPTH = 40;
   var hadError = false;
+  // The selected text element being typed into, and its text and markup as
+  // of the last commit.
+  var editing = null;
+  var editingText = "";
+  var editingHtml = "";
 
   function emit(type, extra) {
     var base = { source: "astro-native-preview", type: type };
@@ -93,11 +98,14 @@
     }
     syncAttrs(existing, desired);
     if (existing.tagName === "SCRIPT") return;
+    // Typing not yet sent to the editor is not overwritten by a render.
+    if (existing === editing && existing.textContent !== editingText) return;
     reconcileChildren(existing, desired);
   }
 
   function syncAttrs(existing, desired) {
     Array.prototype.slice.call(existing.attributes).forEach(function (a) {
+      if (a.name === "contenteditable" && existing === editing) return;
       if (!desired.hasAttribute(a.name)) existing.removeAttribute(a.name);
     });
     Array.prototype.slice.call(desired.attributes).forEach(function (a) {
@@ -254,6 +262,8 @@
       context: String(payload.context || "")
     };
     Object.keys(state.components).forEach(defineTag);
+    // Typing not yet sent survives this render (see reconcileNode).
+    var typing = !!editing && editing.textContent !== editingText;
     syncStyles();
     renderPage();
     if (!hadError) emit("clear-error");
@@ -261,6 +271,9 @@
     // An edit may replace the selected element (a renamed heading, an undo):
     // the same position is selected again, unless the host asks for another.
     if (selected && !selected.isConnected) selected = (previous && previous.node && resolveNodePath(previous)) || null;
+    // A replaced element (a renamed heading, an undo) stays typeable.
+    var wasEditing = !!editing;
+    if (editing && !editing.isConnected) editing = null;
     if (payload.selectNode) {
       var requested = resolveNodePath(payload.selectNode);
       if (requested) {
@@ -268,8 +281,13 @@
         if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
       }
     }
+    if (wasEditing && !editing && selected) startEditing(selected);
+    else if (editing && editing !== selected) stopEditing(false);
+    else if (editing && !typing) { editingText = editing.textContent; editingHtml = editing.innerHTML; }
     lastInsertPoints = "";
+    lastHover = null;
     updateBoxes();
+    reportHover();
     if (selected) emitSelection(selected, "refresh");
     else if (hadSelection) emit("select", { path: "", tag: "", text: "", reason: "refresh", selectors: [] });
     // Text the host just formatted stays selected, so the next format applies to it too.
@@ -362,17 +380,52 @@
       for (var i = 0; i <= children.length; i++) {
         var prev = rects[i - 1];
         var next = rects[i];
+        // Centred over the neighbouring items, not the whole container.
+        var left = Math.min(prev ? prev.left : Infinity, next ? next.left : Infinity);
+        var right = Math.max(prev ? prev.right : -Infinity, next ? next.right : -Infinity);
+        if (!(right > left)) { left = box.left; right = box.right; }
         out.push({
           parent: parentPath,
           index: i,
           top: prev && next ? (prev.bottom + next.top) / 2 : next ? next.top : prev.bottom,
-          left: box.left,
-          width: box.width,
+          left: left,
+          width: right - left,
           before: next ? itemLabel(children[i]) : ""
         });
       }
     });
     return out;
+  }
+
+  // The item under the pointer among the children of a section-holding
+  // element (sections themselves, from inside their shadow trees too), so the
+  // editor shows only the plus buttons just above and below it.
+  function hoveredItem() {
+    if (!pageEl) return null;
+    var current = hovered;
+    while (current && current !== pageEl) {
+      var parentNode = current.parentElement;
+      if (!parentNode) {
+        var root = current.getRootNode && current.getRootNode();
+        current = root instanceof ShadowRoot ? root.host : null;
+        continue;
+      }
+      if ((parentNode === pageEl || pageEl.contains(parentNode)) && Array.prototype.some.call(parentNode.children, sectionLike)) {
+        var parentPath = parentNode === pageEl ? [] : elementIndexPath(parentNode);
+        if (!parentPath) return null;
+        return { parent: parentPath, index: Array.prototype.indexOf.call(parentNode.children, current) };
+      }
+      current = parentNode;
+    }
+    return null;
+  }
+  var lastHover = null;
+  function reportHover() {
+    var item = hoveredItem();
+    var key = JSON.stringify(item);
+    if (key === lastHover) return;
+    lastHover = key;
+    emit("section-hover", { item: item });
   }
 
   var insertFrame = 0;
@@ -631,22 +684,24 @@
   function reportTextSelection(force) {
     if (force) lastText = "";
     if (textFrame) return;
-    textFrame = requestAnimationFrame(function () {
-      textFrame = 0;
-      var payload = null;
-      if (selected && selected.isConnected) {
-        var range = selectionRangeIn(selected);
-        if (range) {
-          var start = textOffset(selected, range.startContainer, range.startOffset);
-          var end = textOffset(selected, range.endContainer, range.endOffset);
-          if (end > start) payload = { start: start, end: end, text: range.cloneContents().textContent, wrappers: wrappersAround(selected, range.commonAncestorContainer) };
-        }
+    textFrame = requestAnimationFrame(flushTextSelection);
+  }
+  function flushTextSelection() {
+    cancelAnimationFrame(textFrame);
+    textFrame = 0;
+    var payload = null;
+    if (selected && selected.isConnected) {
+      var range = selectionRangeIn(selected);
+      if (range) {
+        var start = textOffset(selected, range.startContainer, range.startOffset);
+        var end = textOffset(selected, range.endContainer, range.endOffset);
+        if (end > start) payload = { start: start, end: end, text: range.cloneContents().textContent, wrappers: wrappersAround(selected, range.commonAncestorContainer) };
       }
-      var key = JSON.stringify(payload);
-      if (key === lastText) return;
-      lastText = key;
-      emit("text-selection", { selection: payload });
-    });
+    }
+    var key = JSON.stringify(payload);
+    if (key === lastText) return;
+    lastText = key;
+    emit("text-selection", { selection: payload });
   }
   function setTextSelection(el, start, end) {
     var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -676,10 +731,79 @@
     var key = e.key.toLowerCase();
     if (key !== "b" && key !== "i") return;
     e.preventDefault();
+    commitEditing();
+    // The host formats the selection it knows, so it hears of it first.
+    flushTextSelection();
     emit("format", { format: key === "b" ? "strong" : "em" });
   });
 
+  // Typing into the selected text element: a text element whose content is
+  // only text and inline formatting becomes editable on the pointer press
+  // that selects it, so the caret lands where it was clicked. The editor gets
+  // the element's text before and after on Enter, on blur and before a format
+  // shortcut, and writes the difference into the source.
+  var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
+  var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd)$/;
+  function editableText(el) {
+    if (!el || !TEXT_TAGS.test(el.localName) || !(el.textContent || "").trim()) return false;
+    var all = el.querySelectorAll("*");
+    for (var i = 0; i < all.length; i++) if (!INLINE_TAGS.test(all[i].localName)) return false;
+    return true;
+  }
+  function startEditing(el) {
+    if (editing === el) return;
+    stopEditing(true);
+    if (!editableText(el)) return;
+    editing = el;
+    editingText = el.textContent;
+    editingHtml = el.innerHTML;
+    el.setAttribute("contenteditable", "plaintext-only");
+    if (el.contentEditable !== "plaintext-only") el.setAttribute("contenteditable", "true");
+    el.setAttribute("spellcheck", "false");
+    el.addEventListener("blur", commitEditing);
+    el.addEventListener("keydown", onEditingKey);
+  }
+  function stopEditing(commit) {
+    if (!editing) return;
+    var el = editing;
+    if (commit) commitEditing();
+    el.removeEventListener("blur", commitEditing);
+    el.removeEventListener("keydown", onEditingKey);
+    el.removeAttribute("contenteditable");
+    el.removeAttribute("spellcheck");
+    editing = null;
+  }
+  function commitEditing() {
+    if (!editing || !editing.isConnected) return;
+    var after = editing.textContent;
+    if (after === editingText) return;
+    var before = editingText;
+    editingText = after;
+    editingHtml = editing.innerHTML;
+    emit("text-edit", { path: ownerPath(editing), node: elementIndexPath(editing), before: before, after: after });
+  }
+  function onEditingKey(e) {
+    if (e.key === "Enter") {
+      // One line of text: Enter finishes, as it does in a form field.
+      e.preventDefault();
+      commitEditing();
+      editing.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      editing.innerHTML = editingHtml;
+      editing.blur();
+    }
+  }
+  document.addEventListener("mousedown", function (e) {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
+    var target = deepestElement(e);
+    if (editing && editing.contains(target)) return;
+    if (target && editableText(target)) startEditing(target);
+    else stopEditing(true);
+  }, true);
+
   function clearSelectionState() {
+    stopEditing(true);
     hovered = null;
     selected = null;
     updateBoxes();
@@ -700,6 +824,13 @@
       }
     }
     var target = deepestElement(e);
+    // Clicks while typing move the caret; the text element stays selected.
+    if (editing && editing.contains(target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (selected !== editing) { selected = editing; updateBoxes(); emitSelection(editing, "click"); }
+      return;
+    }
     if (target) {
       e.preventDefault();
       e.stopPropagation();
@@ -711,10 +842,12 @@
   document.addEventListener("mousemove", function (e) {
     hovered = deepestElement(e);
     updateBoxes();
+    reportHover();
   });
-  document.addEventListener("mouseleave", function () {
+  document.documentElement.addEventListener("mouseleave", function () {
     hovered = null;
     updateBoxes();
+    reportHover();
   });
   window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
   window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });

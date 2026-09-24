@@ -194,6 +194,11 @@ test("a selected link offers Follow link, and the bar hides when scrolled away o
   await page.keyboard.press("End");
   await expect(bar(page).getByRole("button", { name: "Italic" })).toBeFocused();
 
+  // A section gets a bar without text controls; the page's main container none at all.
+  await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(bar(page).getByRole("combobox", { name: "Text size" })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Bold" })).toHaveCount(0);
   // Selecting the page's main container shows no bar.
   await child!.evaluate(() => (document.querySelector("main") as HTMLElement).click());
   await expect(page.locator("#content .code-editor__element")).toHaveCount(1);

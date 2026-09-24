@@ -8,9 +8,18 @@
 .insert-point {
   position: absolute;
   height: 0;
+  transition: opacity 120ms;
 }
 .insert-point[hidden] {
   display: none;
+}
+/* Only the pair around the hovered item shows; the rest stay out of the way
+   but reachable by keyboard. */
+.insert-point:not(.is-near, .is-open, :focus-within) {
+  opacity: 0;
+}
+.insert-point:not(.is-near, .is-open, :focus-within) .insert-point__plus {
+  pointer-events: none;
 }
 .insert-point__line {
   position: absolute;
@@ -36,11 +45,6 @@
   padding: 0;
   background: var(--surface-raised);
   color: var(--muted);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1;
-  opacity: 0.7;
   pointer-events: auto;
   transform: translate(-50%, -50%);
   box-shadow: 0 2px 6px var(--semantic-shadow);
@@ -51,7 +55,6 @@
   border-color: var(--primary);
   background: var(--primary);
   color: var(--on-primary);
-  opacity: 1;
 }
 .insert-point__plus:focus-visible {
   outline: 2px solid var(--focus);

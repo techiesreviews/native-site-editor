@@ -33,6 +33,11 @@ async function scrollFrame(page: Page, to: "top" | "bottom") {
 }
 
 const plus = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
+// Plus buttons show only above and below the item under the pointer.
+const shown = (page: Page) => page.locator(".insert-point.is-near .insert-point__plus");
+async function hoverIn(page: Page, selector: string) {
+  await page.frameLocator(".native-preview-frame").locator(selector).first().hover();
+}
 const picker = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 
 test("a plus between sections inserts a section component, and only those are offered", async ({ page }) => {
@@ -40,7 +45,15 @@ test("a plus between sections inserts a section component, and only those are of
   // One plus per gap among <main>'s sections, including both ends.
   await expect(page.locator(".insert-point__plus")).toHaveCount(4);
   const before = plus(page, "Add a section before “Scroll to verify”");
+  await hoverIn(page, "section.cards");
+  await expect(shown(page)).toHaveCount(2);
+  await expect(shown(page).first()).toHaveAccessibleName(/^Add a section before “Reusable cards/);
   await expect(before).toBeVisible();
+  await expect(plus(page, "Add a section before “A native browser preview”")).toHaveCSS("pointer-events", "none");
+  await hoverIn(page, "section.filler h2");
+  await expect(shown(page)).toHaveCount(2);
+  await expect(shown(page).first()).toHaveAccessibleName("Add a section before “Scroll to verify”");
+  // Centred over the sections, in the middle of the gap between them.
   const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
   const cards = (await frame.locator("section.cards").boundingBox())!;
   const filler = (await frame.locator("section.filler").boundingBox())!;
@@ -49,6 +62,7 @@ test("a plus between sections inserts a section component, and only those are of
   expect(middle).toBeGreaterThanOrEqual(cards.y + cards.height - 1);
   expect(middle).toBeLessThanOrEqual(filler.y + 1);
   expect(plusBox.y).toBeGreaterThanOrEqual(frameBox.y);
+  expect(Math.abs(plusBox.x + plusBox.width / 2 - (filler.x + filler.width / 2))).toBeLessThanOrEqual(1);
 
   await before.click();
   await expect(before).toHaveAttribute("aria-expanded", "true");
@@ -86,6 +100,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   // Plus buttons scrolled out of the frame are hidden.
   await expect(end).toBeHidden();
   await scrollFrame(page, "bottom");
+  await hoverIn(page, "section.filler p:last-child");
   await end.click();
   const search = picker(page).getByRole("searchbox", { name: "Search components" });
   await expect(picker(page)).toContainText("Goes at the end");
@@ -103,6 +118,8 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await expect(end).toBeFocused();
   await expect(end).toHaveAttribute("aria-expanded", "false");
 
+  // Keyboard focus shows a plus without hovering.
+  await expect(end.locator("xpath=..")).toHaveCSS("opacity", "1");
   // Enter with a single match inserts it at the end of the page's sections.
   await end.click();
   await page.keyboard.type("feat");
@@ -118,6 +135,7 @@ test("inserting while a component file is open edits the page", async ({ page })
   await frame.locator(".site-footer p").click();
   await expect(page.locator("#current-page")).toHaveText("src/components/site-footer/site-footer.html");
   await scrollFrame(page, "top");
+  await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
   await picker(page).getByRole("option", { name: /Feature block/ }).click();
   await expect(page.locator("#current-page")).toHaveText(indexPath);

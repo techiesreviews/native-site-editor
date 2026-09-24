@@ -4,7 +4,8 @@ import "./insert-controls.css";
 // Plus buttons between page sections and the picker they open. The preview
 // runtime reports each place a section can go (the gaps between the children
 // of a page element that holds sections); the buttons sit over the frame on
-// those gaps. The picker lists only components that fit a section slot and
+// those gaps, shown only just above and below the item under the pointer
+// (or while focused or open). The picker lists only components that fit a section slot and
 // follows the User Editor INSERT contract: title, exact position, search,
 // arrow keys, Enter, Escape back to the plus.
 
@@ -35,6 +36,23 @@ interface InsertHandlers {
 
 const keyOf = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
 
+// A plus drawn as two bars, so it sits in the exact centre of its circle
+// whatever the font's glyph metrics.
+function plusIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("width", "12");
+  svg.setAttribute("height", "12");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M6 1v10M1 6h10");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.75");
+  path.setAttribute("stroke-linecap", "round");
+  svg.append(path);
+  return svg;
+}
+
 export function createInsertControls(pane: HTMLElement, frame: HTMLElement, handlers: InsertHandlers) {
   const layer = node("div", "insert-layer");
   const picker = node("div", "insert-picker");
@@ -47,6 +65,10 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   const plusByKey = new Map<string, HTMLElement>();
   let openKey: string | undefined;
   let query = "";
+  // The hovered item in the preview: its container's path and its index there.
+  let near: { parent: string; index: number } | undefined;
+  let pointerOnPlus = false;
+  let leaveTimer = 0;
 
   function geometry() {
     const frameRect = frame.getBoundingClientRect();
@@ -70,7 +92,17 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       if (!row) {
         row = node("div", "insert-point");
         row.append(node("span", "insert-point__line"));
-        const plus = button("+", () => toggle(key), "insert-point__plus");
+        const plus = button("", () => toggle(key), "insert-point__plus");
+        plus.append(plusIcon());
+        // Moving from the preview onto a plus keeps the pair shown.
+        plus.addEventListener("pointerenter", () => {
+          pointerOnPlus = true;
+          clearTimeout(leaveTimer);
+        });
+        plus.addEventListener("pointerleave", () => {
+          pointerOnPlus = false;
+          scheduleLeave();
+        });
         plus.setAttribute("aria-haspopup", "dialog");
         plus.setAttribute("aria-expanded", "false");
         row.append(plus);
@@ -82,6 +114,8 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       plus.setAttribute("aria-label", `Add a section ${where}`);
       plus.title = `Add a section ${where}`;
       row.hidden = point.top < 0 || point.top > frameRect.height;
+      row.classList.toggle("is-near", Boolean(near && near.parent === point.parent.join(".") &&
+        (point.index === near.index || point.index === near.index + 1)));
       Object.assign(row.style, { left: `${point.left}px`, top: `${point.top}px`, width: `${point.width}px` });
     }
     for (const [key, row] of plusByKey) {
@@ -115,6 +149,15 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     const x = anchor.left - paneRect.left + anchor.width / 2 - width / 2;
     picker.style.top = `${Math.max(top + 12, y)}px`;
     picker.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
+  }
+
+  function scheduleLeave() {
+    clearTimeout(leaveTimer);
+    leaveTimer = window.setTimeout(() => {
+      if (pointerOnPlus) return;
+      near = undefined;
+      layout();
+    }, 300);
   }
 
   function point() {
@@ -276,12 +319,24 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       points = next;
       layout();
     },
+    /** The item under the pointer in the preview, or none. */
+    hover(item: { parent: number[]; index: number } | undefined) {
+      if (!item) {
+        scheduleLeave();
+        return;
+      }
+      clearTimeout(leaveTimer);
+      near = { parent: item.parent.join("."), index: item.index };
+      layout();
+    },
     clear() {
       close(false);
+      near = undefined;
       points = [];
       layout();
     },
     destroy() {
+      clearTimeout(leaveTimer);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();

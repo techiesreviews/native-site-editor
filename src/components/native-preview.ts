@@ -79,12 +79,22 @@ export interface NativeTextSelection {
 
 export type NativeFormat = "strong" | "em";
 
+// Text typed into a selected element in the preview: its whole text content
+// before and after the change.
+export interface NativeTextEdit {
+  path: string;
+  node: number[];
+  before: string;
+  after: string;
+}
+
 interface NativePreviewHandlers {
   onSelect?: (selection: NativePreviewSelection) => void;
   onComponentStyles?: (tags: string[]) => void;
   onTextSelection?: (selection: NativeTextSelection | undefined) => void;
   // Ctrl/⌘+B or +I pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
+  onTextEdit?: (edit: NativeTextEdit) => void;
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
@@ -214,6 +224,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (event.source !== frame.contentWindow) return;
     const data = event.data as { source?: string; type?: string; route?: string; context?: string } | undefined;
     if (data?.source !== "astro-native-preview") return;
+    // Typed text is checked against the current source, so it counts even
+    // when a render was requested since.
+    if (data.type === "text-edit" && manifest) {
+      const raw = data as unknown as Record<string, unknown>;
+      if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
+      if (typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return;
+      if (!Array.isArray(raw.node) || raw.node.length > 500 || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
+      handlers.onTextEdit?.({ path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after });
+      return;
+    }
     if (data.type !== "ready" && data.context !== context) {
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
       return;
@@ -258,6 +278,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         }];
       });
       insertControls.update(points);
+      return;
+    }
+    if (data.type === "section-hover") {
+      const item = (data as { item?: unknown }).item as { parent?: unknown; index?: unknown } | null | undefined;
+      const valid = item && Array.isArray(item.parent) && item.parent.every((index) => Number.isInteger(index) && index >= 0) &&
+        Number.isInteger(item.index) && (item.index as number) >= 0;
+      insertControls.hover(valid ? { parent: item.parent as number[], index: item.index as number } : undefined);
       return;
     }
     if (data.type === "text-selection") {
@@ -411,6 +438,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** Navigate the preview to a `#route` link; the current source edits stay. */
     follow(href: string) {
       return followRoute(href);
+    },
+    /** Render the current sources again, e.g. to drop typed text that was not applied. */
+    refresh() {
+      schedule();
     },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {

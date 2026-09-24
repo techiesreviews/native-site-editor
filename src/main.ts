@@ -18,7 +18,7 @@ import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize } from "./components/sidebar-resize";
-import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextSelection } from "./components/native-preview";
+import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import {
   parseNativeManifest,
   nativeManifestPaths,
@@ -197,6 +197,7 @@ function mountWorkspace() {
       if (lastNativeSelection) renderNativeEditBar(lastNativeSelection);
     },
     onFormat: (format) => nativeFormatActions[format]?.(),
+    onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
   });
@@ -622,7 +623,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       ], node, `Heading level ${value.toUpperCase()}`),
     });
   }
-  const textual = range?.close && !selection.tag.includes("-") && selection.tag !== "slot";
+  // Text size is for elements that carry text themselves, not page containers or components.
+  const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
+  const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
   if (range && textual) {
     const tag = range.tag;
     const style = startTagAttribute(source, tag, "style");
@@ -722,6 +725,62 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.() };
   preview.showEditBar(model, rect);
+}
+
+// Writes text typed into a preview element into its source, as one undo
+// step: only the changed stretch of text is replaced, so formatting around
+// it stays. A change that cannot be placed exactly (it crosses a tag) is
+// dropped and the preview shows the source again.
+async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
+  if (!nativePreview) return;
+  // The click that selected the element may still be opening its file.
+  for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000; waited += 50)
+    await new Promise((done) => setTimeout(done, 50));
+  if (currentPath !== path || !editorModule?.isMounted(path)) {
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false });
+    if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path)) return;
+  }
+  const editor = editorModule;
+  const preview = nativePreview;
+  if (!editor || !preview) return;
+  const source = nativeSources()[path] ?? "";
+  const range = locateNativeElementRange(source, node);
+  // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let endBefore = before.length;
+  let endAfter = after.length;
+  while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
+    endBefore--;
+    endAfter--;
+  }
+  // A pure insertion takes one neighbouring character along, so the source
+  // range is never empty and lands beside that character.
+  if (endBefore === start) {
+    if (start > 0) start--;
+    else { endBefore++; endAfter++; }
+  }
+  const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
+  const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
+  if (!range || !span) {
+    preview.refresh();
+    errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time."));
+    return;
+  }
+  // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
+  const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const edit = { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
+  preview.selectAfterUpdate({ path, node });
+  try {
+    editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
+    element("status").textContent = "Text changed";
+  } catch (error) {
+    preview.selectAfterUpdate(undefined);
+    preview.refresh();
+    errorMessage(error);
+  }
 }
 
 // Components that fit between page sections: those whose template is a
