@@ -79,7 +79,7 @@ test("More moves, duplicates and removes a section as single undo steps", async 
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("an image shows in the preview, and Replace and Alt text edit its tag", async ({ page }) => {
+test("an image shows in the preview, and Address and Alt text edit its tag", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const image = frame.locator(".hero img");
   // The repository file is read for the sandboxed frame.
@@ -100,11 +100,13 @@ test("an image shows in the preview, and Replace and Alt text edit its tag", asy
   await expect(page.locator("#status")).toHaveText("Alt text updated");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
 
-  // Replace from the repository: the alt follows the new file's name since it matched the old one.
-  await bar(page).getByRole("button", { name: "Replace" }).click();
-  const menu = page.getByRole("menu", { name: "Replace" });
-  await expect(menu.getByRole("menuitem", { name: "src/images/placeholder.svg" })).toBeDisabled();
-  await menu.getByRole("menuitem", { name: "src/images/studio-desk.svg" }).click();
+  // Address suggests the repository's images; picking one replaces the image,
+  // and the alt follows the new file's name since it matched the old one.
+  await expect(bar(page).getByRole("button", { name: "Replace" })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Address" }).click();
+  const images = popover(page).getByRole("listbox");
+  await expect(images.getByRole("option", { name: "src/images/placeholder.svg" })).toHaveAttribute("aria-selected", "true");
+  await images.getByRole("option", { name: "src/images/studio-desk.svg" }).click();
   await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="src/images/studio-desk.svg" data-key="hero-image" alt="Studio desk">`);
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await expect(page.locator("#status")).toHaveText("Image replaced");
@@ -114,8 +116,10 @@ test("an image shows in the preview, and Replace and Alt text edit its tag", asy
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("A sketch on the desk");
   await popover(page).getByRole("button", { name: "Apply" }).click();
   await expect.poll(() => editorText(page, "#content")).toContain(`alt="A sketch on the desk"`);
+  // A web address applies as typed, with no image suggested for it.
   await bar(page).getByRole("button", { name: "Address" }).click();
-  await popover(page).getByRole("textbox", { name: "Address" }).fill("https://example.test/photo.jpg");
+  await popover(page).getByRole("combobox", { name: "Address" }).fill("https://example.test/photo.jpg");
+  await expect(images).toBeHidden();
   await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="https://example.test/photo.jpg" data-key="hero-image" alt="A sketch on the desk"`);
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();

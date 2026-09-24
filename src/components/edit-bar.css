@@ -1,4 +1,19 @@
-/* Contextual edit bar over the native preview, anchored to the selection. */
+/* Contextual edit bar over the native preview, anchored to the selection.
+   Active states (pressed format, open address, current item) use a solid
+   action colour with its own text colour, readable on the toolbar in both
+   schemes; the app's --selected is too close to the dark toolbar. */
+.edit-bar,
+.edit-bar__popover {
+  --edit-bar-active: var(--primary);
+  --edit-bar-on-active: var(--on-primary);
+}
+@media (prefers-color-scheme: dark) {
+  .edit-bar,
+  .edit-bar__popover {
+    --edit-bar-active: var(--color-primary-light);
+    --edit-bar-on-active: var(--color-primary-darkest);
+  }
+}
 .edit-bar {
   position: absolute;
   z-index: 30;
@@ -72,8 +87,8 @@
   font-weight: 400;
 }
 .edit-bar__format[aria-pressed="true"] {
-  background: var(--selected);
-  color: var(--primary);
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
 }
 
 /* Menu or field opened from a bar button, under it. */
@@ -111,13 +126,19 @@
 .edit-bar__menu-item:focus-visible {
   background: var(--hover);
 }
+.edit-bar__option[aria-selected="true"]:hover,
+.edit-bar__option[aria-selected="true"]:focus-visible {
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
+  filter: brightness(1.1);
+}
 .edit-bar__menu-item:disabled {
   opacity: 0.45;
   background: transparent;
 }
 .edit-bar__menu-item[aria-current="true"] {
-  background: var(--selected);
-  color: var(--primary);
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
 }
 .edit-bar__menu-item:focus-visible,
 .edit-bar__field-input:focus-visible,
@@ -137,8 +158,8 @@
   flex: none;
 }
 .edit-bar__address[aria-expanded="true"] {
-  background: var(--selected);
-  color: var(--primary);
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
 }
 .edit-bar__options {
   display: flex;
@@ -150,8 +171,8 @@
   display: none;
 }
 .edit-bar__option[aria-selected="true"] {
-  background: var(--selected);
-  color: var(--primary);
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
 }
 .edit-bar__option:focus-visible {
   outline: 2px solid var(--focus);

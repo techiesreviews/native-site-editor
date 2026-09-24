@@ -25,7 +25,7 @@ import {
   nativeDefaultRoute,
   type NativeManifest,
 } from "./native-manifest";
-import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
+import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
@@ -741,9 +741,27 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // from the suggestions, or any address. Each keystroke rewrites the href
   // from the source as it is now, in one undo step until the field closes.
   // (Ctrl/⌘+click in the preview follows a link.)
+  // A live edit from an address field: each keystroke rewrites attributes on
+  // the element at `target` (found again in the source as it is now), grouped
+  // into one undo step until the field closes.
+  const live = (target: number[], tagName: string, build: (latest: string, tag: StartTag) => { start: number; end: number; text: string }[], message: string) => {
+    if (!node) return;
+    const latest = nativeSources()[path] ?? "";
+    const tag = locateNativeElementRange(latest, target)?.tag;
+    if (!tag || tag.name !== tagName) { announce("The element could not be found in the source."); return; }
+    preview.selectAfterUpdate({ path, node });
+    try {
+      // Later edits first, so earlier offsets stay valid.
+      for (const edit of ordered(build(latest, tag)).reverse())
+        editor.replaceActiveRange({ path, ...edit, expected: latest.slice(edit.start, edit.end) }, true);
+      announce(message);
+    } catch (error) {
+      preview.selectAfterUpdate(undefined);
+      errorMessage(error);
+    }
+  };
   const link = selection.link !== undefined && node ? nearestLink(source, node, range) : undefined;
   if (link && node && nativeManifest) {
-    const selected = node;
     const href = startTagAttribute(source, link.range.tag, "href");
     const current = href?.value.trim() ?? "";
     const manifest = nativeManifest;
@@ -757,20 +775,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
         const title = manifest.pages[route]?.title;
         return { label: title ? `${title} (#${route})` : `#${route}`, value: `#${route}` };
       }),
-      onInput: (value) => {
-        const latest = nativeSources()[path] ?? "";
-        const tag = locateNativeElementRange(latest, link.node)?.tag;
-        if (!tag || tag.name !== "a") { announce("The link could not be found in the source."); return; }
-        const edit = setAttributeEdit(latest, tag, "href", value);
-        preview.selectAfterUpdate({ path, node: selected });
-        try {
-          editor.replaceActiveRange({ path, ...edit, expected: latest.slice(edit.start, edit.end) }, true);
-          announce("Link changed");
-        } catch (error) {
-          preview.selectAfterUpdate(undefined);
-          errorMessage(error);
-        }
-      },
+      onInput: (value) => live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", value)], "Link changed"),
       onClose: () => editor.closeActiveEditGroup(path),
     });
   }
@@ -793,36 +798,31 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       });
     }
   }
-  // Images: Replace from the repository, an address, and alt text. Alt text
-  // follows the file name when it was never written or still matches the
-  // previous file's name; a decorative image keeps its empty alt.
+  // Images: a live Address (images of the repository suggested) and alt text.
   if (range && selection.tag === "img") {
     const tag = range.tag;
     const src = attribute("src");
     const alt = attribute("alt");
-    const currentSrc = (src?.value ?? "").replace(/^\.?\//, "").split(/[?#]/)[0];
-    const replaceWith = (next: string) => {
-      const edits = [setAttributeEdit(source, tag, "src", next)];
-      const previousName = altFromPath(src?.value ?? "");
-      if (!alt || (alt.value && alt.value === previousName)) edits.push(setAttributeEdit(source, tag, "alt", altFromPath(next)));
-      change(ordered(edits), node, "Image replaced");
-    };
+    // Address: an image of this repository suggested as typed, or any address,
+    // applied live. An alt that was never written or still equals the previous
+    // file's name follows the new file's name; a written or empty one stays.
     const images = (snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path);
-    if (images.length) {
-      controls.push({
-        kind: "menu",
-        label: "Replace",
-        title: "Replace with an image from this repository",
-        items: images.map((image) => ({ label: image, current: image === currentSrc, disabled: image === currentSrc, onSelect: () => replaceWith(image) })),
-      });
-    }
     controls.push({
-      kind: "field",
+      kind: "address",
       label: "Address",
+      warning: src?.value.trim() ? undefined : "No image",
       value: src?.value ?? "",
-      placeholder: "https://… or src/images/photo.jpg",
-      hint: "A path in this repository or a full web address.",
-      onApply: (value) => { if (value.trim()) replaceWith(value.trim()); },
+      placeholder: "Image in this repository or web address",
+      suggestions: images.map((image) => ({ label: image, value: image })),
+      onInput: (value) => { if (node) live(node, "img", (latest, tag) => {
+        const before = startTagAttribute(latest, tag, "src");
+        const written = startTagAttribute(latest, tag, "alt");
+        const edits = [setAttributeEdit(latest, tag, "src", value)];
+        const previousName = altFromPath(before?.value ?? "");
+        if (!written || (written.value && written.value === previousName)) edits.push(setAttributeEdit(latest, tag, "alt", altFromPath(value)));
+        return edits;
+      }, "Image replaced"); },
+      onClose: () => editor.closeActiveEditGroup(path),
     });
     const suggestion = altFromPath(src?.value ?? "");
     controls.push({
