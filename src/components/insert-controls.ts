@@ -5,7 +5,9 @@ import "./insert-controls.css";
 // runtime reports each place a section can go (the gaps between the children
 // of a page element that holds sections); the buttons sit over the frame on
 // those gaps, shown only just above and below the item under the pointer
-// (or while focused or open). The picker lists only components that fit a section slot and
+// (or while focused or open). While a section is dragged in the preview,
+// every gap of its parent shows instead, the one under the pointer expanded
+// and labelled "Drop section here". The picker lists only components that fit a section slot and
 // follows the User Editor INSERT contract: title, exact position, search,
 // arrow keys, Enter, Escape back to the plus.
 
@@ -69,6 +71,8 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   let near: { parent: string; index: number } | undefined;
   let pointerOnPlus = false;
   let leaveTimer = 0;
+  // A section being dragged in the preview: its parent's gaps are the targets.
+  let drag: { parent: string; index: number | undefined } | undefined;
 
   function geometry() {
     const frameRect = frame.getBoundingClientRect();
@@ -84,6 +88,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       width: `${frameRect.width}px`,
       height: `${frameRect.height}px`,
     });
+    layer.classList.toggle("is-dragging", Boolean(drag));
     const seen = new Set<string>();
     for (const point of points) {
       const key = keyOf(point);
@@ -105,7 +110,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
         });
         plus.setAttribute("aria-haspopup", "dialog");
         plus.setAttribute("aria-expanded", "false");
-        row.append(plus);
+        row.append(plus, node("span", "insert-point__drop", "Drop section here"));
         plusByKey.set(key, row);
         layer.append(row);
       }
@@ -116,6 +121,9 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       row.hidden = point.top < 0 || point.top > frameRect.height;
       row.classList.toggle("is-near", Boolean(near && near.parent === point.parent.join(".") &&
         (point.index === near.index || point.index === near.index + 1)));
+      const inDrag = Boolean(drag && drag.parent === point.parent.join("."));
+      row.classList.toggle("is-drag", inDrag);
+      row.classList.toggle("is-target", inDrag && point.index === drag!.index);
       Object.assign(row.style, { left: `${point.left}px`, top: `${point.top}px`, width: `${point.width}px` });
     }
     for (const [key, row] of plusByKey) {
@@ -329,9 +337,30 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       near = { parent: item.parent.join("."), index: item.index };
       layout();
     },
+    /** A section drag began in the preview: show its parent's gaps, no plus buttons. */
+    dragStart(gap: { parent: number[]; index: number }) {
+      close(false);
+      clearTimeout(leaveTimer);
+      near = undefined;
+      drag = { parent: gap.parent.join("."), index: undefined };
+      layout();
+    },
+    /** The gap under the dragged section changed. */
+    dragTarget(gap: { parent: number[]; index: number }) {
+      if (!drag) return;
+      drag = { parent: gap.parent.join("."), index: gap.index };
+      layout();
+    },
+    /** The drag ended (dropped or cancelled): back to plus buttons. */
+    dragEnd() {
+      if (!drag) return;
+      drag = undefined;
+      layout();
+    },
     clear() {
       close(false);
       near = undefined;
+      drag = undefined;
       points = [];
       layout();
     },

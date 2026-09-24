@@ -145,12 +145,19 @@ interface NativePreviewHandlers {
   // Alt+Up or Alt+Down pressed inside the preview on a selected section.
   onMove?: (direction: "up" | "down") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
+  // A section dragged in the preview was released on a gap among its
+  // siblings (`index` as the insert points count them), or the drag was cancelled.
+  onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
 }
+
+// A list of element-child indexes from the runtime.
+const indexes = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.length <= 500 && value.every((index) => Number.isInteger(index) && index >= 0);
 
 function composePayload(
   manifest: NativeManifest,
@@ -326,8 +333,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const raw = data as unknown as { path?: unknown; points?: unknown };
       const path = raw.path;
       if (typeof path !== "string" || manifest.routes[route] !== path || !Array.isArray(raw.points)) return;
-      const indexes = (value: unknown): value is number[] =>
-        Array.isArray(value) && value.length <= 500 && value.every((index) => Number.isInteger(index) && index >= 0);
       const points = raw.points.slice(0, 500).flatMap((item): InsertPoint[] => {
         if (!item || typeof item !== "object") return [];
         const point = item as Record<string, unknown>;
@@ -344,6 +349,23 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         }];
       });
       insertControls.update(points);
+      return;
+    }
+    if (data.type === "section-drag" && manifest) {
+      const raw = data as { phase?: unknown; parent?: unknown; index?: unknown };
+      if (raw.phase === "cancel") {
+        insertControls.dragEnd();
+        handlers.onSectionDrag?.(undefined);
+        return;
+      }
+      if (!indexes(raw.parent) || !Number.isInteger(raw.index) || (raw.index as number) < 0) return;
+      const gap = { parent: raw.parent, index: raw.index as number };
+      if (raw.phase === "start") insertControls.dragStart(gap);
+      else if (raw.phase === "target") insertControls.dragTarget(gap);
+      else if (raw.phase === "end") {
+        insertControls.dragEnd();
+        handlers.onSectionDrag?.(gap);
+      }
       return;
     }
     if (data.type === "section-hover") {

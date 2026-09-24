@@ -60,6 +60,42 @@
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+/* While a section is dragged in the preview: every gap of its parent shows
+   as a line, the plus buttons stay out, and the gap under the pointer is a
+   44 px band that says where the section will go. */
+.insert-layer.is-dragging .insert-point.is-drag {
+  opacity: 1;
+}
+.insert-layer.is-dragging .insert-point__plus {
+  display: none;
+}
+.insert-layer.is-dragging .insert-point.is-drag .insert-point__line {
+  opacity: 1;
+}
+.insert-layer.is-dragging .insert-point.is-target .insert-point__line {
+  opacity: 0;
+}
+.insert-point__drop {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--primary);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  transform: translateY(-50%);
+}
+.insert-layer.is-dragging .insert-point.is-target .insert-point__drop {
+  display: flex;
+}
 .insert-point:has(.insert-point__plus:hover) .insert-point__line,
 .insert-point:has(.insert-point__plus:focus-visible) .insert-point__line,
 .insert-point.is-open .insert-point__line {

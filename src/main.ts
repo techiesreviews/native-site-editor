@@ -210,6 +210,10 @@ function mountWorkspace() {
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => pageStructure?.update(structure),
     onMove: (direction) => { if (lastNativeSelection) moveNativeSection(lastNativeSelection, direction); },
+    onSectionDrag: (gap) => {
+      const outcome = gap && lastNativeSelection ? moveNativeSectionTo(lastNativeSelection, gap.parent, gap.index) : undefined;
+      if (!outcome) element("status").textContent = "Section drag cancelled";
+    },
   });
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeManifest && Object.hasOwn(nativeManifest.components, item.tag))),
