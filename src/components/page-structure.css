@@ -6,6 +6,46 @@
   margin: 0 -10px;
   overflow: auto;
 }
+/* The Page block above the tree: the route's title and description. */
+.page-structure__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 14px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.page-structure__meta[hidden] {
+  display: none;
+}
+.page-structure__meta-heading {
+  font-size: 11px;
+  font-weight: 620;
+  color: var(--muted);
+}
+.page-structure__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.page-structure__field input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.page-structure__field input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
 .page-structure__tree {
   display: flex;
   flex-direction: column;

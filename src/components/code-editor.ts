@@ -76,6 +76,12 @@ type VisualHistoryEntry = {
   group?: boolean;
 };
 const mounted = new Map<string, MountedEditor>();
+// The Save menus of the mounted editors, for a draft written outside them.
+const publishers = new Set<() => void>();
+/** A browser draft changed outside the editors: the Save menus list it again. */
+export function refreshDrafts() {
+  for (const refresh of publishers) refresh();
+}
 const visualHistory = new Map<string, { undo: VisualHistoryEntry[]; redo: VisualHistoryEntry[] }>();
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
 const historyFor = (session: string) => {
@@ -550,7 +556,10 @@ export function mountCodeEditor(
         })
       : undefined;
   toolbar.append(undo, redo, review, discard);
-  if (publisher) toolbar.append(publisher.root);
+  if (publisher) {
+    toolbar.append(publisher.root);
+    publishers.add(publisher.refresh);
+  }
   const notice = node("div", "code-editor__notice");
   notice.setAttribute("role", "status");
   const conflictBar = node("div", "code-editor__conflict");
@@ -702,6 +711,7 @@ export function mountCodeEditor(
     markers.dispose();
     file.onContextChange?.(null);
     publisher?.destroy();
+    if (publisher) publishers.delete(publisher.refresh);
     subscription.dispose();
     document.removeEventListener("keydown", historyShortcut);
     destroyView();

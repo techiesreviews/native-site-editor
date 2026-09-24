@@ -6,9 +6,23 @@ import "./page-structure.css";
 // fed by the runtime's index paths after each render. A row selects its
 // element in the preview (and brings it to the middle of the frame); a
 // preview selection marks its row. Rows with children fold; the folded
-// state is kept per element while the same page stays on show.
+// state is kept per element while the same page stays on show. Above the
+// tree, a Page block holds the route's title and description from the
+// manifest; they apply as typed.
+
+export type PageMetaField = "title" | "description";
 
 export interface PageStructureHandlers {
+  /**
+   * The manifest's title and description for the page at `path`, empty
+   * strings when the route is a bare path; nothing when the file is not a
+   * route of the site (the fields then stay out of the sidebar).
+   */
+  pageMeta?: (path: string) => { title: string; description: string } | undefined;
+  /** A page field changed: write `value` (empty removes the field) to the manifest. */
+  onPageMeta?: (path: string, field: PageMetaField, value: string) => void;
+  /** A page field closed (Enter, Escape or focus loss): its edits are one step. */
+  onPageMetaClose?: (path: string, field: PageMetaField) => void;
   /** The kind and distinguishing text a row shows for an element. */
   label: (item: NativeStructureItem) => { kind: string; text: string };
   /** A row was chosen: select this element in the preview. */
@@ -28,11 +42,41 @@ const key = (node: number[]) => node.join(".");
 
 export function createPageStructure(host: HTMLElement, handlers: PageStructureHandlers) {
   const hint = node("p", "muted sidebar-hint", HINT_NO_PAGE);
+  const meta = node("div", "page-structure__meta");
+  meta.setAttribute("role", "group");
+  meta.setAttribute("aria-label", "Page");
+  meta.hidden = true;
+  meta.append(node("span", "page-structure__meta-heading", "Page"));
+  const fields = {} as Record<PageMetaField, HTMLInputElement>;
+  for (const [field, label] of [["title", "Title"], ["description", "Description"]] as const) {
+    const wrap = node("label", "page-structure__field");
+    const input = node("input");
+    input.type = "text";
+    input.autocomplete = "off";
+    input.spellcheck = true;
+    wrap.append(node("span", "page-structure__field-label", label), input);
+    input.addEventListener("input", () => { if (structure?.path) handlers.onPageMeta?.(structure.path, field, input.value); });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); input.blur(); }
+    });
+    input.addEventListener("blur", () => { if (structure?.path) handlers.onPageMetaClose?.(structure.path, field); });
+    fields[field] = input;
+    meta.append(wrap);
+  }
   const tree = node("div", "page-structure__tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Page structure");
   tree.hidden = true;
-  host.append(hint, tree);
+  host.append(hint, meta, tree);
+
+  // The Page fields for the page on show; a field being typed in keeps its text.
+  function renderMeta(path: string) {
+    const current = handlers.pageMeta?.(path);
+    meta.hidden = !current;
+    if (!current) return;
+    for (const field of ["title", "description"] as const)
+      if (document.activeElement !== fields[field]) fields[field].value = current[field];
+  }
 
   let structure: NativeStructure | undefined;
   let rendered = "";
@@ -165,11 +209,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (!structure || !structure.path) {
       hint.textContent = structure ? HINT_COMPONENT : HINT_NO_PAGE;
       hint.hidden = false;
+      meta.hidden = true;
       tree.hidden = true;
       tree.replaceChildren();
       return;
     }
     hint.hidden = true;
+    renderMeta(structure.path);
     tree.hidden = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)));
     setSelected(selected);
@@ -202,8 +248,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const current = setSelected(id);
       current?.scrollIntoView({ block: "nearest" });
     },
+    /** The manifest changed under the fields: show its title and description again. */
+    refreshMeta() {
+      if (structure?.path) renderMeta(structure.path);
+    },
     destroy() {
       hint.remove();
+      meta.remove();
       tree.remove();
     },
   };

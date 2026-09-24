@@ -18,7 +18,8 @@ import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
-import { createPageStructure } from "./components/page-structure";
+import { createPageStructure, type PageMetaField } from "./components/page-structure";
+import { editNativePageMeta } from "./native-page-meta";
 import {
   parseNativeManifest,
   nativeManifestPaths,
@@ -37,6 +38,7 @@ import type {
   EditorContext,
   Directory,
   FilesResult,
+  PublishResult,
   Repository,
   SessionInfo,
   Snapshot,
@@ -212,6 +214,9 @@ function mountWorkspace() {
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeManifest && Object.hasOwn(nativeManifest.components, item.tag))),
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
+    pageMeta: nativePageMeta,
+    onPageMeta: writeNativePageMeta,
+    onPageMetaClose: () => editorModule?.closeActiveEditGroup(NATIVE_MANIFEST_PATH),
     onMove: (path, item, direction) =>
       isNativeSectionTag(item.tag) ? (moveNativeSection({ path, node: item.node, tag: item.tag }, direction) ? "moved" : "stayed") : undefined,
   });
@@ -1097,16 +1102,78 @@ function nativeRouteForPath(path: string | undefined) {
   return Object.entries(nativeManifest.routes).find(([, file]) => file === path)?.[0];
 }
 
+const NATIVE_MANIFEST_PATH = ".astro-editor/native.json";
+// The manifest as GitHub has it, for the draft written by the Page fields.
+let nativeManifestBase: { sha: string; text: string } | undefined;
+
+function draftScope() {
+  return currentRepo && snapshot && info.user
+    ? { account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }
+    : undefined;
+}
+
+// The manifest's effective text, resolved like any other source: a mounted
+// editor model wins, then a browser draft, then the clean snapshot baseline.
+function nativeManifestSource() {
+  const mounted = editorModule?.getMountedSource(NATIVE_MANIFEST_PATH);
+  if (mounted !== undefined) return mounted;
+  const scope = draftScope();
+  const draft = scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
+  return draft?.content ?? nativeManifestBase?.text;
+}
+
+// The manifest's title and description for the page file `path`; nothing
+// when the file is not one of the site's routes.
+function nativePageMeta(path: string) {
+  const route = nativeRouteForPath(path);
+  if (!route || !nativeManifest) return undefined;
+  const meta = nativeManifest.pages[route] ?? {};
+  return { title: meta.title ?? "", description: meta.description ?? "" };
+}
+
+// Writes a Page field into the manifest as one minimal text edit: into the
+// manifest's editor model when it is open (grouped into one undo step until
+// the field closes), else as a browser draft of the manifest file, which the
+// Save to GitHub list and diff then show. The parsed manifest's page
+// metadata follows the text at once; routes and the rest do not live-reparse.
+function writeNativePageMeta(path: string, field: PageMetaField, value: string) {
+  const route = nativeRouteForPath(path);
+  const source = nativeManifestSource();
+  const manifest = nativeManifest;
+  if (!route || source === undefined || !manifest) return;
+  const result = editNativePageMeta(source, route, field, value);
+  if (!result.ok) { errorMessage(new Error(result.error)); return; }
+  const label = field === "title" ? "Title" : "Description";
+  if (result.edit) {
+    try {
+      if (editorModule?.isMounted(NATIVE_MANIFEST_PATH)) {
+        editorModule.replaceActiveRange({ path: NATIVE_MANIFEST_PATH, ...result.edit, expected: source.slice(result.edit.start, result.edit.end) }, true);
+      } else {
+        const scope = draftScope();
+        if (!scope || !nativeManifestBase) throw new Error("The manifest cannot be changed right now.");
+        draftStore().save({ ...scope, version: 1, path: NATIVE_MANIFEST_PATH, baseSha: nativeManifestBase.sha, original: nativeManifestBase.text, content: result.text, updatedAt: Date.now() });
+        const failure = draftStore().error;
+        if (failure) throw new Error(failure);
+        editorModule?.refreshDrafts();
+        commitHistory?.refresh();
+      }
+    } catch (error) {
+      errorMessage(error);
+      return;
+    }
+  }
+  const parsed = parseNativeManifest(result.text);
+  if (parsed.ok) manifest.pages = parsed.manifest.pages;
+  element("status").textContent = value ? `${label} updated` : `${label} removed`;
+}
+
 // Resolve every manifest file to its effective source: a mounted editor model
 // wins, then a saved/new browser draft, then the clean snapshot baseline.
 function nativeSources(): Record<string, string> {
   const out: Record<string, string> = {};
   if (!nativeManifest) return out;
   const paths = new Set([...nativeManifestPaths(nativeManifest), ...nativeComponentStyles.values()]);
-  const scope =
-    currentRepo && snapshot && info.user
-      ? { account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }
-      : undefined;
+  const scope = draftScope();
   for (const path of paths) {
     let content = nativeBaseSources.get(path);
     const draft = scope ? draftStore().get(scope, path) : undefined;
@@ -1199,6 +1266,7 @@ async function loadNativeAssets() {
 // a repo/branch switch that superseded the in-flight save never leaks results.
 function adoptNativeBaseSources(
   scope: { account: string; repoId: number; branch: string },
+  result: PublishResult,
   submitted: SavedDraft[],
 ) {
   if (
@@ -1209,12 +1277,17 @@ function adoptNativeBaseSources(
     info.user?.login !== scope.account
   )
     return;
-  for (const draft of submitted) nativeBaseSources.set(draft.path, draft.content);
+  for (const draft of submitted) {
+    nativeBaseSources.set(draft.path, draft.content);
+    const sha = result.files.find((file) => file.path === draft.path)?.sha;
+    if (draft.path === NATIVE_MANIFEST_PATH && sha) nativeManifestBase = { sha, text: draft.content };
+  }
   if (nativeModeActive()) updateNativePreviewSources();
 }
 
 function deactivateNative() {
   nativeManifest = undefined;
+  nativeManifestBase = undefined;
   nativeEngaged = false;
   nativeBaseSources.clear();
   nativeComponentStyles.clear();
@@ -1288,6 +1361,11 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     nativeManifest = undefined;
     manifestText = await readFile(repo.full_name, file.sha);
     if (!live()) return true;
+    nativeManifestBase = { sha: file.sha, text: manifestText };
+    const draft = info.user
+      ? draftStore().get({ account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch }, NATIVE_MANIFEST_PATH)
+      : undefined;
+    if (draft) manifestText = draft.content;
   } catch (error) {
     if (!nativeEngaged) return false;
     if (!live()) return true;
@@ -1333,6 +1411,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   }
   if (!live()) return true;
   nativeManifest = manifest;
+  pageStructure?.refreshMeta();
   nativePreview?.setError(undefined);
   nativePreview?.activate(manifest);
   nativePreview?.update({
@@ -1803,7 +1882,7 @@ async function mountSource(
     scope,
     baseSha: baseSha,
     saveLabels: nativeEngaged,
-    onPublished: (_result, submitted) => {
+    onPublished: (result, submitted) => {
       if (
         generation !== saveEpoch ||
         currentRepo?.id !== scope.repoId ||
@@ -1811,7 +1890,7 @@ async function mountSource(
         info.user?.login !== scope.account
       )
         return;
-      adoptNativeBaseSources(scope, submitted);
+      adoptNativeBaseSources(scope, result, submitted);
       void refreshPublishedSnapshot(scope.repo, scope.branch);
     },
     onDiscardNew: () => {
