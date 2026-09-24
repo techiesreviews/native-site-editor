@@ -13,6 +13,12 @@ export interface PageStructureHandlers {
   label: (item: NativeStructureItem) => { kind: string; text: string };
   /** A row was chosen: select this element in the preview. */
   onSelect: (path: string, node: number[]) => void;
+  /**
+   * Alt+Up/Down on a row: move that element one sibling position. "moved" or
+   * "stayed" (a section at its first or last position) for a section; nothing
+   * for other elements, which do not move.
+   */
+  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | undefined;
 }
 
 const HINT_NO_PAGE = "Open a page of a native project to see its sections and content here.";
@@ -33,6 +39,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let selected: string | undefined;
   const folded = new Set<string>();
   const rows = new Map<string, HTMLElement>();
+  // The row to focus once the next render shows a section that just moved.
+  let focusAfterRender: string | undefined;
 
   function row(item: NativeStructureItem, level: number): HTMLElement[] {
     const id = key(item.node);
@@ -97,6 +105,20 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       target.tabIndex = 0;
       target.focus();
     };
+    // Alt+Up/Down moves a section in the page; its row keeps focus. Other
+    // elements do not move and the keys keep walking the rows.
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && structure?.path) {
+      const direction = event.key === "ArrowUp" ? "up" : "down";
+      const last = item.node.length - 1;
+      const target = [...item.node.slice(0, last), item.node[last] + (direction === "up" ? -1 : 1)];
+      const outcome = handlers.onMove?.(structure.path, item, direction);
+      if (outcome) {
+        if (outcome === "moved") focusAfterRender = key(target);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
     switch (event.key) {
       case "ArrowDown": focusRow(list[at + 1]); break;
       case "ArrowUp": focusRow(list[at - 1]); break;
@@ -138,7 +160,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   function render() {
     rows.clear();
-    const focused = tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined;
+    const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
+    focusAfterRender = undefined;
     if (!structure || !structure.path) {
       hint.textContent = structure ? HINT_COMPONENT : HINT_NO_PAGE;
       hint.hidden = false;
@@ -150,7 +173,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     tree.hidden = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)));
     setSelected(selected);
-    if (focused) rows.get(focused)?.focus();
+    if (focused && rows.has(focused)) {
+      for (const el of rows.values()) el.tabIndex = -1;
+      const el = rows.get(focused)!;
+      el.tabIndex = 0;
+      el.focus();
+    }
   }
 
   return {

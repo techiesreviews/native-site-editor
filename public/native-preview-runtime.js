@@ -897,6 +897,15 @@
   }
   document.addEventListener("selectionchange", function () { reportTextSelection(false); });
   document.addEventListener("keydown", function (e) {
+    // Alt+Up/Down moves the selected section; the editor does the move. Other
+    // elements, and typing in a text element, keep the browser's own behaviour.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      var active = document.activeElement;
+      if (!selected || !selected.isConnected || !sectionLike(selected) || editing || (active && active.isContentEditable)) return;
+      e.preventDefault();
+      emit("move", { direction: e.key === "ArrowUp" ? "up" : "down" });
+      return;
+    }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     var key = e.key.toLowerCase();
     if (key !== "b" && key !== "i") return;

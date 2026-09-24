@@ -142,6 +142,8 @@ interface NativePreviewHandlers {
   onTextSelection?: (selection: NativeTextSelection | undefined) => void;
   // Ctrl/⌘+B or +I pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
+  // Alt+Up or Alt+Down pressed inside the preview on a selected section.
+  onMove?: (direction: "up" | "down") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
@@ -377,6 +379,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "format") {
       const format = (data as { format?: unknown }).format;
       if (format === "strong" || format === "em") handlers.onFormat?.(format);
+      return;
+    }
+    if (data.type === "move") {
+      const direction = (data as { direction?: unknown }).direction;
+      if (direction === "up" || direction === "down") handlers.onMove?.(direction);
       return;
     }
     if (data.type === "selection-rect") {

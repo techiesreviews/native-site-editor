@@ -192,10 +192,13 @@ function mountWorkspace() {
     insertChoices: nativeSectionChoices,
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => pageStructure?.update(structure),
+    onMove: (direction) => { if (lastNativeSelection) moveNativeSection(lastNativeSelection, direction); },
   });
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeManifest && Object.hasOwn(nativeManifest.components, item.tag))),
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
+    onMove: (path, item, direction) =>
+      isNativeSectionTag(item.tag) ? (moveNativeSection({ path, node: item.node, tag: item.tag }, direction) ? "moved" : "stayed") : undefined,
   });
 }
 
@@ -591,18 +594,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   const range = node ? locateNativeElementRange(source, node) : undefined;
   const kind = nativeKindLabel(selection.tag);
   const announce = (text: string) => { element("status").textContent = text; };
-  // One verified source change, as one undo step; `next` is the element to
-  // select once the preview has rendered it.
-  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
-    preview.selectAfterUpdate(next ? { path, node: next } : undefined);
-    try {
-      editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
-      announce(message);
-    } catch (error) {
-      preview.selectAfterUpdate(undefined);
-      errorMessage(error);
-    }
-  };
+  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) =>
+    applyNativeChange(path, source, edits, next, message);
   const controls: EditBarControl[] = [];
   nativeFormatActions = {};
   if (/^h[1-6]$/.test(selection.tag) && range?.close && range.tag.name === selection.tag) {
@@ -848,26 +841,28 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   }
   // Whole sections (a <section> or a section component) move, duplicate and
   // remove from icon buttons always in the bar, as one undo step each.
-  // Nothing else can be removed this way.
-  const sectionTemplate = selection.tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[selection.tag] ?? ""] ?? "");
-  if (range && node && (selection.tag === "section" || sectionTemplate)) {
+  // Nothing else can be removed this way. Alt+Up/Down move the section too,
+  // from the bar, the preview or the page structure (`moveNativeSection`).
+  let onMove: EditBarModel["onMove"];
+  if (range && node && isNativeSectionTag(selection.tag)) {
     const parent = node.slice(0, -1);
     const index = node[node.length - 1];
     const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
     const after = locateNativeElementRange(source, [...parent, index + 1]);
+    onMove = (direction) => moveNativeSection(selection, direction);
     controls.push({
       kind: "button",
       icon: "up",
       label: "Move up",
       disabled: !before,
-      onPress: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
+      onPress: () => moveNativeSection(selection, "up"),
     });
     controls.push({
       kind: "button",
       icon: "down",
       label: "Move down",
       disabled: !after,
-      onPress: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
+      onPress: () => moveNativeSection(selection, "down"),
     });
     controls.push({
       kind: "button",
@@ -882,8 +877,49 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
     });
   }
-  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.() };
+  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove };
   preview.showEditBar(model, rect);
+}
+
+// One verified source change to the mounted page `path`, as one undo step;
+// `next` is the element to select once the preview has rendered it.
+function applyNativeChange(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
+  const preview = nativePreview;
+  const editor = editorModule;
+  if (!preview || !editor) return false;
+  preview.selectAfterUpdate(next ? { path, node: next } : undefined);
+  try {
+    editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
+    element("status").textContent = message;
+    return true;
+  } catch (error) {
+    preview.selectAfterUpdate(undefined);
+    errorMessage(error);
+    return false;
+  }
+}
+
+// A whole section: a <section>, or a component whose template is one.
+function isNativeSectionTag(tag: string) {
+  return tag === "section" || (tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[tag] ?? ""] ?? ""));
+}
+
+// Moves a whole section one sibling position, as one undo step, keeping it
+// selected: the Move up/down buttons and Alt+Up/Down from the bar, the
+// preview and the page structure all come here. At the first or last
+// position, or for anything but a section, nothing happens. Returns whether
+// the section moved.
+function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down") {
+  const { path, node } = target;
+  if (!path || !node?.length || currentPath !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return false;
+  const source = nativeSources()[path] ?? "";
+  const range = locateNativeElementRange(source, node);
+  const parent = node.slice(0, -1);
+  const index = node[node.length - 1] + (direction === "up" ? -1 : 1);
+  const other = index >= 0 ? locateNativeElementRange(source, [...parent, index]) : undefined;
+  if (!range || !other) return false;
+  const edits = direction === "up" ? swapEdits(source, other, range) : swapEdits(source, range, other);
+  return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down");
 }
 
 // Writes text typed into a preview element into its source, as one undo

@@ -104,6 +104,8 @@ export interface EditBarModel {
   controls: EditBarControl[];
   // Ctrl/⌘+B and Ctrl/⌘+I with focus in the bar.
   onFormat?: (format: "strong" | "em") => void;
+  // Alt+Up and Alt+Down with focus in the bar; set only for a movable section.
+  onMove?: (direction: "up" | "down") => void;
 }
 
 export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
@@ -115,6 +117,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
 
   let rect: SelectionRect | undefined;
   let onFormat: EditBarModel["onFormat"];
+  let onMove: EditBarModel["onMove"];
   // The open menu or field, under its button.
   const popover = node("div", "edit-bar__popover");
   popover.hidden = true;
@@ -122,6 +125,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   let popoverButton: HTMLButtonElement | undefined;
   // The open address field, kept across re-renders while its control persists.
   let openAddress: { label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
+
+  const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
     return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > select")];
@@ -200,6 +205,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === "b" || key === "i") && onFormat) {
       event.preventDefault();
       onFormat(key === "b" ? "strong" : "em");
+      return;
+    }
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
+      event.preventDefault();
+      event.stopPropagation();
+      onMove(event.key === "ArrowUp" ? "up" : "down");
       return;
     }
     // Roving focus along the bar; a native select keeps its own arrow keys.
@@ -357,6 +368,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     if (kept && openAddress) openAddress.control = kept;
     else closePopover(false);
     onFormat = model.onFormat;
+    onMove = model.onMove;
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
     for (const control of model.controls) {
       if (control.kind === "button") {
@@ -417,13 +429,16 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     element: bar,
     /** Render controls for the current selection at `at`, keeping focus where it is. */
     show(model: EditBarModel, at: SelectionRect) {
-      const focused = bar.contains(document.activeElement)
-        ? focusable().indexOf(document.activeElement as HTMLElement)
-        : -1;
+      const active = document.activeElement as HTMLElement | null;
+      const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
+      const label = focused >= 0 ? controlLabel(active!) : "";
       render(model);
       rect = at;
       position();
-      if (focused >= 0) focusable()[Math.min(focused, focusable().length - 1)]?.focus();
+      if (focused < 0) return;
+      // The same control again when it is still there and enabled, else its neighbour.
+      const items = focusable();
+      (items.find((item) => controlLabel(item) === label) ?? items[Math.min(focused, items.length - 1)])?.focus();
     },
     /** The selection moved (scroll, resize, reflow) without changing. */
     move(at: SelectionRect) {
