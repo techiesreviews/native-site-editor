@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // The edit bar over the native preview: anchored to the selection, with
-// heading level, text size, Bold, Italic and Follow link editing the source.
+// heading level, text size, Bold, Italic and the link Page menu and Address editing the source.
 const fixture = "fixtures/native-starter";
 const indexPath = "src/pages/index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -171,7 +171,7 @@ test("B and Ctrl+I wrap only the selected word in strong and em, and B unwraps i
   await expect.poll(() => editorText(page, "#content")).toContain("Edit <em><strong>plain</strong></em> HTML");
 });
 
-test("a selected link offers Follow link, and the bar hides when scrolled away or another file opens", async ({ page }) => {
+test("a selected link takes a page or an address, and the bar hides when scrolled away or another file opens", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await frame.locator(".hero h1").click();
@@ -205,10 +205,30 @@ test("a selected link offers Follow link, and the bar hides when scrolled away o
   await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
   await expect(bar(page)).toBeHidden();
 
+  // A link takes a page of the site from the Page menu, or any address; no Follow link.
   await frame.getByRole("link", { name: "About", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveText("src/components/site-header/site-header.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
-  await bar(page).getByRole("button", { name: "Follow link" }).click();
+  await expect(bar(page).getByRole("button", { name: "Follow link" })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Page" }).click();
+  const pages = page.getByRole("menu", { name: "Page" });
+  await expect(pages.getByRole("menuitem", { name: "#/about/" })).toBeDisabled();
+  await pages.getByRole("menuitem", { name: "#/", exact: true }).click();
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="#/" data-key="nav-about">About</a>`);
+  await expect(page.locator("#status")).toHaveText("Link changed");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
+  await bar(page).getByRole("button", { name: "Address" }).click();
+  const address = page.locator(".edit-bar__popover").getByRole("textbox", { name: "Address" });
+  await expect(address).toHaveValue("#/");
+  await address.fill("https://example.test/");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="https://example.test/" data-key="nav-about">About</a>`);
+  await bar(page).getByRole("button", { name: "Address" }).click();
+  await address.fill("#/about/");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="#/about/" data-key="nav-about">About</a>`);
+  // Ctrl/⌘+click still follows a page link.
+  await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   await expect(bar(page)).toBeHidden();
 

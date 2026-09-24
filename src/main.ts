@@ -25,7 +25,7 @@ import {
   nativeDefaultRoute,
   type NativeManifest,
 } from "./native-manifest";
-import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround } from "./native-source-location";
+import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
@@ -523,6 +523,18 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
 
 // What the edit bar shows for a selected element: a kind label in the
 // user's words, or the tag itself for components and anything else.
+// The range of the selected element when it is a link, else of the nearest
+// ancestor link within the same source (a link around a component's slotted
+// text lives in the page; one around the component lives outside it).
+function nearestLinkRange(source: string, node: number[], range: ElementRange | undefined) {
+  if (range?.tag.name === "a") return range;
+  for (let depth = node.length - 1; depth > 0; depth--) {
+    const ancestor = locateNativeElementRange(source, node.slice(0, depth));
+    if (ancestor?.tag.name === "a") return ancestor;
+  }
+  return undefined;
+}
+
 function nativeKindLabel(tag: string) {
   if (/^h[1-6]$/.test(tag)) return "Heading";
   const labels: Record<string, string> = {
@@ -720,13 +732,39 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       });
     }
   }
-  if (selection.link !== undefined && preview.canFollow(selection.link)) {
-    const href = selection.link;
-    controls.push({ kind: "button", label: "Follow link", title: href, onPress: () => void preview.follow(href) });
-  }
   // Edits sorted by position, as one undo step.
   const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
   const attribute = (name: string) => (range ? startTagAttribute(source, range.tag, name) : undefined);
+  // Links: the selected link, or the nearest link around the selection in
+  // this file, takes a page of the site from the Page menu or any address.
+  // (Ctrl/⌘+click in the preview follows a link.)
+  const link = selection.link !== undefined && node ? nearestLinkRange(source, node, range) : undefined;
+  if (link && nativeManifest) {
+    const tag = link.tag;
+    const href = startTagAttribute(source, tag, "href");
+    const current = href?.value.trim() ?? "";
+    const routes = Object.keys(nativeManifest.routes);
+    const setHref = (value: string, message: string) => change([setAttributeEdit(source, tag, "href", value)], node, message);
+    controls.push({
+      kind: "menu",
+      label: "Page",
+      title: "Link to a page of this site",
+      items: routes.map((route) => {
+        const title = nativeManifest?.pages[route]?.title;
+        const same = current === `#${route}` || (route === "/" && current === "#");
+        return { label: title ? `${title} (#${route})` : `#${route}`, current: same, disabled: same, onSelect: () => setHref(`#${route}`, "Link changed") };
+      }),
+    });
+    controls.push({
+      kind: "field",
+      label: "Address",
+      warning: current ? undefined : "No address",
+      value: href?.value ?? "",
+      placeholder: "#/about/ or https://…",
+      hint: "A page of this site as #/route/, or a full web address.",
+      onApply: (value) => { if (value.trim()) setHref(value.trim(), "Link changed"); },
+    });
+  }
   // Heading levels that skip (H2 to H4): one press puts the heading in order.
   if (range && /^h[2-6]$/.test(selection.tag) && range.close && range.tag.name === selection.tag) {
     const level = Number(selection.tag[1]);
