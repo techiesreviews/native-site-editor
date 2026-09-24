@@ -141,9 +141,7 @@
   color: var(--edit-bar-on-active);
 }
 .edit-bar__menu-item:focus-visible,
-.edit-bar__field-input:focus-visible,
-.edit-bar__field-apply:focus-visible,
-.edit-bar__field-extra:focus-visible {
+.edit-bar__field-input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
@@ -182,7 +180,7 @@
   color: var(--warning-fg);
   font-weight: 620;
 }
-.edit-bar__field--warning:not(.edit-bar__address)::before {
+.edit-bar__field--warning:not(.edit-bar__address--icon)::before {
   content: "⚠ ";
 }
 .edit-bar__field-label {
@@ -203,30 +201,6 @@
   color: inherit;
   font: inherit;
   font-weight: 400;
-}
-.edit-bar__field-hint {
-  margin: 0;
-  padding: 0 2px;
-  color: var(--muted);
-}
-.edit-bar__field-actions {
-  display: flex;
-  gap: 4px;
-  padding: 2px;
-}
-.edit-bar__field-apply,
-.edit-bar__field-extra {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 8px;
-  background: var(--surface);
-  color: inherit;
-  font: inherit;
-}
-.edit-bar__field-apply {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: var(--on-primary);
 }
 .edit-bar__warning {
   color: var(--warning-fg);

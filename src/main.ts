@@ -767,6 +767,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const manifest = nativeManifest;
     controls.push({
       kind: "address",
+      icon: "link",
       label: "Address",
       warning: current ? undefined : "No address",
       value: href?.value ?? "",
@@ -809,6 +810,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const images = (snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path);
     controls.push({
       kind: "address",
+      icon: "link",
       label: "Address",
       warning: src?.value.trim() ? undefined : "No image",
       value: src?.value ?? "",
@@ -824,44 +826,42 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       }, "Image replaced"); },
       onClose: () => editor.closeActiveEditGroup(path),
     });
-    const suggestion = altFromPath(src?.value ?? "");
+    // Alt text applies as typed; opening with no alt written applies the
+    // file's name at once; emptied, the image is decorative (alt="").
     controls.push({
-      kind: "field",
+      kind: "address",
       label: "Alt text",
       warning: alt ? undefined : "Alt text missing",
       value: alt?.value ?? "",
-      initial: alt ? undefined : suggestion,
-      placeholder: "What the image shows",
-      hint: "Read aloud in place of the image. Apply with nothing to mark it decorative.",
-      extra: { label: "Decorative", onPress: () => change([setAttributeEdit(source, tag, "alt", "")], node, "Image marked decorative") },
-      onApply: (value) => change([setAttributeEdit(source, tag, "alt", value.trim())], node, value.trim() ? "Alt text updated" : "Image marked decorative"),
+      initial: alt ? undefined : altFromPath(src?.value ?? ""),
+      placeholder: "What the image shows; empty for decorative",
+      onInput: (value) => { if (node) live(node, "img", (latest, tag) => [setAttributeEdit(latest, tag, "alt", value)], value ? "Alt text updated" : "Image marked decorative"); },
+      onClose: () => editor.closeActiveEditGroup(path),
     });
   }
   // Links and buttons need a name; containers get a label when they carry no heading.
   if (range && (selection.tag === "a" || selection.tag === "button") && !selection.text.trim() && !attribute("aria-label")) {
-    const tag = range.tag;
     controls.push({
-      kind: "field",
+      kind: "address",
       label: "Name",
       warning: "Needs a name",
       value: "",
       placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} does`,
-      hint: "It has no text, so screen readers need a name for it.",
-      onApply: (value) => { if (value.trim()) change([setAttributeEdit(source, tag, "aria-label", value.trim())], node, "Name added"); },
+      onInput: (value) => { if (node) live(node, selection.tag, (latest, tag) => [setAttributeEdit(latest, tag, "aria-label", value || undefined)], value ? "Name added" : "Name removed"); },
+      onClose: () => editor.closeActiveEditGroup(path),
     });
   }
   if (range?.close && ["section", "nav", "aside"].includes(selection.tag)) {
-    const tag = range.tag;
     const label = attribute("aria-label");
-    const hasHeading = /<h[1-6][\s>]/i.test(source.slice(tag.end, range.close.start));
+    const hasHeading = /<h[1-6][\s>]/i.test(source.slice(range.tag.end, range.close.start));
     controls.push({
-      kind: "field",
+      kind: "address",
       label: "Label",
       warning: !label && !hasHeading ? "No heading or label" : undefined,
       value: label?.value ?? "",
       placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} is about`,
-      hint: "Names the landmark for screen readers; a heading inside it does the same.",
-      onApply: (value) => change([setAttributeEdit(source, tag, "aria-label", value.trim() || undefined)], node, value.trim() ? "Label updated" : "Label removed"),
+      onInput: (value) => { if (node) live(node, selection.tag, (latest, tag) => [setAttributeEdit(latest, tag, "aria-label", value || undefined)], value ? "Label updated" : "Label removed"); },
+      onClose: () => editor.closeActiveEditGroup(path),
     });
   }
   // More: whole sections (a <section> or a section component) move, duplicate

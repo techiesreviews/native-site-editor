@@ -89,12 +89,13 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   // Only whole sections move, duplicate or go away.
   await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
 
-  // No alt attribute: the field warns and suggests the file's name.
+  // No alt attribute: the field warns, and opening it writes the file's name at once.
   const altButton = bar(page).getByRole("button", { name: "Alt text missing" });
   await altButton.click();
   const input = popover(page).getByRole("textbox", { name: "Alt text" });
   await expect(input).toBeFocused();
   await expect(input).toHaveValue("Placeholder");
+  await expect(popover(page).getByRole("button")).toHaveCount(0);
   await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="src/images/placeholder.svg" data-key="hero-image" alt="Placeholder">`);
   await expect(page.locator("#status")).toHaveText("Alt text updated");
@@ -111,10 +112,10 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await expect(page.locator("#status")).toHaveText("Image replaced");
 
-  // A written alt is kept on the next replacement; Decorative empties it.
+  // A written alt is kept on the next replacement; emptied, the image is decorative.
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("A sketch on the desk");
-  await popover(page).getByRole("button", { name: "Apply" }).click();
+  await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`alt="A sketch on the desk"`);
   // A web address applies as typed, with no image suggested for it.
   await bar(page).getByRole("button", { name: "Address" }).click();
@@ -123,7 +124,8 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="https://example.test/photo.jpg" data-key="hero-image" alt="A sketch on the desk"`);
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
-  await popover(page).getByRole("button", { name: "Decorative" }).click();
+  await popover(page).getByRole("textbox", { name: "Alt text" }).fill("");
+  await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`src="https://example.test/photo.jpg" data-key="hero-image" alt=""`);
   await expect(page.locator("#status")).toHaveText("Image marked decorative");
 
