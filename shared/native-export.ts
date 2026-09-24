@@ -24,6 +24,7 @@
 // output files, so it runs in Node (see native-export-cli.ts) and in the
 // browser alike.
 import { parseNativeManifest, type NativeManifest } from "../src/native-manifest";
+import { assignedSlotNames, pruneEmptyTemplate } from "./native-conditionals";
 
 export type FileContent = string | Uint8Array;
 
@@ -256,8 +257,11 @@ export function exportNativeSite(input: ExportInput): ExportResult {
       const close = closeOf(html, tag, match.index + open.length);
       if (!close) throw new ExportError(`Unclosed <${tag}> in page or template`);
       result += html.slice(cursor, match.index) + open;
-      result += `<template shadowrootmode="open">${styleBlock(tag)}${expand(components[tag].html, depth + 1)}</template>`;
-      result += expand(html.slice(match.index + open.length, close.innerEnd), depth + 1);
+      // Template parts the page's slot content leaves empty are left out.
+      const inner = html.slice(match.index + open.length, close.innerEnd);
+      const template = pruneEmptyTemplate(components[tag].html, assignedSlotNames(inner));
+      result += `<template shadowrootmode="open">${styleBlock(tag)}${expand(template, depth + 1)}</template>`;
+      result += expand(inner, depth + 1);
       result += html.slice(close.innerEnd, close.outerEnd);
       cursor = close.outerEnd;
       re.lastIndex = cursor;

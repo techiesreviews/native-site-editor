@@ -26,6 +26,9 @@
   // component order the editor's rule ranking assumes still holds.
   var sharedSheets = [];
   var componentSheets = {};
+  // Optional template parts (see applyEmptyRules) stay out of layout.
+  var runtimeSheet = new CSSStyleSheet();
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}");
   var sheetPaths = new WeakMap();
 
   function emit(type, extra) {
@@ -151,6 +154,8 @@
       var t = makeTemplate(html);
       reconcileChildren(root, t.content.cloneNode(true));
       syncRootStyles(root);
+      watchSlots(root);
+      applyEmptyRules(root);
     } finally {
       renderDepth--;
     }
@@ -251,6 +256,7 @@
     if (root !== document && root.host) {
       var scoped = componentSheetFor(root.host.localName);
       if (scoped) out.push(scoped);
+      out.push(runtimeSheet);
     }
     return out;
   }
@@ -656,6 +662,55 @@
   // element children. Kept so an older frame's markup still maps.
   function injectedStyle(n) {
     return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
+  }
+
+  // Conditional parts of a template (shared/native-conditionals.ts has the
+  // exporter's copy of these rules). A slot has content when the page
+  // assigned it something real (an element or non-blank text) or, for the
+  // automatic rule, when the template gave it a fallback. An element is
+  // hidden when its `data-if="name other"` slots are not all assigned, or
+  // automatically when it holds slots, none of them has content, and it has
+  // no text of its own: a second button whose slot the page left empty, and
+  // the wrapper around two such buttons, simply do not show.
+  function slotAssigned(slot) {
+    return slot.assignedNodes({ flatten: true }).some(function (n) {
+      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
+    });
+  }
+  function slotHasContent(slot) {
+    if (slotAssigned(slot)) return true;
+    return Array.prototype.some.call(slot.childNodes, function (n) {
+      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
+    });
+  }
+  function applyEmptyRules(root) {
+    var slotsByName = {};
+    root.querySelectorAll("slot").forEach(function (slot) { slotsByName[slot.getAttribute("name") || ""] = slot; });
+    root.querySelectorAll("*").forEach(function (el) {
+      if (el.localName === "style" || el.localName === "slot") return;
+      var empty = false;
+      var condition = el.getAttribute("data-if");
+      if (condition !== null) {
+        empty = condition.trim().split(/\s+/).some(function (name) {
+          var slot = slotsByName[name];
+          return !slot || !slotAssigned(slot);
+        });
+      } else {
+        var slots = el.querySelectorAll("slot");
+        empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !el.textContent.trim();
+      }
+      if (empty) el.setAttribute("data-native-empty", "");
+      else el.removeAttribute("data-native-empty");
+    });
+  }
+  function watchSlots(root) {
+    if (root.__nativeSlotWatch) return;
+    root.__nativeSlotWatch = true;
+    root.addEventListener("slotchange", function () {
+      applyEmptyRules(root);
+      updateBoxes();
+      scheduleInsertPoints();
+    });
   }
 
   // Element-child indexes from the page or component root down to `el`, so

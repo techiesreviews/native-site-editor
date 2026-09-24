@@ -235,11 +235,12 @@ test("component CSS loads on demand, scopes to matching shadow root, and edits l
   });
   // The shared stylesheet is one constructed sheet adopted by the document and
   // every shadow root, with no copies as <style> elements. Each component
-  // adopts only its own sibling stylesheet after it: none leak into the host
+  // adopts only its own sibling stylesheet after it (then the runtime's
+  // one-rule sheet for hidden optional parts): none leak into the host
   // document, and the card's rules never reach the header's shadow root.
   expect(scope.documentSheets).toBe(1);
-  expect(scope.cardSheets).toBe(2);
-  expect(scope.headerSheets).toBe(2);
+  expect(scope.cardSheets).toBe(3);
+  expect(scope.headerSheets).toBe(3);
   expect(scope.sharedIsOneInstance).toBe(true);
   expect(scope.noStyleElements).toBe(0);
   expect(scope.sharedText).toContain("--accent");

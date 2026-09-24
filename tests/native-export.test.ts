@@ -132,3 +132,16 @@ test("reads page comments and image headers", () => {
   assert.deepEqual(imageDimensions(new TextEncoder().encode('<svg viewBox="0 0 640 360"></svg>'), ".svg"), { width: 640, height: 360 });
   assert.equal(imageDimensions(new Uint8Array(4), ".jpg"), null);
 });
+
+test("template parts the page leaves empty are left out of the export", () => {
+  const files = fixtureFiles();
+  const home = text(exportNativeSite({ files }).files["index.html"]);
+  // No card passes a link, so the actions paragraph is not in any card.
+  assert.equal(home.includes("project-card__actions"), false);
+  files["src/pages/index.html"] = text(files["src/pages/index.html"]).replace(
+    `<span slot="title">Reusable cards</span>`,
+    `<span slot="title">Reusable cards</span>\n      <a slot="link" href="#/about/">See the project</a>`,
+  );
+  const withLink = text(exportNativeSite({ files }).files["index.html"]);
+  assert.equal(withLink.split("project-card__actions").length - 1, 1);
+});
