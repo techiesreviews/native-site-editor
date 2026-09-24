@@ -864,34 +864,41 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onClose: () => editor.closeActiveEditGroup(path),
     });
   }
-  // More: whole sections (a <section> or a section component) move, duplicate
-  // and remove, as one undo step each. Nothing else can be removed this way.
+  // Whole sections (a <section> or a section component) move, duplicate and
+  // remove from icon buttons always in the bar, as one undo step each.
+  // Nothing else can be removed this way.
   const sectionTemplate = selection.tag.includes("-") && isSectionTemplate(nativeSources()[nativeManifest?.components[selection.tag] ?? ""] ?? "");
   if (range && node && (selection.tag === "section" || sectionTemplate)) {
     const parent = node.slice(0, -1);
     const index = node[node.length - 1];
     const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
     const after = locateNativeElementRange(source, [...parent, index + 1]);
-    const items: { label: string; onSelect: () => void; disabled?: boolean }[] = [];
-    items.push({
+    controls.push({
+      kind: "button",
+      icon: "up",
       label: "Move up",
       disabled: !before,
-      onSelect: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
+      onPress: () => { if (before) change(swapEdits(source, before, range), [...parent, index - 1], "Moved up"); },
     });
-    items.push({
+    controls.push({
+      kind: "button",
+      icon: "down",
       label: "Move down",
       disabled: !after,
-      onSelect: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
+      onPress: () => { if (after) change(swapEdits(source, range, after), [...parent, index + 1], "Moved down"); },
     });
-    items.push({
+    controls.push({
+      kind: "button",
+      icon: "duplicate",
       label: "Duplicate",
-      onSelect: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
+      onPress: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
     });
-    items.push({
+    controls.push({
+      kind: "button",
+      icon: "remove",
       label: "Remove",
-      onSelect: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
+      onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
     });
-    controls.push({ kind: "menu", label: "More", title: "More actions", items });
   }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.() };
   preview.showEditBar(model, rect);

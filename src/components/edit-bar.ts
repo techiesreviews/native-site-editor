@@ -21,6 +21,8 @@ export type EditBarControl =
   | {
       kind: "button";
       label: string;
+      // Drawn instead of the label (the label names the button).
+      icon?: IconName;
       ariaLabel?: string;
       title?: string;
       disabled?: boolean;
@@ -67,7 +69,18 @@ export type EditBarControl =
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 
-function linkIcon() {
+export type IconName = "link" | "up" | "down" | "duplicate" | "remove";
+
+// Stroke paths on a 16 px grid.
+const iconPaths: Record<IconName, string> = {
+  link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8",
+  up: "M8 13V3M3.5 7.5L8 3l4.5 4.5",
+  down: "M8 3v10M3.5 8.5L8 13l4.5-4.5",
+  duplicate: "M6 6h7v7H6zM10 6V3H3v7h3",
+  remove: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4",
+};
+
+function icon(name: IconName) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("width", "14");
@@ -75,7 +88,7 @@ function linkIcon() {
   svg.setAttribute("aria-hidden", "true");
   svg.classList.add("edit-bar__icon");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8");
+  path.setAttribute("d", iconPaths[name]);
   path.setAttribute("fill", "none");
   path.setAttribute("stroke", "currentColor");
   path.setAttribute("stroke-width", "1.6");
@@ -324,7 +337,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
       openAddressField(item, control);
     }, `edit-bar__button edit-bar__address${control.warning ? " edit-bar__field--warning" : ""}${control.icon ? " edit-bar__address--icon" : ""}`);
     if (control.icon) {
-      item.append(linkIcon());
+      item.append(icon("link"));
       if (control.warning) item.append(document.createTextNode(control.warning));
       item.setAttribute("aria-label", control.label);
       item.title = control.warning ? `${control.label}: ${control.warning}` : control.value ? `${control.label}: ${control.value}` : control.label;
@@ -347,7 +360,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
     for (const control of model.controls) {
       if (control.kind === "button") {
-        const item = button(control.label, control.onPress, `edit-bar__button ${control.className ?? ""}`.trim());
+        const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
+        if (control.icon) {
+          item.append(icon(control.icon));
+          item.setAttribute("aria-label", control.label);
+          item.title = control.title ?? control.label;
+        }
         if (control.ariaLabel) item.setAttribute("aria-label", control.ariaLabel);
         if (control.title) item.title = control.title;
         if (control.pressed !== undefined) item.setAttribute("aria-pressed", String(control.pressed));

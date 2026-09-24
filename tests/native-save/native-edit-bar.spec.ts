@@ -183,8 +183,8 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await child!.evaluate(() => window.scrollTo(0, 0));
   await expect(bar(page)).toBeVisible();
 
-  // Roving focus along the bar: Heading level, Text size, B, I. A heading has no More.
-  await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
+  // Roving focus along the bar: Heading level, Text size, B, I. A heading has no section icons.
+  await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Italic" }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();

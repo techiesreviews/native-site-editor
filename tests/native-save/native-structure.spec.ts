@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// The edit bar's More menu (move, duplicate, remove), image Replace and
+// The edit bar's section icons (move, duplicate, remove), image Address and
 // Alt text, and the accessibility fields that come with a selection.
 const fixture = "fixtures/native-starter";
 const indexPath = "src/pages/index.html";
@@ -35,31 +35,26 @@ async function undo(page: Page) {
   await page.keyboard.press("ControlOrMeta+Z");
 }
 
-test("More moves, duplicates and removes a section as single undo steps", async ({ page }) => {
+test("the section icons move, duplicate and remove it as single undo steps", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
 
-  await bar(page).getByRole("button", { name: "More" }).click();
-  const menu = page.getByRole("menu", { name: "More" });
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Move up" })).toBeFocused();
-  await menu.getByRole("menuitem", { name: "Move up" }).click();
+  // No More menu: the four actions are icon buttons in the bar.
+  await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Move up" }).click();
   await expect(frame.locator("main > section.cards:first-child + section.hero")).toHaveCount(1);
   await expect(page.locator("#status")).toHaveText("Moved up");
-  // The moved section stays selected.
+  // The moved section stays selected, now first, so Move up is disabled.
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  await bar(page).getByRole("button", { name: "More" }).click();
-  await expect(menu.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
-  await page.keyboard.press("Escape");
-  await expect(menu).toBeHidden();
+  await expect(bar(page).getByRole("button", { name: "Move up" })).toBeDisabled();
+  await expect(bar(page).getByRole("button", { name: "Move down" })).toBeEnabled();
   await undo(page);
   await expect(frame.locator("main > section.hero:first-child + section.cards")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
   await select(page, "section.cards");
-  await bar(page).getByRole("button", { name: "More" }).click();
-  await menu.getByRole("menuitem", { name: "Duplicate" }).click();
+  await bar(page).getByRole("button", { name: "Duplicate" }).click();
   await expect(frame.locator("section.cards")).toHaveCount(2);
   await expect(page.locator("#status")).toHaveText("Section duplicated");
   await expect.poll(() => editorText(page, "#content")).toContain(`</section>\n  <section class="cards" data-key="cards-2">`);
@@ -67,8 +62,7 @@ test("More moves, duplicates and removes a section as single undo steps", async 
   await expect(frame.locator("section.cards")).toHaveCount(1);
 
   await select(page, "section.cards");
-  await bar(page).getByRole("button", { name: "More" }).click();
-  await menu.getByRole("menuitem", { name: "Remove" }).click();
+  await bar(page).getByRole("button", { name: "Remove" }).click();
   await expect(frame.locator("section.cards")).toHaveCount(0);
   await expect(page.locator("#status")).toHaveText("Section removed");
   // The previous section is selected next.
@@ -87,7 +81,7 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await image.click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
   // Only whole sections move, duplicate or go away.
-  await expect(bar(page).getByRole("button", { name: "More" })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
 
   // No alt attribute: the field warns, and opening it writes the file's name at once.
   const altButton = bar(page).getByRole("button", { name: "Alt text missing" });

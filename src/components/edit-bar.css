@@ -145,7 +145,8 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
-.edit-bar__address {
+.edit-bar__address,
+.edit-bar__button--icon {
   display: inline-flex;
   align-items: center;
   gap: 4px;

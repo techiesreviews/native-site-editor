@@ -1,5 +1,5 @@
-// Structural and attribute edits behind the edit bar's More menu, Replace
-// and the accessibility fields: each is one range edit (or two that do not
+// Structural and attribute edits behind the edit bar: the section icons (move,
+// duplicate, remove), the image Address and the accessibility fields. Each is one range edit (or two that do not
 // overlap) computed from the element's exact source range, never a re-serialisation.
 
 import { startTagAttribute, startTags, type ElementRange, type StartTag } from "./native-source-location";
