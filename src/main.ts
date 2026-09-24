@@ -16,7 +16,7 @@ import { draftStore, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
-import { mountSidebarResize } from "./components/sidebar-resize";
+import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure } from "./components/page-structure";
 import {
@@ -53,7 +53,7 @@ let content: HTMLDivElement;
 let files: HTMLElement;
 let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
 let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
-let disposeSidebarResize: (() => void) | undefined;
+let sidebarResize: SidebarResize | undefined;
 let editorModule: typeof import("./components/code-editor") | undefined;
 let editorLoading:
   | Promise<typeof import("./components/code-editor")>
@@ -107,7 +107,10 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
-      <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
+      <div class="topbar-pages">
+        <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
+        <button id="structure-toggle" type="button" class="explorer-toggle structure-toggle" aria-controls="structure-sidebar">Hide structure</button>
+      </div>
       <div class="topbar-actions">
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
         <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
@@ -143,10 +146,22 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   repositorySelect = element<HTMLSelectElement>("repository");
-  disposeSidebarResize = mountSidebarResize(
+  sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
     app.querySelector<HTMLElement>(".sidebar")!,
   );
+  // Hide structure / Page structure: the same width the resize handle keeps,
+  // so dragging to nothing flips the label too.
+  const structureToggle = element<HTMLButtonElement>("structure-toggle");
+  sidebarResize.onChange((hidden) => {
+    structureToggle.textContent = hidden ? "Page structure" : "Hide structure";
+    structureToggle.title = hidden ? "Show the page structure sidebar" : "Hide the page structure sidebar";
+    structureToggle.setAttribute("aria-expanded", String(!hidden));
+  });
+  structureToggle.addEventListener("click", () => {
+    if (sidebarResize?.isHidden()) sidebarResize.show();
+    else sidebarResize?.hide();
+  });
   branchSelect = element<HTMLSelectElement>("branch");
   refreshButton = element<HTMLButtonElement>("refresh");
   content = element<HTMLDivElement>("content");
@@ -1511,8 +1526,8 @@ function renderLogin(
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
-  disposeSidebarResize?.();
-  disposeSidebarResize = undefined;
+  sidebarResize?.dispose();
+  sidebarResize = undefined;
   closeEditor();
   deactivateNative();
   nativePreview?.destroy();

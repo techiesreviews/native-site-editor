@@ -85,8 +85,16 @@ select {
   padding: 8px 28px;
   gap: 24px;
 }
-.topbar > .explorer-toggle {
+.topbar > .topbar-pages {
   justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.structure-toggle {
+  flex: none;
+  padding: 8px 12px;
 }
 .brand {
   display: flex;
@@ -799,9 +807,12 @@ dd {
   .login-card {
     padding: 27px 24px;
   }
-  .explorer-toggle {
+  .topbar-pages {
     order: 3;
     width: 100%;
+  }
+  .topbar-pages > .explorer-toggle {
+    flex: 1;
   }
 }
 
