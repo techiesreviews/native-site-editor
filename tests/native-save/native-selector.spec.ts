@@ -215,19 +215,34 @@ test("component CSS loads on demand, scopes to matching shadow root, and edits l
   const scope = await child!.evaluate(() => {
     const card = document.querySelector("project-card") as HTMLElement;
     const header = document.querySelector("site-header") as HTMLElement;
+    const text = (sheet: CSSStyleSheet) => [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+    const shared = document.adoptedStyleSheets;
+    const cardSheets = card.shadowRoot!.adoptedStyleSheets;
+    const headerSheets = header.shadowRoot!.adoptedStyleSheets;
     return {
-      documentStyles: document.querySelectorAll("style[data-native-component-css]").length,
-      cardStyles: card.shadowRoot!.querySelectorAll("style[data-native-component-css]").length,
-      headerStyles: header.shadowRoot!.querySelectorAll("style[data-native-component-css]").length,
-      cardStyleText: card.shadowRoot!.querySelector("style[data-native-component-css]")?.textContent ?? "",
-      headerStyleText: header.shadowRoot!.querySelector("style[data-native-component-css]")?.textContent ?? "",
+      documentSheets: shared.length,
+      cardSheets: cardSheets.length,
+      headerSheets: headerSheets.length,
+      sharedIsOneInstance: cardSheets[0] === shared[0] && headerSheets[0] === shared[0],
+      noStyleElements:
+        document.querySelectorAll("style").length +
+        card.shadowRoot!.querySelectorAll("style").length +
+        header.shadowRoot!.querySelectorAll("style").length,
+      sharedText: text(shared[0]),
+      cardStyleText: text(cardSheets[1]),
+      headerStyleText: text(headerSheets[1]),
     };
   });
-  // Each component only receives its own sibling stylesheet: none leak into the
-  // host document, and the card's rules never reach the header's shadow root.
-  expect(scope.documentStyles).toBe(0);
-  expect(scope.cardStyles).toBe(1);
-  expect(scope.headerStyles).toBe(1);
+  // The shared stylesheet is one constructed sheet adopted by the document and
+  // every shadow root, with no copies as <style> elements. Each component
+  // adopts only its own sibling stylesheet after it: none leak into the host
+  // document, and the card's rules never reach the header's shadow root.
+  expect(scope.documentSheets).toBe(1);
+  expect(scope.cardSheets).toBe(2);
+  expect(scope.headerSheets).toBe(2);
+  expect(scope.sharedIsOneInstance).toBe(true);
+  expect(scope.noStyleElements).toBe(0);
+  expect(scope.sharedText).toContain("--accent");
   expect(scope.cardStyleText).toContain(".project-card");
   expect(scope.headerStyleText).not.toContain(".project-card");
   expect(scope.headerStyleText).toContain(".site-header");

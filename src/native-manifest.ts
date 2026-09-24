@@ -7,10 +7,23 @@
 // versioned contract that maps those files; it is validated defensively because
 // it comes from repository contents that the editor does not control.
 
+/** Per-route page metadata, used by the static exporter for the document head. */
+export interface NativePageMeta {
+  title?: string;
+  description?: string;
+}
+
 export interface NativeManifest {
   version: 1;
   /** Route path (e.g. "/", "/about/") to a `src/pages/*.html` source file. */
   routes: Record<string, string>;
+  /**
+   * Route path to its title and description. In the JSON a route may be
+   * written either as the page path alone or as
+   * `{ "file": "src/pages/about.html", "title": "About", "description": "…" }`;
+   * only routes written the long way appear here.
+   */
+  pages: Record<string, NativePageMeta>;
   /**
    * Custom-element tag (e.g. "site-header") to an HTML file under
    * `src/components/`. The path may be flat (`src/components/<name>.html`) or
@@ -73,12 +86,24 @@ export function parseNativeManifest(text: string): NativeManifestResult {
   const routeEntries = Object.entries(value.routes);
   if (!routeEntries.length) return { ok: false, error: "native.json \"routes\" must map at least one route." };
   const routes: Record<string, string> = {};
-  for (const [route, path] of routeEntries) {
+  const pages: Record<string, NativePageMeta> = {};
+  for (const [route, entry] of routeEntries) {
     if (!ROUTE.test(route))
       return { ok: false, error: `native.json route ${JSON.stringify(route)} must start and end with "/".` };
+    const path = isRecord(entry) ? entry.file : entry;
     if (typeof path !== "string" || !safePath(path) || !PAGE_PATH.test(path))
-      return { ok: false, error: `native.json route ${JSON.stringify(route)} must point to a src/pages/*.html file.` };
+      return { ok: false, error: `native.json route ${JSON.stringify(route)} must point to a src/pages/*.html file${isRecord(entry) ? ' in "file"' : ""}.` };
     routes[route] = path;
+    if (isRecord(entry)) {
+      const meta: NativePageMeta = {};
+      for (const field of ["title", "description"] as const) {
+        if (entry[field] === undefined) continue;
+        if (typeof entry[field] !== "string" || entry[field].length > 1000)
+          return { ok: false, error: `native.json route ${JSON.stringify(route)} "${field}" must be a string.` };
+        meta[field] = entry[field];
+      }
+      pages[route] = meta;
+    }
   }
   if (!Object.hasOwn(routes, "/"))
     return { ok: false, error: "native.json \"routes\" must include a home route \"/\"." };
@@ -107,7 +132,7 @@ export function parseNativeManifest(text: string): NativeManifestResult {
     }
   }
 
-  return { ok: true, manifest: { version: 1, routes, components, styles } };
+  return { ok: true, manifest: { version: 1, routes, pages, components, styles } };
 }
 
 /** Every distinct source file the manifest references, for prefetching. */

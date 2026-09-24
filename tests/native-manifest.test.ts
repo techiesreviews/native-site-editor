@@ -72,6 +72,20 @@ test("defaults optional components and styles to empty", () => {
   assert.deepEqual(manifest.styles, []);
 });
 
+test("accepts a route written with its file, title and description", () => {
+  const manifest = ok(
+    '{"version":1,"routes":{"/":"src/pages/index.html","/about/":{"file":"src/pages/about.html","title":"About","description":"Who we are."}}}',
+  );
+  assert.equal(manifest.routes["/about/"], "src/pages/about.html");
+  assert.deepEqual(manifest.pages, { "/about/": { title: "About", description: "Who we are." } });
+  assert.deepEqual(nativeManifestPaths(manifest).sort(), ["src/pages/about.html", "src/pages/index.html"]);
+});
+
+test("rejects a route object without a page file or with a non-string title", () => {
+  assert.match(fail('{"version":1,"routes":{"/":{"title":"Home"}}}'), /src\/pages.*"file"/);
+  assert.match(fail('{"version":1,"routes":{"/":{"file":"src/pages/index.html","title":3}}}'), /"title" must be a string/);
+});
+
 test("rejects unsupported version", () => {
   assert.match(fail('{"version":2,"routes":{"/":"src/pages/index.html"}}'), /version/);
 });

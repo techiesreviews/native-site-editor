@@ -16,6 +16,17 @@
   var editing = null;
   var editingText = "";
   var editingHtml = "";
+  // Shared stylesheets as constructed sheets: one CSSStyleSheet per manifest
+  // entry for the whole document, adopted by the document and by every
+  // component shadow root, so a token declared once at document level is
+  // inherited everywhere and no shadow root carries its own copy. Component
+  // CSS is one sheet per tag, adopted after the shared ones by that tag's
+  // shadow roots only. Adopted sheets sit after a root's own <style>
+  // elements in the cascade and keep their array order, so the shared →
+  // component order the editor's rule ranking assumes still holds.
+  var sharedSheets = [];
+  var componentSheets = {};
+  var sheetPaths = new WeakMap();
 
   function emit(type, extra) {
     var base = { source: "astro-native-preview", type: type };
@@ -138,25 +149,6 @@
       var root = host.shadowRoot || host.attachShadow({ mode: "open" });
       shadowRoots.add(root);
       var t = makeTemplate(html);
-      var componentStyle = componentStyleFor(host.localName);
-      stylesList().slice().reverse().forEach(function (item, index) {
-        var style = document.createElement("style");
-        style.setAttribute("data-native-css", "");
-        style.setAttribute("data-native-css-path", String(item.path || ""));
-        style.setAttribute("data-key", "native-css-" + (stylesList().length - index - 1));
-        style.textContent = String(item.source || "");
-        t.content.insertBefore(style, t.content.firstChild);
-      });
-      // Component CSS follows the shared stylesheets so it wins the cascade at
-      // equal specificity; the editor's rule ranking assumes the same order.
-      if (componentStyle) {
-        var scoped = document.createElement("style");
-        scoped.setAttribute("data-native-component-css", "");
-        scoped.setAttribute("data-native-css-path", String(componentStyle.path || ""));
-        scoped.setAttribute("data-key", "native-component-css");
-        scoped.textContent = String(componentStyle.source || "");
-        t.content.insertBefore(scoped, t.content.childNodes[stylesList().length] || null);
-      }
       reconcileChildren(root, t.content.cloneNode(true));
       syncRootStyles(root);
     } finally {
@@ -217,46 +209,63 @@
     return state && state.componentStyles && state.componentStyles[tag] || null;
   }
 
-  function syncRootStyles(root) {
-    if (!state) return;
-    var styles = stylesList();
-    var parentNode = root === document ? document.head : root;
-    var existing = Array.prototype.slice.call(parentNode.querySelectorAll("style[data-native-css]"));
-    styles.forEach(function (item, index) {
-      var style = existing[index];
-      if (!style) {
-        style = document.createElement("style");
-        style.setAttribute("data-native-css", "");
-        if (root !== document) style.setAttribute("data-key", "native-css-" + index);
-        parentNode.appendChild(style);
-      }
-      style.setAttribute("data-native-css-path", String(item.path || ""));
-      style.textContent = String(item.source || "");
-    });
-    existing.slice(styles.length).forEach(function (style) { style.remove(); });
-    if (root !== document) syncComponentStyle(root);
+  // Fills a constructed sheet from `item` ({ path, source }), replacing its
+  // rules only when the source changed.
+  function fillSheet(entry, item) {
+    entry.path = String(item.path || "");
+    sheetPaths.set(entry.sheet, entry.path);
+    var source = String(item.source || "");
+    if (entry.source === source) return;
+    entry.source = source;
+    try {
+      entry.sheet.replaceSync(source);
+    } catch (e) {
+      reportError("Stylesheet " + entry.path + " could not be applied: " + (e && e.message ? e.message : e));
+    }
   }
 
-  function syncComponentStyle(root) {
-    var host = root.host;
-    var item = host && componentStyleFor(host.localName);
-    var existing = root.querySelector("style[data-native-component-css]");
+  function syncSharedSheets() {
+    var styles = stylesList();
+    styles.forEach(function (item, index) {
+      if (!sharedSheets[index]) sharedSheets[index] = { path: "", source: null, sheet: new CSSStyleSheet() };
+      fillSheet(sharedSheets[index], item);
+    });
+    sharedSheets.length = styles.length;
+  }
+
+  function componentSheetFor(tag) {
+    var item = componentStyleFor(tag);
     if (!item) {
-      if (existing) existing.remove();
-      return;
+      delete componentSheets[tag];
+      return null;
     }
-    if (!existing) {
-      existing = document.createElement("style");
-      existing.setAttribute("data-native-component-css", "");
-      existing.setAttribute("data-key", "native-component-css");
-      var afterShared = root.querySelectorAll("style[data-native-css]");
-      root.insertBefore(existing, afterShared.length ? afterShared[afterShared.length - 1].nextSibling : root.firstChild);
+    if (!componentSheets[tag]) componentSheets[tag] = { path: "", source: null, sheet: new CSSStyleSheet() };
+    fillSheet(componentSheets[tag], item);
+    return componentSheets[tag].sheet;
+  }
+
+  // The sheets a root adopts: every shared sheet, then (for a component's
+  // shadow root) that component's own sheet.
+  function sheetsFor(root) {
+    var out = sharedSheets.map(function (entry) { return entry.sheet; });
+    if (root !== document && root.host) {
+      var scoped = componentSheetFor(root.host.localName);
+      if (scoped) out.push(scoped);
     }
-    existing.setAttribute("data-native-css-path", String(item.path || ""));
-    if (existing.textContent !== String(item.source || "")) existing.textContent = String(item.source || "");
+    return out;
+  }
+
+  function syncRootStyles(root) {
+    if (!state) return;
+    var wanted = sheetsFor(root);
+    var current = root.adoptedStyleSheets || [];
+    var same = current.length === wanted.length;
+    for (var i = 0; same && i < wanted.length; i++) same = current[i] === wanted[i];
+    if (!same) root.adoptedStyleSheets = wanted;
   }
 
   function syncStyles() {
+    syncSharedSheets();
     syncRootStyles(document);
     shadowRoots.forEach(syncRootStyles);
   }
@@ -480,8 +489,7 @@
     });
   }
 
-  // The element at `node` (element-child indexes, injected styles not
-  // counted) under the page root or under the shadow root of the component
+  // The element at `node` (element-child indexes) under the page root or under the shadow root of the component
   // whose template is `path`, preferring the currently selected instance.
   function resolveNodePath(request) {
     if (!state || !request || !Array.isArray(request.node)) return null;
@@ -543,6 +551,26 @@
     }
   }
 
+  // The stylesheets that apply within `root`, in cascade order: its own
+  // <style> elements, then the sheets it adopted.
+  function sheetsIn(root) {
+    var out = [];
+    var own = root && root.styleSheets ? root.styleSheets : document.styleSheets;
+    for (var s = 0; s < own.length; s++) if (applicableSheet(own[s], root)) out.push(own[s]);
+    var adopted = (root && root.adoptedStyleSheets) || [];
+    for (var a = 0; a < adopted.length; a++) out.push(adopted[a]);
+    return out;
+  }
+
+  // The source path a sheet came from: a constructed shared or component
+  // sheet, or a <style> element the runtime tagged.
+  function sheetPath(sheet) {
+    if (!sheet) return "";
+    if (sheetPaths.has(sheet)) return sheetPaths.get(sheet);
+    var owner = sheet.ownerNode;
+    return owner && owner.getAttribute ? owner.getAttribute("data-native-css-path") || "" : "";
+  }
+
   function conditionApplies(rule) {
     if (typeof CSSMediaRule !== "undefined" && rule instanceof CSSMediaRule)
       return !rule.conditionText || matchMedia(rule.conditionText).matches;
@@ -571,7 +599,7 @@
 
   function matchingRules(el) {
     var root = el.getRootNode && el.getRootNode();
-    var sheets = root && root.styleSheets ? root.styleSheets : document.styleSheets;
+    var sheets = sheetsIn(root instanceof ShadowRoot ? root : document);
     var out = [], ruleIndexes = {};
     function nextRuleIndex(path) {
       path = path || ownerPath(el);
@@ -583,8 +611,7 @@
       for (var i = 0; i < rules.length; i++) {
         var rule = rules[i];
         if (typeof CSSStyleRule !== "undefined" && rule instanceof CSSStyleRule) {
-          var owner = rule.parentStyleSheet && rule.parentStyleSheet.ownerNode;
-          var path = owner && owner.getAttribute ? owner.getAttribute("data-native-css-path") || "" : "";
+          var path = sheetPath(rule.parentStyleSheet);
           var currentIndex = nextRuleIndex(path);
           if (!active) continue;
           splitSelectorList(rule.selectorText).forEach(function (selector) {
@@ -600,9 +627,7 @@
       }
     }
     for (var s = 0; s < sheets.length; s++) {
-      var sheet = sheets[s];
-      if (!applicableSheet(sheet, root)) continue;
-      try { walk(sheet.cssRules, true); } catch (_) {}
+      try { walk(sheets[s].cssRules, true); } catch (_) {}
     }
     return out;
   }
@@ -626,13 +651,15 @@
     emit("select", payload);
   }
 
+  // Styles the runtime itself once injected as elements; shared and component
+  // CSS are adopted sheets now, so the source and the DOM have the same
+  // element children. Kept so an older frame's markup still maps.
   function injectedStyle(n) {
     return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
   }
 
-  // Element-child indexes from the page or component root down to `el`, not
-  // counting the stylesheets the runtime injects, so the editor can find the
-  // element's start tag in the source.
+  // Element-child indexes from the page or component root down to `el`, so
+  // the editor can find the element's start tag in the source.
   function elementIndexPath(el) {
     var out = [];
     var current = el;

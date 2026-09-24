@@ -2,6 +2,7 @@ import { button, link, node } from "../ui/dom";
 import { mountDropdown } from "./dropdown";
 import { draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import type { PublishResult } from "../../shared/types";
+import { diffHunks } from "../text-diff";
 import "./publish-menu.css";
 
 export function createPublishMenu(options: {
@@ -58,10 +59,47 @@ export function createPublishMenu(options: {
         if (checkbox.checked) selection.add(draft.path); else selection.delete(draft.path);
         submit.disabled = !records.some(record => selection.has(record.path));
       });
-      label.append(checkbox, node("span", "", draft.path)); list.append(label);
+      label.append(checkbox, node("span", "", draft.path));
+      list.append(label, changes(draft));
     }
     submit.disabled = !records.some(record => selection.has(record.path));
     if (resetMessage) message.textContent = labels.idle;
+  }
+  // What the commit would change in a file: the changed lines with one line
+  // of context, so a stray edit is seen before it reaches the branch.
+  function changes(draft: SavedDraft) {
+    const details = node("details", "publish-menu__changes");
+    const summary = node("summary");
+    const hunks = draft.baseSha === null ? [] : diffHunks(draft.original, draft.content);
+    let added = 0, deleted = 0;
+    for (const hunk of hunks) for (const line of hunk.lines) {
+      if (line.kind === "add") added++;
+      else if (line.kind === "del") deleted++;
+    }
+    if (draft.baseSha === null) {
+      summary.textContent = `New file, ${draft.content.split("\n").length} lines`;
+      details.append(summary);
+      return details;
+    }
+    summary.textContent = `${added} added, ${deleted} removed`;
+    details.append(summary);
+    details.open = true;
+    const pre = node("pre", "publish-menu__diff");
+    hunks.forEach((hunk, index) => {
+      if (index) pre.append(node("span", "publish-menu__diff-gap", "⋯\n"));
+      for (const line of hunk.lines) {
+        const row = node("span", `publish-menu__diff-line is-${line.kind}`);
+        row.append(
+          node("span", "publish-menu__diff-number", String(line.line)),
+          node("span", "publish-menu__diff-sign", line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "),
+          node("span", "publish-menu__diff-text", line.text),
+          "\n",
+        );
+        pre.append(row);
+      }
+    });
+    details.append(pre);
+    return details;
   }
   async function send() {
     const submitted = draftStore().list(options.scope).filter(draft => selection.has(draft.path));

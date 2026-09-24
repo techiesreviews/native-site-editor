@@ -1182,7 +1182,7 @@ async function loadNativeComponentStyles(tags: string[]) {
 async function activateNativeManifest(repo: Repository, result: Snapshot, epoch: number) {
   const request = ++nativeSourcesRequest;
   const live = () => epoch === generation && request === nativeSourcesRequest;
-  const placeholder: NativeManifest = { version: 1, routes: { "/": "src/pages/index.html" }, components: {}, styles: [] };
+  const placeholder: NativeManifest = { version: 1, routes: { "/": "src/pages/index.html" }, pages: {}, components: {}, styles: [] };
   // Locate the manifest first. A failure *before* we confirm native.json exists
   // cannot be attributed to native intent, so the project opens as plain files.
   // Once the file is found, the project is native and every later failure

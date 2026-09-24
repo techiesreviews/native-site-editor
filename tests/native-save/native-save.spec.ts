@@ -72,6 +72,11 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   // The native save menu commits to GitHub but does not track deployment status.
   await openSaveMenu(page);
   await expect(page.locator("#publish-files")).toContainText("A connected host may deploy this commit automatically");
+  // The change the commit would make is listed before it is made.
+  const changes = page.locator("#publish-files .publish-menu__changes");
+  await expect(changes).toContainText("1 added, 1 removed");
+  await expect(changes.locator(".publish-menu__diff-line.is-del")).toContainText("A native browser preview");
+  await expect(changes.locator(".publish-menu__diff-line.is-add")).toContainText("Saved to GitHub heading");
   await saveSubmit(page).click();
 
   const message = page.locator(".publish-menu__message");

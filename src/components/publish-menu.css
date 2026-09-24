@@ -2,6 +2,15 @@
 .publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 16px; max-height: 40dvh; overflow: auto; }
 .publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: 12px; overflow-wrap: anywhere; }
 .publish-menu__file input { accent-color: var(--green); }
+.publish-menu__changes { font-size: 11px; margin: -4px 0 4px 24px; }
+.publish-menu__changes summary { cursor: pointer; color: var(--muted, inherit); }
+.publish-menu__diff { margin: 6px 0 0; padding: 6px 0; font-size: 11px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 30dvh; background: var(--code-bg, rgba(127, 127, 127, 0.08)); border-radius: 6px; }
+.publish-menu__diff-line { display: inline-block; min-width: 100%; padding-inline: 8px; }
+.publish-menu__diff-line.is-add { background: rgba(47, 109, 58, 0.16); }
+.publish-menu__diff-line.is-del { background: rgba(200, 30, 30, 0.14); text-decoration: line-through; text-decoration-color: rgba(200, 30, 30, 0.6); }
+.publish-menu__diff-number { display: inline-block; width: 3ch; text-align: right; opacity: 0.55; margin-right: 6px; }
+.publish-menu__diff-sign { display: inline-block; width: 1.5ch; }
+.publish-menu__diff-gap { display: block; padding-inline: 8px; opacity: 0.55; }
 .publish-menu__message { font-size: 12px; line-height: 1.6; }
 @supports (position-area: bottom) { .publish-menu__panel { position-area: bottom span-left; justify-self: end; } }
 .code-editor__conflict { padding: 10px 20px; background: var(--warning-bg); color: var(--warning-fg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
