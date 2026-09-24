@@ -25,6 +25,7 @@ import {
   nativeDefaultRoute,
   type NativeManifest,
 } from "./native-manifest";
+import { locateNativeElement } from "./native-source-location";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -490,16 +491,34 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   if (!css) closeSecondary();
   renderLinkedStyle();
   const top = rules[0];
-  if (reveal && top) editorModule?.revealRange(top.path, top.start, top.end);
+  // The page's own caret stays on the selected element; inline rules still
+  // open from their chips.
+  if (reveal && top && top.path !== page) editorModule?.revealRange(top.path, top.start, top.end);
+}
+
+// A preview click that arrived before its file's editor was mounted; replayed
+// by `mountSource` once that file opens in the same generation.
+let pendingNativeSelection: { selection: NativePreviewSelection; epoch: number } | undefined;
+
+// Marks the selected element's start tag in its open source file.
+function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
+  if (!selection.path || currentPath !== selection.path || !editorModule?.isMounted(selection.path)) return;
+  if (reveal) pendingNativeSelection = undefined;
+  const source = nativeSources()[selection.path];
+  const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
+  editorModule?.markElement(selection.path, tag, reveal);
 }
 
 async function selectNativeSource(selection: NativePreviewSelection) {
   const reveal = selection.reason !== "refresh";
   if (!reveal) {
     if (!selection.path || currentPath !== selection.path) return;
+    markNativeElement(selection, false);
     void linkNativeStyles(selection, false);
     return;
   }
+  if (currentPath) editorModule?.markElement(currentPath, undefined, false);
+  pendingNativeSelection = selection.path ? { selection, epoch: generation } : undefined;
   const request = ++linkedStyleRequest;
   fileGeneration++;
   secondaryRequest++;
@@ -516,6 +535,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     await restoreFile(selection.path, epoch, { linkDefaultStyle: false });
     if (request !== linkedStyleRequest || epoch !== generation || currentPath !== selection.path) return;
   }
+  markNativeElement(selection, true);
   void linkNativeStyles(selection, reveal);
 }
 
@@ -1236,6 +1256,13 @@ async function mountSource(
     onSessionExpired: () =>
       errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
   });
+  // Checked before the file-generation guard: handling that click is what
+  // superseded this open.
+  const pending = pendingNativeSelection;
+  if (pending?.selection.path === path && currentPath === path && editorModule?.isMounted(path)) {
+    pendingNativeSelection = undefined;
+    if (pending.epoch === generation) void selectNativeSource(pending.selection);
+  }
   if (epoch !== generation || selection !== fileGeneration || !info.user)
     return;
   rememberWorkspace(info.user.login, {

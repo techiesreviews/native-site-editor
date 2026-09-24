@@ -411,8 +411,34 @@
       reason: reason || "click",
       selectors: matchingRules(el)
     };
+    var node = elementIndexPath(el);
+    if (node) payload.node = node;
     if (link !== undefined) payload.link = link;
     emit("select", payload);
+  }
+
+  function injectedStyle(n) {
+    return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
+  }
+
+  // Element-child indexes from the page or component root down to `el`, not
+  // counting the stylesheets the runtime injects, so the editor can find the
+  // element's start tag in the source.
+  function elementIndexPath(el) {
+    var out = [];
+    var current = el;
+    while (current) {
+      var parentNode = current.parentNode;
+      if (!parentNode) return null;
+      var index = 0;
+      for (var sibling = current.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+        if (!injectedStyle(sibling)) index++;
+      }
+      out.unshift(index);
+      if (parentNode === pageEl || parentNode instanceof ShadowRoot) return out;
+      current = parentNode instanceof Element ? parentNode : null;
+    }
+    return null;
   }
 
   // Walks up through shadow hosts too, so a selection inside a component that

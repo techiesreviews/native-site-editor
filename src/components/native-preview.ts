@@ -13,9 +13,10 @@ import "./native-preview.css";
 //
 // This is the editor's only preview: a sandboxed frame rendered in place. It
 // deliberately supports NO arbitrary page JavaScript: `<script>`, `on*`
-// handlers, and `javascript:` URLs are stripped before render. It has no source
-// position mapping, so visual selection opens the owning page/component file and
-// matching rendered CSS rules, but does not claim exact HTML source offsets.
+// handlers, and `javascript:` URLs are stripped before render. It has no build
+// source maps; selection opens the owning page/component file at the
+// selected element's start tag (see native-source-location.ts) plus the
+// matching rendered CSS rules.
 //
 // The frame uses `srcdoc` so project-wide X-Frame-Options/`frame-ancestors` do
 // not block it, but loads its runtime from a same-origin external script.
@@ -49,6 +50,8 @@ export interface NativePreviewSelection {
   text: string;
   reason: "click" | "refresh";
   selectors: NativeSelectedRule[];
+  // Element-child indexes from the owning file's root to the selected element.
+  node?: number[];
 }
 
 interface NativePreviewHandlers {
@@ -119,6 +122,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let route = "/";
   let context = "";
   let renderVersion = 0;
+  // A click reported against an older render. The runtime re-reports its
+  // selection as a refresh after the next update, and that refresh then counts
+  // as the click, so clicks during a re-render are not lost.
+  let staleClick = false;
   let ready = false;
   let mounted = false;
   let rafHandle = 0;
@@ -163,7 +170,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (event.source !== frame.contentWindow) return;
     const data = event.data as { source?: string; type?: string; route?: string; context?: string } | undefined;
     if (data?.source !== "astro-native-preview") return;
-    if (data.type !== "ready" && data.context !== context) return;
+    if (data.type !== "ready" && data.context !== context) {
+      if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
+      return;
+    }
     if (data.type === "ready") {
       ready = true;
       schedule();
@@ -196,7 +206,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         text?: unknown;
         selectors?: unknown;
         reason?: unknown;
+        node?: unknown;
       };
+      const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
+      staleClick = false;
       if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
       const allowedSelectorPaths = new Set([...nativeManifestPaths(manifest), ...Object.values(componentStyles)]);
       const selectors = Array.isArray(raw.selectors)
@@ -217,8 +230,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         path: raw.path,
         tag: typeof raw.tag === "string" ? raw.tag : "",
         text: typeof raw.text === "string" ? raw.text : "",
-        reason: raw.reason === "refresh" ? "refresh" : "click",
+        reason,
         selectors,
+        node: Array.isArray(raw.node) && raw.node.length <= 500 &&
+          raw.node.every((index) => Number.isInteger(index) && index >= 0)
+          ? raw.node as number[]
+          : undefined,
       });
       return;
     }
@@ -235,6 +252,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "clear-selection" }, "*");
   }
   function clearSelection() {
+    staleClick = false;
     postClearSelection();
     handlers.onSelect?.({ path: "", tag: "", text: "", reason: "click", selectors: [] });
   }

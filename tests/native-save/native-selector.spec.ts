@@ -280,11 +280,68 @@ test("slotted light DOM selection keeps page ownership and inline grouped CSS ig
 
   await expect(page.locator("#current-page")).toHaveText(indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+  await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Reusable cards</span>");
+  await page.locator("#secondary-rules button", { hasText: "slot-probe" }).first().click();
   const selected = await copySelectedEditorText(page, "#content");
   expect(selected).toContain(".slot-probe, .lead");
   expect(selected).toContain("rgb(190, 20, 40)");
   expect(selected).not.toContain("max-width: 1px");
   await expect(page.locator("#content-secondary .view-lines")).toContainText("body");
+});
+
+// Text from the editor caret to the end of its line.
+async function caretToLineEnd(page: Page, host: string) {
+  const textbox = page.locator(`${host} [role="textbox"]`).first();
+  await textbox.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("Shift+End");
+  await page.keyboard.press("ControlOrMeta+C");
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  await page.keyboard.press("ArrowLeft");
+  return text;
+}
+
+test("selecting an element puts the caret after its start tag in the owning source", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
+
+  await frame.locator(".filler p").nth(2).click();
+  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
+  await expect
+    .poll(() => caretToLineEnd(page, "#content"))
+    .toBe("Paragraph three of filler content, still plain semantic HTML rendered natively.</p>");
+
+  // Slotted light DOM belongs to the page, under the right card.
+  await frame.locator("project-card").nth(1).locator("p[slot=body]").click();
+  await expect.poll(() => caretToLineEnd(page, "#content"))
+    .toBe("The header and footer are custom elements shared across Home and About.</p>");
+
+  // Inside a shadow root the component template owns the element.
+  const handle = await page.locator(".native-preview-frame").elementHandle();
+  const child = await handle!.contentFrame();
+  await child!.evaluate(() => {
+    const card = document.querySelectorAll("project-card")[2] as HTMLElement;
+    (card.shadowRoot!.querySelector("card-note") as HTMLElement).click();
+  });
+  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Shared across cards</card-note>");
+
+  // Edits above the element keep the mark on it.
+  await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+Home");
+  await page.keyboard.type("<!-- note -->\n");
+  await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
+});
+
+test("a click while the file is still opening is not lost", async ({ page }) => {
+  await page.reload();
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
+  await frame.locator(".filler p").nth(2).click();
+  await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
+  await expect
+    .poll(() => caretToLineEnd(page, "#content"))
+    .toBe("Paragraph three of filler content, still plain semantic HTML rendered natively.</p>");
 });
 
 async function box(page: Page, selector: string) {

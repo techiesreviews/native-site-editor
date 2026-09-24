@@ -55,6 +55,7 @@ type RangeApi = {
   closeGroup(): void;
   reveal(start: number, end: number): void;
   highlight(ranges: { start: number; end: number }[]): void;
+  markElement(tag: { start: number; end: number } | undefined, reveal: boolean): void;
   review(on: boolean): void;
   reviewing(): boolean;
 };
@@ -187,6 +188,12 @@ export function revealRange(path: string, start: number, end: number) {
 // Marks byte ranges (the CSS rules styling the selected element) in a mounted file.
 export function highlightRanges(path: string, ranges: { start: number; end: number }[]) {
   mounted.get(path)?.range.highlight(ranges);
+}
+// Marks the start tag of the element selected in the preview. With `reveal`
+// the caret moves just past the tag, where its content starts, and the tag
+// scrolls into view; without it only the mark follows edits.
+export function markElement(path: string, tag: { start: number; end: number } | undefined, reveal: boolean) {
+  mounted.get(path)?.range.markElement(tag, reveal);
 }
 export function isMounted(path: string) {
   return mounted.has(path);
@@ -338,6 +345,7 @@ export function mountCodeEditor(
     current.model.pushStackElement();
   };
   let marks: string[] = [];
+  let elementMarks: string[] = [];
   const rangeOf = (edit: Omit<RangeEdit, "text">) => {
     if (disposed || file.readOnly || file.path !== edit.path)
       throw new Error("The active file changed or is read only.");
@@ -386,6 +394,26 @@ export function mountCodeEditor(
           },
         })),
       );
+    },
+    markElement(tag: { start: number; end: number } | undefined, reveal: boolean) {
+      const model = current.model;
+      const target = tag && monaco.Range.fromPositions(model.getPositionAt(tag.start), model.getPositionAt(tag.end));
+      elementMarks = model.deltaDecorations(
+        elementMarks,
+        target
+          ? [{
+              range: target,
+              options: {
+                className: "code-editor__element",
+                linesDecorationsClassName: "code-editor__element-line",
+                overviewRuler: { color: { id: "editorOverviewRuler.selectionHighlightForeground" }, position: monaco.editor.OverviewRulerLane.Full },
+              },
+            }]
+          : [],
+      );
+      if (!target || !reveal) return;
+      view?.setSelection(monaco.Range.fromPositions(target.getEndPosition(), target.getEndPosition()));
+      view?.revealRangeInCenterIfOutsideViewport(target);
     },
     replace(edit: RangeEdit, group: boolean) {
       const target = rangeOf(edit);
@@ -670,7 +698,7 @@ export function mountCodeEditor(
   return () => {
     disposed = true;
     if (mounted.get(file.path) === registration) mounted.delete(file.path);
-    if (marks.length) current.model.deltaDecorations(marks, []);
+    if (marks.length || elementMarks.length) current.model.deltaDecorations([...marks, ...elementMarks], []);
     markers.dispose();
     file.onContextChange?.(null);
     publisher?.destroy();

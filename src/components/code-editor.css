@@ -66,6 +66,14 @@
 .code-editor__match {
   background: var(--selected);
 }
+.code-editor__element {
+  background: var(--selected);
+  outline: 1px solid var(--focus);
+}
+.code-editor__element-line {
+  border-left: 3px solid var(--focus);
+  margin-left: 3px;
+}
 .code-editor__diff-labels {
   display: grid;
   grid-template-columns: 1fr 1fr;
