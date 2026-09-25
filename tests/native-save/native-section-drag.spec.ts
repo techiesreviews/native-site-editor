@@ -47,7 +47,7 @@ const centre = async (page: Page, selector: ReturnType<Page["locator"]>) => {
 };
 
 test("a sidebar row dragged onto a sibling gap reorders the page as one undo step", async ({ page }) => {
-  await expect(page.locator(".page-structure__hint")).toHaveText("Drag to reorder within a page or slot. Alt + ↑/↓ moves sections.");
+  await expect(page.locator(".page-structure__hint")).toHaveCount(0);
   const cards = row(page, "Section");
   const from = await centre(page, cards);
   const hero = await centre(page, row(page, "Section A native browser preview"));

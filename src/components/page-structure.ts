@@ -53,7 +53,6 @@ export interface PageStructureHandlers {
 
 const HINT_NO_PAGE = "Open a page of a native project to see its sections and content here.";
 const HINT_COMPONENT = "The preview shows a component by itself. Open a page to see its structure.";
-const HINT_DRAG = "Drag to reorder within a page or slot. Alt + \u2191/\u2193 moves sections.";
 // Pointer travel before a press on a row becomes a drag.
 const DRAG_THRESHOLD = 7;
 
@@ -90,12 +89,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Page structure");
   tree.hidden = true;
-  const dragHint = node("p", "muted page-structure__hint", HINT_DRAG);
-  dragHint.hidden = true;
   // The line between rows that shows where a dragged row will go.
   const drop = node("div", "page-structure__drop");
   drop.hidden = true;
-  host.append(hint, meta, tree, dragHint);
+  host.append(hint, meta, tree);
 
   // The Page fields for the page on show; a field being typed in keeps its text.
   function renderMeta(path: string) {
@@ -366,14 +363,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       hint.hidden = false;
       meta.hidden = true;
       tree.hidden = true;
-      dragHint.hidden = true;
       tree.replaceChildren();
       return;
     }
     hint.hidden = true;
     renderMeta(structure.path);
     tree.hidden = false;
-    dragHint.hidden = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
     setSelected(selected);
     if (focused && rows.has(focused)) {
@@ -414,7 +409,6 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       hint.remove();
       meta.remove();
       tree.remove();
-      dragHint.remove();
     },
   };
 }
