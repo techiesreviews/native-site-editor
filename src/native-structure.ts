@@ -1,5 +1,6 @@
 // Structural and attribute edits behind the edit bar: the section icons (move,
-// duplicate, remove), links on a text range, the image Address and the accessibility fields. Each is one range edit (or two that do not
+// duplicate, remove), links on a text range and their new-tab and title
+// options, the image Address and the accessibility fields. Each is one range edit (or two that do not
 // overlap) computed from the element's exact source range, never a re-serialisation.
 
 import { startTagAttribute, startTags, textRangeInSource, type ElementRange, type StartTag } from "./native-source-location";
@@ -64,14 +65,25 @@ export function removeEdit(source: string, range: ElementRange): RangeEdit {
 
 /**
  * A copy of the element right after it, on its own lines with the same
- * indentation, whose root `data-key` (when it has one) is made unique.
+ * indentation, in which every `data-key` (the root's and those of the
+ * elements inside) is made unique in the file (MENU-03: fresh keys).
  */
 export function duplicateEdit(source: string, range: ElementRange): RangeEdit {
   const lines = wholeLines(source, range);
   const indent = source.slice(lines.start, range.start);
   let copy = source.slice(range.start, range.end);
-  const key = startTagAttribute(copy, startTags(copy)[0], "data-key");
-  if (key?.value) copy = copy.slice(0, key.valueStart) + uniqueDataKey(source, key.value) + copy.slice(key.valueEnd);
+  const keys = startTags(copy).map((tag) => startTagAttribute(copy, tag, "data-key")).filter((key) => key?.value);
+  const assigned: string[] = [];
+  const fresh = keys.map((key) => {
+    const value = uniqueDataKey(source, key!.value, assigned);
+    assigned.push(value);
+    return value;
+  });
+  // From the last key back, so earlier offsets stay valid.
+  for (let index = keys.length - 1; index >= 0; index--) {
+    const key = keys[index]!;
+    copy = copy.slice(0, key.valueStart) + fresh[index] + copy.slice(key.valueEnd);
+  }
   const ownLines = lines.end > range.end || lines.start < range.start;
   const text = ownLines ? `${indent}${copy}\n` : `\n${indent}${copy}`;
   return { start: lines.end, end: lines.end, text };
@@ -149,6 +161,40 @@ export function setAttributeEdit(source: string, tag: StartTag, name: string, va
   let insertAt = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
   while (insertAt > tag.nameEnd && /\s/.test(source[insertAt - 1])) insertAt--;
   return { start: insertAt, end: insertAt, text: ` ${name}="${escaped}"` };
+}
+
+/**
+ * Several attribute changes on one start tag as one edit of that tag (so two
+ * new attributes never meet at one insertion point); each change is what
+ * `setAttributeEdit` does, `undefined` removing the attribute.
+ */
+export function setAttributesEdit(source: string, tag: StartTag, changes: [name: string, value: string | undefined][]): RangeEdit {
+  let text = source.slice(tag.start, tag.end);
+  for (const [name, value] of changes) {
+    const local = startTags(text)[0];
+    if (!local) break;
+    const edit = setAttributeEdit(text, local, name, value);
+    text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+  }
+  return { start: tag.start, end: tag.end, text };
+}
+
+/** Whether a link's start tag opens it in a new tab (`target="_blank"`). */
+export function opensInNewTab(source: string, tag: StartTag) {
+  return startTagAttribute(source, tag, "target")?.value.trim().toLowerCase() === "_blank";
+}
+
+/**
+ * "Open in new tab" on a link: on, `target="_blank"` and `noopener` in `rel`
+ * (other rel words kept); off, `target` goes and so do `noopener` and
+ * `noreferrer`, the whole `rel` when nothing else is left in it.
+ */
+export function newTabEdit(source: string, tag: StartTag, on: boolean): RangeEdit {
+  const rel = startTagAttribute(source, tag, "rel")?.value.split(/\s+/).filter(Boolean) ?? [];
+  const words = on
+    ? rel.some((word) => word.toLowerCase() === "noopener") ? rel : [...rel, "noopener"]
+    : rel.filter((word) => !["noopener", "noreferrer"].includes(word.toLowerCase()));
+  return setAttributesEdit(source, tag, [["target", on ? "_blank" : undefined], ["rel", words.length ? words.join(" ") : undefined]]);
 }
 
 /**

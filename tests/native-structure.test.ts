@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, linkWrapEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, linkWrapEdit, moveEdit, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, setAttributesEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -39,6 +39,43 @@ test("duplicate copies the element after itself with a fresh data-key", () => {
   );
   const inline = `<p><b>x</b></p>`;
   assert.equal(apply(inline, [duplicateEdit(inline, rangeAt(inline, 1))]), `<p><b>x</b>\n<b>x</b></p>`);
+});
+
+test("duplicate gives every data-key inside the copy a fresh value too", () => {
+  const source = `<main>\n  <section data-key="s">\n    <h2 data-key="t">T</h2>\n    <p data-key="p">1</p>\n    <p data-key="p-2">2</p>\n    <p>none</p>\n  </section>\n</main>`;
+  const copy = apply(source, [duplicateEdit(source, rangeAt(source, 1))]);
+  assert.equal(
+    copy.slice(source.length - "\n</main>".length),
+    `\n  <section data-key="s-2">\n    <h2 data-key="t-2">T</h2>\n    <p data-key="p-3">1</p>\n    <p data-key="p-2-2">2</p>\n    <p>none</p>\n  </section>\n</main>`,
+  );
+  const keys = [...copy.matchAll(/data-key="([^"]*)"/g)].map((match) => match[1]);
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test("setAttributesEdit rewrites one start tag for several attributes", () => {
+  const source = `<p><a href="/x">x</a></p>`;
+  const tag = startTags(source)[1];
+  const edit = setAttributesEdit(source, tag, [["target", "_blank"], ["rel", "noopener"]]);
+  assert.deepEqual({ start: edit.start, end: edit.end }, { start: tag.start, end: tag.end });
+  assert.equal(apply(source, [edit]), `<p><a href="/x" target="_blank" rel="noopener">x</a></p>`);
+});
+
+test("Open in new tab writes target and noopener, and takes both away again", () => {
+  const plain = `<a href="/x">x</a>`;
+  const on = apply(plain, [newTabEdit(plain, startTags(plain)[0], true)]);
+  assert.equal(on, `<a href="/x" target="_blank" rel="noopener">x</a>`);
+  assert.equal(opensInNewTab(on, startTags(on)[0]), true);
+  assert.equal(opensInNewTab(plain, startTags(plain)[0]), false);
+  assert.equal(apply(on, [newTabEdit(on, startTags(on)[0], false)]), plain);
+  // Other rel words stay; noreferrer goes with noopener.
+  const kept = `<a href="/x" rel="nofollow">x</a>`;
+  const keptOn = apply(kept, [newTabEdit(kept, startTags(kept)[0], true)]);
+  assert.equal(keptOn, `<a href="/x" rel="nofollow noopener" target="_blank">x</a>`);
+  const both = `<a target="_blank" rel="noopener noreferrer nofollow" href="/x">x</a>`;
+  assert.equal(apply(both, [newTabEdit(both, startTags(both)[0], false)]), `<a rel="nofollow" href="/x">x</a>`);
+  // Already noopener: not written twice.
+  const already = `<a href="/x" rel="noopener">x</a>`;
+  assert.equal(apply(already, [newTabEdit(already, startTags(already)[0], true)]), `<a href="/x" rel="noopener" target="_blank">x</a>`);
 });
 
 test("swap exchanges two siblings and keeps what lies between", () => {

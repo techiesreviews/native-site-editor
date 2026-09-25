@@ -1,3 +1,9 @@
+:root {
+  --text-s: 14px;
+  --text-m: 16px;
+  --text-l: 22px;
+}
+
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
