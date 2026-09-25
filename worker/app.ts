@@ -1,14 +1,22 @@
 import { requestJson } from "./http";
 import {
-  agentRecord,
-  tokenId,
-  getGrant,
   authenticateAgent,
-  operateGrant,
+  createGrant,
+  getGrant,
+  getHub,
+  operateHub,
+  revokeGrant,
   validateContext,
   type AgentGrant,
+  type AgentHub,
 } from "./agent-context";
 import { handleMcp } from "./mcp";
+import {
+  handleOAuth,
+  isOAuthPath,
+  resourceMetadataUrl,
+  type OAuthRecord,
+} from "./oauth";
 import { publish } from "./publish";
 import { history, restore } from "./history";
 import { GitHub, HttpError } from "./github";
@@ -37,8 +45,10 @@ interface Session {
 interface OAuthState {
   kind: "oauth";
   expiresAt: number;
+  /** An MCP authorization to continue after signing in (`/auth/mcp/authorize?...`). */
+  returnTo?: string;
 }
-export type StoredSession = Session | OAuthState | AgentGrant;
+export type StoredSession = Session | OAuthState | AgentGrant | AgentHub | OAuthRecord;
 export type StoredValue = StoredSession | OwnerSetupState;
 
 export interface Env {
@@ -114,6 +124,11 @@ async function store(
     }),
   );
 }
+async function sessionWithId(request: Request, env: Env) {
+  const id = cookie(request, "session");
+  const user = await session(request, env);
+  return id && user ? { ...user, id } : null;
+}
 async function session(request: Request, env: Env): Promise<Session | null> {
   const id = cookie(request, "session");
   if (!id) return null;
@@ -157,7 +172,10 @@ export async function handle(
   secured.headers.set("Referrer-Policy", "no-referrer");
   secured.headers.set("X-Frame-Options", "DENY");
   if (url.pathname === "/mcp" && response.status === 401)
-    secured.headers.set("WWW-Authenticate", 'Bearer realm="astro-site-editor"');
+    secured.headers.set(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${resourceMetadataUrl(url.origin)}", scope="site"`,
+    );
   if (
     url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/auth/") ||
@@ -174,6 +192,12 @@ async function route(
   fetcher: typeof fetch,
 ): Promise<Response> {
   const path = url.pathname;
+  if (isOAuthPath(path))
+    return handleOAuth(request, env, url, {
+      session: (request) => sessionWithId(request, env),
+      html,
+      fetcher,
+    });
   if (path === "/auth/logout") {
     if (request.method !== "POST")
       throw new HttpError(405, "Use POST to disconnect.");
@@ -305,15 +329,13 @@ async function route(
       );
       if (repo.id !== data.repoId)
         throw new HttpError(403, "Repository changed. Reload and try again.");
-      const token = `ase_${randomId()}`;
-      const id = await tokenId(token);
-      await agentRecord(env, id, "PUT", {
-        kind: "agent",
+      const { id, token } = await createGrant(env, {
         sessionId,
         login: user.login,
         repoId: repo.id,
         repo: repo.full_name,
         expiresAt: user.expiresAt,
+        via: "token",
       });
       return json({
         id,
@@ -322,48 +344,68 @@ async function route(
         expiresAt: user.expiresAt,
       });
     }
-    const id = url.searchParams.get("id") ?? "";
-    const grant = await getGrant(env, id);
-    if (grant.sessionId !== sessionId || grant.login !== user.login)
-      throw new HttpError(
-        403,
-        "This connection belongs to another editor session.",
-      );
-    if (path === "/api/agent/connection" && request.method === "GET")
+    // The session's connections, the tab sharing its context, and the
+    // changes waiting for it (src/components/agent-menu.ts polls this).
+    if (path === "/api/agent/hub" && request.method === "GET") {
+      const hub = await getHub(env, sessionId);
       return json({
-        repoId: grant.repoId,
-        expiresAt: grant.expiresAt,
-        updatedAt: grant.updatedAt,
-        commands: grant.commands ?? [],
+        grants: hub?.grants ?? [],
+        tabId: hub?.tabId ?? null,
+        updatedAt: hub?.updatedAt ?? null,
+        commands: (hub?.commands ?? []).filter(
+          (command) => command.state === "pending",
+        ),
       });
-    if (path === "/api/agent/revoke" && request.method === "POST") {
-      await agentRecord(env, id, "DELETE");
-      return json({ ok: true });
     }
-    if (path === "/api/agent/pause" && request.method === "POST")
-      return json(await operateGrant(env, id, { type: "pause" }));
+    if (path === "/api/agent/revoke" && request.method === "POST") {
+      const data = await requestJson(request, 4096);
+      const ids: string[] = data?.all
+        ? ((await getHub(env, sessionId))?.grants ?? [])
+            .filter((grant) => data.repoId === undefined || grant.repoId === data.repoId)
+            .map((grant) => grant.id)
+        : [String(data?.id ?? "")];
+      for (const id of ids) {
+        const grant = await getGrant(env, id).catch(() => undefined);
+        if (grant && (grant.sessionId !== sessionId || grant.login !== user.login))
+          throw new HttpError(403, "This connection belongs to another editor session.");
+        if (grant || /^[a-f0-9]{64}$/.test(id)) await revokeGrant(env, id, sessionId);
+      }
+      return json({ ok: true, revoked: ids.length });
+    }
+    if (path === "/api/agent/pause" && request.method === "POST") {
+      const data = await requestJson(request, 4096);
+      if (!(await getHub(env, sessionId))) return json({ ok: true });
+      return json(await operateHub(env, sessionId, { type: "pause", tabId: data?.tabId }));
+    }
     if (path === "/api/agent/context" && request.method === "POST") {
-      const context = validateContext(await requestJson(request));
-      if (
-        context.repository.id !== grant.repoId ||
-        context.repository.fullName !== grant.repo
-      )
-        throw new HttpError(
-          403,
-          "This connection is scoped to a different repository.",
-        );
-      return json(await operateGrant(env, id, { type: "context", context }));
+      const data = await requestJson(request, 1200 * 1024);
+      const context = validateContext(data?.context);
+      return json(
+        await operateHub(env, sessionId, { type: "context", tabId: data?.tabId, context }),
+      );
+    }
+    if (path === "/api/agent/claim" && request.method === "POST") {
+      const data = await requestJson(request, 4096);
+      const command = await operateHub(env, sessionId, {
+        type: "claim",
+        id: data?.id,
+        grantId: data?.grantId,
+        tabId: data?.tabId,
+      });
+      return json({ id: command.id, state: command.state });
     }
     if (path === "/api/agent/ack" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
-      return json(
-        await operateGrant(env, id, {
-          type: "ack",
-          id: data.id,
-          state: data.state,
-          message: data.message,
-        }),
-      );
+      const data = await requestJson(request, 8192);
+      const command = await operateHub(env, sessionId, {
+        type: "ack",
+        id: data?.id,
+        grantId: data?.grantId,
+        tabId: data?.tabId,
+        state: data?.state,
+        message: data?.message,
+        result: data?.result,
+      });
+      return json({ id: command.id, state: command.state });
     }
     throw new HttpError(404, "Agent endpoint not found.");
   }
@@ -375,9 +417,13 @@ async function route(
         "GitHub connection is not configured. Use the owner setup link for this editor.",
       );
     const id = randomId();
+    const returnTo = url.searchParams.get("return") ?? "";
     await store(env, id, "PUT", {
       kind: "oauth",
       expiresAt: Date.now() + 600_000,
+      ...(returnTo.startsWith("/auth/mcp/authorize?") && returnTo.length < 4096
+        ? { returnTo }
+        : {}),
     });
     const target = new URL("https://github.com/login/oauth/authorize");
     target.searchParams.set("client_id", app.clientId);
@@ -447,7 +493,7 @@ async function route(
     });
     const previous = cookie(request, "session");
     if (previous) await store(env, previous, "DELETE");
-    return redirect("/", [
+    return redirect(state.returnTo ?? "/", [
       setCookie(url, "session", id, duration),
       setCookie(url, "oauth", "", 0),
     ]);

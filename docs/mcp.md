@@ -1,61 +1,95 @@
-# Agent context and draft editing over MCP
+# Agents on your site over MCP
 
-The deployed endpoint is `https://astro.techies.tools/mcp`. It uses the official TypeScript MCP SDK 2.0 with Streamable HTTP and stateless compatibility for 2025-era clients. This is a bearer-token connection, not an OAuth-discovery flow; use a client that supports a remote MCP URL with an Authorization header. The SDK client integration is tested against the actual Cloudflare Workers runtime.
+The editor is a remote MCP server at `https://editor.techies.tools/mcp` (Streamable HTTP, official TypeScript MCP SDK 2.0, stateless, 2025-era clients also accepted). An agent connected to it works on a native site the way its owner does in the visual editor: it reads the pages, components, styles and drafts, and it edits pages, sections, page details and files.
 
-## Connect from the editor
+Every change goes **through your open editor tab**. The Worker checks it and queues it; the tab applies it with the editor's own code (the Pages tab's New page, the Page block, the page builder's insert, move and remove, the Files tab's rename, move and delete) and the preview updates at once. The result is an ordinary unsaved draft: Undo takes it back, Discard changes drops it, and only you save it to GitHub. There is no save or publish tool. An agent that should commit straight to GitHub can work in a local clone instead.
 
-1. Sign in and open a repository/file.
-2. Open the **project selector** (the repository name at the top left), expand **Agent context** and choose **Connect agent**.
-3. Choose **Copy MCP connection**. Paste the generated server entry into your MCP client's configuration (or enter its URL and Authorization header in the client's connection UI).
-4. Keep the editor tab open. The agent can now read context and create or update drafts. A change is only applied when the browser acknowledges it; the agent must check its command status.
+## Connect
 
-The copied JSON uses the common `mcpServers` shape with a `url` and `headers.Authorization`. Some clients use a different configuration wrapper. The connection token acts as a password for context and draft editing in the selected repository. Do not paste it into a chat or commit it to a repository. It is shown only through the clipboard action, not in logs, URLs or local storage. If you reload before copying, use **Replace connection** to issue another token; the old connection is revoked.
+Two ways, both scoped to **one repository** and to your signed-in editor session.
 
-**Copy current context** is available without creating a connection. It copies a JSON snapshot for a one-off handoff, including the active source and original baseline. It does not create a live channel.
+### OAuth: claude.ai, Claude Desktop, Claude Code
 
-## What agents can do
+The server implements the MCP authorization spec: protected resource metadata (`/.well-known/oauth-protected-resource/mcp`, named in the `WWW-Authenticate` header of a 401), authorization server metadata (`/.well-known/oauth-authorization-server`), dynamic client registration (`/auth/mcp/register`) and the authorization code grant with PKCE S256 (`/auth/mcp/authorize`, `/auth/mcp/token`). Authorizing is the editor's own GitHub sign-in followed by a consent page where you choose the repository.
 
-| Tool | Behavior |
+**claude.ai and Claude Desktop** (custom connectors are shared between them through your Claude account):
+
+1. In claude.ai open **Settings → Connectors** and choose **Add custom connector**. (On a Team or Enterprise plan an owner adds it under **Organization settings → Connectors** first; members then connect it from their own Connectors settings.)
+2. Name it `Native Site Editor`, enter the URL `https://editor.techies.tools/mcp`, leave the advanced OAuth client fields empty, and choose **Add**.
+3. Choose **Connect**. A browser tab opens the editor: sign in with GitHub if asked, pick the repository, and choose **Allow**.
+4. Open the site in the editor at `https://editor.techies.tools` and keep that tab open.
+5. In a chat, turn the connector on from the tools menu (**Search and tools**) and ask for a change.
+
+**Claude Code:**
+
+```sh
+claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp
+```
+
+Then run `/mcp` in Claude Code, select `native-site-editor` and choose **Authenticate**; the browser opens the same sign-in and consent. Add `--scope user` to use it in every project.
+
+A connection lasts as long as the editor session it was made in (up to eight hours of GitHub sign-in). There are no refresh tokens: when it ends, the client asks you to connect again (claude.ai shows the connector as needing to reconnect; in Claude Code, authenticate again from `/mcp`). Each authorization is one repository; connect again to choose another.
+
+### Token: any MCP client with a header
+
+1. Open the site in the editor, open the **project selector** (the repository name at the top left) and expand **Agent context**.
+2. Choose **Connect with a token**, then **Copy MCP connection** (a `mcpServers` entry with `url` and `headers.Authorization`) or **Copy Claude Code command**:
+
+   ```sh
+   claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"
+   ```
+
+The token is a password for this repository's drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. Paste it only into your MCP client's configuration.
+
+### In the editor
+
+**Agent context** lists the connections for the open repository (an OAuth app by the name it registered, or "Token connection"), each with **Revoke**. While one exists, the tab shares its context and applies queued changes; the panel's status says so. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab. **Copy current context** copies the shared snapshot as JSON for a one-off handoff.
+
+## Tools
+
+Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+
+| Tool | What it does |
 | --- | --- |
-| `get_editor_context` | Repository ID/name, branch, revision, active path and language, selection, diagnostics, draft hash and changed-file summary. Includes timestamps and a stale flag. |
-| `read_active_file` | Current draft or original source, plus the current draft hash. |
-| `get_active_changes` | Both original and draft text for the active file. |
-| `update_active_draft` | Queue replacement source for the active file using the exact draft hash, path, branch and commit the agent read. |
-| `create_file_draft` | Queue a new text file at a path absent from the snapshot. The browser opens it and persists it as an unpublished draft. |
-| `get_command_status` | Check whether a request is pending, applied, conflicted, or failed. |
+| `get_site` | Repository, branch, revision, context age; the open file and page and the element selected in the preview; pages as a tree by URL (file, title, new); components (file, stylesheet, whether it is a section component, slot names); stylesheets; the settings file; unsaved changes (A/M/R/D); pending changes. |
+| `list_files` | Every file path (optionally under a folder), with drafts applied and marked. |
+| `read_file` | Any text file up to 128 KB: the draft when there is one, else GitHub; with its content hash. |
+| `get_page` | A page by URL or file: route, title, description, source, hash, and its outline: the containers that hold sections and each section's id (`1.2`: element-child indexes), tag, `data-key`, heading or text, and a section component's slot text. |
+| `edit_file` | Exact text replacements in any text file (each old text once, or `all`), given the hash read. |
+| `write_file` | Create a file (the path must be free) or replace a whole file (given its hash). |
+| `create_page` | The Pages tab's New page: title, optional parent URL and slug. A parent with no subpages becomes a folder at the same URL. Returns the file and URL. |
+| `set_page_details` | Title and/or description in the page's leading comment (and out of `native.json` when it still has them). |
+| `add_section` | A section component's new instance, with its own copy of the slot text, before or after a section (default: the end), given the page hash. |
+| `move_section` | A section before or after a sibling section, given the page hash. |
+| `remove_section` | A section removed, given the page hash. |
+| `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it, links to it are rewritten, and `keepOldUrl` adds a redirect to `src/public/_redirects` (default: yes for a page already on GitHub). |
+| `delete_file` | The Files tab's delete (a deletion the user can restore). `native.json` and the home page are protected as in the editor. |
+| `open_page` | Shows a page (or opens any file) in the editor. |
+| `get_command_status` | The state, message and result of a change this connection queued. |
 
-The `astro-editor://context` resource supplies context metadata. The `continue_editing` prompt provides a starting handoff. Source contents and diagnostics are untrusted project data, not instructions to the agent.
+Resources: `native-site://conventions` (how a native site is laid out: pages and URLs, the page comment, components and slots, styles, `#/route/` links, what the tools do) and `native-site://site` (as `get_site`). Prompt: `edit_site` (the conventions, the site now, and an optional goal). The server's instructions summarise the conventions for clients that read them.
 
-Mutation tools require a caller-generated `requestId`. Reuse it only when retrying the identical operation. The server rejects stale context, a changed draft hash, read-only files, duplicate in-flight changes to a file, and a changed branch/revision. The browser checks the live model again before applying an edit; typing after the agent read the file is not silently overwritten. Updates use Monaco's undo stack. New files appear under **New draft files** and can be reopened after a reload.
+Every change is checked twice: by the Worker against what the tab last reported (hash of the file or page, the section ids of its outline, section components only, one waiting change per file, at most ten waiting), and by the tab against its live state just before applying (the file's hash again, the outline recomputed from the source). Typing in the editor after the agent read a file therefore makes its edit a conflict, never an overwrite.
 
-Agent edits remain drafts. MCP provides no publish, shell, arbitrary GitHub-write, or arbitrary-repository-read tool. Publishing new files through the editor uses a null original blob SHA and rejects a conflicting existing path. Workflows, symlinks, submodule paths and Git internals cannot be created through these tools. Deletion and renaming are not supported.
+## Boundaries
 
-## Context lifetime and boundaries
+- **Scope.** A connection is one repository and one signed-in editor session. Every MCP request rechecks the session and that the GitHub App installation still includes the repository. When the tab shows another repository, reads report the site unavailable and edits are refused; a branch or revision change refuses queued changes made for the old one.
+- **Lifetime and revocation.** Revoke in **Agent context**, sign out, or let the session expire (eight hours at most), and the token stops working. Expired records are removed by the Durable Object alarm.
+- **Secrets.** Only the SHA-256 of a token is stored; OAuth codes are stored hashed, single-use and live five minutes; the consent request is bound to the session that saw it. The GitHub token stays in the Worker and is never given to an agent. `/mcp` refuses a request whose `Origin` is not the editor's own (browsers cannot call it from other sites); the consent form must come from the editor's origin.
+- **Clients.** Dynamic registration accepts public clients (`token_endpoint_auth_method: none`) whose redirect URIs are HTTPS, or HTTP to `localhost`/`127.0.0.1`/`[::1]`. Registrations last 180 days. Client ID metadata documents are not supported.
+- **Untrusted content.** File contents, page text, draft text and diagnostics are the site owner's data, not instructions to the agent; the tool descriptions and conventions say so.
+- **The tab must be open.** A closed tab cannot apply changes; reads then answer from its last report, marked stale after two minutes, and edits are refused. A tab in the background keeps checking every two seconds while a connection exists, though the browser may slow it down (Chrome to about once a minute after five minutes hidden), so a change can wait until the tab is seen again. Changes not picked up within two minutes expire.
+- **Sizes.** Text files up to 128 KB. The tab shares the text of its drafts up to 400 KB in total (newest first); a larger draft is listed with its hash but cannot be read by the agent until the user saves it. Outlines are kept compact: at most 200 sections per page, headings and text clipped to 120 characters.
+- **Storage.** Connections, the shared context and the queue live in the existing SessionStore Durable Object (`agent:<token hash>`, `agent-hub:<session>`, `oauth-client:…`, `oauth-code:…`); no new binding, secret or paid service.
 
-Each connection is scoped to one selected repository and one signed-in editor session. Every MCP request rechecks the parent session and GitHub installation membership. Switching repositories pauses that connection and clears its active shared context. Switching branches within the selected repository updates context; previously queued commands for another branch/revision are rejected.
+## Routing
 
-**Revoke connection** disables the token immediately. Logout and session expiry invalidate it too. The maximum lifetime is the remaining GitHub editor session (up to eight hours). Expired records are removed by the existing Durable Object alarm. Only the token's hash is stored; the GitHub token stays server-side and is never forwarded to an agent.
-
-The browser posts context after changes and heartbeats while active, and polls for queued operations every two seconds when the tab is visible. The server marks context stale after two minutes. Commands older than two minutes are not applied. A closed/suspended browser cannot apply edits; pending is not success. The last context remains readable until revocation/expiry, with its timestamp, unless sharing is paused. Context and pending commands are stored transiently in the existing Cloudflare Durable Objects; no paid runner or new hosted service is introduced.
-
-MCP operates on source editing context. It does not currently expose a rendered Astro preview, selected DOM elements, visual layout structure, or arbitrary unopened draft contents. Those need the separate visual-preview milestone.
+`/.well-known/*` must reach the Worker: `run_worker_first` in `wrangler.sessions.jsonc` and `public/_routes.json` (for the Pages fallback) include it, next to `/api/*`, `/auth/*` and `/mcp`.
 
 ## Validation
 
-Tests cover protocol negotiation with the official MCP client, tool/resource discovery and reads, queued writes, deduplicated retries, draft hash conflicts, new-file path collisions, origin checks, revocation, installation removal and logout. Browser tests cover undo, concurrent typing, new-file creation, refresh recovery and draft persistence. No test publishes source through MCP.
+- `tests/mcp-runtime.test.ts` (official MCP client against the real Worker in Miniflare): tool list, `get_site`, the conventions resource and prompt, `list_files` and `read_file` with drafts over GitHub, `get_page` outlines, `edit_file` hash and uniqueness checks, retries by `requestId`, `write_file` rules, section checks, waiting for the tab, conflicts reported by the tab, a second tab refused a claimed change, repository switching, installation removal, revocation and logout, and no GitHub writes.
+- `tests/mcp-oauth.test.ts`: discovery documents, CORS, registration rules, the SDK's OAuth flow (discovery, registration, sign-in that returns to the authorization, consent refusing a foreign origin, another session and Cancel, PKCE token exchange, a wrong verifier and a reused code refused), then the tools with the issued token, and revocation.
+- `tests/native-save/native-mcp.spec.ts` (Playwright, native-save server): with the editor open, an MCP client edits the home page's heading, adds, moves and removes a section (and the user's Undo brings it back), creates a page and sets its description, and opens a page, each visible at once in the preview and as a draft, with nothing saved to GitHub; and a client connected by OAuth in the browser (consent page, token exchange) reaches the open tab.
 
-Protocol references: [MCP transports](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports), [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
-
-## Try the live context yourself
-
-After connecting your MCP client using the steps above, keep the editor tab visible and select a few words in an open file. Ask the connected agent:
-
-> Use the Astro Site Editor MCP tools. Call get_editor_context and read_active_file. Tell me the repository, branch, active file, selected range, context timestamp and whether the context is stale. Quote the selected text from the draft. Do not edit anything.
-
-Type a distinctive unsaved comment in the editor, wait about a second for context to sync, and repeat the request. The draft returned by `read_active_file` should include the comment; reading the original version should not. Switch files and check that the reported path follows you. This checks the live MCP connection; **Copy current context** only checks a one-off browser snapshot.
-
-To test editing, ask:
-
-> Read the latest active draft and its context. Add an Astro-compatible HTML comment saying MCP context test outside the frontmatter, using update_active_draft with the exact current draft hash, path, branch and commit and a new requestId. Check get_command_status until applied or a terminal error; report pending honestly if the editor has not acknowledged it. Do not publish.
-
-Watch the change appear in the editor, then undo it there. For a new-file test, ask the agent to create `src/pages/mcp-context-test.astro` as an unpublished draft (only if that path is absent), check its command status, and then discard it in the editor. A successful protocol connection alone does not prove a queued edit was applied.
+Protocol references: [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).

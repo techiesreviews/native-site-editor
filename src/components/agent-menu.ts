@@ -4,30 +4,66 @@ import type { EditorContext } from "../../shared/types";
 import type { AgentCommand } from "../../shared/agent";
 import "./agent-menu.css";
 
+// The Agent context panel, and the editor tab's side of the MCP connection.
+//
+// Agents connect to `/mcp` with OAuth (a custom connector in claude.ai or
+// Claude Desktop, `claude mcp add` in Claude Code) or with a token copied
+// here. Either way the connection belongs to this editor session and one
+// repository; the Worker keeps the session's connections, the context the
+// sharing tab last reported, and the changes agents queued in one hub
+// (worker/agent-context.ts). This tab polls that hub: while a connection
+// for the open repository exists it reports its context (built only when
+// sent) and applies queued changes with `onCommand`, then reports the new
+// context before it acknowledges each change, so an agent reading after
+// "applied" sees it. Of several tabs, the one that reported last (a
+// visible one) applies the changes.
+
+export interface AgentCommandOutcome {
+  message?: string;
+  result?: AgentCommand["result"];
+}
+interface HubGrant {
+  id: string;
+  repoId: number;
+  repo: string;
+  via: "token" | "oauth";
+  client?: string;
+  createdAt: number;
+}
+interface HubState {
+  grants: HubGrant[];
+  tabId: string | null;
+  updatedAt: number | null;
+  commands: AgentCommand[];
+}
+
+export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
+const FAST = 2000;
+const SLOW = 30_000;
+
 export function createAgentMenu(options: {
   account: string;
   embedded?: boolean;
-  onCommand: (command: AgentCommand) => Promise<void>;
+  /** The open repository, for the panel; nothing before one is open. */
+  repository: () => { id: number; fullName: string } | undefined;
+  /** The context to share, built when it is sent. */
+  context: () => Promise<EditorContext | undefined>;
+  onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
 }) {
-  const storageKey = `astro-site-editor:agent:${options.account.toLowerCase()}`;
-  let id: string | undefined;
-  try {
-    id = sessionStorage.getItem(storageKey) ?? undefined;
-  } catch {
-    /* Optional. */
-  }
-  let repoId: number | undefined,
-    latest: EditorContext | undefined,
-    token: string | undefined;
+  const tabId = `tab-${crypto.randomUUID()}`;
+  let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
+  let token: string | undefined;
   let disposed = false,
-    syncing = false,
     polling = false,
-    changing = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+    changing = false,
+    shared = false;
   let revision = 0,
     sentRevision = -1,
-    lastSent = 0;
-  const applied = new Map<string, { state: string; message: string }>();
+    lastSent = 0,
+    lastPoll = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
+
   const root = node("div", "agent-menu");
   const trigger = node("button", "text-button", "Agent context");
   trigger.type = "button";
@@ -39,26 +75,25 @@ export function createAgentMenu(options: {
   const endpoint = node("input", "agent-menu__endpoint");
   endpoint.readOnly = true;
   endpoint.value = `${location.origin}/mcp`;
-  endpoint.setAttribute("aria-label", "MCP endpoint");
-  const connect = button("Connect agent", () => void start(), "button primary");
-  const copy = button(
-    "Copy MCP connection",
-    () => void copyConnection(),
-    "button secondary",
-  );
-  copy.hidden = true;
-  const stop = button("Revoke connection", () => void revoke(), "text-button");
-  stop.hidden = !id;
+  endpoint.setAttribute("aria-label", "MCP server URL");
+  const list = node("ul", "agent-menu__connections");
+  list.setAttribute("aria-label", "Connected agents");
+  const connect = button("Connect with a token", () => void start(), "button secondary");
+  const copy = button("Copy MCP connection", () => void copyConnection("json"), "button primary");
+  const copyCommand = button("Copy Claude Code command", () => void copyConnection("claude"), "button secondary");
+  copy.hidden = copyCommand.hidden = true;
+  const stop = button("Revoke all", () => void revoke({ all: true }), "text-button");
+  stop.hidden = true;
   const copyContext = button(
     "Copy current context",
     async () => {
       try {
-        if (!latest) return;
-        await navigator.clipboard.writeText(JSON.stringify(latest, null, 2));
+        const value = await options.context();
+        if (!value) return;
+        await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
         status.textContent = "Context copied.";
       } catch {
-        status.textContent =
-          "Clipboard access was denied. Allow it in your browser and retry.";
+        status.textContent = "Clipboard access was denied. Allow it in your browser and retry.";
       }
     },
     "text-button",
@@ -68,12 +103,14 @@ export function createAgentMenu(options: {
     node(
       "p",
       "muted",
-      "Share the active file, selection, diagnostics and draft changes. Agents can create and edit drafts in this repository. Publishing stays in the editor.",
+      "Add this editor to Claude as a custom connector (or any MCP client) with the URL below and sign in; or connect with a token. Agents read your site and make changes here as unsaved drafts you can undo. Saving to GitHub stays with you.",
     ),
     endpoint,
     status,
-    connect,
+    list,
     copy,
+    copyCommand,
+    connect,
     stop,
     copyContext,
   );
@@ -87,204 +124,239 @@ export function createAgentMenu(options: {
     trigger.addEventListener("click", () => {
       panel.hidden = !panel.hidden;
       trigger.setAttribute("aria-expanded", String(!panel.hidden));
+      if (!panel.hidden) void poll(true);
     });
   } else {
     dropdown = mountDropdown({ trigger, panel, anchor: "--agent-context" });
   }
-  function remember(value?: string) {
-    id = value;
-    try {
-      if (value) sessionStorage.setItem(storageKey, value);
-      else sessionStorage.removeItem(storageKey);
-    } catch {
-      /* Optional. */
-    }
-  }
-  async function api(action: string, body?: unknown, connectionId = id) {
-    const response = await fetch(
-      `/api/agent/${action}${action === "connect" ? "" : `?id=${encodeURIComponent(connectionId ?? "")}`}`,
-      {
-        method: body === undefined ? "GET" : "POST",
-        credentials: "same-origin",
-        headers:
-          body === undefined
-            ? undefined
-            : { "Content-Type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      },
-    );
-    const result = await response.json();
-    if (!response.ok) {
-      if ([401, 403].includes(response.status) && connectionId === id) {
-        remember();
-        token = undefined;
-        repoId = undefined;
-        copy.hidden = true;
-        stop.hidden = true;
-      }
-      throw new Error(result.error ?? "Agent connection failed.");
-    }
+
+  async function api(action: string, body?: unknown) {
+    const response = await fetch(`/api/agent/${action}`, {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "same-origin",
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error ?? "Agent connection failed.");
     return result;
   }
+  const repoGrants = () => {
+    const repo = options.repository();
+    return repo ? hub.grants.filter((grant) => grant.repoId === repo.id) : [];
+  };
   function paint() {
-    connect.disabled = !latest || changing;
-    connect.textContent = id ? "Replace connection" : "Connect agent";
-    copyContext.disabled = !latest;
-    stop.hidden = !id;
-    if (!id)
-      status.textContent = latest
-        ? `Connect an agent to ${latest.repository.fullName}.`
-        : "Open a project, then connect your MCP client.";
-    else if (repoId !== undefined && latest?.repository.id !== repoId)
-      status.textContent =
-        "Sharing paused: this connection belongs to another repository.";
+    const repo = options.repository();
+    const grants = repoGrants();
+    connect.disabled = !repo || changing;
+    copyContext.disabled = !repo;
+    stop.hidden = grants.length < 2;
+    list.replaceChildren(
+      ...grants.map((grant) => {
+        const item = node("li", "agent-menu__connection");
+        const name = grant.via === "oauth" ? grant.client ?? "OAuth app" : "Token connection";
+        item.append(node("span", "", name));
+        const revokeOne = button("Revoke", () => void revoke({ id: grant.id }), "text-button");
+        revokeOne.setAttribute("aria-label", `Revoke ${name}`);
+        item.append(revokeOne);
+        return item;
+      }),
+    );
+    if (!repo) status.textContent = "Open a project, then connect your agent.";
+    else if (!grants.length)
+      status.textContent = hub.grants.length
+        ? "Sharing paused: your agents are connected to another repository."
+        : `No agent is connected to ${repo.fullName}.`;
+    else if (hub.tabId && hub.tabId !== tabId)
+      status.textContent = "Connected. Another editor tab is sharing its context.";
     else
-      status.textContent =
-        "Connected. Draft changes from agents appear here while this tab is open.";
+      status.textContent = `Connected (${grants.length}). Agents' changes appear here as drafts while this tab is open.`;
   }
   async function start() {
-    if (!latest || changing) return;
+    const repo = options.repository();
+    if (!repo || changing) return;
     changing = true;
     paint();
     try {
-      if (id) await api("revoke", {});
-      remember();
-      const selected = latest.repository;
-      const result = await api("connect", {
-        repo: selected.fullName,
-        repoId: selected.id,
-      });
+      const result = await api("connect", { repo: repo.fullName, repoId: repo.id });
       if (disposed) return;
-      remember(result.id);
       token = result.token;
-      repoId = selected.id;
+      copy.hidden = copyCommand.hidden = false;
       sentRevision = -1;
-      copy.hidden = false;
-      await sync();
+      changing = false;
+      await poll(true);
+      status.textContent = "Token connection made. Copy it into your MCP client now; it is not shown again.";
     } catch (error) {
       status.textContent = (error as Error).message;
     } finally {
       changing = false;
-      connect.disabled = !latest;
-      connect.textContent = id ? "Replace connection" : "Connect agent";
-      stop.hidden = !id;
+      connect.disabled = !options.repository();
     }
   }
-  async function revoke() {
+  async function revoke(what: { id?: string; all?: boolean }) {
     try {
-      if (id) await api("revoke", {});
-      remember();
+      const repo = options.repository();
+      await api("revoke", what.all ? { all: true, repoId: repo?.id } : { id: what.id });
       token = undefined;
-      repoId = undefined;
-      copy.hidden = true;
-      paint();
+      copy.hidden = copyCommand.hidden = true;
+      await poll(true);
     } catch (error) {
       status.textContent = (error as Error).message;
     }
   }
-  async function copyConnection() {
+  async function copyConnection(kind: "json" | "claude") {
     if (!token) return;
-    try {
-      await navigator.clipboard.writeText(
-        JSON.stringify(
-          {
-            mcpServers: {
-              "astro-site-editor": {
-                url: endpoint.value,
-                headers: { Authorization: `Bearer ${token}` },
+    const text =
+      kind === "json"
+        ? JSON.stringify(
+            {
+              mcpServers: {
+                "native-site-editor": {
+                  type: "http",
+                  url: endpoint.value,
+                  headers: { Authorization: `Bearer ${token}` },
+                },
               },
             },
-          },
-          null,
-          2,
-        ),
-      );
+            null,
+            2,
+          )
+        : `claude mcp add --transport http native-site-editor ${endpoint.value} --header "Authorization: Bearer ${token}"`;
+    try {
+      await navigator.clipboard.writeText(text);
       status.textContent =
-        "MCP connection copied. Paste it into your client's remote MCP configuration. Treat the token as a password.";
+        kind === "json"
+          ? "MCP connection copied. Paste it into your client's configuration. Treat the token as a password."
+          : "Command copied. Run it in a terminal. Treat the token as a password.";
     } catch {
-      status.textContent =
-        "Clipboard access was denied. Allow it in your browser and retry.";
+      status.textContent = "Clipboard access was denied. Allow it in your browser and retry.";
     }
   }
-  async function sync() {
-    if (disposed || !id || repoId === undefined || syncing) return;
-    const connectionId = id;
+
+  // Reports the context (or stops sharing it) when it changed, every 30
+  // seconds as a heartbeat, or at once with `force`.
+  let syncChain: Promise<void> = Promise.resolve();
+  function sync(force = false) {
+    syncChain = syncChain.then(() => doSync(force));
+    return syncChain;
+  }
+  async function doSync(force: boolean) {
+    if (disposed) return;
+    const grants = repoGrants();
+    if (!grants.length) {
+      if (shared) {
+        shared = false;
+        await api("pause", { tabId }).catch(() => undefined);
+      }
+      return;
+    }
     const version = revision;
-    if (sentRevision === version && Date.now() - lastSent < 30_000) return;
-    syncing = true;
+    // Of several tabs, the one sharing keeps sharing; another takes over when
+    // it is the one in use, or when the sharing tab went quiet (closed).
+    const visible = document.visibilityState === "visible";
+    const mine =
+      !hub.tabId ||
+      hub.tabId === tabId ||
+      (visible && document.hasFocus()) ||
+      (visible && Date.now() - (hub.updatedAt ?? 0) > 45_000);
+    if (!force && !mine) return;
+    if (!force && sentRevision === version && hub.tabId === tabId && Date.now() - lastSent < 30_000) return;
     try {
-      if (latest?.repository.id === repoId)
-        await api("context", latest, connectionId);
-      else await api("pause", {}, connectionId);
+      const context = await options.context();
+      if (disposed) return;
+      if (context) {
+        await api("context", { tabId, context });
+        hub.tabId = tabId;
+        hub.updatedAt = Date.now();
+        shared = true;
+      } else if (shared) {
+        await api("pause", { tabId });
+        shared = false;
+      }
       sentRevision = version;
       lastSent = Date.now();
     } catch (error) {
       if (!disposed) status.textContent = (error as Error).message;
-    } finally {
-      syncing = false;
     }
   }
-  async function poll() {
-    if (
-      disposed ||
-      !id ||
-      polling ||
-      document.visibilityState === "hidden" ||
-      changing
-    )
-      return;
+
+  async function poll(now = false) {
+    if (disposed || polling || changing) return;
+    // A tab in the background keeps applying changes while an agent is
+    // connected (browsers may slow its timer); otherwise it waits to be seen.
+    if (document.visibilityState === "hidden" && !now && !repoGrants().length) return;
+    const interval = hub.grants.length ? FAST : SLOW;
+    if (!now && Date.now() - lastPoll < interval - 100) return;
     polling = true;
-    const connectionId = id;
+    lastPoll = Date.now();
     try {
-      const result = await api("connection", undefined, connectionId);
-      if (disposed || connectionId !== id) return;
-      repoId = result.repoId;
-      for (const command of result.commands as AgentCommand[]) {
-        if (command.state !== "pending" || !latest) continue;
+      hub = await api("hub");
+      if (disposed) return;
+      await sync();
+      paint();
+      if (hub.tabId !== tabId) return;
+      const repo = options.repository();
+      for (const command of hub.commands) {
+        if (command.state !== "pending" || disposed) continue;
+        if (command.claimedBy && command.claimedBy !== tabId) continue;
         let ack = applied.get(command.id);
         if (!ack) {
           try {
-            if (
-              !latest ||
-              latest.repository.id !== repoId ||
-              latest.branch !== command.branch ||
-              latest.commit !== command.commit
-            )
-              throw new Error(
-                "The editor changed repository, branch or revision.",
-              );
+            await api("claim", { tabId, id: command.id, grantId: command.grantId });
+          } catch {
+            continue;
+          }
+          try {
+            if (!repo || command.repoId !== undefined && command.repoId !== repo.id)
+              throw new Error("The editor shows another repository.");
             if (Date.now() - command.createdAt > 120_000)
-              throw new Error(
-                "This change expired before the editor received it.",
-              );
-            await options.onCommand(command);
+              throw new Error("This change expired before the editor received it.");
+            const outcome = (await options.onCommand(command)) || {};
             ack = {
               state: "applied",
-              message: "Draft applied in the editor. Not published.",
+              message: outcome.message ?? "Applied in the editor as an unsaved draft.",
+              ...(outcome.result ? { result: outcome.result } : {}),
             };
           } catch (error) {
-            ack = { state: "conflict", message: (error as Error).message };
+            ack = { state: "conflict", message: (error as Error).message || "The change could not be applied." };
           }
           applied.set(command.id, ack);
           if (applied.size > 100) applied.delete(applied.keys().next().value!);
+          // The context goes first, so an agent reading after "applied" sees the change.
+          revision++;
+          await sync(true);
         }
-        await api("ack", { id: command.id, ...ack }, connectionId);
+        await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack });
         status.textContent = ack.message;
       }
-      await sync();
     } catch (error) {
       if (!disposed) status.textContent = (error as Error).message;
     } finally {
       polling = false;
     }
   }
-  const interval = setInterval(() => void poll(), 2000);
+  const interval = setInterval(() => void poll(), FAST);
+  const wake = () => {
+    if (document.visibilityState === "visible") {
+      sentRevision = -1;
+      void poll(true);
+    }
+  };
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === AGENT_CONNECTED_KEY) {
+      // The consent page was just allowed: the token arrives in a moment.
+      for (const delay of [1000, 4000, 10_000]) setTimeout(() => void poll(true), delay);
+    }
+  };
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("focus", wake);
+  window.addEventListener("storage", onStorage);
   paint();
-  if (id) void poll();
+  void poll(true);
   return {
     root,
-    setContext(value?: EditorContext) {
-      latest = value;
+    /** Something the context holds changed: it is sent again shortly. */
+    changed() {
       revision++;
       paint();
       clearTimeout(timer);
@@ -294,6 +366,9 @@ export function createAgentMenu(options: {
       disposed = true;
       clearInterval(interval);
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("storage", onStorage);
       token = undefined;
       dropdown?.destroy();
     },

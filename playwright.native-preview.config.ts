@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+// ASE_TEST_PORT moves the server off 5207 (for runs side by side).
+const port = Number(process.env.ASE_TEST_PORT ?? 5207);
+
 export default defineConfig({
   testDir: "./tests/native-preview",
   workers: 1,
@@ -8,7 +11,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   outputDir: ".scratch/native-preview/results",
   use: {
-    baseURL: "http://127.0.0.1:5207",
+    baseURL: `http://127.0.0.1:${port}`,
     viewport: { width: 1440, height: 1000 },
     colorScheme: "light",
     reducedMotion: "reduce",
@@ -18,8 +21,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "ASE_NATIVE_SAVE_PORT=5207 tsx tests/native-save/server.ts",
-      url: "http://127.0.0.1:5207/api/session",
+      command: `ASE_NATIVE_SAVE_PORT=${port} tsx tests/native-save/server.ts`,
+      url: `http://127.0.0.1:${port}/api/session`,
       reuseExistingServer: false,
       timeout: 120_000,
     },

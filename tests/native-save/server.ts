@@ -35,6 +35,8 @@ import { join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import { createServer, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
+import { agentOperation, newHub } from "../../worker/agent-operations.ts";
+import type { AgentHub } from "../../worker/agent-context.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
@@ -338,7 +340,7 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch 
 // ---------------------------------------------------------------------------
 
 interface StoredSession {
-  kind: "user" | "oauth";
+  kind: string;
   token?: string;
   login?: string;
   avatar_url?: string;
@@ -346,7 +348,7 @@ interface StoredSession {
 }
 interface SessionSlot {
   value: StoredSession;
-  git: Git;
+  git?: Git;
   fixtureGits?: Map<string, Git>;
 }
 const sessions = new Map<string, SessionSlot>();
@@ -368,9 +370,26 @@ function env(): Env {
         fetch: async (request: Request): Promise<Response> => {
           const slot = sessions.get(id);
           const url = new URL(request.url);
+          // The agent hub's operations, as worker/index.ts runs them.
+          if (url.pathname === "/agent-operation") {
+            const action = await request.json();
+            let hub = slot?.value.kind === "agent-hub" && slot.value.expiresAt > Date.now() ? (slot.value as unknown as AgentHub) : undefined;
+            if (!hub) {
+              hub = newHub(action);
+              if (hub) sessions.set(id, { value: hub as unknown as StoredSession });
+            }
+            if (!hub) return Response.json({ error: "Agent connection expired." }, { status: 401 });
+            try {
+              const result = agentOperation(hub, action);
+              return Response.json(JSON.parse(JSON.stringify(result)));
+            } catch (error) {
+              const status = (error as { status?: number }).status ?? 500;
+              return Response.json({ error: (error as Error).message }, { status });
+            }
+          }
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
-            sessions.set(id, { value, git: slot?.git ?? cloneGit(initialGit) });
+            sessions.set(id, { value, git: slot?.git ?? (value.kind === "user" ? cloneGit(initialGit) : undefined) });
             return new Response(null, { status: 204 });
           }
           if (request.method === "DELETE") {
@@ -473,7 +492,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
         // Simulate an external commit that advances the branch, so the next save
         // of that file with a now-stale baseSha conflicts.
         const { path: filePath, content } = JSON.parse(bodyBuffer.toString() || "{}");
-        const git = sessions.get(id)!.git;
+        const git = sessions.get(id)!.git!;
         const tree = writeTree(git, git.commits.get(git.head)!.tree, [
           { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
         ]);
@@ -488,7 +507,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     }
 
     const isWorkerPath =
-      path.startsWith("/api/") || path.startsWith("/auth/") || path === "/mcp";
+      path.startsWith("/api/") || path.startsWith("/auth/") || path === "/mcp" || path.startsWith("/.well-known/");
 
     // A top-level document with no session cookie mints an isolated demo session.
     const accept = req.headers.accept ?? "";
@@ -510,7 +529,13 @@ function workerMiddleware(): Connect.NextHandleFunction {
 
     const bodyBuffer = await readBody(req);
     const request = toRequest(req, bodyBuffer);
-    const id = sessionCookie(req);
+    // An MCP request carries an agent token, not a cookie: it reads the
+    // repositories of the editor session the token belongs to.
+    const bearer = /^Bearer (ase_[a-f0-9]{64})$/.exec(req.headers.authorization ?? "")?.[1];
+    const agentSession = bearer
+      ? (sessions.get(`agent:${createHash("sha256").update(bearer).digest("hex")}`)?.value as { sessionId?: string } | undefined)?.sessionId
+      : undefined;
+    const id = sessionCookie(req) ?? agentSession ?? null;
     const slot = id ? sessions.get(id) : undefined;
     const git = slot?.git || initialGit;
     if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();

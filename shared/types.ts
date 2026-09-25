@@ -128,12 +128,68 @@ export interface EditorContext {
       column: number;
     }[];
   } | null;
-  drafts: { path: string; baseSha: string | null; updatedAt: number }[];
+  /**
+   * The browser drafts of this repository and branch: a changed file's text
+   * and content hash (`textHash`), a deletion, or a rename (`movedFrom`).
+   * `content` is left out past the context's size budget; `hash` never is.
+   */
+  drafts: {
+    path: string;
+    baseSha: string | null;
+    updatedAt: number;
+    hash?: string;
+    content?: string;
+    deleted?: boolean;
+    movedFrom?: string;
+  }[];
   /**
    * A native project's pages by route (shared/native-routes.ts: where a file
    * is under `src/pages/` is its URL, unless native.json maps the route), with
    * the title and description native.json gives the route, else the page's
-   * leading `<!-- title: … -->` comment. Absent for other projects.
+   * leading `<!-- title: … -->` comment, and the route of the row it sits
+   * under in the Pages tab (`parent`). A folder of pages with no page of its
+   * own has no `file`. Absent for other projects.
    */
-  pages?: { route: string; file: string; title?: string; description?: string }[];
+  pages?: { route: string; file?: string; title?: string; description?: string; parent?: string; isNew?: boolean }[];
+  /** The native site as the editor tab sees it (src/agent-site.ts). */
+  site?: AgentSiteContext;
+}
+
+/** A section of a page, or of a container that holds sections, in a page outline. */
+export interface AgentOutlineSection {
+  /** Element-child indexes from the page root, dot-joined ("1.0"). */
+  id: string;
+  tag: string;
+  /** A section component instance (its template is one `<section>`). */
+  component?: boolean;
+  key?: string;
+  heading?: string;
+  /** The start of its text, when it has no heading. */
+  text?: string;
+  /** A component instance's slotted text by slot name. */
+  slots?: Record<string, string>;
+}
+export interface AgentPageOutline {
+  file: string;
+  /** textHash of the page source the outline was read from. */
+  hash: string;
+  /** Elements that hold sections (or the `<main>` of a page with none yet), with their element-child count. */
+  containers: { id: string; tag: string; children: number }[];
+  sections: AgentOutlineSection[];
+}
+export interface AgentSiteContext {
+  /** The file open in the editor and the page the preview shows. */
+  openFile: string | null;
+  openRoute: string | null;
+  /** The element selected in the preview. */
+  selection: { file: string; id: string; tag: string; text: string } | null;
+  /** Whether `.astro-editor/native.json` exists. */
+  manifest: boolean;
+  components: { tag: string; file: string; css?: string; section: boolean; slots: string[] }[];
+  styles: string[];
+  /** The site settings file, when there is one. */
+  settings: string | null;
+  outlines: AgentPageOutline[];
+  /** Draft changes as the Save panel lists them. */
+  changes: { kind: "A" | "M" | "R" | "D"; path: string; from?: string }[];
 }
