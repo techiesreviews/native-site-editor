@@ -34,6 +34,7 @@ import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, native
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
+import { expandStyleImports } from "../shared/css-imports";
 import type {
   EditorContext,
   Directory,
@@ -349,7 +350,8 @@ let secondaryRequest = 0;
 function defaultSharedStyleMatch() {
   if (!nativeManifest) return undefined;
   const sources = nativeSources();
-  for (const path of nativeManifest.styles) {
+  const paths = new Set(expandStyleImports(nativeManifest.styles, (path) => sources[path]).sheets.map((sheet) => sheet.path));
+  for (const path of paths) {
     const match = { path, selector: "body" };
     if (findStyleRulesInSources(sources, [match]).length) return match;
   }
@@ -1239,6 +1241,13 @@ const nativeBaseSources = new Map<string, string>();
 const nativeComponentStyles = new Map<string, string>();
 const nativeMissingComponentStyles = new Set<string>();
 const nativeComponentStyleRequests = new Set<string>();
+// Files the shared stylesheets `@import` (not in the manifest): loaded, or
+// missing from the branch, or being read. Each is a style dependency like a
+// manifest stylesheet: its effective source reaches the preview and edits to
+// it re-render.
+const nativeImportedStyles = new Set<string>();
+const nativeMissingImportedStyles = new Set<string>();
+const nativeImportedStyleRequests = new Set<string>();
 let nativeSourcesRequest = 0;
 
 function nativeModeActive() {
@@ -1350,18 +1359,26 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
 
 // Resolve every manifest file to its effective source: a mounted editor model
 // wins, then a saved/new browser draft, then the clean snapshot baseline.
-function nativeSources(): Record<string, string> {
+function nativeSources(manifest = nativeManifest): Record<string, string> {
   const out: Record<string, string> = {};
-  if (!nativeManifest) return out;
-  const paths = new Set([...nativeManifestPaths(nativeManifest), ...nativeComponentStyles.values()]);
+  if (!manifest) return out;
+  const paths = new Set([...nativeManifestPaths(manifest), ...nativeComponentStyles.values()]);
   const scope = draftScope();
-  for (const path of paths) {
+  const effective = (path: string) => {
     let content = nativeBaseSources.get(path);
     const draft = scope ? draftStore().get(scope, path) : undefined;
     if (draft) content = draft.content;
     const mounted = editorModule?.getMountedSource(path);
     if (mounted !== undefined) content = mounted;
-    out[path] = content ?? "";
+    return content;
+  };
+  for (const path of paths) out[path] = effective(path) ?? "";
+  // An imported file that is neither in the branch nor a draft stays out, so
+  // the preview reports the import as missing.
+  for (const path of [...nativeImportedStyles, ...nativeMissingImportedStyles]) {
+    if (Object.hasOwn(out, path)) continue;
+    const content = effective(path);
+    if (content !== undefined) out[path] = content;
   }
   return out;
 }
@@ -1384,6 +1401,54 @@ function updateNativePreviewSources() {
   if (!nativeManifest || !nativePreview) return;
   nativePreview.update({ sources: nativeSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets) });
   void loadNativeAssets();
+  void loadNativeImportedStyles();
+}
+
+// Reads the files the shared stylesheets `@import` that are not loaded yet,
+// following imports of imports, into the base sources. True when any loaded.
+async function readNativeImportedStyles(repo: string, manifest: NativeManifest, live: () => boolean) {
+  let loaded = false;
+  for (let round = 0; round < 20; round++) {
+    const sources = nativeSources(manifest);
+    const wanted = expandStyleImports(manifest.styles, (path) => sources[path]).imported.filter((path) =>
+      !Object.hasOwn(sources, path) && !nativeMissingImportedStyles.has(path) && !nativeImportedStyleRequests.has(path));
+    if (!wanted.length) break;
+    wanted.forEach((path) => nativeImportedStyleRequests.add(path));
+    try {
+      const found: { path: string; sha: string }[] = [];
+      for (const path of wanted) {
+        const entry = await findEntry(path);
+        if (!live()) return false;
+        if (entry) found.push({ path, sha: entry.sha });
+        else nativeMissingImportedStyles.add(path);
+      }
+      const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
+      if (!live()) return false;
+      for (const file of found) {
+        nativeBaseSources.set(file.path, contents[file.sha]);
+        nativeImportedStyles.add(file.path);
+        loaded = true;
+      }
+    } finally {
+      wanted.forEach((path) => nativeImportedStyleRequests.delete(path));
+    }
+  }
+  return loaded;
+}
+
+async function loadNativeImportedStyles() {
+  if (!nativeManifest || !currentRepo || !snapshot) return;
+  const manifest = nativeManifest;
+  const request = nativeSourcesRequest;
+  const epoch = generation;
+  const live = () => epoch === generation && request === nativeSourcesRequest && nativeManifest === manifest;
+  let loaded = false;
+  try {
+    loaded = await readNativeImportedStyles(currentRepo.full_name, manifest, live);
+  } catch {
+    // The preview reports the import as missing.
+  }
+  if (loaded && live()) updateNativePreviewSources();
 }
 
 // Images the pages and components refer to, read once per path as data URLs
@@ -1474,6 +1539,9 @@ function deactivateNative() {
   nativeComponentStyles.clear();
   nativeMissingComponentStyles.clear();
   nativeComponentStyleRequests.clear();
+  nativeImportedStyles.clear();
+  nativeMissingImportedStyles.clear();
+  nativeImportedStyleRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
   nativeSourcesRequest++;
@@ -1575,6 +1643,9 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   nativeComponentStyles.clear();
   nativeMissingComponentStyles.clear();
   nativeComponentStyleRequests.clear();
+  nativeImportedStyles.clear();
+  nativeMissingImportedStyles.clear();
+  nativeImportedStyleRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
   try {
@@ -1589,6 +1660,14 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     const contents = await readFiles(repo.full_name, sources.map((source) => source.sha));
     if (!live()) return true;
     for (const source of sources) nativeBaseSources.set(source.path, contents[source.sha]);
+    // Files the shared stylesheets import render with the first update; one
+    // that cannot be read is reported by the preview, not here.
+    try {
+      await readNativeImportedStyles(repo.full_name, manifest, live);
+    } catch {
+      // Reported by the preview as a missing import.
+    }
+    if (!live()) return true;
   } catch (error) {
     if (!live()) return true;
     nativeManifest = undefined;

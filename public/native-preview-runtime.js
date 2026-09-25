@@ -29,7 +29,11 @@
   // Optional template parts (see applyEmptyRules) stay out of layout.
   var runtimeSheet = new CSSStyleSheet();
   runtimeSheet.replaceSync("[data-native-empty]{display:none !important}");
-  var sheetPaths = new WeakMap();
+  // Each constructed sheet's source: `{ path, wrappers, importer, kind }`. A
+  // shared sheet expanded from an `@import` carries the imported file's path,
+  // the chain of import wrappers (outermost first; each may have `layer`,
+  // `supports` and `media`) and the importing file (see shared/css-imports.ts).
+  var sheetInfo = new WeakMap();
 
   function emit(type, extra) {
     var base = { source: "astro-native-preview", type: type };
@@ -214,11 +218,17 @@
     return state && state.componentStyles && state.componentStyles[tag] || null;
   }
 
-  // Fills a constructed sheet from `item` ({ path, source }), replacing its
-  // rules only when the source changed.
+  // Fills a constructed sheet from `item` ({ path, source }, plus `wrappers`,
+  // `importer` and `kind` for an expanded import), replacing its rules only
+  // when the source changed.
   function fillSheet(entry, item) {
     entry.path = String(item.path || "");
-    sheetPaths.set(entry.sheet, entry.path);
+    sheetInfo.set(entry.sheet, {
+      path: entry.path,
+      wrappers: Array.isArray(item.wrappers) ? item.wrappers : [],
+      importer: String(item.importer || ""),
+      kind: String(item.kind || "sheet")
+    });
     var source = String(item.source || "");
     if (entry.source === source) return;
     entry.source = source;
@@ -291,6 +301,7 @@
       components: payload.components || {},
       componentPaths: payload.componentPaths || {},
       styles: Array.isArray(payload.styles) ? payload.styles : [],
+      styleErrors: Array.isArray(payload.styleErrors) ? payload.styleErrors : [],
       componentStyles: payload.componentStyles || {},
       assets: payload.assets || {},
       route: payload.route || "/",
@@ -301,6 +312,7 @@
     // Typing not yet sent survives this render (see reconcileNode).
     var typing = !!editing && editing.textContent !== editingText;
     syncStyles();
+    state.styleErrors.forEach(reportError);
     renderPage();
     if (!hadError) emit("clear-error");
     var hadSelection = !!selected;
@@ -647,7 +659,7 @@
   // sheet, or a <style> element the runtime tagged.
   function sheetPath(sheet) {
     if (!sheet) return "";
-    if (sheetPaths.has(sheet)) return sheetPaths.get(sheet);
+    if (sheetInfo.has(sheet)) return sheetInfo.get(sheet).path;
     var owner = sheet.ownerNode;
     return owner && owner.getAttribute ? owner.getAttribute("data-native-css-path") || "" : "";
   }
@@ -708,6 +720,10 @@
       }
     }
     for (var s = 0; s < sheets.length; s++) {
+      // Rules count per source file. A constructed sheet holds one whole file
+      // (an imported file may be expanded more than once), so its count
+      // starts over; a page's <style> elements share the page's count.
+      if (sheetInfo.has(sheets[s])) ruleIndexes[sheetInfo.get(sheets[s]).path] = 0;
       try { walk(sheets[s].cssRules, true); } catch (_) {}
     }
     return out;

@@ -145,3 +145,36 @@ test("template parts the page leaves empty are left out of the export", () => {
   const withLink = text(exportNativeSite({ files }).files["index.html"]);
   assert.equal(withLink.split("project-card__actions").length - 1, 1);
 });
+
+test("stylesheets a shared sheet imports become hashed assets the import points at", () => {
+  const files = fixtureFiles();
+  files["src/styles/site.css"] =
+    `@import url("sections.css") layer(sections) supports(display: grid) screen;\n@import "https://fonts.example/css";\n` +
+    text(files["src/styles/site.css"]);
+  files["src/styles/sections.css"] = `@import "./parts/deep.css" layer(deep);\n` + text(files["src/styles/sections.css"]);
+  files["src/styles/parts/deep.css"] = ".deep { color: red; }";
+  const { files: out, log } = exportNativeSite({ files });
+  const deepName = `deep.${contentHash(".deep { color: red; }")}.css`;
+  assert.equal(text(out[`assets/${deepName}`]), ".deep { color: red; }");
+  const sections = text(files["src/styles/sections.css"]).replace(`"./parts/deep.css"`, `url("/assets/${deepName}")`);
+  const sectionsName = `sections.${contentHash(sections)}.css`;
+  assert.equal(text(out[`assets/${sectionsName}`]), sections);
+  const site = text(out[Object.keys(out).find((path) => /^assets\/site\.\w+\.css$/.test(path))!]);
+  // The layer, supports() and media stay; the external import is untouched.
+  assert.ok(site.startsWith(`@import url("/assets/${sectionsName}") layer(sections) supports(display: grid) screen;\n@import "https://fonts.example/css";\n`));
+  // Only the manifest's stylesheets are linked; imports load through them.
+  const home = text(out["index.html"]);
+  assert.ok(home.includes(`<link rel="stylesheet" href="/assets/site.`));
+  assert.ok(!home.includes(`href="/assets/${sectionsName}"`));
+  assert.ok(log.includes("assets -> 2 images, 3 stylesheets, _headers"));
+});
+
+test("fails closed on a missing or circular stylesheet import", () => {
+  const missing = fixtureFiles();
+  missing["src/styles/site.css"] = `@import "gone.css";\n` + text(missing["src/styles/site.css"]);
+  assert.throws(() => exportNativeSite({ files: missing }), /src\/styles\/site.css imports src\/styles\/gone.css, which is missing/);
+  const circular = fixtureFiles();
+  circular["src/styles/site.css"] = `@import "sections.css";\n` + text(circular["src/styles/site.css"]);
+  circular["src/styles/sections.css"] = `@import "site.css";\n.filler {}`;
+  assert.throws(() => exportNativeSite({ files: circular }), /sections.css imports src\/styles\/site.css, which imports it back/);
+});

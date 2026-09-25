@@ -8,6 +8,7 @@ import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
+import { expandStyleImports } from "../../shared/css-imports";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders plain
@@ -198,10 +199,14 @@ function composePayload(
     if (!Object.hasOwn(manifest.components, tag)) continue;
     stylesByComponent[tag] = { path, source: sources[path] ?? "" };
   }
-  const styles = manifest.styles.map((path) => ({ path, source: sources[path] ?? "" }));
+  // Shared stylesheets with their `@import`s expanded: one sheet per file,
+  // each import before the sheet that imports it (see shared/css-imports.ts).
+  const expanded = expandStyleImports(manifest.styles, (path) => sources[path]);
+  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source, wrappers, importer, kind }));
+  const styleErrors = expanded.errors;
   // Section components count as sections when the runtime looks for places to insert one.
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
-  return { pages, pagePaths, components, componentPaths, styles, componentStyles: stylesByComponent, assets, sectionTags, route, context, selectNode, selectText };
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, context, selectNode, selectText };
 }
 
 function routeCandidate(manifest: NativeManifest, href: string) {
@@ -467,7 +472,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         return;
       }
       if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
-      const allowedSelectorPaths = new Set([...nativeManifestPaths(manifest), ...Object.values(componentStyles)]);
+      const allowedSelectorPaths = new Set([
+        ...nativeManifestPaths(manifest),
+        ...Object.values(componentStyles),
+        ...expandStyleImports(manifest.styles, (path) => sources[path]).imported,
+      ]);
       const selectors = Array.isArray(raw.selectors)
         ? raw.selectors.flatMap((item) => {
           if (!item || typeof item !== "object") return [];

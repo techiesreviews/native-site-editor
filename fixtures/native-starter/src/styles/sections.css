@@ -1,0 +1,4 @@
+/* Section styles, for a stylesheet to @import (not listed in native.json). */
+.filler {
+  border-top: 6px solid rgb(47, 109, 58);
+}

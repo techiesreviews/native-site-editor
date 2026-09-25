@@ -10,9 +10,9 @@
 //   adopts them, so the cascade matches the preview;
 // - `#/route/` links become real paths, and the nav link for the current
 //   route gets `aria-current="page"`;
-// - shared stylesheets and `src/images/` are written under `/assets/` with
-//   content-hashed names and immutable cache headers (`_headers`); HTML is
-//   always revalidated;
+// - shared stylesheets (with the repository files they `@import`) and
+//   `src/images/` are written under `/assets/` with content-hashed names
+//   and immutable cache headers (`_headers`); HTML is always revalidated;
 // - images get `width`/`height` from the file and `loading="lazy"` after the
 //   first section;
 // - the document head takes its title and description from the manifest's
@@ -25,6 +25,7 @@
 // browser alike.
 import { parseNativeManifest, type NativeManifest } from "../src/native-manifest";
 import { assignedSlotNames, pruneEmptyTemplate } from "./native-conditionals";
+import { isExternalImport, parseCssImports, resolveImportPath } from "./css-imports";
 
 export type FileContent = string | Uint8Array;
 
@@ -210,13 +211,30 @@ export function exportNativeSite(input: ExportInput): ExportResult {
   const site = readSiteMeta(files);
   const siteUrl = (input.siteUrl || site.url || "").replace(/\/$/, "");
 
-  // Shared stylesheets: one hashed file each, linked in manifest order.
-  const sharedLinks = manifest.styles.map((path) => {
-    const css = text(path);
+  // Shared stylesheets: one hashed file each, linked in manifest order. A
+  // file they `@import` from the repository is written the same way and the
+  // import points at its hashed name, keeping its layer, supports() and media.
+  const styleUrls = new Map<string, string>();
+  function writeStyle(path: string, chain: string[]): string {
+    const written = styleUrls.get(path);
+    if (written) return written;
+    let css = text(path);
+    for (const item of parseCssImports(css).imports.reverse()) {
+      const target = resolveImportPath(path, item.url);
+      if (target === undefined) {
+        if (isExternalImport(item.url)) continue;
+        throw new ExportError(`${path} imports ${item.url}, which is outside the repository.`);
+      }
+      if (chain.includes(target)) throw new ExportError(`${path} imports ${target}, which imports it back.`);
+      if (files[target] === undefined) throw new ExportError(`${path} imports ${target}, which is missing.`);
+      css = css.slice(0, item.urlStart) + `url("${writeStyle(target, [...chain, target])}")` + css.slice(item.urlEnd);
+    }
     const name = `${basename(path, ".css")}.${contentHash(css)}.css`;
     out[`assets/${name}`] = css;
-    return `<link rel="stylesheet" href="/assets/${name}">`;
-  });
+    styleUrls.set(path, `/assets/${name}`);
+    return `/assets/${name}`;
+  }
+  const sharedLinks = manifest.styles.map((path) => `<link rel="stylesheet" href="${writeStyle(path, [path])}">`);
   const sharedLinkTags = sharedLinks.join("");
 
   // Images: copied to hashed names; the map rewrites references in HTML.
@@ -356,6 +374,6 @@ ${body}
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 `;
-  log.push(`assets -> ${imageMap.size} images, ${sharedLinks.length} stylesheets, _headers`);
+  log.push(`assets -> ${imageMap.size} images, ${styleUrls.size} stylesheets, _headers`);
   return { files: out, log };
 }

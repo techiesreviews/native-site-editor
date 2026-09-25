@@ -182,3 +182,50 @@ test("preview route links switch pages while preserving the frame", async ({ pag
   await frame.getByRole("link", { name: "Home", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible();
 });
+
+test("a stylesheet a shared sheet imports applies in its layer and lists its rules under its own path", async ({ page }) => {
+  const sectionsPath = "src/styles/sections.css";
+  const sectionsSource = readFileSync(resolve(fixture, sectionsPath), "utf8");
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  const filler = frame.locator("section.filler");
+  expect(await filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
+
+  // sections.css is not in the manifest: site.css imports it into a layer.
+  await openFile(page, cssPath, "--accent");
+  await pasteSource(page, "--accent", `@import url("sections.css") layer(sections);\n${cssSource}`);
+  await expect.poll(() => filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("6px");
+  expect(await filler.evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgb(47, 109, 58)");
+  const layers = await (await frameWindow(page)).evaluate(() =>
+    document.adoptedStyleSheets.flatMap((sheet) => Array.from(sheet.cssRules))
+      .filter((rule) => rule instanceof CSSLayerBlockRule).map((rule) => (rule as CSSLayerBlockRule).name));
+  expect(layers).toEqual(["sections"]);
+
+  // Selecting the section lists the imported rule with the imported file's path and range.
+  await filler.click({ position: { x: 12, y: 2 } });
+  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#secondary-title")).toHaveText(sectionsPath);
+  await expect(page.locator("#secondary-rules button", { hasText: ".filler" })).toHaveAttribute("title", `${sectionsPath} · .filler`);
+  // The caret sits at the rule's start in the imported file; with nothing
+  // selected, a copy takes that whole line.
+  const secondary = page.locator("#content-secondary [role=\"textbox\"]").first();
+  await expect.poll(async () => {
+    await secondary.evaluate((el) => (el as HTMLElement).focus());
+    await page.keyboard.press("ControlOrMeta+C");
+    return page.evaluate(() => navigator.clipboard.readText());
+  }).toBe(".filler {\n");
+
+  // Editing the imported file refreshes the preview.
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), sectionsSource.replace("6px", "9px"));
+  await secondary.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(() => filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("9px");
+
+  // On a fresh load the imported file is read before the first render.
+  await page.reload();
+  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+  await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  expect(await filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("9px");
+  await expect(page.locator(".native-preview-error")).toBeHidden();
+});

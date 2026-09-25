@@ -23,7 +23,9 @@ A project opts in with a validated, versioned manifest at
   route is required.
 - `components` maps a custom-element tag (must contain a dash) to a
   `src/components/*.html` template. Templates use native shadow DOM `<slot>`s.
-- `styles` lists shared `src/styles/*.css` files.
+- `styles` lists shared `src/styles/*.css` files. They may `@import` other
+  repository stylesheets (with `layer`, `supports()` and media), which need
+  not be listed; see `shared/css-imports.ts`.
 
 Validation lives in `src/native-manifest.ts`; the preview runtime and panel live
 in `src/components/native-preview.ts`. When a valid manifest is present the
