@@ -142,7 +142,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Saved to GitHub heading"));
   await expect(frame.getByRole("heading", { name: "Saved to GitHub heading" })).toBeVisible();
 
-  // The native save menu commits to GitHub but does not track deployment status.
+  // The native save menu commits to GitHub; the Change status shows in the top bar (native-change-status.spec.ts).
   await openSaveMenu(page);
   await expect(page.locator("#publish-files")).toContainText("A connected host may deploy this commit automatically");
   // The change the commit would make is listed before it is made.
@@ -158,7 +158,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   const message = page.locator(".publish-menu__message");
   await expect(message).toContainText("Saved to GitHub", { timeout: 30_000 });
   await expect(message.getByRole("link", { name: /View commit/ })).toHaveAttribute("href", /\/commit\//);
-  await expect(message).toContainText("Deployment status is not tracked by this editor");
+  await expect(message).toContainText("Its status shows in the top bar.");
   await expect(message).not.toContainText(/build|live|publish/i);
 });
 

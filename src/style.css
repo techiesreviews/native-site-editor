@@ -209,6 +209,13 @@ select {
   margin: 0;
   font-size: 13px;
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 14px;
+  min-width: 0;
+}
 .editor-toolbar-host {
   display: flex;
   justify-content: end;

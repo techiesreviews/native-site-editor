@@ -249,9 +249,20 @@ function fileAt(git: Git, path: string): Buffer | undefined {
   }
 }
 
+// GitHub Actions as a test sets it through `/__demo/actions`, per session:
+// no workflows (the default), a 403 as for an app without Actions: read, or
+// workflows whose runs for any commit are the ones given (none yet: waiting).
+interface FakeActions {
+  mode: "none" | "forbidden" | "runs";
+  runs?: { name?: string; status: string; conclusion?: string | null; html_url?: string }[];
+  /** Every commit the editor asked about. */
+  asked?: string[];
+}
+const NO_ACTIONS: FakeActions = { mode: "none" };
+
 // A fake `fetch` bound to one session's git models: the demo repository's,
 // and the fixture repositories' (cloned on first use).
-function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch {
+function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeActions = NO_ACTIONS): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
     const path = url.pathname;
@@ -278,6 +289,15 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch 
     }
     const git = fixture ? fixtureGits.get(repoName)! : demoGit;
     const repoBase = `/repos/${DEMO_REPO.owner.login}/${fixture ? repoName : DEMO_REPO.name}`;
+    if (path === `${repoBase}/actions/runs` || path === `${repoBase}/actions/workflows`) {
+      if (actions.mode === "forbidden")
+        return jsonResponse({ message: "Resource not accessible by integration" }, 403);
+      if (path.endsWith("/workflows"))
+        return jsonResponse({ total_count: actions.mode === "runs" ? 1 : 0, workflows: actions.mode === "runs" ? [{ name: "Deploy", state: "active" }] : [] });
+      actions.asked?.push(url.searchParams.get("head_sha") ?? "");
+      const runs = actions.mode === "runs" ? actions.runs ?? [] : [];
+      return jsonResponse({ total_count: runs.length, workflow_runs: runs.map((run, index) => ({ id: index + 1, head_sha: url.searchParams.get("head_sha"), html_url: `https://github.com/${DEMO_REPO.full_name}/actions/runs/${index + 1}`, ...run })) });
+    }
     if (path === `${repoBase}/branches`) return jsonResponse([{ name: "main" }]);
     if (path === `${repoBase}/branches/main`)
       return jsonResponse({ commit: { sha: git.head } });
@@ -460,6 +480,7 @@ function mintSession(): string {
 // Test-only latency injected before the worker handles a publish, scoped to the
 // browser session. Public demo mode does not expose this control channel.
 const publishDelays = new Map<string, number>();
+const sessionActions = new Map<string, FakeActions>();
 
 function workerMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
@@ -493,6 +514,17 @@ function workerMiddleware(): Connect.NextHandleFunction {
         res.statusCode = bytes ? 200 : 404;
         res.setHeader("Content-Type", "application/octet-stream");
         return res.end(bytes ?? Buffer.alloc(0));
+      }
+      if (path === "/__demo/actions") {
+        // GET reads the commits asked about; POST sets what Actions answers.
+        if (req.method === "GET") {
+          res.setHeader("Content-Type", "application/json");
+          return res.end(JSON.stringify(sessionActions.get(id) ?? NO_ACTIONS));
+        }
+        const next = JSON.parse(bodyBuffer.toString() || "{}") as FakeActions;
+        sessionActions.set(id, { ...next, asked: sessionActions.get(id)?.asked ?? [] });
+        res.statusCode = 204;
+        return res.end();
       }
       if (path === "/__demo/external-edit") {
         // Simulate an external commit that advances the branch, so the next save
@@ -543,7 +575,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git, fixtureGits));
+    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS));
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => res.setHeader(key, value));

@@ -9,6 +9,8 @@ node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com
 
 `SITE_URL` in the environment also overrides `site.json`'s `url`. The export changes nothing about how the editor previews the site.
 
+The editor runs the same module in the browser: **Download site** in the project menu exports the site as it is in the editor, unsaved drafts included, and saves it as `<repository>-site.zip`. `site.json`'s `url` is also where **View live site** goes.
+
 ## A site with no manifest
 
 `.astro-editor/native.json` is optional, and legacy: a new site needs none, and the editor moves an existing one's page details into the pages and can then remove it (below). A repository with `src/pages/index.html` is a native site, in the editor and to the exporter, and everything the manifest would say is found by where the files are (`resolveNativeProject` in `shared/native-project.ts`, which the editor, the exporter and the agent context share):

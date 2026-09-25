@@ -16,6 +16,9 @@ import { draftStore, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
+import { mountSiteActions } from "./components/site-actions";
+import type { SiteFiles } from "./site-download";
+import { NATIVE_SITE_PATHS } from "../shared/native-project";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeWarning, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
@@ -73,6 +76,7 @@ let content: HTMLDivElement;
 let files: HTMLElement;
 let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
 let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
+let siteActions: ReturnType<typeof mountSiteActions> | undefined;
 let sidebarResize: SidebarResize | undefined;
 let editorModule: typeof import("./components/code-editor") | undefined;
 let editorLoading:
@@ -129,6 +133,7 @@ function mountWorkspace() {
       <div id="repository-menu"></div>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
       <div class="topbar-actions">
+        <div id="change-status"></div>
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
         <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
       </div>
@@ -168,6 +173,7 @@ function mountWorkspace() {
     onDisconnect: disconnect,
   });
   element("repository-menu").append(repositoryMenu.root);
+  siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   repositorySelect = element<HTMLSelectElement>("repository");
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
@@ -2025,6 +2031,36 @@ async function listNativePageFiles(repo: Repository, result: Snapshot): Promise<
   return listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${NATIVE_SOURCE_DIR}${entry.path}`);
 }
 
+// The site as edited, for Download site and the site's address: every file
+// under `src/` with its drafts, and the manifest and the root site settings
+// when the site has them. Undefined when no native site is open.
+async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
+  const repo = currentRepo?.full_name;
+  const scope = draftScope();
+  if (!repo || !scope || !nativeModeActive()) return undefined;
+  const draftAt = (path: string) => draftStore().get(scope, path);
+  const extra: string[] = [];
+  if (nativeHasManifest()) extra.push(NATIVE_MANIFEST_PATH);
+  for (const path of NATIVE_SITE_PATHS) {
+    if (path.startsWith(NATIVE_SOURCE_DIR)) continue;
+    const draft = draftAt(path);
+    if (draft ? !draft.deleted : await findEntry(path)) extra.push(path);
+  }
+  return {
+    repository: repo,
+    paths: [...nativePageFiles(scope), ...extra],
+    held: (path) => (path === NATIVE_MANIFEST_PATH ? nativeManifestSource() : nativeEffectiveSource(path, scope)),
+    blob: async (path) => {
+      const draft = draftAt(path);
+      if (draft?.deleted) return undefined;
+      if (draft?.opaque) return draft.sourceSha;
+      return (await findEntry(path))?.sha;
+    },
+    readTexts: (shas) => readFiles(repo, shas),
+    readBase64: async (sha) => (await api<{ content: string }>("raw", { repo, sha })).content,
+  };
+}
+
 // The files routes, components and styles are derived from: the branch's
 // under `src/`, plus new files there drafted in the browser in `scope`.
 function nativePageFiles(scope = draftScope()): string[] {
@@ -2380,6 +2416,8 @@ function renderLogin(
   fileGeneration++;
   repositoryMenu?.destroy();
   repositoryMenu = undefined;
+  siteActions?.destroy();
+  siteActions = undefined;
   repositories = [];
   currentRepo = undefined;
   snapshot = undefined;
@@ -4554,6 +4592,9 @@ async function mountSource(
       // Saved uploads are GitHub's now; this browser lets their bytes go.
       void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
       void refreshPublishedSnapshot(scope.repo, scope.branch);
+      if (nativeEngaged && !result.unchanged)
+        siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
+          () => currentRepo?.id === scope.repoId && (snapshot?.branch ?? branchSelect.value) === scope.branch && info.user?.login === scope.account);
     },
     onDiscardNew: () => {
       // A discarded page no longer routes, and the manifest entry it came
@@ -4897,7 +4938,7 @@ async function refreshPublishedSnapshot(repo: string, branch: string) {
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
     renderFileTree();
-    status("Selected files saved to GitHub. Deployment status is not tracked by this editor.");
+    status("Selected files saved to GitHub.");
   } catch (error) {
     if (epoch === generation) errorMessage(error);
   }
@@ -4916,6 +4957,7 @@ async function loadSnapshot(
   clearError();
   snapshot = undefined;
   deletedUpstream = new Set();
+  siteActions?.revalidate();
   openFolders.clear();
   folderListings.clear();
   deactivateNative();
@@ -5085,6 +5127,7 @@ async function loadRepositories(prefetched?: Repository[]) {
   const epoch = ++generation;
   fileGeneration++;
   currentRepo = undefined;
+  siteActions?.revalidate();
   repositoryMenu?.setRepository();
   setCurrentPage();
   snapshot = undefined;
