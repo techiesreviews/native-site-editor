@@ -64,8 +64,9 @@ The editor routes pages by the same rule (`shared/native-routes.ts`), so the pre
 | each page under `src/pages/` (see [Routes](#routes)) | `<route>/index.html` |
 | the `/404/` route | `404.html` (see [Not-found page](#not-found-page)) |
 | the shared stylesheets (the manifest's `styles`, else [by convention](#a-site-with-no-manifest)), in order | one `assets/site.[hash].css` |
-| a repository file a shared stylesheet `@import`s | `assets/<name>.[hash].css`; the import points at it |
-| `src/components/<name>/<name>.css` | `assets/<name>.[hash].css` |
+| a repository file a stylesheet `@import`s | inlined into the importing stylesheet (see below); no file of its own |
+| `src/components/<name>/<name>.css` | `assets/<name>.[hash].css`, with its imports inlined |
+| a repository file a stylesheet's `url()` names, outside `src/images/` and `src/public/` (a font, say) | `assets/<name>.[hash].<ext>` |
 | `src/images/*` | `assets/images/<name>.[hash].<ext>` |
 | `src/public/*` | copied to the site root unchanged (`src/public/_redirects` is [`_redirects`](#_redirects)) |
 | routes, with a site URL | `sitemap.xml`, `robots.txt` (unless `src/public/` has them) |
@@ -79,7 +80,11 @@ Pages:
 - `data-key` attributes are removed. The preview uses them to patch in place; nothing on the published site reads them.
 - Images get `width`/`height` from the file, and `loading="lazy"` after the first `</section>`.
 
-Because the shared stylesheets become one file, a stylesheet other than the first must not rely on its own `@import`s landing mid-cascade: only `@layer` statements and `@import` may lead a stylesheet, so the bundle collects the first file's layer statements, then those of each later file that imports, then every import, then the rest in order. Declare the layer order in the first file and import into named layers, and the order is unchanged; the exporter prints a warning for an unlayered import in a later file.
+The shared stylesheets become one file, and so a page loads one stylesheet rather than a chain of imports: an `@import` of a repository file is replaced by that file's text, recursively, each file once. The import's conditions and layer become blocks around the text, the way the preview wraps an imported sheet and as CSS Cascade 5 declares an imported layer (conditions outside the layer): `@import "a.css";` is a.css's rules where the import stood, `layer(name)` gives `@layer name { … }`, a bare `layer` an anonymous `@layer { … }`, and `supports(…)` and media wrap those in `@supports (…) { … }` and `@media … { … }`. A file's own leading `@layer` statements stay inside its block, so nested layers compose as the browser composes them. A component's stylesheet gets the same treatment in its own file. An import that goes round in a circle, or names a missing file, stops the export.
+
+Every stylesheet is served from `/assets/`, so each `url()` is resolved from the file it is written in: an image under `src/images/` becomes its hashed copy, a file under `src/public/` its path at the site root, and another repository file (a font) is copied to `assets/` with a hashed name. Root-relative (`/…`), external, `data:` and `#fragment` URLs are left as written; one that names a missing file is left too, with a warning.
+
+An external import (`https://…`) cannot be inlined, and only `@layer` statements and `@import` may lead a stylesheet, so it moves to the head of the bundle, after the first file's layer statements (and those of each later file with an external import), keeping the layer and conditions of the imports around it. Declare the layer order in the first file and import into named layers, and the order is unchanged; the exporter prints a warning for an unlayered external import that moves ahead of other styles. (The Content Security Policy below blocks other sites' stylesheets anyway.)
 
 ## The document head
 

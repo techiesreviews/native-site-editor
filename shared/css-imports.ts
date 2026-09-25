@@ -1,6 +1,7 @@
 // `@import` in shared stylesheets, resolved from repository sources. Used by
 // the editor host (the preview gets one sheet per imported file) and by the
-// static exporter (imported files become hashed assets).
+// static exporter (imported files are inlined into the stylesheet that
+// imports them, and `url()`s are rewritten for where the bundle is served).
 //
 // Constructed stylesheets drop `@import`, so the preview expands each import
 // into its own sheet placed before the importing one. Its text is the
@@ -209,7 +210,7 @@ export function resolveImportPath(from: string, url: string): string | undefined
 }
 
 /** `supports(display: grid)` holds a declaration; `@supports` wants it in parentheses. */
-function supportsCondition(value: string) {
+export function supportsCondition(value: string) {
   return /^[\w-]+\s*:/.test(value) ? `(${value})` : value;
 }
 
@@ -279,4 +280,36 @@ export function expandStyleImports(paths: readonly string[], read: (path: string
   }
   for (const path of paths) visit(path, read(path) ?? "", [], [path]);
   return { sheets, errors, imported: [...imported] };
+}
+
+/**
+ * `css` with each `url(…)` token (outside comments and strings) replaced by
+ * `url("<replacement>")` where `replace` returns one; left as written where
+ * it returns undefined.
+ */
+export function rewriteCssUrls(css: string, replace: (url: string) => string | undefined): string {
+  let result = "", cursor = 0, quote = "";
+  for (let index = 0; index < css.length; index++) {
+    const char = css[index];
+    if (quote) {
+      if (char === "\\") index++;
+      else if (char === quote || char === "\n") quote = "";
+      continue;
+    }
+    if (char === "/" && css[index + 1] === "*") {
+      const close = css.indexOf("*/", index + 2);
+      index = close === -1 ? css.length : close + 1;
+    } else if (char === "\"" || char === "'") quote = char;
+    else if ((char === "u" || char === "U") && /^url\(/i.test(css.slice(index, index + 4)) && !/[\w-]/.test(css[index - 1] ?? "")) {
+      const close = closingParen(css, index + 3);
+      if (close === -1) break;
+      const next = replace(unquote(css.slice(index + 4, close)));
+      if (next !== undefined) {
+        result += css.slice(cursor, index) + `url("${next.replace(/["\\]/g, "\\$&")}")`;
+        cursor = close + 1;
+      }
+      index = close;
+    }
+  }
+  return result + css.slice(cursor);
 }

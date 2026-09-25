@@ -17,8 +17,8 @@
 // - `#/route/` links become real paths, the nav link for the current route
 //   gets `aria-current="page"`, and the editor's `data-key` attributes go;
 // - the shared stylesheets (the manifest's `styles`, else by convention; see
-//   native-project.ts, which also finds the components) are joined into one `site.[hash].css`
-//   (repository files they `@import` stay separate); that, each component's
+//   native-project.ts, which also finds the components) are joined into one `site.[hash].css`,
+//   with the repository files they `@import` inlined; that, each component's
 //   stylesheet and `src/images/` are written under `/assets/` with
 //   content-hashed names and immutable cache headers (`_headers`, which also
 //   carries the security headers); HTML is always revalidated;
@@ -39,7 +39,7 @@
 import type { NativeManifest } from "../src/native-manifest";
 import { NATIVE_MANIFEST_PATH, NATIVE_SITE_PATHS, nativePageComment, resolveNativeProject } from "./native-project";
 import { assignedSlotNames, dropFilledFallbacks, pruneEmptyTemplate } from "./native-conditionals";
-import { isExternalImport, parseCssImports, resolveImportPath } from "./css-imports";
+import { isExternalImport, parseCssImports, resolveImportPath, rewriteCssUrls, supportsCondition, wrapImported, type CssImport, type ImportWrapper } from "./css-imports";
 
 export type FileContent = string | Uint8Array;
 
@@ -274,6 +274,15 @@ const RASTER = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"]);
 /** JSON for a `<script type="application/ld+json">`, safe to put inside the element. */
 const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
+/** What an import wraps its file in: its layer, supports() and media; undefined for a bare import. */
+function importWrapper(item: CssImport): ImportWrapper | undefined {
+  const wrapper: ImportWrapper = {};
+  if (item.layer !== undefined) wrapper.layer = item.layer;
+  if (item.supports !== undefined) wrapper.supports = item.supports;
+  if (item.media !== undefined) wrapper.media = item.media;
+  return Object.keys(wrapper).length ? wrapper : undefined;
+}
+
 export function exportNativeSite(input: ExportInput): ExportResult {
   const { files } = input;
   const out: Record<string, FileContent> = {};
@@ -300,67 +309,6 @@ export function exportNativeSite(input: ExportInput): ExportResult {
   const siteUrl = (input.siteUrl || site.url || "").replace(/\/$/, "");
   const indexable = site.indexable !== false;
 
-  // Stylesheets. A file a shared stylesheet `@import`s from the repository is
-  // written as its own hashed file and the import points at it, keeping its
-  // layer, supports() and media.
-  let stylesheets = 0;
-  function importsRewritten(path: string, chain: string[]): string {
-    let css = text(path);
-    for (const item of parseCssImports(css).imports.reverse()) {
-      const target = resolveImportPath(path, item.url);
-      if (target === undefined) {
-        if (isExternalImport(item.url)) continue;
-        throw new ExportError(`${path} imports ${item.url}, which is outside the repository.`);
-      }
-      if (chain.includes(target)) throw new ExportError(`${path} imports ${target}, which imports it back.`);
-      if (files[target] === undefined) throw new ExportError(`${path} imports ${target}, which is missing.`);
-      css = css.slice(0, item.urlStart) + `url("${writeImported(target, [...chain, target])}")` + css.slice(item.urlEnd);
-    }
-    return css;
-  }
-  const importedUrls = new Map<string, string>();
-  function writeImported(path: string, chain: string[]): string {
-    const written = importedUrls.get(path);
-    if (written) return written;
-    const url = writeAsset(basename(path, ".css"), importsRewritten(path, chain));
-    importedUrls.set(path, url);
-    return url;
-  }
-  function writeAsset(name: string, css: string) {
-    const file = `assets/${name}.${contentHash(css)}.css`;
-    if (out[file] === undefined) stylesheets++;
-    out[file] = css;
-    return `/${file}`;
-  }
-
-  // The manifest's shared stylesheets become one `site.[hash].css`, in
-  // manifest order, so a page and each shadow root link a single file. Only
-  // `@charset`, `@layer` statements and `@import` may come before other
-  // rules, and no layer statement may come after an import, so the head of
-  // the bundle holds the first file's layer statements, then those of each
-  // later file that imports, then every import, and the rest follows.
-  let siteCss: string | undefined;
-  if (manifest.styles.length) {
-    const layers: string[] = [];
-    const imports: string[] = [];
-    const bodies: string[] = [];
-    manifest.styles.forEach((path, index) => {
-      const css = importsRewritten(path, [path]);
-      const head = parseCssImports(css);
-      let headEnd = 0;
-      if (index === 0 || head.imports.length) {
-        if (index > 0 && head.imports.some((item) => item.layer === undefined))
-          warnings.push(`warning: ${path} is not first in "styles" and imports a stylesheet outside a layer; in site.css that import moves ahead of the files listed before it.`);
-        for (const range of head.layers) layers.push(css.slice(range.start, range.end));
-        for (const item of head.imports) imports.push(css.slice(item.start, item.end));
-        headEnd = Math.max(0, ...[...head.layers, ...head.imports].map((range) => range.end));
-      }
-      bodies.push(`/* ${path} */\n${css.slice(headEnd).replace(/^\s*\n/, "")}`);
-    });
-    siteCss = writeAsset("site", [...layers, ...imports, ...bodies].join("\n"));
-  }
-  const siteLink = siteCss ? `<link rel="stylesheet" href="${siteCss}">` : "";
-
   // Images: copied to hashed names; the map rewrites references in HTML.
   const imageMap = new Map<string, string>();
   const imageSize = new Map<string, { width: number; height: number }>();
@@ -379,13 +327,147 @@ export function exportNativeSite(input: ExportInput): ExportResult {
     return url;
   };
 
+  // Stylesheets. Every stylesheet is served from /assets/, so each `url()`
+  // is resolved from the file it is written in: an image becomes its hashed
+  // copy, a file under src/public/ its path at the site root, and another
+  // repository file (a font, say) is copied to a hashed name of its own.
+  let stylesheets = 0;
+  function writeAsset(name: string, css: string) {
+    const file = `assets/${name}.${contentHash(css)}.css`;
+    if (out[file] === undefined) stylesheets++;
+    out[file] = css;
+    return `/${file}`;
+  }
+  const fileAssets = new Map<string, string>();
+  function cssUrl(from: string, url: string): string | undefined {
+    const written = url.trim();
+    if (!written || written.startsWith("#") || written.startsWith("/") || isExternalImport(written)) return undefined;
+    const target = resolveImportPath(from, written);
+    const suffix = /[?#][\s\S]*$/.exec(written)?.[0] ?? "";
+    if (target === undefined) {
+      warnings.push(`warning: ${from} refers to ${written}, which is outside the repository.`);
+      return undefined;
+    }
+    const image = imageMap.get(target);
+    if (image) return image + suffix;
+    if (target.startsWith(PUBLIC_DIR)) return `/${target.slice(PUBLIC_DIR.length)}${suffix}`;
+    const content = files[target];
+    if (content === undefined) {
+      warnings.push(`warning: ${from} refers to ${written}, which is missing.`);
+      return undefined;
+    }
+    let asset = fileAssets.get(target);
+    if (!asset) {
+      const ext = extname(target);
+      asset = `/assets/${basename(target, ext)}.${contentHash(content)}${ext}`;
+      out[asset.slice(1)] = content;
+      fileAssets.set(target, asset);
+    }
+    return asset + suffix;
+  }
+  const urlsRewritten = (path: string, css: string) => rewriteCssUrls(css, (url) => cssUrl(path, url));
+
+  // A stylesheet's `@import`s of repository files are inlined where they
+  // stand, recursively, each file once, inside the blocks its import asks
+  // for (`@media …`, `@supports (…)`, then `@layer name` or an anonymous
+  // `@layer`, as the preview wraps them), so a page loads one stylesheet and
+  // no chain of imports. Only `@charset`, `@layer` statements and `@import`
+  // may come before other rules, and no layer statement after an import, so
+  // an external import that remains leads the bundle, after the first
+  // file's layer statements (and those of each later file with an external
+  // import): declare the layer order first and import into named layers,
+  // and the order is unchanged. An unlayered one that moves ahead of other
+  // styles gets a warning.
+  function bundleStyles(paths: readonly string[], name: string, labelled: boolean) {
+    const layers: string[] = [];
+    const externals: string[] = [];
+    const bodies: string[] = [];
+    const seen = new Set<string>();
+    let hasRules = false;
+    function external(path: string, css: string, item: CssImport, wrappers: ImportWrapper[]) {
+      const own = importWrapper(item);
+      if (!wrappers.length) return { statement: css.slice(item.start, item.end), layered: own?.layer !== undefined };
+      const chain = own ? [...wrappers, own] : wrappers;
+      const parts = [css.slice(item.urlStart, item.urlEnd)];
+      const layerNames = chain.filter((wrapper) => wrapper.layer !== undefined).map((wrapper) => wrapper.layer!);
+      if (layerNames.length > 1 && layerNames.includes(""))
+        warnings.push(`warning: ${path} imports ${item.url} inside an anonymous layer, which an import at the head of ${name}.css cannot name; it is kept in the named layers only.`);
+      const named = layerNames.filter(Boolean);
+      if (named.length) parts.push(`layer(${named.join(".")})`);
+      else if (layerNames.length) parts.push("layer");
+      const supports = chain.flatMap((wrapper) => wrapper.supports === undefined ? [] : [wrapper.supports]);
+      if (supports.length === 1) parts.push(`supports(${supports[0]})`);
+      else if (supports.length) parts.push(`supports(${supports.map((condition) => `(${supportsCondition(condition)})`).join(" and ")})`);
+      const media = chain.flatMap((wrapper) => wrapper.media === undefined ? [] : [wrapper.media]);
+      if (media.length === 1) parts.push(media[0]);
+      else if (media.length) {
+        if (media.every((query) => !query.includes(",")) && media.slice(1).every((query) => query.startsWith("("))) parts.push(media.join(" and "));
+        else {
+          warnings.push(`warning: ${path} imports ${item.url} under media queries that cannot be combined at the head of ${name}.css; only "${media[media.length - 1]}" is kept.`);
+          parts.push(media[media.length - 1]);
+        }
+      }
+      return { statement: `@import ${parts.join(" ")};`, layered: layerNames.length > 0 };
+    }
+    // The file's leading layer statements, and the rest of it with its
+    // repository imports inlined.
+    function inline(path: string, chain: string[], wrappers: ImportWrapper[]) {
+      const css = text(path);
+      const head = parseCssImports(css);
+      const headEnd = Math.max(0, ...[...head.layers, ...head.imports].map((range) => range.end));
+      const leading = head.layers.map((range) => css.slice(range.start, range.end));
+      const externalsBefore = externals.length;
+      let body = "";
+      for (const item of head.imports) {
+        const target = resolveImportPath(path, item.url);
+        if (target === undefined) {
+          if (!isExternalImport(item.url)) throw new ExportError(`${path} imports ${item.url}, which is outside the repository.`);
+          const kept = external(path, css, item, wrappers);
+          if (hasRules && !kept.layered)
+            warnings.push(`warning: ${path} imports ${item.url} outside a layer after other styles; in ${name}.css that import moves ahead of them.`);
+          externals.push(kept.statement);
+          continue;
+        }
+        if (chain.includes(target)) throw new ExportError(`${path} imports ${target}, which imports it back.`);
+        if (files[target] === undefined) throw new ExportError(`${path} imports ${target}, which is missing.`);
+        const wrapper = importWrapper(item);
+        const inner = wrapper ? [...wrappers, wrapper] : wrappers;
+        const key = `${target} ${JSON.stringify(inner)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const child = inline(target, [...chain, target], inner);
+        const content = (labelled ? `/* ${target} */\n` : "") + [...child.leading, child.body].join("\n").trimEnd();
+        body += wrapImported(content, wrapper ? [wrapper] : []) + "\n";
+      }
+      const rest = urlsRewritten(path, css.slice(headEnd).replace(/^\s*\n/, ""));
+      if (/\S/.test(rest.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ""))) hasRules = true;
+      return { leading, body: body + rest, externals: externals.length - externalsBefore };
+    }
+    paths.forEach((path, index) => {
+      seen.add(`${path} []`);
+      const file = inline(path, [path], []);
+      let body = file.body;
+      if (index === 0 || file.externals) layers.push(...file.leading);
+      else body = [...file.leading, body].join("\n");
+      bodies.push((labelled ? `/* ${path} */\n` : "") + body);
+    });
+    return [...layers, ...externals, ...bodies].join("\n");
+  }
+
+  // The shared stylesheets (the manifest's `styles`, else by convention)
+  // become one `site.[hash].css`, in order, so a page and each shadow root
+  // link a single file.
+  const siteCss = manifest.styles.length ? writeAsset("site", bundleStyles(manifest.styles, "site", true)) : undefined;
+  const siteLink = siteCss ? `<link rel="stylesheet" href="${siteCss}">` : "";
+
   // Components, expanded recursively into declarative shadow DOM. Each shadow
   // root links the site stylesheet and then the component's own, the order the
   // preview runtime adopts them in.
   const components: Record<string, { html: string; cssUrl?: string }> = {};
   for (const [tag, path] of Object.entries(manifest.components)) {
     const cssPath = path.replace(/\.html$/, ".css");
-    const css = files[cssPath] !== undefined ? text(cssPath) : "";
+    const source = files[cssPath] !== undefined ? text(cssPath) : "";
+    const css = !source ? "" : parseCssImports(source).imports.length ? bundleStyles([cssPath], tag, false) : urlsRewritten(cssPath, source);
     components[tag] = { html: text(path), cssUrl: css ? writeAsset(tag, css) : undefined };
   }
   const styleBlock = (tag: string) =>

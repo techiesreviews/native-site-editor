@@ -152,27 +152,156 @@ test("template parts the page leaves empty are left out of the export", () => {
   assert.equal(withLink.split("project-card__actions").length - 1, 1);
 });
 
-test("stylesheets a shared sheet imports become hashed assets the import points at", () => {
+/** The export of the fixture with these shared stylesheets listed and these files added. */
+function exportStyles(added: Record<string, FileContent>, styles = ["src/styles/site.css"]) {
   const files = fixtureFiles();
-  files["src/styles/site.css"] =
-    `@import url("sections.css") layer(sections) supports(display: grid) screen;\n@import "https://fonts.example/css";\n` +
-    text(files["src/styles/site.css"]);
-  files["src/styles/sections.css"] = `@import "./parts/deep.css" layer(deep);\n` + text(files["src/styles/sections.css"]);
-  files["src/styles/parts/deep.css"] = ".deep { color: red; }";
+  const manifest = JSON.parse(text(files[".astro-editor/native.json"]));
+  manifest.styles = styles;
+  files[".astro-editor/native.json"] = JSON.stringify(manifest);
+  Object.assign(files, added);
   const { files: out, log } = exportNativeSite({ files });
-  const deepName = `deep.${contentHash(".deep { color: red; }")}.css`;
-  assert.equal(text(out[`assets/${deepName}`]), ".deep { color: red; }");
-  const sections = text(files["src/styles/sections.css"]).replace(`"./parts/deep.css"`, `url("/assets/${deepName}")`);
-  const sectionsName = `sections.${contentHash(sections)}.css`;
-  assert.equal(text(out[`assets/${sectionsName}`]), sections);
-  const site = text(out[Object.keys(out).find((path) => /^assets\/site\.\w+\.css$/.test(path))!]);
-  // The layer, supports() and media stay; the external import is untouched.
-  assert.ok(site.startsWith(`@import url("/assets/${sectionsName}") layer(sections) supports(display: grid) screen;\n@import "https://fonts.example/css";\n`));
-  // Only the manifest's stylesheets are linked; imports load through them.
+  const siteFile = Object.keys(out).find((path) => /^assets\/site\.[0-9a-f]{10}\.css$/.test(path))!;
+  return { out, log, siteFile, css: text(out[siteFile]), warnings: log.filter((line) => line.startsWith("warning:")) };
+}
+const cssAssets = (out: Record<string, FileContent>) =>
+  Object.keys(out).filter((path) => path.endsWith(".css")).map((path) => path.replace(/\.[0-9a-f]{10}\.css$/, "")).sort();
+
+test("repository stylesheets a shared sheet imports are inlined in place, recursively and once each", () => {
+  const { out, css, log, warnings, siteFile } = exportStyles({
+    "src/styles/site.css": `@import "a.css";\n@import url(parts/b.css);\n.site {}\n`,
+    "src/styles/a.css": `@import "./parts/b.css";\n.a {}\n`,
+    "src/styles/parts/b.css": ".b {}",
+  });
+  assert.equal(css, `/* src/styles/site.css */\n/* src/styles/a.css */\n/* src/styles/parts/b.css */\n.b {}\n.a {}\n.site {}\n`);
+  // No file of its own for an inlined stylesheet: the site loads one stylesheet.
+  assert.ok(!cssAssets(out).some((path) => /assets\/(a|b)$/.test(path)), cssAssets(out).join());
   const home = text(out["index.html"]);
-  assert.ok(home.includes(`<link rel="stylesheet" href="/assets/site.`));
-  assert.ok(!home.includes(`href="/assets/${sectionsName}"`));
-  assert.ok(log.includes("assets -> 2 images, 7 stylesheets, _headers"));
+  assert.equal(home.split("<template")[0].split(`<link rel="stylesheet"`).length - 1, 1);
+  assert.ok(home.includes(`<link rel="stylesheet" href="/${siteFile}">`));
+  assert.deepEqual(warnings, []);
+  assert.ok(log.includes("assets -> 2 images, 5 stylesheets, _headers"), log.join("\n"));
+});
+
+test("an import's layer, supports() and media become blocks around the inlined file", () => {
+  const { css } = exportStyles({
+    "src/styles/site.css": [
+      `@layer x, y;`,
+      `@import "a.css" layer(x);`,
+      `@import "b.css" layer;`,
+      `@import "c.css" print;`,
+      `@import "d.css" supports(display: grid);`,
+      `@import "e.css" layer(y) supports(not (display: grid)) (min-width: 40em);`,
+      `.site {}`,
+    ].join("\n"),
+    "src/styles/a.css": `@layer inner;\n@import "parts/f.css" layer(inner);\n.a {}`,
+    "src/styles/parts/f.css": ".f {}",
+    "src/styles/b.css": ".b {}",
+    "src/styles/c.css": ".c {}",
+    "src/styles/d.css": ".d {}",
+    "src/styles/e.css": ".e {}",
+  });
+  assert.equal(
+    css,
+    [
+      `@layer x, y;`,
+      `/* src/styles/site.css */`,
+      // A file's own leading layer statements stay inside its block; nested layers compose (x.inner).
+      `@layer x {\n/* src/styles/a.css */\n@layer inner;\n@layer inner {\n/* src/styles/parts/f.css */\n.f {}\n}\n.a {}\n}`,
+      `@layer {\n/* src/styles/b.css */\n.b {}\n}`,
+      `@media print {\n/* src/styles/c.css */\n.c {}\n}`,
+      `@supports (display: grid) {\n/* src/styles/d.css */\n.d {}\n}`,
+      // Conditions wrap the layer, as css-cascade-5 declares an imported layer.
+      `@media (min-width: 40em) {\n@supports not (display: grid) {\n@layer y {\n/* src/styles/e.css */\n.e {}\n}\n}\n}`,
+      `.site {}`,
+    ].join("\n"),
+  );
+});
+
+test("url()s in every stylesheet resolve from the file they are written in", () => {
+  const font = new Uint8Array([1, 2, 3]);
+  const { out, css, warnings } = exportStyles({
+    "src/styles/site.css": `@import "parts/b.css";\n.hero { background: url(../images/studio-desk.svg); }\n`,
+    "src/styles/parts/b.css": [
+      `@font-face { font-family: Body; src: url("../../fonts/body.woff2?v=2") format("woff2"); }`,
+      `.b { background: url('../../images/studio-desk.svg#part'); }`,
+      `.c { background: url(../../public/og.png), url(/root.png), url(data:image/gif;base64,R0lGOD), url("https://cdn.example/x.png"); }`,
+      `.d { mask: url(#mask); content: "url(../not-a-url.png)"; } /* url(../comment.png) */`,
+      `.e { background: url(../../images/gone.png); }`,
+    ].join("\n"),
+    "src/fonts/body.woff2": font,
+    "src/public/og.png": new Uint8Array([4]),
+  });
+  const image = Object.keys(out).find((path) => /^assets\/images\/studio-desk\.[0-9a-f]{10}\.svg$/.test(path))!;
+  const fontFile = `assets/body.${contentHash(font)}.woff2`;
+  assert.deepEqual(out[fontFile], font);
+  assert.ok(css.includes(`src: url("/${fontFile}?v=2") format("woff2");`));
+  assert.ok(css.includes(`.b { background: url("/${image}#part"); }`));
+  assert.ok(css.includes(`.c { background: url("/og.png"), url(/root.png), url(data:image/gif;base64,R0lGOD), url("https://cdn.example/x.png"); }`));
+  assert.ok(css.includes(`.d { mask: url(#mask); content: "url(../not-a-url.png)"; } /* url(../comment.png) */`));
+  assert.ok(css.includes(`.hero { background: url("/${image}"); }`));
+  assert.deepEqual(warnings, ["warning: src/styles/parts/b.css refers to ../../images/gone.png, which is missing."]);
+});
+
+test("an external import stays at the head of the bundle, with the layer and conditions of the imports around it", () => {
+  const { css, warnings } = exportStyles({
+    "src/styles/site.css": `@layer a;\n@import "tokens.css" layer(a) supports(display: grid);\n@import "https://fonts.example/css";\n.site {}\n`,
+    "src/styles/tokens.css": `@import url("https://fonts.example/more.css") screen;\n.tokens {}\n`,
+  });
+  assert.equal(
+    css,
+    `@layer a;\n@import url("https://fonts.example/more.css") layer(a) supports(display: grid) screen;\n@import "https://fonts.example/css";\n` +
+      `/* src/styles/site.css */\n@supports (display: grid) {\n@layer a {\n/* src/styles/tokens.css */\n.tokens {}\n}\n}\n.site {}\n`,
+  );
+  // The unlayered one moves ahead of tokens.css, which it followed.
+  assert.deepEqual(warnings, [
+    "warning: src/styles/site.css imports https://fonts.example/css outside a layer after other styles; in site.css that import moves ahead of them.",
+  ]);
+});
+
+test("a component stylesheet's imports are inlined into its own file", () => {
+  const files = fixtureFiles();
+  const card = text(files["src/components/project-card/project-card.css"]);
+  files["src/components/project-card/project-card.css"] = `@import "../../styles/parts/shared.css" layer(shared);\n` + card;
+  files["src/styles/parts/shared.css"] = ".shared { background: url(../../images/studio-desk.svg); }";
+  const { files: out } = exportNativeSite({ files });
+  const cardFile = Object.keys(out).find((path) => /^assets\/project-card\.[0-9a-f]{10}\.css$/.test(path))!;
+  const image = Object.keys(out).find((path) => /^assets\/images\/studio-desk\./.test(path))!;
+  assert.equal(text(out[cardFile]), `@layer shared {\n.shared { background: url("/${image}"); }\n}\n` + card);
+  assert.ok(!cssAssets(out).includes("assets/shared"));
+});
+
+test("the starter's site.css of imports exports one stylesheet with the rules of the old bundle, in order", () => {
+  const layers = "@layer tokens, elements, layout, sections;";
+  const parts: Record<string, string> = {
+    "src/styles/tokens.css": `/* The layer order. */\n${layers}\n\n@layer tokens {\n  :root { --ink: #20231f; }\n}\n`,
+    "src/styles/elements.css": `@layer elements {\n  body { margin: 0; color: var(--ink); }\n}\n`,
+    "src/styles/layout.css": `@layer layout {\n  .flow > * + * { margin-top: 1em; }\n}\n`,
+    "src/styles/sections.css": `@layer sections {\n  .intro { padding: 2em; }\n  @media (min-width: 40em) { .intro { padding: 4em; } }\n}\n`,
+  };
+  const listed = exportStyles(parts, Object.keys(parts));
+  const siteCss = `/* Shared styles. */\n${layers}\n@import url("tokens.css");\n@import url("elements.css");\n@import url("layout.css");\n@import url("sections.css");\n`;
+  const imported = exportStyles({ ...parts, "src/styles/site.css": siteCss });
+  assert.ok(!imported.css.includes("@import"));
+  assert.deepEqual(cssAssets(imported.out).filter((path) => !path.startsWith("assets/project-card") && !path.startsWith("assets/card-note")),
+    cssAssets(listed.out).filter((path) => !path.startsWith("assets/project-card") && !path.startsWith("assets/card-note")));
+  assert.ok(!cssAssets(imported.out).some((path) => /assets\/(tokens|elements|layout|sections)$/.test(path)));
+  // Top-level statements and blocks, comments and whitespace aside, with a repeated layer statement once.
+  const rules = (css: string) => {
+    const found: string[] = [];
+    let depth = 0, start = 0;
+    const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (let index = 0; index < source.length; index++) {
+      if (source[index] === "{") depth++;
+      else if (source[index] === "}" && --depth === 0 || source[index] === ";" && depth === 0) {
+        found.push(source.slice(start, index + 1).replace(/\s+/g, " ").trim());
+        start = index + 1;
+      }
+    }
+    return found.filter((rule, index) => rule !== found[index - 1]);
+  };
+  assert.deepEqual(rules(imported.css), rules(listed.css));
+  assert.equal(rules(imported.css)[0], layers);
+  assert.deepEqual(imported.warnings, []);
 });
 
 test("fails closed on a missing or circular stylesheet import", () => {
@@ -183,6 +312,12 @@ test("fails closed on a missing or circular stylesheet import", () => {
   circular["src/styles/site.css"] = `@import "sections.css";\n` + text(circular["src/styles/site.css"]);
   circular["src/styles/sections.css"] = `@import "site.css";\n.filler {}`;
   assert.throws(() => exportNativeSite({ files: circular }), /sections.css imports src\/styles\/site.css, which imports it back/);
+  // Deeper down, and a file importing itself, fail the same way instead of inlining forever.
+  circular["src/styles/sections.css"] = `@import "parts/a.css";\n.filler {}`;
+  circular["src/styles/parts/a.css"] = `@import "../sections.css" layer(x);`;
+  assert.throws(() => exportNativeSite({ files: circular }), /parts\/a.css imports src\/styles\/sections.css, which imports it back/);
+  circular["src/styles/sections.css"] = `@import "sections.css";`;
+  assert.throws(() => exportNativeSite({ files: circular }), /sections.css imports src\/styles\/sections.css, which imports it back/);
 });
 
 const withSite = (extra: Record<string, unknown> = {}) => {
@@ -429,11 +564,10 @@ test("shared stylesheets are joined into one site stylesheet, linked once per do
   files["src/styles/parts/more.css"] = ".more {}";
   const { files: out, log } = exportNativeSite({ files });
   const siteFile = Object.keys(out).find((path) => /^assets\/site\.\w+\.css$/.test(path))!;
-  const moreUrl = `/assets/more.${contentHash(".more {}")}.css`;
-  // Imports lead the file, after the first file's layer order statement.
+  // The first file's layer order leads; an imported file is inlined where its import stands.
   assert.equal(
     text(out[siteFile]),
-    `@layer base, extra;\n@import url("${moreUrl}") layer(extra);\n/* src/styles/site.css */\n@layer base { p { color: red; } }\n\n/* src/styles/extra.css */\n@layer extra { p { color: blue; } }\n`,
+    `@layer base, extra;\n/* src/styles/site.css */\n@layer base { p { color: red; } }\n\n/* src/styles/extra.css */\n@layer extra {\n/* src/styles/parts/more.css */\n.more {}\n}\n@layer extra { p { color: blue; } }\n`,
   );
   const home = text(out["index.html"]);
   assert.equal(home.split(`href="/${siteFile}"`).length - 1, 1 + home.split("<template shadowrootmode").length - 1);
@@ -443,8 +577,11 @@ test("shared stylesheets are joined into one site stylesheet, linked once per do
   assert.ok(home.includes(`<link rel="preload" href="/assets/${cardName}" as="style">`));
   assert.ok(!text(out["about/index.html"]).includes(cardName));
   assert.ok(!log.some((line) => line.startsWith("warning:")), "a layered import needs no warning");
-  files["src/styles/extra.css"] = `@import "parts/more.css";\n`;
-  assert.ok(exportNativeSite({ files }).log.some((line) => line.startsWith("warning: src/styles/extra.css is not first")));
+  // An external import in a later file moves ahead of the files before it: unlayered, that gets a warning.
+  files["src/styles/extra.css"] = `@import "https://fonts.example/css" layer(extra);\n`;
+  assert.ok(!exportNativeSite({ files }).log.some((line) => line.startsWith("warning:")));
+  files["src/styles/extra.css"] = `@import "https://fonts.example/css";\n`;
+  assert.ok(exportNativeSite({ files }).log.some((line) => line.startsWith("warning: src/styles/extra.css imports https://fonts.example/css outside a layer")));
 });
 
 test("a site with no manifest exports exactly as its manifest would have it", () => {
@@ -478,7 +615,7 @@ test("exports the manifest-less conventions fixture: comment titles, convention 
   assert.deepEqual(Object.keys(out).filter((path) => path.endsWith(".html")).sort(), ["index.html", "notes/first-note/index.html"]);
   assert.deepEqual(
     Object.keys(out).filter((path) => path.startsWith("assets/")).map((path) => path.replace(/\.[0-9a-f]{10}\.css$/, ".css")).sort(),
-    ["assets/base.css", "assets/layout.css", "assets/promo-card.css", "assets/site-header.css", "assets/site.css"],
+    ["assets/promo-card.css", "assets/site-header.css", "assets/site.css"],
   );
   assert.ok(!log.some((line) => line.startsWith("warning:")), log.join("\n"));
   const home = text(out["index.html"]);
@@ -490,8 +627,8 @@ test("exports the manifest-less conventions fixture: comment titles, convention 
   assert.ok(/<promo-card><template shadowrootmode="open">/.test(home));
   assert.ok(text(out["notes/first-note/index.html"]).includes("<title>The first note · Conventions</title>"));
   assert.ok(text(out["sitemap.xml"]).includes("https://conventions.example/notes/first-note/"));
-  // The shared stylesheet is site.css alone; the files it imports are assets it points at.
+  // The shared stylesheet is site.css alone, with the files it imports inlined in their layers.
   const siteCss = text(Object.entries(out).find(([path]) => /^assets\/site\.[0-9a-f]{10}\.css$/.test(path))![1]);
-  assert.ok(!siteCss.includes("src/styles/base.css"));
-  assert.match(siteCss, /@import url\("\/assets\/base\.[0-9a-f]{10}\.css"\) layer\(base\);/);
+  assert.ok(!siteCss.includes("@import"));
+  assert.ok(siteCss.startsWith("@layer base, layout;\n/* src/styles/site.css */\n@layer base {\n/* src/styles/base.css */\n"), siteCss);
 });
