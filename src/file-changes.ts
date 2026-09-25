@@ -7,7 +7,10 @@
 // meanwhile conflicts rather than being lost. A rename or move (R) is two
 // drafts: the new path, a new file carrying the old text (`movedFrom`), and a
 // deletion of the old path (`movedTo`); it is listed, selected, saved and
-// discarded as one change. A file renamed and not edited is saved as the blob
+// discarded as one change. A draft that began from a blob GitHub has since
+// deleted is settled on loading (settleDeletedUpstream): a deletion is done
+// already and is dropped; an edit is held back from saving until it is
+// discarded or kept as a new file. A file renamed and not edited is saved as the blob
 // it came from, so binary files move too. A folder is renamed, moved or
 // deleted file by file. This module has no DOM and no I/O: it reads and
 // writes a draft store given to it.
@@ -68,6 +71,31 @@ export function listChanges(drafts: SavedDraft[]): FileChange[] {
     } else out.push({ kind: "M", path: draft.path, drafts: [draft] });
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * Drafts of files GitHub deleted since they began: `missing` are the paths
+ * of `drafts` with a base that the branch no longer has. A deletion (a
+ * rename's old path too, whose new path is then a new file) is dropped: the
+ * file is gone already. Returns the edits, which only Discard draft or
+ * {@link keepAsNewFile} can settle; saved as they are, they would be refused.
+ */
+export function settleDeletedUpstream(store: DraftAccess, scope: DraftScope, drafts: SavedDraft[], missing: ReadonlySet<string>): string[] {
+  const gone: string[] = [];
+  for (const draft of drafts) {
+    if (draft.baseSha === null || !missing.has(draft.path)) continue;
+    if (draft.deleted) store.remove(scope, draft.path);
+    else gone.push(draft.path);
+  }
+  return gone;
+}
+
+/** An edit of a file GitHub deleted, as a new file: saving recreates the file with the draft's text. */
+export function keepAsNewFile(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): boolean {
+  const draft = store.get(scope, path);
+  if (!draft || draft.deleted || draft.baseSha === null) return false;
+  const { entries: _, ...rest } = draft;
+  return store.save({ ...rest, baseSha: null, updatedAt: now });
 }
 
 /** Whether a new path's draft is saved as the blob it came from rather than as text. */

@@ -138,6 +138,8 @@ export async function publish(
   const files: PublishResult["files"] = [];
   const deleted: string[] = [];
   const conflicts: string[] = [];
+  // Edits of files GitHub no longer has: settled in the editor, not by a refresh.
+  const gone: string[] = [];
   const isFile = (entry: TreeEntry) =>
     entry.type === "blob" && ["100644", "100755"].includes(entry.mode);
   for (const file of data.files) {
@@ -158,8 +160,9 @@ export async function publish(
     const body = file.sha ? { sha: file.sha } : { content: file.content };
     if (!existing && file.baseSha === null) {
       changes.push({ path: file.path, mode: file.mode ?? "100644", type: "blob", ...body });
+    } else if (!existing) {
+      gone.push(file.path);
     } else if (
-      !existing ||
       !isFile(existing) ||
       (existing.sha !== file.baseSha && existing.sha !== sha)
     ) {
@@ -168,11 +171,15 @@ export async function publish(
       changes.push({ path: file.path, mode: existing.mode, type: "blob", ...body });
     }
   }
-  if (conflicts.length)
+  if (conflicts.length || gone.length)
     throw new HttpError(
       409,
-      `GitHub changed these files: ${conflicts.join(", ")}. Refresh and review the latest version before publishing. Your drafts are kept.`,
-      conflicts,
+      [
+        conflicts.length ? `GitHub changed these files: ${conflicts.join(", ")}. Refresh and review the latest version before publishing.` : "",
+        gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Save to GitHub.` : "",
+        "Your drafts are kept.",
+      ].filter(Boolean).join(" "),
+      [...conflicts, ...gone],
     );
   let result = head;
   if (changes.length) {

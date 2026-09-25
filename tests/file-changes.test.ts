@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DraftStore, type SavedDraft } from "../src/drafts.ts";
-import { deleteFile, duplicateFile, listChanges, moveBack, moveFile, publishFiles, restoreFile } from "../src/file-changes.ts";
+import { deleteFile, duplicateFile, keepAsNewFile, listChanges, moveBack, moveFile, publishFiles, restoreFile, settleDeletedUpstream } from "../src/file-changes.ts";
 import { copyPath, filesLinkingTo, linkNote, protectedPathProblem, renameSelection } from "../src/native-files.ts";
 
 function memory() {
@@ -138,4 +138,32 @@ test("a copy's name and an inline rename's first selection", () => {
   assert.deepEqual(renameSelection("about.html", false), { start: 0, end: 5 });
   assert.deepEqual(renameSelection("my.folder", true), { start: 0, end: 9 });
   assert.deepEqual(renameSelection(".env", false), { start: 0, end: 4 });
+});
+
+test("drafts of files GitHub deleted: a deletion is dropped, an edit is returned to settle, a new file is left alone", () => {
+  const store = new DraftStore(memory());
+  store.save(edit(".astro-editor/native.json", "{}", "{\"version\":1}"));
+  store.save(edit("kept.txt", "a", "b"));
+  deleteFile(store, scope, { path: "gone.txt", sha: sha("b"), text: "x" });
+  store.save({ ...edit("new.txt", "", "n"), baseSha: null });
+  moveFile(store, scope, { path: "src/old.html", sha: sha("c"), text: "<p>o</p>" }, "src/new.html");
+  const missing = new Set([".astro-editor/native.json", "gone.txt", "new.txt", "src/old.html"]);
+  assert.deepEqual(settleDeletedUpstream(store, scope, store.list(scope), missing), [".astro-editor/native.json"]);
+  // The deletion is gone; the rename's old half too, so its new path is a new file saved as the old blob.
+  assert.deepEqual(kinds(store), ["M .astro-editor/native.json", "M kept.txt", "A new.txt", "A src/new.html"]);
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))).find((file) => file.path === "src/new.html"), { path: "src/new.html", baseSha: null, content: "", sha: sha("c"), movedFrom: "src/old.html" });
+  // Nothing missing: nothing changes.
+  assert.deepEqual(settleDeletedUpstream(store, scope, store.list(scope), new Set()), []);
+  assert.deepEqual(kinds(store).length, 4);
+});
+
+test("an edit of a file GitHub deleted kept as a new file is saved by creating it with the draft's text", () => {
+  const store = new DraftStore(memory());
+  store.save(edit("notes.md", "old", "new text"));
+  assert.equal(keepAsNewFile(store, scope, "notes.md"), true);
+  assert.deepEqual(kinds(store), ["A notes.md"]);
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [{ path: "notes.md", baseSha: null, content: "new text" }]);
+  // Only an edit with a base can be kept so.
+  assert.equal(keepAsNewFile(store, scope, "notes.md"), false);
+  assert.equal(keepAsNewFile(store, scope, "absent.md"), false);
 });

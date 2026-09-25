@@ -29,7 +29,7 @@ import { createPagePicker, type PagePickerItem } from "./components/page-picker"
 import type { UrlPlan } from "./components/url-change";
 import { NATIVE_REDIRECTS_PATH, editNativeRedirects, folderFile, folderToLeaf, groupRouteChanges, isRouteWithin, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
-import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
 import {
@@ -2134,6 +2134,8 @@ let repositories: Repository[] = [];
 let info: SessionInfo;
 let currentRepo: Repository | undefined;
 let snapshot: Snapshot | undefined;
+// Paths whose drafts are edits of files GitHub deleted since they began.
+let deletedUpstream = new Set<string>();
 let generation = 0;
 let fileGeneration = 0;
 
@@ -3939,6 +3941,43 @@ function discardFileChange(change: FileChange) {
   else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
 }
 
+// Drafts of files GitHub deleted since they began, found when a snapshot
+// loads (src/file-changes.ts): a deletion is dropped, an edit waits in Save
+// to GitHub and the code editor for Discard draft or Keep as new file.
+async function findDeletedUpstream(epoch: number) {
+  deletedUpstream = new Set();
+  const scope = draftScope();
+  if (!scope) return;
+  const drafts = draftStore().list(scope).filter((draft) => draft.baseSha !== null);
+  const missing = new Set<string>();
+  try {
+    for (const draft of drafts) {
+      const entry = await findEntry(draft.path);
+      if (epoch !== generation) return;
+      if (!entry) missing.add(draft.path);
+    }
+  } catch {
+    // Unknown: a save reports it instead.
+    return;
+  }
+  deletedUpstream = new Set(settleDeletedUpstream(draftStore(), scope, drafts, missing));
+}
+
+// Discard draft (`keep` false) or Keep as new file, for an edit of a file
+// GitHub deleted. A discarded manifest leaves the project without one, as
+// GitHub has it; kept, it is the manifest again once saved.
+function settleDeletedDraft(path: string, keep: boolean) {
+  const scope = draftScope();
+  if (!scope) return;
+  const opened = releaseFiles(new Set([path]));
+  if (keep) keepAsNewFile(draftStore(), scope, path);
+  else draftStore().remove(scope, path);
+  deletedUpstream.delete(path);
+  afterFileChanges();
+  if (opened) void openAfter(keep ? path : undefined);
+  announce(keep ? `Kept ${path} as a new file. Saving creates it again.` : `Discarded the draft of ${path}.`);
+}
+
 async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
   const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
   if (!to.ok) return to.error;
@@ -4483,6 +4522,8 @@ async function mountSource(
     movedFrom: baseSha === null ? draftStore().get(scope, path)?.movedFrom : undefined,
     onMoveBack: () => undoFileChanges({ moveBack: [path] }),
     onDiscardChange: discardFileChange,
+    deletedUpstream: (path) => deletedUpstream.has(path),
+    onSettleDeleted: settleDeletedDraft,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();
@@ -4717,6 +4758,13 @@ async function restoreFile(
         await openNewDraft(saved, { keepExplorer: options.keepExplorer });
         return;
       }
+      // An edit of a file GitHub deleted: opened to be settled.
+      if (saved && !saved.deleted && deletedUpstream.has(path)) {
+        if (!options.keepExplorer) explorerDropdown?.close();
+        setCurrentPage(path);
+        await mountSource(path, saved.original, saved.baseSha, false, epoch, selection, options);
+        return;
+      }
       throw unavailable();
     }
     if (entry.type === "tree") throw nowFolder();
@@ -4738,6 +4786,8 @@ async function refreshPublishedSnapshot(repo: string, branch: string) {
     )
       return;
     snapshot = result;
+    await findDeletedUpstream(epoch);
+    if (epoch !== generation) return;
     updateAgentContext();
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
@@ -4760,6 +4810,7 @@ async function loadSnapshot(
   fileGeneration++;
   clearError();
   snapshot = undefined;
+  deletedUpstream = new Set();
   openFolders.clear();
   folderListings.clear();
   deactivateNative();
@@ -4781,6 +4832,8 @@ async function loadSnapshot(
       }));
     if (epoch !== generation) return;
     snapshot = result;
+    await findDeletedUpstream(epoch);
+    if (epoch !== generation) return;
     updateAgentContext();
     updatePreview();
     // Start reading the file to reopen now, alongside the native manifest.

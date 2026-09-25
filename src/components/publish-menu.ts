@@ -15,6 +15,10 @@ export function createPublishMenu(options: {
   saveLabels?: boolean;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
   onDiscardChange?: (change: FileChange) => void;
+  /** Whether the draft at `path` is an edit of a file GitHub deleted since it began: it cannot be saved as it is. */
+  deletedUpstream?: (path: string) => boolean;
+  /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
+  onSettleDeleted?: (path: string, keep: boolean) => void;
 }) {
   const labels = options.saveLabels
     ? {
@@ -59,6 +63,12 @@ export function createPublishMenu(options: {
       const checkbox = node("input"); checkbox.type = "checkbox";
       // A rename is selected as a whole, by its new path (or its old one, where the file was open).
       checkbox.checked = selection.has(change.path) || (change.from !== undefined && selection.has(change.from));
+      // An edit of a file GitHub deleted waits until it is settled; the rest can be saved.
+      if (gone(change)) {
+        checkbox.checked = false;
+        checkbox.disabled = true;
+        selection.delete(change.path);
+      }
       if (checkbox.checked) selection.add(change.path);
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) selection.add(change.path);
@@ -77,22 +87,34 @@ export function createPublishMenu(options: {
     submit.disabled = !records.some(record => selection.has(record.path));
     if (resetMessage) message.textContent = labels.idle;
   }
+  const gone = (change: FileChange) => change.kind === "M" && Boolean(options.deletedUpstream?.(change.path));
   // What the commit would change in a file, as counts; the button opens the
   // comparison, so a stray edit is seen before it reaches the branch. A
-  // deletion and a rename say so, with Restore or Move back.
+  // deletion and a rename say so, with Restore or Move back; an edit of a
+  // file GitHub deleted, with Discard draft and Keep as new file.
   function changes(change: FileChange) {
     const row = node("div", "publish-menu__changes");
     const [draft] = change.drafts;
+    if (gone(change)) {
+      row.append(node("span", "publish-menu__note", "Deleted on GitHub"));
+      if (options.onSettleDeleted) {
+        row.append(
+          discardButton("Discard draft", `Discard the draft of ${change.path}`, () => options.onSettleDeleted?.(change.path, false)),
+          discardButton("Keep as new file", `Keep ${change.path} as a new file`, () => options.onSettleDeleted?.(change.path, true)),
+        );
+      }
+      return row;
+    }
     if (change.kind === "D") {
       row.append(node("span", "publish-menu__note", "Deleted"));
-      if (options.onDiscardChange) row.append(discardButton("Restore", `Restore ${change.path}`, change));
+      if (options.onDiscardChange) row.append(discardButton("Restore", `Restore ${change.path}`, () => options.onDiscardChange?.(change)));
       return row;
     }
     if (change.kind === "R") {
       const edited = !draft.opaque && draft.content !== draft.original;
       if (edited) row.append(showButton(change.path, draft.original, draft.content));
       else row.append(node("span", "publish-menu__note", "Renamed, no other changes"));
-      if (options.onDiscardChange) row.append(discardButton("Move back", `Move ${change.path} back to ${change.from}`, change));
+      if (options.onDiscardChange) row.append(discardButton("Move back", `Move ${change.path} back to ${change.from}`, () => options.onDiscardChange?.(change)));
       return row;
     }
     const isNew = draft.baseSha === null;
@@ -112,9 +134,9 @@ export function createPublishMenu(options: {
     show.dataset.path = path;
     return show;
   }
-  function discardButton(text: string, label: string, change: FileChange) {
+  function discardButton(text: string, label: string, run: () => void) {
     const discard = button(text, () => {
-      options.onDiscardChange?.(change);
+      run();
       refresh(false);
       message.textContent = `${label}: done.`;
     }, "publish-menu__show-changes publish-menu__discard");
@@ -207,7 +229,7 @@ export function createPublishMenu(options: {
     return pre;
   }
   async function send() {
-    const chosen = listChanges(draftStore().list(options.scope)).filter(change => selection.has(change.path));
+    const chosen = listChanges(draftStore().list(options.scope)).filter(change => selection.has(change.path) && !gone(change));
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
     if (pending || !submitted.length) return;
     pending = true; trigger.disabled = true; submit.disabled = true;

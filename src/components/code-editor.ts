@@ -44,6 +44,10 @@ export interface SourceFile {
   onMoveBack?: () => void;
   /** Restores a deletion or moves a renamed file back, from the Save panel. */
   onDiscardChange?: (change: FileChange) => void;
+  /** Whether a draft is an edit of a file GitHub deleted since it began (this file's too). */
+  deletedUpstream?: (path: string) => boolean;
+  /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
+  onSettleDeleted?: (path: string, keep: boolean) => void;
 }
 
 interface Draft {
@@ -651,6 +655,8 @@ export function mountCodeEditor(
           currentPath: file.path,
           saveLabels: file.saveLabels,
           onDiscardChange: file.onDiscardChange,
+          deletedUpstream: file.deletedUpstream,
+          onSettleDeleted: file.onSettleDeleted,
           onExpired: () => file.onSessionExpired?.(),
           onPublished: (result, submitted) => {
             reconcilePublished(result, submitted);
@@ -694,11 +700,20 @@ export function mountCodeEditor(
     "text-button",
   );
   acceptLatest.hidden = true;
-  conflictBar.append(
-    node("span", "", "GitHub changed since this draft started."),
-    reviewLatest,
-    acceptLatest,
-  );
+  // GitHub deleted the file: nothing to review, only to settle.
+  const deletedUpstream = current.baseSha !== null && Boolean(file.deletedUpstream?.(file.path));
+  if (deletedUpstream)
+    conflictBar.append(
+      node("span", "", "GitHub deleted this file since this draft started."),
+      button("Discard draft", () => file.onSettleDeleted?.(file.path, false), "text-button"),
+      button("Keep as new file", () => file.onSettleDeleted?.(file.path, true), "text-button"),
+    );
+  else
+    conflictBar.append(
+      node("span", "", "GitHub changed since this draft started."),
+      reviewLatest,
+      acceptLatest,
+    );
   const body = node("div", "code-editor__body");
   // toolbarHost: element → toolbar lives there; null → secondary pane without toolbar.
   if (toolbarHost) {
@@ -730,7 +745,7 @@ export function mountCodeEditor(
         updatedAt: Date.now(),
       });
     }
-    conflictBar.hidden = !conflict;
+    conflictBar.hidden = !conflict && !deletedUpstream;
     publisher?.refresh();
     const message = file.readOnly ? "Read only" : store.error;
     notice.hidden = !message;

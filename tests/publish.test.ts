@@ -111,6 +111,18 @@ test("overlapping edits, deleted files and symlinks fail before any GitHub write
     assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
   }
 });
+test("an edit of a file GitHub deleted is refused as deleted, not changed", async () => {
+  const { github } = fixture({ deleted: true });
+  await assert.rejects(
+    () => publish(github, repo, { branch: "main", files }),
+    (error: HttpError) =>
+      error.status === 409 &&
+      error.conflicts?.[0] === files[0].path &&
+      error.message.includes(`GitHub deleted these files since your drafts began: ${files[0].path}.`) &&
+      error.message.includes("Discard those drafts or keep them as new files") &&
+      !error.message.includes("GitHub changed these files"),
+  );
+});
 test("concurrent branch changes reject publication without force or a stale retry", async () => {
   const { github, calls } = fixture({ race: true });
   await assert.rejects(
