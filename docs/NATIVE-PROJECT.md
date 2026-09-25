@@ -172,7 +172,13 @@ Local focused checks on 2026-09-23:
 - `npx playwright test tests/browser/workspace.spec.ts` initially passed 28/29 with a stale reused local server serving old built assets for the unconfigured-login copy assertion. The deployed login copy and private setup link were later verified by the live owner setup smoke above.
 - `npx playwright test -c playwright.native-preview.config.ts` now runs on the native-save server (port 5207); the inherited Astro warm-preview server, draft builds, integration files, project intelligence and the astro-starter fixture were removed on 2026-09-24.
 
-Remote simulated demo:
+Remote simulated demo of the `page-structure-sidebar` branch, started 2026-09-25 (replaces the units below, which are gone):
+
+- Tunnel: `https://nato-approx-solved-took.trycloudflare.com/#repo=501&branch=main&file=src%2Fpages%2Findex.html` (a quick tunnel; the address changes whenever the tunnel unit restarts, read it with `journalctl --user -u native-editor-branch-tunnel.service | grep trycloudflare`, then update `~/.config/native-editor-demo/env` and restart the demo unit).
+- User systemd units `native-editor-branch-tunnel` (`~/.local/bin/cloudflared tunnel --url http://127.0.0.1:5208`) and `native-editor-branch-demo` (`tsx tests/native-save/server.ts` on port 5208, `ASE_NATIVE_SAVE_DEMO=1`, origin from the env file), both enabled. Vite serves the working tree live, so the demo shows whatever branch is checked out.
+- Smoke through the tunnel: the page structure row "Section Scroll to verify" selected the section and opened the edit bar with no page errors (`.scratch/tunnel-smoke.mjs`, `.scratch/tunnel-smoke.png`).
+
+Earlier remote simulated demo (units no longer present):
 
 - Tunnel: `https://hop-carriers-handmade-dozens.trycloudflare.com/#repo=501&branch=main&file=src%2Fpages%2Findex.html`
 - User systemd units: `native-editor-milestone-demo-v2` on port 5208 and `native-editor-milestone-tunnel`.
