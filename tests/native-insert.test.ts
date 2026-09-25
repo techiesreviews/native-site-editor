@@ -69,6 +69,7 @@ test("a new instance carries its own copy of the template's text slots", () => {
   <slot name="list"><ul><li>One</li></ul></slot>
   <slot name="box"><p><div>Block</div></p></slot>
 </section>`;
+  assert.deepEqual(slotMarkup(`<slot name="image"><img src="src/images/a.svg" alt="" data-key="split-image"></slot>`), [`<img slot="image" src="src/images/a.svg" alt="" data-key="split-image">`]);
   assert.deepEqual(slotMarkup(hero), [
     `<h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>`,
     `<p slot="lead" data-key="hero-lead">Who it is for.</p>`,
