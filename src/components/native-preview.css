@@ -68,3 +68,16 @@ main.has-preview .code-editor {
 .native-preview-error[hidden] {
   display: none;
 }
+.native-preview-warning {
+  padding: 8px 16px;
+  background: var(--warning-bg, #fff1de);
+  color: var(--warning-fg, #715321);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.native-preview-warning p {
+  margin: 0;
+}
+.native-preview-warning[hidden] {
+  display: none;
+}

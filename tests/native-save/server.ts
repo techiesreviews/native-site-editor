@@ -19,7 +19,9 @@
 //
 // Outside demo mode, every folder under `fixtures/cascade/` is one more small
 // native repository (`cascade-<folder>`, ids from 510 in folder order), each a
-// site with its own CSS structure for the style panel's cascade tests.
+// site with its own CSS structure for the style panel's cascade tests, and
+// `fixtures/native-routing` is `native-routing` (id 530), a site whose pages
+// are routed by their folders with no page listed in its manifest.
 //
 // Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
 // (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
@@ -145,7 +147,7 @@ function buildInitialGit(fixture = fixtureRoot): Git {
   return git;
 }
 
-// The cascade fixture repositories (none in demo mode).
+// The fixture repositories (none in demo mode).
 const cascadeRoot = resolve(projectRoot, "fixtures/cascade");
 const FIXTURE_REPOS = demoMode || !existsSync(cascadeRoot) ? [] : readdirSync(cascadeRoot, { withFileTypes: true })
   .filter((dirent) => dirent.isDirectory())
@@ -155,6 +157,11 @@ const FIXTURE_REPOS = demoMode || !existsSync(cascadeRoot) ? [] : readdirSync(ca
     root: join(cascadeRoot, name),
     repo: { ...DEMO_REPO, id: 510 + index, name: `cascade-${name}`, full_name: `${DEMO_LOGIN}/cascade-${name}` },
   }));
+if (!demoMode)
+  FIXTURE_REPOS.push({
+    root: resolve(projectRoot, "fixtures/native-routing"),
+    repo: { ...DEMO_REPO, id: 530, name: "native-routing", full_name: `${DEMO_LOGIN}/native-routing` },
+  });
 const initialFixtureGits = new Map<string, Git>();
 
 // Deep clone so each session mutates its own git only.

@@ -108,6 +108,27 @@ test("a listing that does not descend into folders is not presented as the whole
   assert.equal((await truncated.snapshot(repo, "main")).tree, undefined);
 });
 
+test("a folder's subtree is listed in one recursive request, and a truncated one is refused", async () => {
+  const calls: string[] = [];
+  const github = new GitHub("secret", async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname + url.search);
+    return reply({
+      truncated: false,
+      tree: [
+        { path: "work", type: "tree", mode: "040000", sha: "1".repeat(40) },
+        { path: "work/index.html", type: "blob", mode: "100644", sha: "2".repeat(40), size: 10 },
+        { path: "index.html", type: "blob", mode: "100644", sha: "3".repeat(40), size: 10 },
+      ],
+    });
+  });
+  const listed = await github.subtree(repo, "c".repeat(40));
+  assert.deepEqual(calls, [`/repos/lex/starter/git/trees/${"c".repeat(40)}?recursive=1`]);
+  assert.deepEqual(listed.entries.map((entry) => entry.path), ["index.html", "work", "work/index.html"]);
+  const truncated = new GitHub("secret", async () => reply({ truncated: true, tree: [] }));
+  await assert.rejects(() => truncated.subtree(repo, "c".repeat(40)), (error: HttpError) => error.status === 413);
+});
+
 test("selected repositories are rechecked by default and shared briefly on request", async () => {
   let listings = 0;
   const fetcher: typeof fetch = async (input) => {

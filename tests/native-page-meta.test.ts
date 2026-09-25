@@ -89,26 +89,44 @@ test("a route written one member per line keeps its indentation and key order", 
   assert.equal(edit(dropped, "/about/", "title", "").text, text.replace("{\n\t\t\t\"description\": \"Old\",\n\t\t\t\"file\": \"src/pages/about.html\"\n\t\t}", "\"src/pages/about.html\""));
 });
 
-test("unknown routes and unreadable manifests are reported, not guessed", () => {
-  const missing = editNativePageMeta(fixture, "/nope/", "title", "x");
-  assert.equal(missing.ok, false);
-  assert.match(missing.ok ? "" : missing.error, /no route "\/nope\/"/);
+test("unreadable manifests are reported, not guessed", () => {
   const broken = editNativePageMeta("{ \"routes\": { \"/\": ", "/", "title", "x");
   assert.equal(broken.ok, false);
-  const noRoutes = editNativePageMeta("{ \"version\": 1 }", "/", "title", "x");
-  assert.equal(noRoutes.ok, false);
   const number = editNativePageMeta("{ \"routes\": { \"/\": 3 } }", "/", "title", "x");
   assert.equal(number.ok, false);
+  const list = editNativePageMeta("{ \"version\": 1, \"routes\": [] }", "/", "title", "x");
+  assert.equal(list.ok, false);
 });
 
-test("an object route with no members is reported, not thrown", () => {
-  const empty = editNativePageMeta('{ "routes": { "/": {} } }', "/", "title", "x");
-  assert.equal(empty.ok, false);
-  assert.match(empty.ok ? "" : empty.error, /empty object/);
+test("a derived route with no entry gets a metadata-only one, and loses it when emptied", () => {
+  const titled = edit(fixture, "/work/fern-and-kettle/", "title", "Fern & Kettle");
+  assert.ok(titled.text.includes('    "/about/": "src/pages/about.html",\n    "/work/fern-and-kettle/": { "title": "Fern & Kettle" }\n  },'));
+  const files = ["src/pages/index.html", "src/pages/about.html", "src/pages/work/fern-and-kettle.html"];
+  const parsed = parseNativeManifest(titled.text, files);
+  assert.ok(parsed.ok);
+  assert.deepEqual(parsed.manifest.pages, { "/work/fern-and-kettle/": { title: "Fern & Kettle" } });
+  assert.equal(parsed.manifest.routes["/work/fern-and-kettle/"], "src/pages/work/fern-and-kettle.html");
+  const both = edit(titled.text, "/work/fern-and-kettle/", "description", "A café.").text;
+  assert.ok(both.includes('"/work/fern-and-kettle/": { "title": "Fern & Kettle", "description": "A café." }'));
+  const noTitle = edit(both, "/work/fern-and-kettle/", "title", "").text;
+  assert.ok(noTitle.includes('"/work/fern-and-kettle/": { "description": "A café." }'));
+  assert.equal(edit(noTitle, "/work/fern-and-kettle/", "description", "").text, fixture);
+  // An empty value for a route with no entry is nothing to do.
+  assert.equal(edit(fixture, "/work/", "description", "").edit, null);
+});
+
+test("a manifest without routes gets a routes object; an empty routes object gets the entry", () => {
+  const bare = '{\n  "version": 1,\n  "styles": ["src/styles/site.css"]\n}\n';
+  const titled = edit(bare, "/", "title", "Home").text;
+  assert.equal(titled, '{\n  "version": 1,\n  "routes": { "/": { "title": "Home" } },\n  "styles": ["src/styles/site.css"]\n}\n');
+  assert.equal(edit(titled, "/", "title", "").text, '{\n  "version": 1,\n  "routes": {},\n  "styles": ["src/styles/site.css"]\n}\n');
+  assert.equal(edit('{ "version": 1, "routes": {} }', "/about/", "title", "About").text, '{ "version": 1, "routes": { "/about/": { "title": "About" } } }');
+});
+
+test("an object route with no members takes the field", () => {
+  assert.equal(edit('{ "routes": { "/": {} } }', "/", "title", "x").text, '{ "routes": { "/": { "title": "x" } } }');
   // Removing from it has nothing to do.
-  const nothing = editNativePageMeta('{ "routes": { "/": {} } }', "/", "title", "");
-  assert.equal(nothing.ok, true);
-  assert.equal(nothing.ok && nothing.edit, null);
+  assert.equal(edit('{ "routes": { "/": {} } }', "/", "title", "").edit, null);
 });
 
 test("a manifest written with CRLF gets CRLF between new members", () => {

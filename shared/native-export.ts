@@ -3,7 +3,9 @@
 // site with no JavaScript. Every site that opens in the editor gets the same
 // output rules, so no starter needs its own build script:
 //
-// - each route becomes `<route>/index.html`, except the `/404/` route, which
+// - each page under `src/pages/` is routed by its path there (`about.html` and
+//   `about/index.html` are `/about/`; see native-routes.ts), and each route
+//   becomes `<route>/index.html`, except the `/404/` route, which
 //   becomes `404.html` (served for unknown paths by Cloudflare's
 //   `not_found_handling: "404-page"`);
 // - each custom element is expanded into declarative shadow DOM
@@ -293,9 +295,11 @@ export function exportNativeSite(input: ExportInput): ExportResult {
     return typeof content === "string" ? encoder.encode(content) : content;
   };
 
-  const parsed = parseNativeManifest(text(MANIFEST_PATH));
+  // Pages are routed by where they are under src/pages/ (shared/native-routes.ts).
+  const parsed = parseNativeManifest(text(MANIFEST_PATH), Object.keys(files));
   if (!parsed.ok) throw new ExportError(parsed.error);
   const manifest: NativeManifest = parsed.manifest;
+  warnings.push(...parsed.warnings.map((warning) => `warning: ${warning}`));
   const site = readSiteMeta(files);
   const siteUrl = (input.siteUrl || site.url || "").replace(/\/$/, "");
   const indexable = site.indexable !== false;

@@ -238,6 +238,41 @@ test("the /404/ route is written to 404.html, kept out of the sitemap and not in
   assert.ok(log.includes("/404/ -> 404.html"));
 });
 
+test("pages are routed by their folders, with metadata-only manifest entries and no file", () => {
+  const files = withSite();
+  files[".astro-editor/native.json"] = JSON.stringify({
+    version: 1,
+    routes: {
+      "/work/fern-and-kettle/": { title: "Fern & Kettle", description: "A café in Frome." },
+      "/gone/": { title: "Gone" },
+    },
+    components: JSON.parse(text(files[".astro-editor/native.json"])).components,
+    styles: ["src/styles/site.css"],
+  });
+  files["src/pages/work/index.html"] = `<main><h1>Work</h1><a href="#/work/fern-and-kettle/">Fern</a></main>`;
+  files["src/pages/work/fern-and-kettle.html"] = `<site-header></site-header><main><h1>Fern and Kettle</h1></main>`;
+  files["src/pages/_parts/draft.html"] = `<main><h1>Not a page</h1></main>`;
+  files["src/pages/404.html"] = `<main><h1>Page not found</h1></main>`;
+  const { files: out, log } = exportNativeSite({ files });
+  assert.deepEqual(
+    Object.keys(out).filter((path) => path.endsWith(".html")).sort(),
+    ["404.html", "about/index.html", "index.html", "work/fern-and-kettle/index.html", "work/index.html"],
+  );
+  const fern = text(out["work/fern-and-kettle/index.html"]);
+  assert.ok(fern.includes("<title>Fern &amp; Kettle · Native Studio</title>"));
+  assert.ok(fern.includes('<meta name="description" content="A café in Frome.">'));
+  assert.ok(fern.includes('<link rel="canonical" href="https://example.test/work/fern-and-kettle/">'));
+  assert.ok(text(out["work/index.html"]).includes('<a href="/work/fern-and-kettle/">Fern</a>'));
+  assert.ok(text(out["sitemap.xml"]).includes("<loc>https://example.test/work/fern-and-kettle/</loc>"));
+  assert.ok(log.includes("/work/fern-and-kettle/ -> work/fern-and-kettle/index.html"));
+  assert.ok(log.some((line) => /^warning: native.json has metadata for \/gone\/, but no page gives that route/.test(line)));
+  // A file and a folder's index on one route: the index wins, with a warning.
+  files["src/pages/work.html"] = `<main><h1>Old work</h1></main>`;
+  const conflict = exportNativeSite({ files });
+  assert.ok(text(conflict.files["work/index.html"]).includes("<h1>Work</h1>"));
+  assert.ok(conflict.log.some((line) => line.startsWith("warning: src/pages/work.html and src/pages/work/index.html both give the route /work/")));
+});
+
 test("sitemap.xml and robots.txt come from the routes and site.json, unless the repository supplies them", () => {
   const { files: out } = exportNativeSite({ files: withSite({ contentSignals: { search: "yes", "ai-input": "yes", "ai-train": "no" } }) });
   assert.equal(

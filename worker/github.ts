@@ -347,6 +347,21 @@ export class GitHub {
   }
 
   /**
+   * Every file and folder under the tree `sha`, with paths relative to it, in
+   * one request (the editor lists `src/pages/` this way to route pages when
+   * the snapshot has no whole-commit tree).
+   */
+  async subtree(repo: Repository, sha: string): Promise<Directory> {
+    const tree = await this.recursiveTree(repo, sha);
+    if (!tree)
+      throw new HttpError(
+        413,
+        "GitHub truncated this folder. Its contents cannot be listed completely.",
+      );
+    return { entries: tree };
+  }
+
+  /**
    * The whole commit in one listing when GitHub can return it completely.
    * Returns `undefined` when the listing is truncated or does not actually
    * descend into folders (a fake or proxy ignoring `recursive`), in which case

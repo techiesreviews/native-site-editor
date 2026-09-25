@@ -121,6 +121,10 @@ test("MCP protocol reads context, queues guarded drafts, reports application, an
         diagnostics: [],
       },
       drafts: [{ path: "index.astro", baseSha: sha, updatedAt: Date.now() }],
+      pages: [
+        { route: "/", file: "src/pages/index.html" },
+        { route: "/work/fern-and-kettle/", file: "src/pages/work/fern-and-kettle.html", title: "Fern & Kettle" },
+      ],
     };
     assert.equal(
       (await post(`/api/agent/context?id=${id}`, context)).status,
@@ -174,6 +178,11 @@ test("MCP protocol reads context, queues guarded drafts, reports application, an
       uri: "astro-editor://context",
     });
     assert.ok(JSON.stringify(resource).includes("index.astro"));
+    // A native project's pages by their derived routes, with the rule.
+    const summary = await client.callTool({ name: "get_editor_context", arguments: {} });
+    const shared = JSON.parse((summary.content as { text: string }[])[0].text);
+    assert.deepEqual(shared.pages, context.pages);
+    assert.match(shared.routing, /every \.html file under src\/pages\/ is a page at its path there/);
     const args = {
       requestId: "edit-1",
       path: "index.astro",

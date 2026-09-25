@@ -13,7 +13,7 @@ import { readCascade, readSelectedRules, type NativeCascade, type NativeSelected
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders plain
-// `src/pages/*.html` routes and custom elements defined under `src/components/`
+// `src/pages/**.html` routes and custom elements defined under `src/components/`
 // (flat `<name>.html` or one folder per component, `<name>/<name>.html`) from
 // in-memory source, patched over `postMessage` and never reloaded per edit.
 //
@@ -237,7 +237,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const errorBox = node("div", "native-preview-error");
   errorBox.setAttribute("role", "alert");
   errorBox.hidden = true;
-  pane.append(errorBox, frameHost);
+  // Manifest problems that leave the site usable (two files on one route,
+  // metadata for a route with no page): shown above the page, which renders.
+  const warningBox = node("div", "native-preview-warning");
+  warningBox.setAttribute("role", "status");
+  warningBox.hidden = true;
+  pane.append(errorBox, warningBox, frameHost);
   // A drag from the edit bar's grip: the editor holds the pointer and sends
   // its place in the frame; the runtime answers with `section-drag` messages.
   const toRuntime = (type: string, at?: { x: number; y: number }) =>
@@ -637,6 +642,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       loadError = Boolean(message);
       showBanner(message, true);
     },
+    /** Show the manifest's warnings, one per line; none hides the box. */
+    setWarnings(warnings: string[]) {
+      warningBox.replaceChildren(...warnings.map((warning) => node("p", "", warning)));
+      warningBox.hidden = !warnings.length;
+    },
     deactivate() {
       if (!mounted) return;
       mounted = false;
@@ -649,6 +659,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pane.remove();
       host.classList.remove("has-preview");
       showBanner(undefined, false);
+      warningBox.replaceChildren();
+      warningBox.hidden = true;
     },
     isActive() {
       return mounted;

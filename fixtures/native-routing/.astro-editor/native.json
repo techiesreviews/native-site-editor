@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "routes": {
+    "/work/fern-and-kettle/": { "title": "Fern & Kettle" }
+  },
+  "styles": ["src/styles/site.css"]
+}

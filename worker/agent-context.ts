@@ -59,7 +59,23 @@ const schema = z.object({
       }),
     )
     .max(200),
+  pages: z
+    .array(
+      z.object({
+        route: z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*$/),
+        file: path,
+        title: z.string().max(1000).optional(),
+      }),
+    )
+    .max(500)
+    .optional(),
 });
+/**
+ * How a native project routes its pages, for agents that add or move them.
+ * Mirrors shared/native-routes.ts and docs/static-export.md.
+ */
+export const nativeRoutingNote =
+  "Native projects (.astro-editor/native.json) route pages by file: every .html file under src/pages/ is a page at its path there (src/pages/index.html is /, src/pages/about.html and src/pages/about/index.html are /about/, src/pages/work/fern-and-kettle.html is /work/fern-and-kettle/); a file or folder named with a leading _ is not a page. native.json \"routes\" is optional: an entry keyed by route may hold only title, description and jsonLd, or map the route to a page explicitly with \"file\". Link between pages with #/route/ hrefs.";
 export function validateContext(value: unknown): EditorContext {
   const result = schema.safeParse(value);
   if (!result.success)

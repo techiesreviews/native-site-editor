@@ -2,6 +2,7 @@ import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
   getGrant,
+  nativeRoutingNote,
   operateGrant,
   type AgentGrant,
   type authenticateAgent,
@@ -33,6 +34,9 @@ export async function contextSummary(grant: AgentGrant) {
         }
       : null,
     drafts: context?.drafts ?? [],
+    ...(context?.pages
+      ? { pages: context.pages, routing: nativeRoutingNote }
+      : {}),
     capabilities: {
       readContext: true,
       editDrafts: true,

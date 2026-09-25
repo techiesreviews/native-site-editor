@@ -9,11 +9,30 @@ node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com
 
 `SITE_URL` in the environment also overrides `site.json`'s `url`. The export changes nothing about how the editor previews the site.
 
+## Routes
+
+A page's URL is where its file is. Every `.html` file under `src/pages/`, at any depth, is a page:
+
+| File | Route | Output |
+| --- | --- | --- |
+| `src/pages/index.html` | `/` | `index.html` |
+| `src/pages/about.html` | `/about/` | `about/index.html` |
+| `src/pages/work/index.html` | `/work/` | `work/index.html` |
+| `src/pages/work/fern-and-kettle.html` | `/work/fern-and-kettle/` | `work/fern-and-kettle/index.html` |
+| `src/pages/404.html` | `/404/` | `404.html` |
+
+- A file or folder whose name starts with `_` is not a page (`src/pages/_parts/note.html`), nor is a name with characters other than letters, digits, `_`, `.` and `-`.
+- `work.html` and `work/index.html` both give `/work/`; `work/index.html` is used and the export prints a warning.
+- There must be a home page: `src/pages/index.html`, or a page the manifest maps to `/`.
+- Link between pages with `#/route/` (`#/work/fern-and-kettle/`); the export rewrites these to paths.
+
+The editor routes pages by the same rule (`shared/native-routes.ts`), so the preview and the export agree.
+
 ## Output
 
 | Source | Output |
 | --- | --- |
-| each route in `.astro-editor/native.json` | `<route>/index.html` |
+| each page under `src/pages/` (see [Routes](#routes)) | `<route>/index.html` |
 | the `/404/` route | `404.html` (see [Not-found page](#not-found-page)) |
 | the manifest's `styles`, in order | one `assets/site.[hash].css` |
 | a repository file a shared stylesheet `@import`s | `assets/<name>.[hash].css`; the import points at it |
@@ -77,25 +96,28 @@ Every field is optional; the editor ignores the file.
 
 ## Per-route fields in the manifest
 
-A route may be written as an object:
+`routes` in `.astro-editor/native.json` is optional. Keyed by route, an entry gives the page's title, description and JSON-LD:
 
 ```json
-"/about/": {
-  "file": "src/pages/about.html",
-  "title": "About",
-  "description": "Who we are.",
-  "jsonLd": { "@context": "https://schema.org", "@type": "AboutPage", "name": "About Larkspur" }
+"routes": {
+  "/about/": {
+    "title": "About",
+    "description": "Who we are.",
+    "jsonLd": { "@context": "https://schema.org", "@type": "AboutPage", "name": "About Larkspur" }
+  }
 }
 ```
 
-`jsonLd` is an object or an array of objects, written into the page as it is in its own `<script type="application/ld+json">`.
+`jsonLd` is an object or an array of objects, written into the page as it is in its own `<script type="application/ld+json">`. An entry for a route no page gives is ignored, with a warning.
+
+An entry may also map its route to a file, `"/about/": { "file": "src/pages/about-us.html", "title": "About" }`, or as the bare path, `"/about/": "src/pages/about-us.html"`. That file then serves the route instead of the one its place would give, and is published only there: `about-us.html` is not also written to `about-us/index.html`. Manifests written before pages were routed by folder map every route this way and export as before, except that an `.html` file under `src/pages/` they do not map is now a page too.
 
 ## Not-found page
 
-Map the route `/404/` to a page, conventionally `src/pages/404.html`:
+Name a page `src/pages/404.html`, and give it a title in the manifest if you like:
 
 ```json
-"/404/": { "file": "src/pages/404.html", "title": "Page not found" }
+"/404/": { "title": "Page not found" }
 ```
 
 The editor previews it like any other route. The export writes it to `404.html` at the site root instead of `404/index.html`, gives it `<meta name="robots" content="noindex">` and no canonical link, and leaves it out of `sitemap.xml`. Cloudflare serves it, with status 404, for every unknown path when `wrangler.jsonc` has `"assets": { "not_found_handling": "404-page" }`. Links in the page are root-relative, so they work at any depth.

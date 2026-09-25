@@ -115,4 +115,10 @@ export interface EditorContext {
     }[];
   } | null;
   drafts: { path: string; baseSha: string | null; updatedAt: number }[];
+  /**
+   * A native project's pages by route (shared/native-routes.ts: where a file
+   * is under `src/pages/` is its URL, unless native.json maps the route), with
+   * the manifest's title. Absent for other projects.
+   */
+  pages?: { route: string; file: string; title?: string }[];
 }

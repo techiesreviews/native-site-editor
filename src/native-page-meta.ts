@@ -1,15 +1,19 @@
 // Minimal text edits to the manifest's route metadata.
 //
 // A route in `.astro-editor/native.json` is either the bare page path
-// (`"/about/": "src/pages/about.html"`) or an object with the path in `file`
-// and an optional `title` and `description`. Writing a title or description
-// changes only what it must: a bare route becomes the object form when its
+// (`"/about/": "src/pages/about.html"`), an object with the path in `file`
+// and an optional `title` and `description`, or an object with only the
+// metadata, for a route a page's place under `src/pages/` gives it. Writing a
+// title or description changes only what it must: a route with no entry gets
+// a metadata-only one (`"/work/": { "title": "Work" }`, and a `routes` object
+// when the manifest has none), a bare route becomes the object form when its
 // first field is written, an existing string is replaced in place, a field
-// emptied is removed, and a route left with only `file` goes back to the bare
-// form. Indentation and the order of the file's other keys are kept, so the
-// change reads as a small diff. This module has no DOM and no knowledge of
-// the editor; the caller applies the returned range edit however it stores
-// the file.
+// emptied is removed, a route left with only `file` goes back to the bare
+// form, and a metadata-only entry left empty is removed. Indentation and the
+// order of the file's other keys are kept, so the change reads as a small
+// diff. This module has no DOM and no knowledge of the editor; the caller
+// applies the returned range edit however it stores the file, and passes
+// only routes the site has.
 
 export type NativePageMetaField = "title" | "description";
 
@@ -102,20 +106,29 @@ class Scanner {
  */
 export function editNativePageMeta(text: string, route: string, field: NativePageMetaField, value: string): NativePageMetaResult {
   const scanner = new Scanner(text);
+  let top: Member[];
+  let routes: Member | undefined;
+  let routeMembers: Member[] = [];
   let routeMember: Member | undefined;
   let members: Member[] | undefined;
   try {
-    const top = scanner.skip(0);
-    const routes = scanner.members(top).find((member) => member.key === "routes");
-    if (!routes || text[routes.valueStart] !== "{") return { ok: false, error: 'native.json has no "routes" object.' };
-    routeMember = scanner.members(routes.valueStart).find((member) => member.key === route);
-    if (!routeMember) return { ok: false, error: `native.json has no route ${JSON.stringify(route)}.` };
-    if (text[routeMember.valueStart] === "{") members = scanner.members(routeMember.valueStart);
-    else if (text[routeMember.valueStart] !== '"') return { ok: false, error: `native.json route ${JSON.stringify(route)} is neither a path nor an object.` };
+    const start = scanner.skip(0);
+    top = scanner.members(start);
+    routes = top.find((member) => member.key === "routes");
+    if (routes) {
+      if (text[routes.valueStart] !== "{") return { ok: false, error: 'native.json "routes" is not an object.' };
+      routeMembers = scanner.members(routes.valueStart);
+      routeMember = routeMembers.find((member) => member.key === route);
+    }
+    if (routeMember) {
+      if (text[routeMember.valueStart] === "{") members = scanner.members(routeMember.valueStart);
+      else if (text[routeMember.valueStart] !== '"') return { ok: false, error: `native.json route ${JSON.stringify(route)} is neither a path nor an object.` };
+    }
   } catch {
     return { ok: false, error: "native.json could not be read as JSON." };
   }
   const literal = JSON.stringify(value);
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const done = (edit: NativePageMetaEdit | null): NativePageMetaResult => {
     if (!edit) return { ok: true, text, edit: null };
     const next = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
@@ -126,6 +139,28 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
     }
     return { ok: true, text: next, edit };
   };
+  // The separator before a new member placed after `after`: on its own line,
+  // indented like `after`, when the object it joins is written one member per
+  // line from `open` (its `{`).
+  const separator = (open: number, first: Member, after: Member) => {
+    if (!text.slice(open, first.start).includes("\n")) return ", ";
+    const lineStart = text.lastIndexOf("\n", after.start) + 1;
+    return `,${newline}${text.slice(lineStart, after.start).match(/^[ \t]*/)![0]}`;
+  };
+  const entry = `${JSON.stringify(route)}: { ${JSON.stringify(field)}: ${literal} }`;
+
+  // No entry: a derived route's first field adds a metadata-only one.
+  if (!routeMember) {
+    if (!value) return done(null);
+    if (!routes) {
+      if (!top.length) return done({ start: text.indexOf("{") + 1, end: text.indexOf("{") + 1, text: ` "routes": { ${entry} } ` });
+      const after = top.find((member) => member.key === "version") ?? top[top.length - 1];
+      return done({ start: after.valueEnd, end: after.valueEnd, text: `${separator(scanner.skip(0), top[0], after)}"routes": { ${entry} }` });
+    }
+    if (!routeMembers.length) return done({ start: routes.valueStart, end: routes.valueEnd, text: `{ ${entry} }` });
+    const last = routeMembers[routeMembers.length - 1];
+    return done({ start: last.valueEnd, end: last.valueEnd, text: `${separator(routes.valueStart, routeMembers[0], last)}${entry}` });
+  }
 
   // The bare form: the first field written turns it into the object form.
   if (!members) {
@@ -140,27 +175,29 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
       if (text.slice(existing.valueStart, existing.valueEnd) === literal) return done(null);
       return done({ start: existing.valueStart, end: existing.valueEnd, text: literal });
     }
+    if (!members.length) return done({ start: routeMember.valueStart, end: routeMember.valueEnd, text: `{ ${JSON.stringify(field)}: ${literal} }` });
     // A new field goes after `file` (a title) or at the end (a description),
     // on its own line when the object is written one member per line.
-    if (!members.length) return { ok: false, error: `native.json route ${JSON.stringify(route)} is an empty object; give it a "file" first.` };
     const file = members.find((member) => member.key === "file");
     const after = (field === "title" && file) || members[members.length - 1];
-    const multiline = text.slice(routeMember.valueStart, members[0].start).includes("\n");
-    const lineStart = text.lastIndexOf("\n", after.start) + 1;
-    const indent = multiline ? text.slice(lineStart, after.start).match(/^[ \t]*/)![0] : "";
-    const newline = text.includes("\r\n") ? "\r\n" : "\n";
-    const separator = multiline ? `,${newline}${indent}` : ", ";
-    return done({ start: after.valueEnd, end: after.valueEnd, text: `${separator}${JSON.stringify(field)}: ${literal}` });
+    return done({ start: after.valueEnd, end: after.valueEnd, text: `${separator(routeMember.valueStart, members[0], after)}${JSON.stringify(field)}: ${literal}` });
   }
   if (!existing) return done(null);
-  // Removing the last field beside `file` restores the bare form.
   const rest = members.filter((member) => member !== existing);
   const file = members.find((member) => member.key === "file");
+  // Removing the last field beside `file` restores the bare form.
   if (file && rest.length === 1)
     return done({ start: routeMember.valueStart, end: routeMember.valueEnd, text: text.slice(file.valueStart, file.valueEnd) });
-  if (!rest.length) return done({ start: routeMember.valueStart, end: routeMember.valueEnd, text: "{}" });
-  const index = members.indexOf(existing);
-  const start = index > 0 ? members[index - 1].valueEnd : existing.start;
-  const end = index > 0 ? existing.valueEnd : members[index + 1].start;
-  return done({ start, end, text: "" });
+  // A metadata-only entry left with nothing goes, as the route needs no entry.
+  if (!rest.length) return done(removal(routeMembers, routeMember) ?? { start: routes!.valueStart, end: routes!.valueEnd, text: "{}" });
+  return done(removal(members, existing)!);
+}
+
+/** The edit that takes `member` out of its object; undefined when it is the only one. */
+function removal(members: Member[], member: Member): NativePageMetaEdit | undefined {
+  const index = members.indexOf(member);
+  if (members.length === 1) return undefined;
+  const start = index > 0 ? members[index - 1].valueEnd : member.start;
+  const end = index > 0 ? member.valueEnd : members[index + 1].start;
+  return { start, end, text: "" };
 }

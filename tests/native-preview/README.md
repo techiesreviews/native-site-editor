@@ -13,14 +13,20 @@ A project opts in with a validated, versioned manifest at
 ```json
 {
   "version": 1,
-  "routes": { "/": "src/pages/index.html", "/about/": "src/pages/about.html" },
+  "routes": { "/about/": { "title": "About" } },
   "components": { "site-header": "src/components/site-header/site-header.html" },
   "styles": ["src/styles/site.css"]
 }
 ```
 
-- `routes` maps a URL path to an ordinary `src/pages/*.html` file. A `/` home
-  route is required.
+- Pages are routed by where they are: every `.html` file under `src/pages/` is
+  a page (`index.html` is `/`, `about.html` and `about/index.html` are
+  `/about/`; names starting with `_` are skipped; see
+  `shared/native-routes.ts`). A `/` home page is required.
+- `routes` is optional metadata keyed by route (`title`, `description`,
+  `jsonLd`). An entry with `file`, or the bare path
+  (`"/about/": "src/pages/about.html"`), maps its route to that file
+  explicitly.
 - `components` maps a custom-element tag (must contain a dash) to a
   `src/components/*.html` template. Templates use native shadow DOM `<slot>`s.
 - `styles` lists shared `src/styles/*.css` files. They may `@import` other

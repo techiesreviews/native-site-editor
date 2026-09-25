@@ -1,11 +1,14 @@
 // Opt-in browser-native preview manifest (`.astro-editor/native.json`).
 //
 // A native project renders entirely in the browser from plain source files —
-// `src/pages/*.html` routes, custom-element templates under `src/components/`
+// pages under `src/pages/` (routed by where they are, see
+// shared/native-routes.ts), custom-element templates under `src/components/`
 // (either flat `<name>.html` or one folder per component, `<name>/<name>.html`),
 // and `src/styles/*.css` — with no build step. The manifest is the explicit,
-// versioned contract that maps those files; it is validated defensively because
-// it comes from repository contents that the editor does not control.
+// versioned contract that names the components and stylesheets and adds page
+// metadata; it is validated defensively because it comes from repository
+// contents that the editor does not control.
+import { deriveNativeRoutes, nativePageRoute } from "../shared/native-routes";
 
 /** Per-route page metadata, used by the static exporter for the document head. */
 export interface NativePageMeta {
@@ -17,14 +20,24 @@ export interface NativePageMeta {
 
 export interface NativeManifest {
   version: 1;
-  /** Route path (e.g. "/", "/about/") to a `src/pages/*.html` source file. */
+  /**
+   * Route path (e.g. "/", "/about/") to its `src/pages/**.html` source file:
+   * every page file by its place under `src/pages/` (`about.html` is
+   * "/about/", `work/index.html` is "/work/"), plus each route the manifest
+   * maps to a file itself, which wins. A file the manifest maps is routed only
+   * where the manifest says.
+   */
   routes: Record<string, string>;
   /**
-   * Route path to its title and description. In the JSON a route may be
-   * written either as the page path alone or as
-   * `{ "file": "src/pages/about.html", "title": "About", "description": "…" }`,
-   * optionally with a `jsonLd` object (or array of objects);
-   * only routes written the long way appear here.
+   * Route path to its title and description. `routes` in the JSON is
+   * optional and keyed by route; an entry is one of
+   * - `{ "title": "About", "description": "…" }`: metadata for the page the
+   *   route's file gives (ignored, with a warning, when no file does);
+   * - `{ "file": "src/pages/about.html", "title": …, "description": … }`: the
+   *   route mapped to that file explicitly, with its metadata;
+   * - `"src/pages/about.html"`: the route mapped to that file, no metadata.
+   * Either object form may carry a `jsonLd` object (or array of objects).
+   * Only routes written as objects appear here.
    */
   pages: Record<string, NativePageMeta>;
   /**
@@ -38,7 +51,8 @@ export interface NativeManifest {
 }
 
 export type NativeManifestResult =
-  | { ok: true; manifest: NativeManifest }
+  /** `warnings` name routes two files would give and metadata with no page. */
+  | { ok: true; manifest: NativeManifest; warnings: string[] }
   | { ok: false; error: string };
 
 const ROUTE = /^\/(?:[\w.-]+\/)*$/;
@@ -73,8 +87,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Parse and validate a native manifest from its raw JSON text. */
-export function parseNativeManifest(text: string): NativeManifestResult {
+/**
+ * Parse and validate a native manifest from its raw JSON text, routing the
+ * pages among `files` (repository paths, and drafts of new files; any path
+ * outside `src/pages/` is ignored) by where they are.
+ */
+export function parseNativeManifest(text: string, files: Iterable<string> = []): NativeManifestResult {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -85,18 +103,19 @@ export function parseNativeManifest(text: string): NativeManifestResult {
   if (value.version !== 1)
     return { ok: false, error: `native.json version ${JSON.stringify(value.version)} is unsupported; expected 1.` };
 
-  if (!isRecord(value.routes)) return { ok: false, error: "native.json \"routes\" must be an object." };
-  const routeEntries = Object.entries(value.routes);
-  if (!routeEntries.length) return { ok: false, error: "native.json \"routes\" must map at least one route." };
-  const routes: Record<string, string> = {};
+  if (value.routes !== undefined && !isRecord(value.routes)) return { ok: false, error: "native.json \"routes\" must be an object." };
+  const entries = isRecord(value.routes) ? Object.entries(value.routes) : [];
+  const explicit: Record<string, string> = {};
   const pages: Record<string, NativePageMeta> = {};
-  for (const [route, entry] of routeEntries) {
+  for (const [route, entry] of entries) {
     if (!ROUTE.test(route))
       return { ok: false, error: `native.json route ${JSON.stringify(route)} must start and end with "/".` };
     const path = isRecord(entry) ? entry.file : entry;
-    if (typeof path !== "string" || !safePath(path) || !PAGE_PATH.test(path))
-      return { ok: false, error: `native.json route ${JSON.stringify(route)} must point to a src/pages/*.html file${isRecord(entry) ? ' in "file"' : ""}.` };
-    routes[route] = path;
+    if (!(isRecord(entry) && path === undefined)) {
+      if (typeof path !== "string" || !safePath(path) || !PAGE_PATH.test(path))
+        return { ok: false, error: `native.json route ${JSON.stringify(route)} must point to a src/pages/*.html file${isRecord(entry) ? ' in "file"' : ""}.` };
+      explicit[route] = path;
+    }
     if (isRecord(entry)) {
       const meta: NativePageMeta = {};
       for (const field of ["title", "description"] as const) {
@@ -114,8 +133,24 @@ export function parseNativeManifest(text: string): NativeManifestResult {
       pages[route] = meta;
     }
   }
+  // A file the manifest maps is routed only where the manifest says, so an
+  // older manifest's `"/work/x/": "src/pages/work-x.html"` does not also
+  // publish the page at /work-x/; a route the manifest maps is that file's
+  // alone.
+  const mapped = new Set(Object.values(explicit));
+  const derived = deriveNativeRoutes([...files].filter((path) => {
+    const route = nativePageRoute(path);
+    return route !== undefined && !mapped.has(path) && !Object.hasOwn(explicit, route);
+  }));
+  const warnings = derived.warnings;
+  const merged: Record<string, string> = { ...derived.routes, ...explicit };
+  const routes: Record<string, string> = {};
+  for (const route of Object.keys(merged).sort()) routes[route] = merged[route];
+  for (const route of Object.keys(pages))
+    if (!Object.hasOwn(routes, route))
+      warnings.push(`native.json has metadata for ${route}, but no page gives that route; add ${route === "/" ? "src/pages/index.html" : `src/pages${route.slice(0, -1)}.html`} or give the entry a "file".`);
   if (!Object.hasOwn(routes, "/"))
-    return { ok: false, error: "native.json \"routes\" must include a home route \"/\"." };
+    return { ok: false, error: "The site has no home page: add src/pages/index.html, or map the route \"/\" to a page in native.json." };
 
   const components: Record<string, string> = {};
   if (value.components !== undefined) {
@@ -141,7 +176,7 @@ export function parseNativeManifest(text: string): NativeManifestResult {
     }
   }
 
-  return { ok: true, manifest: { version: 1, routes, pages, components, styles } };
+  return { ok: true, manifest: { version: 1, routes, pages, components, styles }, warnings };
 }
 
 /** Every distinct source file the manifest references, for prefetching. */

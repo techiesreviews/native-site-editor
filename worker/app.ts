@@ -550,7 +550,9 @@ async function route(
       );
     if (path === "/api/tree")
       return json(
-        await github.directory(repo, url.searchParams.get("sha") ?? ""),
+        url.searchParams.get("recursive") === "1"
+          ? await github.subtree(repo, url.searchParams.get("sha") ?? "")
+          : await github.directory(repo, url.searchParams.get("sha") ?? ""),
       );
     if (path === "/api/raw")
       return json(await github.raw(repo, url.searchParams.get("sha") ?? ""));

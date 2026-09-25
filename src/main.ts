@@ -37,6 +37,7 @@ import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./st
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports } from "../shared/css-imports";
+import { NATIVE_PAGES_DIR } from "../shared/native-routes";
 import type {
   EditorContext,
   Directory,
@@ -1391,6 +1392,10 @@ const nativeImportedStyles = new Set<string>();
 const nativeMissingImportedStyles = new Set<string>();
 const nativeImportedStyleRequests = new Set<string>();
 let nativeSourcesRequest = 0;
+// Every file under `src/pages/` on the branch; pages are routed by where they
+// are (shared/native-routes.ts), so this list, with new page files drafted in
+// the browser (`nativePageFiles`), decides the site's routes.
+let nativeBasePageFiles: string[] = [];
 
 function nativeModeActive() {
   return Boolean(nativeManifest);
@@ -1446,7 +1451,7 @@ function nativePageMeta(path: string) {
   if (!route || !nativeManifest) return undefined;
   const conflict = nativeManifestConflict();
   const source = conflict ? nativeManifestBase?.text : nativeManifestSource();
-  const parsed = source !== undefined ? parseNativeManifest(source) : undefined;
+  const parsed = source !== undefined ? parseNativeManifest(source, nativePageFiles()) : undefined;
   const meta = (parsed?.ok ? parsed.manifest.pages : nativeManifest.pages)[route] ?? {};
   return { title: meta.title ?? "", description: meta.description ?? "", notice: conflict ? MANIFEST_CONFLICT : undefined };
 }
@@ -1494,7 +1499,7 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
       return;
     }
   }
-  const parsed = parseNativeManifest(result.text);
+  const parsed = parseNativeManifest(result.text, nativePageFiles());
   if (parsed.ok) manifest.pages = parsed.manifest.pages;
   element("status").textContent = value ? `${label} updated` : `${label} removed`;
 }
@@ -1667,6 +1672,8 @@ function adoptNativeBaseSources(
     return;
   for (const draft of submitted) {
     nativeBaseSources.set(draft.path, draft.content);
+    if (draft.path.startsWith(NATIVE_PAGES_DIR) && !nativeBasePageFiles.includes(draft.path))
+      nativeBasePageFiles = [...nativeBasePageFiles, draft.path];
     const sha = result.files.find((file) => file.path === draft.path)?.sha;
     if (draft.path === NATIVE_MANIFEST_PATH && sha) nativeManifestBase = { sha, text: draft.content };
   }
@@ -1676,6 +1683,7 @@ function adoptNativeBaseSources(
 function deactivateNative() {
   nativeManifest = undefined;
   nativeManifestBase = undefined;
+  nativeBasePageFiles = [];
   nativeEngaged = false;
   nativeBaseSources.clear();
   nativeComponentStyles.clear();
@@ -1730,6 +1738,29 @@ async function loadNativeComponentStyles(tags: string[]) {
   if (epoch === generation && request === nativeSourcesRequest && nativeManifest === manifest) updateNativePreviewSources();
 }
 
+// Every file under `src/pages/` on the branch: from the snapshot's recursive
+// tree when it has one, else from one recursive listing of that folder.
+async function listNativePageFiles(repo: Repository, result: Snapshot): Promise<string[]> {
+  if (result.tree)
+    return result.tree.filter((entry) => entry.type === "blob" && entry.path.startsWith(NATIVE_PAGES_DIR)).map((entry) => entry.path);
+  const src = result.entries.find((entry) => entry.path === "src" && entry.type === "tree");
+  if (!src) return [];
+  const pages = (await api<Directory>("tree", { repo: repo.full_name, sha: src.sha })).entries
+    .find((entry) => entry.path === "pages" && entry.type === "tree");
+  if (!pages) return [];
+  const listed = await api<Directory>("tree", { repo: repo.full_name, sha: pages.sha, recursive: "1" });
+  return listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${NATIVE_PAGES_DIR}${entry.path}`);
+}
+
+// The page files routes are derived from: the branch's, plus new files under
+// `src/pages/` drafted in the browser in `scope`.
+function nativePageFiles(scope = draftScope()): string[] {
+  const drafted = scope
+    ? draftStore().list(scope).filter((draft) => draft.baseSha === null && draft.path.startsWith(NATIVE_PAGES_DIR)).map((draft) => draft.path)
+    : [];
+  return [...new Set([...nativeBasePageFiles, ...drafted])];
+}
+
 // Reads and validates `.astro-editor/native.json`, prefetches every referenced
 // source file from the current snapshot, and activates the native preview. All
 // async steps are guarded against a superseding navigation (`epoch`).
@@ -1737,6 +1768,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   const request = ++nativeSourcesRequest;
   const live = () => epoch === generation && request === nativeSourcesRequest;
   const placeholder: NativeManifest = { version: 1, routes: { "/": "src/pages/index.html" }, pages: {}, components: {}, styles: [] };
+  const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
   // Locate the manifest first. A failure *before* we confirm native.json exists
   // cannot be attributed to native intent, so the project opens as plain files.
   // Once the file is found, the project is native and every later failure
@@ -1754,7 +1786,8 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     manifestText = await readFile(repo.full_name, file.sha);
     if (!live()) return true;
     nativeManifestBase = { sha: file.sha, text: manifestText };
-    const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
+    nativeBasePageFiles = await listNativePageFiles(repo, result);
+    if (!live()) return true;
     const draft = scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
     if (draft && scope) {
       if (draft.baseSha === file.sha) manifestText = draft.content;
@@ -1772,12 +1805,13 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     nativePreview?.setError(error instanceof Error ? error.message : "native.json could not be loaded.");
     return true;
   }
-  const parsed = parseNativeManifest(manifestText);
+  const parsed = parseNativeManifest(manifestText, nativePageFiles(scope));
   if (!parsed.ok) {
     // A present-but-invalid manifest is a visible native error, never a silent
     // fall-back to plain files that would confuse the project's intent.
     nativeManifest = undefined;
     nativePreview?.activate(placeholder);
+    nativePreview?.setWarnings([]);
     nativePreview?.setError(parsed.error);
     return true;
   }
@@ -1793,14 +1827,17 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   nativeMissingAssets.clear();
   try {
     // Resolve every referenced file, then read them all in one round trip.
+    // A page drafted as a new file has no blob; its draft is its source.
+    const drafted = new Set(nativePageFiles(scope).filter((path) => !nativeBasePageFiles.includes(path)));
     const sources: { path: string; sha: string }[] = [];
     for (const path of nativeManifestPaths(manifest)) {
+      if (drafted.has(path)) continue;
       const entry = await findEntry(path);
       if (!live()) return true;
       if (!entry) throw new Error(`native.json references ${path}, which is missing from this branch.`);
       sources.push({ path, sha: entry.sha });
     }
-    const contents = await readFiles(repo.full_name, sources.map((source) => source.sha));
+    const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
     if (!live()) return true;
     for (const source of sources) nativeBaseSources.set(source.path, contents[source.sha]);
     // Files the shared stylesheets import render with the first update; one
@@ -1822,12 +1859,14 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   nativeManifest = manifest;
   pageStructure?.refreshMeta();
   nativePreview?.setError(undefined);
+  nativePreview?.setWarnings(parsed.warnings);
   nativePreview?.activate(manifest);
   nativePreview?.update({
     sources: nativeSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(manifest),
   });
+  updateAgentContext();
   void loadNativeAssets();
   return true;
 }
@@ -2415,6 +2454,14 @@ function updateAgentContext() {
       .list(scope)
       .slice(0, 200)
       .map(({ path, baseSha, updatedAt }) => ({ path, baseSha, updatedAt })),
+    ...(nativeManifest ? { pages: nativeContextPages(nativeManifest) } : {}),
+  });
+}
+// The native site's pages by route for the agent context.
+function nativeContextPages(manifest: NativeManifest): NonNullable<EditorContext["pages"]> {
+  return Object.entries(manifest.routes).slice(0, 500).map(([route, file]) => {
+    const title = manifest.pages[route]?.title;
+    return title ? { route, file, title } : { route, file };
   });
 }
 function renderDraftFiles() {
