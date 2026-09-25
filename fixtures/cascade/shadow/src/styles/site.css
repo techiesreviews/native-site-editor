@@ -1,0 +1,22 @@
+body {
+  margin: 0;
+}
+
+/* The page's rules beat the component's :host and ::slotted() rules... */
+info-box {
+  padding: 9px;
+}
+
+info-box.boxed {
+  margin-top: 1px;
+}
+
+.lead {
+  color: rgb(100, 0, 0);
+  letter-spacing: 5px;
+}
+
+/* ...except !important ones, where the component's win. */
+p {
+  font-weight: 400 !important;
+}

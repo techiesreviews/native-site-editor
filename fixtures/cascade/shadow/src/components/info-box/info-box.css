@@ -1,0 +1,19 @@
+:host {
+  display: block;
+  padding: 3px;
+  color: rgb(0, 0, 100);
+}
+
+:host(.boxed) {
+  margin-top: 5px;
+}
+
+::slotted(p) {
+  color: rgb(0, 100, 0);
+  font-style: italic;
+}
+
+slot::slotted(.lead) {
+  font-weight: 700 !important;
+  letter-spacing: 2px;
+}

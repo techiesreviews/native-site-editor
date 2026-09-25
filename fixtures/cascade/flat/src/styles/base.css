@@ -1,0 +1,56 @@
+/* No layers: specificity, then order of appearance across files. */
+body {
+  margin: 0;
+  color: rgb(10, 10, 10);
+}
+
+p {
+  color: rgb(1, 1, 1);
+  margin: 0 0 8px;
+}
+
+.note {
+  color: rgb(2, 2, 2);
+}
+
+.note--loud {
+  text-transform: uppercase !important;
+}
+
+@media (min-width: 1px) {
+  .card .note {
+    letter-spacing: 1px;
+  }
+}
+
+@media (max-width: 1px) {
+  .note {
+    color: rgb(99, 99, 99);
+  }
+}
+
+.card {
+  container-type: inline-size;
+}
+
+@container (min-width: 1px) {
+  .note {
+    word-spacing: 4px;
+  }
+}
+
+@container (max-width: 1px) {
+  .note {
+    word-spacing: 9px;
+  }
+}
+
+@scope (.card) to (.skip) {
+  p {
+    text-indent: 3px;
+  }
+}
+
+.plain {
+  color: rgb(6, 6, 6);
+}

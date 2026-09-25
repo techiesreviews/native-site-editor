@@ -1,0 +1,17 @@
+footer {
+  display: flex;
+  padding: 24px;
+  color: var(--muted);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--muted);
+}
+
+a:hover {
+  color: var(--accent);
+}

@@ -1,0 +1,31 @@
+/* The layer order, declared before any layer is used. */
+@layer reset, base, components;
+
+@layer components {
+  .button {
+    color: rgb(30, 30, 30);
+    padding: 4px;
+  }
+}
+
+@layer base {
+  p a {
+    color: rgb(20, 20, 20);
+    padding: 2px;
+    text-decoration: underline !important;
+    font-weight: 700 !important;
+  }
+}
+
+@layer reset {
+  a {
+    text-decoration: none !important;
+  }
+}
+
+/* Unlayered: beats every layer for normal declarations, loses to every
+   layer for !important ones. */
+a {
+  color: rgb(9, 9, 9);
+  font-weight: 400 !important;
+}

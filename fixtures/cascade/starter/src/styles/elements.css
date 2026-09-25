@@ -1,0 +1,11 @@
+@layer elements {
+  body {
+    margin: 0;
+  }
+
+  /* Links in running text. */
+  p a,
+  li a {
+    color: var(--accent);
+  }
+}

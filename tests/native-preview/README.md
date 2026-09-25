@@ -80,6 +80,10 @@ returns to the ordinary Astro preview path.
 
 - `tests/native-manifest.test.ts` — manifest validation (`npm test`, or
   `npx tsx --test tests/native-manifest.test.ts`).
+- `tests/native-preview/native-cascade.spec.ts` — the style panel's cascade
+  against the small sites under `fixtures/cascade/` (no layers, layers up
+  front, layers by first use, `@import` with `layer()`, shadow DOM, the
+  starter's footer link), each served as its own repository.
 - `tests/native-preview/native-preview.spec.ts` — drives the real app end to end
   (`npx playwright test -c playwright.native-preview.config.ts`). The config
   boots its own copy of `tests/warm-preview/server.ts` on port 5196, so it does

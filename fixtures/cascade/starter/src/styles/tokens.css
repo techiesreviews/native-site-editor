@@ -1,0 +1,10 @@
+/* As in native-site-editor-starter: shared sheets in layers, component
+   sheets unlayered, so a component's rules win over all of them. */
+@layer tokens, elements;
+
+@layer tokens {
+  :root {
+    --accent: rgb(47, 109, 58);
+    --muted: rgb(92, 102, 90);
+  }
+}

@@ -17,12 +17,16 @@
 // Each browser session gets its own isolated git clone, so concurrently exposed
 // demo browsers never see each other's saves.
 //
+// Outside demo mode, every folder under `fixtures/cascade/` is one more small
+// native repository (`cascade-<folder>`, ids from 510 in folder order), each a
+// site with its own CSS structure for the style panel's cascade tests.
+//
 // Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
 // (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
 // that all saves are simulated.
 
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import { createServer, type Connect, type Plugin } from "vite";
@@ -31,7 +35,9 @@ import { handle, type Env } from "../../worker/app.ts";
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
 const projectRoot = process.cwd();
-const fixtureRoot = resolve(projectRoot, "fixtures/native-starter");
+// `ASE_NATIVE_SAVE_FIXTURE` serves another site as the demo repository (a
+// checkout of a real project, to try the editor against it by hand).
+const fixtureRoot = resolve(projectRoot, process.env.ASE_NATIVE_SAVE_FIXTURE ?? "fixtures/native-starter");
 
 const DEMO_LOGIN = "native-demo-user";
 const DEMO_REPO = {
@@ -130,14 +136,26 @@ function buildTree(
   return { sha, entries };
 }
 
-function buildInitialGit(): Git {
+function buildInitialGit(fixture = fixtureRoot): Git {
   const git: Git = { blobs: new Map(), trees: new Map(), commits: new Map(), head: "" };
-  const root = buildTree(git, fixtureRoot, "");
+  const root = buildTree(git, fixture, "");
   const commit = commitSha(root.sha);
   git.commits.set(commit, { tree: root.sha, parents: [] });
   git.head = commit;
   return git;
 }
+
+// The cascade fixture repositories (none in demo mode).
+const cascadeRoot = resolve(projectRoot, "fixtures/cascade");
+const FIXTURE_REPOS = demoMode || !existsSync(cascadeRoot) ? [] : readdirSync(cascadeRoot, { withFileTypes: true })
+  .filter((dirent) => dirent.isDirectory())
+  .map((dirent) => dirent.name)
+  .sort()
+  .map((name, index) => ({
+    root: join(cascadeRoot, name),
+    repo: { ...DEMO_REPO, id: 510 + index, name: `cascade-${name}`, full_name: `${DEMO_LOGIN}/cascade-${name}` },
+  }));
+const initialFixtureGits = new Map<string, Git>();
 
 // Deep clone so each session mutates its own git only.
 function cloneGit(source: Git): Git {
@@ -198,8 +216,9 @@ function base64(content: string): string {
   return Buffer.from(encoder.encode(content)).toString("base64");
 }
 
-// A fake `fetch` bound to one session's git model.
-function githubFetch(git: Git): typeof fetch {
+// A fake `fetch` bound to one session's git models: the demo repository's,
+// and the fixture repositories' (cloned on first use).
+function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
     const path = url.pathname;
@@ -216,9 +235,16 @@ function githubFetch(git: Git): typeof fetch {
         installations: [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }],
       });
     if (path === "/user/installations/1/repositories")
-      return jsonResponse({ repositories: [DEMO_REPO] });
+      return jsonResponse({ repositories: [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)] });
 
-    const repoBase = `/repos/${DEMO_REPO.owner.login}/${DEMO_REPO.name}`;
+    const repoName = /^\/repos\/[^/]+\/([^/]+)/.exec(path)?.[1] ?? DEMO_REPO.name;
+    const fixture = FIXTURE_REPOS.find((item) => item.repo.name === repoName);
+    if (fixture && !fixtureGits.has(repoName)) {
+      if (!initialFixtureGits.has(repoName)) initialFixtureGits.set(repoName, buildInitialGit(fixture.root));
+      fixtureGits.set(repoName, cloneGit(initialFixtureGits.get(repoName)!));
+    }
+    const git = fixture ? fixtureGits.get(repoName)! : demoGit;
+    const repoBase = `/repos/${DEMO_REPO.owner.login}/${fixture ? repoName : DEMO_REPO.name}`;
     if (path === `${repoBase}/branches`) return jsonResponse([{ name: "main" }]);
     if (path === `${repoBase}/branches/main`)
       return jsonResponse({ commit: { sha: git.head } });
@@ -294,6 +320,7 @@ interface StoredSession {
 interface SessionSlot {
   value: StoredSession;
   git: Git;
+  fixtureGits?: Map<string, Git>;
 }
 const sessions = new Map<string, SessionSlot>();
 let initialGit: Git;
@@ -457,11 +484,14 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const bodyBuffer = await readBody(req);
     const request = toRequest(req, bodyBuffer);
     const id = sessionCookie(req);
-    const git = (id && sessions.get(id)?.git) || initialGit;
+    const slot = id ? sessions.get(id) : undefined;
+    const git = slot?.git || initialGit;
+    if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();
+    const fixtureGits = slot?.fixtureGits ?? new Map<string, Git>();
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git));
+    const response = await handle(request, env(), githubFetch(git, fixtureGits));
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => res.setHeader(key, value));

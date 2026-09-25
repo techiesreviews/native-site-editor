@@ -1,0 +1,13 @@
+.note {
+  color: rgb(3, 3, 3);
+}
+
+p.note {
+  text-transform: none;
+}
+
+.card {
+  & .note {
+    font-style: italic;
+  }
+}

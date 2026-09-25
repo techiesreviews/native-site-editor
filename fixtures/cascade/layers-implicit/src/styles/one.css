@@ -1,0 +1,19 @@
+/* No @layer statement: layers are ordered by first use. */
+@layer theme {
+  h1 {
+    color: rgb(40, 0, 0);
+  }
+}
+
+@layer base {
+  h1 {
+    color: rgb(50, 0, 0);
+    font-size: 30px;
+  }
+}
+
+@layer {
+  h1 {
+    letter-spacing: 3px;
+  }
+}

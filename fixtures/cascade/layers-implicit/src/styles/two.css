@@ -1,0 +1,31 @@
+@layer theme {
+  #title.title {
+    font-size: 20px;
+  }
+}
+
+/* Nested in base: base's own rules come after it. */
+@layer base.type {
+  #title {
+    color: rgb(60, 0, 0);
+  }
+}
+
+/* A second anonymous layer, after the first. */
+@layer {
+  h1 {
+    letter-spacing: 1px;
+  }
+}
+
+@layer outer {
+  @layer inner {
+    #title {
+      text-transform: uppercase;
+    }
+  }
+
+  h1 {
+    text-transform: lowercase;
+  }
+}
