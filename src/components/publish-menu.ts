@@ -3,6 +3,7 @@ import { mountDropdown } from "./dropdown";
 import { draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import type { PublishResult } from "../../shared/types";
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
+import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import "./publish-menu.css";
 
 export function createPublishMenu(options: {
@@ -12,6 +13,8 @@ export function createPublishMenu(options: {
   onExpired: () => void;
   /** Native projects relabel the menu as "Save to GitHub" and do not track deployment status. */
   saveLabels?: boolean;
+  /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
+  onDiscardChange?: (change: FileChange) => void;
 }) {
   const labels = options.saveLabels
     ? {
@@ -48,36 +51,75 @@ export function createPublishMenu(options: {
   let pending = false, disposed = false;
   function refresh(resetMessage = true) {
     if (pending) return;
-    const records = draftStore().list(options.scope);
+    const records = listChanges(draftStore().list(options.scope));
     trigger.disabled = records.length === 0;
     list.replaceChildren();
-    for (const draft of records) {
+    for (const change of records) {
       const label = node("label", "publish-menu__file");
       const checkbox = node("input"); checkbox.type = "checkbox";
-      checkbox.checked = selection.has(draft.path);
+      // A rename is selected as a whole, by its new path (or its old one, where the file was open).
+      checkbox.checked = selection.has(change.path) || (change.from !== undefined && selection.has(change.from));
+      if (checkbox.checked) selection.add(change.path);
       checkbox.addEventListener("change", () => {
-        if (checkbox.checked) selection.add(draft.path); else selection.delete(draft.path);
+        if (checkbox.checked) selection.add(change.path);
+        else { selection.delete(change.path); if (change.from) selection.delete(change.from); }
         submit.disabled = !records.some(record => selection.has(record.path));
       });
-      label.append(checkbox, node("span", "", draft.path));
-      list.append(label, changes(draft));
+      const status = node("span", `publish-menu__status is-${change.kind}`);
+      status.title = CHANGE_WORDS[change.kind];
+      const letter = node("span", "", change.kind);
+      letter.setAttribute("aria-hidden", "true");
+      status.append(letter, node("span", "sr-only", `${CHANGE_WORDS[change.kind]}:`));
+      const name = node("span", "publish-menu__path", change.from ? `${change.from} → ${change.path}` : change.path);
+      label.append(checkbox, status, name);
+      list.append(label, changes(change));
     }
     submit.disabled = !records.some(record => selection.has(record.path));
     if (resetMessage) message.textContent = labels.idle;
   }
   // What the commit would change in a file, as counts; the button opens the
-  // comparison, so a stray edit is seen before it reaches the branch.
-  function changes(draft: SavedDraft) {
+  // comparison, so a stray edit is seen before it reaches the branch. A
+  // deletion and a rename say so, with Restore or Move back.
+  function changes(change: FileChange) {
     const row = node("div", "publish-menu__changes");
+    const [draft] = change.drafts;
+    if (change.kind === "D") {
+      row.append(node("span", "publish-menu__note", "Deleted"));
+      if (options.onDiscardChange) row.append(discardButton("Restore", `Restore ${change.path}`, change));
+      return row;
+    }
+    if (change.kind === "R") {
+      const edited = !draft.opaque && draft.content !== draft.original;
+      if (edited) row.append(showButton(change.path, draft.original, draft.content));
+      else row.append(node("span", "publish-menu__note", "Renamed, no other changes"));
+      if (options.onDiscardChange) row.append(discardButton("Move back", `Move ${change.path} back to ${change.from}`, change));
+      return row;
+    }
     const isNew = draft.baseSha === null;
-    const { added, deleted } = diffCounts(isNew ? "" : draft.original, draft.content);
-    const summary = isNew ? `New file, ${draft.content.split("\n").length} lines` : `${added} added, ${deleted} removed`;
-    const show = button(summary, () => openComparison(draft, show), "publish-menu__show-changes");
-    show.setAttribute("aria-label", `${summary}. Show changes in ${draft.path}`);
-    show.setAttribute("aria-haspopup", "dialog");
-    show.dataset.path = draft.path;
-    row.append(show);
+    if (isNew && draft.opaque) {
+      row.append(node("span", "publish-menu__note", "New file, a copy"));
+      return row;
+    }
+    row.append(showButton(draft.path, isNew ? "" : draft.original, draft.content, isNew));
     return row;
+  }
+  function showButton(path: string, before: string, after: string, isNew = false) {
+    const { added, deleted } = diffCounts(before, after);
+    const summary = isNew ? `New file, ${after.split("\n").length} lines` : `${added} added, ${deleted} removed`;
+    const show = button(summary, () => openComparison(path, before, after, show), "publish-menu__show-changes");
+    show.setAttribute("aria-label", `${summary}. Show changes in ${path}`);
+    show.setAttribute("aria-haspopup", "dialog");
+    show.dataset.path = path;
+    return show;
+  }
+  function discardButton(text: string, label: string, change: FileChange) {
+    const discard = button(text, () => {
+      options.onDiscardChange?.(change);
+      refresh(false);
+      message.textContent = `${label}: done.`;
+    }, "publish-menu__show-changes publish-menu__discard");
+    discard.setAttribute("aria-label", label);
+    return discard;
   }
   // The comparison dialog lives inside the panel, so the panel (an auto
   // popover) is its popover ancestor and stays open while the modal shows.
@@ -107,11 +149,10 @@ export function createPublishMenu(options: {
     opener = null;
     target?.focus();
   });
-  function openComparison(draft: SavedDraft, from: HTMLButtonElement) {
-    const before = draft.baseSha === null ? "" : draft.original;
+  function openComparison(path: string, before: string, after: string, from: HTMLButtonElement) {
     opener = from;
-    dialogTitle.textContent = draft.path;
-    dialogBody.replaceChildren(splitView(before, draft.content), unifiedView(before, draft.content));
+    dialogTitle.textContent = path;
+    dialogBody.replaceChildren(splitView(before, after), unifiedView(before, after));
     dialog.showModal();
     dialogBody.scrollTop = 0;
   }
@@ -166,7 +207,8 @@ export function createPublishMenu(options: {
     return pre;
   }
   async function send() {
-    const submitted = draftStore().list(options.scope).filter(draft => selection.has(draft.path));
+    const chosen = listChanges(draftStore().list(options.scope)).filter(change => selection.has(change.path));
+    const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
     if (pending || !submitted.length) return;
     pending = true; trigger.disabled = true; submit.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
@@ -174,7 +216,7 @@ export function createPublishMenu(options: {
     try {
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch: options.scope.branch, files: submitted.map(({ path, baseSha, content }) => ({ path, baseSha, content })) }),
+        body: JSON.stringify({ branch: options.scope.branch, files: publishFiles(chosen) }),
       });
       if (response.status === 401) { options.onExpired(); return; }
       const data = await response.json();

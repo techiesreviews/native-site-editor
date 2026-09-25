@@ -19,10 +19,15 @@ import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeWarning, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
-import { addedNativeRouteEntries, editNativePageMeta, registerNativeFile, removeNativeRouteEntry, sameNativeJson, unpairNativeRoutes, type NativePageMetaResult, type NativeRegistration } from "./native-page-meta";
-import { nativeNewPagePath, nativePageTemplate, nativeRegistration, newFilePath, newFolderPath, normalizeRoute, routeHeading, type Checked } from "./native-create";
-import { createCreateDialog, type CreateRequest } from "./components/create-dialog";
-import { createPagesTree, type NativeNewRequest } from "./components/pages-tree";
+import { addedNativeRouteEntries, editNativePageMeta, moveNativeEntries, registerNativeFile, removeNativeRouteEntry, restoreNativeEntries, sameNativeJson, unpairNativeRoutes, type NativeFileMove, type NativePageMetaResult, type NativeRegistration } from "./native-page-meta";
+import { nativeNewPagePath, nativePageTemplate, nativeRegistration, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
+import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
+import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
+import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
+import { createConfirmDialog } from "./components/confirm-dialog";
+import type { MenuItem } from "./components/row-menu";
+import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeNewTarget, type NativeNewTarget } from "./native-pages";
 import {
   parseNativeManifest,
@@ -199,8 +204,22 @@ function mountWorkspace() {
     create: createFromRequest,
   });
   element("explorer").append(createDialog.root);
+  confirmDialog = createConfirmDialog();
+  element("explorer").append(confirmDialog.root);
   const newAtRoot = element<HTMLButtonElement>("new-at-root");
   newAtRoot.addEventListener("click", () => openCreate("", newAtRoot));
+  fileActions = createFileRowActions({
+    host: element("explorer-files"),
+    items: fileRowItems,
+    checkRename: (target, name) => renameProblem(target, name),
+    rename: renameFileTarget,
+    remove: (target) => void deleteFileTarget(target),
+    dropProblem: (source, folder) => dropProblem(source, folder),
+    drop: (source, folder) => void dropFileTarget(source, folder),
+    announce,
+  });
+  fileActions.attachRoot(files);
+  fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
   pagesTree = createPagesTree({
     open: (file) => {
       if (file === currentPath && editorModule?.isMounted(file)) explorerDropdown?.close();
@@ -212,12 +231,19 @@ function mountWorkspace() {
     },
     create: createNativeNew,
     announce: (text) => { element("status").textContent = text; },
+    retitle: retitleNativePage,
+    duplicate: (file) => void duplicateNativePage(file),
+    remove: (target) => void removeNativePagesTarget(target),
   });
   element("explorer-pages").append(pagesTree.root);
   mountExplorerTabs();
   element("explorer").addEventListener("toggle", () => {
     if (explorerDropdown?.isOpen()) renderPagesTree();
-    else pagesTree?.reset();
+    else {
+      pagesTree?.reset();
+      fileActions?.close();
+      confirmDialog?.close();
+    }
   });
   codeResize = mountCodeResize(element("main"), element("code-split"));
   codeWidthResize = mountCodeWidthResize(
@@ -322,19 +348,20 @@ function openDraftChanges() {
     node("h2", "changes-window__title", `Draft changes on ${scope.branch}`),
     button("Commit history", () => openHistory(true), "text-button"),
   );
-  const files = draftStore()
-    .list(scope)
-    .filter((draft) => draft.baseSha === null || draft.content !== draft.original);
+  const changes = listChanges(draftStore().list(scope));
   const openFiles = new Set((editorModule?.changedFiles() ?? []).map((f) => f.path));
-  if (!files.length && !openFiles.size)
+  if (!changes.length && !openFiles.size)
     panel.append(node("p", "muted changes-window__empty", "No changes yet. Edit a file to start a draft."));
-  const paths = [...new Set([...files.map((f) => f.path), ...openFiles])].sort();
+  const byPath = new Map(changes.map((change) => [change.path, change]));
+  const paths = [...new Set([...byPath.keys(), ...openFiles])].sort();
   if (paths.length) {
     panel.append(node("p", "files-heading", "CHANGED FILES"));
-    for (const path of paths)
+    for (const path of paths) {
+      const change = byPath.get(path);
+      const label = change?.kind === "D" ? `${path} (deleted)` : change?.kind === "R" ? `${change.from} → ${path}` : path;
       panel.append(
         button(
-          path,
+          label,
           () => {
             panel.hidePopover();
             void showCodeChanges(path);
@@ -342,6 +369,7 @@ function openDraftChanges() {
           "file-row",
         ),
       );
+    }
   }
   if (currentPath && editorModule?.isReviewing(currentPath)) {
     const path = currentPath;
@@ -1591,6 +1619,8 @@ function nativeSources(manifest = nativeManifest): Record<string, string> {
 function nativeEffectiveSource(path: string, scope = draftScope()) {
   let content = nativeBaseSources.get(path);
   const draft = scope ? draftStore().get(scope, path) : undefined;
+  // A file deleted in the drafts has no source; a binary one moved has none to show.
+  if (draft?.deleted || draft?.opaque) return undefined;
   if (draft) content = draft.content;
   const mounted = editorModule?.getMountedSource(path);
   if (mounted !== undefined) content = mounted;
@@ -1737,8 +1767,15 @@ function adoptNativeBaseSources(
     info.user?.login !== scope.account
   )
     return;
+  const removed = new Set(result.deleted ?? []);
   for (const draft of submitted) {
-    nativeBaseSources.set(draft.path, draft.content);
+    if (draft.deleted) {
+      if (!removed.has(draft.path)) continue;
+      nativeBaseSources.delete(draft.path);
+      nativeBasePageFiles = nativeBasePageFiles.filter((path) => path !== draft.path);
+      continue;
+    }
+    if (!draft.opaque) nativeBaseSources.set(draft.path, draft.content);
     if (draft.path.startsWith(NATIVE_PAGES_DIR) && !nativeBasePageFiles.includes(draft.path))
       nativeBasePageFiles = [...nativeBasePageFiles, draft.path];
     const sha = result.files.find((file) => file.path === draft.path)?.sha;
@@ -1787,8 +1824,13 @@ async function loadNativeComponentStyles(tags: string[]) {
   wanted.forEach((tag) => nativeComponentStyleRequests.add(tag));
   try {
     const found: { tag: string; path: string; sha: string }[] = [];
+    const scope = draftScope();
     for (const tag of wanted) {
       const path = nativeComponentCssPath(manifest.components[tag]);
+      // A stylesheet drafted here (new, or moved with its component) is its draft; a deleted one is missing.
+      const draft = scope ? draftStore().get(scope, path) : undefined;
+      if (draft && !draft.deleted) { nativeComponentStyles.set(tag, path); continue; }
+      if (draft?.deleted) { nativeMissingComponentStyles.add(tag); continue; }
       const entry = await findEntry(path);
       if (epoch !== generation || request !== nativeSourcesRequest || nativeManifest !== manifest) return;
       if (!entry) nativeMissingComponentStyles.add(tag);
@@ -1823,10 +1865,11 @@ async function listNativePageFiles(repo: Repository, result: Snapshot): Promise<
 // The page files routes are derived from: the branch's, plus new files under
 // `src/pages/` drafted in the browser in `scope`.
 function nativePageFiles(scope = draftScope()): string[] {
-  const drafted = scope
-    ? draftStore().list(scope).filter((draft) => draft.baseSha === null && draft.path.startsWith(NATIVE_PAGES_DIR)).map((draft) => draft.path)
-    : [];
-  return [...new Set([...nativeBasePageFiles, ...drafted])];
+  const drafts = scope ? draftStore().list(scope).filter((draft) => draft.path.startsWith(NATIVE_PAGES_DIR)) : [];
+  const drafted = drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path);
+  // A page deleted, or renamed or moved away, in the drafts is not routed.
+  const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
+  return [...new Set([...nativeBasePageFiles.filter((path) => !gone.has(path)), ...drafted])];
 }
 
 // Reads and validates `.astro-editor/native.json`, prefetches every referenced
@@ -1896,7 +1939,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   try {
     // Resolve every referenced file, then read them all in one round trip.
     // A page drafted as a new file has no blob; its draft is its source.
-    const drafted = new Set(nativePageFiles(scope).filter((path) => !nativeBasePageFiles.includes(path)));
+    const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : []);
     const sources: { path: string; sha: string }[] = [];
     for (const path of nativeManifestPaths(manifest)) {
       if (drafted.has(path)) continue;
@@ -2248,12 +2291,51 @@ function showDirectory(directory: Directory, path = "") {
 // read, by tree sha.
 const openFolders = new Set<string>();
 const folderListings = new Map<string, TreeEntry[]>();
-// The new files the tree was last drawn with.
+// The changes the tree was last drawn with.
 let drawnNewFiles = "";
 
 // Paths of the new files (drafts with no base blob) in the current scope.
 function newDraftPaths(scope = draftScope()) {
-  return scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null).map((draft) => draft.path) : [];
+  return scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : [];
+}
+
+// The drafts as the tree shows them: each path's change (A, M, R, D), the
+// deletions by path, and the new paths (new and renamed files).
+interface TreeState {
+  changes: Map<string, FileChange>;
+  deleted: Map<string, SavedDraft>;
+  drafted: string[];
+}
+function treeState(scope = draftScope()): TreeState {
+  const drafts = scope ? draftStore().list(scope) : [];
+  const changes = listChanges(drafts);
+  return {
+    changes: new Map(changes.map((change) => [change.path, change])),
+    deleted: new Map(drafts.filter((draft) => draft.deleted).map((draft) => [draft.path, draft])),
+    drafted: drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path),
+  };
+}
+const treeSignature = (state: TreeState) => [...state.changes.values()].map((change) => `${change.kind} ${change.from ?? ""} ${change.path}`).join("\n");
+// A file renamed or moved away in the drafts: its new path shows it.
+function movedAway(state: TreeState, path: string) {
+  const marker = state.deleted.get(path);
+  return Boolean(marker?.movedTo && state.changes.get(marker.movedTo)?.from === path);
+}
+// A folder on the branch every file of which is deleted ("deleted") or moved
+// away ("moved") in the drafts, with no new file in it; known with the
+// whole-commit tree only.
+function folderGone(state: TreeState, folder: string): "deleted" | "moved" | undefined {
+  if (!snapshot?.tree) return undefined;
+  const prefix = `${folder}/`;
+  if (state.drafted.some((path) => path.startsWith(prefix))) return undefined;
+  const inside = snapshot.tree.filter((entry) => entry.type === "blob" && entry.path.startsWith(prefix));
+  if (!inside.length) return undefined;
+  let moved = true;
+  for (const entry of inside) {
+    if (!state.deleted.has(entry.path)) return undefined;
+    if (!movedAway(state, entry.path)) moved = false;
+  }
+  return moved ? "moved" : "deleted";
 }
 
 // A tree row: an entry of the branch, or a new file drafted in this browser,
@@ -2278,17 +2360,26 @@ function withNewFiles(entries: TreeEntry[], parentPath: string, drafted: string[
   return [...entries, ...added.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-// Draws the file tree from the snapshot, new files in place.
+// Draws the file tree from the snapshot, new files in place, each change marked.
 function renderFileTree() {
   if (!snapshot) return;
-  const drafted = newDraftPaths();
-  drawnNewFiles = drafted.join("\n");
-  files.replaceChildren(renderEntries(snapshot.entries, "", generation, drafted));
+  const state = treeState();
+  drawnNewFiles = treeSignature(state);
+  const focused = document.activeElement instanceof HTMLElement && files.contains(document.activeElement)
+    ? document.activeElement.closest<HTMLElement>(".file-row")?.dataset.path
+    : undefined;
+  files.replaceChildren(renderEntries(snapshot.entries, "", generation, state));
+  if (focused) fileRow(focused)?.focus();
 }
 
-// Draws the tree again when a new file was created, discarded or saved.
+// Draws the tree again when a change appeared, went, or was saved.
 function renderDraftFiles() {
-  if (snapshot && newDraftPaths().join("\n") !== drawnNewFiles) renderFileTree();
+  if (snapshot && treeSignature(treeState()) !== drawnNewFiles) renderFileTree();
+}
+
+// The Files tree's row for `path`, when it is drawn.
+function fileRow(path: string) {
+  return [...files.querySelectorAll<HTMLButtonElement>(".file-row")].find((row) => row.dataset.path === path);
 }
 
 // The explorer's Pages | Files tabs: a native site shows both, Pages first
@@ -2342,7 +2433,8 @@ function renderPagesTree(focus?: { file?: string; folder?: string }) {
   if (!pagesTree || !nativeManifest || element("explorer-pages").hidden) return;
   const manifest = nativeManifest;
   const scope = draftScope();
-  const drafted = new Set(newDraftPaths(scope));
+  // New pages are marked; a renamed or moved one is the same page.
+  const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path) : []);
   const site = buildNativePagesTree({
     files: nativePageFiles(scope),
     routes: manifest.routes,
@@ -2400,19 +2492,44 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
   const planned = planNativeNew(request);
   if (!planned.ok) return planned.error;
   const plan = planned.value;
-  const scope = draftScope()!;
-  const draft: SavedDraft = { ...scope, version: 1, path: plan.file, baseSha: null, original: "", content: plan.content, updatedAt: Date.now() };
+  return commitNativePage({
+    kind: request.kind, file: plan.file, route: plan.route, title: plan.title, content: plan.content, manifest: plan.manifest,
+    collection: request.kind === "collection" ? plan.folder!.slice(NATIVE_PAGES_DIR.length) : undefined,
+    done: request.kind === "page"
+      ? `Created the page ${plan.title} at ${plan.route}.`
+      : `Created the collection ${plan.title} at ${plan.route}, with its overview page ${plan.file}.`,
+  });
+}
+
+// Writes a new page (a creation or a copy) as one operation: the file as a
+// new draft and its title as a metadata-only manifest entry, both or
+// neither; then routes are derived again, the trees drawn, the page opened
+// (a collection's overview behind the explorer, which stays open with it
+// focused), and Undo right after takes both back.
+async function commitNativePage(page: {
+  kind: "page" | "collection";
+  file: string;
+  route: string;
+  title: string;
+  content: string;
+  manifest: { source: string; result: Extract<NativePageMetaResult, { ok: true }> };
+  collection?: string;
+  done: string;
+}): Promise<string | undefined> {
+  const scope = draftScope();
+  if (!scope) return "Open a repository first.";
+  const draft: SavedDraft = { ...scope, version: 1, path: page.file, baseSha: null, original: "", content: page.content, updatedAt: Date.now() };
   draftStore().save(draft);
   const failure = draftStore().error;
   if (failure) {
-    draftStore().remove(scope, plan.file);
+    draftStore().remove(scope, page.file);
     return failure;
   }
   try {
-    writeNativeManifest(plan.manifest.source, plan.manifest.result);
+    writeNativeManifest(page.manifest.source, page.manifest.result);
   } catch (error) {
     // Neither part stays: the page goes with the title that could not be written.
-    draftStore().remove(scope, plan.file);
+    draftStore().remove(scope, page.file);
     return error instanceof Error ? error.message : "The manifest could not be changed.";
   }
   editorModule?.refreshDrafts();
@@ -2420,19 +2537,75 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
   refreshNativeRoutes();
   renderFileTree();
   updateAgentContext();
-  const creation: NativeCreation = { kind: request.kind, file: plan.file, route: plan.route, title: plan.title };
-  const collection = request.kind === "collection" ? plan.folder!.slice(NATIVE_PAGES_DIR.length) : undefined;
+  const creation: NativeCreation = { kind: page.kind, file: page.file, route: page.route, title: page.title };
+  const collection = page.collection;
   const epoch = generation;
   const opened = openNewDraft(draft, { keepExplorer: collection !== undefined });
   if (collection !== undefined) renderPagesTree({ folder: collection });
   await opened;
-  if (epoch === generation && currentPath === plan.file)
-    editorModule?.recordHistoryAction(plan.file, () => undoNativeCreation(creation));
+  if (epoch === generation && currentPath === page.file)
+    editorModule?.recordHistoryAction(page.file, () => undoNativeCreation(creation));
   if (collection !== undefined) renderPagesTree({ folder: collection });
-  element("status").textContent = request.kind === "page"
-    ? `Created the page ${plan.title} at ${plan.route}.`
-    : `Created the collection ${plan.title} at ${plan.route}, with its overview page ${plan.file}.`;
+  element("status").textContent = page.done;
   return undefined;
+}
+
+// ---- The Pages tab's Rename, Duplicate and Delete. ----
+
+// A page's title in the manifest, as the Page block's Title field sets it.
+function retitleNativePage(file: string, title: string): string | undefined {
+  if (!nativeManifest || !nativeRouteForPath(file)) return "This page has no URL in the site.";
+  if (nativeManifestConflict()) return MANIFEST_CONFLICT;
+  writeNativePageMeta(file, "title", title);
+  editorModule?.closeActiveEditGroup(NATIVE_MANIFEST_PATH);
+  pageStructure?.refreshMeta();
+  renderPagesTree();
+  return undefined;
+}
+
+// A copy of a page beside it: `<slug>-copy` (then `-copy-2`, …), its content
+// as it is now, titled "… (copy)", made like a new page.
+async function duplicateNativePage(file: string) {
+  const manifest = nativeManifest;
+  const route = nativeRouteForPath(file);
+  if (!manifest || !route) return;
+  const parts = file.slice(NATIVE_PAGES_DIR.length, -".html".length).split("/");
+  let name = parts.pop()!;
+  if (name === "index") name = parts.length ? parts.pop()! : "home";
+  const folder = parts.join("/");
+  let target: Checked<NativeNewTarget> | undefined;
+  for (let n = 1; n < 100; n++) {
+    target = nativeNewTarget("page", folder, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: (r) => manifest.routes[r], exists: nativePagesPathExists });
+    if (target.ok) break;
+  }
+  if (!target?.ok) { errorMessage(new Error(target?.error ?? "No name is free for the copy.")); return; }
+  if (nativeManifestConflict()) { errorMessage(new Error(MANIFEST_CONFLICT)); return; }
+  const source = nativeManifestSource();
+  const content = nativeEffectiveSource(file);
+  if (source === undefined || content === undefined) { errorMessage(new Error("The page could not be read.")); return; }
+  const label = manifest.pages[route]?.title?.trim() || (route === "/" ? "Home" : firstHeadingText(content)) || routeHeading(route);
+  const title = `${label} (copy)`;
+  const result = editNativePageMeta(source, target.value.route, "title", title);
+  if (!result.ok) { errorMessage(new Error(result.error)); return; }
+  const error = await commitNativePage({
+    kind: "page", file: target.value.file, route: target.value.route, title, content, manifest: { source, result },
+    done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
+  });
+  if (error) errorMessage(new Error(error));
+}
+
+// Delete in the Pages tab: a page, or a collection's folder with every page in it.
+function removeNativePagesTarget(target: NativePagesTarget) {
+  if (target.kind === "page") {
+    const name = target.file.slice(target.file.lastIndexOf("/") + 1);
+    void deleteFileTarget({ path: target.file, name, folder: false }, { title: `Delete the page ${target.label} (${target.file})?` });
+    return;
+  }
+  const folder = `${NATIVE_PAGES_DIR}${target.folder}`;
+  void deleteFileTarget(
+    { path: folder, name: folder.slice(folder.lastIndexOf("/") + 1), folder: true },
+    { title: `Delete the collection ${target.label} and its ${target.pages} ${target.pages === 1 ? "page" : "pages"}?` },
+  );
 }
 
 // Undo right after a creation: the new file and the manifest entry it added
@@ -2595,6 +2768,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
   // What stands in the way of a new file at `path`, as far as is known here;
   // without the whole-commit tree, GitHub is asked on confirm.
   const problem = (path: string) => {
+    if (draftStore().get(scope, path)?.deleted) return `${path} is deleted in your changes. Restore it instead.`;
     if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
     if (folderExists(path)) return `There is a folder ${path} already.`;
     if (entryAt(path) || nativeBasePageFiles.includes(path)) return `${path} already exists.`;
@@ -2733,17 +2907,549 @@ function openCreate(folder: string, opener: HTMLElement) {
   createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener });
 }
 
+// ---- Deleting, renaming, moving and duplicating files. ----
+//
+// Each is a pending change in the browser drafts (src/file-changes.ts),
+// saved with Save to GitHub in one commit. What goes with it in a native
+// site is written in the same operation: a page's manifest entry follows it
+// to its new route or goes with it, a component's or stylesheet's entry
+// names its new path or goes (`moveNativeEntries`), and routes are derived
+// again. Undo right after (the open file's editor), Restore on a deletion
+// and Move back on a rename take the whole operation back.
+let fileActions: ReturnType<typeof createFileRowActions> | undefined;
+let confirmDialog: ReturnType<typeof createConfirmDialog> | undefined;
+
+function announce(text: string) {
+  element("status").textContent = text;
+}
+
+// The change marker a tree row carries: the letter shown, the word read.
+function statusMarker(kind: ChangeKind) {
+  // A new file's name says New, as before; the other kinds are in the row's
+  // description (the row's title says each in words).
+  const marker = node("span", `file-status is-${kind}`);
+  const letter = node("span", "", kind);
+  letter.setAttribute("aria-hidden", "true");
+  marker.append(letter);
+  if (kind === "A") marker.append(node("span", "sr-only", "New"));
+  else marker.setAttribute("aria-hidden", "true");
+  return marker;
+}
+
+const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+
+// The actions of a Files row.
+function fileRowItems(target: FileRowTarget): MenuItem[] {
+  if (target.gone) return [{ label: "Restore", run: () => void restoreFileTarget(target) }];
+  const items: MenuItem[] = [];
+  if (target.folder)
+    items.push(
+      { label: "New file…", run: () => openCreateKind(target.path, "file") },
+      { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
+    );
+  items.push({ label: "Rename", shortcut: "F2", run: () => fileActions?.rename(files, target.path) });
+  if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
+  const change = treeState().changes.get(target.path);
+  if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => undoFileChanges({ moveBack: [target.path] }) });
+  items.push(
+    { label: "Delete", shortcut: "Delete", run: () => void deleteFileTarget(target) },
+    { label: "Copy path", run: () => void copyFilePath(target.path) },
+  );
+  return items;
+}
+
+// New file… and New folder… from a folder's menu: the + dialog, that kind chosen.
+function openCreateKind(folder: string, kind: CreateKind) {
+  if (!snapshot) return;
+  const opener = fileRow(folder) ?? element<HTMLButtonElement>("new-at-root");
+  createDialog?.open({ in: folder, kinds: ["file", "folder"], first: kind, opener });
+}
+
+async function copyFilePath(path: string) {
+  try {
+    await navigator.clipboard.writeText(path);
+    announce(`Copied ${path}`);
+  } catch {
+    announce(`The path could not be copied: ${path}`);
+  }
+}
+
+// What is at `path` now: a file or a folder with something in it (on the
+// branch and not deleted, or drafted), or a deletion in the drafts (a file,
+// or a folder only deletions are in).
+function pathNow(path: string, state = treeState()): "file" | "folder" | "deleted" | undefined {
+  if (state.deleted.has(path)) return "deleted";
+  if (state.drafted.includes(path)) return "file";
+  const entry = entryAt(path);
+  if (entry?.type === "blob" || entry?.type === "commit" || nativeBasePageFiles.includes(path)) return "file";
+  const prefix = `${path}/`;
+  if (state.drafted.some((file) => file.startsWith(prefix))) return "folder";
+  const inside = snapshot?.tree
+    ? snapshot.tree.filter((item) => item.type !== "tree" && item.path.startsWith(prefix)).map((item) => item.path)
+    : nativeBasePageFiles.filter((file) => file.startsWith(prefix));
+  if (inside.some((file) => !state.deleted.has(file))) return "folder";
+  if (inside.length) return "deleted";
+  return entry?.type === "tree" ? "folder" : undefined;
+}
+
+// The protected files a target takes: native.json and the home page.
+function protectedProblem(target: FileRowTarget, operation: FileOperation) {
+  const home = nativeManifest?.routes["/"];
+  const inside = (path: string | undefined) => path !== undefined && (path === target.path || (target.folder && path.startsWith(`${target.path}/`)));
+  return protectedPathProblem([NATIVE_MANIFEST_PATH, home].filter(inside) as string[], operation, home, nativeEngaged);
+}
+
+// Why `source` cannot be renamed or moved to `to`, as known without asking GitHub.
+function moveProblem(source: FileRowTarget, to: string, operation: FileOperation): string | undefined {
+  if (to === source.path) return undefined;
+  const guarded = protectedProblem(source, operation);
+  if (guarded) return guarded;
+  if (source.folder && to.startsWith(`${source.path}/`)) return `A folder cannot go inside itself.`;
+  const state = treeState();
+  const now = pathNow(to, state);
+  if (now === "file" || now === "folder") return `${to} already exists.`;
+  if (now === "deleted") {
+    // Only what was renamed away from there may go back.
+    const back = source.folder
+      ? [...state.deleted.values()].filter((draft) => draft.path.startsWith(`${to}/`)).every((draft) => draft.movedTo?.startsWith(`${source.path}/`))
+      : state.deleted.get(to)?.movedTo === source.path;
+    if (!back) return `${to} is deleted in your changes. Restore it, or choose another name.`;
+  }
+  const parts = to.split("/");
+  for (let index = 1; index < parts.length; index++) {
+    const parent = parts.slice(0, index).join("/");
+    if (pathNow(parent, state) === "file") return `${parent} is a file, so nothing can go in it.`;
+  }
+  return undefined;
+}
+
+function renameProblem(target: FileRowTarget, name: string) {
+  const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
+  return to.ok ? moveProblem(target, to.value, "rename") : to.error;
+}
+
+function dropProblem(source: FileRowTarget, folder: string) {
+  if (source.gone) return "A deleted file cannot move.";
+  if (parentOf(source.path) === folder) return "It is already there.";
+  if (source.folder && (folder === source.path || folder.startsWith(`${source.path}/`))) return "A folder cannot go inside itself.";
+  return moveProblem(source, folder ? `${folder}/${source.name}` : source.name, "move");
+}
+
+// Every file on the branch under `folder`, with full paths.
+async function branchFilesUnder(folder: string): Promise<TreeEntry[]> {
+  if (!snapshot || !currentRepo) return [];
+  if (snapshot.tree) return snapshot.tree.filter((entry) => entry.type !== "tree" && entry.path.startsWith(`${folder}/`));
+  let entries = snapshot.entries;
+  let entry: TreeEntry | undefined;
+  for (const part of folder.split("/")) {
+    entry = entries.find((item) => item.path === part);
+    if (!entry || entry.type !== "tree") return [];
+    entries = (await api<Directory>("tree", { repo: currentRepo.full_name, sha: entry.sha })).entries;
+  }
+  if (!entry) return [];
+  const listed = await api<Directory>("tree", { repo: currentRepo.full_name, sha: entry.sha, recursive: "1" });
+  return listed.entries.filter((item) => item.type !== "tree").map((item) => ({ ...item, path: `${folder}/${item.path}` }));
+}
+
+const BINARY_FILE = /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;
+
+// The files a target takes: its branch files not deleted in the drafts and
+// its new ones; with `withText`, the text of each branch file that has no
+// draft (a binary or large one goes as its blob).
+async function targetFiles(target: FileRowTarget, withText: boolean): Promise<MovableFile[]> {
+  const state = treeState();
+  const scope = draftScope();
+  if (!scope || !currentRepo) return [];
+  const branch = target.folder ? await branchFilesUnder(target.path) : await (async () => {
+    const entry = await findEntry(target.path);
+    return entry ? [{ ...entry, path: target.path }] : [];
+  })();
+  const odd = branch.find((entry) => entry.type === "commit" || entry.mode === "120000");
+  if (odd) throw new Error(`${odd.path} is a ${odd.type === "commit" ? "submodule" : "symbolic link"}; change it on GitHub.`);
+  const live = branch.filter((entry) => !state.deleted.has(entry.path));
+  const out: MovableFile[] = live.map((entry) => ({ path: entry.path, sha: entry.sha, mode: entry.mode }));
+  const known = new Set(out.map((file) => file.path));
+  for (const path of state.drafted)
+    if (!known.has(path) && (target.folder ? path.startsWith(`${target.path}/`) : path === target.path)) out.push({ path });
+  if (!withText) return out;
+  const wanted = live.filter((entry) => !draftStore().get(scope, entry.path) && (entry.size ?? 0) <= 128 * 1024 && !BINARY_FILE.test(entry.path));
+  const texts = new Map<string, string>();
+  for (const entry of wanted) {
+    const loaded = nativeBaseSources.get(entry.path);
+    if (loaded !== undefined) texts.set(entry.sha, loaded);
+  }
+  const unread = wanted.filter((entry) => !texts.has(entry.sha));
+  if (unread.length) {
+    try {
+      const read = await readFiles(currentRepo.full_name, unread.map((entry) => entry.sha));
+      for (const [sha, text] of Object.entries(read)) texts.set(sha, text);
+    } catch {
+      // One unreadable file (binary, not UTF-8) fails the batch: read each alone.
+      const results = await Promise.allSettled(unread.map((entry) => readFile(currentRepo!.full_name, entry.sha)));
+      results.forEach((result, index) => { if (result.status === "fulfilled") texts.set(unread[index].sha, result.value); });
+    }
+  }
+  for (const file of out) if (file.sha && texts.has(file.sha)) file.text = texts.get(file.sha);
+  return out;
+}
+
+// For a confirmation: the pages and components that link to the pages
+// among `paths` whose URL goes away.
+function pageLinks(paths: string[], moves: Map<string, string | undefined>, action: "deleted" | "moved") {
+  if (!nativeManifest) return undefined;
+  const routes = paths.flatMap((path) => {
+    const route = nativeRouteForPath(path);
+    if (!route) return [];
+    const to = moves.get(path);
+    return to && (nativeRouteForPath(to) ?? nativePageRoute(to)) === route ? [] : [route];
+  });
+  if (!routes.length) return undefined;
+  const sources: Record<string, string | undefined> = {};
+  for (const path of [...Object.values(nativeManifest.routes), ...Object.values(nativeManifest.components)]) sources[path] = nativeEffectiveSource(path);
+  return linkNote(filesLinkingTo(sources, routes, new Set(paths)), routes, action);
+}
+
+interface FileOperationRecord {
+  /** The drafts of every path it touched, as they were before. */
+  before: Map<string, SavedDraft | undefined>;
+  moves: NativeFileMove[];
+  dropped: Record<string, NonNullable<SavedDraft["entries"]>>;
+  /** The file open before, and where it went. */
+  opened?: { from: string; to?: string };
+}
+
+// Closes what shows the files among `paths` (the editor, the style pane) and
+// forgets the models kept for them. Returns the open file when it is one.
+function releaseFiles(paths: Set<string>) {
+  const scope = draftScope();
+  const open = currentPath && paths.has(currentPath) ? currentPath : undefined;
+  if (open) {
+    fileGeneration++;
+    setCurrentPage();
+  }
+  if (secondaryPath && paths.has(secondaryPath)) {
+    linkedStyle = undefined;
+    closeSecondary();
+  }
+  if (scope) for (const path of paths) editorModule?.forgetDraftModel(scope, path);
+  return open;
+}
+
+// After files changed: the drafts' listings, routes, both trees and the agent.
+function afterFileChanges() {
+  editorModule?.refreshDrafts();
+  commitHistory?.refresh();
+  if (nativeManifest) {
+    // Component stylesheets are found again where their components now are.
+    nativeComponentStyles.clear();
+    nativeMissingComponentStyles.clear();
+    refreshNativeRoutes();
+    void loadNativeComponentStyles(Object.keys(nativeManifest.components));
+  }
+  renderFileTree();
+  updateAgentContext();
+}
+
+// Opens `path` after an operation, or the home page (else the folder summary) when it is gone.
+async function openAfter(path: string | undefined) {
+  const epoch = generation;
+  const scope = draftScope();
+  const draft = path && scope ? draftStore().get(scope, path) : undefined;
+  if (draft && draft.baseSha === null && !draft.deleted) await openNewDraft(draft, { keepExplorer: true });
+  else if (path && !draft?.deleted) await restoreFile(path, epoch);
+  else if (nativeManifest?.routes["/"]) await restoreFile(nativeManifest.routes["/"], epoch);
+  else if (snapshot) showDirectory(snapshot);
+}
+
+/**
+ * Renames, moves (`to`) or deletes (no `to`) files as one operation: the
+ * drafts, the manifest entries that go with them, routes derived again, the
+ * trees drawn, and the open file kept open where it went (or the home page
+ * opened when it is gone). Resolves to an error message, or nothing.
+ */
+async function applyFileOperation(ops: { file: MovableFile; to?: string }[]): Promise<string | undefined> {
+  const scope = draftScope();
+  if (!scope || !ops.length) return "Open a repository first.";
+  const store = draftStore();
+  const moves: NativeFileMove[] = ops.map((op) => (op.to ? { from: op.file.path, to: op.to } : { from: op.file.path }));
+  let manifest: { source: string; text: string; dropped: Record<string, NonNullable<SavedDraft["entries"]>> } | undefined;
+  if (nativeManifest) {
+    const source = nativeManifestConflict() ? undefined : nativeManifestSource();
+    if (source !== undefined) {
+      const result = moveNativeEntries(source, nativeManifest.routes, moves);
+      if (!result.ok) return result.error;
+      manifest = { source, text: result.text, dropped: result.dropped };
+    } else {
+      // The manifest draft is in conflict: only files it does not name can go.
+      const base = nativeManifestBase?.text;
+      const check = base !== undefined ? moveNativeEntries(base, nativeManifest.routes, moves) : undefined;
+      if (check?.ok && check.text !== base) return MANIFEST_CONFLICT;
+    }
+  }
+  const before = new Map<string, SavedDraft | undefined>();
+  const remember = (path: string) => { if (!before.has(path)) before.set(path, store.get(scope, path)); };
+  for (const op of ops) {
+    remember(op.file.path);
+    if (op.to) remember(op.to);
+    const from = store.get(scope, op.file.path)?.movedFrom;
+    if (from) remember(from);
+  }
+  const opened = releaseFiles(new Set(ops.map((op) => op.file.path)));
+  for (const op of ops) {
+    const entries = manifest?.dropped[op.file.path];
+    if (op.to) moveFile(store, scope, op.file, op.to, entries);
+    else deleteFile(store, scope, op.file, entries);
+  }
+  const failure = store.error;
+  if (failure) {
+    for (const [path, draft] of before) draft ? store.save(draft) : store.remove(scope, path);
+    afterFileChanges();
+    await openAfter(opened);
+    return failure;
+  }
+  if (manifest && manifest.text !== manifest.source) {
+    try {
+      writeNativeManifest(manifest.source, manifestReplacement(manifest.source, manifest.text));
+    } catch (error) {
+      errorMessage(error);
+    }
+  }
+  afterFileChanges();
+  const record: FileOperationRecord = { before, moves, dropped: manifest?.dropped ?? {} };
+  if (opened) {
+    const to = ops.find((op) => op.file.path === opened)?.to;
+    record.opened = { from: opened, to };
+    await openAfter(to);
+  }
+  // Undo in the open file's editor takes the whole operation back.
+  if (currentPath && editorModule?.isMounted(currentPath)) editorModule.recordHistoryAction(currentPath, () => undoFileOperation(record));
+  return undefined;
+}
+
+// Undo right after an operation: the drafts as they were, the manifest's
+// entries back where they were, and the file that was open open again.
+async function undoFileOperation(record: FileOperationRecord) {
+  const scope = draftScope();
+  if (!scope) return;
+  const store = draftStore();
+  const opened = releaseFiles(new Set([...record.before.keys()]));
+  for (const [path, draft] of record.before) draft ? store.save(draft) : store.remove(scope, path);
+  putBackEntries(record.moves.filter((move) => move.to).map((move) => ({ from: move.to!, to: move.from })), Object.values(record.dropped));
+  afterFileChanges();
+  const back = record.opened?.from ?? (opened && record.moves.find((move) => move.to === opened)?.from) ?? opened;
+  if (back) await openAfter(back);
+  announce(`Undid ${describeMoves(record.moves)}.`);
+}
+
+// The manifest with renames reversed and dropped entries put back.
+function putBackEntries(moves: NativeFileMove[], dropped: (SavedDraft["entries"] | undefined)[]) {
+  if (!nativeManifest) return;
+  const source = nativeManifestConflict() ? undefined : nativeManifestSource();
+  if (source === undefined) return;
+  let text = source;
+  if (moves.length) {
+    const moved = moveNativeEntries(text, nativeManifest.routes, moves);
+    if (moved.ok) text = moved.text;
+  }
+  for (const entries of dropped) {
+    const restored = restoreNativeEntries(text, entries);
+    if (restored.ok) text = restored.text;
+  }
+  if (text === source) return;
+  try {
+    writeNativeManifest(source, manifestReplacement(source, text));
+  } catch (error) {
+    errorMessage(error);
+  }
+}
+
+function describeMoves(moves: NativeFileMove[]) {
+  if (moves.length !== 1) return moves.some((move) => move.to) ? `moving ${moves.length} files` : `deleting ${moves.length} files`;
+  const [move] = moves;
+  if (!move.to) return `deleting ${move.from}`;
+  return parentOf(move.from) === parentOf(move.to) ? `renaming ${move.from} to ${move.to}` : `moving ${move.from} to ${move.to}`;
+}
+
+/**
+ * Restores deletions and moves renamed files back (Restore in the tree, the
+ * Save panel's Restore and Move back, Discard changes on a renamed file),
+ * with the manifest entries that went with them.
+ */
+function undoFileChanges(what: { restore?: string[]; moveBack?: string[] }) {
+  const scope = draftScope();
+  if (!scope) return;
+  const store = draftStore();
+  const involved = new Set<string>();
+  for (const path of [...(what.restore ?? []), ...(what.moveBack ?? [])]) {
+    involved.add(path);
+    const draft = store.get(scope, path);
+    if (draft?.movedTo) involved.add(draft.movedTo);
+  }
+  const opened = releaseFiles(involved);
+  const reversed: NativeFileMove[] = [];
+  const dropped: SavedDraft["entries"][] = [];
+  const done: string[] = [];
+  const results = [
+    ...(what.restore ?? []).map((path) => restoreDraftFile(store, scope, path)),
+    ...(what.moveBack ?? []).map((path) => {
+      const draft = store.get(scope, path);
+      const origin = draft?.movedFrom;
+      return origin ? restoreDraftFile(store, scope, origin) : undefined;
+    }),
+  ];
+  for (const result of results) {
+    if (!result) continue;
+    done.push(result.path);
+    if (result.from) reversed.push({ from: result.from, to: result.path });
+    dropped.push(result.entries);
+  }
+  putBackEntries(reversed, dropped);
+  afterFileChanges();
+  const back = opened && (reversed.find((move) => move.from === opened)?.to ?? opened);
+  if (back) void openAfter(back);
+  announce(done.length === 1 ? (reversed.length ? `Moved ${reversed[0].from} back to ${reversed[0].to}.` : `Restored ${done[0]}.`) : `Restored ${done.length} files.`);
+}
+
+function restoreFileTarget(target: FileRowTarget) {
+  const state = treeState();
+  const paths = target.folder
+    ? [...state.deleted.keys()].filter((path) => path.startsWith(`${target.path}/`))
+    : [target.path];
+  undoFileChanges({ restore: paths });
+  requestAnimationFrame(() => fileRow(target.path)?.focus());
+}
+
+// A change's Restore (a deletion) or Move back (a rename) in the Save panel.
+function discardFileChange(change: FileChange) {
+  if (change.kind === "D") undoFileChanges({ restore: [change.path] });
+  else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
+}
+
+async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
+  const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
+  if (!to.ok) return to.error;
+  return moveFileTarget(target, to.value, "rename");
+}
+
+async function dropFileTarget(source: FileRowTarget, folder: string) {
+  const problem = dropProblem(source, folder);
+  if (problem) { announce(problem); return; }
+  const error = await moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
+  if (error) errorMessage(new Error(error));
+}
+
+// Renames or moves a file or folder to `to`: the pages among them that other
+// pages link to are named in a confirmation first.
+async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move"): Promise<string | undefined> {
+  const problem = moveProblem(source, to, operation);
+  if (problem) return problem;
+  if (to === source.path) return undefined;
+  const epoch = generation;
+  let found: MovableFile[];
+  try {
+    const taken = await branchPathProblem(to);
+    if (taken) return taken;
+    found = await targetFiles(source, true);
+  } catch (error) {
+    return error instanceof Error ? error.message : "The files could not be read.";
+  }
+  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  if (!found.length) return `${source.path} has no files to ${operation}.`;
+  const ops = found.map((file) => ({ file, to: movedPath(file.path, source.path, to) }));
+  const links = pageLinks(found.map((file) => file.path), new Map(ops.map((op) => [op.file.path, op.to])), "moved");
+  if (links && confirmDialog) {
+    const verb = operation === "rename" ? "Rename" : "Move";
+    const ok = await confirmDialog.ask({
+      title: `${verb} ${source.path} to ${to}?`,
+      notes: [`Its URL changes. ${links}`],
+      action: verb,
+    });
+    if (!ok) { announce(`Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`); return undefined; }
+  }
+  const error = await applyFileOperation(ops);
+  if (error) return error;
+  const what = source.folder ? `the folder ${source.path}` : source.path;
+  announce(operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${parentOf(to) || "the top of the repository"}.`);
+  requestAnimationFrame(() => {
+    for (let part = parentOf(to); part; part = parentOf(part)) openFolders.add(part);
+    if (!fileRow(to)) renderFileTree();
+    if (explorerDropdown?.isOpen() && explorerTab === "files") fileRow(to)?.focus();
+  });
+  return undefined;
+}
+
+// Deletes a file or folder after a confirmation naming it (and how many
+// pages link to the pages it takes).
+async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }) {
+  if (target.gone) return;
+  const guarded = protectedProblem(target, "delete");
+  if (guarded) { errorMessage(new Error(guarded)); announce(guarded); return; }
+  const epoch = generation;
+  let found: MovableFile[];
+  try {
+    found = await targetFiles(target, false);
+  } catch (error) {
+    errorMessage(error);
+    return;
+  }
+  if (epoch !== generation || !found.length) return;
+  const count = found.length;
+  const onGitHub = found.some((file) => file.sha);
+  const links = pageLinks(found.map((file) => file.path), new Map(), "deleted");
+  const title = wording?.title ?? (target.folder ? `Delete the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}?` : `Delete ${target.path}?`);
+  const ok = await confirmDialog?.ask({
+    title,
+    notes: [
+      ...(links ? [links] : []),
+      onGitHub
+        ? count === 1 ? "It is removed from GitHub when you save. Until then, Restore brings it back." : "They are removed from GitHub when you save. Until then, Restore brings them back."
+        : count === 1 ? "It is not on GitHub yet, so this discards it." : "They are not on GitHub yet, so this discards them.",
+    ],
+    action: "Delete",
+  });
+  if (!ok) { announce(`Cancelled deleting ${target.path}`); return; }
+  const error = await applyFileOperation(found.map((file) => ({ file })));
+  if (error) { errorMessage(new Error(error)); return; }
+  announce(target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`);
+  requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
+}
+
+// A copy of a file beside it, `name-copy.ext`, as a new file.
+async function duplicateFileTarget(target: FileRowTarget) {
+  const scope = draftScope();
+  if (!scope || target.folder || target.gone) return;
+  let found: MovableFile[];
+  try {
+    found = await targetFiles(target, true);
+  } catch (error) {
+    errorMessage(error);
+    return;
+  }
+  const [file] = found;
+  if (!file) return;
+  const state = treeState();
+  const to = copyPath(target.path, (path) => pathNow(path, state) !== undefined);
+  if (!duplicateFile(draftStore(), scope, file, to)) { errorMessage(new Error(`${target.path} could not be copied.`)); return; }
+  if (draftStore().error) { errorMessage(new Error(draftStore().error!)); return; }
+  afterFileChanges();
+  announce(`Duplicated ${target.path} as ${to}.`);
+  requestAnimationFrame(() => fileRow(to)?.focus());
+}
+
 function renderEntries(
   entries: TreeEntry[],
   parentPath: string,
   epoch: number,
-  drafted = newDraftPaths(),
+  state = treeState(),
 ): HTMLUListElement {
   const list = node("ul", "file-list");
-  for (const entry of withNewFiles(entries, parentPath, drafted)) {
-    const item = node("li");
+  for (const entry of withNewFiles(entries, parentPath, state.drafted)) {
     const path = parentPath ? `${parentPath}/${entry.path}` : entry.path;
     const directory = entry.type === "tree";
+    // Renamed or moved away: the file shows where it went.
+    const gone = entry.isNew ? undefined : directory ? folderGone(state, path) : state.deleted.has(path) ? (movedAway(state, path) ? "moved" : "deleted") : undefined;
+    if (gone === "moved") continue;
+    const item = node("li");
     const row = button("", () => {}, "file-row");
     const icon = node(
       "span",
@@ -2758,15 +3464,25 @@ function renderEntries(
     );
     icon.setAttribute("aria-hidden", "true");
     row.append(icon, node("span", "filename", entry.path));
-    // A new file, or a folder only new files are in, is not on GitHub yet.
-    if (entry.isNew) row.append(node("span", "file-new", "New"));
-    row.title = entry.isNew ? `${path} (new, not saved to GitHub yet)` : path;
+    // A new file, or a folder only new files are in, is not on GitHub yet;
+    // a renamed, edited or deleted one is marked as git marks it.
+    const change = directory ? undefined : state.changes.get(path);
+    const kind: ChangeKind | undefined = gone ? "D"
+      : entry.isNew ? (directory ? (state.drafted.filter((file) => file.startsWith(`${path}/`)).every((file) => state.changes.get(file)?.kind === "R") ? "R" : "A") : change?.kind === "R" ? "R" : "A")
+      : change?.kind;
+    if (kind) row.append(statusMarker(kind));
+    if (gone) row.classList.add("is-deleted");
+    row.title = kind === "R" && change?.from ? `${path} (renamed from ${change.from}, not saved to GitHub yet)`
+      : kind === "A" ? `${path} (new, not saved to GitHub yet)`
+      : kind === "D" ? `${path} (deleted, not saved to GitHub yet)`
+      : kind === "M" ? `${path} (changed, not saved to GitHub yet)` : path;
+    if (kind) row.setAttribute("aria-description", kind === "R" && change?.from ? `renamed from ${change.from}, not saved to GitHub yet` : `${CHANGE_WORDS[kind].toLowerCase()}, not saved to GitHub yet`);
     row.dataset.path = path;
     if (!directory && path === currentPath) row.classList.add("selected");
     if (directory) row.setAttribute("aria-expanded", "false");
     let childList: HTMLUListElement | undefined;
     const show = (children: TreeEntry[]) => {
-      childList = renderEntries(children, path, epoch, drafted);
+      childList = renderEntries(children, path, epoch, state);
       if (!childList.children.length)
         childList.append(node("li", "muted empty-folder", "Empty folder"));
       item.append(childList);
@@ -2818,6 +3534,10 @@ function renderEntries(
           row.disabled = false;
         }
       } else {
+        if (gone) {
+          announce(`${path} is deleted. Restore it to open it.`);
+          return;
+        }
         files
           .querySelectorAll(".selected")
           .forEach((el) => el.classList.remove("selected"));
@@ -2828,9 +3548,14 @@ function renderEntries(
         else if (!entry.isNew) await openEntry(entry, path, epoch);
       }
     });
-    const line = node("div", "file-row-line");
+    const line = node("div", `file-row-line${directory ? " is-folder" : ""}`);
     line.append(row);
-    if (directory) {
+    if (gone) {
+      const restore = button("Restore", () => void restoreFileTarget({ path, name: entry.path, folder: directory, gone: true }), "file-restore");
+      restore.setAttribute("aria-label", `Restore ${path}`);
+      line.append(restore);
+    }
+    if (directory && !gone) {
       const add = node("button", "file-add", "+");
       add.type = "button";
       add.setAttribute("aria-label", `New in ${path}`);
@@ -2839,6 +3564,7 @@ function renderEntries(
       add.addEventListener("click", () => openCreate(path, add));
       line.append(add);
     }
+    fileActions?.attach(row, line, { path, name: entry.path, folder: directory, gone: Boolean(gone) });
     item.append(line);
     list.append(item);
     // A folder open before the tree was drawn again opens again.
@@ -2862,6 +3588,17 @@ async function openEntry(
   options: { linkDefaultStyle?: boolean } = {},
 ) {
   if (epoch !== generation || !currentRepo || !snapshot || !info.user) return;
+  // A file deleted in the drafts opens as a note with Restore; one renamed
+  // or moved opens where it is now.
+  const marker = draftStore().get({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, path);
+  if (marker?.deleted) {
+    if (marker.movedTo) { await openAfter(marker.movedTo); return; }
+    ++fileGeneration;
+    explorerDropdown?.close();
+    setCurrentPage(path);
+    showDeletedFile(path);
+    return;
+  }
   const selection = ++fileGeneration;
   explorerDropdown?.close();
   setCurrentPage(path);
@@ -2995,6 +3732,9 @@ async function mountSource(
     },
     onHistory: openHistory,
     discardPlan: path === NATIVE_MANIFEST_PATH ? nativeManifestDiscardPlan : undefined,
+    movedFrom: baseSha === null ? draftStore().get(scope, path)?.movedFrom : undefined,
+    onMoveBack: () => undoFileChanges({ moveBack: [path] }),
+    onDiscardChange: discardFileChange,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();
@@ -3113,7 +3853,29 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     selection = ++fileGeneration;
   if (!options.keepExplorer) explorerDropdown?.close();
   setCurrentPage(draft.path);
+  // A binary or large file moved or copied here: its text is not held.
+  if (draft.opaque) {
+    content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; save to GitHub to keep the change.`));
+    status(`Selected ${draft.path}.`);
+    return;
+  }
   await mountSource(draft.path, "", null, false, epoch, selection);
+}
+
+// A file deleted in the drafts, opened (from the changes window, a link or a
+// reload): what happens to it, and Restore.
+function showDeletedFile(path: string) {
+  const panel = node("section", "directory-summary");
+  panel.append(
+    node("span", "badge", "Deleted"),
+    node("h1", "", path.split("/").pop() ?? path),
+    node("p", "intro", `${path} is deleted in your changes. It is removed from GitHub when you save.`),
+  );
+  const restore = button("Restore", () => undoFileChanges({ restore: [path] }), "button primary");
+  restore.setAttribute("aria-label", `Restore ${path}`);
+  panel.append(restore);
+  content.replaceChildren(panel);
+  status(`${path} is deleted in your changes.`);
 }
 async function applyAgentCommand(command: AgentCommand) {
   if (

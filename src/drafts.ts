@@ -11,6 +11,35 @@ export interface SavedDraft extends DraftScope {
   original: string;
   content: string;
   updatedAt: number;
+  /**
+   * The path is removed on the branch: `baseSha` is the blob removed,
+   * `original` its text when known, and `content` what it held when it was
+   * deleted (its draft's text), which Restore brings back.
+   */
+  deleted?: true;
+  /** On a deletion: the file was renamed or moved to this path. */
+  movedTo?: string;
+  /** On a new path: the file renamed or moved here from this path; `original` is its text there. */
+  movedFrom?: string;
+  /**
+   * The blob the content came from (a renamed, moved or duplicated file):
+   * saved as that blob while `content` equals `original`, or always when
+   * the content is `opaque` (a binary or large file whose text is not held).
+   */
+  sourceSha?: string;
+  opaque?: true;
+  mode?: "100755";
+  /** Manifest entries removed with the file (src/native-page-meta.ts), put back when it is restored. */
+  entries?: NativeDroppedEntries;
+}
+/** What a deleted or moved file took out of `.astro-editor/native.json`. */
+export interface NativeDroppedEntries {
+  /** Route to its entry's JSON value, as written. */
+  routes?: Record<string, string>;
+  /** Component tag to its template path. */
+  components?: Record<string, string>;
+  /** Stylesheets with their place in `styles`. */
+  styles?: { path: string; index: number }[];
 }
 const prefix = "astro-site-editor:draft:v1:";
 export const draftKey = (scope: DraftScope, path: string) =>
@@ -84,7 +113,7 @@ export class DraftStore {
       .sort((a, b) => a.path.localeCompare(b.path));
   }
   save(value: SavedDraft) {
-    if (value.baseSha !== null && value.content === value.original)
+    if (value.baseSha !== null && value.content === value.original && !value.deleted)
       return this.remove(value, value.path);
     const key = draftKey(value, value.path);
     this.deleted.delete(key);

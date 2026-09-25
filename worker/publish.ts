@@ -9,6 +9,21 @@ import { GitHub, HttpError } from "./github";
 const encoder = new TextEncoder();
 const validSha = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
+/** Paths one commit may change: edits, new files, and both sides of every rename. */
+export const MAX_PUBLISH_FILES = 100;
+const invalidPath = (path: unknown) =>
+  typeof path !== "string" ||
+  path.length > 1024 ||
+  path
+    .split("/")
+    .some(
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        part.toLowerCase() === ".git",
+    ) ||
+  /[\\\u0000-\u001f\u007f]/.test(path);
 export function validatePublish(value: unknown): PublishRequest {
   const data = value as Partial<PublishRequest> | null;
   if (
@@ -18,33 +33,29 @@ export function validatePublish(value: unknown): PublishRequest {
     data.branch.length > 255 ||
     !Array.isArray(data.files) ||
     data.files.length < 1 ||
-    data.files.length > 20
+    data.files.length > MAX_PUBLISH_FILES
   )
     throw new HttpError(
       400,
-      "Choose a branch and between 1 and 20 changed files.",
+      `Choose a branch and between 1 and ${MAX_PUBLISH_FILES} changed files.`,
     );
   const paths = new Set<string>();
   let bytes = 0;
   for (const file of data.files) {
     if (
       !file ||
-      typeof file.path !== "string" ||
-      file.path.length > 1024 ||
-      file.path
-        .split("/")
-        .some(
-          (part) =>
-            !part ||
-            part === "." ||
-            part === ".." ||
-            part.toLowerCase() === ".git",
-        ) ||
-      /[\\\u0000-\u001f\u007f]/.test(file.path) ||
+      invalidPath(file.path) ||
       paths.has(file.path) ||
       (file.baseSha !== null && !validSha(file.baseSha)) ||
       typeof file.content !== "string" ||
-      file.content.includes("\0")
+      file.content.includes("\0") ||
+      (file.delete !== undefined && file.delete !== true) ||
+      // A deletion removes the blob it began from, and sends nothing.
+      (file.delete && (file.baseSha === null || file.content !== "" || file.sha !== undefined)) ||
+      // A new path may be an existing blob instead of content.
+      (file.sha !== undefined && (!validSha(file.sha) || file.baseSha !== null || file.content !== "")) ||
+      (file.mode !== undefined && file.mode !== "100644" && file.mode !== "100755") ||
+      (file.movedFrom !== undefined && invalidPath(file.movedFrom))
     )
       throw new HttpError(
         400,
@@ -120,39 +131,41 @@ export async function publish(
       sha = entry.sha;
     }
   }
-  const changes: {
-    path: string;
-    mode: string;
-    type: "blob";
-    content: string;
-  }[] = [];
+  type Change = { path: string; mode: string; type: "blob" } & (
+    { content: string } | { sha: string | null }
+  );
+  const changes: Change[] = [];
   const files: PublishResult["files"] = [];
+  const deleted: string[] = [];
   const conflicts: string[] = [];
+  const isFile = (entry: TreeEntry) =>
+    entry.type === "blob" && ["100644", "100755"].includes(entry.mode);
   for (const file of data.files) {
     const existing = await lookup(file.path);
-    const sha = await blobSha(file.content);
+    if (file.delete) {
+      // Already gone from the branch: nothing to remove.
+      if (!existing) deleted.push(file.path);
+      // Removing a file that changed since the draft began would lose that change.
+      else if (!isFile(existing) || existing.sha !== file.baseSha) conflicts.push(file.path);
+      else {
+        changes.push({ path: file.path, mode: existing.mode, type: "blob", sha: null });
+        deleted.push(file.path);
+      }
+      continue;
+    }
+    const sha = file.sha ?? (await blobSha(file.content));
     files.push({ path: file.path, sha });
+    const body = file.sha ? { sha: file.sha } : { content: file.content };
     if (!existing && file.baseSha === null) {
-      changes.push({
-        path: file.path,
-        mode: "100644",
-        type: "blob",
-        content: file.content,
-      });
+      changes.push({ path: file.path, mode: file.mode ?? "100644", type: "blob", ...body });
     } else if (
       !existing ||
-      existing.type !== "blob" ||
-      !["100644", "100755"].includes(existing.mode) ||
+      !isFile(existing) ||
       (existing.sha !== file.baseSha && existing.sha !== sha)
     ) {
       conflicts.push(file.path);
     } else if (existing.sha !== sha) {
-      changes.push({
-        path: file.path,
-        mode: existing.mode,
-        type: "blob",
-        content: file.content,
-      });
+      changes.push({ path: file.path, mode: existing.mode, type: "blob", ...body });
     }
   }
   if (conflicts.length)
@@ -172,7 +185,7 @@ export async function publish(
       `${base}/git/commits`,
       "POST",
       {
-        message: `Update ${changes.length === 1 ? changes[0].path : `${changes.length} files`} with Native Site Editor`,
+        message: `${commitSummary(data.files, changes)} with Native Site Editor`,
         tree: tree.sha,
         parents: [head],
       },
@@ -190,6 +203,40 @@ export async function publish(
     branch: data.branch,
     url: `https://github.com/${repo.full_name}/commit/${result}`,
     files,
+    deleted,
     unchanged: changes.length === 0,
   };
+}
+
+/**
+ * What the commit does, in words: one change by its path ("Rename a to b",
+ * "Delete a", "Update a"), else the counts ("Rename 3 files and delete 1").
+ */
+export function commitSummary(
+  requested: PublishRequest["files"],
+  changes: { path: string; sha?: string | null }[],
+): string {
+  const removed = new Set(changes.filter((change) => "sha" in change && change.sha === null).map((change) => change.path));
+  const written = changes.filter((change) => !removed.has(change.path));
+  const renames = written.flatMap((change) => {
+    const from = requested.find((file) => file.path === change.path)?.movedFrom;
+    return from && removed.has(from) ? [{ from, to: change.path }] : [];
+  });
+  const renamedFrom = new Set(renames.map((rename) => rename.from));
+  const renamedTo = new Set(renames.map((rename) => rename.to));
+  const updates = written.filter((change) => !renamedTo.has(change.path));
+  const deletes = [...removed].filter((path) => !renamedFrom.has(path));
+  if (renames.length + updates.length + deletes.length === 1) {
+    if (renames.length) return `Rename ${renames[0].from} to ${renames[0].to}`;
+    if (deletes.length) return `Delete ${deletes[0]}`;
+    return `Update ${updates[0].path}`;
+  }
+  const count = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
+  const parts = [
+    updates.length ? `update ${count(updates.length)}` : "",
+    renames.length ? `rename ${updates.length ? renames.length : count(renames.length)}` : "",
+    deletes.length ? `delete ${updates.length || renames.length ? deletes.length : count(deletes.length)}` : "",
+  ].filter(Boolean);
+  const text = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] ?? "Update files";
+  return text[0].toUpperCase() + text.slice(1);
 }

@@ -10,6 +10,7 @@ import { createPublishMenu } from "./publish-menu";
 import { textHash, type AgentCommand } from "../../shared/agent";
 import type { EditorContext } from "../../shared/types";
 import type { PublishResult } from "../../shared/types";
+import type { FileChange } from "../file-changes";
 import { button, node } from "../ui/dom";
 
 export interface SourceFile {
@@ -38,6 +39,11 @@ export interface SourceFile {
    * discard takes with it, said in the confirmation, and what to do after.
    */
   discardPlan?: () => { note: string; after: () => void } | undefined;
+  /** A renamed or moved file's old path: Discard changes moves it back there (`onMoveBack`). */
+  movedFrom?: string;
+  onMoveBack?: () => void;
+  /** Restores a deletion or moves a renamed file back, from the Save panel. */
+  onDiscardChange?: (change: FileChange) => void;
 }
 
 interface Draft {
@@ -154,6 +160,19 @@ export function dropDraft(scope: DraftScope, path: string) {
     kept.model.dispose();
     drafts.delete(key);
   }
+  return true;
+}
+/**
+ * Forgets the model kept for `path` (a draft not mounted), leaving its
+ * stored draft as it is: the file was renamed, moved or deleted, and its
+ * draft now lives elsewhere or is a deletion.
+ */
+export function forgetDraftModel(scope: DraftScope, path: string) {
+  const key = draftKey(scope, path);
+  const kept = drafts.get(key);
+  if (!kept || [...mounted.values()].some((editor) => editor.model === kept.model)) return false;
+  kept.model.dispose();
+  drafts.delete(key);
   return true;
 }
 export function getMountedSource(path: string) {
@@ -581,6 +600,11 @@ export function mountCodeEditor(
   const discard = button(
     "Discard changes",
     () => {
+      // A renamed file goes back to its old path, its edits kept there.
+      if (current.baseSha === null && file.movedFrom && file.onMoveBack) {
+        if (confirm(`Move this file back to ${file.movedFrom}? Its edits are kept there.`)) file.onMoveBack();
+        return;
+      }
       const plan = current.baseSha === null ? undefined : file.discardPlan?.();
       if (
         !confirm(
@@ -614,6 +638,7 @@ export function mountCodeEditor(
           scope: file.scope,
           currentPath: file.path,
           saveLabels: file.saveLabels,
+          onDiscardChange: file.onDiscardChange,
           onExpired: () => file.onSessionExpired?.(),
           onPublished: (result, submitted) => {
             reconcilePublished(result, submitted);
@@ -677,7 +702,13 @@ export function mountCodeEditor(
     const changed =
       current.baseSha === null || current.model.getValue() !== current.original;
     if (file.scope && current.baseSha !== undefined && !file.readOnly) {
+      // A renamed file keeps where it came from (src/file-changes.ts).
+      const stored = current.baseSha === null ? store.get(file.scope, file.path) : undefined;
+      const moved = stored && !stored.deleted
+        ? { ...(stored.movedFrom ? { movedFrom: stored.movedFrom } : {}), ...(stored.sourceSha ? { sourceSha: stored.sourceSha } : {}), ...(stored.mode ? { mode: stored.mode } : {}) }
+        : {};
       current.persisted = store.save({
+        ...moved,
         ...file.scope,
         version: 1,
         path: file.path,
@@ -801,26 +832,37 @@ export function mountCodeEditor(
 
 function reconcilePublished(result: PublishResult, submitted: SavedDraft[]) {
   const store = draftStore();
+  const removed = new Set(result.deleted ?? []);
   for (const sent of submitted) {
+    const latest = store.get(sent, sent.path);
+    // A deletion saved: the path is gone from GitHub, and so is its draft.
+    if (sent.deleted) {
+      if (removed.has(sent.path) && latest?.deleted) store.remove(sent, sent.path);
+      continue;
+    }
     const sha = result.files.find((file) => file.path === sent.path)?.sha;
     if (!sha) continue;
     const key = draftKey(sent, sent.path);
     const open = drafts.get(key);
-    const latest = store.get(sent, sent.path);
+    // Saved, a renamed or copied file is a file like any other.
+    const { movedFrom: _from, sourceSha: _source, opaque, mode: _mode, entries: _entries, ...plain } = sent;
     // Edits typed during publishing remain a new draft on top of the committed content.
     if (open) {
       open.original = sent.content;
       open.baseSha = sha;
       open.persisted = store.save({
-        ...sent,
+        ...plain,
         baseSha: sha,
         original: sent.content,
         content: open.model.getValue(),
         updatedAt: Date.now(),
       });
+    } else if (opaque) {
+      if (latest?.opaque) store.remove(sent, sent.path);
     } else if (latest) {
+      const { movedFrom: _f, sourceSha: _s, opaque: _o, mode: _m, entries: _e, ...rest } = latest;
       store.save({
-        ...latest,
+        ...rest,
         baseSha: sha,
         original: sent.content,
         updatedAt: Date.now(),

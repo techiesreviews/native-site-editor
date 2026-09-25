@@ -46,6 +46,11 @@ export function newFilePath(folder: string, name: string): Checked<string> {
   return path;
 }
 
+/** The path `name` gives in `folder` for a file or folder renamed or moved there (any extension). */
+export function renamedPath(folder: string, name: string, what: "file" | "folder"): Checked<string> {
+  return joinPath(folder, name, what);
+}
+
 /** The path of a new folder named `name` in `folder`. */
 export function newFolderPath(folder: string, name: string): Checked<string> {
   return joinPath(folder, name, "folder");

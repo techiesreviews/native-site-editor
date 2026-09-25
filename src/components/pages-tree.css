@@ -141,36 +141,6 @@
 .pages-edit__action--primary:hover { background: var(--green); filter: brightness(1.1); }
 .pages-edit__action:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* A collection's actions, and + New. */
-.pages-menu {
-  position: fixed;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 170px;
-  padding: 6px;
-  border-radius: 8px;
-  background: var(--surface-toolbar);
-  color: var(--text);
-  font-size: 12px;
-  box-shadow: var(--shadow);
-}
-.pages-menu[hidden] { display: none; }
-.pages-menu__item {
-  border: 0;
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.pages-menu__item:hover, .pages-menu__item:focus-visible { background: var(--hover); }
-.pages-menu__item:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-
 /* Pages | Files. */
 .explorer-tabs { display: flex; gap: 2px; margin: -8px 0 4px; border-bottom: 1px solid var(--line); }
 .explorer-tabs[hidden] { display: none; }
@@ -190,3 +160,20 @@
 .explorer-tab[aria-selected="true"] { color: var(--green); border-bottom-color: var(--green); }
 .explorer-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 5px 5px 0 0; }
 .explorer-panel[hidden] { display: none; }
+
+/* A title edited in place. */
+.pages-label[hidden] { display: none; }
+.pages-rename {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--focus);
+  border-radius: 4px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.pages-rename:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; }

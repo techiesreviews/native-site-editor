@@ -139,3 +139,86 @@ test("a manifest written with CRLF gets CRLF between new members", () => {
   assert.equal(result.text.includes("\n"), true);
   assert.equal(/[^\r]\n/.test(result.text), false);
 });
+
+test("a moved page's metadata-only entry follows it to its new route; deleted or out of src/pages it goes and comes back on restore", async () => {
+  const { moveNativeEntries, restoreNativeEntries } = await import("../src/native-page-meta.ts");
+  const text = `{
+  "version": 1,
+  "routes": {
+    "/work/fern-and-kettle/": { "title": "Fern & Kettle" },
+    "/about/": { "title": "About" }
+  },
+  "styles": ["src/styles/site.css"]
+}
+`;
+  const routes = { "/": "src/pages/index.html", "/about/": "src/pages/about.html", "/work/fern-and-kettle/": "src/pages/work/fern-and-kettle.html" };
+  const moved = moveNativeEntries(text, routes, [{ from: "src/pages/work/fern-and-kettle.html", to: "src/pages/projects/fern.html" }]);
+  assert.equal(moved.ok, true);
+  if (!moved.ok) return;
+  assert.deepEqual(JSON.parse(moved.text).routes, { "/about/": { title: "About" }, "/projects/fern/": { title: "Fern & Kettle" } });
+  assert.deepEqual(moved.dropped, {});
+  assert.match(moved.text, /\n    "\/projects\/fern\/": \{ "title": "Fern & Kettle" \}\n  \}/);
+  // Deleted: the entry goes, remembered for Restore.
+  const deleted = moveNativeEntries(text, routes, [{ from: "src/pages/about.html" }]);
+  assert.equal(deleted.ok, true);
+  if (!deleted.ok) return;
+  assert.deepEqual(Object.keys(JSON.parse(deleted.text).routes), ["/work/fern-and-kettle/"]);
+  assert.deepEqual(deleted.dropped, { "src/pages/about.html": { routes: { "/about/": '{ "title": "About" }' } } });
+  const restored = restoreNativeEntries(deleted.text, deleted.dropped["src/pages/about.html"]);
+  assert.equal(restored.ok && JSON.stringify(JSON.parse(restored.text)), JSON.stringify(JSON.parse(text)));
+  // Moved out of src/pages, or renamed to a non-page, it goes too.
+  for (const to of ["notes/about.html", "src/pages/about.txt", "src/pages/_draft.html"]) {
+    const out = moveNativeEntries(text, routes, [{ from: "src/pages/about.html", to }]);
+    assert.equal(out.ok && Object.hasOwn(JSON.parse(out.text).routes, "/about/"), false, to);
+  }
+  // A file whose route another file serves carries no entry.
+  const unused = moveNativeEntries(text, { ...routes, "/about/": "src/pages/about/index.html" }, [{ from: "src/pages/about.html", to: "src/pages/team.html" }]);
+  assert.equal(unused.ok && unused.text, text);
+});
+
+test("a route mapped to a file names its new path; components and styles follow their files or go", async () => {
+  const { moveNativeEntries, restoreNativeEntries } = await import("../src/native-page-meta.ts");
+  const text = `{
+  "version": 1,
+  "routes": {
+    "/": "src/pages/index.html",
+    "/about/": { "file": "src/pages/about.html", "title": "About" }
+  },
+  "components": {
+    "site-header": "src/components/site-header/site-header.html",
+    "card-note": "src/components/card-note/card-note.html"
+  },
+  "styles": ["src/styles/site.css", "src/styles/sections.css", "src/styles/print.css"]
+}
+`;
+  const routes = { "/": "src/pages/index.html", "/about/": "src/pages/about.html" };
+  const result = moveNativeEntries(text, routes, [
+    { from: "src/pages/about.html", to: "src/pages/team.html" },
+    { from: "src/components/site-header/site-header.html", to: "src/components/header/site-header.html" },
+    { from: "src/components/card-note/card-note.html" },
+    { from: "src/styles/sections.css" },
+    { from: "src/styles/site.css", to: "src/styles/base.css" },
+  ]);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const value = JSON.parse(result.text);
+  assert.deepEqual(value.routes["/about/"], { file: "src/pages/team.html", title: "About" });
+  assert.deepEqual(value.components, { "site-header": "src/components/header/site-header.html" });
+  assert.deepEqual(value.styles, ["src/styles/base.css", "src/styles/print.css"]);
+  assert.deepEqual(result.dropped, {
+    "src/components/card-note/card-note.html": { components: { "card-note": "src/components/card-note/card-note.html" } },
+    "src/styles/sections.css": { styles: [{ path: "src/styles/sections.css", index: 1 }] },
+  });
+  let back = result.text;
+  for (const entries of Object.values(result.dropped)) {
+    const restored = restoreNativeEntries(back, entries);
+    assert.equal(restored.ok, true);
+    if (restored.ok) back = restored.text;
+  }
+  const again = JSON.parse(back);
+  assert.deepEqual(again.styles, ["src/styles/base.css", "src/styles/sections.css", "src/styles/print.css"]);
+  assert.deepEqual(Object.keys(again.components).sort(), ["card-note", "site-header"]);
+  // A mapped page deleted drops its route.
+  const gone = moveNativeEntries(text, routes, [{ from: "src/pages/about.html" }]);
+  assert.equal(gone.ok && Object.hasOwn(JSON.parse(gone.text).routes, "/about/"), false);
+});

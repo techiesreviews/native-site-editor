@@ -1,4 +1,6 @@
 // Minimal text edits to the manifest's route metadata.
+import { nativePageRoute } from "../shared/native-routes";
+import type { NativeDroppedEntries } from "./drafts";
 //
 // A route in `.astro-editor/native.json` is either the bare page path
 // (`"/about/": "src/pages/about.html"`), an object with the path in `file`
@@ -152,14 +154,7 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
   // No entry: a derived route's first field adds a metadata-only one.
   if (!routeMember) {
     if (!value) return done(null);
-    if (!routes) {
-      if (!top.length) return done({ start: text.indexOf("{") + 1, end: text.indexOf("{") + 1, text: ` "routes": { ${entry} } ` });
-      const after = top.find((member) => member.key === "version") ?? top[top.length - 1];
-      return done({ start: after.valueEnd, end: after.valueEnd, text: `${separator(scanner.skip(0), top[0], after)}"routes": { ${entry} }` });
-    }
-    if (!routeMembers.length) return done({ start: routes.valueStart, end: routes.valueEnd, text: `{ ${entry} }` });
-    const last = routeMembers[routeMembers.length - 1];
-    return done({ start: last.valueEnd, end: last.valueEnd, text: `${separator(routes.valueStart, routeMembers[0], last)}${entry}` });
+    return done(addRouteMember(text, scanner, top, routes, routeMembers, entry));
   }
 
   // The bare form: the first field written turns it into the object form.
@@ -191,6 +186,19 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
   // A metadata-only entry left with nothing goes, as the route needs no entry.
   if (!rest.length) return done(removal(routeMembers, routeMember) ?? { start: routes!.valueStart, end: routes!.valueEnd, text: "{}" });
   return done(removal(members, existing)!);
+}
+
+// The edit that adds the member `entry` (`"/route/": value`) at the end of
+// `routes`, creating `routes` after `version` when the manifest has none.
+function addRouteMember(text: string, scanner: Scanner, top: Member[], routes: Member | undefined, routeMembers: Member[], entry: string): NativePageMetaEdit {
+  if (!routes) {
+    if (!top.length) return { start: text.indexOf("{") + 1, end: text.indexOf("{") + 1, text: ` "routes": { ${entry} } ` };
+    const after = top.find((member) => member.key === "version") ?? top[top.length - 1];
+    return { start: after.valueEnd, end: after.valueEnd, text: `${separatorAfter(text, scanner.skip(0), top[0].start, after.start)}"routes": { ${entry} }` };
+  }
+  if (!routeMembers.length) return { start: routes.valueStart, end: routes.valueEnd, text: `{ ${entry} }` };
+  const last = routeMembers[routeMembers.length - 1];
+  return { start: last.valueEnd, end: last.valueEnd, text: `${separatorAfter(text, routes.valueStart, routeMembers[0].start, last.start)}${entry}` };
 }
 
 /**
@@ -350,4 +358,188 @@ function removal(members: Member[], member: Member): NativePageMetaEdit | undefi
   const start = index > 0 ? members[index - 1].valueEnd : member.start;
   const end = index > 0 ? member.valueEnd : members[index + 1].start;
   return { start, end, text: "" };
+}
+
+// The paths the manifest accepts for each kind of entry (native-manifest.ts).
+const PAGE_PATH = /^src\/pages\/[\w./-]+\.html$/;
+const COMPONENT_PATH = /^src\/components\/[\w./-]+\.html$/;
+const STYLE_PATH = /^src\/styles\/[\w./-]+\.css$/;
+
+/** A file renamed or moved to `to`, or deleted (no `to`). */
+export interface NativeFileMove {
+  from: string;
+  to?: string;
+}
+
+export type NativeMovesResult =
+  /** `dropped`: per file moved or deleted, the entries taken out, to put back when it is restored. */
+  | { ok: true; text: string; dropped: Record<string, NativeDroppedEntries> }
+  | { ok: false; error: string };
+
+interface ManifestShape {
+  top: Member[];
+  routes?: Member;
+  routeMembers: Member[];
+  components?: Member;
+  componentMembers: Member[];
+  styles?: Member;
+  styleItems: { start: number; end: number }[];
+}
+
+function shapeOf(text: string): ManifestShape {
+  const scanner = new Scanner(text);
+  const top = scanner.members(scanner.skip(0));
+  const find = (key: string) => top.find((member) => member.key === key);
+  const routes = find("routes");
+  const components = find("components");
+  const styles = find("styles");
+  return {
+    top,
+    routes,
+    routeMembers: routes && text[routes.valueStart] === "{" ? scanner.members(routes.valueStart) : [],
+    components,
+    componentMembers: components && text[components.valueStart] === "{" ? scanner.members(components.valueStart) : [],
+    styles,
+    styleItems: styles && text[styles.valueStart] === "[" ? scanner.elements(styles.valueStart) : [],
+  };
+}
+
+const stringAt = (text: string, start: number, end: number) => {
+  if (text[start] !== '"') return undefined;
+  try {
+    return JSON.parse(text.slice(start, end)) as string;
+  } catch {
+    return undefined;
+  }
+};
+
+const apply = (text: string, edit: NativePageMetaEdit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+
+// The edit that takes the element at `index` out of an array.
+function elementRemoval(array: Member, items: { start: number; end: number }[], index: number): NativePageMetaEdit {
+  if (items.length === 1) return { start: array.valueStart, end: array.valueEnd, text: "[]" };
+  if (index > 0) return { start: items[index - 1].end, end: items[index].end, text: "" };
+  return { start: items[0].start, end: items[1].start, text: "" };
+}
+
+/**
+ * The manifest after files were renamed, moved or deleted, as minimal edits:
+ * - a page's metadata-only entry follows it to the route its new place gives
+ *   (`routes` maps route to file as parsed, so only the file a route is
+ *   actually served from carries its entry), and goes when it leaves
+ *   `src/pages/`, stops being a page or is deleted;
+ * - a route mapped to the file (a bare path, or `file`) keeps its route and
+ *   names the new path, or goes when the file is deleted or is no page;
+ * - a component's template path and a stylesheet in `styles` name the new
+ *   path, or go when the file is deleted or is no longer that kind of file.
+ * What was taken out is returned per file, for `restoreNativeEntries`.
+ */
+export function moveNativeEntries(text: string, routes: Record<string, string>, moves: NativeFileMove[]): NativeMovesResult {
+  const dropped: Record<string, NativeDroppedEntries> = {};
+  const drop = (from: string) => (dropped[from] ??= {});
+  let next = text;
+  try {
+    for (const { from, to } of moves) {
+      // Mapped routes: one edit at a time, reading the text again after each.
+      let explicit = false;
+      for (let guard = 0; guard < 1000; guard++) {
+        const shape = shapeOf(next);
+        const member = shape.routeMembers.find((member) => {
+          const value = next[member.valueStart] === "{" ? new Scanner(next).members(member.valueStart).find((item) => item.key === "file") : member;
+          return value !== undefined && stringAt(next, value.valueStart, value.valueEnd) === from;
+        });
+        if (!member) break;
+        explicit = true;
+        const file = next[member.valueStart] === "{" ? new Scanner(next).members(member.valueStart).find((item) => item.key === "file")! : member;
+        if (to && PAGE_PATH.test(to)) {
+          next = apply(next, { start: file.valueStart, end: file.valueEnd, text: JSON.stringify(to) });
+          continue;
+        }
+        (drop(from).routes ??= {})[member.key] = next.slice(member.valueStart, member.valueEnd);
+        next = apply(next, removal(shape.routeMembers, member) ?? { start: shape.routes!.valueStart, end: shape.routes!.valueEnd, text: "{}" });
+      }
+      // The metadata of the route the file's place gives it.
+      const route = nativePageRoute(from);
+      if (!explicit && route && routes[route] === from) {
+        const shape = shapeOf(next);
+        const member = shape.routeMembers.find((member) => member.key === route);
+        const target = to ? nativePageRoute(to) : undefined;
+        if (member && next[member.valueStart] === "{" && target !== route) {
+          const raw = next.slice(member.valueStart, member.valueEnd);
+          next = apply(next, removal(shape.routeMembers, member) ?? { start: shape.routes!.valueStart, end: shape.routes!.valueEnd, text: "{}" });
+          const after = shapeOf(next);
+          if (target && !after.routeMembers.some((item) => item.key === target))
+            next = apply(next, addRouteMember(next, new Scanner(next), after.top, after.routes, after.routeMembers, `${JSON.stringify(target)}: ${raw}`));
+          else (drop(from).routes ??= {})[route] = raw;
+        }
+      }
+      // Components.
+      for (let guard = 0; guard < 1000; guard++) {
+        const shape = shapeOf(next);
+        const member = shape.componentMembers.find((member) => stringAt(next, member.valueStart, member.valueEnd) === from);
+        if (!member) break;
+        if (to && COMPONENT_PATH.test(to)) {
+          next = apply(next, { start: member.valueStart, end: member.valueEnd, text: JSON.stringify(to) });
+          continue;
+        }
+        (drop(from).components ??= {})[member.key] = from;
+        next = apply(next, removal(shape.componentMembers, member) ?? { start: shape.components!.valueStart, end: shape.components!.valueEnd, text: "{}" });
+      }
+      // Stylesheets.
+      for (let guard = 0; guard < 1000; guard++) {
+        const shape = shapeOf(next);
+        const index = shape.styleItems.findIndex((item) => stringAt(next, item.start, item.end) === from);
+        if (index < 0) break;
+        const item = shape.styleItems[index];
+        if (to && STYLE_PATH.test(to)) {
+          next = apply(next, { start: item.start, end: item.end, text: JSON.stringify(to) });
+          continue;
+        }
+        (drop(from).styles ??= []).push({ path: from, index });
+        next = apply(next, elementRemoval(shape.styles!, shape.styleItems, index));
+      }
+    }
+  } catch {
+    return { ok: false, error: "native.json could not be read as JSON." };
+  }
+  const done = finish(text, next === text ? null : { start: 0, end: text.length, text: next });
+  return done.ok ? { ok: true, text: done.text, dropped } : done;
+}
+
+/**
+ * The manifest with entries a deleted or moved file took out put back, where
+ * nothing has taken their place: a route's entry, a component's tag, a
+ * stylesheet at its old place in `styles`.
+ */
+export function restoreNativeEntries(text: string, entries: NativeDroppedEntries | undefined): NativePageMetaResult {
+  if (!entries) return finish(text, null);
+  let next = text;
+  try {
+    for (const [route, raw] of Object.entries(entries.routes ?? {})) {
+      const shape = shapeOf(next);
+      if (shape.routeMembers.some((member) => member.key === route)) continue;
+      next = apply(next, addRouteMember(next, new Scanner(next), shape.top, shape.routes, shape.routeMembers, `${JSON.stringify(route)}: ${raw}`));
+    }
+    for (const [tag, path] of Object.entries(entries.components ?? {})) {
+      const result = registerNativeFile(next, { kind: "component", tag, path });
+      if (result.ok) next = result.text;
+    }
+    for (const { path, index } of [...(entries.styles ?? [])].sort((a, b) => a.index - b.index)) {
+      const shape = shapeOf(next);
+      if (shape.styleItems.some((item) => stringAt(next, item.start, item.end) === path)) continue;
+      if (!shape.styles || index >= shape.styleItems.length || !shape.styleItems.length) {
+        const result = registerNativeFile(next, { kind: "style", path });
+        if (result.ok) next = result.text;
+        continue;
+      }
+      const items = shape.styleItems;
+      const literal = JSON.stringify(path);
+      // Before the element now at `index`, separated like the elements are.
+      const separator = separatorAfter(next, shape.styles.valueStart, items[0].start, items[index].start);
+      next = apply(next, { start: items[index].start, end: items[index].start, text: `${literal}${separator}` });
+    }
+  } catch {
+    return { ok: false, error: "native.json could not be read as JSON." };
+  }
+  return finish(text, next === text ? null : { start: 0, end: text.length, text: next });
 }

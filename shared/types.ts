@@ -48,10 +48,22 @@ export interface SessionInfo {
   repositories?: Repository[] | null;
 }
 
+/**
+ * One path in a commit. `baseSha` is the blob the change began from (null for
+ * a path the branch should not have yet). A deletion (`delete: true`) removes
+ * the path and needs its `baseSha`; a new path may name an existing blob in
+ * `sha` (a file renamed, moved or copied unchanged, which may be binary)
+ * instead of sending `content`. `mode` keeps an executable file executable.
+ */
 export interface PublishFile {
   path: string;
   baseSha: string | null;
   content: string;
+  delete?: boolean;
+  sha?: string;
+  mode?: "100644" | "100755";
+  /** A rename's old path, for the commit message only. */
+  movedFrom?: string;
 }
 export interface PublishRequest {
   branch: string;
@@ -62,6 +74,8 @@ export interface PublishResult {
   branch: string;
   url: string;
   files: { path: string; sha: string }[];
+  /** Paths the commit removed (or that GitHub no longer had). */
+  deleted?: string[];
   unchanged: boolean;
 }
 

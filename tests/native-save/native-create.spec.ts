@@ -296,7 +296,7 @@ test("a collection, a page in it and a sub-collection are made in place, route a
   await item(page, "Videos").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add page", "Add sub-collection"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add page", "Add sub-collection", /^Rename/, /^Delete/]);
   await expect(menu.getByRole("menuitem", { name: "Add page" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");

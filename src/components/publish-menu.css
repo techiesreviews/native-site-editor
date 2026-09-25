@@ -56,3 +56,10 @@
   .publish-diff__split { display: none; }
   .publish-diff__unified { display: block; }
 }
+/* A change's kind, as in git: A added, M modified, R renamed, D deleted. */
+.publish-menu__status { flex-shrink: 0; min-width: 14px; padding: 0 4px; border-radius: 4px; font: 600 10px/16px ui-monospace, monospace; text-align: center; }
+.publish-menu__status.is-A, .publish-menu__status.is-R { background: var(--success-bg); color: var(--success-fg); }
+.publish-menu__status.is-M { background: var(--selected); color: var(--green); }
+.publish-menu__status.is-D { background: var(--warning-bg); color: var(--warning-fg); }
+.publish-menu__changes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.publish-menu__note { font-size: 11px; color: var(--muted); }

@@ -1,6 +1,7 @@
 import { button, node } from "../ui/dom";
 import { slugify, type NativeCollectionNode, type NativeNewKind, type NativePageNode, type NativeTreeNode } from "../native-pages";
 import type { Checked } from "../native-create";
+import { createRowMenu, type MenuItem } from "./row-menu";
 import "./pages-tree.css";
 
 /** A new page or collection, as typed in the tree. */
@@ -12,10 +13,8 @@ export interface NativeNewRequest {
   slug: string;
 }
 
-interface MenuItem {
-  label: string;
-  run: () => void;
-}
+/** A page or a collection a row action applies to. */
+export type NativePagesTarget = { kind: "page"; file: string; label: string; home: boolean } | { kind: "collection"; folder: string; label: string; overview?: string; pages: number };
 
 // Rows are found again after each render by these keys.
 const pageKey = (file: string) => `page:${file}`;
@@ -40,6 +39,12 @@ export function createPagesTree(options: {
   /** Creates it; resolves to an error message, or nothing when done (the caller renders the tree again). */
   create: (request: NativeNewRequest) => Promise<string | undefined>;
   announce: (text: string) => void;
+  /** Sets a page's title in the manifest ("" removes it); resolves to an error message, or nothing when done. */
+  retitle?: (file: string, title: string) => string | undefined;
+  /** Makes a copy of a page. */
+  duplicate?: (file: string) => void;
+  /** Deletes a page, or a collection with its pages (the caller confirms). */
+  remove?: (target: NativePagesTarget) => void;
 }) {
   const root = node("section", "pages");
   const heading = node("div", "files-heading pages-heading");
@@ -70,83 +75,8 @@ export function createPagesTree(options: {
   // The row with the tab stop, by key.
   let active: string | undefined;
 
-  // ---- The row menu (a collection's actions, and + New). ----
-  const menu = (() => {
-    const element = node("div", "pages-menu");
-    element.setAttribute("role", "menu");
-    element.hidden = true;
-    root.append(element);
-    let opener: HTMLElement | undefined;
-    const items = () => [...element.querySelectorAll<HTMLButtonElement>("[role='menuitem']")];
-    function close(returnFocus: boolean) {
-      if (element.hidden) return;
-      element.hidden = true;
-      element.replaceChildren();
-      document.removeEventListener("pointerdown", outside, true);
-      opener?.setAttribute("aria-expanded", "false");
-      const target = opener;
-      api.opener = opener = undefined;
-      if (returnFocus && target?.isConnected) target.focus();
-    }
-    function outside(event: PointerEvent) {
-      if (!element.contains(event.target as Node) && !opener?.contains(event.target as Node)) close(false);
-    }
-    const api = {
-      opener: undefined as HTMLElement | undefined,
-      isOpen: () => !element.hidden,
-      close,
-      /** Opens under `anchor` (or at `at`, a pointer's place), focus on the first item. */
-      open(anchor: HTMLElement, entries: MenuItem[], at?: { x: number; y: number }) {
-        close(false);
-        api.opener = opener = anchor;
-        element.setAttribute("aria-label", anchor.getAttribute("aria-label") ?? "Actions");
-        element.replaceChildren(...entries.map((entry) => {
-          const item = button(entry.label, () => { close(false); entry.run(); }, "pages-menu__item");
-          item.setAttribute("role", "menuitem");
-          item.tabIndex = -1;
-          return item;
-        }));
-        element.hidden = false;
-        if (anchor.getAttribute("aria-haspopup")) anchor.setAttribute("aria-expanded", "true");
-        // Fixed, in the viewport: the explorer is a popover in the top layer.
-        const rect = anchor.getBoundingClientRect();
-        const x = at?.x ?? rect.right - element.offsetWidth;
-        const y = at?.y ?? rect.bottom + 4;
-        element.style.left = `${Math.max(8, Math.min(x, innerWidth - element.offsetWidth - 8))}px`;
-        element.style.top = `${y + element.offsetHeight > innerHeight - 8 ? Math.max(8, (at?.y ?? rect.top) - element.offsetHeight - 4) : y}px`;
-        document.addEventListener("pointerdown", outside, true);
-        items()[0]?.focus();
-      },
-    };
-    element.addEventListener("keydown", (event) => {
-      const list = items();
-      const index = list.indexOf(document.activeElement as HTMLButtonElement);
-      let next: number | undefined;
-      if (event.key === "ArrowDown") next = (index + 1) % list.length;
-      else if (event.key === "ArrowUp") next = (index - 1 + list.length) % list.length;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = list.length - 1;
-      else if (event.key === "Escape") {
-        // Closes the menu only, not the explorer around it.
-        event.preventDefault();
-        event.stopPropagation();
-        close(true);
-        return;
-      } else if (event.key === "Tab") {
-        event.preventDefault();
-        close(true);
-        return;
-      }
-      if (next === undefined) return;
-      event.preventDefault();
-      list[next]?.focus();
-    });
-    element.addEventListener("focusout", (event) => {
-      const to = event.relatedTarget as Node | null;
-      if (to && !element.contains(to)) close(false);
-    });
-    return api;
-  })();
+  // ---- The row menu (a page's or collection's actions, and + New). ----
+  const menu = createRowMenu(root);
 
   // ---- The row being created in place. ----
   interface Editing {
@@ -335,10 +265,86 @@ export function createPagesTree(options: {
     expanded.get(collection.folder) ?? (level === 1 || Boolean(current && `${current}`.startsWith(`src/pages/${collection.folder}/`)));
 
   function collectionItems(collection: NativeCollectionNode): MenuItem[] {
+    const target = collectionTarget(collection);
     return [
       { label: "Add page", run: () => startEditing("page", collection.folder, collectionKey(collection.folder)) },
       { label: "Add sub-collection", run: () => startEditing("collection", collection.folder, collectionKey(collection.folder)) },
+      ...(collection.overview && options.retitle ? [{ label: "Rename", shortcut: "F2", run: () => startRename(collectionKey(collection.folder)) }] : []),
+      ...(options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
     ];
+  }
+  function pageItems(page: NativePageNode): MenuItem[] {
+    return [
+      ...(options.retitle ? [{ label: "Rename", shortcut: "F2", run: () => startRename(pageKey(page.file)) }] : []),
+      ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file) }] : []),
+      ...(options.remove && page.special !== "home" ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(pageTarget(page)) }] : []),
+    ];
+  }
+  const pageTarget = (page: NativePageNode): NativePagesTarget => ({ kind: "page", file: page.file, label: page.label, home: page.special === "home" });
+  function collectionTarget(collection: NativeCollectionNode): NativePagesTarget {
+    let pages = collection.overview ? 1 : 0;
+    const count = (node: NativeCollectionNode) => {
+      for (const child of node.children) {
+        if (child.kind === "page") pages++;
+        else { if (child.overview) pages++; count(child); }
+      }
+    };
+    count(collection);
+    return { kind: "collection", folder: collection.folder, label: collection.label, overview: collection.overview?.file, pages };
+  }
+
+  // ---- A title edited in place (the manifest's title of a page, or of a collection's overview). ----
+  let renaming: { key: string; input: HTMLInputElement } | undefined;
+  function startRename(key: string) {
+    const item = rowByKey(key);
+    const target = item ? nodeOf(item) : undefined;
+    const file = target?.kind === "page" ? target.file : target?.kind === "collection" ? target.overview?.file : undefined;
+    if (!item || !file || !options.retitle || !target || target.kind === "add") return;
+    cancelRename(false);
+    const label = item.querySelector<HTMLElement>(":scope > .pages-row > .pages-label");
+    if (!label) return;
+    const before = target.label;
+    const input = node("input", "pages-rename");
+    input.type = "text";
+    input.value = before;
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", `Title of ${before}`);
+    label.hidden = true;
+    label.after(input);
+    renaming = { key, input };
+    let done = false;
+    const finish = (commit: boolean) => {
+      if (done) return;
+      done = true;
+      const value = input.value.trim();
+      renaming = undefined;
+      input.remove();
+      label.hidden = false;
+      if (commit && value !== before) {
+        const error = options.retitle!(file, value);
+        if (error) options.announce(error);
+        else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
+      } else if (!commit) options.announce(`Cancelled renaming ${before}`);
+      focusRow(key);
+    };
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); finish(true); }
+      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(false); }
+      event.stopPropagation();
+    });
+    input.addEventListener("blur", () => finish(true));
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.focus();
+    input.select();
+  }
+  function cancelRename(returnFocus: boolean) {
+    if (!renaming) return;
+    const { key, input } = renaming;
+    renaming = undefined;
+    const label = input.previousElementSibling as HTMLElement | null;
+    input.remove();
+    if (label) label.hidden = false;
+    if (returnFocus) focusRow(key);
   }
 
   function pageRow(page: NativePageNode, level: number) {
@@ -358,12 +364,30 @@ export function createPagesTree(options: {
     row.append(twistySpacer(), icon(page.special === "home" ? "⌂" : "◻"), label(page.label));
     if (page.unusedFor) row.append(node("span", "pages-note", "not used"));
     if (page.isNew) row.append(node("span", "file-new", "New"));
-    row.append(node("span", "pages-url", page.route), node("span", "pages-more-space"));
+    row.append(node("span", "pages-url", page.route));
+    const items = pageItems(page);
+    if (items.length) {
+      const more = moreButton(`Actions for ${page.label}`, "Rename, duplicate or delete");
+      more.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setActive(item);
+        if (menu.isOpen() && menu.opener === more) { menu.close(false); item.focus(); return; }
+        menu.open(more, pageItems(page));
+      });
+      row.append(more);
+    } else row.append(node("span", "pages-more-space"));
     item.append(row);
     item.addEventListener("click", (event) => {
       if (!ownEvent(event, item)) return;
       setActive(item);
       options.open(page.file);
+    });
+    item.addEventListener("contextmenu", (event) => {
+      if (!ownEvent(event, item) || !pageItems(page).length) return;
+      event.preventDefault();
+      setActive(item);
+      item.focus();
+      menu.open(item, pageItems(page), { x: event.clientX, y: event.clientY }, `Actions for ${page.label}`);
     });
     return item;
   }
@@ -396,13 +420,7 @@ export function createPagesTree(options: {
     row.lastElementChild!.setAttribute("aria-hidden", "true");
     if (collection.isNew) row.append(node("span", "file-new", "New"));
     row.append(node("span", "pages-url", collection.route));
-    const more = node("button", "pages-more", "⋯");
-    more.type = "button";
-    more.tabIndex = -1;
-    more.setAttribute("aria-label", `Actions for ${collection.label}`);
-    more.setAttribute("aria-haspopup", "menu");
-    more.setAttribute("aria-expanded", "false");
-    more.title = "Add a page or sub-collection";
+    const more = moreButton(`Actions for ${collection.label}`, "Add a page or sub-collection, rename or delete");
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       setActive(item);
@@ -421,7 +439,7 @@ export function createPagesTree(options: {
       event.preventDefault();
       setActive(item);
       item.focus();
-      menu.open(item, collectionItems(collection), { x: event.clientX, y: event.clientY });
+      menu.open(item, collectionItems(collection), { x: event.clientX, y: event.clientY }, `Actions for ${collection.label}`);
     });
     const group = node("ul", "pages-group");
     group.setAttribute("role", "group");
@@ -451,9 +469,19 @@ export function createPagesTree(options: {
     return item;
   }
 
-  // An event on this row itself, not on a row inside it or a new row being typed.
+  // An event on this row itself, not on a row inside it, a new row being typed or a title being edited.
   function ownEvent(event: Event, item: HTMLElement) {
-    return event.target instanceof Element && !event.target.closest(".pages-editing") && event.target.closest("[role='treeitem']") === item;
+    return event.target instanceof Element && !event.target.closest(".pages-editing, .pages-rename") && event.target.closest("[role='treeitem']") === item;
+  }
+  function moreButton(label: string, title: string) {
+    const more = node("button", "pages-more", "⋯");
+    more.type = "button";
+    more.tabIndex = -1;
+    more.setAttribute("aria-label", label);
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-expanded", "false");
+    more.title = title;
+    return more;
   }
   function describe(route: string, isNew: boolean, extra?: string) {
     return [route, extra, isNew ? "new, not saved to GitHub yet" : undefined].filter(Boolean).join(", ");
@@ -552,8 +580,21 @@ export function createPagesTree(options: {
       case "F10":
         if (event.key === "F10" && !event.shiftKey) return;
         event.preventDefault();
-        if (target?.kind === "collection") menu.open(row, collectionItems(target));
-        else options.announce(target?.kind === "page" ? "No actions for pages yet" : "No actions here");
+        if (target?.kind === "collection") menu.open(row, collectionItems(target), undefined, `Actions for ${target.label}`);
+        else if (target?.kind === "page" && pageItems(target).length) menu.open(row, pageItems(target), undefined, `Actions for ${target.label}`);
+        else options.announce("No actions here");
+        return;
+      case "F2":
+        event.preventDefault();
+        if (target?.kind === "page" || (target?.kind === "collection" && target.overview)) startRename(row.dataset.key!);
+        return;
+      case "Delete":
+        event.preventDefault();
+        if (!options.remove) return;
+        if (target?.kind === "page") {
+          if (target.special === "home") options.announce("The home page cannot be deleted.");
+          else options.remove(pageTarget(target));
+        } else if (target?.kind === "collection") options.remove(collectionTarget(target));
         return;
     }
   });
@@ -569,6 +610,7 @@ export function createPagesTree(options: {
       model = site;
       current = currentFile;
       menu.close(false);
+      cancelRename(false);
       // Focus asked for is a creation done: the row typed is now a row of the tree.
       if (focus && editing) {
         editing.item.remove();
@@ -603,6 +645,7 @@ export function createPagesTree(options: {
     /** Drops a new row being typed and closes the menu (the explorer closed). */
     reset() {
       cancelEditing(false);
+      cancelRename(false);
       menu.close(false);
     },
     /** Starts a new page or collection in place, as + New does. */

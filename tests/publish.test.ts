@@ -189,3 +189,82 @@ test("a new file uses a null baseline and never replaces an existing remote file
     (error: HttpError) => error.status === 409,
   );
 });
+
+test("a deletion and a rename go into one commit: sha null for the removed paths, the renamed file as its blob", async () => {
+  const { github, calls } = fixture();
+  const moved = "9".repeat(40);
+  const result = await publish(github, repo, {
+    branch: "main",
+    files: [
+      { path: "src/index.astro", baseSha, content: "", delete: true },
+      { path: "src/home.astro", baseSha: null, content: "", sha: moved, movedFrom: "src/index.astro" },
+    ],
+  });
+  const writes = calls.filter((call) => call.method !== "GET");
+  assert.equal(writes.length, 3);
+  assert.deepEqual(writes[0].body, {
+    base_tree: tree,
+    tree: [
+      { path: "src/index.astro", mode: "100644", type: "blob", sha: null },
+      { path: "src/home.astro", mode: "100644", type: "blob", sha: moved },
+    ],
+  });
+  assert.equal(writes[1].body.message, "Rename src/index.astro to src/home.astro with Native Site Editor");
+  assert.deepEqual(result.deleted, ["src/index.astro"]);
+  assert.deepEqual(result.files, [{ path: "src/home.astro", sha: moved }]);
+});
+
+test("deleting a file that changed on GitHub since its base conflicts; one already gone is no change", async () => {
+  const changed = fixture({ conflict: true });
+  await assert.rejects(
+    () => publish(changed.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha, content: "", delete: true }] }),
+    (error: HttpError) => error.status === 409 && error.conflicts?.[0] === "src/index.astro",
+  );
+  assert.equal(changed.calls.filter((call) => call.method !== "GET").length, 0);
+  const gone = fixture({ deleted: true });
+  const result = await publish(gone.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha, content: "", delete: true }] });
+  assert.equal(result.unchanged, true);
+  assert.deepEqual(result.deleted, ["src/index.astro"]);
+  // A rename whose target appeared on GitHub meanwhile conflicts.
+  const taken = fixture();
+  await assert.rejects(
+    () => publish(taken.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha: null, content: "", sha: "9".repeat(40) }] }),
+    (error: HttpError) => error.status === 409,
+  );
+});
+
+test("deletions and blob references are validated", () => {
+  for (const file of [
+    { path: "a", baseSha: null, content: "", delete: true },
+    { path: "a", baseSha, content: "x", delete: true },
+    { path: "a", baseSha, content: "", delete: true, sha: baseSha },
+    { path: "a", baseSha, content: "", sha: baseSha },
+    { path: "a", baseSha: null, content: "x", sha: baseSha },
+    { path: "a", baseSha: null, content: "", sha: "nope" },
+    { path: "a", baseSha: null, content: "", mode: "120000" },
+    { path: "a", baseSha: null, content: "", movedFrom: "../b" },
+  ])
+    assert.throws(() => validatePublish({ branch: "main", files: [file] }), HttpError);
+  assert.equal(validatePublish({ branch: "main", files: Array.from({ length: 100 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }).files.length, 100);
+  assert.throws(() => validatePublish({ branch: "main", files: Array.from({ length: 101 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }), HttpError);
+});
+
+test("the commit message counts renames, updates and deletions", async () => {
+  const { commitSummary } = await import("../worker/publish.ts");
+  const requested = [
+    { path: "b/one", baseSha: null, content: "", movedFrom: "a/one" },
+    { path: "b/two", baseSha: null, content: "", movedFrom: "a/two" },
+    { path: "a/one", baseSha, content: "", delete: true },
+    { path: "a/two", baseSha, content: "", delete: true },
+  ];
+  const changes = [
+    { path: "b/one", sha: "1" },
+    { path: "b/two", sha: "2" },
+    { path: "a/one", sha: null },
+    { path: "a/two", sha: null },
+  ];
+  assert.equal(commitSummary(requested, changes), "Rename 2 files");
+  assert.equal(commitSummary(requested, [...changes, { path: "c", sha: null }, { path: "d" }]), "Update 1 file, rename 2 and delete 1");
+  assert.equal(commitSummary([], [{ path: "c", sha: null }]), "Delete c");
+  assert.equal(commitSummary([], [{ path: "c" }, { path: "d" }]), "Update 2 files");
+});

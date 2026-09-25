@@ -62,10 +62,13 @@ interface TreeEntry {
   mode: string;
   size?: number;
 }
+// One path in git/trees: new content, an existing blob (`sha`), or, with
+// `sha: null`, the path removed.
 interface Change {
   segments: string[];
   mode: string;
-  content: string;
+  content?: string;
+  sha?: string | null;
 }
 interface Git {
   blobs: Map<string, string>;
@@ -175,9 +178,10 @@ function cloneGit(source: Git): Git {
 }
 
 // Apply full-path changes over a base tree, rebuilding nested trees (GitHub's
-// git/trees semantics), and return the new root tree sha.
+// git/trees semantics: `sha: null` removes a path, and a folder left empty
+// goes with it), and return the new root tree sha.
 function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
-  function recurse(currentSha: string | undefined, group: Change[]): string {
+  function recurse(currentSha: string | undefined, group: Change[]): string | undefined {
     const entries = (currentSha ? git.trees.get(currentSha) ?? [] : []).map((e) => ({ ...e }));
     const byFirst = new Map<string, Change[]>();
     for (const change of group) {
@@ -188,35 +192,43 @@ function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
     for (const [name, sub] of byFirst) {
       const leaves = sub.filter((c) => c.segments.length === 1);
       const deeper = sub.filter((c) => c.segments.length > 1);
-      let entry: TreeEntry;
+      let entry: TreeEntry | undefined;
       if (leaves.length) {
         const change = leaves[leaves.length - 1];
-        const sha = blobSha(change.content);
-        git.blobs.set(sha, change.content);
-        entry = {
-          path: name,
-          sha,
-          type: "blob",
-          mode: change.mode,
-          size: encoder.encode(change.content).length,
-        };
+        if (change.sha === null) entry = undefined;
+        else if (change.sha) {
+          const content = git.blobs.get(change.sha);
+          if (content === undefined) throw new Error(`Unknown blob ${change.sha}`);
+          entry = { path: name, sha: change.sha, type: "blob", mode: change.mode, size: encoder.encode(content).length };
+        } else {
+          const content = change.content ?? "";
+          const sha = blobSha(content);
+          git.blobs.set(sha, content);
+          entry = { path: name, sha, type: "blob", mode: change.mode, size: encoder.encode(content).length };
+        }
       } else {
         const existing = entries.find((e) => e.path === name && e.type === "tree");
         const childSha = recurse(
           existing?.sha,
           deeper.map((c) => ({ ...c, segments: c.segments.slice(1) })),
         );
-        entry = { path: name, sha: childSha, type: "tree", mode: "040000" };
+        entry = childSha ? { path: name, sha: childSha, type: "tree", mode: "040000" } : undefined;
       }
       const index = entries.findIndex((e) => e.path === name);
-      if (index >= 0) entries[index] = entry;
+      if (!entry) { if (index >= 0) entries.splice(index, 1); }
+      else if (index >= 0) entries[index] = entry;
       else entries.push(entry);
     }
+    if (!entries.length) return undefined;
     const sha = treeSha(entries);
     git.trees.set(sha, entries);
     return sha;
   }
-  return recurse(baseTreeSha, changes);
+  const root = recurse(baseTreeSha, changes);
+  if (root) return root;
+  const empty = treeSha([]);
+  git.trees.set(empty, []);
+  return empty;
 }
 
 function base64(content: string): string {
@@ -290,11 +302,14 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch 
       });
     }
     if (path === `${repoBase}/git/trees` && method === "POST") {
-      const changes: Change[] = (body.tree as { path: string; mode: string; content: string }[]).map(
-        (t) => ({ segments: t.path.split("/"), mode: t.mode, content: t.content }),
+      const changes: Change[] = (body.tree as { path: string; mode: string; content?: string; sha?: string | null }[]).map(
+        (t) => ({ segments: t.path.split("/"), mode: t.mode, content: t.content, sha: t.sha }),
       );
-      const sha = writeTree(git, body.base_tree, changes);
-      return jsonResponse({ sha });
+      try {
+        return jsonResponse({ sha: writeTree(git, body.base_tree, changes) });
+      } catch (error) {
+        return jsonResponse({ message: (error as Error).message }, 422);
+      }
     }
     if (path === `${repoBase}/git/commits` && method === "POST") {
       const parents = Array.isArray(body.parents) ? body.parents.map(String) : [];
