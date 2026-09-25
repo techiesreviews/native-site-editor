@@ -78,7 +78,7 @@ test("a subpage of a page with none makes it a folder at the same URL; deleting 
   await item(page, "Notes").hover();
   await explorer(page).getByRole("button", { name: "Add subpage to Notes" }).click();
   await explorer(page).getByRole("textbox", { name: "New subpage of Notes, title" }).fill("Draft");
-  await expect(explorer(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/work/notes/draft.html; Notes moves to src/pages/work/notes/index.html, its URL still /work/notes/");
+  await expect(explorer(page).locator(".pages-edit__message")).toBeEmpty();
   await page.keyboard.press("Enter");
   await expect(status(page)).toHaveText("Created the page Draft at /work/notes/draft/; src/pages/work/notes.html is now src/pages/work/notes/index.html.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/notes/draft.html");

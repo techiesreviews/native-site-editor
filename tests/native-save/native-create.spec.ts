@@ -243,7 +243,7 @@ test("a page, a subpage under it (the page becomes a folder) and another are mad
   await expect(name).toHaveAttribute("aria-invalid", "true");
   await name.fill("Vidéos");
   await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/");
-  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos.html");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await name.fill("Videos");
   await page.keyboard.press("Enter");
   await expect(page.locator("#status")).toHaveText("Created the page Videos at /videos/.");
@@ -259,7 +259,7 @@ test("a page, a subpage under it (the page becomes a folder) and another are mad
   await expect(title).toBeFocused();
   await title.pressSequentially("My first video");
   await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/my-first-video/");
-  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/my-first-video.html; Videos moves to src/pages/videos/index.html, its URL still /videos/");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await page.keyboard.press("Enter");
   await expect(explorer(page)).toBeHidden();
   await expect(page.locator("#status")).toHaveText("Created the page My first video at /videos/my-first-video/; src/pages/videos.html is now src/pages/videos/index.html.");
@@ -284,9 +284,9 @@ test("a page, a subpage under it (the page becomes a folder) and another are mad
   const slug = explorer(page).getByRole("textbox", { name: "URL of the new page, after /videos/" });
   await expect(slug).toBeFocused();
   await slug.fill("second-take");
-  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/second-take.html");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await title.fill("Another title");
-  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/second-take.html");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await page.keyboard.press("Escape");
   await expect(editRow(page)).toHaveCount(0);
   await expect(explorer(page)).toBeVisible();

@@ -143,12 +143,8 @@ export function createPagesTree(options: {
     const message = node("p", "pages-edit__message");
     message.id = "pages-edit-message";
     message.setAttribute("aria-live", "polite");
-    const cancel = button("Cancel", () => cancelEditing(true), "pages-edit__action");
-    const submit = node("button", "pages-edit__action pages-edit__action--primary", "Create");
-    submit.type = "submit";
-    const actions = node("div", "pages-edit__actions");
-    actions.append(node("span", "pages-edit__hint", "Enter to create, Esc to cancel"), cancel, submit);
-    form.append(line, url, message, actions);
+    // Enter creates and Escape cancels; the row shows only what stops it.
+    form.append(line, url, message);
     item.append(form);
 
     let slug = "";
@@ -163,7 +159,7 @@ export function createPagesTree(options: {
       const planned = options.plan(request());
       const blank = !input.value.trim() && !slug;
       const error = !planned.ok && (!blank || showEmpty);
-      message.textContent = planned.ok ? `Creates ${planned.value.file}${planned.value.note ? `; ${planned.value.note}` : ""}` : error ? planned.error : "";
+      message.textContent = error && !planned.ok ? planned.error : "";
       message.classList.toggle("is-error", error);
       for (const field of [input, slugInput]) field.setAttribute("aria-invalid", String(error));
       return planned;
@@ -183,6 +179,12 @@ export function createPagesTree(options: {
       check();
     });
     form.addEventListener("keydown", (event) => {
+      // With two fields and no submit button the browser does not submit on Enter.
+      if (event.key === "Enter" && !event.isComposing && event.target instanceof HTMLInputElement) {
+        event.preventDefault();
+        form.requestSubmit();
+        return;
+      }
       if (event.key !== "Escape") return;
       // Cancels the new row only, not the explorer around it.
       event.preventDefault();
@@ -198,7 +200,6 @@ export function createPagesTree(options: {
         return;
       }
       pending = true;
-      submit.disabled = true;
       try {
         const error = await options.create(request());
         if (error) {
@@ -211,7 +212,6 @@ export function createPagesTree(options: {
         }
       } finally {
         pending = false;
-        submit.disabled = false;
       }
     });
     editing = { parent, item, input, opener };
