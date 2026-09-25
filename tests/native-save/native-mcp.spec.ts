@@ -231,3 +231,32 @@ test("a component an agent creates opens its new stylesheet beside the page", as
     await client.close();
   }
 });
+
+test("a component whose slot holds a heading puts that heading in the page", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    await call("write_file", {
+      path: "src/components/page-banner/page-banner.html",
+      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <slot name="action"><a href="#/about/" data-key="banner-action">Get in touch</a></slot>\n</section>\n',
+    });
+    await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
+    const home = await call("get_page", { page: "/", source: false });
+    expect((await call("add_section", { page: "/", component: "page-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
+
+    await expect.poll(async () => (await draft(page, indexPath))?.content).toContain(
+      `<page-banner data-key="page-banner">\n    <h2 slot="title" data-key="banner-title">A new banner</h2>\n    <a slot="action" href="#/about/" data-key="banner-action">Get in touch</a>\n  </page-banner>`,
+    );
+    await expect(frame(page).locator("main > page-banner > h2")).toHaveText("A new banner");
+    await expect(frame(page).locator("main > page-banner > h2")).toBeVisible();
+  } finally {
+    await client.close();
+  }
+});

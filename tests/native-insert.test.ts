@@ -53,6 +53,7 @@ test("a new instance carries its own copy of the template's text slots", () => {
   assert.deepEqual(slotMarkup(template), [
     `<span slot="title">What we <em>offer</em></span>`,
     `<a slot="action" href="#/about/">Get in touch</a>`,
+    `<p slot="items">Add items.</p>`,
   ]);
   // Only a fallback that is exactly one element takes the slot itself.
   assert.deepEqual(slotMarkup(`<slot name="a"><a href="#x">One</a> <a href="#y">Two</a></slot><slot name="b">Go <a href="#z">here</a></slot><slot name="c"><br></slot>`), [
@@ -60,9 +61,26 @@ test("a new instance carries its own copy of the template's text slots", () => {
     `<span slot="b">Go <a href="#z">here</a></span>`,
     `<span slot="c"><br></span>`,
   ]);
+  // A slot holding a whole heading or paragraph copies that element, so the
+  // page source shows a heading; one holding blocks of blocks stays in the template.
+  const hero = `<section>
+  <slot name="title"><h1 class="big" data-key="hero-title">A <em>clear</em> headline</h1></slot>
+  <slot name="lead"><p data-key="hero-lead">Who it is for.</p></slot>
+  <slot name="list"><ul><li>One</li></ul></slot>
+  <slot name="box"><p><div>Block</div></p></slot>
+</section>`;
+  assert.deepEqual(slotMarkup(hero), [
+    `<h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>`,
+    `<p slot="lead" data-key="hero-lead">Who it is for.</p>`,
+  ]);
+  // Copied keys already on the page get a number, like the instance's own.
+  assert.equal(
+    instanceMarkup(`<site-hero data-key="site-hero"><h1 slot="title" data-key="hero-title">x</h1></site-hero>`, "site-hero", hero),
+    `<site-hero data-key="site-hero-2">\n  <h1 slot="title" class="big" data-key="hero-title-2">A <em>clear</em> headline</h1>\n  <p slot="lead" data-key="hero-lead">Who it is for.</p>\n</site-hero>`,
+  );
   assert.equal(
     instanceMarkup("", "feature-section", template),
-    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <a slot="action" href="#/about/">Get in touch</a>\n</feature-section>`,
+    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <a slot="action" href="#/about/">Get in touch</a>\n  <p slot="items">Add items.</p>\n</feature-section>`,
   );
   assert.equal(instanceMarkup("", "site-hero", `<section><h2>Fixed</h2></section>`), `<site-hero data-key="site-hero"></site-hero>`);
   // Every line of a multi-line instance takes the neighbour's indentation.

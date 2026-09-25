@@ -51,14 +51,18 @@ export function uniqueDataKey(source: string, tag: string, also: Iterable<string
   return `${tag}-${n}`;
 }
 
+// Elements that hold a line of text, which a slot fallback can be.
+const TEXT_BLOCKS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "figcaption", "dt", "dd", "address"]);
+
 const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small", "code", "mark", "sub", "sup", "br", "wbr", "abbr", "time", "cite", "q", "kbd"]);
 
 /**
  * Per-instance content for a template's slots: a `<span slot="…">` for each
  * named slot, holding the template's own fallback, so the text lives in the
- * page. A fallback that is one element (a button link) takes the `slot`
- * attribute itself, so the template's `::slotted(a)` rules still reach it. A
- * slot whose fallback is not plain text and inline markup (a list of items,
+ * page. A fallback that is one element (a heading, a paragraph, a button
+ * link) takes the `slot` attribute itself, so the page source shows that
+ * element and the template's `::slotted(h1)` rules still reach it. A slot
+ * whose fallback is not plain text and inline markup (a list of items,
  * another component) is left to the template.
  */
 export function slotMarkup(template: string) {
@@ -66,13 +70,15 @@ export function slotMarkup(template: string) {
   for (const match of template.matchAll(/<slot\b([^>]*)>([\s\S]*?)<\/slot\s*>/gi)) {
     const name = /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[1]);
     const slot = (name?.[1] ?? name?.[2] ?? name?.[3] ?? "").trim();
-    const content = match[2].replace(COMMENTS, "").trim();
-    if (!content || !slot || !textOnly(content)) continue;
-    const text = content.replace(/\s+/g, " ");
+    const text = match[2].replace(COMMENTS, "").trim().replace(/\s+/g, " ");
+    if (!text || !slot) continue;
     const first = startTags(text)[0];
-    out.push(first && oneElement(text, first) && !/\sslot\s*=/i.test(text.slice(0, first.end))
-      ? `${text.slice(0, first.nameEnd)} slot="${slot}"${text.slice(first.nameEnd)}`
-      : `<span slot="${slot}">${text}</span>`);
+    const inner = first && oneElement(text, first) && !/\sslot\s*=/i.test(text.slice(0, first.end))
+      ? text.slice(first.end, text.lastIndexOf("<"))
+      : undefined;
+    if (inner !== undefined && (INLINE.has(first.name) || TEXT_BLOCKS.has(first.name)) && textOnly(inner))
+      out.push(`${text.slice(0, first.nameEnd)} slot="${slot}"${text.slice(first.nameEnd)}`);
+    else if (textOnly(text)) out.push(`<span slot="${slot}">${text}</span>`);
   }
   return out;
 }
@@ -113,8 +119,16 @@ export function insertBesideEdit(source: string, anchor: { start: number; end: n
 
 /** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots. */
 export function instanceMarkup(source: string, tag: string, template: string) {
-  const open = `<${tag} data-key="${uniqueDataKey(source, tag)}">`;
-  const slots = slotMarkup(template);
+  const key = uniqueDataKey(source, tag);
+  const open = `<${tag} data-key="${key}">`;
+  // Keys copied from the template's fallbacks stay unique in the page.
+  const taken = [key];
+  const slots = slotMarkup(template).map((line) =>
+    line.replace(/\bdata-key="([^"]*)"/g, (_, name: string) => {
+      const unique = uniqueDataKey(source, name, taken);
+      taken.push(unique);
+      return `data-key="${unique}"`;
+    }));
   return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
 }
 
