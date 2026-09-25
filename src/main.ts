@@ -109,10 +109,7 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
-      <div class="topbar-pages">
-        <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
-        <button id="structure-toggle" type="button" class="explorer-toggle structure-toggle" aria-controls="structure-sidebar">Hide structure</button>
-      </div>
+      <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
       <div class="topbar-actions">
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
         <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
@@ -127,6 +124,7 @@ function mountWorkspace() {
     <div class="workspace">
       <aside class="sidebar" aria-label="Page structure">
         <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span></div>
+        <button id="structure-toggle" type="button" class="structure-toggle" aria-controls="structure-sidebar" aria-label="Hide page structure" title="Hide page structure"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 2.5h9a1 1 0 011 1v9a1 1 0 01-1 1h-9a1 1 0 01-1-1v-9a1 1 0 011-1zM6.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div id="structure" class="page-structure"></div>
       </aside>
       <main id="main">
@@ -152,12 +150,13 @@ function mountWorkspace() {
     app.querySelector<HTMLElement>(".workspace")!,
     app.querySelector<HTMLElement>(".sidebar")!,
   );
-  // Hide structure / Page structure: the same width the resize handle keeps,
-  // so dragging to nothing flips the label too.
+  // The floating panel icon on the sidebar's edge: the same width the resize
+  // handle keeps, so dragging to nothing flips its name too.
   const structureToggle = element<HTMLButtonElement>("structure-toggle");
   sidebarResize.onChange((hidden) => {
-    structureToggle.textContent = hidden ? "Page structure" : "Hide structure";
-    structureToggle.title = hidden ? "Show the page structure sidebar" : "Hide the page structure sidebar";
+    const name = hidden ? "Show page structure" : "Hide page structure";
+    structureToggle.setAttribute("aria-label", name);
+    structureToggle.title = name;
     structureToggle.setAttribute("aria-expanded", String(!hidden));
   });
   structureToggle.addEventListener("click", () => {

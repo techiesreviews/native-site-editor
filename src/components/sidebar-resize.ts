@@ -12,7 +12,7 @@ export interface SidebarResize {
 }
 
 // The one source of truth for the sidebar's width: the drag handle, its keys
-// and the Hide structure toggle all go through `apply`.
+// and the page structure toggle all go through `apply`.
 export function mountSidebarResize(
   workspace: HTMLElement,
   sidebar: HTMLElement,
