@@ -327,16 +327,8 @@
     reportHover();
     if (selected) emitSelection(selected, "refresh");
     else if (hadSelection) emit("select", { path: "", tag: "", text: "", reason: "refresh", selectors: [] });
-    // Text the host just formatted stays selected, so the next format applies
-    // to it too; a placeholder the host just inserted starts being edited,
-    // fully selected, so typing replaces it.
-    if (selected && payload.selectText && typeof payload.selectText.start === "number") {
-      if (payload.selectText.edit && !editing) {
-        startEditing(selected);
-        if (editing === selected) selected.focus();
-      }
-      setTextSelection(selected, payload.selectText.start, payload.selectText.end);
-    }
+    // Text the host just formatted stays selected, so the next format applies to it too.
+    if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
     reportTextSelection(true);
     reportStructure();
     requestAnimationFrame(requestComponentStyles);

@@ -7,10 +7,9 @@ import "./insert-controls.css";
 // those gaps, shown only just above and below the item under the pointer
 // (or while focused or open). While a section is dragged in the preview,
 // every gap of its parent shows instead, the one under the pointer expanded
-// and labelled "Drop section here". The picker lists a plain section and the
-// components that fit a section slot, and follows the User Editor INSERT
-// contract: title, exact position, search, arrow keys, Enter, Escape back to
-// the plus.
+// and labelled "Drop section here". The picker lists only components that
+// fit a section slot and follows the User Editor INSERT contract: title,
+// exact position, search, arrow keys, Enter, Escape back to the plus.
 
 export interface InsertPoint {
   // Page file the point belongs to.
@@ -28,11 +27,8 @@ export interface InsertPoint {
 }
 
 export interface InsertChoice {
-  // A component's tag, or "section" for a plain section.
   tag: string;
   label: string;
-  // Shown in place of the tag (the plain section's description).
-  description?: string;
 }
 
 interface InsertHandlers {
@@ -186,14 +182,19 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     const all = handlers.choices();
     const needle = query.trim().toLowerCase();
     const matches = all.filter((choice) => !needle ||
-      choice.label.toLowerCase().includes(needle) || choice.tag.includes(needle) ||
-      choice.description?.toLowerCase().includes(needle));
+      choice.label.toLowerCase().includes(needle) || choice.tag.includes(needle));
     const title = node("h2", "insert-picker__title", "Add to the page");
     title.id = "insert-picker-title";
     picker.setAttribute("aria-labelledby", title.id);
     const position = node("p", "insert-picker__position", at.before ? `Goes before “${at.before}”` : "Goes at the end");
-    const scope = node("p", "insert-picker__scope", "A new section, or components whose template is a single section.");
+    const scope = node("p", "insert-picker__scope", "Components whose template is a single section.");
     const children: HTMLElement[] = [title, position];
+    if (!all.length) {
+      children.push(node("p", "insert-picker__empty",
+        "No components fit here yet. A component fits between sections when its template is one <section> element."));
+      picker.replaceChildren(...children);
+      return;
+    }
     const search = document.createElement("input");
     search.type = "search";
     search.className = "insert-picker__search";
@@ -217,7 +218,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     if (!matches.length) {
       const empty = node("div", "insert-picker__empty");
       empty.append(
-        node("p", "", `Nothing matches “${query.trim()}”. Only a section and components that fit between sections are listed.`),
+        node("p", "", `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
         button("Clear search", () => {
           query = "";
           renderPicker(true);
@@ -231,10 +232,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       for (const choice of matches) {
         const option = button("", () => choose(choice), "insert-picker__option");
         option.setAttribute("role", "option");
-        option.append(
-          node("span", "insert-picker__name", choice.label),
-          choice.description ? node("span", "insert-picker__tag", choice.description) : node("code", "insert-picker__tag", `<${choice.tag}>`),
-        );
+        option.append(node("span", "insert-picker__name", choice.label), node("code", "insert-picker__tag", `<${choice.tag}>`));
         list.append(option);
       }
       children.push(list);

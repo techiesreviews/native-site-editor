@@ -81,13 +81,6 @@ export interface NativeNodeRequest {
   node: number[];
 }
 
-/** A text range (offsets into the selected element's text) to select after an update, optionally editing it. */
-export interface NativeTextRequest {
-  start: number;
-  end: number;
-  edit?: boolean;
-}
-
 export interface NativeSelectedRule {
   path: string;
   selector: string;
@@ -157,7 +150,7 @@ interface NativePreviewHandlers {
   onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
-  // What is offered between page sections, and what to do with a choice.
+  // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
 }
@@ -175,7 +168,7 @@ function composePayload(
   alone: string | undefined,
   context: string,
   selectNode: NativeNodeRequest | undefined,
-  selectText: NativeTextRequest | undefined,
+  selectText: { start: number; end: number } | undefined,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -262,7 +255,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
   let selectNode: NativeNodeRequest | undefined;
-  let selectText: NativeTextRequest | undefined;
+  let selectText: { start: number; end: number } | undefined;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -592,8 +585,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectAfterUpdate(request: NativeNodeRequest | undefined) {
       selectNode = request;
     },
-    /** Re-select this text range (offsets into the selected element's text) after the next update; with `edit`, start editing it too. */
-    selectTextAfterUpdate(range: NativeTextRequest | undefined) {
+    /** Re-select this text range (offsets into the selected element's text) after the next update. */
+    selectTextAfterUpdate(range: { start: number; end: number } | undefined) {
       selectText = range;
     },
     /** Whether `href` (a `#route` link) can be followed in the preview. */

@@ -29,7 +29,7 @@ import {
 import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
-import { componentLabel, indentUnit, insertMarkupEdit, isSectionTemplate, nativeInsertEdit, sectionMarkup, sectionText } from "./native-insert";
+import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
@@ -1047,26 +1047,20 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   }
 }
 
-// What fits between page sections: a plain section, then components whose
-// template is a single <section>, read from their current source so a
-// draft counts.
-const SECTION_CHOICE: InsertChoice = { tag: "section", label: "Section", description: "A new section with a heading and a paragraph" };
+// Components that fit between page sections: those whose template is a
+// single <section>, read from their current source so a draft counts.
 function nativeSectionChoices(): InsertChoice[] {
   if (!nativeManifest) return [];
   const sources = nativeSources();
-  const components = Object.entries(nativeManifest.components)
+  return Object.entries(nativeManifest.components)
     .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
     .map(([tag]) => ({ tag, label: componentLabel(tag) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  return [SECTION_CHOICE, ...components];
 }
 
-// Puts a new plain section or section component instance into the page at
-// `point`, as one undo step, and selects it. A new section's heading is
-// selected and being edited with its placeholder selected, so typing
-// replaces it (the runtime edits the selected element, so the heading is
-// what gets selected, not the section). The page file opens first when
-// another file is in the editor, since edits go through the mounted editor.
+// Puts a new instance of a section component into the page at `point`, as
+// one undo step, and selects it. The page file opens first when another
+// file is in the editor, since edits go through the mounted editor.
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
   if (!nativePreview || !nativeManifest || !Object.values(nativeManifest.routes).includes(path)) return;
@@ -1078,33 +1072,18 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview) return;
-  const source = nativeSources()[path] ?? "";
-  let edit: { start: number; end: number; text: string } | undefined;
-  let select = [...point.parent, point.index];
-  let text: { start: number; end: number; edit: true } | undefined;
-  if (choice.tag === "section") {
-    // Indented like the children of the neighbouring section (the next one, else the previous).
-    const neighbour = locateNativeElementRange(source, select) ??
-      (point.index > 0 ? locateNativeElementRange(source, [...point.parent, point.index - 1]) : undefined);
-    edit = insertMarkupEdit(source, point.parent, point.index, sectionMarkup(source, indentUnit(source, neighbour)));
-    select = [...select, 0];
-    text = { start: 0, end: sectionText.title.length, edit: true };
-  } else {
-    const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
-    edit = nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
-  }
+  const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
+  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag, template);
   if (!edit) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
   }
-  preview.selectAfterUpdate({ path, node: select });
-  if (text) preview.selectTextAfterUpdate(text);
+  preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
   try {
     editor.replaceActiveRanges([{ path, ...edit, expected: "" }]);
     element("status").textContent = `${choice.label} added`;
   } catch (error) {
     preview.selectAfterUpdate(undefined);
-    preview.selectTextAfterUpdate(undefined);
     errorMessage(error);
   }
 }

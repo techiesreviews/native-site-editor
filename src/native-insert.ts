@@ -1,10 +1,10 @@
-// Inserting a plain section or a section component between page sections.
+// Inserting components between page sections.
 //
 // A component fits between sections when its template is a single <section>
 // element: a feature or testimonial block fits, a button or card does not.
 // There is no separate declaration; the template's own root says what the
-// component is. Inserting writes the new markup into the page source on
-// its own line, indented like its neighbour, as one range edit. A new
+// component is. Inserting writes a new instance tag into the page source on
+// its own line, indented like its neighbour, as one range edit. The new
 // instance carries its own copy of each text slot, so typing in the preview
 // changes this page alone and the shared template stays as it is.
 
@@ -75,7 +75,7 @@ function textOnly(html: string) {
 }
 
 /** The line ending `source` is written with: CRLF when it has any, else LF. */
-export function lineEnding(source: string) {
+function lineEnding(source: string) {
   return source.includes("\r\n") ? "\r\n" : "\n";
 }
 
@@ -98,50 +98,13 @@ export function instanceMarkup(source: string, tag: string, template: string) {
   return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
 }
 
-/** The placeholder text a new plain section's heading and paragraph start with. */
-export const sectionText = { title: "Something worth sharing", text: "Start writing here." };
-
-/**
- * The indentation unit used under the element at `range` (its first
- * indented child line beyond the element's own indentation: a tab, or the
- * spaces found there), else two spaces.
- */
-export function indentUnit(source: string, range: { start: number; end: number } | undefined) {
-  if (!range) return "  ";
-  const lineStart = source.lastIndexOf("\n", range.start - 1) + 1;
-  const lead = source.slice(lineStart, range.start);
-  const own = /^[ \t]*$/.test(lead) ? lead : "";
-  const child = /\n([ \t]+)\S/.exec(source.slice(range.start, range.end));
-  if (!child || !child[1].startsWith(own) || child[1].length <= own.length) return "  ";
-  return child[1].startsWith("\t", own.length) ? "\t" : child[1].slice(own.length);
-}
-
-/**
- * The markup for a new plain section in `source`: an H2 and a paragraph
- * with their placeholders, the inner lines indented by `indent`. The keys
- * share the section's own key as their base.
- */
-export function sectionMarkup(source: string, indent = "  ") {
-  const key = uniqueDataKey(source, "section");
-  return [
-    `<section data-key="${key}">`,
-    `${indent}<h2 data-key="${uniqueDataKey(source, `${key}-title`)}">${sectionText.title}</h2>`,
-    `${indent}<p data-key="${uniqueDataKey(source, `${key}-text`)}">${sectionText.text}</p>`,
-    `</section>`,
-  ].join(lineEnding(source));
-}
-
 /**
  * The source edit that puts a new `<tag>` at element-child position `index`
  * under `parent` (element-child indexes from the page root). Undefined when
  * neither neighbour's exact source range can be told.
  */
 export function nativeInsertEdit(source: string, parent: number[], index: number, tag: string, template = "") {
-  return insertMarkupEdit(source, parent, index, instanceMarkup(source, tag, template));
-}
-
-/** The source edit that puts `markup` at element-child position `index` under `parent`; undefined when the spot cannot be told. */
-export function insertMarkupEdit(source: string, parent: number[], index: number, markup: string) {
+  const markup = instanceMarkup(source, tag, template);
   const next = locateNativeElementRange(source, [...parent, index]);
   if (next) return insertBesideEdit(source, next, "before", markup);
   // Past the last child, or the next element's range is ambiguous: right
