@@ -204,3 +204,30 @@ test("an MCP client connected by OAuth reaches the open editor tab", async ({ pa
     await client.close();
   }
 });
+
+test("a component an agent creates opens its new stylesheet beside the page", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  const cssPath = "src/components/hero-banner/hero-banner.css";
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    await call("write_file", { path: "src/components/hero-banner/hero-banner.html", content: '<section data-key="hero-banner">\n  <h2 data-key="banner-title"><slot name="title">A new banner</slot></h2>\n</section>\n' });
+    await call("write_file", { path: cssPath, content: "h2 {\n  color: rebeccapurple;\n}\n" });
+    await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "hero-banner")?.section, { timeout: 15_000 }).toBe(true);
+    const home = await call("get_page", { page: "/", source: false });
+    expect((await call("add_section", { page: "/", component: "hero-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
+
+    await frame(page).locator("main > hero-banner h2").click();
+    await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+    await expect(page.locator("#content-secondary .view-lines")).toContainText("rebeccapurple");
+    await expect(page.locator("#status")).not.toContainText("Could not open");
+  } finally {
+    await client.close();
+  }
+});

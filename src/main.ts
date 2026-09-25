@@ -587,10 +587,13 @@ async function openSecondary(css: string) {
     branch: snapshot.branch,
   };
   try {
-    const entry = await findEntry(css);
-    if (!entry || (entry.size ?? 0) > 128 * 1024) throw new Error(`Could not open ${css}.`);
+    // A stylesheet only in the drafts (a new component's) opens from its draft.
+    const draft = draftStore().get(scope, css);
+    const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
+    const entry = created ? undefined : await findEntry(css);
+    if (!created && (!entry || (entry.size ?? 0) > 128 * 1024)) throw new Error(`Could not open ${css}.`);
     const [source, editor] = await Promise.all([
-      readFile(scope.repo, entry.sha),
+      entry ? readFile(scope.repo, entry.sha) : "",
       loadEditorModule(),
     ]);
     if (request !== secondaryRequest) return false;
@@ -600,7 +603,7 @@ async function openSecondary(css: string) {
     codeWidthResize?.apply();
     disposeSecondary = editor.mountCodeEditor(
       element("content-secondary"),
-      { key: draftKey(scope, css), historyScope, scope, baseSha: entry.sha, path: css, source, readOnly: entry.mode === "120000",
+      { key: draftKey(scope, css), historyScope, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
         onContextChange: (value) => {
           if (value) {
             syncLinkedStyles(value.path, value.content);
