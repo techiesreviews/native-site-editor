@@ -64,15 +64,15 @@ test("a new instance carries its own copy of the template's text slots", () => {
   <slot name="list"><ul><li>One</li></ul></slot>
   <slot name="box"><p><div>Block</div></p></slot>
 </section>`;
-  assert.deepEqual(slotMarkup(`<slot name="image"><img src="src/images/a.svg" alt="" data-key="split-image"></slot>`), [`<img slot="image" src="src/images/a.svg" alt="" data-key="split-image">`]);
+  assert.deepEqual(slotMarkup(`<slot name="image"><img src="src/images/a.svg" alt="" data-key="split-image"></slot>`), [`<img slot="image" src="src/images/a.svg" alt="">`]);
   assert.deepEqual(slotMarkup(hero), [
-    `<h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>`,
-    `<p slot="lead" data-key="hero-lead">Who it is for.</p>`,
+    `<h1 slot="title" class="big">A <em>clear</em> headline</h1>`,
+    `<p slot="lead">Who it is for.</p>`,
   ]);
-  // The instance gets no data-key of its own; the fallbacks are copied as they are.
+  // Neither the instance nor the copied fallbacks get a data-key.
   assert.equal(
     instanceMarkup(`<site-hero><h1 slot="title" data-key="hero-title">x</h1></site-hero>`, "site-hero", hero),
-    `<site-hero>\n  <h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>\n  <p slot="lead" data-key="hero-lead">Who it is for.</p>\n</site-hero>`,
+    `<site-hero>\n  <h1 slot="title" class="big">A <em>clear</em> headline</h1>\n  <p slot="lead">Who it is for.</p>\n</site-hero>`,
   );
   assert.equal(
     instanceMarkup("", "feature-section", template),

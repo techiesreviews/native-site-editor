@@ -52,14 +52,14 @@ const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small"
  * link, an image) takes the `slot` attribute itself, so the page source shows that
  * element and the template's `::slotted(h1)` rules still reach it. A slot
  * whose fallback is not plain text and inline markup (a list of items,
- * another component) is left to the template.
+ * another component) is left to the template. Copies leave out `data-key`.
  */
 export function slotMarkup(template: string) {
   const out: string[] = [];
   for (const match of template.matchAll(/<slot\b([^>]*)>([\s\S]*?)<\/slot\s*>/gi)) {
     const name = /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[1]);
     const slot = (name?.[1] ?? name?.[2] ?? name?.[3] ?? "").trim();
-    const text = match[2].replace(COMMENTS, "").trim().replace(/\s+/g, " ");
+    const text = withoutDataKeys(match[2].replace(COMMENTS, "").trim().replace(/\s+/g, " "));
     if (!text || !slot) continue;
     const first = startTags(text)[0];
     const inner = first && oneElement(text, first) && !/\sslot\s*=/i.test(text.slice(0, first.end))
@@ -72,6 +72,11 @@ export function slotMarkup(template: string) {
     else if (textOnly(text)) out.push(`<span slot="${slot}">${text}</span>`);
   }
   return out;
+}
+
+/** `html` without the `data-key` attributes an older template may still carry. */
+function withoutDataKeys(html: string) {
+  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\sdata-key(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?(?=[\s/>])/gi, ""));
 }
 
 /** Whether `html` is exactly the element `first` opens: its end tag is the last thing. */
