@@ -114,6 +114,24 @@ test("the sidebar handle: hover growth, click hides and shows at the previous wi
   await expect(tree(page)).toBeVisible();
 });
 
+test("a mouse click on a handle takes focus without the keyboard focus ring", async ({ page }) => {
+  const handle = sidebarHandle(page);
+  const ring = () => handle.evaluate((el) => ({ focus: el.matches(":focus"), visible: el.matches(":focus-visible") }));
+  await handle.click();
+  await expect(tree(page)).toBeHidden();
+  expect(await ring()).toEqual({ focus: true, visible: false });
+  await handle.click();
+  await expect(tree(page)).toBeVisible();
+  expect(await ring()).toEqual({ focus: true, visible: false });
+  // Tabbing to it shows the ring.
+  await handle.blur();
+  await handle.evaluate((el) => (el.previousElementSibling as HTMLElement | null)?.focus?.());
+  await handle.focus();
+  await page.keyboard.press("Enter");
+  await expect(tree(page)).toBeHidden();
+  await expect.poll(async () => (await ring()).visible).toBe(true);
+});
+
 test("the sidebar handle: Enter and Space toggle, and the hidden state and width survive a reload", async ({ page, baseURL }) => {
   const handle = sidebarHandle(page);
   await handle.focus();

@@ -28,7 +28,9 @@ export function trackPress(handle: HTMLElement, handlers: PressHandlers) {
   handle.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !handlers.start(event)) return;
     event.preventDefault();
-    handle.focus();
+    // Focus follows the press, but the keyboard focus ring does not: a click
+    // that collapses a panel would otherwise leave a full-height outline.
+    handle.focus({ focusVisible: false } as FocusOptions);
     press = { x: event.clientX, y: event.clientY, moved: false };
     handle.setPointerCapture(event.pointerId);
   });
