@@ -1,14 +1,24 @@
 @import "./resize-handle.css";
 
+/* Along the code split's top edge; taller on hover or focus. While the code
+   is hidden it stays at the top of the strip left at the bottom. */
 .code-resize {
   position: absolute;
-  inset: -5px 0 auto 0;
+  top: -5px;
+  right: 0;
+  left: 0;
   height: 10px;
   /* Above the vertical width splitter so the horizontal handle wins at their
      crossing point; vertical handles stay at 2 elsewhere. */
   z-index: 3;
   cursor: row-resize;
   touch-action: none;
+  transition: height 120ms ease, top 120ms ease;
+}
+.code-resize:is(:hover, :focus-visible),
+.code-resizing .code-resize {
+  top: -9px;
+  height: 18px;
 }
 .code-resize:focus-visible {
   outline: 2px solid var(--focus);
@@ -21,9 +31,13 @@
 main:not(.has-preview) .code-resize {
   display: none;
 }
+main.has-preview.code-collapsed .code-width-resize {
+  display: none;
+}
 
 /* Vertical splitter between the code panes. A narrow, transparent hit target
-   (no decorative divider line); the shared grip appears on hover/focus. */
+   (no decorative divider line); on hover or focus it widens over both panes
+   through negative margins, so the panes do not move. */
 .code-width-resize {
   position: relative;
   flex: 0 0 6px;
@@ -31,6 +45,24 @@ main:not(.has-preview) .code-resize {
   z-index: 2;
   cursor: col-resize;
   touch-action: none;
+  transition: flex-basis 120ms ease, margin 120ms ease;
+}
+.code-width-resize:is(:hover, :focus-visible),
+.code-width-resizing .code-width-resize {
+  flex-basis: 14px;
+  margin: 0 -4px;
+}
+/* The editors' own layers (Monaco's scrollbars) stay inside their pane, so
+   the grown handle stays above them. */
+.code-split > .code-pane {
+  isolation: isolate;
+}
+/* Collapsed, it sits at the split's right edge and grows inwards only. */
+.code-split--secondary-collapsed > .code-pane#secondary-pane {
+  display: none;
+}
+.code-split--secondary-collapsed > .code-width-resize:is(:hover, :focus-visible) {
+  margin: 0 0 0 -8px;
 }
 .code-width-resize[hidden] {
   display: none;
@@ -40,6 +72,9 @@ main:not(.has-preview) .code-resize {
   position: absolute;
   inset: 0 -3px;
   cursor: col-resize;
+}
+.code-split--secondary-collapsed > .code-width-resize::before {
+  inset: 0 0 0 -6px;
 }
 .code-width-resize:focus-visible::before {
   outline: 2px solid var(--focus);

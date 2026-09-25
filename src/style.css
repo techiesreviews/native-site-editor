@@ -166,37 +166,8 @@ select {
   padding: 0;
   overflow: visible;
 }
-.workspace--sidebar-collapsed .sidebar > :not(.sidebar-resize, .structure-toggle) {
+.workspace--sidebar-collapsed .sidebar > :not(.sidebar-resize) {
   display: none;
-}
-/* Hide / Show page structure: a panel icon floating on the sidebar's right
-   edge, centred in the workspace's height, over the border and the resize
-   handle (which stays usable above and below it). With the sidebar hidden
-   it sits at the workspace's left edge so the sidebar can come back. */
-.structure-toggle {
-  position: absolute;
-  top: 50%;
-  right: -14px;
-  z-index: 3;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--muted);
-  box-shadow: var(--shadow);
-  transform: translateY(-50%);
-}
-.structure-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.workspace--sidebar-collapsed .structure-toggle {
-  right: auto;
-  left: 8px;
 }
 .changes-window {
   position: fixed;
@@ -680,20 +651,13 @@ dd {
     flex-direction: column;
     min-height: 0;
   }
+  /* The shown sidebar leaves room at its bottom for its handle bar
+     (sidebar-resize.css); the hidden one keeps a strip for it. */
   .sidebar {
-    padding: 18px;
-  }
-  /* The column layout has no side edge: the icon sits at the top right of
-     the sidebar block, which keeps a strip for it while hidden. */
-  .structure-toggle,
-  .workspace--sidebar-collapsed .structure-toggle {
-    top: 12px;
-    right: 12px;
-    left: auto;
-    transform: none;
+    padding: 18px 18px 28px;
   }
   .workspace--sidebar-collapsed .sidebar {
-    min-height: 52px;
+    min-height: 20px;
   }
   .sidebar-heading {
     margin-bottom: 13px;

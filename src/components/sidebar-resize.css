@@ -3,13 +3,27 @@
 .sidebar {
   position: relative;
 }
+/* On the sidebar's right edge; wider on hover or focus. While the sidebar is
+   hidden it stays at the workspace's left edge. */
 .sidebar-resize {
   position: absolute;
-  inset: 0 -5px 0 auto;
+  top: 0;
+  bottom: 0;
+  right: -5px;
   width: 10px;
   z-index: 2;
   cursor: col-resize;
   touch-action: none;
+  transition: width 120ms ease, right 120ms ease;
+}
+.sidebar-resize:is(:hover, :focus-visible),
+.workspace--resizing .sidebar-resize {
+  right: -9px;
+  width: 18px;
+}
+.workspace--sidebar-collapsed .sidebar-resize {
+  right: auto;
+  left: 0;
 }
 .sidebar-resize:focus-visible {
   outline: 2px solid var(--focus);
@@ -19,8 +33,41 @@
   cursor: col-resize;
   user-select: none;
 }
+/* The column layout has no side edge: the handle is a compact bar along the
+   sidebar block's bottom edge that toggles on tap, the chevron pointing up
+   to hide and down to show. */
 @media (max-width: 650px) {
-  .sidebar-resize {
-    display: none;
+  .workspace .sidebar-resize,
+  .workspace--sidebar-collapsed .sidebar-resize {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: 20px;
+    cursor: pointer;
+    transition: height 120ms ease;
+  }
+  .workspace .sidebar-resize:is(:hover, :focus-visible),
+  .workspace.workspace--resizing .sidebar-resize {
+    right: 0;
+    width: auto;
+    height: 26px;
+  }
+  .workspace .sidebar-resize > .resize-grip {
+    width: 28px;
+    height: 4px;
+    opacity: 0.55;
+  }
+  .workspace .sidebar-resize:is(:hover, :focus-visible) > .resize-grip,
+  .workspace.workspace--resizing .sidebar-resize > .resize-grip {
+    width: 44px;
+    height: 16px;
+  }
+  .workspace .sidebar-resize {
+    --chevron-turn: 90deg;
+  }
+  .workspace .sidebar-resize.is-collapsed {
+    --chevron-turn: -90deg;
   }
 }

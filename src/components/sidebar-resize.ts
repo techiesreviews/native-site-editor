@@ -1,18 +1,15 @@
 import "./sidebar-resize.css";
+import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 
 export interface SidebarResize {
-  /** Collapse the sidebar to nothing; the width it had is kept for `show`. */
-  hide(): void;
-  /** Bring the sidebar back at the width it last had, or the default. */
-  show(): void;
-  isHidden(): boolean;
-  /** Called after every width change, including hide and show. */
-  onChange(listener: (hidden: boolean) => void): void;
   dispose(): void;
 }
 
-// The one source of truth for the sidebar's width: the drag handle, its keys
-// and the page structure toggle all go through `apply`.
+// The one source of truth for the sidebar's width. The handle on its right
+// edge resizes when dragged and hides or shows the sidebar when clicked (or
+// with Enter/Space); all of it goes through `apply`. In the narrow column
+// layout the same handle is a bar along the sidebar's bottom edge that only
+// toggles.
 export function mountSidebarResize(
   workspace: HTMLElement,
   sidebar: HTMLElement,
@@ -28,10 +25,10 @@ export function mountSidebarResize(
   handle.setAttribute("aria-label", "Resize page structure sidebar");
   handle.setAttribute("aria-orientation", "vertical");
   handle.setAttribute("aria-controls", "structure-sidebar");
-  handle.title =
-    "Drag to resize. Use arrow keys when focused; double-click to reset.";
+  handle.append(createGrip());
   sidebar.id = "structure-sidebar";
   sidebar.append(handle);
+  const narrow = () => workspace.clientWidth <= 650;
   // Sliding below the minimum collapses the sidebar to nothing; the handle
   // stays at the left edge so it can be pulled out again.
   const minimum = 160;
@@ -51,9 +48,9 @@ export function mountSidebarResize(
   const savedLast = read(lastKey);
   if (savedLast >= minimum) last = savedLast;
   else if (width > 0) last = width;
-  const listeners = new Set<(hidden: boolean) => void>();
   const maximum = () =>
     Math.max(minimum, Math.min(560, workspace.clientWidth - 360));
+  let drag: { x: number; width: number } | undefined;
   function apply(value: number) {
     width = value < minimum / 2 ? 0 : Math.round(Math.max(minimum, Math.min(maximum(), value)));
     workspace.classList.toggle("workspace--sidebar-collapsed", width === 0);
@@ -61,9 +58,15 @@ export function mountSidebarResize(
     handle.setAttribute("aria-valuemin", "0");
     handle.setAttribute("aria-valuemax", String(maximum()));
     handle.setAttribute("aria-valuenow", String(width));
-    handle.setAttribute("aria-valuetext", `${width} pixels`);
-    if (width > 0) last = width;
-    for (const listener of listeners) listener(width === 0);
+    // `aria-expanded` is not allowed on a separator, so the value text
+    // carries the state.
+    handle.setAttribute("aria-valuetext", width === 0 ? "Page structure hidden" : `Page structure shown, ${width} pixels`);
+    handle.classList.toggle("is-collapsed", width === 0);
+    handle.title = `${narrow() ? "Click" : "Drag to resize, click"} to ${width === 0 ? "show" : "hide"} the page structure`;
+    // A drag only settles the width to come back to when it ends, so one
+    // that passes through the minimum on its way to nothing keeps the width
+    // it started from.
+    if (width > 0 && !drag) last = width;
   }
   const save = () => {
     try {
@@ -71,31 +74,36 @@ export function mountSidebarResize(
       localStorage.setItem(lastKey, String(last));
     } catch {}
   };
-  let drag: { x: number; width: number } | undefined;
-  handle.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    handle.focus();
-    drag = { x: event.clientX, width };
-    handle.setPointerCapture(event.pointerId);
-    workspace.classList.add("workspace--resizing");
-  });
-  handle.addEventListener("pointermove", (event) => {
-    if (drag) apply(drag.width + event.clientX - drag.x);
-  });
-  function finish() {
-    drag = undefined;
-    workspace.classList.remove("workspace--resizing");
+  const toggle = () => {
+    apply(width === 0 ? last : 0);
     save();
-  }
-  handle.addEventListener("pointerup", finish);
-  handle.addEventListener("pointercancel", finish);
-  handle.addEventListener("lostpointercapture", finish);
-  handle.addEventListener("dblclick", () => {
-    apply(fallback);
-    save();
+  };
+  trackPress(handle, {
+    start(event) {
+      drag = { x: event.clientX, width };
+      workspace.classList.add("workspace--resizing");
+      return true;
+    },
+    move(event) {
+      // The column layout has no width to drag.
+      if (drag && !narrow()) apply(drag.width + event.clientX - drag.x);
+    },
+    end(click) {
+      const from = drag?.width ?? 0;
+      drag = undefined;
+      workspace.classList.remove("workspace--resizing");
+      if (click) return toggle();
+      if (width > 0) last = width;
+      else if (from > 0) last = from;
+      save();
+    },
   });
   handle.addEventListener("keydown", (event) => {
+    if (isToggleKey(event)) {
+      event.preventDefault();
+      toggle();
+      return;
+    }
     const step = event.shiftKey ? 40 : 10;
     const values: Record<string, number> = {
       ArrowLeft: width === 0 ? 0 : Math.max(0, width - step) < minimum ? 0 : width - step,
@@ -109,26 +117,14 @@ export function mountSidebarResize(
     save();
   });
   const observer = new ResizeObserver(() => {
-    if (workspace.clientWidth > 650) apply(width);
+    handle.setAttribute("aria-orientation", narrow() ? "horizontal" : "vertical");
+    if (!narrow()) apply(width);
+    else handle.title = `Click to ${width === 0 ? "show" : "hide"} the page structure`;
   });
   observer.observe(workspace);
   apply(width);
   return {
-    hide() {
-      apply(0);
-      save();
-    },
-    show() {
-      apply(last);
-      save();
-    },
-    isHidden: () => width === 0,
-    onChange(listener) {
-      listeners.add(listener);
-      listener(width === 0);
-    },
     dispose() {
-      listeners.clear();
       observer.disconnect();
       handle.remove();
       workspace.classList.remove("workspace--resizing");

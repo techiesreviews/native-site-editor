@@ -1,39 +1,75 @@
-/* Shared resize-handle grip indicator for all three splitters (sidebar width,
-   code height, code pane width). Each handle keeps its own hit area, cursor,
-   focus outline, pointer capture and visibility rules; only the indicator is
-   unified: an empty rounded pill in the brand selected-background, centered in
-   the hit area, shown on hover/focus/drag. No glyph, no permanent line. */
-.sidebar-resize::after,
-.code-resize::after,
-.code-width-resize::after {
-  content: "";
+/* Shared look of the three splitters (sidebar width, code height, code pane
+   width), each also its panel's toggle (resize-handle.ts). Each handle keeps
+   its own hit area, cursor, focus outline and visibility rules; the grip is
+   shared: a thin bar that grows, on hover, focus or drag, into a tab in the
+   action colour holding a chevron that points the way a click moves the
+   edge. While its panel is collapsed the thin bar stays visible at the edge. */
+.resize-grip {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--selected);
-  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  width: 4px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--on-primary);
   opacity: 0;
   pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: width 120ms ease, height 120ms ease, opacity 120ms ease, background-color 120ms ease;
 }
-/* Vertical handles get an upright pill; the horizontal handle a flat one. */
-.sidebar-resize::after,
-.code-width-resize::after {
-  width: 6px;
-  height: 28px;
+.resize-grip svg {
+  opacity: 0;
+  transform: rotate(var(--chevron-turn, 0deg));
+  transition: opacity 120ms ease;
 }
-.code-resize::after {
+.code-resize .resize-grip {
   width: 28px;
-  height: 6px;
+  height: 4px;
 }
-.sidebar-resize:hover::after,
-.sidebar-resize:focus-visible::after,
-.workspace--resizing .sidebar-resize::after,
-.code-resize:hover::after,
-.code-resize:focus-visible::after,
-.code-resizing .code-resize::after,
-.code-width-resize:hover::after,
-.code-width-resize:focus-visible::after,
-.code-width-resizing .code-width-resize::after {
+.is-collapsed > .resize-grip {
+  opacity: 0.55;
+}
+.sidebar-resize:is(:hover, :focus-visible) > .resize-grip,
+.workspace--resizing .sidebar-resize > .resize-grip,
+.code-width-resize:is(:hover, :focus-visible) > .resize-grip,
+.code-width-resizing .code-width-resize > .resize-grip {
+  width: 16px;
+  height: 44px;
   opacity: 1;
+  background: var(--primary);
+}
+.code-resize:is(:hover, :focus-visible) > .resize-grip,
+.code-resizing .code-resize > .resize-grip {
+  width: 44px;
+  height: 16px;
+  opacity: 1;
+  background: var(--primary);
+}
+.sidebar-resize:is(:hover, :focus-visible) svg,
+.code-resize:is(:hover, :focus-visible) svg,
+.code-width-resize:is(:hover, :focus-visible) svg {
+  opacity: 1;
+}
+/* The chevron is drawn pointing left. */
+.sidebar-resize.is-collapsed,
+.code-width-resize:not(.is-collapsed) {
+  --chevron-turn: 180deg;
+}
+.code-resize {
+  --chevron-turn: -90deg;
+}
+.code-resize.is-collapsed {
+  --chevron-turn: 90deg;
+}
+@media (prefers-reduced-motion: reduce) {
+  .resize-grip,
+  .resize-grip svg,
+  .sidebar-resize,
+  .code-resize,
+  .code-width-resize {
+    transition: none !important;
+  }
 }

@@ -1,0 +1,53 @@
+// Shared behaviour of the three splitters (sidebar width, code height, code
+// pane width): each is also its panel's toggle. A press released within
+// `clickSlop` px of where it went down is a click and toggles; anything
+// further is a drag that resizes and never toggles.
+export const clickSlop = 4;
+
+/** The bar shown in the handle, with a chevron pointing the way a click moves the edge. */
+export function createGrip(): HTMLSpanElement {
+  const grip = document.createElement("span");
+  grip.className = "resize-grip";
+  grip.setAttribute("aria-hidden", "true");
+  grip.innerHTML =
+    '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return grip;
+}
+
+export interface PressHandlers {
+  /** Return false to ignore the press. */
+  start(event: PointerEvent): boolean;
+  /** Called for every move once the pointer has left the click slop. */
+  move(event: PointerEvent): void;
+  /** `click` is true for a release that never left the click slop. */
+  end(click: boolean): void;
+}
+
+export function trackPress(handle: HTMLElement, handlers: PressHandlers) {
+  let press: { x: number; y: number; moved: boolean } | undefined;
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !handlers.start(event)) return;
+    event.preventDefault();
+    handle.focus();
+    press = { x: event.clientX, y: event.clientY, moved: false };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!press) return;
+    if (!press.moved && Math.hypot(event.clientX - press.x, event.clientY - press.y) < clickSlop) return;
+    press.moved = true;
+    handlers.move(event);
+  });
+  const finish = (released: boolean) => {
+    if (!press) return;
+    const click = released && !press.moved;
+    press = undefined;
+    handlers.end(click);
+  };
+  handle.addEventListener("pointerup", () => finish(true));
+  handle.addEventListener("pointercancel", () => finish(false));
+  handle.addEventListener("lostpointercapture", () => finish(false));
+}
+
+/** Enter or Space on a focused handle. */
+export const isToggleKey = (event: KeyboardEvent) => event.key === "Enter" || event.key === " ";
