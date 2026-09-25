@@ -93,18 +93,23 @@ test("the Pages tab labels pages by their comment titles, and a new page needs n
   await expect(item(page, "Notes")).toHaveAttribute("aria-expanded", "true");
   await expect(item(page, "The first note").locator(".pages-url")).toHaveText("/notes/first-note/");
 
-  // A page added to Notes is only its file: there is no manifest to title it in.
-  await item(page, "Add page to Notes").click();
-  const newTitle = explorer(page).getByRole("textbox", { name: "New page title" });
+  // Notes is a folder with no page of its own.
+  await expect(item(page, "Notes")).toHaveAttribute("aria-description", "/notes/, no page, 1 subpage");
+  await expect(item(page, "Notes").locator(".pages-note").first()).toHaveText("(no page)");
+
+  // A page added to Notes is only its file, titled in its leading comment: there is no manifest.
+  await item(page, "Notes").hover();
+  await explorer(page).getByRole("button", { name: "Add subpage to Notes" }).click();
+  const newTitle = explorer(page).getByRole("textbox", { name: "New subpage of Notes, title" });
   await newTitle.pressSequentially("Second note");
   await page.keyboard.press("Enter");
   await expect(page.locator("#status")).toHaveText("Created the page Second note at /notes/second-note/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/notes/second-note.html");
-  // With no title in a comment, the top bar names it by its heading.
   await expect(page.locator("#current-page")).toHaveText("Second note");
   await expect(frame(page).locator("h1")).toHaveText("Second note");
-  // It is built from the home page, without the home page's comment.
-  await expect(block(page).getByLabel("Title")).toHaveValue("");
+  // It is built from the home page, without the home page's comment, and has its own.
+  await expect(block(page).getByLabel("Title")).toHaveValue("Second note");
+  await expect(page.locator("#content .view-lines")).toContainText("<!-- title: Second note -->");
   const drafts = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes(".astro-editor/native.json")).length);
   expect(drafts).toBe(0);
   await openPages(page);

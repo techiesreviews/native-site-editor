@@ -307,7 +307,7 @@ test("deleting a component takes it out of native.json; renaming its folder name
   expect(saved.components["site-button"]).toBe("src/components/buttons/site-button.html");
 });
 
-test("the Pages tab renames a title in place, duplicates a page, and deletes a page or a collection", async ({ page, baseURL }) => {
+test("the Pages tab renames a title in place, duplicates a page, and deletes a page with its subpages", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
   // Rename: the manifest's title, typed in the row.
@@ -324,7 +324,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   // Duplicate, from the row's menu: a titled copy beside it.
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Fern & Kettle café" });
-  await expect(menu.getByRole("menuitem")).toHaveText([/^Rename/, "Duplicate", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
   await menu.getByRole("menuitem", { name: "Duplicate" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/fern-and-kettle-copy.html");
   await expect(status(page)).toHaveText("Duplicated Fern & Kettle café as Fern & Kettle café (copy) at /work/fern-and-kettle-copy/.");
@@ -346,16 +346,17 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await openPages(page);
   await item(page, "Home").focus();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("menu", { name: "Actions for Home" }).getByRole("menuitem")).toHaveText([/^Rename/, "Duplicate"]);
+  await expect(page.getByRole("menu", { name: "Actions for Home" }).getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Duplicate"]);
   await page.keyboard.press("Escape");
 
-  // Delete a collection with its pages.
+  // Delete a page with its subpages.
   await explorer(page).getByRole("button", { name: "Actions for Work" }).click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  const deleteCollection = page.getByRole("dialog", { name: "Delete the collection Work and its 3 pages?" });
-  await expect(deleteCollection).toContainText("1 page links to these pages; those links will lead nowhere.");
-  await deleteCollection.getByRole("button", { name: "Delete" }).click();
-  await expect(status(page)).toHaveText("Deleted the folder src/pages/work and its 3 files.");
+  const deleteWork = page.getByRole("dialog", { name: "Delete Work?" });
+  await expect(deleteWork).toContainText("1 page links to these pages; those links will lead nowhere.");
+  await expect(deleteWork.getByRole("button", { name: "Delete only this page" })).toBeFocused();
+  await deleteWork.getByRole("button", { name: "Delete Work and its 2 subpages" }).click();
+  await expect(status(page)).toHaveText("Deleted Work and its 2 subpages.");
   await expect(item(page, "Work")).toHaveCount(0);
   await expect(item(page, "Fern & Kettle café")).toHaveCount(0);
   expect(JSON.parse((await draft(page, manifestPath)).content).routes ?? {}).toEqual({});

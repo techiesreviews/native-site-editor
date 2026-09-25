@@ -306,6 +306,14 @@ test("sitemap.xml and robots.txt come from the routes and site.json, unless the 
   assert.throws(() => exportNativeSite({ files: clash }), /src\/public\/index.html would overwrite the exported index.html/);
 });
 
+test("src/public/_redirects reaches the site root as it is, for Cloudflare's static assets", () => {
+  const files = withSite();
+  files["src/public/_redirects"] = "/about/ /company/ 301\n/about/us/ /company/us/ 301\n";
+  const { files: out } = exportNativeSite({ files });
+  assert.equal(text(out["_redirects"]), "/about/ /company/ 301\n/about/us/ /company/us/ 301\n");
+  assert.ok(out["_headers"]);
+});
+
 test("indexable: false asks search engines to stay away", () => {
   const { files: out } = exportNativeSite({ files: withSite({ indexable: false }) });
   assert.ok(text(out["_headers"]).includes("/*\n  Cache-Control: max-age=0, must-revalidate\n"));

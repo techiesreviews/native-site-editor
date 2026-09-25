@@ -1,48 +1,37 @@
 // The site by URL, for the explorer's Pages tab.
 //
-// Pages are routed by where their files are (shared/native-routes.ts), so the
-// site's shape is its folders under `src/pages/`: a folder is a collection
-// (a nested folder a sub-collection), its `index.html`, when it has one, is
-// the collection's overview page, and every other page file in it is one of
-// its pages. This module turns the page files and the parsed manifest into
-// that tree, labels each row, and decides what a new page or collection
-// writes: a slug made from the title typed, and the file and URL it gives.
-// It has no DOM and no I/O.
+// Pages are routed by where their files are (shared/native-routes.ts), and
+// any page can have subpages: the page at `/about/` is `about.html`, or
+// `about/index.html` once it has subpages, which are the pages in
+// `about/`. This module turns the page files and the parsed manifest into
+// that tree (a folder with pages and no `index.html` of its own is a row
+// with no page), labels each row, and decides what a new page writes: a
+// slug made from the title typed, and the file and URL it gives. It has no
+// DOM and no I/O.
 import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
 import { routeHeading, type Checked } from "./native-create";
+import { leafToFolder, parentRoute, type FileMove } from "./native-page-moves";
 
 export interface NativePageNode {
-  kind: "page";
-  /** Repository path of the page file. */
-  file: string;
+  /** The page file; none for a folder of pages that has no page of its own. */
+  file?: string;
   route: string;
   label: string;
-  /** A new file drafted in this browser, not on GitHub yet. */
+  /** A new file drafted in this browser, not on GitHub yet (for a row with no page: everything under it is). */
   isNew: boolean;
   /** `/` and `/404/` are placed first and last at the top. */
   special?: "home" | "notFound";
   /** The file another file's route wins over (`work.html` beside `work/index.html`): it has no page. */
   unusedFor?: string;
+  /** Its subpages, alphabetical by label. */
+  children: NativePageNode[];
 }
 
-export interface NativeCollectionNode {
-  kind: "collection";
-  /** The folder under `src/pages/` ("" for the site itself), e.g. "videos/tutorials". */
-  folder: string;
-  /** The URL its overview page has, or would have. */
-  route: string;
-  label: string;
-  /** Its `index.html`, when it has one. */
-  overview?: NativePageNode;
-  /** Pages first, then sub-collections, each alphabetical by label; at the top, `/404/` last. */
-  children: NativeTreeNode[];
-  /** Pages directly in it, beside its overview. */
-  pageCount: number;
-  /** Every page in it is new, so the folder is not on GitHub yet. */
-  isNew: boolean;
+/** The site: its home page, and the pages at the top level (`/404/` last). */
+export interface NativeSiteTree {
+  home?: NativePageNode;
+  children: NativePageNode[];
 }
-
-export type NativeTreeNode = NativePageNode | NativeCollectionNode;
 
 export interface NativePagesInput {
   /** Page files: every `.html` under `src/pages/` on the branch and drafted in the browser. */
@@ -56,75 +45,85 @@ export interface NativePagesInput {
   isNew?: (file: string) => boolean;
 }
 
-const compare = (a: NativeTreeNode, b: NativeTreeNode) =>
+const compare = (a: NativePageNode, b: NativePageNode) =>
   a.label.localeCompare(b.label, undefined, { sensitivity: "base", numeric: true }) ||
   (a.route < b.route ? -1 : a.route > b.route ? 1 : 0);
 
 /**
- * The site as a tree of collections and pages; the root is the site itself,
- * whose overview is the home page. Labels are the manifest's title, else the
- * page's first heading, else its URL's last part humanised; the home page is
- * always "Home".
+ * The site as a tree of pages by URL: each page's subpages are the pages
+ * whose URL is one part longer. A URL between (a folder with pages and no
+ * page of its own) is a row with no `file`. Labels are the manifest's title,
+ * else the page's first heading, else its URL's last part humanised; the
+ * home page is always "Home".
  */
-export function buildNativePagesTree(input: NativePagesInput): NativeCollectionNode {
+export function buildNativePagesTree(input: NativePagesInput): NativeSiteTree {
   const byFile = new Map<string, string>();
   for (const [route, file] of Object.entries(input.routes)) if (!byFile.has(file)) byFile.set(file, route);
   const files = new Set<string>();
   for (const file of input.files) if (file.startsWith(NATIVE_PAGES_DIR) && (byFile.has(file) || nativePageRoute(file))) files.add(file);
   for (const file of byFile.keys()) if (file.startsWith(NATIVE_PAGES_DIR)) files.add(file);
 
-  const title = (route: string) => input.titles?.[route]?.trim() || undefined;
-  const heading = (file: string) => input.heading?.(file)?.trim() || undefined;
-  const page = (file: string): NativePageNode => {
+  const nodes = new Map<string, NativePageNode>();
+  const unused: NativePageNode[] = [];
+  for (const file of [...files].sort()) {
     const mapped = byFile.get(file);
     const route = mapped ?? nativePageRoute(file)!;
-    const node: NativePageNode = { kind: "page", file, route, label: "", isNew: Boolean(input.isNew?.(file)) };
-    if (!mapped && input.routes[route]) node.unusedFor = input.routes[route];
-    if (route === "/" && !node.unusedFor) node.special = "home";
-    else if (route === "/404/" && !node.unusedFor) node.special = "notFound";
-    node.label = pageLabel(file, route, node.special, input);
-    return node;
-  };
-
-  const root: NativeCollectionNode = { kind: "collection", folder: "", route: "/", label: "Home", children: [], pageCount: 0, isNew: false };
-  const collections = new Map<string, NativeCollectionNode>([["", root]]);
-  const collection = (folder: string): NativeCollectionNode => {
-    let found = collections.get(folder);
-    if (found) return found;
-    const parent = collection(folder.includes("/") ? folder.slice(0, folder.lastIndexOf("/")) : "");
-    found = { kind: "collection", folder, route: `/${folder}/`, label: "", children: [], pageCount: 0, isNew: true };
-    collections.set(folder, found);
-    parent.children.push(found);
-    return found;
-  };
-  for (const file of [...files].sort()) {
-    const relative = file.slice(NATIVE_PAGES_DIR.length, -".html".length);
-    const slash = relative.lastIndexOf("/");
-    const folder = slash < 0 ? "" : relative.slice(0, slash);
-    const name = relative.slice(slash + 1);
-    const node = page(file);
-    const owner = collection(folder);
-    if (name === "index" && !owner.overview) owner.overview = node;
-    else {
-      owner.children.push(node);
-      owner.pageCount++;
+    const node: NativePageNode = { file, route, label: "", isNew: Boolean(input.isNew?.(file)), children: [] };
+    if (!mapped && input.routes[route]) {
+      node.unusedFor = input.routes[route];
+      node.label = pageLabel(file, route, undefined, input);
+      unused.push(node);
+      continue;
     }
+    if (route === "/") node.special = "home";
+    else if (route === "/404/") node.special = "notFound";
+    node.label = pageLabel(file, route, node.special, input);
+    nodes.set(route, node);
   }
-  // A collection is new when nothing in it is on GitHub; its label is its overview's.
-  const settle = (node: NativeCollectionNode): boolean => {
-    let isNew = node.overview ? node.overview.isNew : true;
-    for (const child of node.children) isNew = (child.kind === "page" ? child.isNew : settle(child)) && isNew;
-    node.isNew = node !== root && isNew;
-    if (node !== root)
-      node.label = (node.overview && (title(node.overview.route) ?? heading(node.overview.file))) || routeHeading(node.route);
-    const pages = node.children.filter((child) => child.kind === "page" && child.special !== "notFound").sort(compare);
-    const folders = node.children.filter((child) => child.kind === "collection").sort(compare);
-    const last = node.children.filter((child) => child.kind === "page" && child.special === "notFound");
-    node.children = [...pages, ...folders, ...last];
-    return isNew;
+  // Every URL between the top and a page is a row, with no page when none gives it.
+  for (const route of [...nodes.keys()]) {
+    for (let parent = parentRoute(route); parent !== "/" && !nodes.has(parent); parent = parentRoute(parent))
+      nodes.set(parent, { route: parent, label: routeHeading(parent), isNew: true, children: [] });
+  }
+  const site: NativeSiteTree = { home: nodes.get("/"), children: [] };
+  const place = (node: NativePageNode) => {
+    const parent = parentRoute(node.route);
+    (parent === "/" ? site.children : nodes.get(parent)!.children).push(node);
   };
-  settle(root);
-  return root;
+  for (const node of nodes.values()) if (node.route !== "/") place(node);
+  for (const node of unused) {
+    if (node.route === "/") site.children.push(node);
+    else place(node);
+  }
+  // A row with no page is new when everything under it is; children in label order.
+  const settle = (node: NativePageNode): boolean => {
+    let isNew = node.file ? node.isNew : true;
+    for (const child of node.children) isNew = settle(child) && isNew;
+    if (!node.file) node.isNew = isNew;
+    node.children.sort(compare);
+    return node.file ? node.isNew : isNew;
+  };
+  for (const node of site.children) settle(node);
+  const top = site.children.filter((node) => node.special !== "notFound").sort(compare);
+  site.children = [...top, ...site.children.filter((node) => node.special === "notFound")];
+  return site;
+}
+
+/** Every page in the tree, depth first (the home page first). */
+export function nativeTreePages(site: NativeSiteTree): NativePageNode[] {
+  const out: NativePageNode[] = [];
+  const walk = (node: NativePageNode) => {
+    out.push(node);
+    node.children.forEach(walk);
+  };
+  if (site.home) out.push(site.home);
+  site.children.forEach(walk);
+  return out;
+}
+
+/** How many pages are under `node` (its subpages, theirs, …). */
+export function nativeSubpageCount(node: NativePageNode): number {
+  return node.children.reduce((sum, child) => sum + (child.file && !child.unusedFor ? 1 : 0) + nativeSubpageCount(child), 0);
 }
 
 type LabelInput = Pick<NativePagesInput, "titles" | "heading">;
@@ -187,15 +186,13 @@ export function slugify(title: string): string {
     .replace(/-+$/, "");
 }
 
-export type NativeNewKind = "page" | "collection";
-
 export interface NativeNewTarget {
-  /** The URL the new page (or the collection's overview) has. */
+  /** The URL the new page has. */
   route: string;
-  /** The file written: `<collection>/<slug>.html`, or `<collection>/<slug>/index.html` for a collection. */
+  /** The file written: `<parent folder>/<slug>.html`. */
   file: string;
-  /** A new collection's folder, under `src/pages/`. */
-  folder?: string;
+  /** The parent, a page with no subpages until now, made a folder (`about.html` → `about/index.html`). */
+  convert?: FileMove;
 }
 
 /** What is already there, as far as the caller knows. */
@@ -209,27 +206,29 @@ export interface NativeTaken {
 const SLUG = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/i;
 
 /**
- * Where a new page or collection named `slug` in the collection `folder` ("" is
- * the top of the site) goes: a page is `src/pages/<folder>/<slug>.html` at
- * `/<folder>/<slug>/`; a collection is the folder `src/pages/<folder>/<slug>`
- * with its overview page `index.html`, at the same URL.
+ * Where a new page named `slug` under the page at `parent` ("/" is the top
+ * of the site) goes: `src/pages/<parent>/<slug>.html` at
+ * `/<parent>/<slug>/`. A parent that is a page without subpages
+ * (`about.html`) becomes a folder first (`convert`: `about/index.html`, the
+ * same URL), given `files` (every file under `src/` now).
  */
-export function nativeNewTarget(kind: NativeNewKind, folder: string, slug: string, taken?: NativeTaken): Checked<NativeNewTarget> {
+export function nativeNewTarget(parent: string, slug: string, taken?: NativeTaken, files: Iterable<string> = []): Checked<NativeNewTarget> {
   const name = slug.trim();
-  if (!name) return { ok: false, error: kind === "page" ? "Enter the page's title." : "Enter the collection's name." };
+  if (!name) return { ok: false, error: "Enter the page's title." };
   if (name.length > 80) return { ok: false, error: "That URL is too long; keep it under 80 characters." };
   if (!SLUG.test(name)) return { ok: false, error: "Use letters, digits and - in the URL, starting and ending with a letter or digit." };
-  if (name.toLowerCase() === "index") return { ok: false, error: "index is the collection's own page; choose another URL." };
+  if (name.toLowerCase() === "index") return { ok: false, error: "index is the page's own file; choose another URL." };
+  const folder = parent === "/" ? "" : parent.slice(1, -1);
   const base = `${NATIVE_PAGES_DIR}${folder ? `${folder}/` : ""}${name}`;
-  const route = `/${folder ? `${folder}/` : ""}${name}/`;
-  const file = kind === "page" ? `${base}.html` : `${base}/index.html`;
+  const route = `${parent}${name}/`;
+  const file = `${base}.html`;
   if (nativePageRoute(file) !== route) return { ok: false, error: `No page file can give the URL ${route}.` };
   if (taken) {
     const existing = taken.route(route);
     if (existing) return { ok: false, error: `The URL ${route} is taken by ${existing}.` };
     if (taken.exists(base)) return { ok: false, error: `The URL ${route} is taken: ${base} is already there.` };
-    if (kind === "page" && taken.exists(file)) return { ok: false, error: `${file} is already there.` };
-    if (kind === "collection" && taken.exists(`${base}.html`)) return { ok: false, error: `The URL ${route} is taken by ${base}.html.` };
+    if (taken.exists(file)) return { ok: false, error: `${file} is already there.` };
   }
-  return { ok: true, value: kind === "page" ? { route, file } : { route, file, folder: base } };
+  const convert = parent === "/" ? undefined : leafToFolder(parent, taken?.route(parent), files);
+  return { ok: true, value: convert ? { route, file, convert } : { route, file } };
 }

@@ -58,8 +58,7 @@ test("a new page starts with a section and its heading, and a section component 
   await open(page, baseURL, 501);
   await expect(label(page)).toHaveText("Home");
   await openPages(page);
-  await explorer(page).getByRole("button", { name: "+ New" }).click();
-  await page.getByRole("menuitem", { name: "Page" }).click();
+  await explorer(page).getByRole("button", { name: "+ New page" }).click();
   await explorer(page).getByRole("textbox", { name: "New page title" }).fill("Services");
   await page.keyboard.press("Enter");
   await expect(label(page)).toHaveAttribute("data-path", "src/pages/services.html");

@@ -1,89 +1,101 @@
 import { button, node } from "../ui/dom";
-import { slugify, type NativeCollectionNode, type NativeNewKind, type NativePageNode, type NativeTreeNode } from "../native-pages";
+import { nativeSubpageCount, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import type { Checked } from "../native-create";
 import { createRowMenu, type MenuItem } from "./row-menu";
+import { createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
 
-/** A new page or collection, as typed in the tree. */
+/** A new page, as typed in the tree. */
 export interface NativeNewRequest {
-  kind: NativeNewKind;
-  /** The collection it goes in, under `src/pages/` ("" is the top of the site). */
-  folder: string;
+  /** The URL of the page it goes under ("/" is the top of the site). */
+  parent: string;
   title: string;
   slug: string;
 }
 
-/** A page or a collection a row action applies to. */
-export type NativePagesTarget = { kind: "page"; file: string; label: string; home: boolean } | { kind: "collection"; folder: string; label: string; overview?: string; pages: number };
+/** A row an action applies to: a page, or a URL with subpages and no page of its own (no `file`). */
+export interface NativePagesTarget {
+  file?: string;
+  route: string;
+  label: string;
+  home: boolean;
+  /** Pages under it. */
+  subpages: number;
+  isNew: boolean;
+}
 
 // Rows are found again after each render by these keys.
 const pageKey = (file: string) => `page:${file}`;
-const collectionKey = (folder: string) => `collection:${folder}`;
-const addKey = (folder: string) => `add:${folder}`;
+const routeKey = (route: string) => `route:${route}`;
+const keyOf = (page: NativePageNode) => (page.file ? pageKey(page.file) : routeKey(page.route));
 
 /**
- * The explorer's Pages tab: the site by URL, like a CMS page tree. Each
- * collection (a folder under `src/pages/`) is a row that opens its overview
- * page and expands to its pages, sub-collections and a "+ Add page" row. New
- * pages and collections are created in place: an editable row with the title,
- * the URL made from it (editable by clicking it), and the result of checking
- * both as they are typed. It is an ARIA tree with one tab stop (roving
+ * The explorer's Pages tab: the site by URL, like a CMS page tree. Any page
+ * can have subpages; a row opens its page (a URL with no page of its own
+ * opens and closes) and shows its subpages under it. On each row, a "+"
+ * (shown on hover or focus) adds a subpage, and the ⋯ button or a right-click
+ * gives Add subpage, Rename, Change URL…, Move to…, Duplicate and Delete.
+ * New pages are made in place: an editable row with the title, the URL made
+ * from it (editable by clicking it), and the result of checking both as they
+ * are typed. A page's URL is changed in place too (click it). A row dragged
+ * onto another becomes its subpage; dropped on the line between rows it
+ * moves to that level. It is an ARIA tree with one tab stop (roving
  * tabindex): arrows move, Right/Left expand and collapse, Enter opens,
- * Shift+F10 or the ContextMenu key opens a collection's menu.
+ * Shift+F10 or the ContextMenu key opens a row's menu.
  */
 export function createPagesTree(options: {
   /** Opens a page file, as choosing it in Files does. */
   open: (file: string) => void;
-  /** Checks a new page or collection as it is typed: the URL and file it gives, or why not. */
-  plan: (request: NativeNewRequest) => Checked<{ route: string; file: string }>;
+  /** Checks a new page as it is typed: the URL and file it gives, and what else it does, or why not. */
+  plan: (request: NativeNewRequest) => Checked<{ route: string; file: string; note?: string }>;
   /** Creates it; resolves to an error message, or nothing when done (the caller renders the tree again). */
   create: (request: NativeNewRequest) => Promise<string | undefined>;
   announce: (text: string) => void;
-  /** Sets a page's title in the manifest ("" removes it); resolves to an error message, or nothing when done. */
+  /** Sets a page's title ("" removes it); resolves to an error message, or nothing when done. */
   retitle?: (file: string, title: string) => string | undefined;
   /** Why titles cannot be edited here now, when they cannot: Rename is then disabled with that hint. */
   retitleBlocked?: () => string | undefined;
   /** Makes a copy of a page. */
   duplicate?: (file: string) => void;
-  /** Deletes a page, or a collection with its pages (the caller confirms). */
+  /** Deletes a page (the caller confirms, and asks about its subpages). */
   remove?: (target: NativePagesTarget) => void;
+  /** Gives a URL with no page its own page. */
+  createPage?: (route: string) => void;
+  /** What changing a page's URL to the typed value does. */
+  planUrl?: (target: NativePagesTarget, value: string) => UrlPlan;
+  /** Changes a page's URL; resolves to an error message, or nothing when done. */
+  changeUrl?: (target: NativePagesTarget, value: string, keep: boolean) => Promise<string | undefined>;
+  /** Move to…: the caller asks where. */
+  moveTo?: (target: NativePagesTarget) => void;
+  /** Why `source` cannot go under the page at `parent` ("/" the top), when it cannot. */
+  dropProblem?: (source: NativePagesTarget, parent: string) => string | undefined;
+  /** A row dropped: `source` goes under `parent` (the caller confirms). */
+  drop?: (source: NativePagesTarget, parent: string) => void;
 }) {
   const root = node("section", "pages");
   const heading = node("div", "files-heading pages-heading");
   const title = node("span", "", "PAGES");
   title.id = "pages-heading";
-  const newButton = button("", () => {
-    if (menu.isOpen() && menu.opener === newButton) { menu.close(true); return; }
-    menu.open(newButton, [
-      { label: "Page", run: () => startEditing("page", "", newButton) },
-      { label: "Collection", run: () => startEditing("collection", "", newButton) },
-    ]);
-  }, "pages-new");
-  newButton.append(node("span", "", "+ New"), node("span", "pages-new__caret", "▾"));
-  newButton.lastElementChild!.setAttribute("aria-hidden", "true");
-  newButton.setAttribute("aria-haspopup", "menu");
-  newButton.setAttribute("aria-expanded", "false");
-  newButton.title = "New page or collection at the top of the site";
+  const newButton = button("+ New page", () => startEditing("/", newButton), "pages-new");
+  newButton.title = "New page at the top of the site";
   heading.append(title, newButton);
   const tree = node("ul", "pages-tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-labelledby", "pages-heading");
   root.append(heading, tree);
 
-  // Collections' open state by folder, kept across renders; unset is the default.
+  // Rows' open state by route, kept across renders; unset is the default.
   const expanded = new Map<string, boolean>();
-  let model: NativeCollectionNode | undefined;
+  let model: NativeSiteTree | undefined;
   let current: string | undefined;
   // The row with the tab stop, by key.
   let active: string | undefined;
 
-  // ---- The row menu (a page's or collection's actions, and + New). ----
   const menu = createRowMenu(root);
 
   // ---- The row being created in place. ----
   interface Editing {
-    kind: NativeNewKind;
-    folder: string;
+    parent: string;
     item: HTMLLIElement;
     input: HTMLInputElement;
     /** Where focus goes when it is cancelled. */
@@ -91,28 +103,29 @@ export function createPagesTree(options: {
   }
   let editing: Editing | undefined;
 
-  function startEditing(kind: NativeNewKind, folder: string, opener: string | HTMLElement) {
+  function startEditing(parent: string, opener: string | HTMLElement) {
     cancelEditing(false);
-    if (folder) expanded.set(folder, true);
+    cancelUrl(false);
+    if (parent !== "/") expanded.set(parent, true);
     const item = node("li", "pages-editing");
     item.setAttribute("role", "none");
-    const level = folder ? folder.split("/").length + 1 : 1;
+    const level = parent === "/" ? 1 : parent.split("/").filter(Boolean).length + 1;
     const form = node("form", "pages-edit");
     form.style.setProperty("--level", String(level));
-    const noun = kind === "page" ? "page" : "collection";
     const input = node("input", "pages-edit__title");
     input.type = "text";
     input.autocomplete = "off";
-    input.placeholder = kind === "page" ? "My first video" : "Videos";
-    input.setAttribute("aria-label", kind === "page" ? "New page title" : "New collection name");
+    input.placeholder = "My first video";
+    const under = parent === "/" ? undefined : pageAt(parent);
+    input.setAttribute("aria-label", under ? `New subpage of ${under.label}, title` : "New page title");
     input.setAttribute("aria-describedby", "pages-edit-url pages-edit-message");
-    const icon = node("span", "pages-icon", kind === "page" ? "◻" : "▤");
+    const icon = node("span", "pages-icon", "◻");
     icon.setAttribute("aria-hidden", "true");
     const line = node("div", "pages-edit__line");
     line.append(icon, input);
     const url = node("div", "pages-edit__url");
     url.id = "pages-edit-url";
-    const prefix = `/${folder ? `${folder}/` : ""}`;
+    const prefix = parent;
     const urlButton = node("button", "pages-edit__url-button");
     urlButton.type = "button";
     urlButton.title = "Change the URL";
@@ -120,7 +133,7 @@ export function createPagesTree(options: {
     slugInput.type = "text";
     slugInput.autocomplete = "off";
     slugInput.spellcheck = false;
-    slugInput.setAttribute("aria-label", `URL of the new ${noun}, after ${prefix}`);
+    slugInput.setAttribute("aria-label", `URL of the new page, after ${prefix}`);
     slugInput.setAttribute("aria-describedby", "pages-edit-message");
     slugInput.hidden = true;
     const slugBox = node("span", "pages-edit__slug-box");
@@ -141,7 +154,7 @@ export function createPagesTree(options: {
     let slug = "";
     let slugEdited = false;
     let pending = false;
-    const request = (): NativeNewRequest => ({ kind, folder, title: input.value.trim(), slug });
+    const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug });
     // The URL follows the title until it is edited by hand; a problem shows once there is something to check.
     const check = (showEmpty = false) => {
       if (!slugEdited) slug = slugify(input.value);
@@ -150,7 +163,7 @@ export function createPagesTree(options: {
       const planned = options.plan(request());
       const blank = !input.value.trim() && !slug;
       const error = !planned.ok && (!blank || showEmpty);
-      message.textContent = planned.ok ? `Creates ${planned.value.file}` : error ? planned.error : "";
+      message.textContent = planned.ok ? `Creates ${planned.value.file}${planned.value.note ? `; ${planned.value.note}` : ""}` : error ? planned.error : "";
       message.classList.toggle("is-error", error);
       for (const field of [input, slugInput]) field.setAttribute("aria-invalid", String(error));
       return planned;
@@ -201,7 +214,7 @@ export function createPagesTree(options: {
         submit.disabled = false;
       }
     });
-    editing = { kind, folder, item, input, opener };
+    editing = { parent, item, input, opener };
     check();
     place();
     input.focus();
@@ -211,44 +224,37 @@ export function createPagesTree(options: {
   function cancelEditing(returnFocus: boolean) {
     if (!editing) return;
     const { item, opener } = editing;
-    const editingNoun = editing.kind;
     editing = undefined;
     item.remove();
     if (!returnFocus) return;
     const target = typeof opener === "string" ? rowByKey(opener) : opener;
     if (target?.isConnected) target.focus();
     else focusRow(active);
-    options.announce(`Cancelled the new ${editingNoun}`);
+    options.announce("Cancelled the new page");
   }
 
-  // The editing row goes last among its collection's pages and collections,
-  // before its "+ Add page" row (at the top, before the 404 page).
+  // The editing row goes last among its parent's subpages (at the top, before the 404 page).
   function place() {
     if (!editing) return;
-    const { folder, item } = editing;
-    if (!folder) {
+    const { parent, item } = editing;
+    if (parent === "/") {
       const notFound = [...tree.children].find((child) => (child as HTMLElement).dataset.special === "notFound");
       tree.insertBefore(item, notFound ?? null);
       return;
     }
-    const owner = rowByKey(collectionKey(folder));
+    const owner = rowOfRoute(parent);
     const group = owner?.querySelector<HTMLUListElement>(":scope > ul");
     if (!owner || !group) { tree.append(item); return; }
-    if (group.hidden) {
-      group.hidden = false;
-      owner.setAttribute("aria-expanded", "true");
-      const twisty = owner.querySelector(":scope > .pages-row > .pages-twisty");
-      if (twisty) twisty.textContent = "▾";
-    }
-    group.insertBefore(item, rowByKey(addKey(folder)) ?? null);
+    if (group.hidden) setOpen(owner, parent, true);
+    group.append(item);
   }
 
   // ---- Rows. ----
-  const rowByKey = (key: string | undefined) =>
-    key ? [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")].find((row) => row.dataset.key === key) : undefined;
-  // Rows a person can reach: not inside a collapsed collection.
-  const visibleRows = () =>
-    [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")].filter((row) => !row.parentElement?.closest("[role='group'][hidden]"));
+  const rows = () => [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")];
+  const rowByKey = (key: string | undefined) => (key ? rows().find((row) => row.dataset.key === key) : undefined);
+  const rowOfRoute = (route: string) => rows().find((row) => row.dataset.route === route && !row.dataset.unused);
+  // Rows a person can reach: not inside a collapsed row.
+  const visibleRows = () => rows().filter((row) => !row.parentElement?.closest("[role='group'][hidden]"));
 
   function focusRow(key: string | undefined) {
     const row = rowByKey(key) ?? visibleRows()[0];
@@ -263,52 +269,62 @@ export function createPagesTree(options: {
     active = row.dataset.key;
   }
 
-  const isOpen = (collection: NativeCollectionNode, level: number) =>
-    expanded.get(collection.folder) ?? (level === 1 || Boolean(current && `${current}`.startsWith(`src/pages/${collection.folder}/`)));
+  const isOpen = (page: NativePageNode, level: number) =>
+    expanded.get(page.route) ?? (level === 1 || Boolean(current && current.startsWith(`src/pages${page.route}`)));
 
-  function collectionItems(collection: NativeCollectionNode): MenuItem[] {
-    const target = collectionTarget(collection);
-    return [
-      { label: "Add page", run: () => startEditing("page", collection.folder, collectionKey(collection.folder)) },
-      { label: "Add sub-collection", run: () => startEditing("collection", collection.folder, collectionKey(collection.folder)) },
-      ...(collection.overview && options.retitle ? [renameItem(collectionKey(collection.folder))] : []),
-      ...(options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
-    ];
-  }
-  function pageItems(page: NativePageNode): MenuItem[] {
-    return [
-      ...(options.retitle ? [renameItem(pageKey(page.file))] : []),
-      ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file) }] : []),
-      ...(options.remove && page.special !== "home" ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(pageTarget(page)) }] : []),
-    ];
-  }
-  const renameItem = (key: string): MenuItem => ({ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) });
-  const pageTarget = (page: NativePageNode): NativePagesTarget => ({ kind: "page", file: page.file, label: page.label, home: page.special === "home" });
-  function collectionTarget(collection: NativeCollectionNode): NativePagesTarget {
-    let pages = collection.overview ? 1 : 0;
-    const count = (node: NativeCollectionNode) => {
-      for (const child of node.children) {
-        if (child.kind === "page") pages++;
-        else { if (child.overview) pages++; count(child); }
+  function pageAt(route: string): NativePageNode | undefined {
+    if (!model) return undefined;
+    if (route === "/") return model.home;
+    const find = (list: NativePageNode[]): NativePageNode | undefined => {
+      for (const page of list) {
+        if (page.route === route && !page.unusedFor) return page;
+        const found = route.startsWith(page.route) ? find(page.children) : undefined;
+        if (found) return found;
       }
+      return undefined;
     };
-    count(collection);
-    return { kind: "collection", folder: collection.folder, label: collection.label, overview: collection.overview?.file, pages };
+    return find(model.children);
   }
 
-  // ---- A title edited in place (the manifest's title of a page, or of a collection's overview). ----
+  const targetOf = (page: NativePageNode): NativePagesTarget => ({
+    file: page.file, route: page.route, label: page.label, home: page.special === "home", subpages: nativeSubpageCount(page), isNew: page.isNew,
+  });
+
+  function items(page: NativePageNode): MenuItem[] {
+    const target = targetOf(page);
+    const key = keyOf(page);
+    if (page.unusedFor) return options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : [];
+    if (!page.file) {
+      return [
+        ...(options.createPage ? [{ label: "Create page", run: () => options.createPage!(page.route) }] : []),
+        { label: "Add subpage", run: () => startEditing(page.route, key) },
+      ];
+    }
+    const home = page.special === "home";
+    return [
+      { label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) },
+      ...(options.retitle ? [{ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) }] : []),
+      ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),
+      ...(!home && options.moveTo ? [{ label: "Move to…", run: () => options.moveTo!(target) }] : []),
+      ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file!) }] : []),
+      ...(!home && options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
+    ];
+  }
+
+  // ---- A title edited in place. ----
   let renaming: { key: string; input: HTMLInputElement } | undefined;
   function startRename(key: string) {
     const item = rowByKey(key);
-    const target = item ? nodeOf(item) : undefined;
-    const file = target?.kind === "page" ? target.file : target?.kind === "collection" ? target.overview?.file : undefined;
-    if (!item || !file || !options.retitle || !target || target.kind === "add") return;
+    const page = item ? pageOf(item) : undefined;
+    const file = page?.file;
+    if (!item || !file || !options.retitle || !page) return;
     const blocked = options.retitleBlocked?.();
     if (blocked) { options.announce(blocked); return; }
     cancelRename(false);
+    cancelUrl(false);
     const label = item.querySelector<HTMLElement>(":scope > .pages-row > .pages-label");
     if (!label) return;
-    const before = target.label;
+    const before = page.label;
     const input = node("input", "pages-rename");
     input.type = "text";
     input.value = before;
@@ -352,32 +368,207 @@ export function createPagesTree(options: {
     if (returnFocus) focusRow(key);
   }
 
+  // ---- A URL changed in place, under its row. ----
+  let changingUrl: { key: string; form: HTMLElement } | undefined;
+  function startUrl(key: string) {
+    const item = rowByKey(key);
+    const page = item ? pageOf(item) : undefined;
+    if (!item || !page?.file || page.special === "home" || !options.changeUrl || !options.planUrl) return;
+    cancelUrl(false);
+    cancelRename(false);
+    const target = targetOf(page);
+    let done = false;
+    const change = createUrlChange({
+      ariaLabel: `URL of ${page.label}`,
+      initial: page.route,
+      buttons: true,
+      plan: (value) => options.planUrl!(target, value),
+      apply: async (value, keep) => {
+        const error = await options.changeUrl!(target, value, keep);
+        if (!error && !done) { done = true; cancelUrl(false); }
+        return error;
+      },
+      cancel: () => {
+        if (done) return;
+        done = true;
+        cancelUrl(true);
+        options.announce(`Cancelled changing the URL of ${page.label}`);
+      },
+    });
+    const wrap = node("div", "pages-url-change");
+    const level = Number(item.getAttribute("aria-level") ?? "1");
+    wrap.style.setProperty("--level", String(level));
+    wrap.append(change.root);
+    item.querySelector(":scope > .pages-row")!.after(wrap);
+    // Keys typed in the field stay out of the tree.
+    wrap.addEventListener("keydown", (event) => event.stopPropagation());
+    changingUrl = { key, form: wrap };
+    change.focus();
+  }
+  function cancelUrl(returnFocus: boolean) {
+    if (!changingUrl) return;
+    const { key, form } = changingUrl;
+    changingUrl = undefined;
+    form.remove();
+    if (returnFocus) focusRow(key);
+  }
+
+  // ---- Dragging a page onto another (a subpage) or between rows (that level). ----
+  let dragging: NativePagesTarget | undefined;
+  let dropMark: { element: HTMLElement; className: string } | undefined;
+  function mark(element: HTMLElement | undefined, className = "is-drop-target") {
+    if (dropMark?.element === element && dropMark?.className === className) return;
+    dropMark?.element.classList.remove(dropMark.className);
+    dropMark = element ? { element, className } : undefined;
+    element?.classList.add(className);
+  }
+  // Where a pointer over `row` would drop: onto it (its middle), or at its level (its top or bottom edge).
+  function dropAt(row: HTMLElement, page: NativePageNode, event: DragEvent): { parent: string; className: string } {
+    const box = row.getBoundingClientRect();
+    const edge = Math.min(8, box.height / 4);
+    const onto = event.clientY > box.top + edge && event.clientY < box.bottom - edge;
+    if (page.special === "home") return { parent: "/", className: "is-drop-target" };
+    if (onto && !page.unusedFor) return { parent: page.route, className: "is-drop-target" };
+    const parent = page.route.slice(0, page.route.slice(0, -1).lastIndexOf("/") + 1) || "/";
+    return { parent, className: event.clientY <= box.top + edge ? "is-drop-before" : "is-drop-after" };
+  }
+  function wireDrag(item: HTMLElement, row: HTMLElement, page: NativePageNode) {
+    const movable = Boolean(page.file && !page.unusedFor && page.special !== "home" && options.drop);
+    if (movable) {
+      row.draggable = true;
+      row.addEventListener("dragstart", (event) => {
+        dragging = targetOf(page);
+        event.dataTransfer?.setData("text/plain", page.route);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+        row.classList.add("is-dragging");
+      });
+      row.addEventListener("dragend", (event) => {
+        row.classList.remove("is-dragging");
+        mark(undefined);
+        if (dragging && event.dataTransfer?.dropEffect === "none") options.announce(`Cancelled moving ${dragging.label}`);
+        dragging = undefined;
+      });
+    }
+    const over = (event: DragEvent) => {
+      if (!dragging) return;
+      event.stopPropagation();
+      const at = dropAt(row, page, event);
+      if (options.dropProblem?.(dragging, at.parent)) { mark(undefined); return; }
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      mark(row, at.className);
+    };
+    row.addEventListener("dragenter", over);
+    row.addEventListener("dragover", over);
+    row.addEventListener("drop", (event) => {
+      if (!dragging) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const at = dropAt(row, page, event);
+      const source = dragging;
+      dragging = undefined;
+      mark(undefined);
+      const problem = options.dropProblem?.(source, at.parent);
+      if (problem) options.announce(problem);
+      else options.drop?.(source, at.parent);
+    });
+    void item;
+  }
+  // The heading and the tree's empty space take a drop to the top level.
+  for (const area of [heading, tree] as HTMLElement[]) {
+    const over = (event: DragEvent) => {
+      if (!dragging || (event.target instanceof Element && event.target.closest(".pages-row") && area === tree)) return;
+      if (options.dropProblem?.(dragging, "/")) { mark(undefined); return; }
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      mark(heading);
+    };
+    area.addEventListener("dragenter", over);
+    area.addEventListener("dragover", over);
+    area.addEventListener("drop", (event) => {
+      if (!dragging) return;
+      event.preventDefault();
+      const source = dragging;
+      dragging = undefined;
+      mark(undefined);
+      const problem = options.dropProblem?.(source, "/");
+      if (problem) options.announce(problem);
+      else options.drop?.(source, "/");
+    });
+  }
+
   function pageRow(page: NativePageNode, level: number) {
     const item = node("li", "pages-item");
     item.setAttribute("role", "treeitem");
     item.setAttribute("aria-level", String(level));
-    item.dataset.key = pageKey(page.file);
+    item.dataset.key = keyOf(page);
+    item.dataset.route = page.route;
+    if (page.unusedFor) item.dataset.unused = "true";
     if (page.special) item.dataset.special = page.special;
     item.tabIndex = -1;
-    const selected = page.file === current;
+    const selected = Boolean(page.file && page.file === current);
     item.setAttribute("aria-selected", String(selected));
     item.setAttribute("aria-label", page.label);
-    item.setAttribute("aria-description", describe(page.route, page.isNew, page.unusedFor ? `not used: ${page.unusedFor} gives this URL` : undefined));
-    const row = node("div", `pages-row${selected ? " is-current" : ""}`);
+    const hasChildren = page.children.length > 0;
+    const open = hasChildren && isOpen(page, level);
+    if (hasChildren) item.setAttribute("aria-expanded", String(open));
+    const count = nativeSubpageCount(page);
+    item.setAttribute("aria-description", [
+      page.route,
+      !page.file ? "no page" : undefined,
+      page.unusedFor ? `not used: ${page.unusedFor} gives this URL` : undefined,
+      count ? `${count} ${count === 1 ? "subpage" : "subpages"}` : undefined,
+      page.isNew && page.file ? "new, not saved to GitHub yet" : undefined,
+    ].filter(Boolean).join(", "));
+    const row = node("div", `pages-row${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
     row.style.setProperty("--level", String(level));
-    row.title = page.unusedFor ? `${page.file} is not used: ${page.unusedFor} gives ${page.route}` : page.file;
-    row.append(twistySpacer(), icon(page.special === "home" ? "⌂" : "◻"), label(page.label));
+    row.title = page.unusedFor ? `${page.file} is not used: ${page.unusedFor} gives ${page.route}` : page.file ?? `src/pages${page.route} has pages but no page of its own`;
+    const twisty = node("span", "pages-twisty", hasChildren ? (open ? "▾" : "▸") : "");
+    twisty.setAttribute("aria-hidden", "true");
+    if (hasChildren)
+      twisty.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setActive(item);
+        item.focus();
+        setOpen(item, page.route, item.getAttribute("aria-expanded") !== "true");
+      });
+    row.append(twisty, icon(page.special === "home" ? "⌂" : page.file ? "◻" : "▢"), label(page.label));
+    if (!page.file) row.append(node("span", "pages-note", "(no page)"));
     if (page.unusedFor) row.append(node("span", "pages-note", "not used"));
-    if (page.isNew) row.append(node("span", "file-new", "New"));
-    row.append(node("span", "pages-url", page.route));
-    const items = pageItems(page);
-    if (items.length) {
-      const more = moreButton(`Actions for ${page.label}`, "Rename, duplicate or delete");
+    if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
+    if (page.file && !page.unusedFor && page.special !== "home" && options.changeUrl) {
+      const url = node("button", "pages-url pages-url--button", page.route);
+      url.type = "button";
+      url.tabIndex = -1;
+      url.title = "Change the URL";
+      url.setAttribute("aria-label", `Change the URL of ${page.label}, ${page.route}`);
+      url.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setActive(item);
+        startUrl(item.dataset.key!);
+      });
+      row.append(url);
+    } else row.append(node("span", "pages-url", page.route));
+    if (!page.unusedFor) {
+      const add = node("button", "pages-add", "+");
+      add.type = "button";
+      add.tabIndex = -1;
+      add.setAttribute("aria-label", page.special === "home" ? "Add a page at the top level" : `Add subpage to ${page.label}`);
+      add.title = page.special === "home" ? "Add a page at the top level" : "Add subpage";
+      add.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setActive(item);
+        startEditing(page.special === "home" ? "/" : page.route, item.dataset.key!);
+      });
+      row.append(add);
+    } else row.append(node("span", "pages-more-space"));
+    if (items(page).length) {
+      const more = moreButton(`Actions for ${page.label}`);
       more.addEventListener("click", (event) => {
         event.stopPropagation();
         setActive(item);
         if (menu.isOpen() && menu.opener === more) { menu.close(false); item.focus(); return; }
-        menu.open(more, pageItems(page));
+        menu.open(more, items(page));
       });
       row.append(more);
     } else row.append(node("span", "pages-more-space"));
@@ -385,111 +576,37 @@ export function createPagesTree(options: {
     item.addEventListener("click", (event) => {
       if (!ownEvent(event, item)) return;
       setActive(item);
-      options.open(page.file);
+      activate(item, page);
     });
     item.addEventListener("contextmenu", (event) => {
-      if (!ownEvent(event, item) || !pageItems(page).length) return;
+      if (!ownEvent(event, item) || !items(page).length) return;
       event.preventDefault();
       setActive(item);
       item.focus();
-      menu.open(item, pageItems(page), { x: event.clientX, y: event.clientY }, `Actions for ${page.label}`);
+      menu.open(item, items(page), { x: event.clientX, y: event.clientY }, `Actions for ${page.label}`);
     });
-    return item;
-  }
-
-  function collectionRow(collection: NativeCollectionNode, level: number) {
-    const item = node("li", "pages-item");
-    item.setAttribute("role", "treeitem");
-    item.setAttribute("aria-level", String(level));
-    item.dataset.key = collectionKey(collection.folder);
-    item.tabIndex = -1;
-    const open = isOpen(collection, level);
-    item.setAttribute("aria-expanded", String(open));
-    const selected = Boolean(collection.overview && collection.overview.file === current);
-    item.setAttribute("aria-selected", String(selected));
-    item.setAttribute("aria-label", collection.label);
-    const count = `${collection.pageCount} ${collection.pageCount === 1 ? "page" : "pages"}`;
-    item.setAttribute("aria-description", describe(collection.route, collection.isNew, `collection, ${count}${collection.overview ? "" : ", no overview page"}`));
-    const row = node("div", `pages-row pages-row--collection${selected ? " is-current" : ""}`);
-    row.style.setProperty("--level", String(level));
-    row.title = collection.overview ? `${collection.overview.file}, the overview of src/pages/${collection.folder}` : `src/pages/${collection.folder} (no overview page)`;
-    const twisty = node("span", "pages-twisty", open ? "▾" : "▸");
-    twisty.setAttribute("aria-hidden", "true");
-    twisty.addEventListener("click", (event) => {
-      event.stopPropagation();
-      setActive(item);
-      item.focus();
-      toggle(item, collection);
-    });
-    row.append(twisty, icon("▤"), label(collection.label), node("span", "pages-count", `· ${collection.pageCount}`));
-    row.lastElementChild!.setAttribute("aria-hidden", "true");
-    if (collection.isNew) row.append(node("span", "file-new", "New"));
-    row.append(node("span", "pages-url", collection.route));
-    const more = moreButton(`Actions for ${collection.label}`, "Add a page or sub-collection, rename or delete");
-    more.addEventListener("click", (event) => {
-      event.stopPropagation();
-      setActive(item);
-      if (menu.isOpen() && menu.opener === more) { menu.close(false); item.focus(); return; }
-      menu.open(more, collectionItems(collection));
-    });
-    row.append(more);
-    item.append(row);
-    item.addEventListener("click", (event) => {
-      if (!ownEvent(event, item)) return;
-      setActive(item);
-      activateCollection(item, collection);
-    });
-    item.addEventListener("contextmenu", (event) => {
-      if (!ownEvent(event, item)) return;
-      event.preventDefault();
-      setActive(item);
-      item.focus();
-      menu.open(item, collectionItems(collection), { x: event.clientX, y: event.clientY }, `Actions for ${collection.label}`);
-    });
+    wireDrag(item, row, page);
     const group = node("ul", "pages-group");
     group.setAttribute("role", "group");
     group.hidden = !open;
-    for (const child of collection.children) group.append(child.kind === "page" ? pageRow(child, level + 1) : collectionRow(child, level + 1));
-    group.append(addRow(collection, level + 1));
+    for (const child of page.children) group.append(pageRow(child, level + 1));
     item.append(group);
     return item;
   }
 
-  function addRow(collection: NativeCollectionNode, level: number) {
-    const item = node("li", "pages-item pages-item--add");
-    item.setAttribute("role", "treeitem");
-    item.setAttribute("aria-level", String(level));
-    item.dataset.key = addKey(collection.folder);
-    item.tabIndex = -1;
-    item.setAttribute("aria-label", `Add page to ${collection.label}`);
-    const row = node("div", "pages-row pages-row--add");
-    row.style.setProperty("--level", String(level));
-    row.append(twistySpacer(), icon("+"), label("Add page"));
-    item.append(row);
-    item.addEventListener("click", (event) => {
-      if (!ownEvent(event, item)) return;
-      setActive(item);
-      startEditing("page", collection.folder, addKey(collection.folder));
-    });
-    return item;
-  }
-
-  // An event on this row itself, not on a row inside it, a new row being typed or a title being edited.
+  // An event on this row itself, not on a row inside it, a new row being typed or a title or URL being edited.
   function ownEvent(event: Event, item: HTMLElement) {
-    return event.target instanceof Element && !event.target.closest(".pages-editing, .pages-rename") && event.target.closest("[role='treeitem']") === item;
+    return event.target instanceof Element && !event.target.closest(".pages-editing, .pages-rename, .pages-url-change") && event.target.closest("[role='treeitem']") === item;
   }
-  function moreButton(label: string, title: string) {
+  function moreButton(label: string) {
     const more = node("button", "pages-more", "⋯");
     more.type = "button";
     more.tabIndex = -1;
     more.setAttribute("aria-label", label);
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-expanded", "false");
-    more.title = title;
+    more.title = "Add subpage, rename, change URL, move, duplicate or delete";
     return more;
-  }
-  function describe(route: string, isNew: boolean, extra?: string) {
-    return [route, extra, isNew ? "new, not saved to GitHub yet" : undefined].filter(Boolean).join(", ");
   }
   function icon(text: string) {
     const element = node("span", "pages-icon", text);
@@ -499,44 +616,32 @@ export function createPagesTree(options: {
   function label(text: string) {
     return node("span", "pages-label", text);
   }
-  function twistySpacer() {
-    const element = node("span", "pages-twisty");
-    element.setAttribute("aria-hidden", "true");
-    return element;
-  }
 
-  function toggle(item: HTMLElement, collection: NativeCollectionNode, open?: boolean) {
+  function setOpen(item: HTMLElement, route: string, open: boolean) {
     const group = item.querySelector<HTMLUListElement>(":scope > ul");
     if (!group) return;
-    const next = open ?? Boolean(group.hidden);
-    group.hidden = !next;
-    expanded.set(collection.folder, next);
-    item.setAttribute("aria-expanded", String(next));
+    group.hidden = !open;
+    expanded.set(route, open);
+    if (item.hasAttribute("aria-expanded") || group.children.length) item.setAttribute("aria-expanded", String(open));
     const twisty = item.querySelector(":scope > .pages-row > .pages-twisty");
-    if (twisty) twisty.textContent = next ? "▾" : "▸";
+    if (twisty && group.querySelector("[role='treeitem']")) twisty.textContent = open ? "▾" : "▸";
   }
 
-  // A collection opens its overview page; one with none opens or closes.
-  function activateCollection(item: HTMLElement, collection: NativeCollectionNode) {
-    if (collection.overview) options.open(collection.overview.file);
-    else toggle(item, collection);
+  // A page opens; a URL with no page opens or closes.
+  function activate(item: HTMLElement, page: NativePageNode) {
+    if (page.file) options.open(page.file);
+    else if (page.children.length) setOpen(item, page.route, item.getAttribute("aria-expanded") !== "true");
   }
 
-  const nodeOf = (row: HTMLElement): NativeTreeNode | { kind: "add"; folder: string } | undefined => {
+  function pageOf(row: HTMLElement): NativePageNode | undefined {
     const key = row.dataset.key ?? "";
     if (!model) return undefined;
-    if (key.startsWith("add:")) return { kind: "add", folder: key.slice(4) };
-    const find = (collection: NativeCollectionNode): NativeTreeNode | undefined => {
-      if (key === collectionKey(collection.folder) && collection.folder) return collection;
-      if (collection.overview && key === pageKey(collection.overview.file)) return collection.overview;
-      for (const child of collection.children) {
-        const found = child.kind === "page" ? (key === pageKey(child.file) ? child : undefined) : find(child);
-        if (found) return found;
-      }
-      return undefined;
-    };
-    return find(model);
-  };
+    const all: NativePageNode[] = [];
+    const walk = (page: NativePageNode) => { all.push(page); page.children.forEach(walk); };
+    if (model.home) all.push(model.home);
+    model.children.forEach(walk);
+    return all.find((page) => keyOf(page) === key);
+  }
 
   tree.addEventListener("focusin", (event) => {
     const row = event.target instanceof HTMLElement && event.target.getAttribute("role") === "treeitem" ? event.target : undefined;
@@ -545,28 +650,28 @@ export function createPagesTree(options: {
   tree.addEventListener("keydown", (event) => {
     const row = event.target instanceof HTMLElement && event.target.getAttribute("role") === "treeitem" ? event.target : undefined;
     if (!row) return;
-    const rows = visibleRows();
-    const index = rows.indexOf(row);
-    const target = nodeOf(row);
+    const list = visibleRows();
+    const index = list.indexOf(row);
+    const page = pageOf(row);
     const go = (next: HTMLElement | undefined) => {
       event.preventDefault();
       if (next) focusRow(next.dataset.key);
     };
     switch (event.key) {
-      case "ArrowDown": return go(rows[index + 1]);
-      case "ArrowUp": return go(rows[index - 1]);
-      case "Home": return go(rows[0]);
-      case "End": return go(rows.at(-1));
+      case "ArrowDown": return go(list[index + 1]);
+      case "ArrowUp": return go(list[index - 1]);
+      case "Home": return go(list[0]);
+      case "End": return go(list.at(-1));
       case "ArrowRight":
-        if (target?.kind !== "collection") return;
+        if (!page?.children.length) return;
         event.preventDefault();
-        if (row.getAttribute("aria-expanded") === "false") toggle(row, target, true);
-        else go(rows[index + 1]);
+        if (row.getAttribute("aria-expanded") === "false") setOpen(row, page.route, true);
+        else go(list[index + 1]);
         return;
       case "ArrowLeft": {
         event.preventDefault();
-        if (target?.kind === "collection" && row.getAttribute("aria-expanded") === "true") {
-          toggle(row, target, false);
+        if (page?.children.length && row.getAttribute("aria-expanded") === "true") {
+          setOpen(row, page.route, false);
           return;
         }
         const parent = row.parentElement?.closest<HTMLElement>("[role='treeitem']");
@@ -576,30 +681,24 @@ export function createPagesTree(options: {
       case "Enter":
       case " ":
         event.preventDefault();
-        if (!target) return;
-        if (target.kind === "page") options.open(target.file);
-        else if (target.kind === "collection") activateCollection(row, target);
-        else startEditing("page", target.folder, addKey(target.folder));
+        if (page) activate(row, page);
         return;
       case "ContextMenu":
       case "F10":
         if (event.key === "F10" && !event.shiftKey) return;
         event.preventDefault();
-        if (target?.kind === "collection") menu.open(row, collectionItems(target), undefined, `Actions for ${target.label}`);
-        else if (target?.kind === "page" && pageItems(target).length) menu.open(row, pageItems(target), undefined, `Actions for ${target.label}`);
+        if (page && items(page).length) menu.open(row, items(page), undefined, `Actions for ${page.label}`);
         else options.announce("No actions here");
         return;
       case "F2":
         event.preventDefault();
-        if (target?.kind === "page" || (target?.kind === "collection" && target.overview)) startRename(row.dataset.key!);
+        if (page?.file) startRename(row.dataset.key!);
         return;
       case "Delete":
         event.preventDefault();
-        if (!options.remove) return;
-        if (target?.kind === "page") {
-          if (target.special === "home") options.announce("The home page cannot be deleted.");
-          else options.remove(pageTarget(target));
-        } else if (target?.kind === "collection") options.remove(collectionTarget(target));
+        if (!options.remove || !page?.file) return;
+        if (page.special === "home") options.announce("The home page cannot be deleted.");
+        else options.remove(targetOf(page));
         return;
     }
   });
@@ -607,40 +706,38 @@ export function createPagesTree(options: {
   return {
     root,
     /**
-     * Draws `site` with `currentFile` marked, keeping collections open or
-     * closed as they were and a row being created in place; `focus` (a page
-     * file, or a collection's folder) is shown open and focused.
+     * Draws `site` with `currentFile` marked, keeping rows open or closed as
+     * they were and a row being created in place; `focus` (a page file, or a
+     * URL) is shown open and focused.
      */
-    render(site: NativeCollectionNode, currentFile: string | undefined, focus?: { file?: string; folder?: string }) {
+    render(site: NativeSiteTree, currentFile: string | undefined, focus?: { file?: string; route?: string }) {
       model = site;
       current = currentFile;
       menu.close(false);
       cancelRename(false);
+      cancelUrl(false);
       // Focus asked for is a creation done: the row typed is now a row of the tree.
       if (focus && editing) {
         editing.item.remove();
         editing = undefined;
       }
-      if (focus?.folder !== undefined) {
-        const parts = focus.folder.split("/");
-        parts.forEach((_, index) => expanded.set(parts.slice(0, index + 1).join("/"), true));
-      }
-      if (focus?.file) {
-        const parts = focus.file.slice("src/pages/".length).split("/").slice(0, -1);
-        parts.forEach((_, index) => expanded.set(parts.slice(0, index + 1).join("/"), true));
+      const target = focus?.route ?? (focus?.file ? `/${focus.file.slice("src/pages/".length).replace(/(?:index)?\.html$/, "")}` : undefined);
+      if (target) {
+        const parts = target.split("/").filter(Boolean);
+        parts.slice(0, -1).forEach((_, index) => expanded.set(`/${parts.slice(0, index + 1).join("/")}/`, true));
       }
       const hadFocus = tree.contains(document.activeElement) && document.activeElement?.getAttribute("role") === "treeitem";
-      const rows: HTMLElement[] = [];
-      if (site.overview) rows.push(pageRow(site.overview, 1));
-      for (const child of site.children) rows.push(child.kind === "page" ? pageRow(child, 1) : collectionRow(child, 1));
-      tree.replaceChildren(...rows);
-      if (!rows.length) {
+      const drawn: HTMLElement[] = [];
+      if (site.home) drawn.push(pageRow(site.home, 1));
+      for (const child of site.children) drawn.push(pageRow(child, 1));
+      tree.replaceChildren(...drawn);
+      if (!drawn.length) {
         const empty = node("li", "muted pages-empty", "No pages yet.");
         empty.setAttribute("role", "none");
         tree.append(empty);
       }
       place();
-      const key = focus?.folder !== undefined ? collectionKey(focus.folder) : focus?.file ? pageKey(focus.file) : active;
+      const key = focus?.file ? pageKey(focus.file) : focus?.route ? (rowOfRoute(focus.route)?.dataset.key ?? routeKey(focus.route)) : active;
       const row = rowByKey(key) ?? rowByKey(currentFile && pageKey(currentFile)) ?? visibleRows()[0];
       if (row) setActive(row);
       if (focus || hadFocus) focusRow(row?.dataset.key);
@@ -651,11 +748,17 @@ export function createPagesTree(options: {
     reset() {
       cancelEditing(false);
       cancelRename(false);
+      cancelUrl(false);
       menu.close(false);
     },
-    /** Starts a new page or collection in place, as + New does. */
-    startNew(kind: NativeNewKind, folder = "") {
-      startEditing(kind, folder, folder ? collectionKey(folder) : newButton);
+    /** Starts a new page in place under `parent`, as + New page does at the top. */
+    startNew(parent = "/") {
+      startEditing(parent, parent === "/" ? newButton : rowOfRoute(parent)?.dataset.key ?? newButton);
+    },
+    /** Focuses the row of the page at `route`, or the page file `file`. */
+    focus(target: { file?: string; route?: string }) {
+      const row = target.file ? rowByKey(pageKey(target.file)) : target.route ? rowOfRoute(target.route) : undefined;
+      if (row) focusRow(row.dataset.key);
     },
   };
 }

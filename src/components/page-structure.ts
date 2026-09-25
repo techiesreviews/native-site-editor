@@ -1,5 +1,6 @@
 import { node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
+import { createUrlChange, type UrlPlan } from "./url-change";
 import "./page-structure.css";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
@@ -38,6 +39,15 @@ export interface PageStructureHandlers {
   onPageMeta?: (path: string, field: PageMetaField, value: string) => void;
   /** A page field closed (Enter, Escape or focus loss): its edits are one step. */
   onPageMetaClose?: (path: string, field: PageMetaField) => void;
+  /**
+   * The URL of the page at `path` and, when it cannot change here, why
+   * (`fixed`: the home page).
+   */
+  pageUrl?: (path: string) => { route: string; fixed?: string } | undefined;
+  /** What changing the page's URL to the typed value does. */
+  planUrl?: (path: string, value: string) => UrlPlan;
+  /** Changes the page's URL (Enter); resolves to an error message, or nothing when done. */
+  applyUrl?: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   /** The kind and distinguishing text a row shows for an element. */
   label: (item: NativeStructureItem) => { kind: string; text: string };
   /** A row was chosen: select this element in the preview. */
@@ -91,6 +101,20 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     fields[field] = input;
     meta.append(wrap);
   }
+  // The URL: applies on Enter only, since it moves files and updates links.
+  const url = createUrlChange({
+    label: "URL",
+    ariaLabel: "URL",
+    initial: "",
+    plan: (value) => (structure?.path && handlers.planUrl ? handlers.planUrl(structure.path, value) : { ok: false, error: "", unchanged: true }),
+    apply: async (value, keep) => (structure?.path && handlers.applyUrl ? handlers.applyUrl(structure.path, value, keep) : undefined),
+    cancel: () => handlers.announce?.("Cancelled changing the URL"),
+  });
+  url.root.classList.add("page-structure__url");
+  url.root.hidden = true;
+  const urlNote = node("p", "page-structure__url-note");
+  urlNote.hidden = true;
+  meta.append(url.root, urlNote);
   const metaNotice = node("p", "page-structure__meta-notice");
   metaNotice.setAttribute("role", "status");
   metaNotice.hidden = true;
@@ -117,6 +141,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     metaNotice.textContent = current.notice ?? "";
     metaNotice.hidden = !current.notice;
+    const address = handlers.pageUrl?.(path);
+    url.root.hidden = !address;
+    if (address) {
+      url.reset(address.route);
+      url.input.readOnly = Boolean(address.fixed);
+      urlNote.textContent = address.fixed ?? "";
+      urlNote.hidden = !address.fixed;
+    } else urlNote.hidden = true;
   }
 
   let structure: NativeStructure | undefined;

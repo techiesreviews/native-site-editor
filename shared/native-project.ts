@@ -167,3 +167,14 @@ export function nativePageWithCommentTitle(html: string, title: string): string 
   const edited = comment[0].replace(/^(\s*(?:<!--)?\s*title:[ \t]*).*?([ \t]*(?:-->)?)$/im, (_, start: string, end: string) => `${start}${safe}${end}`);
   return edited + html.slice(comment[0].length);
 }
+
+/**
+ * The page titled `title` in its leading comment: the comment's `title:`
+ * line set when it has one, else a `<!-- title: … -->` line put first. What
+ * a new page carries when the site has no manifest to title it in.
+ */
+export function nativePageWithTitle(html: string, title: string): string {
+  if (nativePageComment(html).meta.title) return nativePageWithCommentTitle(html, title);
+  const safe = title.replace(/--+>?/g, "-").replace(/[\r\n]+/g, " ").trim();
+  return `<!-- title: ${safe} -->\n${html}`;
+}

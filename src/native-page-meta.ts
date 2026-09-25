@@ -543,3 +543,40 @@ export function restoreNativeEntries(text: string, entries: NativeDroppedEntries
   }
   return finish(text, next === text ? null : { start: 0, end: text.length, text: next });
 }
+
+/**
+ * The manifest with the route keys in `pairs` renamed, old → new, where the
+ * old key is still there and the new one is not: a route mapped to its file
+ * (`"/about/": "src/pages/about.html"`, or with `file`) keeps its entry at
+ * the page's new URL. Metadata-only entries follow their files in
+ * `moveNativeEntries` already; this is for the mapped ones.
+ */
+export function rekeyNativeRoutes(text: string, pairs: [string, string][]): NativePageMetaResult {
+  let next = text;
+  try {
+    for (const [from, to] of pairs) {
+      if (from === to) continue;
+      const shape = shapeOf(next);
+      const member = shape.routeMembers.find((item) => item.key === from);
+      if (!member || shape.routeMembers.some((item) => item.key === to)) continue;
+      const keyEnd = new Scanner(next).string(member.start);
+      next = apply(next, { start: member.start, end: keyEnd, text: JSON.stringify(to) });
+    }
+  } catch {
+    return { ok: false, error: "native.json could not be read as JSON." };
+  }
+  return finish(text, next === text ? null : { start: 0, end: text.length, text: next });
+}
+
+/** The routes the manifest maps to a file itself (a bare path, or an object with `file`). */
+export function mappedNativeRoutes(text: string): string[] {
+  try {
+    const routes = JSON.parse(text)?.routes;
+    if (!routes || typeof routes !== "object" || Array.isArray(routes)) return [];
+    return Object.entries(routes as Record<string, unknown>)
+      .filter(([, value]) => typeof value === "string" || (value && typeof value === "object" && typeof (value as { file?: unknown }).file === "string"))
+      .map(([route]) => route);
+  } catch {
+    return [];
+  }
+}

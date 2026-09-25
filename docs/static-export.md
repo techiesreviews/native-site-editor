@@ -65,7 +65,7 @@ The editor routes pages by the same rule (`shared/native-routes.ts`), so the pre
 | a repository file a shared stylesheet `@import`s | `assets/<name>.[hash].css`; the import points at it |
 | `src/components/<name>/<name>.css` | `assets/<name>.[hash].css` |
 | `src/images/*` | `assets/images/<name>.[hash].<ext>` |
-| `src/public/*` | copied to the site root unchanged |
+| `src/public/*` | copied to the site root unchanged (`src/public/_redirects` is [`_redirects`](#_redirects)) |
 | routes, with a site URL | `sitemap.xml`, `robots.txt` (unless `src/public/` has them) |
 | — | `_headers` |
 
@@ -180,3 +180,16 @@ To write your own, put `robots.txt` or `sitemap.xml` in `src/public/`; the expor
 HTML is always revalidated; hashed assets are cached for a year. All styles are in files, so `style-src` has no `'unsafe-inline'`. It is added only when a page carries a `style` attribute or a `<style>` element. The policy allows only this site's own stylesheets, fonts and images, so a stylesheet that `@import`s a web font service is blocked; host the font files under `src/public/` instead.
 
 HSTS (`Strict-Transport-Security`) is not in `_headers`. Turn it on for the custom domain in the Cloudflare dashboard (SSL/TLS → Edge Certificates → HTTP Strict Transport Security), where its max-age, subdomains and preload can be managed for the whole zone. Every `.dev` domain, `workers.dev` included, is already HTTPS-only through the browsers' HSTS preload list.
+
+## `_redirects`
+
+`src/public/_redirects` is copied to the site root like any file in `src/public/`; the export writes no `_redirects` of its own, so nothing replaces it. Cloudflare's static assets read it (Workers and Pages alike): one rule per line, `source destination [status]`, `#` for comments, the first rule for a source wins, and a redirect is followed even where a page exists at its source.
+
+The editor writes it when a page's URL changes (Change URL, Move to… or a drag in the Pages tab) with **Keep the old URL working** checked: one static line per moved page that is on GitHub, the page first, then its subpages:
+
+```
+/about/ /company/ 301
+/about/us/ /company/us/ 301
+```
+
+Static lines rather than a splat rule (`/about/* /company/:splat 301`): Cloudflare allows 2,000 static redirects but only 100 dynamic ones, and `/about/` itself needs its own line anyway. Each change also keeps the file free of chains and loops: a line whose destination was the old URL (or under it) now points at the new one, one that would point at itself goes, and a line whose source is one of the new URLs goes, since it would hide the page there. Comments and other lines are kept as written.

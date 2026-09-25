@@ -8,8 +8,10 @@ import {
   nativeNewTarget,
   nativePageLabel,
   slugify,
-  type NativeCollectionNode,
-  type NativeTreeNode,
+  nativeSubpageCount,
+  nativeTreePages,
+  type NativePageNode,
+  type NativeSiteTree,
 } from "../src/native-pages.ts";
 import {
   addedNativeRouteEntries,
@@ -23,23 +25,22 @@ import { parseNativeManifest, nativeOrphanWarning } from "../src/native-manifest
 const routingManifest = readFileSync(resolve("fixtures/native-routing/.astro-editor/native.json"), "utf8");
 
 // A tree as lines: "label route [flags]", indented two spaces per level.
-function outline(site: NativeCollectionNode): string[] {
+function outline(site: NativeSiteTree): string[] {
   const lines: string[] = [];
-  const flags = (node: NativeTreeNode) => {
+  const flags = (node: NativePageNode) => {
     const out: string[] = [];
     if (node.isNew) out.push("new");
-    if (node.kind === "page" && node.unusedFor) out.push(`unused for ${node.unusedFor}`);
-    if (node.kind === "collection") out.push(`${node.pageCount} pages`, node.overview ? `overview ${node.overview.file}` : "no overview");
+    if (!node.file) out.push("no page");
+    if (node.unusedFor) out.push(`unused for ${node.unusedFor}`);
+    if (node.file && node.children.length) out.push(`page ${node.file}`);
     return out.length ? ` [${out.join(", ")}]` : "";
   };
-  const walk = (collection: NativeCollectionNode, depth: number) => {
-    for (const child of collection.children) {
-      lines.push(`${"  ".repeat(depth)}${child.label} ${child.route}${flags(child)}`);
-      if (child.kind === "collection") walk(child, depth + 1);
-    }
+  const walk = (node: NativePageNode, depth: number) => {
+    lines.push(`${"  ".repeat(depth)}${node.label} ${node.route}${flags(node)}`);
+    for (const child of node.children) walk(child, depth + 1);
   };
-  if (site.overview) lines.push(`${site.overview.label} ${site.overview.route}${flags(site.overview)}`);
-  walk(site, 0);
+  if (site.home) lines.push(`${site.home.label} ${site.home.route}${flags(site.home)}`);
+  for (const node of site.children) walk(node, 0);
   return lines;
 }
 
@@ -49,7 +50,7 @@ const routesOf = (files: string[], manifest = '{ "version": 1 }') => {
   return parsed.ok ? parsed.manifest : (undefined as never);
 };
 
-test("the site's pages as a tree: collections are folders, their index.html the overview; home first, 404 last", () => {
+test("the site's pages as one tree: a page's subpages are under it, a folder with no page is a row with none; home first, 404 last", () => {
   const files = [
     "src/pages/index.html",
     "src/pages/404.html",
@@ -75,29 +76,32 @@ test("the site's pages as a tree: collections are folders, their index.html the 
     "Home /",
     "About us /about/",
     "Get in touch /contact/",
-    "Our work /work/ [2 pages, overview src/pages/work/index.html]",
+    "Our work /work/ [page src/pages/work/index.html]",
+    "  Archive /work/archive/ [no page]",
+    "    Old /work/archive/old/",
     "  Fern & Kettle /work/fern-and-kettle/",
     "  Zebra /work/zebra/",
-    "  Archive /work/archive/ [1 pages, no overview]",
-    "    Old /work/archive/old/",
-    "Videos /videos/ [0 pages, no overview]",
-    "  Tutorials /videos/tutorials/ [0 pages, overview src/pages/videos/tutorials/index.html]",
+    "Videos /videos/ [no page]",
+    "  Tutorials /videos/tutorials/",
     "Page not found /404/",
   ]);
-  assert.equal(site.overview?.special, "home");
-  const last = site.children.at(-1);
-  assert.equal(last?.kind === "page" && last.special, "notFound");
+  assert.equal(site.home?.special, "home");
+  assert.equal(site.children.at(-1)?.special, "notFound");
+  const work = site.children.find((node) => node.route === "/work/")!;
+  assert.equal(nativeSubpageCount(work), 3);
+  assert.deepEqual(nativeTreePages(site).map((node) => node.route), ["/", "/about/", "/contact/", "/work/", "/work/archive/", "/work/archive/old/", "/work/fern-and-kettle/", "/work/zebra/", "/videos/", "/videos/tutorials/", "/404/"]);
 });
 
-test("new drafts are marked, and a collection is new when everything in it is", () => {
-  const files = ["src/pages/index.html", "src/pages/work/index.html", "src/pages/work/new-case.html", "src/pages/videos/index.html", "src/pages/videos/my-first-video.html"];
-  const drafted = new Set(["src/pages/work/new-case.html", "src/pages/videos/index.html", "src/pages/videos/my-first-video.html"]);
+test("new drafts are marked, and a row with no page is new when everything under it is", () => {
+  const files = ["src/pages/index.html", "src/pages/work/index.html", "src/pages/work/new-case.html", "src/pages/videos/intro.html", "src/pages/videos/my-first-video.html"];
+  const drafted = new Set(["src/pages/work/new-case.html", "src/pages/videos/intro.html", "src/pages/videos/my-first-video.html"]);
   const site = buildNativePagesTree({ files, routes: routesOf(files).routes, isNew: (file) => drafted.has(file) });
   assert.deepEqual(outline(site), [
     "Home /",
-    "Videos /videos/ [new, 1 pages, overview src/pages/videos/index.html]",
+    "Videos /videos/ [new, no page]",
+    "  Intro /videos/intro/ [new]",
     "  My first video /videos/my-first-video/ [new]",
-    "Work /work/ [1 pages, overview src/pages/work/index.html]",
+    "Work /work/ [page src/pages/work/index.html]",
     "  New case /work/new-case/ [new]",
   ]);
 });
@@ -109,8 +113,8 @@ test("a file beside a folder's index on one route shows as not used; a file the 
   assert.deepEqual(outline(site), [
     "Home /",
     "About /about/",
+    "Work /work/",
     "Work /work/ [unused for src/pages/work/index.html]",
-    "Work /work/ [0 pages, overview src/pages/work/index.html]",
   ]);
 });
 
@@ -135,7 +139,7 @@ test("a page's label on its own is the Pages tab's: title, else first heading, e
   assert.equal(label("src/pages/_parts/note.html"), undefined);
   // Same as the tree's.
   const tree = buildNativePagesTree({ files: Object.values(routes), routes, heading });
-  const about = tree.children.find((node) => node.kind === "page" && node.file === "src/pages/about.html");
+  const about = tree.children.find((node) => node.file === "src/pages/about.html");
   assert.equal(about?.label, label("src/pages/about.html"));
 });
 
@@ -149,20 +153,25 @@ test("slugify: lowercase, diacritics stripped, anything else one dash", () => {
   assert.equal(slugify("a".repeat(100)).length, 80);
 });
 
-test("a new page is <collection>/<slug>.html; a new collection is <collection>/<slug>/index.html", () => {
+test("a new page is <parent>/<slug>.html; under a page with no subpages yet, that page becomes a folder first", () => {
   const value = <T>(result: { ok: true; value: T } | { ok: false; error: string }) => {
     assert.ok(result.ok, result.ok ? "" : result.error);
     return result.ok ? result.value : (undefined as never);
   };
-  assert.deepEqual(value(nativeNewTarget("page", "", "about")), { route: "/about/", file: "src/pages/about.html" });
-  assert.deepEqual(value(nativeNewTarget("page", "videos", "my-first-video")), { route: "/videos/my-first-video/", file: "src/pages/videos/my-first-video.html" });
-  assert.deepEqual(value(nativeNewTarget("collection", "", "videos")), { route: "/videos/", file: "src/pages/videos/index.html", folder: "src/pages/videos" });
-  assert.deepEqual(value(nativeNewTarget("collection", "videos", "tutorials")), { route: "/videos/tutorials/", file: "src/pages/videos/tutorials/index.html", folder: "src/pages/videos/tutorials" });
+  assert.deepEqual(value(nativeNewTarget("/", "about")), { route: "/about/", file: "src/pages/about.html" });
+  assert.deepEqual(value(nativeNewTarget("/videos/", "my-first-video")), { route: "/videos/my-first-video/", file: "src/pages/videos/my-first-video.html" });
+  const files = ["src/pages/index.html", "src/pages/about.html", "src/pages/work/index.html"];
+  const routes = routesOf(files).routes;
+  const taken = { route: (route: string) => routes[route], exists: (path: string) => files.some((file) => file === path || file.startsWith(`${path}/`)) };
+  assert.deepEqual(value(nativeNewTarget("/about/", "team", taken, files)), {
+    route: "/about/team/", file: "src/pages/about/team.html", convert: { from: "src/pages/about.html", to: "src/pages/about/index.html" },
+  });
+  assert.deepEqual(value(nativeNewTarget("/work/", "fern", taken, files)), { route: "/work/fern/", file: "src/pages/work/fern.html" });
   for (const slug of ["", "  ", "index", "_draft", ".hidden", "a b", "a/b", "-x", "x-", "é"])
-    assert.equal(nativeNewTarget("page", "videos", slug).ok, false, slug);
+    assert.equal(nativeNewTarget("/videos/", slug).ok, false, slug);
 });
 
-test("a new page or collection is refused where the URL or the path is taken", () => {
+test("a new page is refused where the URL or the path is taken", () => {
   const files = ["src/pages/index.html", "src/pages/work/index.html", "src/pages/work/fern.html", "src/pages/videos/tutorials/index.html"];
   const routes = routesOf(files).routes;
   const taken = {
@@ -170,12 +179,11 @@ test("a new page or collection is refused where the URL or the path is taken", (
     exists: (path: string) => files.some((file) => file === path || file.startsWith(`${path}/`)),
   };
   const error = (result: { ok: boolean; error?: string }) => (result.ok ? "" : result.error ?? "");
-  assert.equal(error(nativeNewTarget("page", "", "work", taken)), "The URL /work/ is taken by src/pages/work/index.html.");
-  assert.equal(error(nativeNewTarget("collection", "work", "fern", taken)), "The URL /work/fern/ is taken by src/pages/work/fern.html.");
-  // A folder with no overview has no route, but its URL is still the collection's.
-  assert.equal(error(nativeNewTarget("page", "", "videos", taken)), "The URL /videos/ is taken: src/pages/videos is already there.");
-  assert.equal(error(nativeNewTarget("collection", "", "videos", taken)), "The URL /videos/ is taken: src/pages/videos is already there.");
-  assert.equal(nativeNewTarget("page", "videos", "intro", taken).ok, true);
+  assert.equal(error(nativeNewTarget("/", "work", taken)), "The URL /work/ is taken by src/pages/work/index.html.");
+  assert.equal(error(nativeNewTarget("/work/", "fern", taken)), "The URL /work/fern/ is taken by src/pages/work/fern.html.");
+  // A folder with no page of its own has no route, but its URL is still taken.
+  assert.equal(error(nativeNewTarget("/", "videos", taken)), "The URL /videos/ is taken: src/pages/videos is already there.");
+  assert.equal(nativeNewTarget("/videos/", "intro", taken).ok, true);
 });
 
 test("creating a page and undoing it: the title entry it added goes with it, and the manifest is GitHub's again", () => {

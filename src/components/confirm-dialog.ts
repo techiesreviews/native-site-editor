@@ -24,9 +24,16 @@ export function createConfirmDialog() {
   confirm.value = "confirm";
   const actions = node("div", "create-dialog__actions");
   actions.append(cancel, confirm);
-  form.append(title, notes, actions);
+  // A checkbox under the notes, when a question offers one.
+  const optionLabel = node("label", "confirm-dialog__option");
+  const option = node("input");
+  option.type = "checkbox";
+  const optionText = node("span");
+  optionLabel.append(option, optionText);
+  optionLabel.hidden = true;
+  form.append(title, notes, optionLabel, actions);
   dialog.append(form);
-  let settle: ((value: boolean) => void) | undefined;
+  let settle: (() => void) | undefined;
   let opener: Element | null = null;
   // Escape closes the dialog only; the explorer would otherwise close too.
   dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
@@ -36,21 +43,44 @@ export function createConfirmDialog() {
     const target = opener;
     opener = null;
     if (target instanceof HTMLElement && target.isConnected && !target.closest("[popover]:not(:popover-open)")) target.focus();
-    done?.(dialog.returnValue === "confirm");
+    done?.();
   });
   return {
     root: dialog,
     /** Asks; resolves to true when confirmed. */
     ask(question: { title: string; notes: string[]; action: string }): Promise<boolean> {
+      return this.choose({ ...question, actions: [{ label: question.action, value: "confirm" }] }).then((answer) => answer.value === "confirm");
+    },
+    /**
+     * Asks with several actions (the first is focused, the last before
+     * Cancel is primary) and, with `option`, a checkbox; resolves to the
+     * action chosen (none when cancelled) and the checkbox's state.
+     */
+    choose(question: { title: string; notes: string[]; actions: { label: string; value: string }[]; option?: { label: string; checked: boolean } }): Promise<{ value?: string; option: boolean }> {
       if (dialog.open) dialog.close("cancel");
       opener = document.activeElement;
       title.textContent = question.title;
       notes.replaceChildren(...question.notes.map((text) => node("p", "create-dialog__result", text)));
-      confirm.textContent = question.action;
+      optionLabel.hidden = !question.option;
+      option.checked = Boolean(question.option?.checked);
+      optionText.textContent = question.option?.label ?? "";
+      const buttons = question.actions.map((action, index) => {
+        const choice = index === question.actions.length - 1 ? confirm : node("button", "button secondary");
+        choice.type = "submit";
+        choice.value = action.value;
+        choice.textContent = action.label;
+        return choice;
+      });
+      actions.replaceChildren(cancel, ...buttons);
       dialog.returnValue = "";
       dialog.showModal();
-      confirm.focus();
-      return new Promise((resolve) => { settle = resolve; });
+      buttons[0]?.focus();
+      return new Promise((resolve) => {
+        settle = () => {
+          const value = dialog.returnValue && dialog.returnValue !== "cancel" ? dialog.returnValue : undefined;
+          resolve({ value, option: !optionLabel.hidden && option.checked });
+        };
+      });
     },
     close() {
       if (dialog.open) dialog.close("cancel");
