@@ -60,6 +60,8 @@ test("the fields are empty for a bare route and absent for a component alone", a
 
   // A component no page uses shows by itself: no route, so no Page fields.
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   for (const part of ["src", "components", "feature-block", "feature-block.html"]) {
     const item = page.locator("#explorer").getByRole("button", { name: part, exact: true }).first();
     await expect(item).toBeVisible({ timeout: 20_000 });
@@ -193,6 +195,8 @@ test("a manifest draft is not rebased onto a manifest that changed on GitHub: th
   // Opening the manifest shows the code editor's conflict bar; discarding the
   // draft settles it and the fields open again on GitHub's text.
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   for (const part of [".astro-editor", "native.json"]) {
     const item = page.locator("#explorer").getByRole("button", { name: part, exact: true }).first();
     await expect(item).toBeVisible({ timeout: 20_000 });

@@ -256,6 +256,8 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page)).toBeVisible();
   // Opening another file over the selected page hides the bar.
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   await page.locator("#files").getByRole("button", { name: "src", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "styles", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "site.css", exact: true }).click();

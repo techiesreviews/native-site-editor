@@ -193,6 +193,78 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
   return done(removal(members, existing)!);
 }
 
+/**
+ * The edit that takes `route`'s whole entry out of `routes` (nothing to do
+ * when it has none), leaving `"routes": {}` when it was the only one.
+ */
+export function removeNativeRouteEntry(text: string, route: string): NativePageMetaResult {
+  const scanner = new Scanner(text);
+  let routes: Member | undefined;
+  let routeMembers: Member[] = [];
+  try {
+    routes = scanner.members(scanner.skip(0)).find((member) => member.key === "routes");
+    if (routes && text[routes.valueStart] === "{") routeMembers = scanner.members(routes.valueStart);
+  } catch {
+    return { ok: false, error: "native.json could not be read as JSON." };
+  }
+  const member = routeMembers.find((member) => member.key === route);
+  if (!routes || !member) return finish(text, null);
+  return finish(text, removal(routeMembers, member) ?? { start: routes.valueStart, end: routes.valueEnd, text: "{}" });
+}
+
+/** The routes `text` has an entry for and `base` (the manifest on GitHub) has not. */
+export function addedNativeRouteEntries(base: string | undefined, text: string): string[] {
+  const routesOf = (source: string | undefined) => {
+    try {
+      const value = source === undefined ? undefined : JSON.parse(source)?.routes;
+      return value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
+    } catch {
+      return [];
+    }
+  };
+  const before = new Set(routesOf(base));
+  return routesOf(text).filter((route) => !before.has(route));
+}
+
+/**
+ * The manifest text `source` without the entries of `routes` that it added
+ * over `base` (GitHub's manifest): what a new page takes with it when it is
+ * discarded or undone. Entries GitHub has stay. When nothing else differs
+ * from `base`, `base` itself, so no draft is left.
+ */
+export function unpairNativeRoutes(base: string | undefined, source: string, routes: Iterable<string>): string {
+  const added = new Set(addedNativeRouteEntries(base, source));
+  let text = source;
+  for (const route of routes) {
+    if (!added.has(route)) continue;
+    const removed = removeNativeRouteEntry(text, route);
+    if (removed.ok) text = removed.text;
+  }
+  return text !== source && base !== undefined && sameNativeJson(text, base) ? base : text;
+}
+
+/**
+ * Whether two manifest texts say the same, whatever their spacing and key
+ * order; an empty `routes` object says what none does.
+ */
+export function sameNativeJson(a: string, b: string): boolean {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value) ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical((value as Record<string, unknown>)[key])]))
+        : value;
+  const read = (text: string) => {
+    const value = JSON.parse(text);
+    if (value && typeof value.routes === "object" && value.routes && !Array.isArray(value.routes) && !Object.keys(value.routes).length) delete value.routes;
+    return JSON.stringify(canonical(value));
+  };
+  try {
+    return read(a) === read(b);
+  } catch {
+    return false;
+  }
+}
+
 /** `text` after `edit`, when it is still valid JSON. */
 function finish(text: string, edit: NativePageMetaEdit | null): NativePageMetaResult {
   if (!edit) return { ok: true, text, edit: null };

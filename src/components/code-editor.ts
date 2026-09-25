@@ -33,6 +33,11 @@ export interface SourceFile {
   historyScope?: string;
   /** Opens an unmounted file before routed visual history changes its model. */
   ensureHistoryTarget?: (path: string) => Promise<boolean>;
+  /**
+   * Asked before Discard changes resets a file GitHub has: what else the
+   * discard takes with it, said in the confirmation, and what to do after.
+   */
+  discardPlan?: () => { note: string; after: () => void } | undefined;
 }
 
 interface Draft {
@@ -61,6 +66,7 @@ type RangeApi = {
 };
 type MountedEditor = {
   apply(command: AgentCommand): Promise<void>;
+  discardNew(): boolean;
   range: RangeApi;
   model: monaco.editor.ITextModel;
   session: string;
@@ -82,7 +88,11 @@ const publishers = new Set<() => void>();
 export function refreshDrafts() {
   for (const refresh of publishers) refresh();
 }
-const visualHistory = new Map<string, { undo: VisualHistoryEntry[]; redo: VisualHistoryEntry[] }>();
+// An undo step that is not a text change (a page created in the explorer):
+// undoing runs it, and it cannot be redone.
+type HistoryAction = { path: string; action: () => void | Promise<void> };
+const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
+const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: VisualHistoryEntry[] }>();
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
 const historyFor = (session: string) => {
   let history = visualHistory.get(session);
@@ -92,14 +102,14 @@ const historyFor = (session: string) => {
 function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false) {
   const history = historyFor(session);
   const last = history.undo.at(-1);
-  if (group && last?.group && last.model === model && last.path === path) last.after = model.getAlternativeVersionId();
+  if (group && !isAction(last) && last?.group && last.model === model && last.path === path) last.after = model.getAlternativeVersionId();
   else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group });
   history.redo.length = 0;
   for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
 }
 function closeVisualGroup(session: string, model: monaco.editor.ITextModel) {
   const last = historyFor(session).undo.at(-1);
-  if (last?.model === model) last.group = false;
+  if (!isAction(last) && last?.model === model) last.group = false;
 }
 function invalidateVisualHistory(session: string) {
   const history = visualHistory.get(session);
@@ -108,9 +118,43 @@ function invalidateVisualHistory(session: string) {
 function canRunVisualHistory(session: string, direction: "undo" | "redo", fallback: monaco.editor.ITextModel) {
   const entry = historyFor(session)[direction];
   const candidate = entry.at(-1);
+  if (isAction(candidate)) return true;
   const expected = direction === "undo" ? candidate?.after : candidate?.undone;
   return Boolean(candidate && !candidate.model.isDisposed() && candidate.model.getAlternativeVersionId() === expected) ||
     (direction === "undo" ? fallback.canUndo() : fallback.canRedo());
+}
+/**
+ * Records `action` as the next undo step of the mounted file `path`'s history,
+ * below any later edit: Undo runs it once the edits after it are undone. A
+ * text change typed in the file clears it with the rest of the history.
+ */
+export function recordHistoryAction(path: string, action: () => void | Promise<void>) {
+  const editor = mounted.get(path);
+  if (!editor) return false;
+  const history = historyFor(editor.session);
+  history.undo.push({ path, action });
+  history.redo.length = 0;
+  for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
+  return true;
+}
+/** Discards the mounted new file `path` as its Discard changes does, without asking. */
+export function discardNewFile(path: string) {
+  return mounted.get(path)?.discardNew() ?? false;
+}
+/**
+ * Forgets the browser draft of `path`, which is not the mounted file: its
+ * stored draft and any model kept for it.
+ */
+export function dropDraft(scope: DraftScope, path: string) {
+  const key = draftKey(scope, path);
+  const kept = drafts.get(key);
+  if (kept && [...mounted.values()].some((editor) => editor.model === kept.model)) return false;
+  draftStore().remove(scope, path);
+  if (kept) {
+    kept.model.dispose();
+    drafts.delete(key);
+  }
+  return true;
 }
 export function getMountedSource(path: string) {
   return mounted.get(path)?.model.getValue();
@@ -123,7 +167,15 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
   const history = historyFor(session);
   const source = direction === "undo" ? history.undo : history.redo;
   const target = direction === "undo" ? history.redo : history.undo;
-  const entry = source.at(-1);
+  const last = source.at(-1);
+  if (isAction(last)) {
+    source.pop();
+    history.redo.length = 0;
+    await last.action();
+    for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
+    return true;
+  }
+  const entry = last;
   if (entry && mounted.get(entry.path)?.model !== entry.model && fallback?.ensureHistoryTarget)
     await fallback.ensureHistoryTarget(entry.path);
   // Loading a displaced stylesheet is asynchronous. A newer action or a
@@ -470,7 +522,7 @@ export function mountCodeEditor(
     },
   };
   const registration: MountedEditor = {
-    apply, range, model: current.model, session, readOnly: !!file.readOnly,
+    apply, range, discardNew: () => discardNew(), model: current.model, session, readOnly: !!file.readOnly,
     ensureHistoryTarget: file.ensureHistoryTarget,
     refresh: () => update(),
   };
@@ -518,24 +570,27 @@ export function mountCodeEditor(
     review.setAttribute("aria-haspopup", "dialog");
     review.setAttribute("aria-expanded", "false");
   }
+  const discardNew = () => {
+    if (current.baseSha !== null || !file.scope || disposed) return false;
+    store.remove(file.scope, file.path);
+    drafts.delete(file.key);
+    file.onDiscardNew?.();
+    current.model.dispose();
+    return true;
+  };
   const discard = button(
     "Discard changes",
     () => {
+      const plan = current.baseSha === null ? undefined : file.discardPlan?.();
       if (
         !confirm(
           current.baseSha === null
             ? "Discard this new file?"
-            : "Discard this file’s draft changes? You can undo this in the editor.",
+            : `Discard this file’s draft changes? You can undo this in the editor.${plan ? ` ${plan.note}` : ""}`,
         )
       )
         return;
-      if (current.baseSha === null && file.scope) {
-        store.remove(file.scope, file.path);
-        drafts.delete(file.key);
-        file.onDiscardNew?.();
-        current.model.dispose();
-        return;
-      }
+      if (discardNew()) return;
       if (conflict) {
         current.original = file.source;
         current.baseSha = file.baseSha;
@@ -549,6 +604,7 @@ export function mountCodeEditor(
         () => null,
       );
       current.model.pushStackElement();
+      plan?.after();
     },
     "text-button",
   );

@@ -424,6 +424,8 @@ async function explorerItem(page: Page, name: string) {
 test("folders only expand, and a component file opens beside its own CSS", async ({ page }) => {
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   await expect(page.locator("#explorer")).toBeVisible();
   for (const part of ["src", "components", "project-card"]) {
     const item = await explorerItem(page, part);
@@ -450,6 +452,8 @@ test("folders only expand, and a component file opens beside its own CSS", async
 
   // A component without its own stylesheet opens beside the shared one.
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   const featureFolder = await explorerItem(page, "feature-block");
   if ((await featureFolder.getAttribute("aria-expanded")) === "false") await featureFolder.click();
   await (await explorerItem(page, "feature-block.html")).click();
@@ -475,6 +479,8 @@ test("folders only expand, and a component file opens beside its own CSS", async
 
   // Opening a page brings its route back.
   await page.locator("#explorer-toggle").click();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  await page.getByRole("tab", { name: "Files" }).click();
   const pages = await explorerItem(page, "pages");
   if ((await pages.getAttribute("aria-expanded")) === "false") await pages.click();
   await (await explorerItem(page, "index.html")).click();

@@ -1,4 +1,4 @@
-import { node } from "../ui/dom";
+import { button, node } from "../ui/dom";
 import {
   nativeDefaultRoute,
   nativeManifestPaths,
@@ -115,6 +115,12 @@ export interface NativeTextSelection {
 
 // Bold, italic, or a link on the selected text (Ctrl/⌘+K).
 export type NativeFormat = "strong" | "em" | "link";
+
+/** A manifest warning with the one-click fixes it offers. */
+export interface NativeWarning {
+  text: string;
+  fixes: { label: string; run: () => void; title?: string; ariaLabel?: string }[];
+}
 
 // Text typed into a selected element in the preview: its whole text content
 // before and after the change.
@@ -642,9 +648,22 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       loadError = Boolean(message);
       showBanner(message, true);
     },
-    /** Show the manifest's warnings, one per line; none hides the box. */
-    setWarnings(warnings: string[]) {
-      warningBox.replaceChildren(...warnings.map((warning) => node("p", "", warning)));
+    /**
+     * Show the manifest's warnings, one per line, each with the fixes it
+     * offers as buttons after it; none hides the box.
+     */
+    setWarnings(warnings: (string | NativeWarning)[]) {
+      warningBox.replaceChildren(...warnings.map((warning) => {
+        const line = node("p", "", typeof warning === "string" ? warning : warning.text);
+        if (typeof warning !== "string")
+          for (const fix of warning.fixes) {
+            const control = button(fix.label, fix.run, "native-preview-warning__fix");
+            if (fix.title) control.title = fix.title;
+            if (fix.ariaLabel) control.setAttribute("aria-label", fix.ariaLabel);
+            line.append(" ", control);
+          }
+        return line;
+      }));
       warningBox.hidden = !warnings.length;
     },
     deactivate() {

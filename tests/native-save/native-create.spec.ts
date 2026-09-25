@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// Creating files, folders and pages from the file tree (src/native-create.ts,
-// src/components/create-dialog.ts). A new file is a browser draft with no
-// base blob; saving commits it through the real worker publish path to the
-// fake GitHub (server.ts). The routing tests use `native-routing` (id 530),
-// whose pages are routed by their folders; the manifest and conflict tests use
-// the starter repository (id 501), which `/__demo/external-edit` writes to.
+// Creating files and folders in the explorer's Files tab (src/native-create.ts,
+// src/components/create-dialog.ts), and pages and collections in its Pages tab
+// (src/native-pages.ts, src/components/pages-tree.ts). A new file is a browser
+// draft with no base blob; saving commits it through the real worker publish
+// path to the fake GitHub (server.ts). The routing tests use `native-routing`
+// (id 530), whose pages are routed by their folders; the manifest and
+// conflict tests use the starter repository (id 501), which
+// `/__demo/external-edit` writes to.
 const indexPath = "src/pages/index.html";
 const manifestPath = ".astro-editor/native.json";
 const routingRepo = "native-demo-user/native-routing";
@@ -42,9 +44,24 @@ async function openExplorer(page: Page) {
   await expect(explorer(page)).toBeVisible();
 }
 
+async function openFiles(page: Page) {
+  await openExplorer(page);
+  await explorer(page).getByRole("tab", { name: "Files" }).click();
+}
+
+async function openPages(page: Page) {
+  await openExplorer(page);
+  await explorer(page).getByRole("tab", { name: "Pages" }).click();
+}
+
+const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
+const editRow = (page: Page) => explorer(page).locator(".pages-edit");
+const manifestDrafts = (page: Page) =>
+  page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes(".astro-editor/native.json")).length);
+
 // Opens the folders along `path` in the tree.
 async function expand(page: Page, path: string) {
-  await openExplorer(page);
+  await openFiles(page);
   for (const part of path.split("/")) {
     const item = row(page, part).first();
     await expect(item).toBeVisible({ timeout: 20_000 });
@@ -69,101 +86,6 @@ async function saveAll(page: Page) {
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
   await page.getByRole("button", { name: "Save selected files", exact: true }).click();
 }
-
-test("New page creates src/pages/videos/intro.html from the home page, routes it at once, and saves it with its title", async ({ page, baseURL }) => {
-  await open(page, baseURL, 530);
-  await openExplorer(page);
-  const newPage = explorer(page).getByRole("button", { name: "New page", exact: true });
-  await newPage.click();
-  const dialog = page.getByRole("dialog", { name: "New page" });
-  await expect(dialog).toBeVisible();
-  const url = dialog.getByRole("textbox", { name: "Page URL" });
-  await expect(url).toBeFocused();
-  await expect(url).toHaveValue("/");
-  // A route that is already a page is refused; the file shows live as the URL is typed.
-  await url.fill("/work/");
-  await expect(dialog.locator(".create-dialog__result")).toHaveText("The URL /work/ already has a page, src/pages/work/index.html.");
-  await expect(url).toHaveAttribute("aria-invalid", "true");
-  await url.fill("/videos/intro/");
-  await expect(dialog.locator(".create-dialog__result")).toHaveText("Creates src/pages/videos/intro.html at /videos/intro/.");
-  await dialog.getByRole("textbox", { name: "Title (optional)" }).fill("Intro videos");
-  await expect(dialog.locator(".create-dialog__result")).toHaveText("Creates src/pages/videos/intro.html at /videos/intro/, with its title in native.json.");
-  await page.keyboard.press("Enter");
-
-  await expect(dialog).toBeHidden();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/videos/intro.html");
-  await expect(page.locator("#status")).toHaveText("Created the page src/pages/videos/intro.html at /videos/intro/.");
-  await expect(frame(page).locator("h1")).toHaveText("Intro videos");
-  await expect(page.getByRole("group", { name: "Page" }).getByLabel("Title")).toHaveValue("Intro videos");
-  await expect(page.locator("#content .view-lines")).toContainText('<h1 data-key="title">Intro videos</h1>');
-
-  // The tree shows the new folder and file in place, marked new.
-  await expand(page, "src/pages");
-  await row(page, "videos New").click();
-  await expect(row(page, "intro.html New")).toBeVisible();
-  await page.keyboard.press("Escape");
-
-  // The route is a page of the site: a link can point to it and follow it.
-  await openExplorer(page);
-  await row(page, "index.html").click();
-  await expect(frame(page).locator("h1")).toHaveText("Routed by folders");
-  await frame(page).getByRole("link", { name: "Our work", exact: true }).click();
-  await page.getByRole("button", { name: "Address" }).click();
-  await page.locator(".edit-bar__popover").getByRole("option", { name: "Intro videos (#/videos/intro/)" }).click();
-  await frame(page).getByRole("link", { name: "Our work", exact: true }).click({ modifiers: ["ControlOrMeta"] });
-  await expect(frame(page).locator("h1")).toHaveText("Intro videos");
-
-  // Saving commits the new page, the manifest's title and the link together.
-  await saveAll(page);
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  const created = await branchFile(page, routingRepo, "src/pages/videos/intro.html");
-  expect(created).toBe('<main class="page" data-key="main">\n  <h1 data-key="title">Intro videos</h1>\n</main>\n');
-  expect(JSON.parse((await branchFile(page, routingRepo, manifestPath))!).routes["/videos/intro/"]).toEqual({ title: "Intro videos" });
-  expect(await branchFile(page, routingRepo, indexPath)).toBe(routingHome.replace('href="#/work/"', 'href="#/videos/intro/"'));
-  await page.keyboard.press("Escape");
-
-  // Saved, the files are no longer new.
-  await openExplorer(page);
-  await expect(row(page, "videos")).toBeVisible();
-  await expect(row(page, "intro.html")).toBeVisible();
-});
-
-test("New folder under src/pages starts it with its index page; the + of that folder offers New page", async ({ page, baseURL }) => {
-  await open(page, baseURL, 530);
-  await expand(page, "src/pages");
-  const add = explorer(page).getByRole("button", { name: "New in src/pages", exact: true });
-  await add.click();
-  const dialog = page.getByRole("dialog", { name: "New file, folder or page in src/pages" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("radio", { name: "Folder" }).check();
-  const name = dialog.getByRole("textbox", { name: "Folder name" });
-  await name.fill("work");
-  await expect(dialog.locator(".create-dialog__result")).toHaveText("src/pages/work already exists.");
-  await name.fill("videos");
-  await expect(dialog.locator(".create-dialog__result")).toHaveText("Creates the page src/pages/videos/index.html at /videos/.");
-  await name.press("Enter");
-  await expect(page.locator("#current-page")).toHaveText("src/pages/videos/index.html");
-  await expect(frame(page).locator("h1")).toHaveText("Videos");
-
-  // In the new folder, a page's URL starts from the folder's; the folder
-  // exists now, so a page named after it would be its index.
-  await expand(page, "src/pages");
-  await row(page, "videos New").click();
-  await explorer(page).getByRole("button", { name: "New in src/pages/videos", exact: true }).click();
-  const second = page.getByRole("dialog", { name: "New file, folder or page in src/pages/videos" });
-  await expect(second.getByRole("radio", { name: "Page" })).toBeChecked();
-  const url = second.getByRole("textbox", { name: "Page URL" });
-  await expect(url).toHaveValue("/videos/");
-  await expect(second.locator(".create-dialog__result")).toHaveText("Enter a page url.");
-  await url.press("End");
-  await url.pressSequentially("intro");
-  await expect(second.locator(".create-dialog__result")).toHaveText("Creates src/pages/videos/intro.html at /videos/intro/.");
-  // Escape closes the dialog only: the explorer stays, focus back on the +.
-  await page.keyboard.press("Escape");
-  await expect(second).toBeHidden();
-  await expect(explorer(page)).toBeVisible();
-  await expect(explorer(page).getByRole("button", { name: "New in src/pages/videos", exact: true })).toBeFocused();
-});
 
 test("a new stylesheet registers in native.json; a new folder elsewhere holds a .gitkeep; discarding a new file removes it from the tree", async ({ page, baseURL }) => {
   page.on("dialog", (dialog) => void dialog.accept());
@@ -194,7 +116,7 @@ test("a new stylesheet registers in native.json; a new folder elsewhere holds a 
   await page.keyboard.press("Escape");
 
   // A folder outside src/pages: git keeps no empty folders, so it holds a .gitkeep.
-  await openExplorer(page);
+  await openFiles(page);
   await explorer(page).getByRole("button", { name: "New file or folder", exact: true }).click();
   const root = page.getByRole("dialog", { name: "New file or folder" });
   await root.getByRole("radio", { name: "Folder" }).check();
@@ -209,7 +131,7 @@ test("a new stylesheet registers in native.json; a new folder elsewhere holds a 
   // Discarding the new stylesheet takes it out of the tree.
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Discard changes" }).click();
-  await openExplorer(page);
+  await openFiles(page);
   await expect(row(page, "styles")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "site.css")).toBeVisible();
   await expect(row(page, "print.css New")).toHaveCount(0);
@@ -217,7 +139,7 @@ test("a new stylesheet registers in native.json; a new folder elsewhere holds a 
 
 test("a new file whose path appeared on GitHub meanwhile is refused on save and kept as a draft", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
-  await openExplorer(page);
+  await openFiles(page);
   await explorer(page).getByRole("button", { name: "New file or folder", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New file or folder" });
   await dialog.getByRole("textbox", { name: "File name" }).fill("docs/notes.md");
@@ -239,4 +161,257 @@ test("a new file whose path appeared on GitHub meanwhile is refused on save and 
   await expect(page.locator("#current-page")).toHaveText("docs/notes.md", { timeout: 30_000 });
   await expect(page.locator("#content .code-editor__conflict")).toContainText("GitHub changed since this draft started.");
   await expect(page.locator("#content .view-lines")).toContainText("# My notes");
+});
+
+test("the Files tab makes plain files and folders only: no Page, and a folder under src/pages holds a .gitkeep", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530);
+  await expand(page, "src/pages");
+  await explorer(page).getByRole("button", { name: "New in src/pages", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New file or folder in src/pages" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("radio")).toHaveCount(2);
+  await expect(dialog.getByRole("radio", { name: "Page" })).toHaveCount(0);
+  await dialog.getByRole("radio", { name: "Folder" }).check();
+  const name = dialog.getByRole("textbox", { name: "Folder name" });
+  await name.fill("work");
+  await expect(dialog.locator(".create-dialog__result")).toHaveText("src/pages/work already exists.");
+  await name.fill("media");
+  await expect(dialog.locator(".create-dialog__result")).toHaveText(
+    "Creates src/pages/media/.gitkeep: git stores no empty folders, so the folder holds this empty file until it has others. To add pages or collections, use the Pages tab.",
+  );
+  // Escape closes the dialog only: the explorer stays, focus back on the +.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(explorer(page)).toBeVisible();
+  await expect(explorer(page).getByRole("button", { name: "New in src/pages", exact: true })).toBeFocused();
+  await expect(explorer(page).getByRole("button", { name: "New page", exact: true })).toHaveCount(0);
+});
+
+test("a native site opens the explorer on Pages: the site by URL, collections with their pages", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530);
+  await page.locator("#explorer-toggle").click();
+  const pagesTab = explorer(page).getByRole("tab", { name: "Pages" });
+  await expect(pagesTab).toHaveAttribute("aria-selected", "true");
+  await expect(explorer(page).getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "false");
+  await expect(explorer(page).getByRole("tabpanel")).toHaveCount(1);
+  const tree = explorer(page).getByRole("tree", { name: "PAGES" });
+  await expect(tree.getByRole("treeitem")).toHaveCount(4);
+  await expect(item(page, "Home")).toHaveAttribute("aria-selected", "true");
+  await expect(item(page, "Home")).toHaveAttribute("aria-level", "1");
+  await expect(item(page, "Work")).toHaveAttribute("aria-expanded", "true");
+  await expect(item(page, "Work").locator(".pages-url").first()).toHaveText("/work/");
+  await expect(item(page, "Fern & Kettle")).toHaveAttribute("aria-level", "2");
+  await expect(item(page, "Fern & Kettle").locator(".pages-url")).toHaveText("/work/fern-and-kettle/");
+  await expect(item(page, "Add page to Work")).toBeVisible();
+
+  // Arrow keys move between the rows; Left closes a collection, Enter opens a page.
+  await item(page, "Home").focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(item(page, "Work")).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(item(page, "Work")).toHaveAttribute("aria-expanded", "false");
+  await expect(item(page, "Fern & Kettle")).toBeHidden();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(item(page, "Fern & Kettle")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(explorer(page)).toBeHidden();
+  await expect(page.locator("#current-page")).toHaveText("src/pages/work/fern-and-kettle.html");
+  await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
+
+  // Clicking a collection opens its overview page.
+  await openExplorer(page);
+  await expect(pagesTab).toHaveAttribute("aria-selected", "true");
+  await expect(item(page, "Fern & Kettle")).toHaveAttribute("aria-selected", "true");
+  await item(page, "Work").locator(".pages-label").first().click();
+  await expect(page.locator("#current-page")).toHaveText("src/pages/work/index.html");
+  await expect(frame(page).locator("h1")).toHaveText("Work");
+});
+
+test("a collection, a page in it and a sub-collection are made in place, route at once, and save with their titles", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530);
+  await openPages(page);
+
+  // + New ▾ → Collection: an editable row, the URL following the name.
+  const newButton = explorer(page).getByRole("button", { name: "+ New" });
+  await newButton.click();
+  await expect(newButton).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("menuitem")).toHaveText(["Page", "Collection"]);
+  await page.getByRole("menuitem", { name: "Collection" }).click();
+  const name = explorer(page).getByRole("textbox", { name: "New collection name" });
+  await expect(name).toBeFocused();
+  await name.pressSequentially("Work");
+  await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/work/");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("The URL /work/ is taken by src/pages/work/index.html.");
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await name.fill("Vidéos");
+  await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/index.html");
+  await name.fill("Videos");
+  await page.keyboard.press("Enter");
+
+  // The collection is made with its overview page; the explorer stays open on it.
+  await expect(page.locator("#status")).toHaveText("Created the collection Videos at /videos/, with its overview page src/pages/videos/index.html.");
+  await expect(explorer(page)).toBeVisible();
+  await expect(editRow(page)).toHaveCount(0);
+  await expect(item(page, "Videos")).toBeFocused();
+  await expect(item(page, "Videos")).toHaveAttribute("aria-expanded", "true");
+  await expect(item(page, "Videos").locator(".file-new").first()).toHaveText("New");
+  await expect(page.locator("#current-page")).toHaveText("src/pages/videos/index.html");
+  await expect(frame(page).locator("h1")).toHaveText("Videos");
+
+  // + Add page in it: the URL is the collection's, the page opens.
+  await item(page, "Add page to Videos").click();
+  const title = explorer(page).getByRole("textbox", { name: "New page title" });
+  await expect(title).toBeFocused();
+  await title.pressSequentially("My first video");
+  await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/my-first-video/");
+  await page.keyboard.press("Enter");
+  await expect(explorer(page)).toBeHidden();
+  await expect(page.locator("#status")).toHaveText("Created the page My first video at /videos/my-first-video/.");
+  await expect(page.locator("#current-page")).toHaveText("src/pages/videos/my-first-video.html");
+  await expect(frame(page).locator("h1")).toHaveText("My first video");
+  await expect(page.getByRole("group", { name: "Page" }).getByLabel("Title")).toHaveValue("My first video");
+
+  // The same title again is refused; the URL can be changed by hand, and
+  // then no longer follows the title. Escape cancels.
+  await openPages(page);
+  await expect(item(page, "My first video")).toHaveAttribute("aria-selected", "true");
+  await item(page, "Add page to Videos").click();
+  await title.pressSequentially("My first video");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("The URL /videos/my-first-video/ is taken by src/pages/videos/my-first-video.html.");
+  await editRow(page).getByRole("button", { name: "URL /videos/my-first-video/, change it" }).click();
+  const slug = explorer(page).getByRole("textbox", { name: "URL of the new page, after /videos/" });
+  await expect(slug).toBeFocused();
+  await slug.fill("second-take");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/second-take.html");
+  await title.fill("Another title");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Creates src/pages/videos/second-take.html");
+  await page.keyboard.press("Escape");
+  await expect(editRow(page)).toHaveCount(0);
+  await expect(explorer(page)).toBeVisible();
+  await expect(item(page, "Add page to Videos")).toBeFocused();
+
+  // The keyboard: Shift+F10 on the collection opens its menu; Add sub-collection.
+  await item(page, "Videos").focus();
+  await page.keyboard.press("Shift+F10");
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add page", "Add sub-collection"]);
+  await expect(menu.getByRole("menuitem", { name: "Add page" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const sub = explorer(page).getByRole("textbox", { name: "New collection name" });
+  await expect(sub).toBeFocused();
+  await page.keyboard.type("Tutorials");
+  await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/tutorials/");
+  await page.keyboard.press("Enter");
+  await expect(item(page, "Tutorials")).toBeFocused();
+  await expect(item(page, "Tutorials")).toHaveAttribute("aria-level", "2");
+  await expect(page.locator("#current-page")).toHaveText("src/pages/videos/tutorials/index.html");
+  await expect(item(page, "Videos").locator(".pages-count").first()).toHaveText("· 1");
+
+  // The page is a route of the site: clicking it in the tree shows it.
+  await item(page, "My first video").click();
+  await expect(frame(page).locator("h1")).toHaveText("My first video");
+
+  // Saving commits the three new files and the manifest's titles together.
+  await saveAll(page);
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  expect(await branchFile(page, routingRepo, "src/pages/videos/index.html")).toBe('<main class="page" data-key="main">\n  <h1 data-key="title">Videos</h1>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/my-first-video.html")).toBe('<main class="page" data-key="main">\n  <h1 data-key="title">My first video</h1>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/tutorials/index.html")).toContain("<h1 data-key=\"title\">Tutorials</h1>");
+  expect(JSON.parse((await branchFile(page, routingRepo, manifestPath))!).routes).toEqual({
+    "/work/fern-and-kettle/": { title: "Fern & Kettle" },
+    "/videos/": { title: "Videos" },
+    "/videos/my-first-video/": { title: "My first video" },
+    "/videos/tutorials/": { title: "Tutorials" },
+  });
+  await page.keyboard.press("Escape");
+  await openPages(page);
+  await expect(item(page, "Videos").locator(".file-new")).toHaveCount(0);
+});
+
+test("undo or discard of a new page takes its manifest entry with it; discarding the manifest takes the pages it titles", async ({ page, baseURL }) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await open(page, baseURL, 530);
+  const create = async (text: string) => {
+    await openPages(page);
+    await explorer(page).getByRole("button", { name: "+ New" }).click();
+    await page.getByRole("menuitem", { name: "Page" }).click();
+    await explorer(page).getByRole("textbox", { name: "New page title" }).fill(text);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#current-page")).toHaveText(`src/pages/${text.toLowerCase().replace(/ /g, "-")}.html`);
+    await expect(frame(page).locator("h1")).toHaveText(text);
+    expect(await manifestDrafts(page)).toBe(1);
+  };
+  const gone = async (text: string) => {
+    await expect(page.locator("#current-page")).toHaveText(indexPath);
+    await expect(frame(page).locator("h1")).toHaveText("Routed by folders");
+    await expect(page.locator(".native-preview-warning")).toBeHidden();
+    expect(await manifestDrafts(page)).toBe(0);
+    await openPages(page);
+    await expect(item(page, text)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  };
+
+  // Undo right after creating takes back the page and its title.
+  await create("Draft page");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText("Undid creating the page Draft page.");
+  await gone("Draft page");
+
+  // So does Discard changes on the new page.
+  await create("Draft page");
+  await page.getByRole("button", { name: "Discard changes" }).click();
+  await gone("Draft page");
+
+  // A collection: Ctrl+Z from the tree, where it is focused, takes it back.
+  await openPages(page);
+  await explorer(page).getByRole("button", { name: "+ New" }).click();
+  await page.getByRole("menuitem", { name: "Collection" }).click();
+  await explorer(page).getByRole("textbox", { name: "New collection name" }).fill("Videos");
+  await page.keyboard.press("Enter");
+  await expect(item(page, "Videos")).toBeFocused();
+  expect(await manifestDrafts(page)).toBe(1);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator("#status")).toHaveText("Undid creating the collection Videos.");
+  await gone("Videos");
+
+  // Discarding the manifest's draft discards the new page it titles.
+  await create("Other page");
+  await openFiles(page);
+  await expand(page, ".astro-editor");
+  await row(page, "native.json").click();
+  await expect(page.locator("#content .view-lines")).toContainText('"/other-page/": { "title": "Other page" }');
+  await page.getByRole("button", { name: "Discard changes" }).click();
+  await expect(page.locator("#status")).toHaveText("Discarded native.json's changes and the new page src/pages/other-page.html.");
+  await expect(page.locator(".native-preview-warning")).toBeHidden();
+  expect(await manifestDrafts(page)).toBe(0);
+  await openPages(page);
+  await expect(item(page, "Other page")).toHaveCount(0);
+});
+
+test("metadata for a route no page gives offers Remove entry and Create the page", async ({ page, baseURL }) => {
+  const orphaned = readFileSync(resolve("fixtures/native-starter/.astro-editor/native.json"), "utf8")
+    .replace('"/about/": "src/pages/about.html"', '"/about/": "src/pages/about.html",\n    "/videos/": { "title": "Videos" }');
+  await page.goto(`${baseURL}/`);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: manifestPath, content: orphaned } });
+  await open(page, baseURL, 501);
+  const warning = page.locator(".native-preview-warning");
+  await expect(warning).toContainText("native.json has metadata for /videos/, but no page gives that route");
+  await warning.getByRole("button", { name: "Remove the entry for /videos/ from native.json" }).click();
+  await expect(warning).toBeHidden();
+  await expect(page.locator("#status")).toHaveText("Removed the entry for /videos/ from native.json.");
+  expect(await manifestDrafts(page)).toBe(1);
+
+  // Reloaded with the draft discarded, the other fix: the page is made.
+  await page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.includes(".astro-editor/native.json")) localStorage.removeItem(key); });
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(warning).toContainText("native.json has metadata for /videos/");
+  await warning.getByRole("button", { name: "Create the page /videos/" }).click();
+  await expect(warning).toBeHidden();
+  await expect(page.locator("#current-page")).toHaveText("src/pages/videos.html");
+  await expect(frame(page).locator("h1")).toHaveText("Videos");
+  await expect(page.locator("#status")).toHaveText("Created the page src/pages/videos.html at /videos/.");
 });

@@ -38,6 +38,9 @@ async function pasteSource(page: Page, contains: string, source: string) {
 async function openExplorer(page: Page) {
   if (!(await page.locator("#explorer").isVisible())) await page.locator("#explorer-toggle").click();
   await expect(page.locator("#explorer")).toBeVisible();
+  // The file tree is the explorer's Files tab; a native site opens on Pages.
+  const files = page.getByRole("tab", { name: "Files" });
+  if (await files.isVisible()) await files.click();
 }
 
 async function openFile(page: Page, path: string, contains: string) {

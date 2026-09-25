@@ -81,3 +81,16 @@ main.has-preview .code-editor {
 .native-preview-warning[hidden] {
   display: none;
 }
+.native-preview-warning__fix {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.native-preview-warning__fix:hover { background: oklch(from currentColor l c h / 0.1); }
+.native-preview-warning__fix:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

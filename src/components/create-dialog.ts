@@ -1,16 +1,14 @@
 import { button, node } from "../ui/dom";
 import "./create-dialog.css";
 
-export type CreateKind = "file" | "folder" | "page";
+export type CreateKind = "file" | "folder";
 
 export interface CreateRequest {
   kind: CreateKind;
   /** The folder it is created in; "" is the repository root. */
   folder: string;
-  /** The typed name or path; for a page, its URL. */
+  /** The typed name or path. */
   name: string;
-  /** A page's title; empty when none was given. */
-  title: string;
 }
 
 /** What confirming would create, said in a sentence, or why it cannot. */
@@ -19,11 +17,10 @@ export type CreatePlan = { ok: true; summary: string } | { ok: false; error: str
 const LABELS: Record<CreateKind, { option: string; field: string; placeholder: string }> = {
   file: { option: "File", field: "File name", placeholder: "notes.md, or docs/notes.md" },
   folder: { option: "Folder", field: "Folder name", placeholder: "images, or media/images" },
-  page: { option: "Page", field: "Page URL", placeholder: "/videos/intro/" },
 };
 
 /**
- * The modal that creates a file, folder or page. It lives inside the file
+ * The modal that creates a file or folder. It lives inside the file
  * explorer's popover, so the explorer stays open behind it (as the Save
  * panel's comparison dialog does). The caller plans each request as it is
  * typed, which shows under the fields, and carries it out on confirm: Enter
@@ -33,8 +30,6 @@ export function createCreateDialog(options: {
   plan: (request: CreateRequest) => CreatePlan;
   /** Carries the request out; resolves to an error message, or nothing when done. */
   create: (request: CreateRequest) => Promise<string | undefined>;
-  /** The page URL a folder's New page starts from. */
-  routePrefix: (folder: string) => string;
 }) {
   const dialog = node("dialog", "create-dialog");
   dialog.setAttribute("aria-labelledby", "create-dialog-title");
@@ -44,7 +39,7 @@ export function createCreateDialog(options: {
   const kinds = node("fieldset", "create-dialog__kinds");
   kinds.append(node("legend", "sr-only", "Create a"));
   const radios = new Map<CreateKind, HTMLInputElement>();
-  for (const kind of ["file", "folder", "page"] as const) {
+  for (const kind of ["file", "folder"] as const) {
     const label = node("label", "create-dialog__kind");
     const radio = node("input");
     radio.type = "radio";
@@ -63,11 +58,6 @@ export function createCreateDialog(options: {
   name.spellcheck = false;
   name.setAttribute("aria-describedby", "create-dialog-result");
   nameLabel.append(nameText, name);
-  const titleLabel = node("label", "create-dialog__field");
-  const pageTitle = node("input");
-  pageTitle.type = "text";
-  pageTitle.autocomplete = "off";
-  titleLabel.append(node("span", "", "Title (optional)"), pageTitle);
   const result = node("p", "create-dialog__result");
   result.id = "create-dialog-result";
   result.setAttribute("aria-live", "polite");
@@ -76,28 +66,26 @@ export function createCreateDialog(options: {
   submit.type = "submit";
   const actions = node("div", "create-dialog__actions");
   actions.append(cancel, submit);
-  form.append(title, kinds, nameLabel, titleLabel, result, actions);
+  form.append(title, kinds, nameLabel, result, actions);
   dialog.append(form);
 
   let folder = "";
   let kind: CreateKind = "file";
   let pending = false;
   let opener: HTMLElement | null = null;
-  const request = (): CreateRequest => ({ kind, folder, name: name.value, title: kind === "page" ? pageTitle.value.trim() : "" });
+  const request = (): CreateRequest => ({ kind, folder, name: name.value });
   function choose(next: CreateKind) {
     kind = next;
     radios.get(next)!.checked = true;
     nameText.textContent = LABELS[next].field;
     name.placeholder = LABELS[next].placeholder;
-    name.value = next === "page" ? options.routePrefix(folder) : "";
-    titleLabel.hidden = next !== "page";
-    pageTitle.value = "";
+    name.value = "";
     refresh();
   }
   // An empty name says what to type rather than showing an error.
   function refresh(showError = false) {
     const plan = options.plan(request());
-    const blank = !name.value.trim() || (kind === "page" && name.value.trim() === options.routePrefix(folder) && !showError);
+    const blank = !name.value.trim();
     result.classList.toggle("is-error", !plan.ok && (showError || !blank));
     if (plan.ok) result.textContent = plan.summary;
     else result.textContent = blank && !showError ? `Enter a ${LABELS[kind].field.toLowerCase()}.` : plan.error;
@@ -105,7 +93,6 @@ export function createCreateDialog(options: {
     return plan;
   }
   name.addEventListener("input", () => refresh());
-  pageTitle.addEventListener("input", () => refresh());
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (pending) return;
@@ -141,8 +128,7 @@ export function createCreateDialog(options: {
       opener = context.opener ?? null;
       for (const [each, radio] of radios) radio.parentElement!.hidden = !context.kinds.includes(each);
       kinds.hidden = context.kinds.length < 2;
-      const what = context.kinds.length === 1 ? LABELS[context.kinds[0]].option.toLowerCase()
-        : context.kinds.includes("page") ? "file, folder or page" : "file or folder";
+      const what = context.kinds.length === 1 ? LABELS[context.kinds[0]].option.toLowerCase() : "file or folder";
       title.textContent = `New ${what}${folder && context.kinds.length > 1 ? ` in ${folder}` : ""}`;
       choose(context.first && context.kinds.includes(context.first) ? context.first : context.kinds[0]);
       dialog.showModal();

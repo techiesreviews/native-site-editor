@@ -1,4 +1,4 @@
-/* New file, folder or page. */
+/* New file or folder. */
 .create-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 0;
@@ -56,6 +56,4 @@
 .file-add:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 @media (hover: none) { .file-add { opacity: 1; } }
 .file-new { flex-shrink: 0; padding: 1px 5px; border-radius: 4px; background: var(--success-bg); color: var(--success-fg); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
-.explorer-actions { display: flex; gap: 8px; }
 .files-heading__end { display: inline-flex; align-items: center; gap: 6px; }
-.explorer-actions[hidden] { display: none; }

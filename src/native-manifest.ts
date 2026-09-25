@@ -51,8 +51,11 @@ export interface NativeManifest {
 }
 
 export type NativeManifestResult =
-  /** `warnings` name routes two files would give and metadata with no page. */
-  | { ok: true; manifest: NativeManifest; warnings: string[] }
+  /**
+   * `warnings` name routes two files would give and metadata with no page;
+   * `orphans` are the routes of the latter (`nativeOrphanWarning` says each).
+   */
+  | { ok: true; manifest: NativeManifest; warnings: string[]; orphans: string[] }
   | { ok: false; error: string };
 
 const ROUTE = /^\/(?:[\w.-]+\/)*$/;
@@ -151,9 +154,8 @@ export function parseNativeManifest(text: string, files: Iterable<string> = []):
   const merged: Record<string, string> = { ...derived.routes, ...explicit };
   const routes: Record<string, string> = {};
   for (const route of Object.keys(merged).sort()) routes[route] = merged[route];
-  for (const route of Object.keys(pages))
-    if (!Object.hasOwn(routes, route))
-      warnings.push(`native.json has metadata for ${route}, but no page gives that route; add ${route === "/" ? "src/pages/index.html" : `src/pages${route.slice(0, -1)}.html`} or give the entry a "file".`);
+  const orphans = Object.keys(pages).filter((route) => !Object.hasOwn(routes, route));
+  warnings.push(...orphans.map(nativeOrphanWarning));
   if (!Object.hasOwn(routes, "/"))
     return { ok: false, error: "The site has no home page: add src/pages/index.html, or map the route \"/\" to a page in native.json." };
 
@@ -181,7 +183,12 @@ export function parseNativeManifest(text: string, files: Iterable<string> = []):
     }
   }
 
-  return { ok: true, manifest: { version: 1, routes, pages, components, styles }, warnings };
+  return { ok: true, manifest: { version: 1, routes, pages, components, styles }, warnings, orphans };
+}
+
+/** The warning for metadata in native.json for a route no page gives. */
+export function nativeOrphanWarning(route: string): string {
+  return `native.json has metadata for ${route}, but no page gives that route; add ${route === "/" ? "src/pages/index.html" : `src/pages${route.slice(0, -1)}.html`} or give the entry a "file".`;
 }
 
 /** Every distinct source file the manifest references, for prefetching. */

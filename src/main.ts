@@ -17,15 +17,18 @@ import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
-import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
+import { createNativePreview, type NativeWarning, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
-import { editNativePageMeta, registerNativeFile, type NativePageMetaResult, type NativeRegistration } from "./native-page-meta";
+import { addedNativeRouteEntries, editNativePageMeta, registerNativeFile, removeNativeRouteEntry, sameNativeJson, unpairNativeRoutes, type NativePageMetaResult, type NativeRegistration } from "./native-page-meta";
 import { nativeNewPagePath, nativePageTemplate, nativeRegistration, newFilePath, newFolderPath, normalizeRoute, routeHeading, type Checked } from "./native-create";
-import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
+import { createCreateDialog, type CreateRequest } from "./components/create-dialog";
+import { createPagesTree, type NativeNewRequest } from "./components/pages-tree";
+import { buildNativePagesTree, firstHeadingText, nativeNewTarget, type NativeNewTarget } from "./native-pages";
 import {
   parseNativeManifest,
   nativeManifestPaths,
   nativeDefaultRoute,
+  nativeOrphanWarning,
   type NativeManifest,
 } from "./native-manifest";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
@@ -123,9 +126,15 @@ function mountWorkspace() {
     </header>
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
-      <div id="explorer-actions" class="explorer-actions" hidden></div>
-      <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+</button></span></div>
-      <nav id="files" aria-label="Repository files"></nav>
+      <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages or files" hidden>
+        <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
+        <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
+      </div>
+      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
+      <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
+        <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+</button></span></div>
+        <nav id="files" aria-label="Repository files"></nav>
+      </div>
     </div>
     <div class="workspace">
       <aside class="sidebar" aria-label="Page structure">
@@ -188,14 +197,28 @@ function mountWorkspace() {
       return planned.ok ? { ok: true, summary: planned.value.summary } : planned;
     },
     create: createFromRequest,
-    routePrefix: (folder) => (folder.startsWith(NATIVE_PAGES_DIR) ? `/${folder.slice(NATIVE_PAGES_DIR.length)}/` : "/"),
   });
   element("explorer").append(createDialog.root);
   const newAtRoot = element<HTMLButtonElement>("new-at-root");
   newAtRoot.addEventListener("click", () => openCreate("", newAtRoot));
-  const newPage = button("New page", () => openCreate(NATIVE_PAGES_DIR.slice(0, -1), newPage, "page"), "button secondary");
-  newPage.setAttribute("aria-haspopup", "dialog");
-  element("explorer-actions").append(newPage);
+  pagesTree = createPagesTree({
+    open: (file) => {
+      if (file === currentPath && editorModule?.isMounted(file)) explorerDropdown?.close();
+      else void restoreFile(file, generation);
+    },
+    plan: (request) => {
+      const planned = planNativeNew(request);
+      return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file } } : planned;
+    },
+    create: createNativeNew,
+    announce: (text) => { element("status").textContent = text; },
+  });
+  element("explorer-pages").append(pagesTree.root);
+  mountExplorerTabs();
+  element("explorer").addEventListener("toggle", () => {
+    if (explorerDropdown?.isOpen()) renderPagesTree();
+    else pagesTree?.reset();
+  });
   codeResize = mountCodeResize(element("main"), element("code-split"));
   codeWidthResize = mountCodeWidthResize(
     element("code-split"),
@@ -1538,11 +1561,12 @@ function refreshNativeRoutes() {
   const parsed = parseNativeManifest(source, nativePageFiles());
   if (!parsed.ok) { errorMessage(new Error(parsed.error)); return; }
   nativeManifest = parsed.manifest;
-  nativePreview?.setWarnings(parsed.warnings);
+  nativePreview?.setWarnings(nativeWarningItems(parsed));
   nativePreview?.activate(parsed.manifest);
   updateNativePreviewSources();
   updateAgentContext();
   pageStructure?.refreshMeta();
+  renderPagesTree();
 }
 
 // Resolve every manifest file to its effective source: a mounted editor model
@@ -1725,7 +1749,7 @@ function adoptNativeBaseSources(
 
 function deactivateNative() {
   nativeManifest = undefined;
-  updateExplorerActions();
+  updateExplorerTabs();
   nativeManifestBase = undefined;
   nativeBasePageFiles = [];
   nativeEngaged = false;
@@ -1903,7 +1927,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   nativeManifest = manifest;
   pageStructure?.refreshMeta();
   nativePreview?.setError(undefined);
-  nativePreview?.setWarnings(parsed.warnings);
+  nativePreview?.setWarnings(nativeWarningItems(parsed));
   nativePreview?.activate(manifest);
   nativePreview?.update({
     sources: nativeSources(),
@@ -2267,21 +2291,292 @@ function renderDraftFiles() {
   if (snapshot && newDraftPaths().join("\n") !== drawnNewFiles) renderFileTree();
 }
 
-// "New page" at the top of the explorer, for a native site.
-function updateExplorerActions() {
-  const actions = document.getElementById("explorer-actions");
-  if (actions) actions.hidden = !nativeManifest;
+// The explorer's Pages | Files tabs: a native site shows both, Pages first
+// when the project loads; any other project shows only its files, no tabs.
+let explorerTab: "pages" | "files" = "pages";
+let pagesTree: ReturnType<typeof createPagesTree> | undefined;
+
+function mountExplorerTabs() {
+  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files") };
+  for (const [name, tab] of Object.entries(tabs) as ["pages" | "files", HTMLButtonElement][]) {
+    tab.addEventListener("click", () => selectExplorerTab(name));
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? "pages" : event.key === "End" ? "files" : name === "pages" ? "files" : "pages";
+      selectExplorerTab(next);
+      tabs[next].focus();
+    });
+  }
+}
+
+function selectExplorerTab(name: "pages" | "files") {
+  explorerTab = name;
+  updateExplorerTabs();
+  if (name === "pages") renderPagesTree();
+}
+
+function updateExplorerTabs(reset = false) {
+  if (!document.getElementById("explorer-tabs")) return;
+  const native = Boolean(nativeManifest);
+  if (reset) explorerTab = "pages";
+  const tab = native ? explorerTab : "files";
+  element("explorer-tabs").hidden = !native;
+  for (const name of ["pages", "files"] as const) {
+    const button = element(`explorer-tab-${name}`);
+    const panel = element(`explorer-${name}`);
+    button.setAttribute("aria-selected", String(tab === name));
+    button.tabIndex = tab === name ? 0 : -1;
+    panel.hidden = tab !== name;
+    // Without tabs the files are the whole explorer, not a tab's panel.
+    if (native) panel.setAttribute("role", "tabpanel");
+    else panel.removeAttribute("role");
+  }
+  if (!native) pagesTree?.reset();
+}
+
+// The site's pages as a tree, from the page files (new drafts included) and
+// the parsed manifest; labels read each page's first heading from its source
+// as far as it is loaded.
+function renderPagesTree(focus?: { file?: string; folder?: string }) {
+  if (!pagesTree || !nativeManifest || element("explorer-pages").hidden) return;
+  const manifest = nativeManifest;
+  const scope = draftScope();
+  const drafted = new Set(newDraftPaths(scope));
+  const site = buildNativePagesTree({
+    files: nativePageFiles(scope),
+    routes: manifest.routes,
+    titles: Object.fromEntries(Object.entries(manifest.pages).map(([route, meta]) => [route, meta.title])),
+    heading: (file) => firstHeadingText(nativeEffectiveSource(file, scope)),
+    isNew: (file) => drafted.has(file),
+  });
+  pagesTree.render(site, currentPath, focus);
+}
+
+// Whether the repository path (a file, or a folder something is in) is under
+// src/pages on the branch or drafted: the branch's src/pages is listed whole.
+function nativePagesPathExists(path: string) {
+  return nativePageFiles().some((file) => file === path || file.startsWith(`${path}/`));
+}
+
+// What a new page or collection typed in the Pages tab writes: its file (from
+// the home page's shell, its heading the title) and the title's manifest
+// entry, or why it cannot.
+function planNativeNew(request: NativeNewRequest): Checked<NativeNewTarget & { title: string; content: string; manifest: { source: string; result: Extract<NativePageMetaResult, { ok: true }> } }> {
+  const manifest = nativeManifest;
+  if (!manifest || !draftScope()) return { ok: false, error: "Open a native site first." };
+  const title = request.title.trim();
+  if (!title) return { ok: false, error: request.kind === "page" ? "Enter the page's title." : "Enter the collection's name." };
+  if (!request.slug.trim()) return { ok: false, error: "The title gives no URL: add letters or digits, or change the URL." };
+  const target = nativeNewTarget(request.kind, request.folder, request.slug, {
+    route: (route) => manifest.routes[route],
+    exists: nativePagesPathExists,
+  });
+  if (!target.ok) return target;
+  if (nativeManifestConflict()) return { ok: false, error: MANIFEST_CONFLICT };
+  const source = nativeManifestSource();
+  if (source === undefined) return { ok: false, error: "The manifest cannot be changed right now." };
+  const result = editNativePageMeta(source, target.value.route, "title", title);
+  if (!result.ok) return result;
+  const content = nativePageTemplate(nativeEffectiveSource(manifest.routes["/"]), title);
+  return { ok: true, value: { ...target.value, title, content, manifest: { source, result } } };
+}
+
+// A page or collection created in the Pages tab, for its undo.
+interface NativeCreation {
+  kind: "page" | "collection";
+  file: string;
+  route: string;
+  title: string;
+}
+
+// Creates a new page or collection as one operation: the page file as a new
+// draft and its title as a metadata-only manifest entry, both or neither.
+// Routes are derived again and the tree drawn; a page opens (the explorer
+// closes), a collection's overview opens behind the explorer, which stays
+// open with the collection expanded and focused. Undo in the editor right
+// after takes both back, as Discard changes on the new file does.
+async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
+  const planned = planNativeNew(request);
+  if (!planned.ok) return planned.error;
+  const plan = planned.value;
+  const scope = draftScope()!;
+  const draft: SavedDraft = { ...scope, version: 1, path: plan.file, baseSha: null, original: "", content: plan.content, updatedAt: Date.now() };
+  draftStore().save(draft);
+  const failure = draftStore().error;
+  if (failure) {
+    draftStore().remove(scope, plan.file);
+    return failure;
+  }
+  try {
+    writeNativeManifest(plan.manifest.source, plan.manifest.result);
+  } catch (error) {
+    // Neither part stays: the page goes with the title that could not be written.
+    draftStore().remove(scope, plan.file);
+    return error instanceof Error ? error.message : "The manifest could not be changed.";
+  }
+  editorModule?.refreshDrafts();
+  commitHistory?.refresh();
+  refreshNativeRoutes();
+  renderFileTree();
+  updateAgentContext();
+  const creation: NativeCreation = { kind: request.kind, file: plan.file, route: plan.route, title: plan.title };
+  const collection = request.kind === "collection" ? plan.folder!.slice(NATIVE_PAGES_DIR.length) : undefined;
+  const epoch = generation;
+  const opened = openNewDraft(draft, { keepExplorer: collection !== undefined });
+  if (collection !== undefined) renderPagesTree({ folder: collection });
+  await opened;
+  if (epoch === generation && currentPath === plan.file)
+    editorModule?.recordHistoryAction(plan.file, () => undoNativeCreation(creation));
+  if (collection !== undefined) renderPagesTree({ folder: collection });
+  element("status").textContent = request.kind === "page"
+    ? `Created the page ${plan.title} at ${plan.route}.`
+    : `Created the collection ${plan.title} at ${plan.route}, with its overview page ${plan.file}.`;
+  return undefined;
+}
+
+// Undo right after a creation: the new file and the manifest entry it added
+// are discarded together. Nothing is undone once the page is on GitHub.
+function undoNativeCreation(creation: NativeCreation) {
+  const scope = draftScope();
+  const what = `${creation.kind} ${creation.title}`;
+  if (!scope || draftStore().get(scope, creation.file)?.baseSha !== null) {
+    element("status").textContent = `The ${what} is saved to GitHub; it is not undone.`;
+    return;
+  }
+  if (!editorModule?.discardNewFile(creation.file)) {
+    editorModule?.dropDraft(scope, creation.file);
+    discardedNewPages([creation.file]);
+  }
+  element("status").textContent = `Undid creating the ${what}.`;
+}
+
+// New page files discarded (Discard changes, an undo, or with the manifest
+// draft): the manifest entries their routes had that GitHub's manifest has
+// not go with them, so no metadata is left for a page that is gone. Routes
+// are then derived again and the trees drawn. Call before the routes are
+// derived again, while the files' routes are still known.
+function discardedNewPages(paths: string[]) {
+  if (!nativeManifest) return;
+  const routes = paths.map((path) => nativeRouteForPath(path) ?? nativePageRoute(path)).filter((route): route is string => Boolean(route));
+  const source = nativeManifestConflict() ? undefined : nativeManifestSource();
+  if (source !== undefined && routes.length) {
+    const text = unpairNativeRoutes(nativeManifestBase?.text, source, routes);
+    if (text !== source) {
+      try {
+        writeNativeManifest(source, manifestReplacement(source, text));
+      } catch (error) {
+        errorMessage(error);
+      }
+    }
+  }
+  refreshNativeRoutes();
+  renderFileTree();
+  updateAgentContext();
+}
+
+// The minimal edit from `source` to `text`, or to GitHub's manifest when
+// `text` says the same, so a manifest edited back needs no draft.
+function manifestReplacement(source: string, text: string): Extract<NativePageMetaResult, { ok: true }> {
+  const base = nativeManifestBase?.text;
+  const next = base !== undefined && sameNativeJson(text, base) ? base : text;
+  let start = 0;
+  while (start < source.length && start < next.length && source[start] === next[start]) start++;
+  let end = 0;
+  while (end < source.length - start && end < next.length - start && source[source.length - 1 - end] === next[next.length - 1 - end]) end++;
+  return { ok: true, text: next, edit: next === source ? null : { start, end: source.length - end, text: next.slice(start, next.length - end) } };
+}
+
+// Discard changes on the manifest: new page files whose entries it added are
+// discarded with it (the confirmation names them), so no page it titled is
+// left half made.
+function nativeManifestDiscardPlan() {
+  const scope = draftScope();
+  const source = editorModule?.getMountedSource(NATIVE_MANIFEST_PATH);
+  if (!scope || !nativeManifest || source === undefined) return undefined;
+  const added = new Set(addedNativeRouteEntries(nativeManifestBase?.text, source));
+  const pages = newDraftPaths(scope).filter((path) => {
+    const route = nativeRouteForPath(path) ?? nativePageRoute(path);
+    return route !== undefined && added.has(route);
+  });
+  if (!pages.length) return undefined;
+  return {
+    note: `The new ${pages.length === 1 ? "page" : "pages"} it titles ${pages.length === 1 ? "is" : "are"} discarded with it: ${pages.join(", ")}.`,
+    after: () => {
+      for (const path of pages) editorModule?.dropDraft(scope, path);
+      discardedNewPages(pages);
+      element("status").textContent = `Discarded native.json's changes and the new ${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}.`;
+    },
+  };
+}
+
+// The manifest's warnings for the preview, metadata with no page offering to
+// remove the entry or to create the page it describes.
+function nativeWarningItems(parsed: { warnings: string[]; orphans: string[] }): (string | NativeWarning)[] {
+  const orphans = new Set(parsed.orphans.map(nativeOrphanWarning));
+  return [
+    ...parsed.warnings.filter((warning) => !orphans.has(warning)),
+    ...parsed.orphans.map((route) => ({
+      text: nativeOrphanWarning(route),
+      fixes: [
+        { label: "Remove entry", ariaLabel: `Remove the entry for ${route} from native.json`, title: `Remove the metadata for ${route} from native.json`, run: () => removeNativeOrphan(route) },
+        { label: "Create the page", ariaLabel: `Create the page ${route}`, title: `Create a page at ${route} from the home page`, run: () => void createNativeOrphanPage(route) },
+      ],
+    })),
+  ];
+}
+
+function removeNativeOrphan(route: string) {
+  const source = nativeManifestConflict() ? undefined : nativeManifestSource();
+  if (source === undefined) { errorMessage(new Error(MANIFEST_CONFLICT)); return; }
+  const removed = removeNativeRouteEntry(source, route);
+  if (!removed.ok) { errorMessage(new Error(removed.error)); return; }
+  try {
+    writeNativeManifest(source, manifestReplacement(source, removed.text));
+  } catch (error) {
+    errorMessage(error);
+    return;
+  }
+  refreshNativeRoutes();
+  element("status").textContent = `Removed the entry for ${route} from native.json.`;
+}
+
+// The page the orphaned metadata describes, made like a new page: its file
+// where file-based routing gives it the route, its heading the entry's title.
+async function createNativeOrphanPage(route: string) {
+  const scope = draftScope();
+  const manifest = nativeManifest;
+  if (!scope || !manifest) return;
+  const path = nativeNewPagePath(route, nativePagesPathExists);
+  if (!path.ok) { errorMessage(new Error(path.error)); return; }
+  if (nativePagesPathExists(path.value)) { errorMessage(new Error(`${path.value} is already there.`)); return; }
+  const title = manifest.pages[route]?.title?.trim() || routeHeading(route);
+  const draft: SavedDraft = { ...scope, version: 1, path: path.value, baseSha: null, original: "", content: nativePageTemplate(nativeEffectiveSource(manifest.routes["/"], scope), title), updatedAt: Date.now() };
+  draftStore().save(draft);
+  const failure = draftStore().error;
+  if (failure) { errorMessage(new Error(failure)); return; }
+  editorModule?.refreshDrafts();
+  commitHistory?.refresh();
+  refreshNativeRoutes();
+  renderFileTree();
+  updateAgentContext();
+  const epoch = generation;
+  await openNewDraft(draft);
+  if (epoch === generation && currentPath === path.value)
+    editorModule?.recordHistoryAction(path.value, () => undoNativeCreation({ kind: "page", file: path.value, route, title }));
+  element("status").textContent = `Created the page ${path.value} at ${route}.`;
 }
 
 let createDialog: ReturnType<typeof createCreateDialog> | undefined;
 
-// What a creation writes: new files (drafts with no base blob), the manifest
-// entry a new stylesheet, component or titled page adds, and what to show
-// after. Planned as the name is typed, so the dialog says the result live.
+// What a creation in the Files tab writes: new files (drafts with no base
+// blob), the manifest entry a new stylesheet or component adds, and what to
+// show after. Planned as the name is typed, so the dialog says the result
+// live. Pages are made in the Pages tab (`createNativeNew`), where the URL is
+// the site's; a file or folder here is only ever what was typed.
 interface Creation {
   files: { path: string; content: string }[];
   register?: NativeRegistration;
-  title?: { route: string; value: string };
   /** The file to open after; else the folder to show in the tree. */
   open?: string;
   folder?: string;
@@ -2289,7 +2584,7 @@ interface Creation {
   done: string;
 }
 
-function planCreation({ kind, folder, name, title }: CreateRequest): Checked<Creation> {
+function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> {
   const scope = draftScope();
   if (!scope || !snapshot) return { ok: false, error: "Open a repository first." };
   const drafted = newDraftPaths(scope);
@@ -2313,7 +2608,6 @@ function planCreation({ kind, folder, name, title }: CreateRequest): Checked<Cre
   const routes = nativeManifest?.routes ?? {};
   const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
   const manifestSource = () => (nativeManifestConflict() ? undefined : nativeManifestSource());
-  const home = () => nativeEffectiveSource(routes["/"], scope);
   const fail = (error: string): Checked<Creation> => ({ ok: false, error });
 
   if (kind === "file") {
@@ -2340,53 +2634,17 @@ function planCreation({ kind, folder, name, title }: CreateRequest): Checked<Cre
     } };
   }
 
-  if (kind === "folder") {
-    const path = newFolderPath(folder, name);
-    if (!path.ok) return path;
-    if (folderExists(path.value) || entryAt(path.value)) return fail(`${path.value} already exists.`);
-    // A folder under src/pages is a page's: it starts with its index page.
-    const route = nativeManifest ? nativePageRoute(`${path.value}/index.html`) : undefined;
-    if (route) {
-      const file = `${path.value}/index.html`;
-      const blocked = problem(file) ?? routeTaken(route);
-      if (blocked) return fail(blocked);
-      return { ok: true, value: {
-        files: [{ path: file, content: nativePageTemplate(home(), routeHeading(route)) }], open: file,
-        summary: `Creates the page ${file} at ${route}.`,
-        done: `Created the page ${file} at ${route}.`,
-      } };
-    }
-    const keep = `${path.value}/.gitkeep`;
-    const blocked = problem(keep);
-    if (blocked) return fail(blocked);
-    return { ok: true, value: {
-      files: [{ path: keep, content: "" }], folder: path.value,
-      summary: `Creates ${keep}: git stores no empty folders, so the folder holds this empty file until it has others.`,
-      done: `Created the folder ${path.value}.`,
-    } };
-  }
-
-  if (!nativeManifest) return fail("Pages need a native site, with .astro-editor/native.json.");
-  const route = normalizeRoute(name);
-  if (!route.ok) return route;
-  const taken = routeTaken(route.value);
-  if (taken) return fail(taken);
-  const path = nativeNewPagePath(route.value, folderExists);
+  const path = newFolderPath(folder, name);
   if (!path.ok) return path;
-  const blocked = problem(path.value);
+  if (folderExists(path.value) || entryAt(path.value)) return fail(`${path.value} already exists.`);
+  const keep = `${path.value}/.gitkeep`;
+  const blocked = problem(keep);
   if (blocked) return fail(blocked);
-  if (title) {
-    const source = manifestSource();
-    if (source === undefined) return fail(MANIFEST_CONFLICT);
-    const check = editNativePageMeta(source, route.value, "title", title);
-    if (!check.ok) return check;
-  }
+  const pagesHint = nativeManifest && `${path.value}/`.startsWith(NATIVE_PAGES_DIR) ? " To add pages or collections, use the Pages tab." : "";
   return { ok: true, value: {
-    files: [{ path: path.value, content: nativePageTemplate(home(), title || routeHeading(route.value)) }],
-    title: title ? { route: route.value, value: title } : undefined,
-    open: path.value,
-    summary: `Creates ${path.value} at ${route.value}${title ? ", with its title in native.json" : ""}.`,
-    done: `Created the page ${path.value} at ${route.value}.`,
+    files: [{ path: keep, content: "" }], folder: path.value,
+    summary: `Creates ${keep}: git stores no empty folders, so the folder holds this empty file until it has others.${pagesHint}`,
+    done: `Created the folder ${path.value}.`,
   } };
 }
 
@@ -2439,7 +2697,6 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   try {
     for (const edit of [
       creation.register && ((source: string) => registerNativeFile(source, creation.register!)),
-      creation.title && ((source: string) => editNativePageMeta(source, creation.title!.route, "title", creation.title!.value)),
     ]) {
       if (!edit) continue;
       const source = nativeManifestSource();
@@ -2453,7 +2710,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   }
   editorModule?.refreshDrafts();
   commitHistory?.refresh();
-  if (creation.files.some((file) => nativePageRoute(file.path)) || creation.register || creation.title) refreshNativeRoutes();
+  if (creation.files.some((file) => nativePageRoute(file.path)) || creation.register) refreshNativeRoutes();
   updateAgentContext();
   if (creation.folder) {
     // The new folder shows open in the tree, with the dialog's focus returned to it.
@@ -2470,12 +2727,10 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   return undefined;
 }
 
-// The "+" on a folder: a new file or folder in it, or a page under src/pages.
-function openCreate(folder: string, opener: HTMLElement, only?: CreateKind) {
+// The "+" on a folder: a new file or folder in it.
+function openCreate(folder: string, opener: HTMLElement) {
   if (!snapshot) return;
-  const pages = Boolean(nativeManifest) && `${folder}/`.startsWith(NATIVE_PAGES_DIR);
-  const kinds: CreateKind[] = only ? [only] : pages ? ["file", "folder", "page"] : ["file", "folder"];
-  createDialog?.open({ in: folder, kinds, first: pages ? "page" : "file", opener });
+  createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener });
 }
 
 function renderEntries(
@@ -2579,7 +2834,7 @@ function renderEntries(
       const add = node("button", "file-add", "+");
       add.type = "button";
       add.setAttribute("aria-label", `New in ${path}`);
-      add.title = `New file or folder${nativeManifest && `${path}/`.startsWith(NATIVE_PAGES_DIR) ? ", or page," : ""} in ${path}`;
+      add.title = `New file or folder in ${path}`;
       add.setAttribute("aria-haspopup", "dialog");
       add.addEventListener("click", () => openCreate(path, add));
       line.append(add);
@@ -2702,8 +2957,23 @@ async function mountSource(
       void refreshPublishedSnapshot(scope.repo, scope.branch);
     },
     onDiscardNew: () => {
-      // A discarded page no longer routes.
-      if (nativePageRoute(path)) refreshNativeRoutes();
+      // A discarded page no longer routes, and the manifest entry it came
+      // with goes too; the site shows the page's collection, else home.
+      const page = Boolean(nativeManifest && (nativeRouteForPath(path) ?? nativePageRoute(path)));
+      if (page) {
+        discardedNewPages([path]);
+        element("status").textContent = `Discarded the new page ${path}.`;
+        const fallback = nativeFallbackPage(path);
+        // Opened once the discard is done; what was announced (the discard,
+        // or an undo's own words) outlasts the page's loading messages.
+        if (fallback)
+          queueMicrotask(async () => {
+            const said = element("status").textContent;
+            const epoch = generation;
+            await restoreFile(fallback, epoch);
+            if (epoch === generation && said) element("status").textContent = said;
+          });
+      }
       if (snapshot && info.user) {
         showDirectory(snapshot);
         rememberWorkspace(info.user.login, {
@@ -2724,6 +2994,7 @@ async function mountSource(
       if (value?.path === NATIVE_MANIFEST_PATH) pageStructure?.refreshMeta();
     },
     onHistory: openHistory,
+    discardPlan: path === NATIVE_MANIFEST_PATH ? nativeManifestDiscardPlan : undefined,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();
@@ -2818,7 +3089,19 @@ function nativeContextPages(manifest: NativeManifest): NonNullable<EditorContext
     return title ? { route, file, title } : { route, file };
   });
 }
-async function openNewDraft(draft: SavedDraft) {
+// The page shown after the page `path` is gone: the overview of the nearest
+// collection it was in that has one, else the home page.
+function nativeFallbackPage(path: string) {
+  if (!nativeManifest) return undefined;
+  const parts = path.slice(NATIVE_PAGES_DIR.length).split("/").slice(0, -1);
+  for (let length = parts.length; length > 0; length--) {
+    const file = nativeManifest.routes[`/${parts.slice(0, length).join("/")}/`];
+    if (file && file !== path) return file;
+  }
+  return nativeManifest.routes["/"];
+}
+
+async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean } = {}) {
   if (
     !snapshot ||
     !currentRepo ||
@@ -2828,7 +3111,7 @@ async function openNewDraft(draft: SavedDraft) {
     return;
   const epoch = generation,
     selection = ++fileGeneration;
-  explorerDropdown?.close();
+  if (!options.keepExplorer) explorerDropdown?.close();
   setCurrentPage(draft.path);
   await mountSource(draft.path, "", null, false, epoch, selection);
 }
@@ -3001,7 +3284,7 @@ async function loadSnapshot(
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
     renderFileTree();
-    updateExplorerActions();
+    updateExplorerTabs(true);
     showDirectory(result);
     if (info.user)
       rememberWorkspace(info.user.login, {
