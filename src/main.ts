@@ -873,14 +873,17 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // Whole sections (a <section> or a section component) move, duplicate and
   // remove from icon buttons always in the bar, as one undo step each.
   // Nothing else can be removed this way. Alt+Up/Down move the section too,
-  // from the bar, the preview or the page structure (`moveNativeSection`).
+  // from the bar, the preview or the page structure (`moveNativeSection`),
+  // as do plain Up/Down on the bar's grip, whose drag moves it in the page.
   let onMove: EditBarModel["onMove"];
+  let draggable = false;
   if (range && node && isNativeSectionTag(selection.tag)) {
     const parent = node.slice(0, -1);
     const index = node[node.length - 1];
     const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
     const after = locateNativeElementRange(source, [...parent, index + 1]);
     onMove = (direction) => moveNativeSection(selection, direction);
+    draggable = true;
     controls.push({
       kind: "button",
       icon: "up",
@@ -908,7 +911,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
     });
   }
-  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove };
+  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
   preview.showEditBar(model, rect);
 }
 

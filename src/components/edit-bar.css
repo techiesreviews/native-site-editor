@@ -210,3 +210,14 @@
 .edit-bar__warning::before {
   content: "⚠ ";
 }
+/* The grip that drags a whole section: grab cursor, and no browser panning
+   or text selection from a touch or press on it. */
+.edit-bar__grip {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.edit-bar.is-dragging .edit-bar__grip {
+  cursor: grabbing;
+  background: var(--hover);
+}

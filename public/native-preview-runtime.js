@@ -278,10 +278,10 @@
 
   function apply(payload) {
     // A render replaces the page under a drag: the drag is over, nothing moved.
-    if (sectionDrag && sectionDrag.dragging) {
+    if (sectionDrag) {
       endSectionDrag();
       emit("section-drag", { phase: "cancel" });
-    } else sectionDrag = null;
+    }
     hadError = false;
     renderDepth = 0;
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
@@ -902,16 +902,6 @@
   }
   document.addEventListener("selectionchange", function () { reportTextSelection(false); });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && sectionDrag) {
-      var wasDragging = sectionDrag.dragging;
-      endSectionDrag();
-      if (wasDragging) {
-        e.preventDefault();
-        suppressClick = true;
-        emit("section-drag", { phase: "cancel" });
-      }
-      return;
-    }
     // Alt+Up/Down moves the selected section; the editor does the move. Other
     // elements, and typing in a text element, keep the browser's own behaviour.
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
@@ -1010,13 +1000,6 @@
   }
 
   document.addEventListener("click", function (e) {
-    // The release that ends a drag is not a click on the section.
-    if (suppressClick) {
-      suppressClick = false;
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
     var link = nearestLinkFromPath(path, e.target);
     if (link && (e.ctrlKey || e.metaKey)) {
@@ -1045,7 +1028,7 @@
     }
   });
   document.addEventListener("mousemove", function (e) {
-    if (sectionDrag && sectionDrag.dragging) return;
+    if (sectionDrag) return;
     hovered = deepestElement(e);
     updateBoxes();
     reportHover();
@@ -1055,17 +1038,16 @@
     updateBoxes();
     reportHover();
   });
-  // Drag to reorder in the canvas: a press on the selected section itself
-  // (its own background, or its template's root for a section component;
-  // never a child being typed into, a link or an image) followed by 7 px of
-  // movement moves it among its siblings. The runtime owns the geometry: it
-  // tells the gap under the pointer from the siblings' midpoints, scrolls
-  // near the top and bottom edges of the frame, and reports only the chosen
-  // gap through `section-drag` messages (start, target, end, cancel); the
-  // editor draws the targets over the frame and writes the move.
+  // Drag to reorder in the canvas, driven by the editor from the edit bar's
+  // grip: the editor owns the pointer (captured on the grip, so nothing in
+  // this page is ever pressed or text-selected) and sends `drag-start`,
+  // `drag-move`, `drag-end` and `drag-cancel` with the pointer's position in
+  // this frame's viewport. The runtime owns the geometry: it tells the gap
+  // under the pointer from the siblings' midpoints, scrolls near the top and
+  // bottom edges of the frame, and reports only the chosen gap through
+  // `section-drag` messages (start, target, end, cancel); the editor draws
+  // the targets over the frame and writes the move.
   var sectionDrag = null;
-  var suppressClick = false;
-  var DRAG_THRESHOLD = 7;
   var SCROLL_STEP = 14;
 
   function dragGap(drag) {
@@ -1079,7 +1061,7 @@
 
   function setDragTarget() {
     var drag = sectionDrag;
-    if (!drag || !drag.dragging) return;
+    if (!drag) return;
     var index = dragGap(drag);
     if (index === drag.target) return;
     drag.target = index;
@@ -1088,10 +1070,10 @@
 
   // Near the top or bottom edge the frame scrolls on its own, faster the
   // nearer the edge, at most SCROLL_STEP per animation frame (also when the
-  // captured pointer reports coordinates outside the frame).
+  // pointer is outside the frame).
   function autoScrollDrag() {
     var drag = sectionDrag;
-    if (!drag || !drag.dragging) return;
+    if (!drag) return;
     var height = window.innerHeight;
     var band = Math.min(72, height / 4);
     var speed = 0;
@@ -1110,69 +1092,62 @@
     sectionDrag = null;
     if (!drag) return;
     if (drag.frame) cancelAnimationFrame(drag.frame);
-    if (drag.dragging) drag.el.style.opacity = drag.opacity;
-    if (drag.el.hasPointerCapture && drag.el.hasPointerCapture(drag.pointerId)) drag.el.releasePointerCapture(drag.pointerId);
+    drag.el.style.opacity = drag.opacity;
+    document.documentElement.style.userSelect = drag.userSelect;
   }
 
-  function finishSectionDrag(e, commit) {
-    var drag = sectionDrag;
-    if (!drag || e.pointerId !== drag.pointerId) return;
+  // The selected section starts a drag at the pointer's position; anything
+  // else (no selection, not a section, text being typed) cancels at once.
+  function startSectionDrag(y) {
     endSectionDrag();
-    if (!drag.dragging) return;
-    suppressClick = true;
-    var inside = e.clientX >= 0 && e.clientX <= window.innerWidth && e.clientY >= 0 && e.clientY <= window.innerHeight;
-    if (!commit || !inside || drag.target === null) {
+    var container = selected && selected.isConnected && sectionLike(selected) && !editing ? selected.parentElement : null;
+    var parentPath = container && pageEl && (container === pageEl || pageEl.contains(container))
+      ? (container === pageEl ? [] : elementIndexPath(container))
+      : null;
+    if (!parentPath) {
       emit("section-drag", { phase: "cancel" });
       return;
     }
-    emit("section-drag", { phase: "end", parent: drag.parent, index: drag.target });
-  }
-
-  // The press lands on the selected section itself, or on the root element
-  // of a selected section component's template (not on anything slotted).
-  function pressOnSelected(target) {
-    if (target === selected) return true;
-    var root = selected.shadowRoot;
-    return !!root && target.parentNode === root;
-  }
-
-  document.addEventListener("pointerdown", function (e) {
-    suppressClick = false;
-    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || sectionDrag) return;
-    if (!selected || !selected.isConnected || !sectionLike(selected) || editing) return;
-    var target = deepestElement(e);
-    if (!target || !pressOnSelected(target)) return;
-    var container = selected.parentElement;
-    if (!container || !pageEl || !(container === pageEl || pageEl.contains(container))) return;
-    var parentPath = container === pageEl ? [] : elementIndexPath(container);
-    if (!parentPath) return;
+    var selection = document.getSelection();
+    if (selection) selection.removeAllRanges();
     sectionDrag = {
-      pointerId: e.pointerId, el: selected, container: container, parent: parentPath,
-      startX: e.clientX, startY: e.clientY, clientY: e.clientY,
-      dragging: false, target: null, opacity: selected.style.opacity, frame: 0
+      el: selected, container: container, parent: parentPath, clientY: y, target: null,
+      opacity: selected.style.opacity, userSelect: document.documentElement.style.userSelect, frame: 0
     };
-  });
-  document.addEventListener("pointermove", function (e) {
-    var drag = sectionDrag;
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    drag.clientY = e.clientY;
-    if (!drag.dragging) {
-      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
-      drag.dragging = true;
-      try { drag.el.setPointerCapture(e.pointerId); } catch (error) { /* a pointer that is gone already */ }
-      drag.el.style.opacity = "0.55";
-      hovered = null;
-      updateBoxes();
-      reportHover();
-      emit("section-drag", { phase: "start", parent: drag.parent, index: Array.prototype.indexOf.call(drag.container.children, drag.el) });
-      drag.frame = requestAnimationFrame(autoScrollDrag);
-    }
-    e.preventDefault();
+    selected.style.opacity = "0.55";
+    document.documentElement.style.userSelect = "none";
+    hovered = null;
+    updateBoxes();
+    reportHover();
+    emit("section-drag", { phase: "start", parent: parentPath, index: Array.prototype.indexOf.call(container.children, selected) });
     setDragTarget();
-  });
-  document.addEventListener("pointerup", function (e) { finishSectionDrag(e, true); });
-  document.addEventListener("pointercancel", function (e) { finishSectionDrag(e, false); });
-  document.addEventListener("lostpointercapture", function (e) { finishSectionDrag(e, false); });
+    sectionDrag.frame = requestAnimationFrame(autoScrollDrag);
+  }
+
+  function dragMessage(msg) {
+    var y = Number(msg.y);
+    if (msg.type === "drag-start") {
+      if (isFinite(y)) startSectionDrag(y);
+      else emit("section-drag", { phase: "cancel" });
+      return;
+    }
+    var drag = sectionDrag;
+    if (msg.type === "drag-move") {
+      if (!drag || !isFinite(y)) return;
+      drag.clientY = y;
+      setDragTarget();
+      return;
+    }
+    // A release, or a cancel: the drag is over either way. A release with
+    // no drag left (a render ended it) or no gap chosen is a cancel.
+    if (drag && msg.type === "drag-end" && isFinite(y)) {
+      drag.clientY = y;
+      setDragTarget();
+    }
+    endSectionDrag();
+    if (drag && msg.type === "drag-end" && drag.target !== null) emit("section-drag", { phase: "end", parent: drag.parent, index: drag.target });
+    else emit("section-drag", { phase: "cancel" });
+  }
 
   window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
   window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });
@@ -1181,6 +1156,10 @@
     if (e.source !== parent) return;
     var msg = e.data || {};
     if (msg.source !== "astro-native-preview-host") return;
+    if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
+      dragMessage(msg);
+      return;
+    }
     if (msg.type === "clear-selection") {
       clearSelectionState();
       return;

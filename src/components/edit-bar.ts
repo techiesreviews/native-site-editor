@@ -69,7 +69,7 @@ export type EditBarControl =
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 
-export type IconName = "link" | "up" | "down" | "duplicate" | "remove";
+export type IconName = "link" | "up" | "down" | "duplicate" | "remove" | "grip";
 
 // Stroke paths on a 16 px grid.
 const iconPaths: Record<IconName, string> = {
@@ -78,6 +78,8 @@ const iconPaths: Record<IconName, string> = {
   down: "M8 3v10M3.5 8.5L8 13l4.5-4.5",
   duplicate: "M6 6h7v7H6zM10 6V3H3v7h3",
   remove: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4",
+  // Six dots in two columns, each a tiny closed arc.
+  grip: [4, 8, 12].map((y) => [6, 10].map((x) => `M${x} ${y - 0.5}a.5.5 0 110 1a.5.5 0 110-1`).join("")).join(""),
 };
 
 function icon(name: IconName) {
@@ -106,9 +108,29 @@ export interface EditBarModel {
   onFormat?: (format: "strong" | "em") => void;
   // Alt+Up and Alt+Down with focus in the bar; set only for a movable section.
   onMove?: (direction: "up" | "down") => void;
+  // A whole section: the bar starts with a grip that drags it in the page.
+  draggable?: boolean;
 }
 
-export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
+// A point in the frame's viewport, as the page inside it measures it.
+export interface FramePoint {
+  x: number;
+  y: number;
+}
+
+// What a drag from the grip does: the preview relays each step to the
+// runtime, which owns the geometry and answers with the gap.
+export interface EditBarDrag {
+  start: (at: FramePoint) => void;
+  move: (at: FramePoint) => void;
+  end: (at: FramePoint) => void;
+  cancel: () => void;
+}
+
+// Movement before a press on the grip becomes a drag.
+const DRAG_THRESHOLD = 7;
+
+export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag) {
   const bar = node("div", "edit-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Edit bar");
@@ -199,8 +221,106 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   }
   document.addEventListener("pointerdown", onPointerDown, true);
 
+  // The grip: a press on it moved 7 px or more drags the selected section.
+  // The editor keeps the pointer (captured on the grip) for the whole drag,
+  // so nothing inside the frame is pressed or text-selected; the pointer's
+  // place in the frame goes to the runtime at each move. The grip element
+  // lasts across renders, and a render asked for during a drag waits for its
+  // end, so the capture is never lost to a re-render.
+  const grip = button("", () => undefined, "edit-bar__button edit-bar__button--icon edit-bar__grip");
+  grip.append(icon("grip"));
+  grip.setAttribute("aria-label", "Drag to move");
+  grip.title = "Drag to move";
+  let press: { pointerId: number; x: number; y: number; dragging: boolean } | undefined;
+  let userSelect = "";
+  let pending: { model: EditBarModel; at: SelectionRect } | undefined;
+
+  function framePoint(event: PointerEvent): FramePoint {
+    const box = frame.getBoundingClientRect();
+    return { x: event.clientX - box.left - frame.clientLeft, y: event.clientY - box.top - frame.clientTop };
+  }
+  function inFrame(event: PointerEvent) {
+    const box = frame.getBoundingClientRect();
+    return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+  }
+  // Back to rest: capture released, the other controls usable, a render
+  // that waited applied. Nothing is sent to the runtime from here.
+  function stopDrag() {
+    const current = press;
+    press = undefined;
+    if (!current) return;
+    if (grip.hasPointerCapture(current.pointerId)) grip.releasePointerCapture(current.pointerId);
+    if (!current.dragging) return;
+    document.documentElement.style.userSelect = userSelect;
+    bar.classList.remove("is-dragging");
+    for (const item of bar.children) item.removeAttribute("inert");
+    const waiting = pending;
+    pending = undefined;
+    if (waiting) show(waiting.model, waiting.at);
+    else position();
+  }
+  function cancelDrag() {
+    const dragging = press?.dragging;
+    stopDrag();
+    if (dragging) drag?.cancel();
+  }
+  grip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || press || !drag) return;
+    // No focus move and no text selection from the press itself.
+    event.preventDefault();
+    grip.focus();
+    press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
+    try { grip.setPointerCapture(event.pointerId); } catch { /* a pointer that is gone already */ }
+  });
+  grip.addEventListener("pointermove", (event) => {
+    if (!press || event.pointerId !== press.pointerId) return;
+    event.preventDefault();
+    if (!press.dragging) {
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_THRESHOLD) return;
+      press.dragging = true;
+      userSelect = document.documentElement.style.userSelect;
+      document.documentElement.style.userSelect = "none";
+      document.getSelection()?.removeAllRanges();
+      closePopover(false);
+      bar.classList.add("is-dragging");
+      for (const item of bar.children) if (item !== grip && item.localName !== "span") item.setAttribute("inert", "");
+      drag?.start(framePoint(event));
+      return;
+    }
+    drag?.move(framePoint(event));
+  });
+  grip.addEventListener("pointerup", (event) => {
+    if (!press || event.pointerId !== press.pointerId) return;
+    const dragging = press.dragging;
+    stopDrag();
+    if (!dragging) return;
+    // A release outside the frame drops nowhere.
+    if (inFrame(event)) drag?.end(framePoint(event));
+    else drag?.cancel();
+  });
+  grip.addEventListener("pointercancel", (event) => {
+    if (press && event.pointerId === press.pointerId) cancelDrag();
+  });
+  grip.addEventListener("lostpointercapture", (event) => {
+    if (press && event.pointerId === press.pointerId) cancelDrag();
+  });
+  function onDragKey(event: KeyboardEvent) {
+    if (!press?.dragging || event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelDrag();
+  }
+  window.addEventListener("keydown", onDragKey, true);
+
   bar.addEventListener("keydown", (event) => {
     const target = event.target as HTMLElement;
+    // The grip is a move handle: plain Up/Down move the section too.
+    if (target === grip && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
+      event.preventDefault();
+      event.stopPropagation();
+      onMove(event.key === "ArrowUp" ? "up" : "down");
+      return;
+    }
     const key = event.key.toLowerCase();
     if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === "b" || key === "i") && onFormat) {
       event.preventDefault();
@@ -228,6 +348,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
   });
 
   function position() {
+    // Held where it is during a drag, so the grip stays under the pointer's capture.
+    if (press?.dragging) return;
     if (!rect || bar.hidden && !bar.dataset.model) return;
     const frameRect = frame.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
@@ -370,6 +492,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     onFormat = model.onFormat;
     onMove = model.onMove;
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
+    if (model.draggable && drag) bar.append(grip);
     for (const control of model.controls) {
       if (control.kind === "button") {
         const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
@@ -425,27 +548,41 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
     if (kept && popoverButton) placePopover(popoverButton);
   }
 
+  function show(model: EditBarModel, at: SelectionRect) {
+    // A drag holds the bar as it is; the newest model waits for its end.
+    if (press?.dragging) {
+      pending = { model, at };
+      return;
+    }
+    const active = document.activeElement as HTMLElement | null;
+    const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
+    const label = focused >= 0 ? controlLabel(active!) : "";
+    render(model);
+    rect = at;
+    position();
+    if (focused < 0) return;
+    // The same control again when it is still there and enabled, else its neighbour.
+    const items = focusable();
+    (items.find((item) => controlLabel(item) === label) ?? items[Math.min(focused, items.length - 1)])?.focus();
+  }
+
   return {
     element: bar,
     /** Render controls for the current selection at `at`, keeping focus where it is. */
-    show(model: EditBarModel, at: SelectionRect) {
-      const active = document.activeElement as HTMLElement | null;
-      const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
-      const label = focused >= 0 ? controlLabel(active!) : "";
-      render(model);
-      rect = at;
-      position();
-      if (focused < 0) return;
-      // The same control again when it is still there and enabled, else its neighbour.
-      const items = focusable();
-      (items.find((item) => controlLabel(item) === label) ?? items[Math.min(focused, items.length - 1)])?.focus();
-    },
+    show,
     /** The selection moved (scroll, resize, reflow) without changing. */
     move(at: SelectionRect) {
       rect = at;
+      if (pending) pending.at = at;
       position();
     },
+    /** The runtime ended the drag (dropped, or cancelled on its side): the grip lets go. */
+    dragEnded() {
+      stopDrag();
+    },
     hide() {
+      cancelDrag();
+      pending = undefined;
       closePopover(false);
       rect = undefined;
       delete bar.dataset.model;
@@ -453,6 +590,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement) {
       bar.replaceChildren();
     },
     destroy() {
+      stopDrag();
+      window.removeEventListener("keydown", onDragKey, true);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       popover.remove();

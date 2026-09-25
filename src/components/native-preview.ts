@@ -228,7 +228,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   errorBox.setAttribute("role", "alert");
   errorBox.hidden = true;
   pane.append(errorBox, frameHost);
-  const editBar = createEditBar(pane, frame);
+  // A drag from the edit bar's grip: the editor holds the pointer and sends
+  // its place in the frame; the runtime answers with `section-drag` messages.
+  const toRuntime = (type: string, at?: { x: number; y: number }) =>
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type, ...at }, "*");
+  const editBar = createEditBar(pane, frame, {
+    start: (at) => toRuntime("drag-start", at),
+    move: (at) => toRuntime("drag-move", at),
+    end: (at) => toRuntime("drag-end", at),
+    cancel: () => toRuntime("drag-cancel"),
+  });
   const insertControls = createInsertControls(pane, frame, {
     choices: () => handlers.insertChoices?.() ?? [],
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
@@ -340,6 +349,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // one the runtime sends when a render replaces the page under a drag)
       // ends the drag with nothing moved, announced as cancelled.
       if (raw.phase === "cancel" || (stale && raw.phase === "end")) {
+        editBar.dragEnded();
         insertControls.dragEnd();
         handlers.onSectionDrag?.(undefined);
         return;
@@ -350,6 +360,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (raw.phase === "start") insertControls.dragStart(gap);
       else if (raw.phase === "target") insertControls.dragTarget(gap);
       else if (raw.phase === "end") {
+        editBar.dragEnded();
         insertControls.dragEnd();
         handlers.onSectionDrag?.(gap);
       }

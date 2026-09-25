@@ -3,8 +3,9 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // Drag to reorder sections: a page structure row dragged onto another gap
-// among its siblings, and a selected section dragged in the canvas. Both
-// are one undo step, keep the section selected, and cancel cleanly.
+// among its siblings, and a selected section dragged in the canvas from the
+// edit bar's grip. Both are one undo step, keep the section selected, and
+// cancel cleanly.
 const fixture = "fixtures/native-starter";
 const indexPath = "src/pages/index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -161,21 +162,44 @@ const frameScroll = async (page: Page) => {
   const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
   return child!.evaluate(() => window.scrollY);
 };
+const frameSelection = async (page: Page) => {
+  const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
+  return child!.evaluate(() => document.getSelection()?.toString() ?? "");
+};
 const sectionOpacity = (page: Page) => frame(page).locator("section.cards").evaluate((el) => getComputedStyle(el).opacity);
+const grip = (page: Page) => bar(page).getByRole("button", { name: "Drag to move" });
+const dragging = (page: Page) => page.locator(".insert-layer");
+// Presses the selected section's grip; returns where it was pressed.
+async function pressGrip(page: Page) {
+  const at = await centre(page, grip(page));
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  return at;
+}
 
-test("a selected section dragged in the canvas lands on the target gap, stays selected and is one undo step", async ({ page }) => {
+test("the grip in the edit bar drags a selected section onto the target gap, one undo step", async ({ page }) => {
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  const from = await sectionPoint(page);
+  // The grip comes first after the kind label, named and titled.
+  await expect(bar(page).locator(":scope > button").first()).toHaveAccessibleName("Drag to move");
+  await expect(grip(page)).toHaveAttribute("title", "Drag to move");
   const hero = (await frame(page).locator("section.hero").boundingBox())!;
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
+  const heading = (await frame(page).locator(".hero h1").boundingBox())!;
+  const from = await pressGrip(page);
   await page.mouse.move(from.x, from.y - 20, { steps: 4 });
   // Every gap of the parent shows; the source is translucent; the plus buttons are gone.
-  await expect(page.locator(".insert-layer")).toHaveClass(/is-dragging/);
+  await expect(dragging(page)).toHaveClass(/is-dragging/);
   await expect(page.locator(".insert-point.is-drag")).toHaveCount(4);
   await expect.poll(() => sectionOpacity(page)).toBe("0.55");
   await expect(page.locator(".insert-point__plus:visible")).toHaveCount(0);
+  // The bar stays; its other controls are inert; the page cannot be selected.
+  await expect(bar(page)).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Duplicate", includeHidden: true })).toHaveAttribute("inert", "");
+  await expect(grip(page)).not.toHaveAttribute("inert", "");
+  expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("none");
+  // Across the hero's heading text, then onto the gap above the hero.
+  await page.mouse.move(heading.x + heading.width - 4, heading.y + heading.height / 2, { steps: 6 });
+  await page.mouse.move(heading.x + 4, heading.y + 4, { steps: 6 });
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 8, { steps: 4 });
   const target = page.locator(".insert-point.is-target");
   await expect(target).toHaveCount(1);
@@ -185,87 +209,139 @@ test("a selected section dragged in the canvas lands on the target gap, stays se
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
   await expect(status(page)).toHaveText("Section moved");
-  await expect(page.locator(".insert-layer")).not.toHaveClass(/is-dragging/);
+  await expect(dragging(page)).not.toHaveClass(/is-dragging/);
   await expect(page.locator(".insert-point.is-target")).toHaveCount(0);
   await expect.poll(() => sectionOpacity(page)).toBe("1");
+  // No text was selected in the page, and the editor is selectable again.
+  expect(await frameSelection(page)).toBe("");
+  expect(await page.evaluate(() => document.getSelection()?.toString() ?? "")).toBe("");
+  expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect(bar(page).getByRole("button", { name: "Move up" })).toBeDisabled();
+  await expect(bar(page).getByRole("button", { name: "Duplicate" })).not.toHaveAttribute("inert", "");
   await expect(sections(page).first()).toHaveAttribute("aria-selected", "true");
   await undo(page);
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("a canvas drag cancels on Escape, needs 7 px, ignores children and records nothing for a same-position release", async ({ page }) => {
+test("a grip drag needs 7 px, cancels on Escape and records nothing for a same-position release", async ({ page }) => {
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  const from = await sectionPoint(page);
   // 6 px: no drag.
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
+  await clearStatus(page);
+  let from = await pressGrip(page);
   await page.mouse.move(from.x, from.y + 6, { steps: 3 });
   await page.waitForTimeout(100);
-  await expect(page.locator(".insert-layer")).not.toHaveClass(/is-dragging/);
+  await expect(dragging(page)).not.toHaveClass(/is-dragging/);
+  await expect.poll(() => sectionOpacity(page)).toBe("1");
   await page.mouse.up();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(status(page)).toHaveText("");
 
   // 7 px: a drag; Escape cancels it and everything is cleaned up.
-  await clearStatus(page);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
+  from = await pressGrip(page);
   await page.mouse.move(from.x, from.y + 7, { steps: 3 });
-  await expect(page.locator(".insert-layer")).toHaveClass(/is-dragging/);
+  await expect(dragging(page)).toHaveClass(/is-dragging/);
+  await expect.poll(() => sectionOpacity(page)).toBe("0.55");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".insert-layer")).not.toHaveClass(/is-dragging/);
+  await expect(dragging(page)).not.toHaveClass(/is-dragging/);
   await expect(status(page)).toHaveText("Section drag cancelled");
   await expect.poll(() => sectionOpacity(page)).toBe("1");
   await page.mouse.up();
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("");
 
-  // Released on the gap it already fills: nothing recorded.
+  // Released on the gap it already fills (the top half of itself): nothing recorded.
   await clearStatus(page);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(from.x, from.y + 30, { steps: 4 });
-  await page.mouse.move(from.x, from.y + 2, { steps: 4 });
+  const cards = (await frame(page).locator("section.cards").boundingBox())!;
+  from = await pressGrip(page);
+  await page.mouse.move(from.x, from.y - 30, { steps: 4 });
+  await page.mouse.move(cards.x + cards.width / 2, cards.y + 10, { steps: 4 });
   await page.mouse.up();
   await expect(status(page)).toHaveText("Section stayed in place");
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
+
+  // Released outside the frame: cancelled.
+  await clearStatus(page);
+  const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+  from = await pressGrip(page);
+  await page.mouse.move(from.x, from.y - 30, { steps: 4 });
+  await page.mouse.move(frameBox.x + frameBox.width + 40, from.y, { steps: 4 });
+  await page.mouse.up();
+  await expect(status(page)).toHaveText("Section drag cancelled");
+  await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
-  await undo(page);
+});
+
+test("a press and move inside the page never starts a section drag", async ({ page }) => {
+  await select(page, "section.cards");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await clearStatus(page);
+  // On the selected section's own background: at most a click that selects it.
+  const from = await sectionPoint(page);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y - 80, { steps: 6 });
+  await page.waitForTimeout(100);
+  await expect(dragging(page)).not.toHaveClass(/is-dragging/);
+  await expect.poll(() => sectionOpacity(page)).toBe("1");
+  await page.mouse.up();
+  await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
+  await expect(status(page)).not.toHaveText(/Section/);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // A press on a child of the selected section (a card) never starts a
-  // section drag: the release is an ordinary click that selects there.
+  // On a child (a card): an ordinary click that selects there. (The move
+  // above may have selected page text, as a press and move does; a press on
+  // selected text would start the browser's own text drag instead.)
+  await frame(page).locator("body").evaluate(() => document.getSelection()?.removeAllRanges());
   await select(page, "section.cards");
-  await clearStatus(page);
   const card = (await frame(page).locator(".cards project-card").first().boundingBox())!;
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
   await page.mouse.down();
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2 - 60, { steps: 4 });
   await page.waitForTimeout(100);
-  await expect(page.locator(".insert-layer")).not.toHaveClass(/is-dragging/);
+  await expect(dragging(page)).not.toHaveClass(/is-dragging/);
   await page.mouse.up();
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
   await expect(status(page)).not.toHaveText(/Section/);
   await expect(bar(page).locator(".edit-bar__kind")).not.toHaveText("Section");
 });
 
-test("a canvas drag near the bottom edge scrolls the frame", async ({ page }) => {
+test("the grip moves the section with Up/Down and Alt+Up/Down while focused", async ({ page }) => {
+  await select(page, "section.cards");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await grip(page).focus();
+  await page.keyboard.press("ArrowUp");
+  await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
+  await expect(status(page)).toHaveText("Moved up");
+  await expect(grip(page)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
+  await expect(status(page)).toHaveText("Moved down");
+  await expect(grip(page)).toBeFocused();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});
+
+test("a grip drag near the bottom edge scrolls the frame", async ({ page }) => {
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   expect(await frameScroll(page)).toBe(0);
-  const from = await sectionPoint(page);
   const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
+  const from = await pressGrip(page);
   await page.mouse.move(from.x, from.y + 20, { steps: 4 });
-  await expect(page.locator(".insert-layer")).toHaveClass(/is-dragging/);
+  await expect(dragging(page)).toHaveClass(/is-dragging/);
   // Inside the edge band the frame scrolls on its own, with the pointer still.
   await page.mouse.move(from.x, frameBox.y + frameBox.height - 10, { steps: 4 });
   await expect.poll(() => frameScroll(page)).toBeGreaterThan(40);
   const scrolled = await frameScroll(page);
+  // The bar is held where it was, still under the pointer's capture.
+  await expect(bar(page)).toBeVisible();
   // Out of the band it stops.
   await page.mouse.move(from.x, frameBox.y + frameBox.height / 2, { steps: 4 });
   await page.waitForTimeout(200);
@@ -277,4 +353,5 @@ test("a canvas drag near the bottom edge scrolls the frame", async ({ page }) =>
   await page.mouse.up();
   await expect(status(page)).toHaveText("Section drag cancelled");
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
+  expect(await frameSelection(page)).toBe("");
 });
