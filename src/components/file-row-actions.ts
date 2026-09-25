@@ -1,5 +1,6 @@
 import { node } from "../ui/dom";
 import { renameSelection } from "../native-files";
+import { dragHasFiles } from "../uploads";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import "./file-row-actions.css";
 
@@ -18,7 +19,8 @@ export interface FileRowTarget {
  * gives; F2 renames in place, Delete deletes, Shift+F10 or the ContextMenu
  * key opens the menu; a file or folder dragged onto a folder row (or the
  * tree's empty space, the repository root) moves there, with the drop
- * target highlighted and Escape cancelling the drag. What each action does
+ * target highlighted and Escape cancelling the drag; files dragged in from
+ * the computer are uploaded to the folder they are dropped on. What each action does
  * is the caller's; this only wires the rows.
  */
 export function createFileRowActions(options: {
@@ -33,6 +35,8 @@ export function createFileRowActions(options: {
   /** Whether `source` can move into `folder` ("" is the root); the reason when not, said on drop. */
   dropProblem: (source: FileRowTarget, folder: string) => string | undefined;
   drop: (source: FileRowTarget, folder: string) => void;
+  /** Files dragged in from the computer, dropped on a folder ("" is the root): uploaded there. */
+  dropFiles?: (files: File[], folder: string) => void;
   announce: (text: string) => void;
 }) {
   const menu = createRowMenu(options.host);
@@ -109,7 +113,14 @@ export function createFileRowActions(options: {
     const marked = () => target.folder ? line
       : line.parentElement?.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > .file-row-line") ?? rootArea;
     const over = (event: DragEvent) => {
-      if (!dragging) return;
+      if (!dragging) {
+        if (!options.dropFiles || !dragHasFiles(event)) return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        highlight(marked());
+        return;
+      }
       event.stopPropagation();
       if (options.dropProblem(dragging, folder)) { highlight(undefined); return; }
       event.preventDefault();
@@ -119,7 +130,14 @@ export function createFileRowActions(options: {
     line.addEventListener("dragenter", over);
     line.addEventListener("dragover", over);
     line.addEventListener("drop", (event) => {
-      if (!dragging) return;
+      if (!dragging) {
+        if (!options.dropFiles || !event.dataTransfer?.files.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        highlight(undefined);
+        options.dropFiles([...event.dataTransfer.files], folder);
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       const source = dragging;
@@ -134,9 +152,10 @@ export function createFileRowActions(options: {
   function attachRoot(area: HTMLElement, marked: HTMLElement = area) {
     rootArea ??= marked;
     const over = (event: DragEvent) => {
-      if (!dragging || options.dropProblem(dragging, "")) return;
+      const files = !dragging && options.dropFiles && dragHasFiles(event);
+      if (!files && (!dragging || options.dropProblem(dragging, ""))) return;
       event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (event.dataTransfer) event.dataTransfer.dropEffect = files ? "copy" : "move";
       highlight(marked);
     };
     area.addEventListener("dragenter", over);
@@ -149,7 +168,13 @@ export function createFileRowActions(options: {
       if (event.clientX <= box.left || event.clientX >= box.right || event.clientY <= box.top || event.clientY >= box.bottom) highlight(undefined);
     });
     area.addEventListener("drop", (event) => {
-      if (!dragging) return;
+      if (!dragging) {
+        if (!options.dropFiles || !event.dataTransfer?.files.length) return;
+        event.preventDefault();
+        highlight(undefined);
+        options.dropFiles([...event.dataTransfer.files], "");
+        return;
+      }
       event.preventDefault();
       const source = dragging;
       dragging = undefined;

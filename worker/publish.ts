@@ -78,8 +78,9 @@ export function validatePublish(value: unknown): PublishRequest {
   return data as PublishRequest;
 }
 
-export async function blobSha(content: string): Promise<string> {
-  const body = encoder.encode(content);
+/** The git blob SHA of text (as UTF-8) or of bytes (an uploaded file). */
+export async function blobSha(content: string | Uint8Array): Promise<string> {
+  const body = typeof content === "string" ? encoder.encode(content) : content;
   const header = encoder.encode(`blob ${body.length}\0`);
   const bytes = new Uint8Array(header.length + body.length);
   bytes.set(header);

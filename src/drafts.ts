@@ -28,6 +28,11 @@ export interface SavedDraft extends DraftScope {
    */
   sourceSha?: string;
   opaque?: true;
+  /**
+   * An uploaded file (src/uploads.ts): `sourceSha` is the blob of its bytes,
+   * which this browser keeps (IndexedDB) until Save makes them a GitHub blob.
+   */
+  upload?: { size: number; type: string };
   mode?: "100755";
   /** Manifest entries removed with the file (src/native-page-meta.ts), put back when it is restored. */
   entries?: NativeDroppedEntries;

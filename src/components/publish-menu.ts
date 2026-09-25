@@ -4,6 +4,7 @@ import { draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import type { PublishResult } from "../../shared/types";
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
+import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import "./publish-menu.css";
 
 export function createPublishMenu(options: {
@@ -96,6 +97,11 @@ export function createPublishMenu(options: {
       return row;
     }
     const isNew = draft.baseSha === null;
+    if (isNew && draft.upload) {
+      row.append(node("span", "publish-menu__note", `Uploaded, ${formatBytes(draft.upload.size)}`));
+      if (options.onDiscardChange) row.append(discardButton("Discard", `Discard ${change.path}`, change));
+      return row;
+    }
     if (isNew && draft.opaque) {
       row.append(node("span", "publish-menu__note", "New file, a copy"));
       return row;
@@ -214,6 +220,8 @@ export function createPublishMenu(options: {
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = labels.pending;
     try {
+      // Uploaded files become GitHub blobs first; the commit names them.
+      await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch: options.scope.branch, files: publishFiles(chosen) }),
@@ -238,6 +246,7 @@ export function createPublishMenu(options: {
         ),
       );
     } catch (error) {
+      if ((error as { status?: number }).status === 401) { options.onExpired(); return; }
       if (!disposed) message.textContent = error instanceof Error ? error.message : "Publishing failed. Your drafts are kept.";
     } finally {
       pending = false;

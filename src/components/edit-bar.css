@@ -221,3 +221,21 @@
   cursor: grabbing;
   background: var(--hover);
 }
+/* An image's Upload… and the drop hint, under its address field. */
+.edit-bar__upload {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.edit-bar__upload-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+.edit-bar__popover.is-drop-target {
+  outline: 2px dashed var(--focus);
+  outline-offset: -2px;
+}
+.edit-bar__popover.is-uploading {
+  cursor: progress;
+}
