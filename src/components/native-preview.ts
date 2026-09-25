@@ -315,6 +315,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       handlers.onTextEdit?.({ path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after });
       return;
     }
+    // A link click inside the preview (including inside shadow roots) navigates
+    // the preview only, keeping the current source edits untouched. It is the
+    // user's action, not a description of a render, so it counts even while a
+    // render requested since (component styles arriving) is still pending.
+    if (data.type === "route" && typeof data.route === "string" && manifest) {
+      followRoute(`#${data.route}`);
+      return;
+    }
     if (data.type !== "ready" && data.context !== context) {
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
       return;
@@ -334,9 +342,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!loadError) showBanner(undefined, false);
       return;
     }
-    // A link click inside the preview (including inside shadow roots) navigates
-    // the preview only, keeping the current source edits untouched.
-    if (data.type === "route" && typeof data.route === "string" && manifest) followRoute(`#${data.route}`);
     if (data.type === "insert-points" && manifest) {
       const raw = data as unknown as { path?: unknown; points?: unknown };
       const path = raw.path;
