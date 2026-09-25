@@ -61,7 +61,7 @@ let serial = 0;
 // commands are routed by file path.
 type RangeApi = {
   select(edit: Omit<RangeEdit, "text">): boolean;
-  replace(edit: RangeEdit, group: boolean): void;
+  replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
   replaceMany(edits: RangeEdit[]): void;
   closeGroup(): void;
   reveal(start: number, end: number): void;
@@ -86,7 +86,14 @@ type VisualHistoryEntry = {
   after: number;
   undone?: number;
   group?: boolean;
+  /** Changes to other files made with this edit: undone and redone with it. */
+  companions?: HistoryCompanion[];
 };
+/** A change outside the edited model (the manifest, as a draft) that belongs to an edit's undo step. */
+export interface HistoryCompanion {
+  undo(): void;
+  redo(): void;
+}
 const mounted = new Map<string, MountedEditor>();
 // The Save menus of the mounted editors, for a draft written outside them.
 const publishers = new Set<() => void>();
@@ -105,11 +112,13 @@ const historyFor = (session: string) => {
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
   return history;
 };
-function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false) {
+function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false, companion?: HistoryCompanion) {
   const history = historyFor(session);
   const last = history.undo.at(-1);
-  if (group && !isAction(last) && last?.group && last.model === model && last.path === path) last.after = model.getAlternativeVersionId();
-  else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group });
+  if (group && !isAction(last) && last?.group && last.model === model && last.path === path) {
+    last.after = model.getAlternativeVersionId();
+    if (companion) (last.companions ??= []).push(companion);
+  } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined });
   history.redo.length = 0;
   for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
 }
@@ -210,6 +219,8 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
     finally { routedModelChanges.delete(entry.model); }
     if (direction === "undo") entry.undone = entry.model.getAlternativeVersionId();
     else entry.after = entry.model.getAlternativeVersionId();
+    const companions = entry.companions ?? [];
+    for (const companion of direction === "undo" ? [...companions].reverse() : companions) companion[direction]();
     target.push(entry);
     for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
     return true;
@@ -245,8 +256,9 @@ export function selectActiveRange(edit: Omit<RangeEdit, "text">) {
 }
 // Inline edits stream keystrokes; `group` keeps them in one undo step until
 // `closeActiveEditGroup` is called.
-export function replaceActiveRange(edit: RangeEdit, group = false) {
-  editorFor(edit.path).range.replace(edit, group);
+// A `companion` (another file changed with it) is undone and redone with the edit.
+export function replaceActiveRange(edit: RangeEdit, group = false, companion?: HistoryCompanion) {
+  editorFor(edit.path).range.replace(edit, group, companion);
 }
 export function replaceActiveRanges(edits: RangeEdit[]) {
   if (!edits.length) return;
@@ -507,7 +519,7 @@ export function mountCodeEditor(
       view?.setSelection(monaco.Range.fromPositions(target.getEndPosition(), target.getEndPosition()));
       view?.revealRangeInCenterIfOutsideViewport(target);
     },
-    replace(edit: RangeEdit, group: boolean) {
+    replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion) {
       const target = rangeOf(edit);
       if (edit.text === edit.expected) return;
       if (!group) current.model.pushStackElement();
@@ -515,7 +527,7 @@ export function mountCodeEditor(
       try { current.model.pushEditOperations([], [{ range: target, text: edit.text }], () => null); }
       finally { routedModelChanges.delete(current.model); }
       if (!group) current.model.pushStackElement();
-      recordVisualEdit(session, file.path, current.model, group);
+      recordVisualEdit(session, file.path, current.model, group, companion);
       view?.setSelection(
         monaco.Range.fromPositions(
           current.model.getPositionAt(edit.start),

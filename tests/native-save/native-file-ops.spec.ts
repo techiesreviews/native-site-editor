@@ -234,7 +234,7 @@ test("dragging a file onto a folder moves it there; a folder cannot go inside it
   expect(await draft(page, "src/styles/note.html")).toBeUndefined();
 });
 
-test("renaming a page re-keys its title to the new URL and keeps it open there; Undo takes it back", async ({ page, baseURL }) => {
+test("renaming a page re-keys its title to the new URL, updates its links and keeps it open there; Undo takes it back", async ({ page, baseURL }) => {
   await open(page, baseURL, 530, "src/pages/work/fern-and-kettle.html");
   await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
   await expand(page, "src/pages/work");
@@ -244,9 +244,11 @@ test("renaming a page re-keys its title to the new URL and keeps it open there; 
   await page.keyboard.press("Enter");
   // The page's URL changes, and another page links to it: that is said first.
   const dialog = page.getByRole("dialog", { name: "Rename src/pages/work/fern-and-kettle.html to src/pages/work/fern.html?" });
-  await expect(dialog).toContainText("Its URL changes. 1 page links to #/work/fern-and-kettle/; those links are not updated.");
+  await expect(dialog).toContainText("Its URL changes from /work/fern-and-kettle/ to /work/fern/.");
+  await expect(dialog).toContainText("Updates 1 link in 1 file.");
   await dialog.getByRole("button", { name: "Rename" }).click();
-  await expect(status(page)).toHaveText("Renamed src/pages/work/fern-and-kettle.html to src/pages/work/fern.html.");
+  await expect(status(page)).toHaveText("Renamed src/pages/work/fern-and-kettle.html to src/pages/work/fern.html — 1 link updated in 1 file; /work/fern-and-kettle/ redirects there.");
+  expect((await draft(page, "src/pages/work/index.html")).content).toContain('href="#/work/fern/"');
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/fern.html");
   await expect(page.locator("#current-page")).toHaveText("Fern & Kettle");
   await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
@@ -263,10 +265,12 @@ test("renaming a page re-keys its title to the new URL and keeps it open there; 
   expect(await draft(page, manifestPath)).toBeUndefined();
   expect(await draft(page, "src/pages/work/fern.html")).toBeUndefined();
   expect(await draft(page, "src/pages/work/fern-and-kettle.html")).toBeUndefined();
+  expect(await draft(page, "src/pages/work/index.html")).toBeUndefined();
+  expect(await draft(page, "src/public/_redirects")).toBeUndefined();
   await expect(page.getByRole("group", { name: "Page" }).getByLabel("Title")).toHaveValue("Fern & Kettle");
 });
 
-test("deleting a component takes it out of native.json; renaming its folder names the new path; home and native.json are kept", async ({ page, baseURL }) => {
+test("deleting a component takes it out of native.json; renaming its folder names the new path; home is kept and native.json asks", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
   await expand(page, "src/components");
   await row(page, "card-note").click({ button: "right" });
@@ -284,7 +288,7 @@ test("deleting a component takes it out of native.json; renaming its folder name
   await expect(status(page)).toHaveText("Renamed the folder src/components/site-button to src/components/buttons.");
   expect(JSON.parse((await draft(page, manifestPath)).content).components["site-button"]).toBe("src/components/buttons/site-button.html");
 
-  // The home page and the manifest cannot be deleted.
+  // The home page cannot be deleted; the manifest can (the home page keeps the site native), after asking.
   await expand(page, "src/pages");
   await row(page, "index.html").focus();
   await page.keyboard.press("Delete");
@@ -292,7 +296,9 @@ test("deleting a component takes it out of native.json; renaming its folder name
   await expand(page, ".astro-editor");
   await row(page, "native.json").focus();
   await page.keyboard.press("Delete");
-  await expect(page.locator("#notice")).toHaveText(".astro-editor/native.json cannot be deleted: it defines the site.");
+  const deleteManifest = page.getByRole("dialog", { name: "Delete .astro-editor/native.json?" });
+  await expect(deleteManifest).toContainText("The site is then read from its files alone");
+  await deleteManifest.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // Saved together: the deletions, the rename and the manifest in one commit.
@@ -310,7 +316,7 @@ test("deleting a component takes it out of native.json; renaming its folder name
 test("the Pages tab renames a title in place, duplicates a page, and deletes a page with its subpages", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
-  // Rename: the manifest's title, typed in the row.
+  // Rename: the title, typed in the row, goes into the page's comment and out of the manifest.
   await item(page, "Fern & Kettle").focus();
   await page.keyboard.press("F2");
   const title = explorer(page).getByRole("textbox", { name: "Title of Fern & Kettle" });
@@ -319,7 +325,8 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await page.keyboard.press("Enter");
   await expect(item(page, "Fern & Kettle café")).toBeFocused();
   await expect(status(page)).toHaveText("Renamed Fern & Kettle to Fern & Kettle café");
-  expect(JSON.parse((await draft(page, manifestPath)).content).routes["/work/fern-and-kettle/"]).toEqual({ title: "Fern & Kettle café" });
+  expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({});
+  expect((await draft(page, "src/pages/work/fern-and-kettle.html")).content).toMatch(/^<!--\ntitle: Fern & Kettle café\n-->\n/);
 
   // Duplicate, from the row's menu: a titled copy beside it.
   await page.keyboard.press("Shift+F10");
@@ -339,7 +346,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await deletePage.getByRole("button", { name: "Delete" }).click();
   await expect(item(page, "Fern & Kettle café (copy)")).toHaveCount(0);
   expect(await draft(page, "src/pages/work/fern-and-kettle-copy.html")).toBeUndefined();
-  expect(Object.keys(JSON.parse((await draft(page, manifestPath)).content).routes)).toEqual(["/work/fern-and-kettle/"]);
+  expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({});
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/index.html");
 
   // Home has no Delete.

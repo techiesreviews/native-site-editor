@@ -66,15 +66,15 @@ test("a site with no manifest previews its components and styles by convention",
   await expect(frame(page).locator("site-header .brand")).toHaveText("Conventions");
 });
 
-test("the Page block shows the page comment's title and description, read-only", async ({ page, baseURL }) => {
+test("the Page block shows the page comment's title and description, editable", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const title = block(page).getByLabel("Title");
   const description = block(page).getByLabel("Description");
   await expect(title).toHaveValue("Built by convention");
   await expect(description).toHaveValue("A site with no native.json: its pages, components and styles are found where they are.");
-  await expect(title).not.toBeEditable();
-  await expect(description).not.toBeEditable();
-  await expect(block(page).locator(".page-structure__meta-notice")).toHaveText("From the page's leading <!-- title: … --> comment; edit it in the page source.");
+  await expect(title).toBeEditable();
+  await expect(description).toBeEditable();
+  await expect(block(page).locator(".page-structure__meta-notice")).toBeHidden();
 
   // Selecting a preview element still opens the page source at it.
   await frame(page).locator("h1").click();
@@ -109,7 +109,7 @@ test("the Pages tab labels pages by their comment titles, and a new page needs n
   await expect(frame(page).locator("h1")).toHaveText("Second note");
   // It is built from the home page, without the home page's comment, and has its own.
   await expect(block(page).getByLabel("Title")).toHaveValue("Second note");
-  await expect(page.locator("#content .view-lines")).toContainText("<!-- title: Second note -->");
+  await expect(page.locator("#content .view-lines")).toContainText("title: Second note");
   const drafts = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes(".astro-editor/native.json")).length);
   expect(drafts).toBe(0);
   await openPages(page);
@@ -171,25 +171,16 @@ test("with no manifest, moved, renamed and deleted files are found where they ar
   expect(await manifestDrafts(page)).toBe(0);
 });
 
-test("with no manifest, the Pages tab's Rename is disabled with why, and Duplicate titles the copy in its comment", async ({ page, baseURL }) => {
+test("with no manifest, the Pages tab's Rename is enabled, and Duplicate titles the copy in its comment", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openPages(page);
   const note = item(page, "The first note");
   await note.focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for The first note" });
-  const rename = menu.getByRole("menuitem", { name: /^Rename/ });
-  await expect(rename).toHaveAttribute("aria-disabled", "true");
-  await expect(rename).toContainText("edit it in the page source");
-  await rename.focus();
-  await page.keyboard.press("Enter");
-  await expect(menu).toBeVisible();
-  await expect(explorer(page).getByRole("textbox", { name: "Title of The first note" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: /^Rename/ })).not.toHaveAttribute("aria-disabled", "true");
   await page.keyboard.press("Escape");
   await expect(note).toBeFocused();
-  await page.keyboard.press("F2");
-  await expect(page.locator("#status")).toHaveText("This site has no native.json: a page's title is its leading <!-- title: … --> comment; edit it in the page source.");
-  await expect(explorer(page).getByRole("textbox", { name: "Title of The first note" })).toHaveCount(0);
 
   // Duplicate: the copy's leading comment carries its title.
   await page.keyboard.press("Shift+F10");

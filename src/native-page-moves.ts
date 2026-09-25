@@ -214,7 +214,7 @@ export interface LinkRewrite {
  * parts match (`/about-us/` is not under `/about/`); only the path in each
  * `href` changes, so the rest of the markup stays as written.
  */
-export function rewriteRouteLinks(source: string, from: string, to: string): LinkRewrite {
+export function rewriteRouteLinks(source: string, from: string, to: string, subtree = true): LinkRewrite {
   const edits: LinkRewrite["edits"] = [];
   if (from === "/" || from === to) return { text: source, count: 0, edits };
   const bare = from.slice(0, -1);
@@ -232,7 +232,7 @@ export function rewriteRouteLinks(source: string, from: string, to: string): Lin
     const path = trimmed.slice(offset).split(/[?#\s]/)[0];
     let next: string | undefined;
     if (path === bare) next = to.slice(0, -1);
-    else if (path.startsWith(from)) next = `${to}${path.slice(from.length)}`;
+    else if (path === from || (subtree && path.startsWith(from))) next = `${to}${path.slice(from.length)}`;
     if (next === undefined) continue;
     const start = valueStart + lead + offset;
     edits.push({ start, end: start + path.length, text: next });
@@ -251,9 +251,10 @@ export const NATIVE_REDIRECTS_PATH = "src/public/_redirects";
  * no chains or loops: a line whose destination was under `from` now points
  * under `to` (dropped when it would point at itself), and a line whose
  * source is one of the new URLs, or one of the old URLs about to be
- * written again, goes. Comments and other lines stay as written.
+ * written again, goes. Comments and other lines stay as written. With
+ * `subtree` false only the page at `from` moved, not the pages under it.
  */
-export function editNativeRedirects(text: string | undefined, from: string, to: string, redirect: string[]): string {
+export function editNativeRedirects(text: string | undefined, from: string, to: string, redirect: string[], subtree = true): string {
   const newline = text?.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
   if (lines.length && lines[lines.length - 1] === "") lines.pop();
@@ -261,7 +262,7 @@ export function editNativeRedirects(text: string | undefined, from: string, to: 
     const bare = from.slice(0, -1);
     const [route, rest] = splitPath(path);
     if (route === bare) return `${to.slice(0, -1)}${rest}`;
-    if (route.startsWith(from)) return `${to}${route.slice(from.length)}${rest}`;
+    if (route === from || (subtree && route.startsWith(from))) return `${to}${route.slice(from.length)}${rest}`;
     return undefined;
   };
   const writing = new Set(redirect);
@@ -272,7 +273,7 @@ export function editNativeRedirects(text: string | undefined, from: string, to: 
     const [source, destination] = tokens;
     const sourceRoute = splitPath(source)[0];
     // The new URLs are pages now: a redirect away from one would hide it.
-    if (isRouteWithin(sourceRoute, to) || sourceRoute === to.slice(0, -1)) continue;
+    if ((subtree ? isRouteWithin(sourceRoute, to) : sourceRoute === to) || sourceRoute === to.slice(0, -1)) continue;
     if (writing.has(source) || writing.has(sourceRoute)) continue;
     const moved = move(destination);
     if (moved === undefined) { out.push(line); continue; }
@@ -290,4 +291,33 @@ export function editNativeRedirects(text: string | undefined, from: string, to: 
 function splitPath(value: string): [string, string] {
   const at = value.search(/[?#]/);
   return at < 0 ? [value, ""] : [value.slice(0, at), value.slice(at)];
+}
+
+/** A page URL that changes: with `subtree`, every page under it moves along to the same place under `to`. */
+export interface RouteChange {
+  from: string;
+  to: string;
+  subtree: boolean;
+}
+
+/**
+ * The URL changes of pages moved as files (the Files tab), grouped: a page
+ * whose every subpage (every route under it in `before`) moved to the same
+ * place under its new URL is one change of the whole subtree, as Change URL
+ * makes; any other page changes only its own URL, so links to pages that
+ * stayed are left alone.
+ */
+export function groupRouteChanges(before: Iterable<string>, changes: [string, string][]): RouteChange[] {
+  const routes = [...before];
+  const moved = new Map(changes);
+  const covered = new Set<string>();
+  const out: RouteChange[] = [];
+  for (const [from, to] of [...changes].sort(([a], [b]) => a.length - b.length || a.localeCompare(b))) {
+    if (covered.has(from)) continue;
+    const under = routes.filter((route) => route !== from && isRouteWithin(route, from));
+    const subtree = under.every((route) => moved.get(route) === `${to}${route.slice(from.length)}`);
+    if (subtree) for (const route of under) covered.add(route);
+    out.push({ from, to, subtree });
+  }
+  return out;
 }

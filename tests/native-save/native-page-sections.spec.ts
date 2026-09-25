@@ -66,8 +66,8 @@ test("a new page starts with a section and its heading, and a section component 
   await expect(page.locator("#explorer-toggle")).toHaveAttribute("title", "Pages & files — src/pages/services.html");
   await expect(frame(page).locator("main > section.hero > h1")).toHaveText("Services");
 
-  // The home page's shell, with <main> holding a copy of its first section's start tag.
-  const shell = (inner: string) => `${starterHome.slice(0, starterHome.indexOf("<main"))}<main class="page" data-key="main">\n${inner}${starterHome.slice(starterHome.indexOf("</main>"))}`;
+  // Its title comment, then the home page's shell, with <main> holding a copy of its first section's start tag.
+  const shell = (inner: string) => `<!--\ntitle: Services\n-->\n${starterHome.slice(0, starterHome.indexOf("<main"))}<main class="page" data-key="main">\n${inner}${starterHome.slice(starterHome.indexOf("</main>"))}`;
   const section = `  <section class="hero" data-key="hero">\n    <h1 data-key="title">Services</h1>\n  </section>\n`;
   await expect.poll(() => editorText(page)).toBe(shell(section));
 

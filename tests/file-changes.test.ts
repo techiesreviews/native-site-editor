@@ -108,6 +108,10 @@ test("the home page and native.json cannot be deleted, renamed or moved", () => 
   assert.match(protectedPathProblem(["a", ".astro-editor/native.json"], "move", "src/pages/index.html", true)!, /native.json cannot be moved/);
   assert.equal(protectedPathProblem(["src/pages/about.html"], "rename", "src/pages/index.html", true), undefined);
   assert.equal(protectedPathProblem([".astro-editor/native.json"], "delete", undefined, false), undefined);
+  // The manifest can be deleted when src/pages/index.html keeps the site native; never renamed or moved.
+  assert.equal(protectedPathProblem([".astro-editor/native.json"], "delete", "src/pages/index.html", true, true), undefined);
+  assert.match(protectedPathProblem([".astro-editor/native.json"], "delete", "src/pages/index.html", true, false)!, /cannot be deleted: without src\/pages\/index.html/);
+  assert.match(protectedPathProblem([".astro-editor/native.json"], "rename", "src/pages/index.html", true, true)!, /cannot be renamed/);
 });
 
 test("links to a page are counted per file, a lower bound when a source is not loaded", () => {

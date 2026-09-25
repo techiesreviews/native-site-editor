@@ -52,7 +52,7 @@ export function createPagesTree(options: {
   create: (request: NativeNewRequest) => Promise<string | undefined>;
   announce: (text: string) => void;
   /** Sets a page's title ("" removes it); resolves to an error message, or nothing when done. */
-  retitle?: (file: string, title: string) => string | undefined;
+  retitle?: (file: string, title: string) => string | undefined | Promise<string | undefined>;
   /** Why titles cannot be edited here now, when they cannot: Rename is then disabled with that hint. */
   retitleBlocked?: () => string | undefined;
   /** Makes a copy of a page. */
@@ -342,10 +342,14 @@ export function createPagesTree(options: {
       input.remove();
       label.hidden = false;
       if (commit && value !== before) {
-        const error = options.retitle!(file, value);
-        if (error) options.announce(error);
-        else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
-      } else if (!commit) options.announce(`Cancelled renaming ${before}`);
+        void Promise.resolve(options.retitle!(file, value)).then((error) => {
+          if (error) options.announce(error);
+          else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
+          focusRow(key);
+        });
+        return;
+      }
+      if (!commit) options.announce(`Cancelled renaming ${before}`);
       focusRow(key);
     };
     input.addEventListener("keydown", (event) => {

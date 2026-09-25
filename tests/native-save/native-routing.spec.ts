@@ -6,7 +6,6 @@ import { expect, test, type Page } from "@playwright/test";
 // and "/work/fern-and-kettle/" has a metadata-only entry (a title, no file);
 // src/pages/work/notes.html is a heading-only page, with no section.
 const indexPath = "src/pages/index.html";
-const manifestPath = ".astro-editor/native.json";
 const hash = (file: string) => `#repo=530&branch=main&file=${encodeURIComponent(file)}`;
 const pageErrors: string[] = [];
 
@@ -35,7 +34,8 @@ async function open(page: Page, baseURL: string | undefined, file = indexPath) {
 test("nested pages are routed by their folders and #/ links follow to them", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await expect(heading(page)).toHaveText("Routed by folders");
-  await expect(page.locator(".native-preview-warning")).toBeHidden();
+  // Only the notice that the manifest still titles a page.
+  await expect(page.locator(".native-preview-warning")).toHaveText(/^native\.json gives 1 page its title or description\./);
 
   // src/pages/work/index.html is /work/.
   await follow(page, "Our work");
@@ -61,24 +61,20 @@ test("nested pages are routed by their folders and #/ links follow to them", asy
   await expect(heading(page)).toHaveText("Routed by folders");
 });
 
-test("opening a nested page file shows its route, and titling it adds a metadata-only entry", async ({ page, baseURL }) => {
+test("opening a nested page file shows its route, and titling it writes the page's comment", async ({ page, baseURL }) => {
   await open(page, baseURL, "src/pages/work/index.html");
   await expect(heading(page)).toHaveText("Work");
   await title(page).fill("Our work");
   await expect(page.locator("#status")).toHaveText("Title updated");
+  await expect(page.locator("#content .view-lines")).toContainText("title: Our work");
 
+  // The manifest is untouched: the only change is the page.
   await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
-  await page.locator("#publish-files").getByRole("button", { name: `Show changes in ${manifestPath}` }).click();
-  const dialog = page.getByRole("dialog", { name: manifestPath });
-  await expect(dialog.locator(".publish-diff__code.is-del")).toContainText(['    "/work/fern-and-kettle/": { "title": "Fern & Kettle" }']);
-  await expect(dialog.locator(".publish-diff__code.is-add")).toContainText([
-    '    "/work/fern-and-kettle/": { "title": "Fern & Kettle" },',
-    '    "/work/": { "title": "Our work" }',
-  ]);
-  await page.keyboard.press("Escape");
+  await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(1);
+  await expect(page.locator("#publish-files .publish-menu__file")).toContainText("src/pages/work/index.html");
   await page.keyboard.press("Escape");
 
-  // Emptying the title removes the entry again: nothing left to save.
+  // Emptying the title removes the comment again: nothing left to save.
   await title(page).fill("");
   await expect(page.locator("#status")).toHaveText("Title removed");
   await expect(page.getByRole("button", { name: "Save to GitHub", exact: true })).toBeDisabled();
@@ -114,7 +110,7 @@ test("two files on one route show a warning above the page, which still renders"
     await route.fulfill({ response, json: snapshot });
   });
   await open(page, baseURL);
-  await expect(page.locator(".native-preview-warning")).toHaveText(
+  await expect(page.locator(".native-preview-warning")).toContainText(
     'src/pages/work.html and src/pages/work/index.html both give the route /work/; src/pages/work/index.html is used. Rename one, or map "/work/" to a file in native.json.',
   );
   await expect(page.locator(".native-preview-warning")).toHaveAttribute("role", "status");

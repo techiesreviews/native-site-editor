@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// The Page block in the structure sidebar: the manifest's title and
-// description for the route on show, applied as typed into a draft of
-// `.astro-editor/native.json` that Save to GitHub lists and commits.
+// The Page block in the structure sidebar: the title and description of the
+// route on show, applied as typed into the page's leading comment, which
+// Save to GitHub lists and commits with the page. A title the manifest still
+// gives the route wins, shows in the field, and goes from the manifest when
+// the field is edited.
 const indexPath = "src/pages/index.html";
 const manifestPath = ".astro-editor/native.json";
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
@@ -22,21 +24,11 @@ const description = (page: Page) => block(page).getByLabel("Description");
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
 const changesDialog = (page: Page) => page.getByRole("dialog", { name: manifestPath });
-const diffAdded = (page: Page) => changesDialog(page).locator(".publish-diff__code.is-add");
-const diffRemoved = (page: Page) => changesDialog(page).locator(".publish-diff__code.is-del");
+const code = (page: Page) => page.locator("#content .view-lines");
 
 async function openSaveMenu(page: Page) {
   await saveTrigger(page).click();
   await expect(page.locator("#publish-files")).toBeVisible();
-}
-/** Opens the manifest's comparison dialog from the open Save panel. */
-async function showManifestChanges(page: Page) {
-  await page.locator("#publish-files").getByRole("button", { name: `Show changes in ${manifestPath}` }).click();
-  await expect(changesDialog(page)).toBeVisible();
-}
-async function closeManifestChanges(page: Page) {
-  await page.keyboard.press("Escape");
-  await expect(changesDialog(page)).toBeHidden();
 }
 async function closeSaveMenu(page: Page) {
   if (await changesDialog(page).isVisible()) {
@@ -72,33 +64,27 @@ test("the fields are empty for a bare route and absent for a component alone", a
   await expect(block(page)).toBeHidden();
 });
 
-test("typing a title writes the object form into a manifest draft; emptying both fields restores the bare route", async ({ page }) => {
+test("typing a title writes the page's comment; emptying both fields removes it", async ({ page }) => {
   await title(page).fill("Home");
   await expect(page.locator("#status")).toHaveText("Title updated");
+  await expect(code(page)).toContainText("title: Home");
   await openSaveMenu(page);
-  await expect(page.locator("#publish-files")).toContainText(manifestPath);
-  await expect(page.locator("#publish-files .publish-menu__changes")).toHaveText("1 added, 1 removed");
-  await showManifestChanges(page);
-  await expect(diffRemoved(page)).toContainText('"/": "src/pages/index.html",');
-  await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
+  await expect(page.locator("#publish-files")).toContainText(indexPath);
+  await expect(page.locator("#publish-files")).not.toContainText(manifestPath);
+  await expect(page.locator("#publish-files .publish-menu__changes")).toHaveText("3 added, 0 removed");
   await closeSaveMenu(page);
 
   await description(page).fill("The home page");
   await expect(page.locator("#status")).toHaveText("Description updated");
-  await openSaveMenu(page);
-  await showManifestChanges(page);
-  await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home", "description": "The home page" },');
-  await closeSaveMenu(page);
+  await expect(code(page)).toContainText("description: The home page");
+  // The comment is not part of the page on show.
+  await expect(page.frameLocator(".native-preview-frame").locator("body")).not.toContainText("The home page");
 
-  // Emptying one field removes it; emptying the other leaves the bare route, so no draft.
   await title(page).fill("");
   await expect(page.locator("#status")).toHaveText("Title removed");
-  await openSaveMenu(page);
-  await showManifestChanges(page);
-  await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "description": "The home page" },');
-  await closeSaveMenu(page);
   await description(page).fill("");
   await expect(page.locator("#status")).toHaveText("Description removed");
+  await expect(code(page)).not.toContainText("<!--");
   await saveTrigger(page).hover();
   await expect(saveTrigger(page)).toBeDisabled();
 });
@@ -121,13 +107,10 @@ test("the fields follow the preview route and keep what was typed on each page",
   await expect(title(page)).toHaveValue("About");
   await expect(description(page)).toHaveValue("Who made this");
   await openSaveMenu(page);
-  await showManifestChanges(page);
-  await expect(diffAdded(page)).toHaveCount(2);
-  await expect(diffAdded(page).nth(0)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
-  await expect(diffAdded(page).nth(1)).toContainText('"/about/": { "file": "src/pages/about.html", "title": "About", "description": "Who made this" }');
+  await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(2);
 });
 
-test("a typed title survives a reload, and saving the manifest commits it", async ({ page }) => {
+test("a typed title survives a reload, and saving commits it in the page", async ({ page }) => {
   await title(page).fill("Home");
   await expect(page.locator("#status")).toHaveText("Title updated");
   await page.reload();
@@ -137,7 +120,7 @@ test("a typed title survives a reload, and saving the manifest commits it", asyn
   await openSaveMenu(page);
   const files = page.locator("#publish-files .publish-menu__file");
   await expect(files).toHaveCount(1);
-  await expect(files).toContainText(manifestPath);
+  await expect(files).toContainText(indexPath);
   await files.locator("input").check();
   await page.getByRole("button", { name: "Save selected files", exact: true }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
@@ -150,52 +133,38 @@ test("a typed title survives a reload, and saving the manifest commits it", asyn
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await expect(title(page)).toHaveValue("Home");
   await expect(saveTrigger(page)).toBeDisabled();
-  // And a change on top of the committed text is a fresh draft against it.
-  await description(page).fill("The home page");
-  await openSaveMenu(page);
-  await showManifestChanges(page);
-  await expect(diffRemoved(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
-  await expect(diffAdded(page)).toContainText('"title": "Home", "description": "The home page" },');
 });
 
-test("a manifest draft is not rebased onto a manifest that changed on GitHub: the fields close, the save is refused, the editor shows the conflict", async ({ page, baseURL }) => {
-  await title(page).fill("Home");
-  await expect(page.locator("#status")).toHaveText("Title updated");
-
-  // A teammate gives About a title on the branch, so the draft's base is stale.
-  const changed = manifestSource.replace('"/about/": "src/pages/about.html"', '"/about/": { "file": "src/pages/about.html", "title": "About us" }');
-  expect(changed).not.toBe(manifestSource);
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: manifestPath, content: changed } });
-
+test("a manifest draft is not rebased onto a manifest that changed on GitHub: fields it titles close until the conflict is settled", async ({ page, baseURL }) => {
+  // The manifest titles the home page on GitHub.
+  const titled = manifestSource.replace('"/": "src/pages/index.html"', '"/": { "file": "src/pages/index.html", "title": "Home" }');
+  expect(titled).not.toBe(manifestSource);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: manifestPath, content: titled } });
   await page.reload();
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  // The fields show what GitHub has, closed, with the notice; the draft is not adopted.
+  await expect(title(page)).toHaveValue("Home");
+  // Editing it writes the comment and takes the title out of the manifest: a manifest draft.
+  await title(page).fill("Start");
+  await expect(page.locator("#status")).toHaveText("Title updated");
+
+  // A teammate gives About a title on the branch, so the manifest draft's base is stale.
+  const changed = titled.replace('"/about/": "src/pages/about.html"', '"/about/": { "file": "src/pages/about.html", "title": "About us" }');
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: manifestPath, content: changed } });
+  await page.reload();
+  await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  // GitHub's manifest titles both pages: their fields show that, closed, with the notice.
   const notice = block(page).getByRole("status");
   await expect(notice).toHaveText("The manifest changed on GitHub. Open .astro-editor/native.json to review.");
-  await expect(title(page)).toHaveValue("");
+  await expect(title(page)).toHaveValue("Home");
   await expect(title(page)).toBeDisabled();
-  await expect(description(page)).toBeDisabled();
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Heading About this project" })).toBeVisible();
   await expect(title(page)).toHaveValue("About us");
   await expect(title(page)).toBeDisabled();
 
-  // The draft is still there, against its old base: GitHub refuses it.
-  await openSaveMenu(page);
-  await expect(page.locator("#publish-files")).toContainText(manifestPath);
-  await showManifestChanges(page);
-  await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
-  await expect(diffAdded(page)).not.toContainText("About us");
-  await closeManifestChanges(page);
-  await page.locator("#publish-files .publish-menu__file input").check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
-  await expect(page.locator(".publish-menu__message")).toContainText(/GitHub changed these files|drafts are kept/i, { timeout: 30_000 });
-  await closeSaveMenu(page);
-
   // Opening the manifest shows the code editor's conflict bar; discarding the
   // draft settles it and the fields open again on GitHub's text.
   await page.locator("#explorer-toggle").click();
-  // The file tree is the explorer's Files tab; a native site opens on Pages.
   await page.getByRole("tab", { name: "Files" }).click();
   for (const part of [".astro-editor", "native.json"]) {
     const item = page.locator("#explorer").getByRole("button", { name: part, exact: true }).first();
@@ -204,22 +173,11 @@ test("a manifest draft is not rebased onto a manifest that changed on GitHub: th
   }
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", manifestPath);
   await expect(page.locator("#content .code-editor__conflict")).toBeVisible();
-  await expect(page.locator("#content .code-editor__conflict")).toContainText("GitHub changed since this draft started.");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.locator("#editor-toolbar-host").getByRole("button", { name: "Discard changes" }).click();
   await expect(page.locator("#content .code-editor__conflict")).toBeHidden();
   await expect(notice).toBeHidden();
   await expect(title(page)).toBeEnabled();
   await expect(title(page)).toHaveValue("About us");
-  await saveTrigger(page).hover();
-  await expect(saveTrigger(page)).toBeDisabled();
-  // A fresh field edit now starts a draft against the current blob, which saves.
-  await description(page).fill("Who made this");
-  await openSaveMenu(page);
-  await showManifestChanges(page);
-  await expect(diffAdded(page)).toContainText('"title": "About us", "description": "Who made this" }');
-  await closeManifestChanges(page);
-  await page.locator("#publish-files .publish-menu__file input").check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await expect(changesDialog(page)).toBeHidden();
 });

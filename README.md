@@ -1,4 +1,4 @@
-> Current architecture, audit and checkpoint: [docs/NATIVE-PROJECT.md](docs/NATIVE-PROJECT.md). The sections below record the project's origin as an Astro editor; the Astro build, preview and intelligence code has since been removed, and the editor now works only with native HTML/CSS sites described by `.astro-editor/native.json`.
+> Current architecture, audit and checkpoint: [docs/NATIVE-PROJECT.md](docs/NATIVE-PROJECT.md). The sections below record the project's origin as an Astro editor; the Astro build, preview and intelligence code has since been removed, and the editor now works only with native HTML/CSS sites: pages under `src/pages/`, components and styles by folder, page details in each page's leading comment, and an optional, legacy `.astro-editor/native.json`.
 
 # Native Site Editor
 

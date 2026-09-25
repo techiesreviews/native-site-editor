@@ -1,5 +1,6 @@
 // Minimal text edits to the manifest's route metadata.
 import { nativePageRoute } from "../shared/native-routes";
+import { nativePageWithDetails, resolveNativeProject } from "../shared/native-project";
 import type { NativeDroppedEntries } from "./drafts";
 //
 // A route in `.astro-editor/native.json` is either the bare page path
@@ -579,4 +580,113 @@ export function mappedNativeRoutes(text: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The routes whose manifest entry gives a title or a description (a non-empty string). */
+export function nativeManifestDetailRoutes(text: string | undefined): string[] {
+  try {
+    const routes = text === undefined ? undefined : JSON.parse(text)?.routes;
+    if (!routes || typeof routes !== "object" || Array.isArray(routes)) return [];
+    return Object.entries(routes as Record<string, unknown>)
+      .filter(([, value]) => value && typeof value === "object" && ["title", "description"].some((field) => {
+        const detail = (value as Record<string, unknown>)[field];
+        return typeof detail === "string" && detail.trim() !== "";
+      }))
+      .map(([route]) => route);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The manifest without `route`'s title and description (a metadata-only
+ * entry left empty goes; one mapping a file goes back to the bare path;
+ * `jsonLd` stays), as one edit of the whole text; `edit` null when it has
+ * neither.
+ */
+export function removeNativePageDetails(text: string, route: string, fields: NativePageMetaField[] = ["title", "description"]): NativePageMetaResult {
+  let next = text;
+  for (const field of fields) {
+    const result = editNativePageMeta(next, route, field, "");
+    if (!result.ok) return result;
+    next = result.text;
+  }
+  return finish(text, next === text ? null : { start: 0, end: text.length, text: next });
+}
+
+export interface NativeDetailsMigration {
+  /** The manifest with the moved titles and descriptions taken out. */
+  manifest: string;
+  /** Each page file given its details, and its text after. */
+  pages: Record<string, string>;
+  /** The routes whose details moved. */
+  moved: string[];
+  /** Routes with details that stay: no page gives them, or the page could not be read. */
+  skipped: string[];
+}
+
+/**
+ * Moves every route's title and description from the manifest into its
+ * page's leading comment: `routes` is the site's route → file (as resolved),
+ * `sources` the pages' texts. The manifest's value is the one that applied,
+ * so it replaces the comment's; an empty one is only removed.
+ */
+export function planNativeDetailsMigration(text: string, routes: Record<string, string>, sources: Record<string, string | undefined>): { ok: true; value: NativeDetailsMigration } | { ok: false; error: string } {
+  let entries: Record<string, unknown>;
+  try {
+    entries = JSON.parse(text)?.routes ?? {};
+  } catch {
+    return { ok: false, error: "native.json could not be read as JSON." };
+  }
+  const pages: Record<string, string> = {};
+  const moved: string[] = [];
+  const skipped: string[] = [];
+  let manifest = text;
+  for (const [route, entry] of Object.entries(entries)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const fields = (["title", "description"] as const).filter((field) => typeof (entry as Record<string, unknown>)[field] === "string");
+    if (!fields.length) continue;
+    const file = routes[route];
+    const source = file === undefined ? undefined : pages[file] ?? sources[file];
+    if (file === undefined || source === undefined) { skipped.push(route); continue; }
+    const details: Partial<Record<NativePageMetaField, string>> = {};
+    for (const field of fields) {
+      const value = ((entry as Record<string, string>)[field]).trim();
+      if (value) details[field] = value;
+    }
+    pages[file] = nativePageWithDetails(source, details);
+    const removed = removeNativePageDetails(manifest, route, [...fields]);
+    if (!removed.ok) return removed;
+    manifest = removed.text;
+    moved.push(route);
+  }
+  for (const [file, page] of Object.entries(pages)) if (page === sources[file]) delete pages[file];
+  return { ok: true, value: { manifest, pages, moved, skipped } };
+}
+
+/**
+ * Whether the manifest says nothing the conventions do not already give for
+ * the repository `paths`: the same routes, components and shared
+ * stylesheets as with no manifest, no page title, description or JSON-LD,
+ * and no other keys. Then `.astro-editor/native.json` can go.
+ */
+export function nativeManifestRedundant(text: string, paths: Iterable<string>): boolean {
+  const files = [...paths];
+  let declared: Record<string, unknown>;
+  try {
+    declared = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!declared || typeof declared !== "object" || Array.isArray(declared)) return false;
+  if (Object.keys(declared).some((key) => !["version", "routes", "components", "styles", "$schema"].includes(key))) return false;
+  const withManifest = resolveNativeProject(files, text);
+  const without = resolveNativeProject(files);
+  if (!withManifest.ok || !without.ok) return false;
+  const a = withManifest.manifest;
+  const b = without.manifest;
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+  const sorted = (record: Record<string, string>) => Object.fromEntries(Object.entries(record).sort(([x], [y]) => x.localeCompare(y)));
+  if (!same(sorted(a.routes), sorted(b.routes)) || !same(sorted(a.components), sorted(b.components)) || !same(a.styles, b.styles)) return false;
+  return Object.values(a.pages).every((meta) => !meta.title && !meta.description && meta.jsonLd === undefined);
 }

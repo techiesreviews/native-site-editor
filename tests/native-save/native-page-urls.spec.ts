@@ -338,6 +338,6 @@ test("with no manifest, Create page on a folder with no page titles the new page
   await expect(status(page)).toHaveText("Created the page Notes at /notes/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/notes/index.html");
   await expect(block(page).getByLabel("Title")).toHaveValue("Notes");
-  expect((await draft(page, "src/pages/notes/index.html")).content).toMatch(/^<!-- title: Notes -->\n<site-header/);
+  expect((await draft(page, "src/pages/notes/index.html")).content).toMatch(/^<!--\ntitle: Notes\n-->\n<site-header/);
   expect(await draft(page, manifestPath)).toBeUndefined();
 });

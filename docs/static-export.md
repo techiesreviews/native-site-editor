@@ -11,7 +11,7 @@ node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com
 
 ## A site with no manifest
 
-`.astro-editor/native.json` is optional. A repository with `src/pages/index.html` is a native site, in the editor and to the exporter, and everything the manifest would say is found by where the files are (`resolveNativeProject` in `shared/native-project.ts`, which the editor, the exporter and the agent context share):
+`.astro-editor/native.json` is optional, and legacy: a new site needs none, and the editor moves an existing one's page details into the pages and can then remove it (below). A repository with `src/pages/index.html` is a native site, in the editor and to the exporter, and everything the manifest would say is found by where the files are (`resolveNativeProject` in `shared/native-project.ts`, which the editor, the exporter and the agent context share):
 
 | What | By convention | What wins, when it is there |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com
 
 When `src/components/<name>.html` and `src/components/<name>/<name>.html` both exist, the folder's is used and the export prints a warning. `jsonLd` comes only from the manifest.
 
-A page's metadata comment is the first thing in the file:
+A page's title and description live in the page itself, in a metadata comment that is the first thing in the file, one `key: value` per line (other keys, such as `image`, may follow and are kept):
 
 ```html
 <!--
@@ -34,7 +34,9 @@ description: Who we are.
 <main>…</main>
 ```
 
-The export leaves the comment out of the page. The editor shows its title and description in the Page block and the Pages tab when the manifest has none for the route; in a site with no manifest the Page block's fields are read-only, and the comment is edited in the page source.
+This is the recommended home for page details. The export leaves the comment out of the page, and the preview never shows it. The editor's Page block (Title, Description) and the Pages tab's Rename write it: a minimal edit of the comment, made when the page has none (`<!--\ntitle: …\n-->`), a line removed when a field is emptied, and the comment removed when nothing is left. New pages, copies and subpages are titled there too. When the manifest still gives the route that field, it would win, so the same edit (one Undo step) takes it out of the manifest.
+
+A manifest whose `routes` give titles or descriptions shows a notice with **Move page details into the pages**: every route's title and description go into its page's comment and out of the manifest as one undoable change. When the manifest then says nothing the conventions do not already give (no page details or `jsonLd`, routes only where the files already put them, the conventional components and styles), the notice offers **Remove native.json**, a deletion saved like any other. The Files tab also deletes `native.json` when `src/pages/index.html` keeps the site native without it.
 
 ## Routes
 
@@ -81,14 +83,14 @@ Because the shared stylesheets become one file, a stylesheet other than the firs
 
 ## The document head
 
-- Title: the route's `title` in the manifest, else a leading `<!-- title: … -->` comment in the page, else the page's first `h1`, followed by ` · <site name>`. `og:title` is the same full title.
-- Description: the route's `description`, else the page comment, else the page's first `p`, else `site.json`'s `description`.
+- Title: the page's leading `<!-- title: … -->` comment (a manifest route's `title`, where a legacy manifest still has one, wins), else the page's first `h1`, followed by ` · <site name>`. `og:title` is the same full title.
+- Description: the page comment's `description` (a manifest route's wins), else the page's first `p`, else `site.json`'s `description`.
 - `lang` is `site.json`'s `locale` in BCP 47 form (`en_GB` → `en-GB`); `og:locale` keeps the Open Graph form.
 - JSON-LD: the home page gets a WebSite object and, with `organization` in `site.json`, an Organization (or the `type` given) linked as its publisher. A route may add its own with `jsonLd` in the manifest (below). JSON-LD is data, not script, so it runs under `script-src 'none'`.
 
-## `.astro-editor/site.json`
+## `src/site.json`
 
-The site settings are read from `.astro-editor/site.json`, else from `src/site.json` (`.astro-editor/site.json` wins when both exist, so older sites keep working). Every field is optional; the editor ignores the file.
+The site settings are read from `src/site.json`; an older site's `.astro-editor/site.json` is still read, and wins when both exist. Every field is optional; the editor ignores the file.
 
 ```json
 {
@@ -121,9 +123,9 @@ The site settings are read from `.astro-editor/site.json`, else from `src/site.j
 - `contentSignals` becomes a `Content-Signal:` line in `robots.txt` (Cloudflare's [Content Signals](https://contentsignals.org/)); each value is `"yes"` or `"no"`.
 - `organization`: `type` (default `Organization`; `@type` also works), `name` (default: the site name), `email`, `telephone`, `address` (a string or PostalAddress fields), `areaServed` (a string or strings), `foundingDate`, `sameAs` (URLs), `logo` (a `src/images/` file or a URL).
 
-## Per-route fields in the manifest
+## Per-route fields in the manifest (legacy)
 
-`routes` in `.astro-editor/native.json` is optional. Keyed by route, an entry gives the page's title, description and JSON-LD:
+`routes` in `.astro-editor/native.json` is optional. Keyed by route, an entry gives the page's title, description and JSON-LD (titles and descriptions belong in the page comment now; `jsonLd` is only here):
 
 ```json
 "routes": {
@@ -141,10 +143,12 @@ An entry may also map its route to a file, `"/about/": { "file": "src/pages/abou
 
 ## Not-found page
 
-Name a page `src/pages/404.html`, and give it a title in the manifest if you like:
+Name a page `src/pages/404.html`, and give it a title in its comment if you like:
 
-```json
-"/404/": { "title": "Page not found" }
+```html
+<!--
+title: Page not found
+-->
 ```
 
 The editor previews it like any other route. The export writes it to `404.html` at the site root instead of `404/index.html`, gives it `<meta name="robots" content="noindex">` and no canonical link, and leaves it out of `sitemap.xml`. Cloudflare serves it, with status 404, for every unknown path when `wrangler.jsonc` has `"assets": { "not_found_handling": "404-page" }`. Links in the page are root-relative, so they work at any depth.
@@ -185,7 +189,7 @@ HSTS (`Strict-Transport-Security`) is not in `_headers`. Turn it on for the cust
 
 `src/public/_redirects` is copied to the site root like any file in `src/public/`; the export writes no `_redirects` of its own, so nothing replaces it. Cloudflare's static assets read it (Workers and Pages alike): one rule per line, `source destination [status]`, `#` for comments, the first rule for a source wins, and a redirect is followed even where a page exists at its source.
 
-The editor writes it when a page's URL changes (Change URL, Move to… or a drag in the Pages tab) with **Keep the old URL working** checked: one static line per moved page that is on GitHub, the page first, then its subpages:
+The editor writes it when a page's URL changes (Change URL, Move to… or a drag in the Pages tab, or renaming or moving its file in the Files tab) with **Keep the old URL working** checked: one static line per moved page that is on GitHub, the page first, then its subpages:
 
 ```
 /about/ /company/ 301

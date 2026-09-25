@@ -306,25 +306,23 @@ test("a page, a subpage under it (the page becomes a folder) and another are mad
   await item(page, "My first video").locator(".pages-label").click();
   await expect(frame(page).locator("h1")).toHaveText("My first video");
 
-  // Saving commits the three new files and the manifest's titles together.
+  // Saving commits the three new files, each titled in its own comment; the manifest is untouched.
+  expect(await manifestDrafts(page)).toBe(0);
   await saveAll(page);
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect(await branchFile(page, routingRepo, "src/pages/videos/index.html")).toBe('<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">Videos</h1>\n  </section>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/index.html")).toBe('<!--\ntitle: Videos\n-->\n<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">Videos</h1>\n  </section>\n</main>\n');
   expect(await branchFile(page, routingRepo, "src/pages/videos.html")).toBeUndefined();
-  expect(await branchFile(page, routingRepo, "src/pages/videos/my-first-video.html")).toBe('<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">My first video</h1>\n  </section>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/my-first-video.html")).toBe('<!--\ntitle: My first video\n-->\n<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">My first video</h1>\n  </section>\n</main>\n');
   expect(await branchFile(page, routingRepo, "src/pages/videos/tutorials.html")).toContain("<h1 data-key=\"title\">Tutorials</h1>");
   expect(JSON.parse((await branchFile(page, routingRepo, manifestPath))!).routes).toEqual({
     "/work/fern-and-kettle/": { title: "Fern & Kettle" },
-    "/videos/": { title: "Videos" },
-    "/videos/my-first-video/": { title: "My first video" },
-    "/videos/tutorials/": { title: "Tutorials" },
   });
   await page.keyboard.press("Escape");
   await openPages(page);
   await expect(item(page, "Videos").locator(".file-new")).toHaveCount(0);
 });
 
-test("undo or discard of a new page takes its manifest entry with it; undoing a subpage makes its parent a file again; discarding the manifest takes the pages it titles", async ({ page, baseURL }) => {
+test("undo or discard of a new page takes it back, with no manifest entry; undoing a subpage makes its parent a file again", async ({ page, baseURL }) => {
   page.on("dialog", (dialog) => void dialog.accept());
   await open(page, baseURL, 530);
   const create = async (text: string) => {
@@ -334,12 +332,13 @@ test("undo or discard of a new page takes its manifest entry with it; undoing a 
     await page.keyboard.press("Enter");
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", `src/pages/${text.toLowerCase().replace(/ /g, "-")}.html`);
     await expect(frame(page).locator("h1")).toHaveText(text);
-    expect(await manifestDrafts(page)).toBe(1);
+    // Titled in its comment, never in the manifest.
+    expect(await manifestDrafts(page)).toBe(0);
   };
   const gone = async (text: string) => {
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
     await expect(frame(page).locator("h1")).toHaveText("Routed by folders");
-    await expect(page.locator(".native-preview-warning")).toBeHidden();
+    await expect(page.locator(".native-preview-warning")).not.toContainText("no page gives");
     expect(await manifestDrafts(page)).toBe(0);
     await openPages(page);
     await expect(item(page, text)).toHaveCount(0);
@@ -370,29 +369,12 @@ test("undo or discard of a new page takes its manifest entry with it; undoing a 
   await expect(page.locator("#status")).toHaveText("Undid creating the page Intro.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/videos.html");
   await expect(frame(page).locator("h1")).toHaveText("Videos");
-  expect(Object.keys(JSON.parse((await page.evaluate(() => {
-    const key = Object.keys(localStorage).find((key) => key.includes(".astro-editor/native.json"))!;
-    return JSON.parse(localStorage.getItem(key)!).content as string;
-  }))).routes)).toEqual(["/work/fern-and-kettle/", "/videos/"]);
   await openPages(page);
   await expect(item(page, "Intro")).toHaveCount(0);
   await expect(item(page, "Videos")).not.toHaveAttribute("aria-expanded");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Discard changes" }).click();
   await gone("Videos");
-
-  // Discarding the manifest's draft discards the new page it titles.
-  await create("Other page");
-  await openFiles(page);
-  await expand(page, ".astro-editor");
-  await row(page, "native.json").click();
-  await expect(page.locator("#content .view-lines")).toContainText('"/other-page/": { "title": "Other page" }');
-  await page.getByRole("button", { name: "Discard changes" }).click();
-  await expect(page.locator("#status")).toHaveText("Discarded native.json's changes and the new page src/pages/other-page.html.");
-  await expect(page.locator(".native-preview-warning")).toBeHidden();
-  expect(await manifestDrafts(page)).toBe(0);
-  await openPages(page);
-  await expect(item(page, "Other page")).toHaveCount(0);
 });
 
 test("metadata for a route no page gives offers Remove entry and Create the page", async ({ page, baseURL }) => {
@@ -414,7 +396,7 @@ test("metadata for a route no page gives offers Remove entry and Create the page
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(warning).toContainText("native.json has metadata for /videos/");
   await warning.getByRole("button", { name: "Create the page /videos/" }).click();
-  await expect(warning).toBeHidden();
+  await expect(warning).not.toContainText("no page gives");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/videos.html");
   await expect(frame(page).locator("h1")).toHaveText("Videos");
   await expect(page.locator("#status")).toHaveText("Created the page src/pages/videos.html at /videos/.");

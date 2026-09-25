@@ -2,7 +2,8 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { editNativePageMeta, type NativePageMetaField } from "../src/native-page-meta.ts";
+import { editNativePageMeta, nativeManifestDetailRoutes, nativeManifestRedundant, planNativeDetailsMigration, removeNativePageDetails, type NativePageMetaField } from "../src/native-page-meta.ts";
+import { nativePageComment } from "../shared/native-project.ts";
 import { parseNativeManifest } from "../src/native-manifest.ts";
 
 const fixture = readFileSync(resolve("fixtures/native-starter/.astro-editor/native.json"), "utf8");
@@ -221,4 +222,76 @@ test("a route mapped to a file names its new path; components and styles follow 
   // A mapped page deleted drops its route.
   const gone = moveNativeEntries(text, routes, [{ from: "src/pages/about.html" }]);
   assert.equal(gone.ok && Object.hasOwn(JSON.parse(gone.text).routes, "/about/"), false);
+});
+
+test("removing a route's details drops an emptied entry and keeps file and jsonLd", () => {
+  const text = `{
+  "version": 1,
+  "routes": {
+    "/": { "file": "src/pages/index.html", "title": "Home" },
+    "/about/": { "title": "About", "description": "Who" },
+    "/work/": { "title": "Work", "jsonLd": { "@type": "CollectionPage" } }
+  }
+}
+`;
+  const one = removeNativePageDetails(text, "/");
+  assert.ok(one.ok);
+  assert.match(one.text, /"\/": "src\/pages\/index.html",/);
+  const two = removeNativePageDetails(one.text, "/about/", ["title"]);
+  assert.ok(two.ok);
+  assert.match(two.text, /"\/about\/": \{ "description": "Who" \}/);
+  const three = removeNativePageDetails(two.text, "/about/");
+  assert.ok(three.ok);
+  assert.doesNotMatch(three.text, /about/);
+  const four = removeNativePageDetails(three.text, "/work/");
+  assert.ok(four.ok);
+  assert.deepEqual(JSON.parse(four.text).routes["/work/"], { jsonLd: { "@type": "CollectionPage" } });
+  assert.equal(removeNativePageDetails(four.text, "/work/").ok && removeNativePageDetails(four.text, "/work/").edit, null);
+});
+
+test("migration moves every route's title and description into its page and out of the manifest", () => {
+  const text = `{
+  "version": 1,
+  "routes": {
+    "/": { "title": "Home", "description": "Start here" },
+    "/about/": { "title": "About" },
+    "/gone/": { "title": "No page" },
+    "/work/": "src/pages/work.html"
+  },
+  "styles": ["src/styles/site.css"]
+}
+`;
+  assert.deepEqual(nativeManifestDetailRoutes(text), ["/", "/about/", "/gone/"]);
+  const routes = { "/": "src/pages/index.html", "/about/": "src/pages/about.html", "/work/": "src/pages/work.html" };
+  const sources = {
+    "src/pages/index.html": "<!--\ntitle: Old\nimage: a.png\n-->\n<main></main>",
+    "src/pages/about.html": "<main><h1>About</h1></main>",
+    "src/pages/work.html": "<main></main>",
+  };
+  const planned = planNativeDetailsMigration(text, routes, sources);
+  assert.ok(planned.ok);
+  const { value } = planned;
+  assert.deepEqual(value.moved, ["/", "/about/"]);
+  assert.deepEqual(value.skipped, ["/gone/"]);
+  // The manifest's value wins over the comment's, other keys stay.
+  assert.equal(value.pages["src/pages/index.html"], "<!--\ntitle: Home\ndescription: Start here\nimage: a.png\n-->\n<main></main>");
+  assert.deepEqual(nativePageComment(value.pages["src/pages/about.html"]).meta, { title: "About" });
+  assert.equal(value.pages["src/pages/work.html"], undefined);
+  assert.deepEqual(JSON.parse(value.manifest).routes, { "/gone/": { title: "No page" }, "/work/": "src/pages/work.html" });
+  assert.deepEqual(nativeManifestDetailRoutes(value.manifest), ["/gone/"]);
+});
+
+test("a manifest is redundant only when the conventions already give everything it says", () => {
+  const paths = ["src/pages/index.html", "src/pages/about.html", "src/components/site-header/site-header.html", "src/styles/site.css", "src/styles/tokens.css"];
+  assert.equal(nativeManifestRedundant('{ "version": 1 }', paths), true);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "routes": {}, "styles": ["src/styles/site.css"] }', paths), true);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "routes": { "/about/": "src/pages/about.html" }, "components": { "site-header": "src/components/site-header/site-header.html" } }', paths), true);
+  // Styles other than the convention's, a route mapped elsewhere, a title, JSON-LD, another key: not redundant.
+  assert.equal(nativeManifestRedundant('{ "version": 1, "styles": ["src/styles/tokens.css", "src/styles/site.css"] }', paths), false);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "routes": { "/company/": "src/pages/about.html" } }', paths), false);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "routes": { "/about/": { "title": "About" } } }', paths), false);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "routes": { "/": { "jsonLd": { "@type": "WebPage" } } } }', paths), false);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "components": { "x-card": "src/components/site-header/site-header.html" } }', paths), false);
+  assert.equal(nativeManifestRedundant('{ "version": 1, "extra": true }', paths), false);
+  assert.equal(nativeManifestRedundant("not json", paths), false);
 });

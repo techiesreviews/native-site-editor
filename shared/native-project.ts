@@ -156,25 +156,137 @@ export function nativePageInfo(pages: Record<string, NativePageMeta>, route: str
   return out;
 }
 
+/** A replacement of `start`..`end` of a text by `text`. */
+export interface NativeTextEdit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export type NativePageDetail = "title" | "description";
+
+const COMMENT_LINE = /^([ \t]*)([a-z-]+):[ \t]*(.*?)[ \t\r]*$/i;
+
+/** A value as a comment line can carry it: one line, no `-->`, trimmed. */
+function commentValue(value: string) {
+  return value.replace(/--+>?/g, "-").replace(/[\r\n]+/g, " ").trim();
+}
+
+/** The smallest edit that turns `before` into `after`; null when they are the same. */
+export function minimalTextEdit(before: string, after: string): NativeTextEdit | null {
+  if (before === after) return null;
+  let start = 0;
+  const limit = Math.min(before.length, after.length);
+  while (start < limit && before[start] === after[start]) start++;
+  let tail = 0;
+  while (tail < limit - start && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+  return { start, end: before.length - tail, text: after.slice(start, after.length - tail) };
+}
+
+/**
+ * The edit that sets `field` in the page's leading metadata comment to
+ * `value` (empty removes the line), as small as it can be:
+ * - with no metadata comment (none, or a leading comment with no
+ *   `key: value` line), one is put first: `<!--\ntitle: …\n-->\n`;
+ * - an existing line has its value replaced; a new `title:` line goes first
+ *   in the comment, a new `description:` line after the title (else last);
+ *   other lines (`image: …`, notes) stay as they are;
+ * - a one-line comment stays one line while it has one field, and is
+ *   written one field per line when it gets a second;
+ * - a comment left with nothing goes, with the line break after it.
+ * Null when the page already says this.
+ */
+export function nativePageCommentEdit(html: string, field: NativePageDetail, value: string): NativeTextEdit | null {
+  const wanted = commentValue(value);
+  const newline = html.includes("\r\n") ? "\r\n" : "\n";
+  const found = /^\s*<!--([\s\S]*?)-->/.exec(html);
+  const bodyStart = found ? found[0].length - 3 - found[1].length : 0;
+  const lines = found ? found[1].split("\n") : [];
+  const keyed = lines.map((line) => COMMENT_LINE.exec(line));
+  const isMeta = Boolean(found) && (keyed.some(Boolean) || !found![1].trim());
+  if (!isMeta) {
+    if (!wanted) return null;
+    return { start: 0, end: 0, text: `<!--${newline}${field}: ${wanted}${newline}-->${newline}` };
+  }
+  const commentStart = bodyStart - 4;
+  const commentEnd = found![0].length;
+  const at = keyed.findIndex((match) => match?.[2].toLowerCase() === field);
+  const indent = keyed.find((match, index) => match && index > 0)?.[1] ?? "";
+  // A line followed by a break carries the file's `\r` before it.
+  const cr = newline === "\r\n" ? "\r" : "";
+  const next = [...lines];
+  const last = lines.length - 1;
+  if (at >= 0) {
+    const match = keyed[at]!;
+    if (match[3] === wanted) return null;
+    if (wanted) {
+      const colon = match[1].length + match[2].length + 1;
+      const space = /^[ \t]*/.exec(lines[at].slice(colon))![0].length;
+      next[at] = `${lines[at].slice(0, colon)}${space ? lines[at].slice(colon, colon + space) : " "}${wanted}${lines[at].slice(colon + space + match[3].length)}`;
+    } else if (at === 0 || at === last) next[at] = at === last ? "" : cr;
+    // The line after `<!--` or before `-->` keeps its break; any other line goes whole.
+    else next.splice(at, 1);
+  } else {
+    if (!wanted) return null;
+    const line = `${indent}${field}: ${wanted}`;
+    if (!last) {
+      // One line: one field keeps the one-line form, a second makes it one per line.
+      if (!lines[0].trim()) next[0] = ` ${line.trimStart()} `;
+      else {
+        const other = lines[0].trim();
+        next.splice(0, 1, cr, ...(field === "title" ? [line, other] : [other, line]).map((item) => `${item.trimStart()}${cr}`), "");
+      }
+    } else if (field === "title") {
+      if (!lines[0].trim()) next.splice(1, 0, `${line}${cr}`);
+      else next.splice(0, 1, cr, `${line}${cr}`, lines[0].trimStart());
+    } else {
+      const title = keyed.findIndex((match) => match?.[2].toLowerCase() === "title");
+      if (title >= 0 && title < last) next.splice(title + 1, 0, `${line}${cr}`);
+      else if (!lines[last].trim()) next.splice(last, 0, `${line}${cr}`);
+      else next.splice(last, 1, `${lines[last].trimEnd()}${cr}`, `${line}${cr}`, "");
+    }
+  }
+  const body = next.join("\n");
+  // Nothing left: the comment goes, with the line break after it.
+  if (!body.trim()) {
+    const after = html.startsWith("\r\n", commentEnd) ? 2 : html.startsWith("\n", commentEnd) ? 1 : 0;
+    return { start: commentStart, end: commentEnd + after, text: "" };
+  }
+  const edit = minimalTextEdit(found![1], body);
+  return edit && { start: edit.start + bodyStart, end: edit.end + bodyStart, text: edit.text };
+}
+
+/** `html` with `edit` made. */
+export function applyTextEdit(html: string, edit: NativeTextEdit | null): string {
+  return edit ? html.slice(0, edit.start) + edit.text + html.slice(edit.end) : html;
+}
+
+/**
+ * The page with the details given set in its leading comment (an empty
+ * value removes the line): `nativePageCommentEdit` for each.
+ */
+export function nativePageWithDetails(html: string, details: Partial<Record<NativePageDetail, string>>): string {
+  let text = html;
+  for (const field of ["title", "description"] as const) {
+    const value = details[field];
+    if (value !== undefined) text = applyTextEdit(text, nativePageCommentEdit(text, field, value));
+  }
+  return text;
+}
+
 /**
  * The page with its leading comment's `title:` line set to `title`; the page
  * as it is when its leading comment has no title (or there is none).
  */
 export function nativePageWithCommentTitle(html: string, title: string): string {
-  const comment = /^\s*<!--[\s\S]*?-->/.exec(html);
-  if (!comment || !nativePageComment(html).meta.title) return html;
-  const safe = title.replace(/--+>?/g, "-").replace(/[\r\n]+/g, " ");
-  const edited = comment[0].replace(/^(\s*(?:<!--)?\s*title:[ \t]*).*?([ \t]*(?:-->)?)$/im, (_, start: string, end: string) => `${start}${safe}${end}`);
-  return edited + html.slice(comment[0].length);
+  if (!nativePageComment(html).meta.title) return html;
+  return applyTextEdit(html, nativePageCommentEdit(html, "title", title));
 }
 
 /**
- * The page titled `title` in its leading comment: the comment's `title:`
- * line set when it has one, else a `<!-- title: … -->` line put first. What
- * a new page carries when the site has no manifest to title it in.
+ * The page titled `title` in its leading comment, the comment made when it
+ * has none: what a new page, a copy or a subpage carries.
  */
 export function nativePageWithTitle(html: string, title: string): string {
-  if (nativePageComment(html).meta.title) return nativePageWithCommentTitle(html, title);
-  const safe = title.replace(/--+>?/g, "-").replace(/[\r\n]+/g, " ").trim();
-  return `<!-- title: ${safe} -->\n${html}`;
+  return applyTextEdit(html, nativePageCommentEdit(html, "title", title));
 }

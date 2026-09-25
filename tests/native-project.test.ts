@@ -5,7 +5,10 @@ import {
   nativeConventionComponents,
   nativeConventionStyles,
   nativePageComment,
+  nativePageCommentEdit,
   nativePageWithCommentTitle,
+  nativePageWithDetails,
+  nativePageWithTitle,
   nativePageInfo,
   resolveNativeProject,
 } from "../shared/native-project.ts";
@@ -159,4 +162,37 @@ test("a copy's title is written into its leading comment's title line only", () 
   assert.equal(nativePageWithCommentTitle("<h1>A</h1><!-- title: late -->", "A (copy)"), "<h1>A</h1><!-- title: late -->");
   assert.equal(nativePageWithCommentTitle("<!-- title: A -->", "B --> <script>"), "<!-- title: B - <script> -->");
   assert.equal(nativePageComment(nativePageWithCommentTitle("<!-- title: A -->", "B --> x")).meta.title, "B - x");
+});
+
+test("page details are written into the leading comment, made when missing", () => {
+  assert.equal(nativePageWithTitle("<main></main>", "About"), "<!--\ntitle: About\n-->\n<main></main>");
+  assert.equal(nativePageWithDetails("<main></main>", { title: "About", description: "Who we are." }), "<!--\ntitle: About\ndescription: Who we are.\n-->\n<main></main>");
+  // A leading comment that is no metadata stays, after the new one.
+  assert.equal(nativePageWithTitle("<!-- hero -->\n<main></main>", "A"), "<!--\ntitle: A\n-->\n<!-- hero -->\n<main></main>");
+  // Unsafe text cannot end the comment or break its lines.
+  assert.deepEqual(nativePageComment(nativePageWithDetails("<p></p>", { title: "A --> b", description: "x\ny" })).meta, { title: "A - b", description: "x y" });
+  // Nothing to write, nothing made.
+  assert.equal(nativePageCommentEdit("<main></main>", "title", "  "), null);
+});
+
+test("page details update in place, keep other keys, and go with an empty comment", () => {
+  const page = "<!--\ntitle: About\nimage: src/images/about.png\n-->\n<main></main>";
+  // A value replaced is the smallest edit: only the changed characters.
+  assert.deepEqual(nativePageCommentEdit(page, "title", "About us"), { start: 17, end: 17, text: " us" });
+  assert.equal(nativePageCommentEdit(page, "title", "About"), null);
+  // A description goes after the title; other keys stay.
+  assert.equal(nativePageWithDetails(page, { description: "Who" }), "<!--\ntitle: About\ndescription: Who\nimage: src/images/about.png\n-->\n<main></main>");
+  // A title goes first.
+  assert.equal(nativePageWithTitle("<!--\ndescription: D\n-->\n<p></p>", "T"), "<!--\ntitle: T\ndescription: D\n-->\n<p></p>");
+  // Removing a line keeps the others; the comment goes when nothing is left.
+  assert.equal(nativePageWithDetails(page, { title: "" }), "<!--\nimage: src/images/about.png\n-->\n<main></main>");
+  assert.equal(nativePageWithDetails("<!--\ntitle: A\ndescription: B\n-->\n<main></main>", { title: "", description: "" }), "<main></main>");
+  // One line stays one line with one field, and becomes one per line with two.
+  assert.equal(nativePageWithTitle("<!-- title: Home -->\n<h1>Home</h1>", "Start"), "<!-- title: Start -->\n<h1>Home</h1>");
+  assert.equal(nativePageWithDetails("<!-- title: Home -->\n<h1>Home</h1>", { description: "D" }), "<!--\ntitle: Home\ndescription: D\n-->\n<h1>Home</h1>");
+  assert.equal(nativePageWithDetails("<!-- title: Home -->\n<h1>Home</h1>", { title: "" }), "<h1>Home</h1>");
+  // Fields on the comment's own lines; CRLF files keep CRLF.
+  assert.equal(nativePageWithDetails("<!--\ntitle: X -->\n<p></p>", { description: "D" }), "<!--\ntitle: X\ndescription: D\n-->\n<p></p>");
+  assert.equal(nativePageWithDetails("<!--\r\ntitle: X\r\n-->\r\n<p></p>", { description: "D" }), "<!--\r\ntitle: X\r\ndescription: D\r\n-->\r\n<p></p>");
+  assert.equal(nativePageWithTitle("<!--\ntitle:\n-->\n<p></p>", "Z"), "<!--\ntitle: Z\n-->\n<p></p>");
 });

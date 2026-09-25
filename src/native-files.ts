@@ -10,13 +10,17 @@ const PAST: Record<FileOperation, string> = { delete: "deleted", rename: "rename
 
 /**
  * Why `paths` (the files an operation takes, a folder's included) cannot be
- * deleted, renamed or moved: the manifest defines the native site and the
- * home page is its `/`. Undefined when nothing stands in the way.
+ * deleted, renamed or moved: the home page is the site's `/`, and the
+ * manifest can only be deleted, and only when `src/pages/index.html` keeps
+ * the site native without it (`homePage`). Undefined when nothing stands in
+ * the way.
  */
-export function protectedPathProblem(paths: Iterable<string>, operation: FileOperation, home: string | undefined, native: boolean): string | undefined {
+export function protectedPathProblem(paths: Iterable<string>, operation: FileOperation, home: string | undefined, native: boolean, homePage = false): string | undefined {
   if (!native) return undefined;
   for (const path of paths) {
-    if (path === NATIVE_MANIFEST) return `${NATIVE_MANIFEST} cannot be ${PAST[operation]}: it defines the site.`;
+    if (path === NATIVE_MANIFEST && operation === "delete" && !homePage)
+      return `${NATIVE_MANIFEST} cannot be deleted: without src/pages/index.html the site needs it.`;
+    if (path === NATIVE_MANIFEST && operation !== "delete") return `${NATIVE_MANIFEST} cannot be ${PAST[operation]}: it defines the site.`;
     if (home && path === home) return `The home page ${home} cannot be ${PAST[operation]}: the site needs a page at /.`;
   }
   return undefined;

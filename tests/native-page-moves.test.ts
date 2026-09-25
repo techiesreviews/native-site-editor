@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   editNativeRedirects,
   folderToLeaf,
+  groupRouteChanges,
   isRouteWithin,
   leafToFolder,
   parentRoute,
@@ -187,4 +188,23 @@ test("the manifest: metadata follows the moved files, and a route mapped to its 
     "/company/us/": { title: "Us" },
   });
   assert.equal(rekeyNativeRoutes(text, [["/nope/", "/x/"]]).ok && rekeyNativeRoutes(text, [["/nope/", "/x/"]]).text, text);
+});
+
+test("file moves group into subtree changes only when every subpage moved along", () => {
+  const routes = ["/", "/about/", "/about/team/", "/work/", "/work/a/"];
+  assert.deepEqual(groupRouteChanges(routes, [["/about/", "/company/"], ["/about/team/", "/company/team/"]]), [{ from: "/about/", to: "/company/", subtree: true }]);
+  // The page alone moved (its subpage stayed): only its own URL changes.
+  assert.deepEqual(groupRouteChanges(routes, [["/about/", "/company/"]]), [{ from: "/about/", to: "/company/", subtree: false }]);
+  assert.deepEqual(groupRouteChanges(routes, [["/work/a/", "/a/"]]), [{ from: "/work/a/", to: "/a/", subtree: true }]);
+});
+
+test("an exact route change leaves links and redirects under it alone", () => {
+  const source = '<a href="#/about/">A</a><a href="#/about/team/">T</a><a href="/about/#x">X</a>';
+  const exact = rewriteRouteLinks(source, "/about/", "/company/", false);
+  assert.equal(exact.text, '<a href="#/company/">A</a><a href="#/about/team/">T</a><a href="/company/#x">X</a>');
+  assert.equal(exact.count, 2);
+  assert.equal(
+    editNativeRedirects("/old/ /about/team/ 301\n/about/team/x/ /y/ 301\n", "/about/", "/company/", ["/about/"], false),
+    "/old/ /about/team/ 301\n/about/team/x/ /y/ 301\n/about/ /company/ 301\n",
+  );
 });
