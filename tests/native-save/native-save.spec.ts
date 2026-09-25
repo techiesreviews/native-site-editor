@@ -62,6 +62,76 @@ async function openSaveMenu(page: Page) {
   await expect(page.locator("#publish-files")).toBeVisible();
 }
 
+const showChangesButton = (page: Page, path: string) =>
+  page.locator("#publish-files").getByRole("button", { name: `Show changes in ${path}` });
+
+async function showChanges(page: Page, path: string) {
+  await showChangesButton(page, path).click();
+  const dialog = page.getByRole("dialog", { name: path });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+test("the Save panel lists counts only; the button opens a side-by-side comparison dialog that closes back to the panel", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  // Two separate edits, far apart, so the unchanged run between them collapses.
+  const edited = indexSource.replace("A native browser preview", "Compared heading").replace("</main>", "  <p>Added at the end</p>\n</main>");
+  expect(edited).not.toBe(indexSource);
+  await pasteSource(page, "A native browser preview", edited);
+  await expect(frame.getByRole("heading", { name: "Compared heading" })).toBeVisible();
+
+  await openSaveMenu(page);
+  const panel = page.locator("#publish-files");
+  // Only the counts show under the file, no inline lines.
+  await expect(panel.locator(".publish-menu__changes")).toHaveText("2 added, 1 removed");
+  await expect(panel.locator(".publish-menu__changes")).not.toContainText("Compared heading");
+  await expect(panel.locator(".publish-menu__diff-line:visible")).toHaveCount(0);
+  const opener = showChangesButton(page, indexPath);
+  await expect(opener).toHaveAccessibleName(`2 added, 1 removed. Show changes in ${indexPath}`);
+
+  const dialog = await showChanges(page, indexPath);
+  await expect(dialog.locator("h2")).toHaveText(indexPath);
+  expect(await dialog.evaluate((element) => element.matches(":modal"))).toBe(true);
+  // Both columns: GitHub on the left, the draft on the right, numbered on both sides.
+  await expect(dialog.getByRole("columnheader")).toHaveText(["GitHub", "Draft"]);
+  const changed = dialog.locator(".publish-diff__row.is-change").first();
+  await expect(changed.locator("td").nth(1)).toHaveClass(/is-del/);
+  await expect(changed.locator("td").nth(1)).toContainText("A native browser preview");
+  await expect(changed.locator("td").nth(3)).toHaveClass(/is-add/);
+  await expect(changed.locator("td").nth(3)).toContainText("Compared heading");
+  const leftNumber = Number(await changed.locator("td").nth(0).textContent());
+  const rightNumber = Number(await changed.locator("td").nth(2).textContent());
+  expect(leftNumber).toBeGreaterThan(0);
+  expect(rightNumber).toBe(leftNumber);
+  await expect(dialog.locator(".publish-diff__code.is-add").last()).toContainText("Added at the end");
+  await expect(dialog.locator(".publish-diff__gap").first()).toHaveText(/^\d+ unchanged lines?$/);
+  // The panel stays open behind the modal.
+  await expect(panel).toBeVisible();
+
+  // Escape closes the dialog only; focus goes back to the button, the panel stays.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  await expect(panel).toBeVisible();
+
+  // A click on the backdrop closes it too.
+  await showChanges(page, indexPath);
+  await page.mouse.click(4, 4);
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  await expect(panel).toBeVisible();
+
+  // Narrow viewports get the one-column view inside the same dialog.
+  await page.setViewportSize({ width: 600, height: 800 });
+  await showChanges(page, indexPath);
+  await expect(dialog.locator(".publish-diff__split")).toBeHidden();
+  await expect(dialog.locator(".publish-menu__diff-line.is-add").first()).toContainText("Compared heading");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(panel).toBeVisible();
+});
+
 test("edits patch the preview and the native Save UI commits to GitHub", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
@@ -74,9 +144,12 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   await expect(page.locator("#publish-files")).toContainText("A connected host may deploy this commit automatically");
   // The change the commit would make is listed before it is made.
   const changes = page.locator("#publish-files .publish-menu__changes");
-  await expect(changes).toContainText("1 added, 1 removed");
-  await expect(changes.locator(".publish-menu__diff-line.is-del")).toContainText("A native browser preview");
-  await expect(changes.locator(".publish-menu__diff-line.is-add")).toContainText("Saved to GitHub heading");
+  await expect(changes).toHaveText("1 added, 1 removed");
+  const dialog = await showChanges(page, indexPath);
+  await expect(dialog.locator(".publish-diff__code.is-del")).toContainText("A native browser preview");
+  await expect(dialog.locator(".publish-diff__code.is-add")).toContainText("Saved to GitHub heading");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
   await saveSubmit(page).click();
 
   const message = page.locator(".publish-menu__message");

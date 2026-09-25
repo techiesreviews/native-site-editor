@@ -2,7 +2,7 @@ import { button, link, node } from "../ui/dom";
 import { mountDropdown } from "./dropdown";
 import { draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import type { PublishResult } from "../../shared/types";
-import { diffHunks } from "../text-diff";
+import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import "./publish-menu.css";
 
 export function createPublishMenu(options: {
@@ -65,27 +65,92 @@ export function createPublishMenu(options: {
     submit.disabled = !records.some(record => selection.has(record.path));
     if (resetMessage) message.textContent = labels.idle;
   }
-  // What the commit would change in a file: the changed lines with one line
-  // of context, so a stray edit is seen before it reaches the branch.
+  // What the commit would change in a file, as counts; the button opens the
+  // comparison, so a stray edit is seen before it reaches the branch.
   function changes(draft: SavedDraft) {
-    const details = node("details", "publish-menu__changes");
-    const summary = node("summary");
-    const hunks = draft.baseSha === null ? [] : diffHunks(draft.original, draft.content);
-    let added = 0, deleted = 0;
-    for (const hunk of hunks) for (const line of hunk.lines) {
-      if (line.kind === "add") added++;
-      else if (line.kind === "del") deleted++;
+    const row = node("div", "publish-menu__changes");
+    const isNew = draft.baseSha === null;
+    const { added, deleted } = diffCounts(isNew ? "" : draft.original, draft.content);
+    const summary = isNew ? `New file, ${draft.content.split("\n").length} lines` : `${added} added, ${deleted} removed`;
+    const show = button(summary, () => openComparison(draft, show), "publish-menu__show-changes");
+    show.setAttribute("aria-label", `${summary}. Show changes in ${draft.path}`);
+    show.setAttribute("aria-haspopup", "dialog");
+    show.dataset.path = draft.path;
+    row.append(show);
+    return row;
+  }
+  // The comparison dialog lives inside the panel, so the panel (an auto
+  // popover) is its popover ancestor and stays open while the modal shows.
+  const dialog = node("dialog", "publish-diff");
+  dialog.setAttribute("aria-labelledby", "publish-diff-title");
+  const dialogTitle = node("h2", "publish-diff__title");
+  dialogTitle.id = "publish-diff-title";
+  const dialogBody = node("div", "publish-diff__body");
+  const closeDialog = button("Close", () => dialog.close(), "button secondary");
+  const dialogHeader = node("header", "publish-diff__header");
+  dialogHeader.append(dialogTitle, closeDialog);
+  dialog.append(dialogHeader, dialogBody);
+  panel.append(dialog);
+  let opener: HTMLButtonElement | null = null;
+  // Escape closes the dialog only; the dropdown would otherwise close the panel too.
+  dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
+  dialog.addEventListener("click", event => {
+    if (event.target !== dialog) return;
+    const box = dialog.getBoundingClientRect();
+    if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) dialog.close();
+  });
+  dialog.addEventListener("close", () => {
+    dialogBody.replaceChildren();
+    // The list may have been rebuilt meanwhile: fall back to the same file's button.
+    const target = opener?.isConnected ? opener
+      : [...list.querySelectorAll<HTMLButtonElement>(".publish-menu__show-changes")].find(item => item.dataset.path === opener?.dataset.path);
+    opener = null;
+    target?.focus();
+  });
+  function openComparison(draft: SavedDraft, from: HTMLButtonElement) {
+    const before = draft.baseSha === null ? "" : draft.original;
+    opener = from;
+    dialogTitle.textContent = draft.path;
+    dialogBody.replaceChildren(splitView(before, draft.content), unifiedView(before, draft.content));
+    dialog.showModal();
+    dialogBody.scrollTop = 0;
+  }
+  // GitHub's version on the left, the draft on the right.
+  function splitView(before: string, after: string) {
+    const table = node("table", "publish-diff__split");
+    const head = node("thead"), headRow = node("tr");
+    const leftHead = node("th", "", "GitHub"), rightHead = node("th", "", "Draft");
+    leftHead.colSpan = rightHead.colSpan = 2;
+    leftHead.scope = rightHead.scope = "col";
+    // Fixed layout takes its widths from the columns: narrow numbers, even code halves.
+    const columns = node("colgroup");
+    for (const kind of ["num", "code", "num", "code"]) columns.append(node("col", `publish-diff__col-${kind}`));
+    table.append(columns);
+    headRow.append(leftHead, rightHead);
+    head.append(headRow);
+    const body = node("tbody");
+    const cells = (cell: SideCell | null) => {
+      const number = node("td", "publish-diff__num", cell ? String(cell.line) : "");
+      const code = node("td", `publish-diff__code is-${cell?.kind ?? "empty"}`);
+      if (cell) code.append(node("span", "publish-diff__sign", cell.kind === "add" ? "+" : cell.kind === "del" ? "−" : " "), node("span", "", cell.text));
+      return [number, code];
+    };
+    for (const row of sideBySideRows(before, after)) {
+      const tr = node("tr", `publish-diff__row is-${row.kind}`);
+      if (row.kind === "gap") {
+        const cell = node("td", "publish-diff__gap", `${row.count} unchanged ${row.count === 1 ? "line" : "lines"}`);
+        cell.colSpan = 4;
+        tr.append(cell);
+      } else tr.append(...cells(row.left), ...cells(row.right));
+      body.append(tr);
     }
-    if (draft.baseSha === null) {
-      summary.textContent = `New file, ${draft.content.split("\n").length} lines`;
-      details.append(summary);
-      return details;
-    }
-    summary.textContent = `${added} added, ${deleted} removed`;
-    details.append(summary);
-    details.open = true;
-    const pre = node("pre", "publish-menu__diff");
-    hunks.forEach((hunk, index) => {
+    table.append(head, body);
+    return table;
+  }
+  // The narrow fallback: the changed lines in one column.
+  function unifiedView(before: string, after: string) {
+    const pre = node("pre", "publish-menu__diff publish-diff__unified");
+    diffHunks(before, after, 3).forEach((hunk, index) => {
       if (index) pre.append(node("span", "publish-menu__diff-gap", "⋯\n"));
       for (const line of hunk.lines) {
         const row = node("span", `publish-menu__diff-line is-${line.kind}`);
@@ -98,8 +163,7 @@ export function createPublishMenu(options: {
         pre.append(row);
       }
     });
-    details.append(pre);
-    return details;
+    return pre;
   }
   async function send() {
     const submitted = draftStore().list(options.scope).filter(draft => selection.has(draft.path));
@@ -145,5 +209,5 @@ export function createPublishMenu(options: {
   // Native toggle fires after shared hover/click handling; do not rebuild during a publish.
   panel.addEventListener("beforetoggle", event => { if ((event as ToggleEvent).newState === "open") refresh(); });
   refresh();
-  return { root, refresh, destroy() { disposed = true; dropdown.destroy(); } };
+  return { root, refresh, destroy() { disposed = true; if (dialog.open) dialog.close(); dropdown.destroy(); } };
 }

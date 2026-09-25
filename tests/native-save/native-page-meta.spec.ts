@@ -21,14 +21,28 @@ const title = (page: Page) => block(page).getByLabel("Title");
 const description = (page: Page) => block(page).getByLabel("Description");
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
-const diffAdded = (page: Page) => page.locator("#publish-files .publish-menu__diff-line.is-add");
-const diffRemoved = (page: Page) => page.locator("#publish-files .publish-menu__diff-line.is-del");
+const changesDialog = (page: Page) => page.getByRole("dialog", { name: manifestPath });
+const diffAdded = (page: Page) => changesDialog(page).locator(".publish-diff__code.is-add");
+const diffRemoved = (page: Page) => changesDialog(page).locator(".publish-diff__code.is-del");
 
 async function openSaveMenu(page: Page) {
   await saveTrigger(page).click();
   await expect(page.locator("#publish-files")).toBeVisible();
 }
+/** Opens the manifest's comparison dialog from the open Save panel. */
+async function showManifestChanges(page: Page) {
+  await page.locator("#publish-files").getByRole("button", { name: `Show changes in ${manifestPath}` }).click();
+  await expect(changesDialog(page)).toBeVisible();
+}
+async function closeManifestChanges(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(changesDialog(page)).toBeHidden();
+}
 async function closeSaveMenu(page: Page) {
+  if (await changesDialog(page).isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(changesDialog(page)).toBeHidden();
+  }
   await page.keyboard.press("Escape");
   await expect(page.locator("#publish-files")).toBeHidden();
 }
@@ -61,14 +75,16 @@ test("typing a title writes the object form into a manifest draft; emptying both
   await expect(page.locator("#status")).toHaveText("Title updated");
   await openSaveMenu(page);
   await expect(page.locator("#publish-files")).toContainText(manifestPath);
+  await expect(page.locator("#publish-files .publish-menu__changes")).toHaveText("1 added, 1 removed");
+  await showManifestChanges(page);
   await expect(diffRemoved(page)).toContainText('"/": "src/pages/index.html",');
   await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
-  await expect(page.locator("#publish-files .publish-menu__changes")).toContainText("1 added, 1 removed");
   await closeSaveMenu(page);
 
   await description(page).fill("The home page");
   await expect(page.locator("#status")).toHaveText("Description updated");
   await openSaveMenu(page);
+  await showManifestChanges(page);
   await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home", "description": "The home page" },');
   await closeSaveMenu(page);
 
@@ -76,6 +92,7 @@ test("typing a title writes the object form into a manifest draft; emptying both
   await title(page).fill("");
   await expect(page.locator("#status")).toHaveText("Title removed");
   await openSaveMenu(page);
+  await showManifestChanges(page);
   await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "description": "The home page" },');
   await closeSaveMenu(page);
   await description(page).fill("");
@@ -102,6 +119,7 @@ test("the fields follow the preview route and keep what was typed on each page",
   await expect(title(page)).toHaveValue("About");
   await expect(description(page)).toHaveValue("Who made this");
   await openSaveMenu(page);
+  await showManifestChanges(page);
   await expect(diffAdded(page)).toHaveCount(2);
   await expect(diffAdded(page).nth(0)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
   await expect(diffAdded(page).nth(1)).toContainText('"/about/": { "file": "src/pages/about.html", "title": "About", "description": "Who made this" }');
@@ -133,6 +151,7 @@ test("a typed title survives a reload, and saving the manifest commits it", asyn
   // And a change on top of the committed text is a fresh draft against it.
   await description(page).fill("The home page");
   await openSaveMenu(page);
+  await showManifestChanges(page);
   await expect(diffRemoved(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
   await expect(diffAdded(page)).toContainText('"title": "Home", "description": "The home page" },');
 });
@@ -162,8 +181,10 @@ test("a manifest draft is not rebased onto a manifest that changed on GitHub: th
   // The draft is still there, against its old base: GitHub refuses it.
   await openSaveMenu(page);
   await expect(page.locator("#publish-files")).toContainText(manifestPath);
+  await showManifestChanges(page);
   await expect(diffAdded(page)).toContainText('"/": { "file": "src/pages/index.html", "title": "Home" },');
   await expect(diffAdded(page)).not.toContainText("About us");
+  await closeManifestChanges(page);
   await page.locator("#publish-files .publish-menu__file input").check();
   await page.getByRole("button", { name: "Save selected files", exact: true }).click();
   await expect(page.locator(".publish-menu__message")).toContainText(/GitHub changed these files|drafts are kept/i, { timeout: 30_000 });
@@ -191,7 +212,9 @@ test("a manifest draft is not rebased onto a manifest that changed on GitHub: th
   // A fresh field edit now starts a draft against the current blob, which saves.
   await description(page).fill("Who made this");
   await openSaveMenu(page);
+  await showManifestChanges(page);
   await expect(diffAdded(page)).toContainText('"title": "About us", "description": "Who made this" }');
+  await closeManifestChanges(page);
   await page.locator("#publish-files .publish-menu__file input").check();
   await page.getByRole("button", { name: "Save selected files", exact: true }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });

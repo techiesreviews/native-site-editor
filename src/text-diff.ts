@@ -43,14 +43,20 @@ export function diffLines(before: string, after: string): DiffLine[] {
 
 export interface DiffHunk { lines: DiffLine[] }
 
-/** The changed lines with `context` kept lines around each run, grouped into hunks. */
-export function diffHunks(before: string, after: string, context = 1): DiffHunk[] {
-  const lines = diffLines(before, after);
+/** Which lines are changed or within `context` lines of a change. */
+function nearChanges(lines: DiffLine[], context: number) {
   const keep = new Array<boolean>(lines.length).fill(false);
   lines.forEach((line, index) => {
     if (line.kind === "same") return;
     for (let k = Math.max(0, index - context); k <= Math.min(lines.length - 1, index + context); k++) keep[k] = true;
   });
+  return keep;
+}
+
+/** The changed lines with `context` kept lines around each run, grouped into hunks. */
+export function diffHunks(before: string, after: string, context = 1): DiffHunk[] {
+  const lines = diffLines(before, after);
+  const keep = nearChanges(lines, context);
   const hunks: DiffHunk[] = [];
   let current: DiffHunk | null = null;
   lines.forEach((line, index) => {
@@ -69,4 +75,58 @@ export function diffCounts(before: string, after: string) {
     else if (line.kind === "del") deleted++;
   }
   return { added, deleted };
+}
+
+/** One side of a side-by-side row: a line of the baseline (left) or the draft (right). */
+export interface SideCell {
+  kind: "same" | "add" | "del";
+  text: string;
+  /** 1-based line number on its own side. */
+  line: number;
+}
+
+/**
+ * A row of the side-by-side comparison: a kept line on both sides, a changed
+ * row (a removed line on the left and/or an added line on the right, `null`
+ * where the other side has more lines), or a run of unchanged lines left out.
+ */
+export type SideBySideRow =
+  | { kind: "same" | "change"; left: SideCell | null; right: SideCell | null }
+  | { kind: "gap"; count: number };
+
+/**
+ * The baseline (left) against the draft (right), aligned by the LCS line diff:
+ * each run of removed and added lines is paired row by row, `context` unchanged
+ * lines are kept around it, and the unchanged lines between are one gap row.
+ */
+export function sideBySideRows(before: string, after: string, context = 3): SideBySideRow[] {
+  const lines = diffLines(before, after);
+  const keep = nearChanges(lines, context);
+  const rows: SideBySideRow[] = [];
+  let left = 0, right = 0, skipped = 0;
+  const flush = () => { if (skipped) rows.push({ kind: "gap", count: skipped }); skipped = 0; };
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index];
+    if (line.kind === "same") {
+      left++; right++;
+      if (!keep[index]) skipped++;
+      else {
+        flush();
+        rows.push({ kind: "same", left: { kind: "same", text: line.text, line: left }, right: { kind: "same", text: line.text, line: right } });
+      }
+      index++;
+      continue;
+    }
+    flush();
+    const removed: SideCell[] = [], added: SideCell[] = [];
+    for (; index < lines.length && lines[index].kind !== "same"; index++) {
+      const { kind, text } = lines[index];
+      if (kind === "del") removed.push({ kind, text, line: ++left });
+      else added.push({ kind, text, line: ++right });
+    }
+    for (let k = 0; k < Math.max(removed.length, added.length); k++)
+      rows.push({ kind: "change", left: removed[k] ?? null, right: added[k] ?? null });
+  }
+  flush();
+  return rows;
 }

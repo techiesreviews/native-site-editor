@@ -2,16 +2,57 @@
 .publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 16px; max-height: 40dvh; overflow: auto; }
 .publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: 12px; overflow-wrap: anywhere; }
 .publish-menu__file input { accent-color: var(--green); }
-.publish-menu__changes { font-size: 11px; margin: -4px 0 4px 24px; }
-.publish-menu__changes summary { cursor: pointer; color: var(--muted, inherit); }
-.publish-menu__diff { margin: 6px 0 0; padding: 6px 0; font-size: 11px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 30dvh; background: var(--code-bg, rgba(127, 127, 127, 0.08)); border-radius: 6px; }
-.publish-menu__diff-line { display: inline-block; min-width: 100%; padding-inline: 8px; }
-.publish-menu__diff-line.is-add { background: rgba(47, 109, 58, 0.16); }
-.publish-menu__diff-line.is-del { background: rgba(200, 30, 30, 0.14); text-decoration: line-through; text-decoration-color: rgba(200, 30, 30, 0.6); }
-.publish-menu__diff-number { display: inline-block; width: 3ch; text-align: right; opacity: 0.55; margin-right: 6px; }
-.publish-menu__diff-sign { display: inline-block; width: 1.5ch; }
-.publish-menu__diff-gap { display: block; padding-inline: 8px; opacity: 0.55; }
+.publish-menu__changes { margin: -6px 0 2px 24px; }
+.publish-menu__show-changes { padding: 2px 6px; margin-left: -6px; border: 0; border-radius: 4px; background: none; color: var(--green); font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.publish-menu__show-changes:hover { background: var(--hover); }
+.publish-menu__show-changes:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .publish-menu__message { font-size: 12px; line-height: 1.6; }
 @supports (position-area: bottom) { .publish-menu__panel { position-area: bottom span-left; justify-self: end; } }
 .code-editor__conflict { padding: 10px 20px; background: var(--warning-bg); color: var(--warning-fg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
 .code-editor__conflict[hidden] { display: none; }
+
+/* Comparison dialog. Removed lines take the success tokens turned to red, so
+   they follow the light and dark scheme like the added ones. */
+.publish-diff {
+  --diff-add-bg: var(--success-bg);
+  --diff-add-fg: var(--success-fg);
+  --diff-del-bg: oklch(from var(--success-bg) l c 25);
+  --diff-del-fg: oklch(from var(--success-fg) l c 25);
+  width: min(1200px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.publish-diff[open] { display: flex; flex-direction: column; }
+.publish-diff::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.45); }
+.publish-diff__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface-toolbar); }
+.publish-diff__title { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.publish-diff__body { overflow: auto; min-height: 0; flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; }
+.publish-diff__split { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.publish-diff__split th { position: sticky; top: 0; z-index: 1; padding: 6px 10px; text-align: left; font: 600 12px/1.4 system-ui, sans-serif; background: var(--surface-subtle); border-bottom: 1px solid var(--line); }
+.publish-diff__split th + th { border-left: 1px solid var(--line); }
+.publish-diff__col-num { width: 6ch; }
+.publish-diff__num { padding: 0 8px; text-align: right; vertical-align: top; color: var(--muted); user-select: none; }
+.publish-diff__code { padding: 0 10px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+.publish-diff__code + .publish-diff__num { border-left: 1px solid var(--line); }
+.publish-diff__code.is-del { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.publish-diff__code.is-add { background: var(--diff-add-bg); color: var(--diff-add-fg); }
+.publish-diff__code.is-empty { background: var(--surface-subtle); }
+.publish-diff__sign { display: inline-block; width: 1.5ch; user-select: none; }
+.publish-diff__gap { padding: 4px 10px; text-align: center; color: var(--muted); background: var(--surface-subtle); font-family: system-ui, sans-serif; }
+.publish-diff__unified { display: none; margin: 0; padding: 6px 0; white-space: pre; width: max-content; min-width: 100%; box-sizing: border-box; }
+.publish-menu__diff-line { display: block; padding-inline: 8px; }
+.publish-menu__diff-line.is-add { background: var(--diff-add-bg); color: var(--diff-add-fg); }
+.publish-menu__diff-line.is-del { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.publish-menu__diff-number { display: inline-block; width: 4ch; text-align: right; color: var(--muted); margin-right: 6px; }
+.publish-menu__diff-sign { display: inline-block; width: 1.5ch; }
+.publish-menu__diff-gap { display: block; padding-inline: 8px; color: var(--muted); }
+/* Too narrow for two columns: the changed lines in one column. */
+@media (max-width: 699px) {
+  .publish-diff__split { display: none; }
+  .publish-diff__unified { display: block; }
+}
