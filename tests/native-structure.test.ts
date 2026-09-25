@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, linkWrapEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -138,4 +138,42 @@ test("structureLabel names a container by its first heading and an atom by its o
   // Long text is cut with an ellipsis.
   const long = "x".repeat(70);
   assert.equal(structureLabel({ tag: "p", text: long, heading: "", children: none }, false).text, `${"x".repeat(59)}…`);
+});
+
+test("linkWrapEdit wraps exactly the selected text in an empty link", () => {
+  const inner = "Edit plain HTML, CSS and JS.";
+  const result = linkWrapEdit(inner, 5, 10, "plain");
+  assert.ok("edit" in result);
+  assert.equal(apply(inner, [result.edit]), `Edit <a href="">plain</a> HTML, CSS and JS.`);
+  assert.equal(result.link, 5);
+});
+
+test("linkWrapEdit maps entities and keeps inner formatting inside the link", () => {
+  const inner = "Tom &amp; <strong>Jerry</strong> run";
+  // Text content: "Tom & Jerry run"; select "& Jerry run" (whole strong inside).
+  const result = linkWrapEdit(inner, 4, 15, "& Jerry run");
+  assert.ok("edit" in result);
+  assert.equal(apply(inner, [result.edit]), `Tom <a href="">&amp; <strong>Jerry</strong> run</a>`);
+  // "& Jerry" ends inside the strong: refused, as B/I refuse it.
+  assert.deepEqual(linkWrapEdit(inner, 4, 11, "& Jerry"), { refused: "split" });
+  // A word inside the strong: the link goes inside it.
+  const inside = linkWrapEdit(inner, 6, 11, "Jerry");
+  assert.ok("edit" in inside);
+  assert.equal(apply(inner, [inside.edit]), `Tom &amp; <strong><a href="">Jerry</a></strong> run`);
+});
+
+test("linkWrapEdit refuses a span that cuts through a tag or holds a link", () => {
+  assert.deepEqual(linkWrapEdit("Tom <strong>Jerry</strong> run", 2, 7, "m Jer"), { refused: "split" });
+  assert.deepEqual(linkWrapEdit(`Go <a href="#/">home</a> now`, 0, 11, "Go home now"), { refused: "nested" });
+  // The text no longer matches the source: refused rather than guessed.
+  assert.deepEqual(linkWrapEdit("Edit plain", 5, 10, "other"), { refused: "split" });
+});
+
+test("unwrapEdits removes a link's tags and keeps its text and formatting", () => {
+  const source = `<p>Read <a href="#/about/" class="x"><em>more</em> &amp; more</a> here</p>`;
+  const tag = startTags(source)[1];
+  const closeAt = source.indexOf("</a>");
+  const range: ElementRange = { tag, start: tag.start, end: closeAt + 4, close: { start: closeAt, end: closeAt + 4 } };
+  assert.equal(apply(source, unwrapEdits(range)!), "<p>Read <em>more</em> &amp; more here</p>");
+  assert.equal(unwrapEdits({ tag, start: tag.start, end: tag.end }), undefined);
 });

@@ -102,15 +102,19 @@ export interface NativePreviewSelection {
 }
 
 // A text selection inside the selected element: offsets into its DOM text
-// content, the selected text, and the inline wrappers around it (innermost first).
+// content, the selected text, and the inline wrappers around it (innermost
+// first). `caret` marks a collapsed one (start = end, no text), reported
+// only when the caret sits inside a link.
 export interface NativeTextSelection {
   start: number;
   end: number;
   text: string;
   wrappers: string[];
+  caret?: boolean;
 }
 
-export type NativeFormat = "strong" | "em";
+// Bold, italic, or a link on the selected text (Ctrl/⌘+K).
+export type NativeFormat = "strong" | "em" | "link";
 
 // Text typed into a selected element in the preview: its whole text content
 // before and after the change.
@@ -140,7 +144,7 @@ interface NativePreviewHandlers {
   onSelect?: (selection: NativePreviewSelection) => void;
   onComponentStyles?: (tags: string[]) => void;
   onTextSelection?: (selection: NativeTextSelection | undefined) => void;
-  // Ctrl/⌘+B or +I pressed inside the preview.
+  // Ctrl/⌘+B, +I or +K pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
   // Alt+Up or Alt+Down pressed inside the preview on a selected section.
   onMove?: (direction: "up" | "down") => void;
@@ -332,7 +336,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "format") {
       const format = (data as { format?: unknown }).format;
-      if (format === "strong" || format === "em") handlers.onFormat?.(format);
+      if (format === "strong" || format === "em" || format === "link") handlers.onFormat?.(format);
       return;
     }
     if (data.type === "move") {
@@ -515,11 +519,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!Number.isInteger(value.start) || !Number.isInteger(value.end) || typeof value.text !== "string") return undefined;
     const start = value.start as number;
     const end = value.end as number;
-    if (start < 0 || end <= start || value.text.length > 100_000) return undefined;
+    const caret = value.caret === true && end === start && value.text === "";
+    if (start < 0 || (end <= start && !caret) || value.text.length > 100_000) return undefined;
     const wrappers = Array.isArray(value.wrappers)
       ? value.wrappers.filter((name): name is string => typeof name === "string").slice(0, 50)
       : [];
-    return { start, end, text: value.text, wrappers };
+    return caret ? { start, end, text: "", wrappers, caret } : { start, end, text: value.text, wrappers };
   }
   function followRoute(href: string) {
     if (!manifest) return false;

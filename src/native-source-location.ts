@@ -61,6 +61,21 @@ export function locateNativeElementRange(html: string, path: number[]): ElementR
   return el ? markedRange(html, tags, root, el) : undefined;
 }
 
+// The element-child index path, from the root of `html`, of the element
+// whose start tag begins at `start` (the inverse of the lookups above).
+export function elementPathAt(html: string, start: number): number[] | undefined {
+  const { tags, root } = parseMarked(html);
+  const index = tags.findIndex((tag) => tag.start === start);
+  let el = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
+  if (!el) return undefined;
+  const path: number[] = [];
+  while (el) {
+    path.unshift([...(el.parentNode as ParentNode).children].indexOf(el));
+    el = el.parentElement;
+  }
+  return path;
+}
+
 // The outer range of a marked element in a parsed source.
 function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element): ElementRange | undefined {
   const tag = tagOf(tags, el);

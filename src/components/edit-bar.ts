@@ -63,17 +63,21 @@ export type EditBarControl =
       initial?: string;
       placeholder?: string;
       suggestions?: { label: string; value: string }[];
+      // Opened, focused, as soon as the bar renders (a link just made).
+      open?: boolean;
       onInput: (value: string) => void;
       onClose?: () => void;
     };
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 
-export type IconName = "link" | "up" | "down" | "duplicate" | "remove" | "grip";
+export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip";
 
 // Stroke paths on a 16 px grid.
 const iconPaths: Record<IconName, string> = {
   link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8",
+  // The link's two halves apart, with a spark at each break.
+  unlink: "M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8M2.5 5.5h2M5.5 2.5v2M13.5 10.5h-2M10.5 13.5v-2",
   up: "M8 13V3M3.5 7.5L8 3l4.5 4.5",
   down: "M8 3v10M3.5 8.5L8 13l4.5-4.5",
   duplicate: "M6 6h7v7H6zM10 6V3H3v7h3",
@@ -104,8 +108,8 @@ export interface EditBarModel {
   // Short kind label shown first: Heading, Paragraph, Link, Component…
   kind: string;
   controls: EditBarControl[];
-  // Ctrl/⌘+B and Ctrl/⌘+I with focus in the bar.
-  onFormat?: (format: "strong" | "em") => void;
+  // Ctrl/⌘+B, Ctrl/⌘+I and Ctrl/⌘+K (link) with focus in the bar.
+  onFormat?: (format: "strong" | "em" | "link") => void;
   // Alt+Up and Alt+Down with focus in the bar; set only for a movable section.
   onMove?: (direction: "up" | "down") => void;
   // A whole section: the bar starts with a grip that drags it in the page.
@@ -322,9 +326,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       return;
     }
     const key = event.key.toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === "b" || key === "i") && onFormat) {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === "b" || key === "i" || key === "k") && onFormat) {
       event.preventDefault();
-      onFormat(key === "b" ? "strong" : "em");
+      onFormat(key === "b" ? "strong" : key === "i" ? "em" : "link");
       return;
     }
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
@@ -483,6 +487,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
 
   function render(model: EditBarModel) {
+    let opening: { item: HTMLButtonElement; control: AddressControl } | undefined;
     // An open address field stays open while the new model still offers it
     // (the source re-renders after each keystroke); its handlers move over.
     const kept = openAddress && model.controls.find((control): control is AddressControl =>
@@ -529,6 +534,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
           popoverButton = item;
           item.setAttribute("aria-expanded", "true");
           renderSuggestions(openAddress);
+        } else if (control.open && !kept) {
+          opening = { item, control };
         }
         bar.append(item);
       } else {
@@ -546,6 +553,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     }
     bar.dataset.model = "1";
     if (kept && popoverButton) placePopover(popoverButton);
+    return opening;
   }
 
   function show(model: EditBarModel, at: SelectionRect) {
@@ -557,9 +565,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const active = document.activeElement as HTMLElement | null;
     const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
     const label = focused >= 0 ? controlLabel(active!) : "";
-    render(model);
+    const opening = render(model);
     rect = at;
     position();
+    // A field asked to open does so once the bar is in place, and keeps the focus.
+    if (opening) {
+      openAddressField(opening.item, opening.control);
+      return;
+    }
     if (focused < 0) return;
     // The same control again when it is still there and enabled, else its neighbour.
     const items = focusable();

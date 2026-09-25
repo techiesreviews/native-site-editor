@@ -1,8 +1,8 @@
 // Structural and attribute edits behind the edit bar: the section icons (move,
-// duplicate, remove), the image Address and the accessibility fields. Each is one range edit (or two that do not
+// duplicate, remove), links on a text range, the image Address and the accessibility fields. Each is one range edit (or two that do not
 // overlap) computed from the element's exact source range, never a re-serialisation.
 
-import { startTagAttribute, startTags, type ElementRange, type StartTag } from "./native-source-location";
+import { startTagAttribute, startTags, textRangeInSource, type ElementRange, type StartTag } from "./native-source-location";
 import { componentLabel, uniqueDataKey } from "./native-insert";
 
 // What the edit bar and the page structure call an element: a kind in the
@@ -149,6 +149,32 @@ export function setAttributeEdit(source: string, tag: StartTag, name: string, va
   let insertAt = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
   while (insertAt > tag.nameEnd && /\s/.test(source[insertAt - 1])) insertAt--;
   return { start: insertAt, end: insertAt, text: ` ${name}="${escaped}"` };
+}
+
+/**
+ * Links a text range of an element: `start`/`end` are offsets into the
+ * element's text content (as the preview reports a text selection) and
+ * `inner` is the element's inner source. The mapped source span is replaced
+ * by itself wrapped in `<a href="">`, one edit; `link` is where the new start
+ * tag begins. Refused when the span cuts through a tag (`split`) or already
+ * holds a link (`nested`).
+ */
+export function linkWrapEdit(inner: string, start: number, end: number, text: string):
+  { edit: RangeEdit; link: number } | { refused: "split" | "nested" } {
+  const span = textRangeInSource(inner, start, end, text);
+  if (!span) return { refused: "split" };
+  const slice = inner.slice(span.start, span.end);
+  if (startTags(slice).some((tag) => tag.name === "a")) return { refused: "nested" };
+  return { edit: { start: span.start, end: span.end, text: `<a href="">${slice}</a>` }, link: span.start };
+}
+
+/** Removes an element's own tags and keeps its content (a link's text and formatting). */
+export function unwrapEdits(range: ElementRange): RangeEdit[] | undefined {
+  if (!range.close) return undefined;
+  return [
+    { start: range.tag.start, end: range.tag.end, text: "" },
+    { start: range.close.start, end: range.close.end, text: "" },
+  ];
 }
 
 /** "src/images/studio-desk@2x.jpg" → "Studio desk". */

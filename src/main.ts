@@ -26,11 +26,11 @@ import {
   nativeDefaultRoute,
   type NativeManifest,
 } from "./native-manifest";
-import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
+import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
+import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -591,8 +591,15 @@ function wholeWrapper(inner: string, tags: string[]) {
 let lastNativeSelection: NativePreviewSelection | undefined;
 // Text selected inside the selected element, bound to that element.
 let nativeTextSelection: (NativeTextSelection & { path: string; node: number[] }) | undefined;
-// What B and I do for the current selection, for the keyboard shortcuts.
+// What B, I and Link do for the current selection, for the keyboard shortcuts.
 let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
+// A link just made from the bar around selected text (`node` is the text
+// element, `link` the new link's index path): its Address opens at once
+// (`shown` once asked), and closing it with the address still empty takes
+// the link away again. The wrap and what is typed are one undo step.
+let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start: number; end: number }; shown?: boolean } | undefined;
+// Elements a link inside can be removed from, keeping its text.
+const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
 
 // Controls for the selected element. Structural actions need the element's
 // exact outer source range; when that cannot be told (implied end tags,
@@ -610,6 +617,11 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   const source = nativeSources()[path] ?? "";
   const range = node ? locateNativeElementRange(source, node) : undefined;
   const kind = nativeKindLabel(selection.tag);
+  // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
+  if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
+    editor.closeActiveEditGroup(nativeNewLink.path);
+    nativeNewLink = undefined;
+  }
   const announce = (text: string) => { element("status").textContent = text; };
   const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) =>
     applyNativeChange(path, source, edits, next, message);
@@ -662,11 +674,16 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
+  // The link the selected text sits in, inside the selected text element.
+  let textLink: { node: number[]; text: NativeTextSelection } | undefined;
   if (range?.close && nativeTextTags.has(selection.tag)) {
     const close = range.close;
     const inner = source.slice(range.tag.end, close.start);
-    const text = nativeTextSelection && nativeTextSelection.path === path && node &&
+    const reported = nativeTextSelection && nativeTextSelection.path === path && node &&
       nativeTextSelection.node.join(".") === node.join(".") ? nativeTextSelection : undefined;
+    // The caret (reported only inside a link) is no text to format.
+    const text = reported?.caret ? undefined : reported;
+    const caret = reported?.caret ? reported : undefined;
     for (const format of [
       { label: "B", name: "Bold", tag: "strong" as const, also: ["strong", "b"] },
       { label: "I", name: "Italic", tag: "em" as const, also: ["em", "i"] },
@@ -724,6 +741,54 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
         onPress: action,
       });
     }
+    // Link: selected text in a text element that is not in a link already is
+    // wrapped in `<a href="">` (the Address then opens for it); selected text
+    // inside a link gets that link's Address and Remove link below.
+    if (node && selection.link === undefined && nativeLinkParents.has(selection.tag)) {
+      const span = text ? textRangeInSource(inner, text.start, text.end, text.text) : undefined;
+      const around = text && span ? wrapperAround(inner, text.start, ["a"]) : undefined;
+      const inLink = around?.close && span && span.start >= around.tag.end && span.end <= around.close.start ? around : undefined;
+      // The caret in a link: the link on either side of it.
+      const caretLink = caret ? wrapperAround(inner, caret.start, ["a"]) ?? (caret.start > 0 ? wrapperAround(inner, caret.start - 1, ["a"]) : undefined) : undefined;
+      const found = inLink ?? caretLink;
+      const at = found ? elementPathAt(inner, found.tag.start) : undefined;
+      if ((text || caret) && at) {
+        textLink = { node: [...node, ...at], text: (text ?? caret)! };
+      } else if (text) {
+        const wrap = linkWrapEdit(inner, text.start, text.end, text.text);
+        const linkIt = () => {
+          if (!("edit" in wrap)) {
+            announce(wrap.refused === "nested" ? "The selection already holds a link." : "Select text within one element to link it.");
+            return;
+          }
+          const next = inner.slice(0, wrap.edit.start) + wrap.edit.text + inner.slice(wrap.edit.end);
+          const within = elementPathAt(next, wrap.link);
+          if (!within) { announce("Select text within one element to link it."); return; }
+          const start = range.tag.end + wrap.edit.start;
+          const end = range.tag.end + wrap.edit.end;
+          // One undo group from the wrap through the address typed for it.
+          nativeNewLink = { path, node, link: [...node, ...within], text: { start: text.start, end: text.end } };
+          preview.selectTextAfterUpdate({ start: text.start, end: text.end });
+          preview.selectAfterUpdate({ path, node });
+          try {
+            editor.closeActiveEditGroup(path);
+            editor.replaceActiveRange({ path, start, end, text: wrap.edit.text, expected: source.slice(start, end) }, true);
+            announce("Link added");
+          } catch (error) {
+            nativeNewLink = undefined;
+            preview.selectAfterUpdate(undefined);
+            preview.selectTextAfterUpdate(undefined);
+            errorMessage(error);
+          }
+        };
+        nativeFormatActions.link = linkIt;
+        // No button where it cannot apply (a span cutting through a tag, or
+        // holding a link); Ctrl/⌘+K there says why.
+        if ("edit" in wrap) controls.push({ kind: "button", icon: "link", label: "Link", title: "Link (Ctrl+K)", onPress: linkIt });
+      } else {
+        nativeFormatActions.link = () => announce("Select the text to link first.");
+      }
+    }
   }
   // Edits sorted by position, as one undo step.
   const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
@@ -752,11 +817,19 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       errorMessage(error);
     }
   };
-  const link = selection.link !== undefined && node ? nearestLink(source, node, range) : undefined;
+  const textLinkRange = textLink ? locateNativeElementRange(source, textLink.node) : undefined;
+  const link = selection.link !== undefined && node ? nearestLink(source, node, range)
+    : textLink && textLinkRange?.tag.name === "a" ? { range: textLinkRange, node: textLink.node } : undefined;
   if (link && node && nativeManifest) {
     const href = startTagAttribute(source, link.range.tag, "href");
     const current = href?.value.trim() ?? "";
     const manifest = nativeManifest;
+    // The link just made: its Address opens now, once.
+    const fresh = nativeNewLink && nativeNewLink.path === path && nativeNewLink.link.join(".") === link.node.join(".") ? nativeNewLink : undefined;
+    const open = Boolean(fresh && !fresh.shown);
+    if (fresh) fresh.shown = true;
+    // Text selected in the link stays selected while the address is typed.
+    const keepText = textLink?.text;
     controls.push({
       kind: "address",
       icon: "link",
@@ -768,9 +841,33 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
         const title = manifest.pages[route]?.title;
         return { label: title ? `${title} (#${route})` : `#${route}`, value: `#${route}` };
       }),
-      onInput: (value) => live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", value)], "Link changed"),
-      onClose: () => editor.closeActiveEditGroup(path),
+      open,
+      onInput: (value) => {
+        if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
+        live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", value)], "Link changed");
+      },
+      onClose: () => {
+        editor.closeActiveEditGroup(path);
+        if (fresh && nativeNewLink === fresh) removeEmptyNewLink(fresh);
+      },
     });
+    // Remove link: a link inside a text element (the one the selected text
+    // sits in, or the selected link itself) loses its tags, keeping its text
+    // and formatting, as one undo step.
+    const parent = link.node.length > 1 ? locateNativeElementRange(source, link.node.slice(0, -1)) : undefined;
+    const unwrap = link.range.tag.name === "a" && parent && nativeLinkParents.has(parent.tag.name) ? unwrapEdits(link.range) : undefined;
+    if (unwrap) {
+      const inText = Boolean(textLink);
+      controls.push({
+        kind: "button",
+        icon: "unlink",
+        label: "Remove link",
+        onPress: () => {
+          if (inText && keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
+          change(unwrap, inText ? node : link.node.slice(0, -1), "Link removed");
+        },
+      });
+    }
   }
   // Heading levels that skip (H2 to H4): one press puts the heading in order.
   if (range && /^h[2-6]$/.test(selection.tag) && range.close && range.tag.name === selection.tag) {
@@ -899,6 +996,22 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
   preview.showEditBar(model, rect);
+}
+
+// The Address of a link just made closed with no address: the link goes
+// again, by undoing its undo group (the wrap and anything typed), so the
+// source is as it was before Link and no empty undo step is left behind.
+function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
+  nativeNewLink = undefined;
+  const editor = editorModule;
+  const latest = nativeSources()[fresh.path] ?? "";
+  const found = locateNativeElementRange(latest, fresh.link);
+  if (!editor || found?.tag.name !== "a" || startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
+  const selected = lastNativeSelection?.path === fresh.path && lastNativeSelection.node?.join(".") === fresh.node.join(".");
+  if (selected) nativePreview?.selectTextAfterUpdate(fresh.text);
+  void editor.runVisualHistory("undo", fresh.path).then((undone) => {
+    element("status").textContent = undone ? "Empty link removed" : "The empty link could not be removed; undo removes it.";
+  });
 }
 
 // One verified source change to the mounted page `path`, as one undo step;

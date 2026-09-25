@@ -832,13 +832,17 @@
   }
 
   // A text selection inside the selected element, as offsets into that
-  // element's text content, so the host can wrap or unwrap that range.
-  function selectionRangeIn(el) {
+  // element's text content, so the host can wrap or unwrap that range; with
+  // `caret`, a collapsed one (the caret) counts too.
+  function selectionRangeIn(el, caret) {
     var sel = null;
     var root = el.getRootNode && el.getRootNode();
     if (root instanceof ShadowRoot && typeof root.getSelection === "function") sel = root.getSelection();
-    if (!sel || !sel.rangeCount || sel.isCollapsed) sel = document.getSelection();
-    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    if (!sel || !sel.rangeCount || sel.isCollapsed) {
+      var doc = document.getSelection();
+      if (doc && doc.rangeCount && (!doc.isCollapsed || !sel || !sel.rangeCount)) sel = doc;
+    }
+    if (!sel || !sel.rangeCount || (sel.isCollapsed && !caret)) return null;
     var range = sel.getRangeAt(0);
     return el.contains(range.commonAncestorContainer) ? range : null;
   }
@@ -866,11 +870,14 @@
     textFrame = 0;
     var payload = null;
     if (selected && selected.isConnected) {
-      var range = selectionRangeIn(selected);
+      var range = selectionRangeIn(selected, true);
       if (range) {
         var start = textOffset(selected, range.startContainer, range.startOffset);
         var end = textOffset(selected, range.endContainer, range.endOffset);
-        if (end > start) payload = { start: start, end: end, text: range.cloneContents().textContent, wrappers: wrappersAround(selected, range.commonAncestorContainer) };
+        var wrappers = wrappersAround(selected, range.commonAncestorContainer);
+        if (end > start) payload = { start: start, end: end, text: range.cloneContents().textContent, wrappers: wrappers };
+        // The caret inside a link: the host offers that link's address and Remove link.
+        else if (wrappers.indexOf("a") >= 0) payload = { start: start, end: start, text: "", wrappers: wrappers, caret: true };
       }
     }
     var key = JSON.stringify(payload);
@@ -913,12 +920,12 @@
     }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     var key = e.key.toLowerCase();
-    if (key !== "b" && key !== "i") return;
+    if (key !== "b" && key !== "i" && key !== "k") return;
     e.preventDefault();
     commitEditing();
     // The host formats the selection it knows, so it hears of it first.
     flushTextSelection();
-    emit("format", { format: key === "b" ? "strong" : "em" });
+    emit("format", { format: key === "b" ? "strong" : key === "i" ? "em" : "link" });
   });
 
   // Typing into the selected text element: a text element whose content is
