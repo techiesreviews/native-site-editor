@@ -14,7 +14,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -48,7 +48,7 @@ test("selecting a page element opens its source and matching CSS rule", async ({
 
   await frame.locator(".hero h1").click();
 
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(page.locator("#secondary-rules")).toContainText(".hero h1");
   await expect(page.locator("#content-secondary .view-lines")).toContainText(".hero h1");
@@ -90,7 +90,7 @@ test("selection with no direct matching rules falls back to shared body CSS", as
 
   await frame.locator("unmatched-probe").click();
 
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(page.locator("#secondary-rules")).toContainText("body");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain("body");
@@ -108,7 +108,7 @@ test("selecting inside a shadow component opens the component owner and shared C
     body.click();
   });
 
-  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
@@ -175,7 +175,7 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
 
   await frame.locator(".hero h1").click();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
   await expect(page.locator("#secondary-rules")).toContainText(".hero h1");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".hero h1");
 
@@ -190,12 +190,12 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
       selectors: [{ path: "src/styles/site.css", selector: "body" }],
     }, "*");
   });
-  await expect(page.locator("#current-page")).toHaveText("src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
 
   // A plain click on a link selects it (the link lives in the header component)
   // and does not navigate: the About page stays rendered.
   await frame.getByRole("link", { name: "Home", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/site-header/site-header.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-header/site-header.html");
   await expect(page.locator("#secondary-rules")).toContainText(".site-nav a");
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   await frame.getByRole("link", { name: "Home", exact: true }).click({ modifiers: ["ControlOrMeta"] });
@@ -294,7 +294,7 @@ test("slotted light DOM selection keeps page ownership and inline grouped CSS ig
 
   await frame.locator(".slot-probe").click();
 
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Reusable cards</span>");
   await page.locator("#secondary-rules button", { hasText: "slot-probe" }).first().click();
@@ -321,7 +321,7 @@ test("selecting an element puts the caret after its start tag in the owning sour
   await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
 
   await frame.locator(".filler p").nth(2).click();
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
   await expect
     .poll(() => caretToLineEnd(page, "#content"))
@@ -339,7 +339,7 @@ test("selecting an element puts the caret after its start tag in the owning sour
     const card = document.querySelectorAll("project-card")[2] as HTMLElement;
     (card.shadowRoot!.querySelector("card-note") as HTMLElement).click();
   });
-  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
   await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Shared across cards</card-note>");
 
   // Edits above the element keep the mark on it.
@@ -432,18 +432,18 @@ test("folders only expand, and a component file opens beside its own CSS", async
     if ((await item.getAttribute("aria-expanded")) === "false") await item.click();
     await expect(item).toHaveAttribute("aria-expanded", "true");
     // The open page and its stylesheet are untouched by browsing folders.
-    await expect(page.locator("#current-page")).toHaveText(indexPath);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
     await expect(page.locator("#secondary-title")).toHaveText(cssPath);
     await expect(page.locator("#content [role=\"textbox\"]").first()).toBeAttached();
   }
   // Collapsing a folder changes nothing either.
   await (await explorerItem(page, "project-card")).click();
   await expect(await explorerItem(page, "project-card")).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await (await explorerItem(page, "project-card")).click();
 
   await (await explorerItem(page, "project-card.html")).click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
   await expect(page.locator("#content .view-lines")).toContainText("project-card__title", { timeout: 20_000 });
   await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
   await expect(page.locator("#content-secondary .view-lines")).toContainText("project-card");
@@ -457,7 +457,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   const featureFolder = await explorerItem(page, "feature-block");
   if ((await featureFolder.getAttribute("aria-expanded")) === "false") await featureFolder.click();
   await (await explorerItem(page, "feature-block.html")).click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/feature-block/feature-block.html");
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   // No page uses it, so the preview shows the component by itself, still editable.
   const frame = page.frameLocator(".native-preview-frame");
@@ -469,7 +469,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   expect((await frame.locator("feature-block").boundingBox())!.width).toBeLessThanOrEqual(960);
   await featureTitle.click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
-  await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/feature-block/feature-block.html");
   // Editing the template renders in place.
   await page.keyboard.press("End");
   await page.keyboard.type("!");
@@ -484,7 +484,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   const pages = await explorerItem(page, "pages");
   if ((await pages.getAttribute("aria-expanded")) === "false") await pages.click();
   await (await explorerItem(page, "index.html")).click();
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(frame.locator(".hero h1")).toBeVisible();
   await expect(frame.locator("feature-block")).toHaveCount(0);
 });

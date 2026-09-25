@@ -11,7 +11,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 

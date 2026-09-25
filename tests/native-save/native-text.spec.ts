@@ -12,7 +12,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -91,7 +91,7 @@ test("text inside a component template is typed into that template", async ({ pa
   const frame = page.frameLocator(".native-preview-frame");
   const footer = frame.locator(".site-footer p");
   await footer.click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
   await page.keyboard.press("Home");
   await page.keyboard.type("New: ");
   await page.keyboard.press("Enter");

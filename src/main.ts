@@ -28,7 +28,7 @@ import { createConfirmDialog } from "./components/confirm-dialog";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
-import { buildNativePagesTree, firstHeadingText, nativeNewTarget, type NativeNewTarget } from "./native-pages";
+import { buildNativePagesTree, firstHeadingText, nativeNewTarget, nativePageLabel, type NativeNewTarget } from "./native-pages";
 import {
   nativeManifestPaths,
   nativeDefaultRoute,
@@ -1388,14 +1388,15 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const preview = nativePreview;
   if (!editor || !preview) return;
   const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
-  const edit = nativeInsertEdit(nativeSources()[path] ?? "", point.parent, point.index, choice.tag, template);
+  const source = nativeSources()[path] ?? "";
+  const edit = nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
   if (!edit) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
   }
   preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
   try {
-    editor.replaceActiveRanges([{ path, ...edit, expected: "" }]);
+    editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
     element("status").textContent = `${choice.label} added`;
   } catch (error) {
     preview.selectAfterUpdate(undefined);
@@ -1578,6 +1579,7 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
   }
   const parsed = resolveNativeProject(nativePageFiles(), result.text);
   if (parsed.ok) manifest.pages = parsed.manifest.pages;
+  updateCurrentPageLabel();
   element("status").textContent = value ? `${label} updated` : `${label} removed`;
 }
 
@@ -1620,6 +1622,7 @@ function refreshNativeRoutes() {
   updateAgentContext();
   pageStructure?.refreshMeta();
   renderPagesTree();
+  updateCurrentPageLabel();
 }
 
 // Resolve every manifest file to its effective source: a mounted editor model
@@ -1998,6 +2001,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
   if (!live()) return true;
   nativeManifest = manifest;
   pageStructure?.refreshMeta();
+  updateCurrentPageLabel();
   nativePreview?.setError(undefined);
   nativePreview?.setWarnings(nativeWarningItems(parsed));
   nativePreview?.activate(manifest);
@@ -2027,11 +2031,32 @@ function setCurrentPage(path?: string) {
     linkedStyle = undefined;
     closeSecondary();
   }
-  element("current-page").textContent = path ?? "Select a page";
+  updateCurrentPageLabel();
   element("primary-title").textContent = path ?? "";
   element("explorer-toggle").title = path
     ? `Pages & files — ${path}`
     : "Pages & files";
+}
+
+// The top bar names the open file: a page of the native site as the Pages
+// tab labels it (its manifest title, else its leading comment's, else its
+// first heading, else its URL; "Home" for the home page), anything else by
+// its path, which the button's tooltip and `data-path` always give.
+function updateCurrentPageLabel() {
+  const path = currentPath;
+  const span = element("current-page");
+  const route = nativeRouteForPath(path);
+  const label = path && route && nativeManifest
+    ? nativePageLabel(path, {
+      routes: nativeManifest.routes,
+      titles: { [route]: nativeRouteInfo(route).title },
+      heading: (file) => firstHeadingText(nativeEffectiveSource(file)),
+    })
+    : undefined;
+  const text = label ?? path ?? "Select a page";
+  if (span.textContent !== text) span.textContent = text;
+  if (path) span.dataset.path = path;
+  else delete span.dataset.path;
 }
 
 function openExplorer() {
@@ -3184,6 +3209,7 @@ function afterFileChanges() {
   }
   renderFileTree();
   updateAgentContext();
+  updateCurrentPageLabel();
 }
 
 // Opens `path` after an operation, or the home page (else the folder summary) when it is gone.
@@ -3765,6 +3791,8 @@ async function mountSource(
       commitHistory?.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
       if (value?.path === NATIVE_MANIFEST_PATH) pageStructure?.refreshMeta();
+      // A heading or title typed in the open file renames it in the top bar.
+      updateCurrentPageLabel();
     },
     onHistory: openHistory,
     discardPlan: path === NATIVE_MANIFEST_PATH ? nativeManifestDiscardPlan : undefined,

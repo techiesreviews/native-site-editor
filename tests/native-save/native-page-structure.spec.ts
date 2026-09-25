@@ -8,7 +8,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -93,7 +93,7 @@ test("the tree follows the preview route and structural edits", async ({ page })
   await expect(tree(page).locator("[aria-selected='true']")).toHaveCount(0);
   // A row on the About page opens that file and selects there.
   await row(page, "Heading About this project").click();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(row(page, "Heading About this project")).toHaveAttribute("aria-selected", "true");
 });

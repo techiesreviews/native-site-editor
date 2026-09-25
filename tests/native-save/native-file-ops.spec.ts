@@ -34,7 +34,7 @@ const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to Gi
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "src/pages/index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
-  await expect(page.locator("#current-page")).toHaveText(file, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
 }
@@ -247,7 +247,8 @@ test("renaming a page re-keys its title to the new URL and keeps it open there; 
   await expect(dialog).toContainText("Its URL changes. 1 page links to #/work/fern-and-kettle/; those links are not updated.");
   await dialog.getByRole("button", { name: "Rename" }).click();
   await expect(status(page)).toHaveText("Renamed src/pages/work/fern-and-kettle.html to src/pages/work/fern.html.");
-  await expect(page.locator("#current-page")).toHaveText("src/pages/work/fern.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/fern.html");
+  await expect(page.locator("#current-page")).toHaveText("Fern & Kettle");
   await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
   await expect(page.getByRole("group", { name: "Page" }).getByLabel("Title")).toHaveValue("Fern & Kettle");
   expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({ "/work/fern/": { title: "Fern & Kettle" } });
@@ -257,7 +258,7 @@ test("renaming a page re-keys its title to the new URL and keeps it open there; 
   // Undo right after takes the rename and the manifest's change back.
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/work/fern-and-kettle.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/fern-and-kettle.html");
   await expect(status(page)).toHaveText("Undid renaming src/pages/work/fern-and-kettle.html to src/pages/work/fern.html.");
   expect(await draft(page, manifestPath)).toBeUndefined();
   expect(await draft(page, "src/pages/work/fern.html")).toBeUndefined();
@@ -325,7 +326,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   const menu = page.getByRole("menu", { name: "Actions for Fern & Kettle café" });
   await expect(menu.getByRole("menuitem")).toHaveText([/^Rename/, "Duplicate", /^Delete/]);
   await menu.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/work/fern-and-kettle-copy.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/work/fern-and-kettle-copy.html");
   await expect(status(page)).toHaveText("Duplicated Fern & Kettle café as Fern & Kettle café (copy) at /work/fern-and-kettle-copy/.");
   await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
 
@@ -339,7 +340,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await expect(item(page, "Fern & Kettle café (copy)")).toHaveCount(0);
   expect(await draft(page, "src/pages/work/fern-and-kettle-copy.html")).toBeUndefined();
   expect(Object.keys(JSON.parse((await draft(page, manifestPath)).content).routes)).toEqual(["/work/fern-and-kettle/"]);
-  await expect(page.locator("#current-page")).toHaveText("src/pages/index.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/index.html");
 
   // Home has no Delete.
   await openPages(page);
@@ -351,10 +352,10 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   // Delete a collection with its pages.
   await explorer(page).getByRole("button", { name: "Actions for Work" }).click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  const deleteCollection = page.getByRole("dialog", { name: "Delete the collection Work and its 2 pages?" });
+  const deleteCollection = page.getByRole("dialog", { name: "Delete the collection Work and its 3 pages?" });
   await expect(deleteCollection).toContainText("1 page links to these pages; those links will lead nowhere.");
   await deleteCollection.getByRole("button", { name: "Delete" }).click();
-  await expect(status(page)).toHaveText("Deleted the folder src/pages/work and its 2 files.");
+  await expect(status(page)).toHaveText("Deleted the folder src/pages/work and its 3 files.");
   await expect(item(page, "Work")).toHaveCount(0);
   await expect(item(page, "Fern & Kettle café")).toHaveCount(0);
   expect(JSON.parse((await draft(page, manifestPath)).content).routes ?? {}).toEqual({});

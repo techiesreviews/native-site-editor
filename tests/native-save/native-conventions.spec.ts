@@ -26,7 +26,7 @@ const block = (page: Page) => page.getByRole("group", { name: "Page" });
 
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {
   await page.goto(`${baseURL}/${hash(file)}`);
-  await expect(page.locator("#current-page")).toHaveText(file, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
@@ -79,7 +79,7 @@ test("the Page block shows the page comment's title and description, read-only",
   // Selecting a preview element still opens the page source at it.
   await frame(page).locator("h1").click();
   await expect(page.locator(".native-preview-frame")).toBeVisible();
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
 
   await open(page, baseURL, "src/pages/notes/first-note.html");
   await expect(title).toHaveValue("The first note");
@@ -99,7 +99,9 @@ test("the Pages tab labels pages by their comment titles, and a new page needs n
   await newTitle.pressSequentially("Second note");
   await page.keyboard.press("Enter");
   await expect(page.locator("#status")).toHaveText("Created the page Second note at /notes/second-note/.");
-  await expect(page.locator("#current-page")).toHaveText("src/pages/notes/second-note.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/notes/second-note.html");
+  // With no title in a comment, the top bar names it by its heading.
+  await expect(page.locator("#current-page")).toHaveText("Second note");
   await expect(frame(page).locator("h1")).toHaveText("Second note");
   // It is built from the home page, without the home page's comment.
   await expect(block(page).getByLabel("Title")).toHaveValue("");
@@ -187,7 +189,9 @@ test("with no manifest, the Pages tab's Rename is disabled with why, and Duplica
   // Duplicate: the copy's leading comment carries its title.
   await page.keyboard.press("Shift+F10");
   await menu.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/pages/notes/first-note-copy.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/notes/first-note-copy.html");
+  // The top bar names it by its comment's title, not its heading.
+  await expect(page.locator("#current-page")).toHaveText("The first note (copy)");
   await expect(page.locator("#status")).toHaveText("Duplicated The first note as The first note (copy) at /notes/first-note-copy/.");
   await expect(frame(page).locator("h1")).toHaveText("First note");
   await expect(block(page).getByLabel("Title")).toHaveValue("The first note (copy)");

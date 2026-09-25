@@ -11,7 +11,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -208,7 +208,7 @@ test("a selected link takes an address as typed with page suggestions, and the b
   // A link's Address applies as typed: pages of the site are suggested, and
   // any other text is the address itself. No Page menu, no Follow link, no Apply.
   await frame.getByRole("link", { name: "About", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/site-header/site-header.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-header/site-header.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page).getByRole("button", { name: "Follow link" })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Page" })).toHaveCount(0);
@@ -261,6 +261,6 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await page.locator("#files").getByRole("button", { name: "src", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "styles", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "site.css", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveText("src/styles/site.css");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/styles/site.css");
   await expect(bar(page)).toBeHidden();
 });

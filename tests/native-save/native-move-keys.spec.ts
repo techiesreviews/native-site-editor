@@ -12,7 +12,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -151,7 +151,7 @@ test("Alt+Down on a page structure row while a component file is open opens the 
     const card = document.querySelector("project-card") as HTMLElement;
     (card.shadowRoot!.querySelector(".project-card__body") as HTMLElement).click();
   });
-  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
   await expect(tree(page)).toBeVisible();
   // Focus the section's row without clicking it (a click would open the page by itself).
   await row(page, "Section").evaluate((el) => (el as HTMLElement).focus());
@@ -159,7 +159,7 @@ test("Alt+Down on a page structure row while a component file is open opens the 
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
   await expect(status(page)).toHaveText("Moved down");
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(row(page, "Section")).toBeFocused();
   await undo(page);
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
