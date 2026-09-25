@@ -221,8 +221,13 @@ function mountWorkspace() {
     pageMeta: nativePageMeta,
     onPageMeta: writeNativePageMeta,
     onPageMetaClose: () => editorModule?.closeActiveEditGroup(NATIVE_MANIFEST_PATH),
-    onMove: (path, item, direction) =>
-      isNativeSectionTag(item.tag) ? (moveNativeSection({ path, node: item.node, tag: item.tag }, direction) ? "moved" : "stayed") : undefined,
+    onMove: (path, item, direction) => {
+      if (!isNativeSectionTag(item.tag)) return undefined;
+      const target = { path, node: item.node, tag: item.tag };
+      if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction) ?? "stayed";
+      void moveNativeSectionAfterOpening(target, direction);
+      return "pending";
+    },
     canDrag: (item) => isNativeSectionTag(item.tag),
     onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
     announce: (text) => { element("status").textContent = text; },
@@ -952,20 +957,33 @@ function isNativeSectionTag(tag: string) {
 
 // Moves a whole section one sibling position, as one undo step, keeping it
 // selected: the Move up/down buttons and Alt+Up/Down from the bar, the
-// preview and the page structure all come here. At the first or last
-// position, or for anything but a section, nothing happens. Returns whether
-// the section moved.
-function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down") {
+// preview and the page structure all come here. "stayed" at the first or
+// last position; nothing for anything but a section, when the page is not
+// the mounted file, or when the edit could not be made.
+function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down"): "moved" | "stayed" | undefined {
   const { path, node } = target;
-  if (!path || !node?.length || currentPath !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return false;
+  if (!path || !node?.length || currentPath !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
   const source = nativeSources()[path] ?? "";
   const range = locateNativeElementRange(source, node);
+  if (!range) return undefined;
   const parent = node.slice(0, -1);
   const index = node[node.length - 1] + (direction === "up" ? -1 : 1);
   const other = index >= 0 ? locateNativeElementRange(source, [...parent, index]) : undefined;
-  if (!range || !other) return false;
+  if (!other) return "stayed";
   const edits = direction === "up" ? swapEdits(source, other, range) : swapEdits(source, range, other);
-  return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down");
+  return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down") ? "moved" : undefined;
+}
+
+// Alt+Up/Down on a page structure row while another file is open (a
+// component chosen in the preview, a file from the explorer): the page
+// file opens first, as an insert does, then the section moves. A move that
+// still cannot be made is said so rather than passed off as the end of the
+// list.
+async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down") {
+  const epoch = generation;
+  await restoreFile(target.path, epoch, { linkDefaultStyle: false });
+  if (epoch !== generation) return;
+  if (!moveNativeSection(target, direction)) element("status").textContent = "The section could not be moved";
 }
 
 // Moves a whole section to another gap among its siblings (`index` counted

@@ -142,3 +142,26 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await expect(frame(page).locator("section.hero > h1:first-child")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
+
+test("Alt+Down on a page structure row while a component file is open opens the page first, then moves the section", async ({ page }) => {
+  // A click inside a card opens the card's template: the page is no longer the open file.
+  const handle = await page.locator(".native-preview-frame").elementHandle();
+  const child = await handle!.contentFrame();
+  await child!.evaluate(() => {
+    const card = document.querySelector("project-card") as HTMLElement;
+    (card.shadowRoot!.querySelector(".project-card__body") as HTMLElement).click();
+  });
+  await expect(page.locator("#current-page")).toHaveText("src/components/project-card/project-card.html");
+  await expect(tree(page)).toBeVisible();
+  // Focus the section's row without clicking it (a click would open the page by itself).
+  await row(page, "Section").evaluate((el) => (el as HTMLElement).focus());
+  await expect(row(page, "Section")).toBeFocused();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
+  await expect(status(page)).toHaveText("Moved down");
+  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(row(page, "Section")).toBeFocused();
+  await undo(page);
+  await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});

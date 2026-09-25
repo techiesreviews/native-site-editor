@@ -31,11 +31,12 @@ export interface PageStructureHandlers {
   /** A row was chosen: select this element in the preview. */
   onSelect: (path: string, node: number[]) => void;
   /**
-   * Alt+Up/Down on a row: move that element one sibling position. "moved" or
-   * "stayed" (a section at its first or last position) for a section; nothing
+   * Alt+Up/Down on a row: move that element one sibling position. "moved",
+   * "stayed" (a section at its first or last position) or "pending" (the
+   * page file is opening first; the move follows) for a section; nothing
    * for other elements, which do not move.
    */
-  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | undefined;
+  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | "pending" | undefined;
   /** Whether this element's row can be dragged to another position (a whole section). */
   canDrag?: (item: NativeStructureItem) => boolean;
   /**
@@ -299,7 +300,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const target = [...item.node.slice(0, last), item.node[last] + (direction === "up" ? -1 : 1)];
       const outcome = handlers.onMove?.(structure.path, item, direction);
       if (outcome) {
-        if (outcome === "moved") focusAfterRender = key(target);
+        if (outcome !== "stayed") focusAfterRender = key(target);
         event.preventDefault();
         event.stopPropagation();
         return;
