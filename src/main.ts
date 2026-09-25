@@ -33,7 +33,9 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
-import { findStyleRulesInSources, type StyleRule } from "./styles-index";
+import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
+import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
+import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports } from "../shared/css-imports";
 import type {
   EditorContext,
@@ -186,6 +188,7 @@ function mountWorkspace() {
   nativePreview = createNativePreview(element("main"), {
     onSelect: (selection) => void selectNativeSource(selection),
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
+    onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
     onTextSelection: (text) => {
       nativeTextSelection = text && lastNativeSelection?.node ? { ...text, path: lastNativeSelection.path, node: lastNativeSelection.node } : undefined;
       if (lastNativeSelection) renderNativeEditBar(lastNativeSelection);
@@ -325,8 +328,10 @@ async function showCodeChanges(path: string) {
 }
 
 // Side by side with the page: its stylesheet, and after a click in the
-// preview, every rule that styles the selected element. An edit to either
-// file re-derives the matching rules.
+// preview, every rule that styles the selected element in the order the
+// cascade applies them (shared/cascade.ts): rules that decide the element's
+// look first, rules whose declarations all lose last. An edit to either file
+// re-maps the rules to their source.
 const linkedStyleSourceByPath = new Map<string, string>();
 let linkedStyleContext = "";
 function syncLinkedStyles(path: string, content: string) {
@@ -339,39 +344,106 @@ function syncLinkedStyles(path: string, content: string) {
   linkedStyleSourceByPath.set(path, content);
   if (previous !== content && linkedStyle && (path === linkedStyle.page || path === secondaryPath)) void refreshLinkedStyleRules();
 }
-let selectedStyleSelectors: string[] = [];
-let linkedStyle: { page: string; css?: string; rules: StyleRule[] } | undefined;
-let nativeLinkedStyleMatches: NativePreviewSelection["selectors"] = [];
+// A rule in the style panel: its range in its file and how the cascade treats it.
+interface LinkedRule extends StyleRule {
+  rule: NativeSelectedRule;
+  status: RuleStatus;
+  // Per declaration of `rule.declarations`, and for an overridden one the rule that wins its property.
+  declarations: DeclarationStatus[];
+  winners: (NativeSelectedRule | undefined)[];
+}
+// Rules the preview matched on an element, with what resolves them.
+interface NativeStyles {
+  rules: NativeSelectedRule[];
+  cascade?: NativeCascade;
+  // The element, for its `style` attribute's range in the source.
+  node?: number[];
+}
+let linkedStyle: { page: string; css?: string; rules: LinkedRule[]; isDefault?: boolean } | undefined;
+let nativeLinkedStyles: NativeStyles | undefined;
+// The rules styling the preview's <body>: with nothing selected, the first
+// stylesheet among them opens beside a page.
+let nativeBodyStyles: NativeStyles | undefined;
 let linkedStyleRequest = 0;
 let disposeSecondary: (() => void) | undefined;
 let secondaryPath: string | undefined;
 let secondaryHistoryScope: string | undefined;
 let secondaryRequest = 0;
-function defaultSharedStyleMatch() {
-  if (!nativeManifest) return undefined;
+
+// The cascade over `styles`, in display order, mapped to source ranges. A
+// rule whose declarations the CSSOM splits around nested rules is one entry.
+function linkedRules(styles: NativeStyles): LinkedRule[] {
   const sources = nativeSources();
-  const paths = new Set(expandStyleImports(nativeManifest.styles, (path) => sources[path]).sheets.map((sheet) => sheet.path));
-  for (const path of paths) {
-    const match = { path, selector: "body" };
-    if (findStyleRulesInSources(sources, [match]).length) return match;
+  const result = resolveSelectedRules(styles.rules, styles.cascade);
+  const found = new Map<number, StyleRule[]>();
+  const lookups = styles.rules.map((rule) => rule.kind === "inline" ? { path: "", selector: "" } : rule);
+  for (const rule of findStyleRulesInSources(sources, lookups)) {
+    if (!found.has(rule.match)) found.set(rule.match, []);
+    found.get(rule.match)!.push(rule);
   }
-  const path = nativeManifest.styles[0];
-  return path ? { path, selector: "body" } : undefined;
+  styles.rules.forEach((rule, index) => {
+    const source = sources[rule.path];
+    const tag = rule.kind === "inline" && styles.node && source !== undefined ? locateNativeElement(source, styles.node) : undefined;
+    if (tag) found.set(index, [{ path: rule.path, selector: rule.selector, start: tag.start, end: tag.end, match: index }]);
+  });
+  const winner = (property: string) => {
+    const at = result.winners[property];
+    return at ? styles.rules[at.rule] : undefined;
+  };
+  const out: LinkedRule[] = [];
+  const byRange = new Map<string, LinkedRule>();
+  for (const index of result.order) {
+    const rule = styles.rules[index];
+    const statuses = result.declarations[index];
+    const winners = (rule.declarations ?? []).map((item, n) => statuses[n] === "overridden" ? winner(item.property) : undefined);
+    for (const located of found.get(index) ?? []) {
+      const key = `${located.path}\n${located.start}\n${located.end}`;
+      const same = byRange.get(key);
+      if (!same) {
+        const linked: LinkedRule = { ...located, rule, status: result.rules[index], declarations: statuses, winners };
+        byRange.set(key, linked);
+        out.push(linked);
+        continue;
+      }
+      same.rule = { ...same.rule, declarations: [...(same.rule.declarations ?? []), ...(rule.declarations ?? [])] };
+      same.declarations = [...same.declarations, ...statuses];
+      same.winners = [...same.winners, ...winners];
+      same.status = same.status === "wins" || result.rules[index] === "wins" ? "wins"
+        : same.status === "overridden" && result.rules[index] === "overridden" ? "overridden" : "neutral";
+    }
+  }
+  return out;
+}
+
+function defaultLinkedStyle() {
+  if (!nativeManifest) return undefined;
+  const rules = nativeBodyStyles ? linkedRules(nativeBodyStyles) : [];
+  const css = rules.find((rule) => /\.css$/.test(rule.path))?.path ?? nativeManifest.styles[0];
+  return css ? { css, rules } : undefined;
 }
 async function openDefaultLinkedStyle(page = currentPath) {
-  const match = defaultSharedStyleMatch();
-  if (!page || !match) return false;
+  const found = defaultLinkedStyle();
+  if (!page || !found) return false;
   const request = ++linkedStyleRequest;
   const epoch = generation;
-  nativeLinkedStyleMatches = [match];
-  selectedStyleSelectors = ["body"];
-  const rules = findStyleRulesInSources(nativeSources(), nativeLinkedStyleMatches);
-  const css = match.path;
-  linkedStyle = { page, css, rules };
-  if (!(await openSecondary(css))) return false;
+  nativeLinkedStyles = nativeBodyStyles;
+  linkedStyle = { page, css: found.css, rules: found.rules.length ? found.rules : linkedStyleIdle, isDefault: true };
+  if (!(await openSecondary(found.css))) return false;
   if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
   renderLinkedStyle();
   return true;
+}
+// New <body> rules from the preview: a page showing them follows, opening
+// another stylesheet when the cascade now puts another one first.
+function updateBodyStyles(styles: NativeStyles) {
+  nativeBodyStyles = styles;
+  if (!linkedStyle?.isDefault || linkedStyle.page !== currentPath) return;
+  const found = defaultLinkedStyle();
+  if (found && found.css === linkedStyle.css) {
+    nativeLinkedStyles = styles;
+    linkedStyle = { ...linkedStyle, rules: found.rules.length ? found.rules : linkedStyleIdle };
+    renderLinkedStyle();
+  } else void openDefaultLinkedStyle(linkedStyle.page);
 }
 function closeSecondary() {
   secondaryRequest++;
@@ -450,7 +522,8 @@ async function openSecondary(css: string) {
     return false;
   }
 }
-// Title and rule chips of the secondary pane; highlights the rules in both panes.
+// Title and rule chips of the secondary pane; highlights the rules in both
+// panes, crossing out the declarations the cascade overrides.
 function renderLinkedStyle() {
   const linked = linkedStyle;
   const title = element("secondary-title");
@@ -458,21 +531,97 @@ function renderLinkedStyle() {
   chips.replaceChildren();
   if (!linked || !secondaryPath) return;
   title.textContent = secondaryPath;
-  const inPane = (path: string) => linked.rules.filter((rule) => rule.path === path);
+  const inPane = (path: string) => linked.rules.filter((rule) => rule.path === path).map(ruleMarks);
   editorModule?.highlightRanges(secondaryPath, inPane(secondaryPath));
   if (currentPath && currentPath !== secondaryPath) editorModule?.highlightRanges(currentPath, inPane(currentPath));
   if (!linked.rules.length) {
     if (linked.rules !== linkedStyleIdle) chips.append(node("span", "muted", "No rules match this element"));
     return;
   }
-  for (const rule of linked.rules) {
-    const chip = button(rule.selector, () => void revealRule(rule), "code-pane__rule");
-    chip.title = `${rule.path} · ${rule.selector}`;
-    if (rule.path !== secondaryPath) chip.append(node("span", "code-pane__rule-file", rule.path.split("/").pop() ?? ""));
-    chips.append(chip);
-  }
+  for (const rule of linked.rules) chips.append(ruleChip(rule));
 }
-const linkedStyleIdle: StyleRule[] = [];
+const linkedStyleIdle: LinkedRule[] = [];
+
+// Longhands a property sets, as this browser expands it (itself for a longhand).
+const longhandCache = new Map<string, string[]>();
+function longhandsOf(property: string) {
+  if (!longhandCache.has(property)) {
+    const style = document.createElement("div").style;
+    if (!property.startsWith("--")) style.setProperty(property, "inherit");
+    const list = Array.from(style);
+    longhandCache.set(property, list.length ? list : [property]);
+  }
+  return longhandCache.get(property)!;
+}
+
+// A rule's highlight: the whole rule, dimmed when all of it is overridden,
+// and each declaration in its source whose longhands are all overridden.
+function ruleMarks(rule: LinkedRule) {
+  const struck: { start: number; end: number }[] = [];
+  const source = nativeSources()[rule.path];
+  if (rule.rule.kind !== "inline" && source !== undefined) {
+    const items = rule.rule.declarations ?? [];
+    for (const declaration of declarationRanges(source, rule.start, rule.end)) {
+      const longhands = new Set(longhandsOf(declaration.property));
+      const statuses = items.flatMap((item, index) =>
+        longhands.has(item.property) || item.shorthand === declaration.property ? [rule.declarations[index]] : []);
+      if (statuses.length && statuses.every((status) => status === "overridden")) struck.push(declaration);
+    }
+  }
+  return { start: rule.start, end: rule.end, overridden: rule.status === "overridden", struck };
+}
+
+const fileName = (path: string) => path.split("/").pop() ?? path;
+
+// A chip per rule: its selector, where it comes from (context, layer,
+// conditions, state), its file when that is not the pane's, and a tooltip
+// listing its declarations with what the cascade makes of each.
+function ruleChip(rule: LinkedRule) {
+  const origin = ruleOrigin(rule.rule);
+  const inline = rule.rule.kind === "inline";
+  const chip = button("", () => void revealRule(rule), `code-pane__rule code-pane__rule--${rule.status}`);
+  chip.append(node("span", "code-pane__rule-selector", inline ? "style=\"…\"" : rule.selector));
+  const layer = origin.layer === "unlayered" ? "" : origin.layer.replace(/^@layer /, "");
+  const tags = [inline ? "" : origin.context, layer, ...origin.conditions.map((condition) => condition.split(" ")[0]),
+    ...origin.state.filter((state) => !rule.selector.includes(state))].filter(Boolean);
+  if (tags.length) chip.append(node("span", "code-pane__rule-origin", [...new Set(tags)].join(" ")));
+  if (rule.path !== secondaryPath) chip.append(node("span", "code-pane__rule-file", fileName(rule.path)));
+  const items = rule.rule.declarations ?? [];
+  const having = (status: DeclarationStatus) => [...new Set(items.filter((_, index) => rule.declarations[index] === status).map((item) => item.property))];
+  chip.dataset.cascade = rule.status;
+  chip.dataset.wins = having("wins").join(" ");
+  chip.dataset.overridden = having("overridden").join(" ");
+  chip.title = ruleTooltip(rule);
+  return chip;
+}
+
+const MAX_TOOLTIP_DECLARATIONS = 14;
+function ruleTooltip(rule: LinkedRule) {
+  const origin = ruleOrigin(rule.rule);
+  const lines = [
+    rule.rule.kind === "inline" ? "style attribute" : rule.selector,
+    rule.path + (rule.rule.importer ? ` (imported by ${rule.rule.importer})` : ""),
+    [origin.context, origin.layer, ...origin.conditions, ...origin.state.map((state) => `in ${state} state`)].filter(Boolean).join(" · "),
+  ];
+  // A shorthand written with var() is one line, not one per longhand.
+  const seen = new Set<string>();
+  const described = (rule.rule.declarations ?? []).flatMap((item, index) => {
+    const text = `${item.shorthand ?? item.property}: ${item.value}${item.important ? " !important" : ""}`;
+    const status = rule.declarations[index];
+    const by = rule.winners[index];
+    const line = status === "overridden" ? `✕ ${text} — overridden${by ? ` by ${by.kind === "inline" ? "style attribute" : by.selector} (${fileName(by.path)})` : ""}`
+      : status === "wins" ? `✓ ${text}`
+      : status === "inactive" ? `· ${text} — @container not met`
+      : status === "state" ? `· ${text} — ${origin.state.join(", ")} only`
+      : `· ${text} — not verified`;
+    if (seen.has(line)) return [];
+    seen.add(line);
+    return [line];
+  });
+  if (described.length > MAX_TOOLTIP_DECLARATIONS) described.splice(MAX_TOOLTIP_DECLARATIONS, Infinity, `… ${described.length - MAX_TOOLTIP_DECLARATIONS} more`);
+  return [...lines.filter(Boolean), ...described].join("\n");
+}
+
 async function revealRule(rule: StyleRule) {
   if (rule.path === currentPath) {
     editorModule?.revealRange(rule.path, rule.start, rule.end);
@@ -486,17 +635,10 @@ async function revealRule(rule: StyleRule) {
 }
 
 function refreshLinkedStyleRules() {
-  if (!currentRepo || !snapshot || !linkedStyle || !selectedStyleSelectors.length) return;
-  const epoch = generation;
+  if (!currentRepo || !snapshot || !linkedStyle || !nativeLinkedStyles?.rules.length || !nativeModeActive()) return;
   const page = linkedStyle.page;
-  const css = linkedStyle.css;
-  const nativeMatches = nativeLinkedStyleMatches.slice();
-  if (!nativeModeActive()) return;
-  const rules = findStyleRulesInSources(nativeSources(), nativeMatches);
-  if (epoch !== generation || linkedStyle?.page !== page || page !== currentPath ||
-      nativeMatches.map((match) => `${match.path}\n${match.selector}`).join("\n") !==
-      nativeLinkedStyleMatches.map((match) => `${match.path}\n${match.selector}`).join("\n")) return;
-  linkedStyle = { page, css, rules };
+  if (page !== currentPath) return;
+  linkedStyle = { ...linkedStyle, rules: linkedRules(nativeLinkedStyles) };
   renderLinkedStyle();
 }
 
@@ -504,24 +646,25 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   const request = reveal ? ++linkedStyleRequest : linkedStyleRequest;
   const epoch = generation;
   const page = selection.path;
-  let matches = selection.selectors.slice();
-  const defaultMatch = defaultSharedStyleMatch();
-  if (!matches.length && defaultMatch) matches = [defaultMatch];
-  if (!reveal && (!matches.length || !secondaryPath)) return;
-  nativeLinkedStyleMatches = matches;
-  selectedStyleSelectors = matches.map((match) => match.selector);
-  const rules = findStyleRulesInSources(nativeSources(), matches);
+  // An element no rule matches shows what it inherits from: the <body> rules.
+  const styles = selection.selectors.length
+    ? { rules: selection.selectors, cascade: selection.cascade, node: selection.node }
+    : nativeBodyStyles;
+  if (!reveal && (!styles?.rules.length || !secondaryPath)) return;
+  nativeLinkedStyles = styles;
+  const rules = styles ? linkedRules(styles) : [];
   if (request !== linkedStyleRequest || epoch !== generation || page !== currentPath) return;
-  const css = rules.find((rule) => rule.path !== page)?.path ?? matches.find((match) => match.path !== page)?.path ?? defaultMatch?.path ?? secondaryPath;
+  const css = rules.find((rule) => rule.path !== page)?.path ??
+    styles?.rules.find((rule) => rule.path !== page)?.path ?? defaultLinkedStyle()?.css ?? secondaryPath;
   if (!reveal && css !== secondaryPath) return;
   linkedStyle = { page, css, rules };
   if (css && !(await openSecondary(css))) return;
   if (request !== linkedStyleRequest || epoch !== generation || page !== currentPath) return;
   if (!css) closeSecondary();
   renderLinkedStyle();
-  const top = rules[0];
-  // The page's own caret stays on the selected element; inline rules still
-  // open from their chips.
+  // The first rule in the pane's file, which decides the most; the page's
+  // own caret stays on the selected element.
+  const top = rules.find((rule) => rule.path === css);
   if (reveal && top && top.path !== page) editorModule?.revealRange(top.path, top.start, top.end);
 }
 
@@ -1212,8 +1355,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   fileGeneration++;
   secondaryRequest++;
   if (!selection.path) {
-    nativeLinkedStyleMatches = [];
-    selectedStyleSelectors = [];
+    nativeLinkedStyles = undefined;
     linkedStyle = undefined;
     void openDefaultLinkedStyle();
     return;
@@ -1544,6 +1686,7 @@ function deactivateNative() {
   nativeImportedStyleRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
+  nativeBodyStyles = undefined;
   nativeSourcesRequest++;
   nativePreview?.deactivate();
 }
@@ -2244,8 +2387,7 @@ async function openComponentLinkedStyle(page: string) {
   const entry = await findEntry(css);
   if (request !== linkedStyleRequest || epoch !== generation || currentPath !== page) return false;
   if (!entry) return openDefaultLinkedStyle(page);
-  nativeLinkedStyleMatches = [];
-  selectedStyleSelectors = [];
+  nativeLinkedStyles = undefined;
   linkedStyle = { page, css, rules: linkedStyleIdle };
   if (!(await openSecondary(css))) return false;
   if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;

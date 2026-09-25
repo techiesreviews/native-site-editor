@@ -9,6 +9,7 @@ import { createInsertControls, type InsertChoice, type InsertPoint } from "./ins
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
 import { expandStyleImports } from "../../shared/css-imports";
+import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders plain
@@ -82,11 +83,7 @@ export interface NativeNodeRequest {
   node: number[];
 }
 
-export interface NativeSelectedRule {
-  path: string;
-  selector: string;
-  ruleIndex?: number;
-}
+export type { NativeSelectedRule } from "../style-cascade";
 
 export interface NativePreviewSelection {
   path: string;
@@ -94,6 +91,8 @@ export interface NativePreviewSelection {
   text: string;
   reason: "click" | "refresh";
   selectors: NativeSelectedRule[];
+  // Layer order and computed values for resolving `selectors` (shared/cascade.ts).
+  cascade?: NativeCascade;
   // Element-child indexes from the owning file's root to the selected element.
   node?: number[];
   // The nearest enclosing link's href, when the selection sits inside one.
@@ -144,6 +143,8 @@ export interface NativeTextEdit {
 interface NativePreviewHandlers {
   onSelect?: (selection: NativePreviewSelection) => void;
   onComponentStyles?: (tags: string[]) => void;
+  // The rules styling the page's <body>, whenever they change.
+  onDefaultStyles?: (styles: { selectors: NativeSelectedRule[]; cascade?: NativeCascade }) => void;
   onTextSelection?: (selection: NativeTextSelection | undefined) => void;
   // Ctrl/⌘+B, +I or +K pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
@@ -311,6 +312,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     rafHandle = requestAnimationFrame(post);
   }
 
+  // Files a matched rule may come from: pages, components, their stylesheets,
+  // shared stylesheets and every stylesheet those import.
+  function styleSourcePaths() {
+    return new Set([
+      ...(manifest ? nativeManifestPaths(manifest) : []),
+      ...Object.values(componentStyles),
+      ...(manifest ? expandStyleImports(manifest.styles, (path) => sources[path]).imported : []),
+    ]);
+  }
+
   function onMessage(event: MessageEvent) {
     if (event.source !== frame.contentWindow) return;
     const data = event.data as { source?: string; type?: string; route?: string; context?: string } | undefined;
@@ -457,6 +468,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         tag?: unknown;
         text?: unknown;
         selectors?: unknown;
+        cascade?: unknown;
         reason?: unknown;
         node?: unknown;
         link?: unknown;
@@ -472,31 +484,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         return;
       }
       if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
-      const allowedSelectorPaths = new Set([
-        ...nativeManifestPaths(manifest),
-        ...Object.values(componentStyles),
-        ...expandStyleImports(manifest.styles, (path) => sources[path]).imported,
-      ]);
-      const selectors = Array.isArray(raw.selectors)
-        ? raw.selectors.flatMap((item) => {
-          if (!item || typeof item !== "object") return [];
-          const path = (item as { path?: unknown }).path;
-          const selector = (item as { selector?: unknown }).selector;
-          const ruleIndex = (item as { ruleIndex?: unknown }).ruleIndex;
-          if (typeof path !== "string" || typeof selector !== "string" || !allowedSelectorPaths.has(path)) return [];
-          return [{
-            path,
-            selector,
-            ruleIndex: typeof ruleIndex === "number" && Number.isFinite(ruleIndex) ? ruleIndex : undefined,
-          }];
-        }).slice(0, 50)
-        : [];
+      const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
       handlers.onSelect?.({
         path: raw.path,
         tag: typeof raw.tag === "string" ? raw.tag : "",
         text: typeof raw.text === "string" ? raw.text : "",
         reason,
         selectors,
+        cascade: readCascade(raw.cascade),
         node: Array.isArray(raw.node) && raw.node.length <= 500 &&
           raw.node.every((index) => Number.isInteger(index) && index >= 0)
           ? raw.node as number[]
@@ -504,6 +499,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         link: typeof raw.link === "string" ? raw.link : undefined,
         rect: readRect(raw.rect),
       });
+      return;
+    }
+    if (data.type === "default-styles" && manifest) {
+      const raw = data as unknown as { selectors?: unknown; cascade?: unknown };
+      handlers.onDefaultStyles?.({ selectors: readSelectedRules(raw.selectors, styleSourcePaths()), cascade: readCascade(raw.cascade) });
       return;
     }
     if (data.type === "component-styles" && manifest) {

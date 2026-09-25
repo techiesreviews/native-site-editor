@@ -314,6 +314,7 @@
     syncStyles();
     state.styleErrors.forEach(reportError);
     renderPage();
+    reportDefaultStyles();
     if (!hadError) emit("clear-error");
     var hadSelection = !!selected;
     // An edit may replace the selected element (a renamed heading, an undo):
@@ -664,12 +665,39 @@
     return owner && owner.getAttribute ? owner.getAttribute("data-native-css-path") || "" : "";
   }
 
-  function conditionApplies(rule) {
-    if (typeof CSSMediaRule !== "undefined" && rule instanceof CSSMediaRule)
-      return !rule.conditionText || matchMedia(rule.conditionText).matches;
-    if (typeof CSSSupportsRule !== "undefined" && rule instanceof CSSSupportsRule)
-      return !rule.conditionText || (CSS.supports && CSS.supports(rule.conditionText));
-    return true;
+  // The cascade behind an element, read from the CSSOM for the editor's
+  // style panel, which resolves it (shared/cascade.ts). For every style rule
+  // that matches: its file and rule index there (to map it back to source),
+  // its tree context, the layers around it, the conditions it sits behind,
+  // its order of appearance and its declarations; per tree, the layer order
+  // the browser resolved; and, with `probe`, the element's computed value of
+  // every declared property and what each declaration computes to on it.
+  //
+  // Contexts: 0 is the element's own tree (the document, or the shadow root
+  // it sits in), with its `style` attribute; then, for a slotted element, the
+  // shadow tree of each slot in its slot chain (`::slotted()` rules); last,
+  // for a host, its own shadow root (`:host` rules). Lower is outer.
+  //
+  // Conditions: `@media` and `@supports` are evaluated; `@starting-style`
+  // never applies to the element at rest; `@scope` is evaluated from its
+  // root and limit (proximity is not); `@container` cannot be evaluated from
+  // the CSSOM, so its rules count as possibly applying and the computed
+  // check settles them. Rules that match only in a user-action state
+  // (`:hover`, `:focus` …) are collected as state rules, whether or not the
+  // state holds right now.
+  var USER_ACTION = /:(?:hover|active|focus-visible|focus-within|focus)(?![\w-])/g;
+  var MAX_RULES = 300;
+  var MAX_DECLARATIONS = 200;
+  var MAX_PROBES = 400;
+  var anonymousLayers = new WeakMap();
+  var anonymousCount = 0;
+
+  function isRule(rule, name) {
+    return typeof window[name] !== "undefined" && rule instanceof window[name];
+  }
+
+  function safeMatches(el, selector) {
+    try { return el.matches(selector); } catch (_) { return false; }
   }
 
   function splitSelectorList(selector) {
@@ -690,55 +718,362 @@
     return out;
   }
 
-  function matchingRules(el) {
-    var root = el.getRootNode && el.getRootNode();
-    var sheets = sheetsIn(root instanceof ShadowRoot ? root : document);
-    var out = [], ruleIndexes = {};
-    function nextRuleIndex(path) {
-      path = path || ownerPath(el);
-      var value = ruleIndexes[path] || 0;
-      ruleIndexes[path] = value + 1;
-      return value;
+  // Index of the ")" closing the "(" at `open`.
+  function closingParen(text, open) {
+    var depth = 0;
+    for (var i = open; i < text.length; i++) {
+      if (text[i] === "(") depth++;
+      else if (text[i] === ")" && --depth === 0) return i;
     }
-    function walk(rules, active) {
-      for (var i = 0; i < rules.length; i++) {
-        var rule = rules[i];
-        if (typeof CSSStyleRule !== "undefined" && rule instanceof CSSStyleRule) {
-          var path = sheetPath(rule.parentStyleSheet);
-          var currentIndex = nextRuleIndex(path);
-          if (!active) continue;
-          splitSelectorList(rule.selectorText).forEach(function (selector) {
-            try {
-              if (el.matches(selector)) {
-              out.push({ path: path || ownerPath(el), selector: selector, ruleIndex: currentIndex });
-            }
-            } catch (_) {}
+    return -1;
+  }
+
+  // The file a tree's own <style> elements belong to.
+  function rootPath(root) {
+    if (!state) return "";
+    if (root instanceof ShadowRoot) return String(state.componentPaths && state.componentPaths[root.host.localName] || "");
+    return String(state.pagePaths && state.pagePaths[state.route] || "");
+  }
+
+  function parentOrHost(n) {
+    if (n.parentElement) return n.parentElement;
+    var root = n.getRootNode && n.getRootNode();
+    return root instanceof ShadowRoot ? root.host : null;
+  }
+
+  // `<prefix>::slotted(<argument>)`: the slot matches the prefix, the element the argument.
+  function slottedMatch(el, slot, part) {
+    var at = part.indexOf("::slotted(");
+    if (at < 0) return false;
+    var close = closingParen(part, at + 9);
+    if (close < 0 || part.slice(close + 1).trim()) return false;
+    var prefix = part.slice(0, at);
+    if (!prefix || /[\s>+~]$/.test(prefix)) prefix += "*";
+    return safeMatches(slot, prefix) && safeMatches(el, part.slice(at + 10, close));
+  }
+
+  // `:host`, `:host(<selector>)` or `:host-context(<selector>)` on its own:
+  // the host is featureless, so nothing may follow.
+  function hostMatch(el, part) {
+    var head = /^:host(-context)?/.exec(part);
+    if (!head) return false;
+    var rest = part.slice(head[0].length), argument = null;
+    if (rest[0] === "(") {
+      var close = closingParen(rest, 0);
+      if (close < 0) return false;
+      argument = rest.slice(1, close);
+      rest = rest.slice(close + 1);
+    }
+    if (rest.trim()) return false;
+    if (!head[1]) return argument === null || safeMatches(el, argument);
+    if (argument === null) return false;
+    for (var n = el; n; n = parentOrHost(n)) if (safeMatches(n, argument)) return true;
+    return false;
+  }
+
+  // An `@scope (start) to (end)` applies below the nearest element matching
+  // `start` (the element included) down to, not including, one matching
+  // `end`. Without a start, the scope is the owning <style>'s parent.
+  function scopeActive(el, scope) {
+    if (!scope.start) return !scope.parent || scope.parent.contains(el);
+    var root = el;
+    while (root && !safeMatches(root, scope.start)) root = root.parentElement;
+    if (!root) return false;
+    if (!scope.end) return true;
+    for (var n = el; n && n !== root; n = n.parentElement) if (safeMatches(n, scope.end)) return false;
+    return true;
+  }
+
+  // A selector inside `@scope`: `:scope` and `&` are the scoping root, and a
+  // selector with neither is relative to it.
+  function scopedSelector(part, scope) {
+    var root = scope.start ? ":is(" + scope.start + ")" : "*";
+    return /:scope(?![\w-])|&/.test(part) ? part.replace(/:scope(?![\w-])|&/g, root) : root + " " + part;
+  }
+
+  // Longhands a shorthand sets, as the CSSOM expands it.
+  var longhandCache = {};
+  function longhandsOf(name) {
+    if (!Object.prototype.hasOwnProperty.call(longhandCache, name)) {
+      var style = document.createElement("div").style;
+      try { style.setProperty(name, "inherit"); } catch (_) {}
+      longhandCache[name] = Array.prototype.slice.call(style);
+    }
+    return longhandCache[name];
+  }
+
+  // A declaration block's longhands, custom properties included. A shorthand
+  // written with var() leaves its longhands without a value of their own:
+  // they carry the shorthand and its value instead.
+  function readDeclarations(style) {
+    var out = [], shorthands = null;
+    for (var i = 0; i < style.length && out.length < MAX_DECLARATIONS; i++) {
+      var property = style[i];
+      var item = {
+        property: property,
+        value: style.getPropertyValue(property),
+        important: style.getPropertyPriority(property) === "important"
+      };
+      if (!item.value && property.indexOf("--") !== 0) {
+        if (!shorthands) {
+          shorthands = {};
+          (style.cssText.match(/(?:^|;)\s*[a-z][\w-]*(?=\s*:)/gi) || []).forEach(function (found) {
+            var name = found.replace(/^;?\s*/, "").toLowerCase();
+            longhandsOf(name).forEach(function (longhand) {
+              if (longhand !== name && !shorthands[longhand]) shorthands[longhand] = name;
+            });
           });
-        } else if (rule.cssRules) {
-          walk(rule.cssRules, active && conditionApplies(rule));
+        }
+        var shorthand = shorthands[property];
+        if (shorthand) {
+          item.shorthand = shorthand;
+          item.value = style.getPropertyValue(shorthand);
+          item.important = style.getPropertyPriority(shorthand) === "important";
+        }
+      }
+      out.push(item);
+    }
+    return out;
+  }
+
+  function collectRules(root, context, kind, el, slot, into) {
+    var fallback = rootPath(root);
+    var counts = {};
+    var layers = into.layers[context] = [];
+    var registered = {};
+    function register(path) {
+      for (var i = 1; i <= path.length; i++) {
+        var key = path.slice(0, i).join("\n");
+        if (registered[key]) continue;
+        registered[key] = true;
+        layers.push(path.slice(0, i));
+      }
+    }
+    function child(ctx, changes) {
+      return Object.assign({}, ctx, changes);
+    }
+    function test(part, ctx) {
+      if (kind === "slotted") return slottedMatch(el, slot, part);
+      if (kind === "host") return hostMatch(el, part);
+      if (ctx.scope) return safeMatches(el, scopedSelector(part, ctx.scope));
+      return safeMatches(el, part);
+    }
+    // The rule's matching parts: `selector` as written (for display and the
+    // source lookup) and `match` resolved (for specificity). Parts that match
+    // at rest win over ones that match only in a user-action state.
+    function matchRule(parts, resolved, ctx) {
+      var normal = null, stateful = null, states = [], current = false;
+      resolved.forEach(function (part, n) {
+        var match = ctx.scope ? part.replace(/&/g, ":is(" + (ctx.scope.start || ":scope") + ")") : part;
+        var found = part.match(USER_ACTION);
+        if (!found) {
+          if (!test(part, ctx)) return;
+          if (!normal) normal = { selector: parts[n], match: [] };
+          normal.match.push(match);
+          return;
+        }
+        var now = test(part, ctx);
+        if (!now && !test(part.replace(USER_ACTION, ":is(*)"), ctx)) return;
+        if (!stateful) stateful = { selector: parts[n], match: [] };
+        stateful.match.push(match);
+        current = current || now;
+        found.forEach(function (name) { if (states.indexOf(name) < 0) states.push(name); });
+      });
+      if (normal) return normal;
+      if (!stateful) return null;
+      stateful.state = states;
+      stateful.current = current;
+      return stateful;
+    }
+    function entryFor(found, ctx, declarations) {
+      var entry = {
+        path: ctx.path,
+        selector: found.selector,
+        match: found.match,
+        kind: kind,
+        context: context,
+        layer: ctx.layer,
+        layerName: ctx.names.join("."),
+        conditions: ctx.conditions,
+        order: into.order++,
+        declarations: declarations
+      };
+      if (found.ruleIndex !== undefined) entry.ruleIndex = found.ruleIndex;
+      if (ctx.importer) entry.importer = ctx.importer;
+      if (ctx.possible) entry.possible = true;
+      if (found.state) {
+        entry.state = found.state;
+        entry.current = found.current;
+      }
+      return entry;
+    }
+    function walk(list, ctx) {
+      for (var i = 0; i < list.length; i++) {
+        var rule = list[i];
+        if (isRule(rule, "CSSStyleRule")) {
+          var index = counts[ctx.path] || 0;
+          counts[ctx.path] = index + 1;
+          var parts = splitSelectorList(rule.selectorText);
+          // A nested rule's `&` is its parent's selector list, as `:is()`.
+          var resolved = parts.map(function (part) { return ctx.parent ? part.replace(/&/g, ":is(" + ctx.parent + ")") : part; });
+          var found = ctx.active ? matchRule(parts, resolved, ctx) : null;
+          if (found) {
+            found.ruleIndex = index;
+            into.rules.push(entryFor(found, ctx, readDeclarations(rule.style)));
+          } else into.order++;
+          if (rule.cssRules && rule.cssRules.length) walk(rule.cssRules, child(ctx, { parent: resolved.join(", "), found: found }));
+        } else if (isRule(rule, "CSSNestedDeclarations")) {
+          // Declarations after a nested rule: the parent's, later in order.
+          if (ctx.found && ctx.active) into.rules.push(entryFor(ctx.found, ctx, readDeclarations(rule.style)));
+        } else if (isRule(rule, "CSSLayerBlockRule")) {
+          var layer = ctx.layer.concat(rule.name ? rule.name.split(".") : ["#anonymous-" + anonymousId(rule)]);
+          if (ctx.registers) register(layer);
+          walk(rule.cssRules, child(ctx, { layer: layer, names: ctx.names.concat(rule.name || "anonymous") }));
+        } else if (isRule(rule, "CSSLayerStatementRule")) {
+          if (ctx.registers) Array.prototype.forEach.call(rule.nameList, function (name) { register(ctx.layer.concat(name.split("."))); });
+        } else if (isRule(rule, "CSSMediaRule") || isRule(rule, "CSSSupportsRule")) {
+          var media = isRule(rule, "CSSMediaRule");
+          var text = rule.conditionText || "";
+          var on = true;
+          try { on = !text || (media ? matchMedia(text).matches : CSS.supports(text)); } catch (_) {}
+          walk(rule.cssRules, child(ctx, {
+            active: ctx.active && on,
+            registers: ctx.registers && on,
+            conditions: ctx.conditions.concat((media ? "@media " : "@supports ") + text)
+          }));
+        } else if (isRule(rule, "CSSContainerRule")) {
+          walk(rule.cssRules, child(ctx, { possible: true, conditions: ctx.conditions.concat("@container " + (rule.conditionText || "")) }));
+        } else if (isRule(rule, "CSSScopeRule")) {
+          var scope = { start: rule.start || "", end: rule.end || "", parent: ctx.owner && ctx.owner.parentElement };
+          walk(rule.cssRules, child(ctx, {
+            scope: scope,
+            parent: null,
+            active: ctx.active && kind === "rule" && scopeActive(el, scope),
+            conditions: ctx.conditions.concat("@scope" + (scope.start ? " (" + scope.start + ")" : "") + (scope.end ? " to (" + scope.end + ")" : ""))
+          }));
+        } else if (isRule(rule, "CSSStartingStyleRule")) {
+          walk(rule.cssRules, child(ctx, { active: false }));
         }
       }
     }
-    for (var s = 0; s < sheets.length; s++) {
+    sheetsIn(root).forEach(function (sheet) {
+      if (sheet === runtimeSheet) return;
+      var info = sheetInfo.get(sheet);
+      var path = info ? info.path : sheetPath(sheet) || fallback;
       // Rules count per source file. A constructed sheet holds one whole file
       // (an imported file may be expanded more than once), so its count
       // starts over; a page's <style> elements share the page's count.
-      if (sheetInfo.has(sheets[s])) ruleIndexes[sheetInfo.get(sheets[s]).path] = 0;
-      try { walk(sheets[s].cssRules, true); } catch (_) {}
+      if (info) counts[path] = 0;
+      var rules;
+      try { rules = sheet.cssRules; } catch (_) { return; }
+      walk(rules, {
+        path: path, importer: info && info.importer || "", owner: sheet.ownerNode || null,
+        active: true, registers: true, possible: false,
+        layer: [], names: [], conditions: [], parent: null, found: null, scope: null
+      });
+    });
+  }
+
+  function anonymousId(rule) {
+    if (!anonymousLayers.has(rule)) anonymousLayers.set(rule, ++anonymousCount);
+    return anonymousLayers.get(rule);
+  }
+
+  // The element's computed value of every declared property, and on each
+  // declaration what it computes to on the element: the declaration is set
+  // as `!important` in the element's style attribute (which beats every
+  // author rule), read back, and the attribute restored. Transitions are off
+  // while probing, and the element settles on its own values before the
+  // attribute comes back, so no probe value ever animates. (A transition-*
+  // declaration's own probe is the exception: it wins over the switch.)
+  function probeDeclarations(el, rules) {
+    var style = getComputedStyle(el);
+    var computed = {};
+    var before = el.getAttribute("style");
+    var still = (before ? before + ";" : "") + "transition:none !important;";
+    var cache = {}, count = 0;
+    // The element's values, with a transition under way (a hover fading in)
+    // already at its end; the transition properties themselves before that.
+    var read = function (transitions) {
+      rules.forEach(function (rule) {
+        rule.declarations.forEach(function (item) {
+          if ((item.property.indexOf("transition") === 0) !== transitions) return;
+          if (!Object.prototype.hasOwnProperty.call(computed, item.property)) computed[item.property] = style.getPropertyValue(item.property);
+        });
+      });
+    };
+    read(true);
+    try {
+      el.setAttribute("style", still);
+      read(false);
+      rules.forEach(function (rule) {
+        rule.declarations.forEach(function (item) {
+          if (!item.value) return;
+          var name = item.shorthand || item.property;
+          var key = name + "\n" + item.value + "\n" + item.property;
+          if (!Object.prototype.hasOwnProperty.call(cache, key)) {
+            if (count++ >= MAX_PROBES) return;
+            el.setAttribute("style", still + name + ":" + item.value + " !important");
+            cache[key] = style.getPropertyValue(item.property);
+          }
+          item.computed = cache[key];
+        });
+      });
+      el.setAttribute("style", still);
+      style.getPropertyValue("color");
+    } finally {
+      if (before === null) el.removeAttribute("style");
+      else el.setAttribute("style", before);
     }
+    return computed;
+  }
+
+  function matchingRules(el, probe) {
+    var into = { rules: [], layers: {}, order: 0 };
+    var root = el.getRootNode && el.getRootNode();
+    collectRules(root instanceof ShadowRoot ? root : document, 0, "rule", el, null, into);
+    if (el.getAttribute("style")) {
+      into.rules.push({
+        path: ownerPath(el), selector: "style", match: [], kind: "inline", context: 0, layer: [], layerName: "",
+        conditions: [], order: into.order++, declarations: readDeclarations(el.style)
+      });
+    }
+    var context = 1;
+    for (var slot = el.assignedSlot; slot && context < 20; slot = slot.assignedSlot) {
+      var slotRoot = slot.getRootNode();
+      if (slotRoot instanceof ShadowRoot) collectRules(slotRoot, context++, "slotted", el, slot, into);
+    }
+    if (el.shadowRoot) collectRules(el.shadowRoot, context, "host", el, null, into);
+    var out = { rules: into.rules.slice(0, MAX_RULES), layers: into.layers };
+    if (probe) out.computed = probeDeclarations(el, out.rules);
     return out;
+  }
+
+  // The rules for the page's <body>, for the stylesheet the editor opens
+  // beside a page when nothing is selected; sent when they change.
+  var lastDefaultStyles = "";
+  function reportDefaultStyles() {
+    if (!state || !document.body) return;
+    var cascade = matchingRules(document.body, false);
+    var payload = { selectors: cascade.rules, cascade: { layers: cascade.layers } };
+    var key = state.context + "\n" + JSON.stringify(payload);
+    if (key === lastDefaultStyles) return;
+    lastDefaultStyles = key;
+    emit("default-styles", payload);
   }
 
   function emitSelection(el, reason) {
     var path = ownerPath(el);
     if (!path) return;
     var link = nearestLinkHref(el);
+    var cascade = matchingRules(el, true);
     var payload = {
       path: path,
       tag: el.localName,
       text: (el.textContent || "").trim().slice(0, 1000),
       reason: reason || "click",
-      selectors: matchingRules(el)
+      selectors: cascade.rules,
+      cascade: { layers: cascade.layers, computed: cascade.computed }
     };
     var node = elementIndexPath(el);
     if (node) payload.node = node;

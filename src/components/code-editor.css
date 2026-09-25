@@ -66,6 +66,14 @@
 .code-editor__match {
   background: var(--selected);
 }
+.code-editor__match--overridden {
+  background: color-mix(in srgb, var(--selected) 45%, transparent);
+}
+.code-editor__overridden {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+  opacity: 0.6;
+}
 .code-editor__element {
   background: var(--selected);
   outline: 1px solid var(--focus);

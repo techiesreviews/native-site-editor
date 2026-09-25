@@ -54,7 +54,7 @@ type RangeApi = {
   replaceMany(edits: RangeEdit[]): void;
   closeGroup(): void;
   reveal(start: number, end: number): void;
-  highlight(ranges: { start: number; end: number }[]): void;
+  highlight(ranges: HighlightRange[]): void;
   markElement(tag: { start: number; end: number } | undefined, reveal: boolean): void;
   review(on: boolean): void;
   reviewing(): boolean;
@@ -191,8 +191,16 @@ export function closeActiveEditGroup(path: string) {
 export function revealRange(path: string, start: number, end: number) {
   mounted.get(path)?.range.reveal(start, end);
 }
+// A CSS rule styling the selected element: dimmed when the cascade overrides
+// all of it, with the declarations it overrides (`struck`) crossed out.
+export interface HighlightRange {
+  start: number;
+  end: number;
+  overridden?: boolean;
+  struck?: { start: number; end: number }[];
+}
 // Marks byte ranges (the CSS rules styling the selected element) in a mounted file.
-export function highlightRanges(path: string, ranges: { start: number; end: number }[]) {
+export function highlightRanges(path: string, ranges: HighlightRange[]) {
   mounted.get(path)?.range.highlight(ranges);
 }
 // Marks the start tag of the element selected in the preview. With `reveal`
@@ -387,18 +395,25 @@ export function mountCodeEditor(
       view?.setSelection(monaco.Range.fromPositions(target.getStartPosition(), target.getStartPosition()));
       view?.revealRangeNearTop(target);
     },
-    highlight(ranges: { start: number; end: number }[]) {
+    highlight(ranges: HighlightRange[]) {
       const model = current.model;
+      const at = (start: number, end: number) => monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
       marks = model.deltaDecorations(
         marks,
-        ranges.map((range) => ({
-          range: monaco.Range.fromPositions(model.getPositionAt(range.start), model.getPositionAt(range.end)),
-          options: {
-            isWholeLine: true,
-            className: "code-editor__match",
-            overviewRuler: { color: { id: "editorOverviewRuler.findMatchForeground" }, position: monaco.editor.OverviewRulerLane.Full },
+        ranges.flatMap((range) => [
+          {
+            range: at(range.start, range.end),
+            options: {
+              isWholeLine: true,
+              className: range.overridden ? "code-editor__match code-editor__match--overridden" : "code-editor__match",
+              overviewRuler: { color: { id: "editorOverviewRuler.findMatchForeground" }, position: monaco.editor.OverviewRulerLane.Full },
+            },
           },
-        })),
+          ...(range.struck ?? []).map((item) => ({
+            range: at(item.start, item.end),
+            options: { inlineClassName: "code-editor__overridden", hoverMessage: { value: "Overridden for the selected element" } },
+          })),
+        ]),
       );
     },
     markElement(tag: { start: number; end: number } | undefined, reveal: boolean) {

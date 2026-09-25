@@ -205,7 +205,10 @@ test("a stylesheet a shared sheet imports applies in its layer and lists its rul
   await filler.click({ position: { x: 12, y: 2 } });
   await expect(page.locator("#current-page")).toHaveText(indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(sectionsPath);
-  await expect(page.locator("#secondary-rules button", { hasText: ".filler" })).toHaveAttribute("title", `${sectionsPath} · .filler`);
+  const chip = page.locator("#secondary-rules button", { hasText: ".filler" });
+  await expect(chip).toHaveAttribute("title", new RegExp(`^\\.filler\n${sectionsPath} \\(imported by ${cssPath}\\)\n@layer sections\n`));
+  await expect(chip).toHaveAttribute("data-cascade", "wins");
+  await expect(chip).toContainText("sections");
   // The caret sits at the rule's start in the imported file; with nothing
   // selected, a copy takes that whole line.
   const secondary = page.locator("#content-secondary [role=\"textbox\"]").first();

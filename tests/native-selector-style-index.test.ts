@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findStyleRulesInSources } from "../src/styles-index.ts";
+import { declarationRanges, findStyleRulesInSources } from "../src/styles-index.ts";
 
 test("native CSS rule lookup uses active CSSOM rule identity and ignores inactive duplicate selectors", () => {
   const source = `<style>
@@ -39,7 +39,7 @@ test("native CSS rule lookup fails closed when indexed selector does not match s
   assert.equal(rules.length, 0);
 });
 
-test("native CSS rule lookup ranks component CSS after shared CSS at equal specificity", () => {
+test("native CSS rule lookup keeps the order it is given, leaving ranking to the cascade", () => {
   const rules = findStyleRulesInSources(
     {
       "src/styles/site.css": ".project-card__title { color: blue; }",
@@ -50,5 +50,42 @@ test("native CSS rule lookup ranks component CSS after shared CSS at equal speci
       { path: "src/components/project-card/project-card.css", selector: ".project-card__title", ruleIndex: 0 },
     ],
   );
-  assert.equal(rules[0]?.path, "src/components/project-card/project-card.css");
+  assert.deepEqual(rules.map((rule) => [rule.path, rule.match]), [
+    ["src/styles/site.css", 0],
+    ["src/components/project-card/project-card.css", 1],
+  ]);
+});
+
+test("native CSS rule lookup maps nested rules, whose CSSOM selector gains a leading &", () => {
+  const source = `.card {
+  color: red;
+  a { color: blue; }
+  > p { margin: 0; }
+  .dark & { color: white; }
+}`;
+  const rules = findStyleRulesInSources({ "a.css": source }, [
+    { path: "a.css", selector: "& a", ruleIndex: 1 },
+    { path: "a.css", selector: "& > p", ruleIndex: 2 },
+    { path: "a.css", selector: ".dark &", ruleIndex: 3 },
+  ]);
+  assert.deepEqual(rules.map((rule) => source.slice(rule.start, rule.end)), [
+    "a { color: blue; }",
+    "> p { margin: 0; }",
+    ".dark & { color: white; }",
+  ]);
+});
+
+test("declaration ranges cover a rule's own declarations, not nested rules", () => {
+  const source = `.card {
+  color: red;
+  margin: 0 /* ; */ auto;
+  a { color: blue; }
+  background: url("a;b.png")
+}`;
+  const found = declarationRanges(source, 0, source.length);
+  assert.deepEqual(found.map((item) => [item.property, source.slice(item.start, item.end)]), [
+    ["color", "color: red;"],
+    ["margin", "margin: 0 /* ; */ auto;"],
+    ["background", "background: url(\"a;b.png\")"],
+  ]);
 });

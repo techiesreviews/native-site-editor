@@ -272,9 +272,28 @@ select {
 .code-pane__rule:hover {
   background: var(--surface-raised);
 }
-.code-pane__rule-file {
+.code-pane__rule-file,
+.code-pane__rule-origin {
   color: var(--muted);
   font-family: inherit;
+}
+.code-pane__rule-origin {
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+}
+/* Rules the cascade could not settle (a state, an unmet or unverified condition). */
+.code-pane__rule--neutral {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+/* Rules whose every declaration loses: listed last, crossed out. */
+.code-pane__rule--overridden {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+}
+.code-pane__rule--overridden .code-pane__rule-selector {
+  text-decoration: line-through;
 }
 .code-pane > .workspace-content {
   flex: 1;
