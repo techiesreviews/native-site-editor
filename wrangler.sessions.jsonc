@@ -2,7 +2,8 @@
   // Production Worker for the Native Site Editor at https://editor.techies.tools.
   //
   // It owns the SQLite-backed SessionStore Durable Object, runs the request
-  // handler in `worker/app.ts` for `/api/*`, `/auth/*` and `/mcp`, and serves the
+  // handler in `worker/app.ts` for `/api/*`, `/auth/*`, `/mcp` and the MCP OAuth
+  // metadata under `/.well-known/`, and serves the
   // built UI from `dist` as static assets (with `public/_headers` applied).
   //
   // The name stays `native-site-editor-sessions` because the Pages project
@@ -18,7 +19,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/auth/*", "/mcp"],
+    "run_worker_first": ["/api/*", "/auth/*", "/mcp", "/.well-known/*"],
   },
   "durable_objects": {
     "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],

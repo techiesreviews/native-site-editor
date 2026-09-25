@@ -10,7 +10,7 @@ import { MARK, VOID_ELEMENTS, elementEnd, markStartTags, startTags, type Element
 
 export * from "../shared/html-source";
 
-function parseMarked(html: string) {
+export function parseMarked(html: string) {
   const tags = startTags(html);
   const template = document.createElement("template");
   template.innerHTML = markStartTags(html, tags);

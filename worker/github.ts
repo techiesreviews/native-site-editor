@@ -362,6 +362,25 @@ export class GitHub {
   }
 
   /**
+   * Every file and folder of the commit `commit`, with full paths (the MCP
+   * site tools read and list files at the revision the editor tab shows).
+   */
+  async commitTree(repo: Repository, commit: string): Promise<TreeEntry[]> {
+    if (!/^[a-f0-9]{40}$/.test(commit))
+      throw new HttpError(400, "Invalid revision. Refresh the repository.");
+    const data = await this.get<{ tree: { sha: string } }>(
+      `${this.base(repo)}/git/commits/${commit}`,
+    );
+    const tree = await this.recursiveTree(repo, data.tree.sha);
+    if (!tree)
+      throw new HttpError(
+        413,
+        "GitHub truncated this repository's file listing. It is too large to list completely.",
+      );
+    return tree;
+  }
+
+  /**
    * The whole commit in one listing when GitHub can return it completely.
    * Returns `undefined` when the listing is truncated or does not actually
    * descend into folders (a fake or proxy ignoring `recursive`), in which case

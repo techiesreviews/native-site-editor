@@ -1,5 +1,5 @@
 // Cloudflare Pages Functions adapter. Every request that `_routes.json` routes
-// to Functions (only `/api/*`, `/auth/*`, `/mcp`) is delegated to the existing
+// to Functions (only `/api/*`, `/auth/*`, `/mcp`, `/.well-known/*`) is delegated to the existing
 // Worker request handler in `worker/app.ts`, unchanged. Static assets are served
 // directly by Pages and never reach this Function.
 //

@@ -11,6 +11,7 @@ import {
   type WorkspaceLocation,
 } from "./workspace-state";
 import { createAgentMenu } from "./components/agent-menu";
+import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions } from "./agent-site";
 import type { AgentCommand } from "../shared/agent";
 import { draftStore, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
@@ -4256,19 +4257,20 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
 
 // Deletes a file or folder after a confirmation naming it (and how many
 // pages link to the pages it takes).
-async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }) {
-  if (target.gone) return;
+async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }): Promise<string | undefined> {
+  if (target.gone) return `${target.path} is deleted already.`;
   const guarded = protectedProblem(target, "delete");
-  if (guarded) { errorMessage(new Error(guarded)); announce(guarded); return; }
+  if (guarded) { errorMessage(new Error(guarded)); announce(guarded); return guarded; }
   const epoch = generation;
   let found: MovableFile[];
   try {
     found = await targetFiles(target, false);
   } catch (error) {
     errorMessage(error);
-    return;
+    return error instanceof Error ? error.message : "The files could not be read.";
   }
-  if (epoch !== generation || !found.length) return;
+  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  if (!found.length) return `${target.path} has no files to delete.`;
   const count = found.length;
   const onGitHub = found.some((file) => file.sha);
   const links = pageLinks(found.map((file) => file.path), new Map(), "deleted");
@@ -4290,11 +4292,12 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
     ],
     action: "Delete",
   });
-  if (!ok) { announce(`Cancelled deleting ${target.path}`); return; }
+  if (!ok) { announce(`Cancelled deleting ${target.path}`); return "Cancelled."; }
   const error = await applyFileOperation(found.map((file) => ({ file })));
-  if (error) { errorMessage(new Error(error)); return; }
+  if (error) { errorMessage(new Error(error)); return error; }
   announce(target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`);
   requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
+  return undefined;
 }
 
 // A copy of a file beside it, `name-copy.ext`, as a new file.
@@ -4693,35 +4696,113 @@ async function openComponentLinkedStyle(page: string) {
 }
 
 function updateAgentContext() {
-  if (!currentRepo || !snapshot || !info.user) {
-    agentMenu?.setContext();
-    return;
-  }
-  const scope = {
-    account: info.user.login,
-    repoId: currentRepo.id,
-    repo: currentRepo.full_name,
-    branch: snapshot.branch,
-  };
-  agentMenu?.setContext({
+  agentMenu?.changed();
+}
+
+// ---- Agents (src/agent-site.ts): the context shared, and changes applied through the editor's own actions. ----
+
+function agentRepository() {
+  return currentRepo && snapshot && info.user ? { id: currentRepo.id, fullName: currentRepo.full_name } : undefined;
+}
+async function agentContext(): Promise<EditorContext | undefined> {
+  const scope = draftScope();
+  if (!currentRepo || !snapshot || !scope) return undefined;
+  const manifest = nativeManifest;
+  return buildAgentContext({
     repository: { id: currentRepo.id, fullName: currentRepo.full_name },
     branch: snapshot.branch,
     commit: snapshot.commit,
     file: activeFileContext,
-    drafts: draftStore()
-      .list(scope)
-      .slice(0, 200)
-      .map(({ path, baseSha, updatedAt }) => ({ path, baseSha, updatedAt })),
-    ...(nativeManifest ? { pages: nativeContextPages(nativeManifest) } : {}),
+    drafts: draftStore().list(scope),
+    mountedSource: (path) => editorModule?.getMountedSource(path),
+    native: manifest && {
+      manifest,
+      hasManifest: nativeHasManifest(),
+      files: nativePageFiles(scope),
+      routeInfo: (route) => nativeRouteInfo(route, manifest),
+      source: (path) => nativeEffectiveSource(path, scope),
+      exists: (path) => pathNow(path) === "file",
+      openFile: currentPath,
+      selection: lastNativeSelection,
+    },
   });
 }
-// The native site's pages by route for the agent context, with the title and
-// description the manifest or the page's leading comment gives.
-function nativeContextPages(manifest: NativeManifest): NonNullable<EditorContext["pages"]> {
-  return Object.entries(manifest.routes).slice(0, 500).map(([route, file]) => {
-    const { title, description } = nativeRouteInfo(route, manifest);
-    return { route, file, ...(title ? { title: title.slice(0, 1000) } : {}), ...(description ? { description: description.slice(0, 1000) } : {}) };
-  });
+// A Files-tab action run for an agent: its confirmation is answered as asked.
+async function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
+  const real = confirmDialog;
+  confirmDialog = real && agentAnswers(real, answers);
+  try {
+    return await run();
+  } finally {
+    confirmDialog = real;
+  }
+}
+function agentFileTarget(path: string): FileRowTarget | undefined {
+  const now = pathNow(path);
+  return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
+}
+const agentSiteActions: AgentSiteActions = {
+  async text(path) {
+    const mounted = editorModule?.getMountedSource(path);
+    if (mounted !== undefined) return mounted;
+    const scope = draftScope();
+    const draft = scope ? draftStore().get(scope, path) : undefined;
+    if (draft?.deleted) return undefined;
+    if (draft?.opaque) throw new Error(`${path} is not a text file.`);
+    if (draft) return draft.content;
+    return nativeBaseSources.get(path) ?? (await branchText(path))?.text;
+  },
+  isMounted: (path) => Boolean(editorModule?.isMounted(path)),
+  replaceMounted(path, source, edit) {
+    if (!editorModule) throw new Error("The editor is not ready.");
+    editorModule.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
+  },
+  writeDraft: (path, content, create) =>
+    applyNativeOperation({
+      ...(create ? { creates: [{ path, content }] } : { edits: new Map([[path, content]]) }),
+      ...(nativePageRoute(path) ? { open: path } : {}),
+      done: `An agent ${create ? "created" : "changed"} ${path}.`,
+      undone: `Undid the agent's change to ${path}.`,
+    }),
+  async open(path) {
+    if (currentPath !== path || !editorModule?.isMounted(path)) await restoreFile(path, generation, { linkDefaultStyle: false });
+    return currentPath === path;
+  },
+  async createPage(request) {
+    const plan = planNativeNew(request);
+    if (!plan.ok) return plan.error;
+    return (await createNativeNew(request)) ?? { file: plan.value.file, route: plan.value.route };
+  },
+  async setPageDetail(path, field, value) {
+    const error = await writeNativePageMeta(path, field, value, false);
+    if (error) return error;
+    pageStructure?.refreshMeta();
+    renderPagesTree();
+    updateCurrentPageLabel();
+    updateAgentContext();
+    return undefined;
+  },
+  sectionTags: () => new Set(nativeSectionChoices().map((choice) => choice.tag)),
+  template: (tag) => (nativeManifest?.components[tag] ? nativeSources()[nativeManifest.components[tag]] : undefined),
+  change: applyNativeChange,
+  moveSection: moveNativeSectionTo,
+  moveFile: (path, to, keepOldUrl) =>
+    withAgentAnswers({ option: keepOldUrl }, async () => {
+      const target = agentFileTarget(path);
+      if (!target) return `${path} does not exist.`;
+      return moveFileTarget(target, to, parentOf(path) === parentOf(to) ? "rename" : "move");
+    }),
+  deleteFile: (path) =>
+    withAgentAnswers({}, async () => {
+      const target = agentFileTarget(path);
+      return target ? deleteFileTarget(target) : `${path} does not exist.`;
+    }),
+  legacy: applyAgentCommand,
+};
+function applyAgentSiteCommand(command: AgentCommand) {
+  if (!snapshot || command.branch !== snapshot.branch || command.commit !== snapshot.commit)
+    throw new Error("The editor changed branch or revision.");
+  return applySiteCommand(agentSiteActions, command);
 }
 // The page shown after the page `path` is gone: the nearest page above it
 // (by folder) that has one, else the home page.
@@ -5247,7 +5328,9 @@ async function start() {
       agentMenu = createAgentMenu({
         embedded: true,
         account: info.user.login,
-        onCommand: applyAgentCommand,
+        repository: agentRepository,
+        context: agentContext,
+        onCommand: applyAgentSiteCommand,
       });
       element("agent-menu").append(agentMenu.root);
       await loadRepositories(info.repositories ?? undefined);

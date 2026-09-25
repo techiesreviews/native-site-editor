@@ -1,7 +1,8 @@
-import { agentOperation } from "./agent-operations";
+import { agentOperation, newHub } from "./agent-operations";
+import type { AgentHub } from "./agent-context";
 import { HttpError } from "./github";
 import { DurableObject } from "cloudflare:workers";
-import { handle, type Env, type StoredSession, type StoredValue } from "./app";
+import { handle, type Env, type StoredValue } from "./app";
 import type { GitHubAppConfig } from "./owner-setup";
 
 export class SessionStore extends DurableObject {
@@ -9,14 +10,23 @@ export class SessionStore extends DurableObject {
     const storage = this.ctx.storage;
     if (new URL(request.url).pathname === "/agent-operation") {
       return this.ctx.blockConcurrencyWhile(async () => {
-        const value = await storage.get<StoredSession>("session");
-        if (value?.kind !== "agent" || value.expiresAt <= Date.now())
+        const action = await request.json();
+        const stored = await storage.get<StoredValue>("session");
+        let value: AgentHub | undefined =
+          stored?.kind === "agent-hub" && stored.expiresAt > Date.now()
+            ? stored
+            : undefined;
+        if (!value) {
+          value = newHub(action);
+          if (value) await storage.setAlarm(value.expiresAt);
+        }
+        if (!value)
           return Response.json(
             { error: "Agent connection expired." },
             { status: 401 },
           );
         try {
-          const result = await agentOperation(value, await request.json());
+          const result = agentOperation(value, action);
           await storage.put("session", value);
           return Response.json(result);
         } catch (error) {

@@ -5,6 +5,7 @@ import type { EditorContext } from "../shared/types";
 import type { Env, StoredSession } from "./app";
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const position = z.number().int().min(1).max(10_000_000);
 const path = z
   .string()
@@ -15,6 +16,9 @@ const path = z
       value.split("/").every((part) => part && part !== "." && part !== "..") &&
       !/[\\\u0000-\u001f]/.test(value),
   );
+const route = z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*$/);
+const outlineId = z.string().max(320).regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/);
+const short = (max: number) => z.string().max(max);
 const schema = z.object({
   repository: z.object({
     id: z.number().int().positive(),
@@ -56,34 +60,96 @@ const schema = z.object({
         path,
         baseSha: sha.nullable(),
         updatedAt: z.number().finite(),
+        hash: hash.optional(),
+        content: z.string().max(131072).optional(),
+        deleted: z.boolean().optional(),
+        movedFrom: path.optional(),
       }),
     )
     .max(200),
   pages: z
     .array(
       z.object({
-        route: z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*$/),
-        file: path,
-        title: z.string().max(1000).optional(),
-        description: z.string().max(1000).optional(),
+        route,
+        file: path.optional(),
+        title: short(1000).optional(),
+        description: short(1000).optional(),
+        parent: route.optional(),
+        isNew: z.boolean().optional(),
       }),
     )
     .max(500)
     .optional(),
+  site: z
+    .object({
+      openFile: path.nullable(),
+      openRoute: route.nullable(),
+      selection: z
+        .object({ file: path, id: outlineId, tag: short(100), text: short(200) })
+        .nullable(),
+      manifest: z.boolean(),
+      components: z
+        .array(
+          z.object({
+            tag: short(100),
+            file: path,
+            css: path.optional(),
+            section: z.boolean(),
+            slots: z.array(short(100)).max(50),
+          }),
+        )
+        .max(300),
+      styles: z.array(path).max(100),
+      settings: path.nullable(),
+      outlines: z
+        .array(
+          z.object({
+            file: path,
+            hash,
+            containers: z
+              .array(z.object({ id: z.string().max(320).regex(/^(?:\d{1,4}(?:\.\d{1,4}){0,63})?$/), tag: short(100), children: z.number().int().min(0).max(100_000) }))
+              .max(50),
+            sections: z
+              .array(
+                z.object({
+                  id: outlineId,
+                  tag: short(100),
+                  component: z.boolean().optional(),
+                  key: short(200).optional(),
+                  heading: short(200).optional(),
+                  text: short(200).optional(),
+                  slots: z.record(short(100), short(200)).optional(),
+                }),
+              )
+              .max(200),
+          }),
+        )
+        .max(500),
+      changes: z
+        .array(
+          z.object({
+            kind: z.enum(["A", "M", "R", "D"]),
+            path,
+            from: path.optional(),
+          }),
+        )
+        .max(500),
+    })
+    .optional(),
 });
-/**
- * How a native project routes its pages and finds its components and styles,
- * for agents that add or move them. Mirrors shared/native-routes.ts,
- * shared/native-project.ts and docs/static-export.md.
- */
-export const nativeRoutingNote =
-  "Native projects (a src/pages/index.html, or .astro-editor/native.json, which is optional) route pages by file: every .html file under src/pages/ is a page at its path there (src/pages/index.html is /, src/pages/about.html and src/pages/about/index.html are /about/, src/pages/work/fern-and-kettle.html is /work/fern-and-kettle/); a file or folder named with a leading _ is not a page. Every src/components/<tag>/<tag>.html (or src/components/<tag>.html) with a valid custom-element tag is the component <tag>. The shared stylesheets are src/styles/site.css when it exists (it may @import the others), else every src/styles/*.css in name order. A page's details live in the page itself: a leading metadata comment, the first thing in the file, one key per line (<!--\ntitle: About\ndescription: Who we are.\n-->); other keys such as image may follow; the export leaves the comment out and the editor's Page block writes it. Put a new page's title there, not in native.json. Site settings are src/site.json. native.json is optional and legacy: when present it wins (\"routes\" entries keyed by route may hold title, description and jsonLd, or map the route to a page with \"file\"; a \"components\" entry wins for its tag; \"styles\", when present, replaces the stylesheet convention). Link between pages with #/route/ hrefs; when a page's URL changes, src/public/_redirects can keep the old one working (old new 301).";
 export function validateContext(value: unknown): EditorContext {
   const result = schema.safeParse(value);
   if (!result.success)
     throw new HttpError(400, "Editor context is invalid or too large.");
   return result.data;
 }
+
+/**
+ * One agent connection: a bearer token (copied from the editor, or issued by
+ * the OAuth token endpoint) scoped to one repository and one signed-in
+ * editor session. Stored under the SHA-256 of the token; the token itself
+ * is never stored.
+ */
 export interface AgentGrant {
   kind: "agent";
   sessionId: string;
@@ -91,9 +157,40 @@ export interface AgentGrant {
   repoId: number;
   repo: string;
   expiresAt: number;
+  via?: "token" | "oauth";
+  /** The OAuth client's name, as it registered. */
+  client?: string;
+  createdAt?: number;
+}
+/** A connection as the editor tab lists it. */
+export interface HubGrant {
+  id: string;
+  repoId: number;
+  repo: string;
+  via: "token" | "oauth";
+  client?: string;
+  createdAt: number;
+}
+/**
+ * Everything the agents of one editor session share: the connections, the
+ * context the active editor tab last reported, and the queued commands. One
+ * Durable Object per session (`agent-hub:<session id>`), so a connection
+ * made by OAuth reaches the open tab without the tab knowing its token.
+ */
+export interface AgentHub {
+  kind: "agent-hub";
+  login: string;
+  expiresAt: number;
+  grants: HubGrant[];
   context?: EditorContext;
   updatedAt?: number;
+  /** The tab that reported the context; only it applies commands. */
+  tabId?: string;
   commands?: AgentCommand[];
+}
+
+function durable(env: Env, name: string) {
+  return env.SESSIONS.get(env.SESSIONS.idFromName(name));
 }
 export const agentRecord = (
   env: Env,
@@ -101,7 +198,7 @@ export const agentRecord = (
   method = "GET",
   value?: AgentGrant,
 ) =>
-  env.SESSIONS.get(env.SESSIONS.idFromName(`agent:${id}`)).fetch(
+  durable(env, `agent:${id}`).fetch(
     new Request("https://session.internal/", {
       method,
       body: value ? JSON.stringify(value) : undefined,
@@ -116,6 +213,11 @@ export async function tokenId(token: string) {
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
+function randomHex() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
 export async function getGrant(env: Env, id: string): Promise<AgentGrant> {
   if (!/^[a-f0-9]{64}$/.test(id))
     throw new HttpError(401, "Connect this agent again in the editor.");
@@ -127,6 +229,82 @@ export async function getGrant(env: Env, id: string): Promise<AgentGrant> {
     throw new HttpError(401, "Agent connection expired.");
   return grant;
 }
+
+/**
+ * Issues a connection token for `repo` in the signed-in session `sessionId`,
+ * lasting as long as that session, and lists it in the session's hub.
+ */
+export async function createGrant(
+  env: Env,
+  input: {
+    sessionId: string;
+    login: string;
+    repoId: number;
+    repo: string;
+    expiresAt: number;
+    via: "token" | "oauth";
+    client?: string;
+  },
+) {
+  const token = `ase_${randomHex()}`;
+  const id = await tokenId(token);
+  const createdAt = Date.now();
+  await agentRecord(env, id, "PUT", { kind: "agent", ...input, createdAt });
+  await operateHub(env, input.sessionId, {
+    type: "add-grant",
+    hub: { login: input.login, expiresAt: input.expiresAt },
+    grant: {
+      id,
+      repoId: input.repoId,
+      repo: input.repo,
+      via: input.via,
+      ...(input.client ? { client: input.client } : {}),
+      createdAt,
+    },
+  });
+  return { id, token };
+}
+export async function revokeGrant(env: Env, id: string, sessionId: string) {
+  await agentRecord(env, id, "DELETE");
+  await operateHub(env, sessionId, { type: "remove-grant", id }).catch(
+    () => undefined,
+  );
+}
+
+export async function getHub(env: Env, sessionId: string): Promise<AgentHub | undefined> {
+  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
+    new Request("https://session.internal/"),
+  );
+  if (!response.ok) return undefined;
+  const hub = (await response.json()) as AgentHub;
+  return hub.kind === "agent-hub" && hub.expiresAt > Date.now() ? hub : undefined;
+}
+export async function operateHub(env: Env, sessionId: string, action: unknown) {
+  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
+    new Request("https://session.internal/agent-operation", {
+      method: "POST",
+      body: JSON.stringify(action),
+    }),
+  );
+  const result: any = await response.json();
+  if (!response.ok)
+    throw new HttpError(
+      response.status,
+      result.error ?? "Agent operation failed.",
+    );
+  return result;
+}
+
+/** The hub's context when it belongs to the grant's repository, else nothing (sharing is paused). */
+export function grantContext(hub: AgentHub | undefined, grant: AgentGrant) {
+  const context = hub?.context;
+  return context &&
+    context.repository.id === grant.repoId &&
+    context.repository.fullName === grant.repo
+    ? context
+    : undefined;
+}
+
 export async function authenticateAgent(
   request: Request,
   env: Env,
@@ -138,12 +316,13 @@ export async function authenticateAgent(
   if (!token)
     throw new HttpError(
       401,
-      "Supply the MCP token created in the editor's Agent context menu.",
+      "Connect with OAuth, or supply the MCP token created in the editor's Agent context menu.",
     );
-  const grant = await getGrant(env, await tokenId(token));
-  const response = await env.SESSIONS.get(
-    env.SESSIONS.idFromName(grant.sessionId),
-  ).fetch(new Request("https://session.internal/"));
+  const id = await tokenId(token);
+  const grant = await getGrant(env, id);
+  const response = await durable(env, grant.sessionId).fetch(
+    new Request("https://session.internal/"),
+  );
   const session = response.ok
     ? ((await response.json()) as StoredSession)
     : undefined;
@@ -157,23 +336,5 @@ export async function authenticateAgent(
   const repo = await github.authorizeRepository(session.login, grant.repo);
   if (repo.id !== grant.repoId)
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
-  return { grant, github, repo, id: await tokenId(token) };
-}
-
-export async function operateGrant(env: Env, id: string, action: unknown) {
-  const response = await env.SESSIONS.get(
-    env.SESSIONS.idFromName(`agent:${id}`),
-  ).fetch(
-    new Request("https://session.internal/agent-operation", {
-      method: "POST",
-      body: JSON.stringify(action),
-    }),
-  );
-  const result: any = await response.json();
-  if (!response.ok)
-    throw new HttpError(
-      response.status,
-      result.error ?? "Agent operation failed.",
-    );
-  return result;
+  return { grant, github, repo, id };
 }
