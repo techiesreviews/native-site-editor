@@ -1231,7 +1231,15 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
   const source = nativeManifestSource();
   const manifest = nativeManifest;
   if (!route || source === undefined || !manifest) return;
-  const result = editNativePageMeta(source, route, field, value);
+  let result: ReturnType<typeof editNativePageMeta>;
+  try {
+    result = editNativePageMeta(source, route, field, value);
+  } catch (error) {
+    // The helper reports what it can; anything it did not foresee reaches
+    // the notice the same way rather than escaping the input handler.
+    errorMessage(error);
+    return;
+  }
   if (!result.ok) { errorMessage(new Error(result.error)); return; }
   const label = field === "title" ? "Title" : "Description";
   if (result.edit) {

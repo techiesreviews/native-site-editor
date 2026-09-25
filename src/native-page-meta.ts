@@ -142,12 +142,14 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
     }
     // A new field goes after `file` (a title) or at the end (a description),
     // on its own line when the object is written one member per line.
+    if (!members.length) return { ok: false, error: `native.json route ${JSON.stringify(route)} is an empty object; give it a "file" first.` };
     const file = members.find((member) => member.key === "file");
     const after = (field === "title" && file) || members[members.length - 1];
     const multiline = text.slice(routeMember.valueStart, members[0].start).includes("\n");
     const lineStart = text.lastIndexOf("\n", after.start) + 1;
     const indent = multiline ? text.slice(lineStart, after.start).match(/^[ \t]*/)![0] : "";
-    const separator = multiline ? `,\n${indent}` : ", ";
+    const newline = text.includes("\r\n") ? "\r\n" : "\n";
+    const separator = multiline ? `,${newline}${indent}` : ", ";
     return done({ start: after.valueEnd, end: after.valueEnd, text: `${separator}${JSON.stringify(field)}: ${literal}` });
   }
   if (!existing) return done(null);

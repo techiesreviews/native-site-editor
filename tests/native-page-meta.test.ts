@@ -100,3 +100,24 @@ test("unknown routes and unreadable manifests are reported, not guessed", () => 
   const number = editNativePageMeta("{ \"routes\": { \"/\": 3 } }", "/", "title", "x");
   assert.equal(number.ok, false);
 });
+
+test("an object route with no members is reported, not thrown", () => {
+  const empty = editNativePageMeta('{ "routes": { "/": {} } }', "/", "title", "x");
+  assert.equal(empty.ok, false);
+  assert.match(empty.ok ? "" : empty.error, /empty object/);
+  // Removing from it has nothing to do.
+  const nothing = editNativePageMeta('{ "routes": { "/": {} } }', "/", "title", "");
+  assert.equal(nothing.ok, true);
+  assert.equal(nothing.ok && nothing.edit, null);
+});
+
+test("a manifest written with CRLF gets CRLF between new members", () => {
+  const crlf = '{\r\n  "routes": {\r\n    "/": {\r\n      "file": "src/pages/index.html",\r\n      "description": "d"\r\n    }\r\n  }\r\n}\r\n';
+  const result = edit(crlf, "/", "title", "Home");
+  assert.equal(
+    result.text,
+    '{\r\n  "routes": {\r\n    "/": {\r\n      "file": "src/pages/index.html",\r\n      "title": "Home",\r\n      "description": "d"\r\n    }\r\n  }\r\n}\r\n',
+  );
+  assert.equal(result.text.includes("\n"), true);
+  assert.equal(/[^\r]\n/.test(result.text), false);
+});

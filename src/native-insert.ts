@@ -77,22 +77,28 @@ function textOnly(html: string) {
     [...plain.matchAll(/<\/([a-zA-Z][^\s>]*)/g)].every((match) => INLINE.has(match[1].toLowerCase()));
 }
 
-/** Inserts `markup` (one or more lines) on its own line before or after the element at `anchor`, matching its indentation. */
+/** The line ending `source` is written with: CRLF when it has any, else LF. */
+export function lineEnding(source: string) {
+  return source.includes("\r\n") ? "\r\n" : "\n";
+}
+
+/** Inserts `markup` (one or more lines) on its own line before or after the element at `anchor`, matching its indentation and line endings. */
 export function insertBesideEdit(source: string, anchor: { start: number; end: number }, where: "before" | "after", markup: string) {
   const lineStart = source.lastIndexOf("\n", anchor.start - 1) + 1;
   const lead = source.slice(lineStart, anchor.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
-  const text = markup.split("\n").join(`\n${indent}`);
+  const newline = lineEnding(source);
+  const text = markup.split(/\r?\n/).join(`${newline}${indent}`);
   return where === "before"
-    ? { start: anchor.start, end: anchor.start, text: `${text}\n${indent}` }
-    : { start: anchor.end, end: anchor.end, text: `\n${indent}${text}` };
+    ? { start: anchor.start, end: anchor.start, text: `${text}${newline}${indent}` }
+    : { start: anchor.end, end: anchor.end, text: `${newline}${indent}${text}` };
 }
 
 /** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots. */
 export function instanceMarkup(source: string, tag: string, template: string) {
   const open = `<${tag} data-key="${uniqueDataKey(source, tag)}">`;
   const slots = slotMarkup(template);
-  return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join("\n") : `${open}</${tag}>`;
+  return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
 }
 
 /** The atoms a section accepts, with the picker's name and description for each. */
@@ -168,7 +174,7 @@ export function sectionMarkup(source: string, indent = "  ") {
     `${indent}<h2 data-key="${uniqueDataKey(source, `${key}-title`)}">${sectionText.title}</h2>`,
     `${indent}<p data-key="${uniqueDataKey(source, `${key}-text`)}">${sectionText.text}</p>`,
     `</section>`,
-  ].join("\n");
+  ].join(lineEnding(source));
 }
 
 /**

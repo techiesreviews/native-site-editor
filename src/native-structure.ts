@@ -110,11 +110,24 @@ export function moveEdit(
   if (!neighbour || (neighbour.start < range.end && neighbour.end > range.start)) return [];
   const at = target < index ? wholeLines(source, neighbour).start : wholeLines(source, neighbour).end;
   if (at > lines.start && at < lines.end) return [];
-  // The block ends with its newline; after a neighbour that ends its line
-  // without one (the last child before the parent's end tag) the newline
-  // goes first instead.
-  const text = block.endsWith("\n") && at > 0 && source[at - 1] !== "\n" ? `\n${block.slice(0, -1)}` : block;
-  const remove = { start: lines.start, end: lines.end, text: "" };
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const lineStart = at === 0 || source[at - 1] === "\n";
+  let text = block;
+  let removeStart = lines.start;
+  if (block.endsWith("\n") && !lineStart) {
+    // The block ends with its newline; after a neighbour that ends its line
+    // without one (the last child before the parent's end tag) the newline
+    // goes first instead.
+    text = `${newline}${block.slice(0, -newline.length)}`;
+  } else if (!block.endsWith("\n") && lineStart) {
+    // The block ends its line without a newline (the last child before the
+    // parent's end tag, or the end of the file): it takes one along to keep
+    // its own line at the new place, and the newline that led to it goes
+    // with it, so its old neighbour ends the line as the block did.
+    text = `${block}${newline}`;
+    if (source.slice(lines.start - newline.length, lines.start) === newline) removeStart = lines.start - newline.length;
+  }
+  const remove = { start: removeStart, end: lines.end, text: "" };
   const insert = { start: at, end: at, text };
   return at < lines.start ? [insert, remove] : [remove, insert];
 }

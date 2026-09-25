@@ -78,6 +78,27 @@ test("moveEdit carries an element's lines to another gap among its siblings", ()
   assert.equal(apply(inline, moveEdit(inline, inlineSibling(2), 2, 0, inlineSibling)), `<p><u>z</u><b>x</b><i>y</i></p>`);
 });
 
+test("moveEdit keeps lines apart when the moved block has no newline of its own", () => {
+  // The last element at the end of the file without a final newline.
+  const eof = `<section>A</section>\n<section>B</section>\n<section>C</section>`;
+  const eofSibling = (at: number) => rangeAt(eof, at);
+  assert.equal(apply(eof, moveEdit(eof, eofSibling(2), 2, 0, eofSibling)), `<section>C</section>\n<section>A</section>\n<section>B</section>`);
+  assert.equal(apply(eof, moveEdit(eof, eofSibling(2), 2, 1, eofSibling)), `<section>A</section>\n<section>C</section>\n<section>B</section>`);
+  // The last child on the same line as the parent's end tag.
+  const closed = `<main>\n  <section>A</section>\n  <section>B</section>\n  <section>C</section></main>`;
+  const closedSibling = (at: number) => rangeAt(closed, at + 1);
+  assert.equal(apply(closed, moveEdit(closed, closedSibling(2), 2, 0, closedSibling)), `<main>\n  <section>C</section>\n  <section>A</section>\n  <section>B</section></main>`);
+  // And back: the first child to the end lands before the end tag, as before.
+  const moved = `<main>\n  <section>C</section>\n  <section>A</section>\n  <section>B</section></main>`;
+  const movedSibling = (at: number) => rangeAt(moved, at + 1);
+  assert.equal(apply(moved, moveEdit(moved, movedSibling(0), 0, 3, movedSibling)), closed);
+  // CRLF sources keep their line endings.
+  const crlf = `<main>\r\n  <section>A</section>\r\n  <section>B</section>\r\n  <section>C</section></main>`;
+  const crlfSibling = (at: number) => rangeAt(crlf, at + 1);
+  assert.equal(apply(crlf, moveEdit(crlf, crlfSibling(2), 2, 0, crlfSibling)), `<main>\r\n  <section>C</section>\r\n  <section>A</section>\r\n  <section>B</section></main>`);
+  assert.equal(apply(crlf, moveEdit(crlf, crlfSibling(0), 0, 3, crlfSibling)), `<main>\r\n  <section>B</section>\r\n  <section>C</section>\r\n  <section>A</section></main>`);
+});
+
 test("attributes are set, added, quoted and removed on the start tag", () => {
   const img = rangeAt(page, 5);
   assert.equal(apply(page, [setAttributeEdit(page, img.tag, "src", "y.jpg")]).includes(`<img src="y.jpg" alt="">`), true);
