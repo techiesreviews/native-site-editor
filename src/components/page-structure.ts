@@ -19,9 +19,11 @@ export interface PageStructureHandlers {
   /**
    * The manifest's title and description for the page at `path`, empty
    * strings when the route is a bare path; nothing when the file is not a
-   * route of the site (the fields then stay out of the sidebar).
+   * route of the site (the fields then stay out of the sidebar). A `notice`
+   * closes the fields and says why (the manifest changed on GitHub under a
+   * draft).
    */
-  pageMeta?: (path: string) => { title: string; description: string } | undefined;
+  pageMeta?: (path: string) => { title: string; description: string; notice?: string } | undefined;
   /** A page field changed: write `value` (empty removes the field) to the manifest. */
   onPageMeta?: (path: string, field: PageMetaField, value: string) => void;
   /** A page field closed (Enter, Escape or focus loss): its edits are one step. */
@@ -80,6 +82,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     fields[field] = input;
     meta.append(wrap);
   }
+  const metaNotice = node("p", "page-structure__meta-notice");
+  metaNotice.setAttribute("role", "status");
+  metaNotice.hidden = true;
+  meta.append(metaNotice);
   const tree = node("div", "page-structure__tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Page structure");
@@ -96,8 +102,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const current = handlers.pageMeta?.(path);
     meta.hidden = !current;
     if (!current) return;
-    for (const field of ["title", "description"] as const)
-      if (document.activeElement !== fields[field]) fields[field].value = current[field];
+    for (const field of ["title", "description"] as const) {
+      if (document.activeElement !== fields[field] || current.notice) fields[field].value = current[field];
+      fields[field].disabled = Boolean(current.notice);
+    }
+    metaNotice.textContent = current.notice ?? "";
+    metaNotice.hidden = !current.notice;
   }
 
   let structure: NativeStructure | undefined;

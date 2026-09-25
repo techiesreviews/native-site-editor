@@ -42,6 +42,18 @@
   font: inherit;
   font-size: 12px;
 }
+.page-structure__field input:disabled {
+  opacity: 0.6;
+}
+.page-structure__meta-notice {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.page-structure__meta-notice[hidden] {
+  display: none;
+}
 .page-structure__field input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: -1px;

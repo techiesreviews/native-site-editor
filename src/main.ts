@@ -1220,23 +1220,42 @@ function draftScope() {
     : undefined;
 }
 
+// The browser draft of the manifest in the current scope, if any.
+function nativeManifestDraft() {
+  const scope = draftScope();
+  return scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
+}
+
+// Whether the manifest draft began from an older blob than GitHub has now.
+// Such a draft is never rebased by the Page fields: it keeps its baseSha,
+// so a save is refused, and the code editor's conflict bar (Review latest,
+// Keep my draft, Discard) is where it is settled.
+const MANIFEST_CONFLICT = "The manifest changed on GitHub. Open .astro-editor/native.json to review.";
+function nativeManifestConflict() {
+  const draft = nativeManifestDraft();
+  return Boolean(draft && nativeManifestBase && draft.baseSha !== nativeManifestBase.sha);
+}
+
 // The manifest's effective text, resolved like any other source: a mounted
 // editor model wins, then a browser draft, then the clean snapshot baseline.
 function nativeManifestSource() {
   const mounted = editorModule?.getMountedSource(NATIVE_MANIFEST_PATH);
   if (mounted !== undefined) return mounted;
-  const scope = draftScope();
-  const draft = scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
-  return draft?.content ?? nativeManifestBase?.text;
+  return nativeManifestDraft()?.content ?? nativeManifestBase?.text;
 }
 
-// The manifest's title and description for the page file `path`; nothing
-// when the file is not one of the site's routes.
+// The manifest's title and description for the page file `path`, read from
+// the manifest's effective text; nothing when the file is not one of the
+// site's routes. With a conflicting draft the values are GitHub's and the
+// notice says why the fields are closed.
 function nativePageMeta(path: string) {
   const route = nativeRouteForPath(path);
   if (!route || !nativeManifest) return undefined;
-  const meta = nativeManifest.pages[route] ?? {};
-  return { title: meta.title ?? "", description: meta.description ?? "" };
+  const conflict = nativeManifestConflict();
+  const source = conflict ? nativeManifestBase?.text : nativeManifestSource();
+  const parsed = source !== undefined ? parseNativeManifest(source) : undefined;
+  const meta = (parsed?.ok ? parsed.manifest.pages : nativeManifest.pages)[route] ?? {};
+  return { title: meta.title ?? "", description: meta.description ?? "", notice: conflict ? MANIFEST_CONFLICT : undefined };
 }
 
 // Writes a Page field into the manifest as one minimal text edit: into the
@@ -1249,6 +1268,7 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
   const source = nativeManifestSource();
   const manifest = nativeManifest;
   if (!route || source === undefined || !manifest) return;
+  if (nativeManifestConflict()) { errorMessage(new Error(MANIFEST_CONFLICT)); return; }
   let result: ReturnType<typeof editNativePageMeta>;
   try {
     result = editNativePageMeta(source, route, field, value);
@@ -1267,7 +1287,10 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
       } else {
         const scope = draftScope();
         if (!scope || !nativeManifestBase) throw new Error("The manifest cannot be changed right now.");
-        draftStore().save({ ...scope, version: 1, path: NATIVE_MANIFEST_PATH, baseSha: nativeManifestBase.sha, original: nativeManifestBase.text, content: result.text, updatedAt: Date.now() });
+        // A draft keeps the base it began from; only a fresh one starts at the snapshot's blob.
+        const existing = draftStore().get(scope, NATIVE_MANIFEST_PATH);
+        const base = existing ? { sha: existing.baseSha, text: existing.original } : nativeManifestBase;
+        draftStore().save({ ...scope, version: 1, path: NATIVE_MANIFEST_PATH, baseSha: base.sha, original: base.text, content: result.text, updatedAt: Date.now() });
         const failure = draftStore().error;
         if (failure) throw new Error(failure);
         editorModule?.refreshDrafts();
@@ -1478,10 +1501,16 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     manifestText = await readFile(repo.full_name, file.sha);
     if (!live()) return true;
     nativeManifestBase = { sha: file.sha, text: manifestText };
-    const draft = info.user
-      ? draftStore().get({ account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch }, NATIVE_MANIFEST_PATH)
-      : undefined;
-    if (draft) manifestText = draft.content;
+    const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
+    const draft = scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
+    if (draft && scope) {
+      if (draft.baseSha === file.sha) manifestText = draft.content;
+      // A publish whose response was lost: the branch already has the draft.
+      else if (draft.content === manifestText) draftStore().remove(scope, NATIVE_MANIFEST_PATH);
+      // Otherwise GitHub moved on since the draft began: the draft keeps its
+      // base (so a save is refused, and the code editor shows the conflict)
+      // and the preview follows what GitHub has.
+    }
   } catch (error) {
     if (!nativeEngaged) return false;
     if (!live()) return true;
@@ -2035,6 +2064,7 @@ async function mountSource(
       renderDraftFiles();
       commitHistory?.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
+      if (value?.path === NATIVE_MANIFEST_PATH) pageStructure?.refreshMeta();
     },
     onHistory: openHistory,
     ensureHistoryTarget: async (path) => {
