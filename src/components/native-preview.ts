@@ -157,9 +157,8 @@ interface NativePreviewHandlers {
   onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
-  // What is offered at an insert point (components between page sections;
-  // atoms and non-section components inside a section), and what to do with a choice.
-  insertChoices?: (point: InsertPoint) => InsertChoice[];
+  // What is offered between page sections, and what to do with a choice.
+  insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
 }
 
@@ -238,7 +237,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   pane.append(errorBox, frameHost);
   const editBar = createEditBar(pane, frame);
   const insertControls = createInsertControls(pane, frame, {
-    choices: (point) => handlers.insertChoices?.(point) ?? [],
+    choices: () => handlers.insertChoices?.() ?? [],
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
   });
 
@@ -399,8 +398,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           left: point.left as number,
           width: point.width as number,
           before: typeof point.before === "string" ? point.before.slice(0, 60) : "",
-          kind: point.kind === "section" ? "section" : "page",
-          container: typeof point.container === "string" ? point.container.slice(0, 60) : "",
         }];
       });
       insertControls.update(points);

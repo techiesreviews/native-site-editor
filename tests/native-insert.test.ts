@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { atomMarkup, componentLabel, indentUnit, insertBesideEdit, instanceMarkup, isSectionTemplate, newHeadingLevel, sectionMarkup, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
+import { componentLabel, indentUnit, insertBesideEdit, instanceMarkup, isSectionTemplate, sectionMarkup, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
 
 test("a component fits between sections only when its template is one section", () => {
   assert.equal(isSectionTemplate(`<section class="feature"><h2>Hi</h2><section>x</section></section>\n`), true);
@@ -64,27 +64,6 @@ test("a new instance carries its own copy of the template's text slots", () => {
   assert.equal(
     source.slice(0, edit.start) + edit.text + source.slice(edit.end),
     `<main>\n  <section>a</section>\n  <x-a>\n    <span slot="t">T</span>\n  </x-a>\n</main>`,
-  );
-});
-
-test("atoms: placeholder markup, heading level and image path", () => {
-  assert.equal(atomMarkup("", "heading"), `<h2 data-key="heading">A new thought</h2>`);
-  assert.equal(atomMarkup(`<h2 data-key="heading">x</h2>`, "heading", { level: 3 }), `<h3 data-key="heading-2">A new thought</h3>`);
-  assert.equal(atomMarkup("", "text"), `<p data-key="text">Start writing here.</p>`);
-  assert.equal(atomMarkup("", "button"), `<a class="button" href="#/" data-key="button">Learn more</a>`);
-  assert.equal(atomMarkup("", "image", { image: "src/images/placeholder.svg" }), `<img src="src/images/placeholder.svg" alt="" data-key="image">`);
-  assert.equal(atomMarkup("", "image"), `<img src="" alt="" data-key="image">`);
-  const page = `<main>\n  <section>\n    <h1>T</h1>\n    <p>a</p>\n  </section>\n  <section>\n    <p>b</p>\n  </section>\n</main>`;
-  const hero = { start: page.indexOf("<section>"), end: page.indexOf("</section>") + 10 };
-  assert.equal(newHeadingLevel(page, hero), 2);
-  assert.equal(newHeadingLevel(page, { start: page.lastIndexOf("<section>"), end: page.length }), 2);
-  assert.equal(newHeadingLevel(`<section><h6>x</h6></section>`, { start: 0, end: 29 }), 6);
-  assert.equal(newHeadingLevel(page, undefined), 2);
-  // Inside a section, before its paragraph, on that line's indentation.
-  const edit = insertBesideEdit(page, { start: page.indexOf("<p>a"), end: page.indexOf("</p>") + 4 }, "before", atomMarkup(page, "text"));
-  assert.equal(
-    page.slice(0, edit.start) + edit.text + page.slice(edit.end),
-    `<main>\n  <section>\n    <h1>T</h1>\n    <p data-key="text">Start writing here.</p>\n    <p>a</p>\n  </section>\n  <section>\n    <p>b</p>\n  </section>\n</main>`,
   );
 });
 

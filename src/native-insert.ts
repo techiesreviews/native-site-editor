@@ -1,15 +1,12 @@
-// Inserting a plain section or a section component between page sections,
-// and atoms (a heading, text, a button, an image) or non-section components
-// inside a section.
+// Inserting a plain section or a section component between page sections.
 //
 // A component fits between sections when its template is a single <section>
 // element: a feature or testimonial block fits, a button or card does not.
 // There is no separate declaration; the template's own root says what the
-// component is; the others fit inside a section instead. Inserting writes
-// the new markup into the page source on its own line, indented like its
-// neighbour, as one range edit. A new instance carries its own copy of each
-// text slot, so typing in the preview changes this page alone and the shared
-// template stays as it is.
+// component is. Inserting writes the new markup into the page source on
+// its own line, indented like its neighbour, as one range edit. A new
+// instance carries its own copy of each text slot, so typing in the preview
+// changes this page alone and the shared template stays as it is.
 
 import { locateNativeElementRange, startTags } from "./native-source-location";
 
@@ -99,49 +96,6 @@ export function instanceMarkup(source: string, tag: string, template: string) {
   const open = `<${tag} data-key="${uniqueDataKey(source, tag)}">`;
   const slots = slotMarkup(template);
   return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
-}
-
-/** The atoms a section accepts, with the picker's name and description for each. */
-export type AtomKind = "heading" | "text" | "button" | "image";
-export const ATOMS: { kind: AtomKind; label: string; description: string }[] = [
-  { kind: "heading", label: "Heading", description: "A new thought" },
-  { kind: "text", label: "Text", description: "Start writing here." },
-  { kind: "button", label: "Button", description: "Learn more" },
-  { kind: "image", label: "Image", description: "Image" },
-];
-
-/** The placeholder text a new heading, text or button starts with (selected for replacement). */
-export const atomText: Record<Exclude<AtomKind, "image">, string> = {
-  heading: "A new thought",
-  text: "Start writing here.",
-  button: "Learn more",
-};
-
-/**
- * The level for a new heading inside the section at `range`: one below the
- * section's first heading, or H2 when it has none.
- */
-export function newHeadingLevel(source: string, range: { start: number; end: number } | undefined) {
-  if (!range) return 2;
-  for (const tag of startTags(source.slice(range.start, range.end))) {
-    const match = /^h([1-6])$/.exec(tag.name);
-    if (match) return Math.min(Number(match[1]) + 1, 6);
-  }
-  return 2;
-}
-
-/**
- * The markup for a new atom in `source`: `level` for a heading, `image` the
- * repository path for an image (empty when the repository has none).
- */
-export function atomMarkup(source: string, kind: AtomKind, options: { level?: number; image?: string } = {}) {
-  const key = uniqueDataKey(source, kind);
-  switch (kind) {
-    case "heading": return `<h${options.level ?? 2} data-key="${key}">${atomText.heading}</h${options.level ?? 2}>`;
-    case "text": return `<p data-key="${key}">${atomText.text}</p>`;
-    case "button": return `<a class="button" href="#/" data-key="${key}">${atomText.button}</a>`;
-    case "image": return `<img src="${options.image ?? ""}" alt="" data-key="${key}">`;
-  }
 }
 
 /** The placeholder text a new plain section's heading and paragraph start with. */
