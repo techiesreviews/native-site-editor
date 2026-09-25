@@ -1,0 +1,10 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: rgb(32, 35, 31);
+  background: rgb(246, 247, 243);
+}
+
+.promo-card {
+  background: rgb(255, 250, 230);
+}

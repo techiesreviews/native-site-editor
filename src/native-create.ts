@@ -8,6 +8,7 @@
 // from the home page, and what a new file adds to the manifest. It has no DOM
 // and no I/O; whether a path is already taken is the caller's to say.
 import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
+import { nativePageComment } from "../shared/native-project";
 import { isNativeComponentTag } from "./native-manifest";
 import type { NativeRegistration } from "./native-page-meta";
 
@@ -97,9 +98,11 @@ const escapeHtml = (text: string) =>
  * A new page's source made from the home page's: everything outside its
  * `<main>` (the header and footer components) as it is, the `<main>` start
  * tag kept, and its content replaced by one `<h1>`. A home page with no
- * `<main>` gives a page of just `<main id="main">` and the heading.
+ * `<main>` gives a page of just `<main id="main">` and the heading. The home
+ * page's leading `<!-- title: … -->` comment is its own and is left out.
  */
-export function nativePageTemplate(home: string | undefined, heading: string): string {
+export function nativePageTemplate(source: string | undefined, heading: string): string {
+  const home = source === undefined ? undefined : nativePageComment(source).body;
   const text = escapeHtml(heading);
   const start = home ? /<main(?=[\s>/])[^>]*>/i.exec(home) : null;
   const close = home && start ? home.toLowerCase().indexOf("</main>", start.index + start[0].length) : -1;

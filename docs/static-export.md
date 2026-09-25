@@ -9,6 +9,33 @@ node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com
 
 `SITE_URL` in the environment also overrides `site.json`'s `url`. The export changes nothing about how the editor previews the site.
 
+## A site with no manifest
+
+`.astro-editor/native.json` is optional. A repository with `src/pages/index.html` is a native site, in the editor and to the exporter, and everything the manifest would say is found by where the files are (`resolveNativeProject` in `shared/native-project.ts`, which the editor, the exporter and the agent context share):
+
+| What | By convention | What wins, when it is there |
+| --- | --- | --- |
+| Pages | every `.html` file under `src/pages/` (see [Routes](#routes)) | a manifest route mapped to a file |
+| Components | every `src/components/<name>/<name>.html`, and `src/components/<name>.html`, whose `<name>` is a custom-element name (lowercase, with a dash, not reserved such as `font-face`) | a manifest `components` entry, for its tag and its file; the others are still found |
+| Shared stylesheets | `src/styles/site.css` when it exists (it may `@import` the others), else every `.css` file directly in `src/styles/`, in name order | the manifest's `styles` (even `[]`), which replaces the convention |
+| Page title and description | a leading comment in the page (below) | the manifest route's `title` and `description` |
+| Site settings | `src/site.json` | `.astro-editor/site.json` |
+
+When `src/components/<name>.html` and `src/components/<name>/<name>.html` both exist, the folder's is used and the export prints a warning. `jsonLd` comes only from the manifest.
+
+A page's metadata comment is the first thing in the file:
+
+```html
+<!--
+title: About
+description: Who we are.
+-->
+<site-header></site-header>
+<main>…</main>
+```
+
+The export leaves the comment out of the page. The editor shows its title and description in the Page block and the Pages tab when the manifest has none for the route; in a site with no manifest the Page block's fields are read-only, and the comment is edited in the page source.
+
 ## Routes
 
 A page's URL is where its file is. Every `.html` file under `src/pages/`, at any depth, is a page:
@@ -34,7 +61,7 @@ The editor routes pages by the same rule (`shared/native-routes.ts`), so the pre
 | --- | --- |
 | each page under `src/pages/` (see [Routes](#routes)) | `<route>/index.html` |
 | the `/404/` route | `404.html` (see [Not-found page](#not-found-page)) |
-| the manifest's `styles`, in order | one `assets/site.[hash].css` |
+| the shared stylesheets (the manifest's `styles`, else [by convention](#a-site-with-no-manifest)), in order | one `assets/site.[hash].css` |
 | a repository file a shared stylesheet `@import`s | `assets/<name>.[hash].css`; the import points at it |
 | `src/components/<name>/<name>.css` | `assets/<name>.[hash].css` |
 | `src/images/*` | `assets/images/<name>.[hash].<ext>` |
@@ -50,7 +77,7 @@ Pages:
 - `data-key` attributes are removed. The preview uses them to patch in place; nothing on the published site reads them.
 - Images get `width`/`height` from the file, and `loading="lazy"` after the first `</section>`.
 
-Because the manifest's stylesheets become one file, a stylesheet other than the first must not rely on its own `@import`s landing mid-cascade: only `@layer` statements and `@import` may lead a stylesheet, so the bundle collects the first file's layer statements, then those of each later file that imports, then every import, then the rest in manifest order. Declare the layer order in the first file and import into named layers, and the order is unchanged; the exporter prints a warning for an unlayered import in a later file.
+Because the shared stylesheets become one file, a stylesheet other than the first must not rely on its own `@import`s landing mid-cascade: only `@layer` statements and `@import` may lead a stylesheet, so the bundle collects the first file's layer statements, then those of each later file that imports, then every import, then the rest in order. Declare the layer order in the first file and import into named layers, and the order is unchanged; the exporter prints a warning for an unlayered import in a later file.
 
 ## The document head
 
@@ -61,7 +88,7 @@ Because the manifest's stylesheets become one file, a stylesheet other than the 
 
 ## `.astro-editor/site.json`
 
-Every field is optional; the editor ignores the file.
+The site settings are read from `.astro-editor/site.json`, else from `src/site.json` (`.astro-editor/site.json` wins when both exist, so older sites keep working). Every field is optional; the editor ignores the file.
 
 ```json
 {

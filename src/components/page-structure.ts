@@ -21,9 +21,19 @@ export interface PageStructureHandlers {
    * strings when the route is a bare path; nothing when the file is not a
    * route of the site (the fields then stay out of the sidebar). A `notice`
    * closes the fields and says why (the manifest changed on GitHub under a
-   * draft).
+   * draft); with `readOnly` the fields show their values but cannot be
+   * changed, and the notice says where the values come from (a site with no
+   * manifest, titled by the page's leading comment). `placeholders` show in
+   * an empty field (the page comment's values, which apply when the manifest
+   * has none).
    */
-  pageMeta?: (path: string) => { title: string; description: string; notice?: string } | undefined;
+  pageMeta?: (path: string) => {
+    title: string;
+    description: string;
+    notice?: string;
+    readOnly?: boolean;
+    placeholders?: { title?: string; description?: string };
+  } | undefined;
   /** A page field changed: write `value` (empty removes the field) to the manifest. */
   onPageMeta?: (path: string, field: PageMetaField, value: string) => void;
   /** A page field closed (Enter, Escape or focus loss): its edits are one step. */
@@ -101,7 +111,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (!current) return;
     for (const field of ["title", "description"] as const) {
       if (document.activeElement !== fields[field] || current.notice) fields[field].value = current[field];
-      fields[field].disabled = Boolean(current.notice);
+      fields[field].readOnly = Boolean(current.readOnly);
+      fields[field].disabled = Boolean(current.notice) && !current.readOnly;
+      fields[field].placeholder = current.placeholders?.[field] ?? "";
     }
     metaNotice.textContent = current.notice ?? "";
     metaNotice.hidden = !current.notice;

@@ -6,10 +6,14 @@
 //   curl -fsSL https://editor.techies.tools/native-export.mjs -o native-export.mjs
 //   node native-export.mjs [projectDir] [--out dist] [--site-url https://example.com]
 //
-// SITE_URL in the environment also overrides `.astro-editor/site.json`'s url.
+// SITE_URL in the environment also overrides the url in the site settings
+// (`.astro-editor/site.json`, else `src/site.json`). A project is exported
+// when it has `.astro-editor/native.json` or a home page,
+// `src/pages/index.html`; the manifest is optional.
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { exportNativeSite, ExportError, MANIFEST_PATH, SITE_PATH, type FileContent } from "./native-export";
+import { exportNativeSite, ExportError, MANIFEST_PATH, SITE_PATHS, type FileContent } from "./native-export";
+import { isNativeProject, NATIVE_HOME_PAGE } from "./native-project";
 
 const TEXT = /\.(html|css|json)$/i;
 
@@ -39,11 +43,11 @@ function main(argv: string[]) {
   }
   const root = resolve(project);
   const files: Record<string, FileContent> = {};
-  for (const path of [MANIFEST_PATH, SITE_PATH]) {
+  for (const path of [MANIFEST_PATH, ...SITE_PATHS]) {
     try {
       files[path] = readFileSync(join(root, path), "utf8");
     } catch {
-      if (path === MANIFEST_PATH) throw new ExportError(`No ${MANIFEST_PATH} in ${root}`);
+      // Optional: the manifest and the site settings may both be absent.
     }
   }
   const src = join(root, "src");
@@ -52,6 +56,7 @@ function main(argv: string[]) {
   } catch {
     throw new ExportError(`No src/ directory in ${root}`);
   }
+  if (!isNativeProject(Object.keys(files))) throw new ExportError(`No ${MANIFEST_PATH} or ${NATIVE_HOME_PAGE} in ${root}`);
   const result = exportNativeSite({ files, siteUrl });
   const target = resolve(root, outDir);
   rmSync(target, { recursive: true, force: true });

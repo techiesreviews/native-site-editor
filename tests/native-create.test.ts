@@ -88,6 +88,11 @@ test("a new page keeps the home page outside <main> and replaces its content wit
   // A custom element whose name starts with "main" is not <main>.
   assert.equal(nativePageTemplate("<main-nav></main-nav>", "Intro"), '<main id="main">\n  <h1>Intro</h1>\n</main>\n');
   assert.ok(nativePageTemplate(routingHome, "Intro").startsWith('<main class="page" data-key="main">\n  <h1 data-key="title">Intro</h1>\n</main>'));
+  // The home page's leading metadata comment titles the home page only.
+  assert.equal(
+    nativePageTemplate("<!--\ntitle: Home\ndescription: Welcome.\n-->\n<site-header></site-header>\n<main>\n  <p>Old</p>\n</main>\n", "Intro"),
+    "<site-header></site-header>\n<main>\n  <h1>Intro</h1>\n</main>\n",
+  );
 });
 
 test("without <main> in the home page, a new page is a minimal <main>", () => {
