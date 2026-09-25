@@ -68,6 +68,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.ok(!JSON.stringify(site).includes("github-private-token"));
     const conventions = await client.readResource({ uri: "native-site://conventions" });
     assert.match(JSON.stringify(conventions), /src\/components\/<tag>\/<tag>\.html/);
+    assert.match(JSON.stringify(conventions), /slot name=\\"title\\" data-if><h1/);
     const prompt = await client.getPrompt({ name: "edit_site", arguments: { goal: "Add a team page" } });
     assert.match(JSON.stringify(prompt), /Add a team page/);
 
