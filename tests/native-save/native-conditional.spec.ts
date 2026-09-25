@@ -14,7 +14,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -57,7 +57,7 @@ test("data-if shows an element only when its named slot is filled", async ({ pag
   // Open the template and make the note depend on the link slot.
   // The card's own article (the body paragraph is the page's slotted element).
   await frame.locator("project-card article").first().evaluate((el) => (el as HTMLElement).click());
-  await expect(page.locator("#current-page")).toHaveText(cardPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await pasteInto(page, "#content", cardSource.replace(`<card-note data-key="card-note">`, `<card-note data-if="link" data-key="card-note">`));
   for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
 });

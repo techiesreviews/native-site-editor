@@ -12,7 +12,7 @@ const manifestSource = readFileSync(resolve("fixtures/native-starter", manifestP
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -67,7 +67,7 @@ test("the fields are empty for a bare route and absent for a component alone", a
     await expect(item).toBeVisible({ timeout: 20_000 });
     if (part === "feature-block.html" || (await item.getAttribute("aria-expanded")) === "false") await item.click();
   }
-  await expect(page.locator("#current-page")).toHaveText("src/components/feature-block/feature-block.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/feature-block/feature-block.html");
   await expect(page.locator("#structure .sidebar-hint")).toContainText("component by itself", { timeout: 30_000 });
   await expect(block(page)).toBeHidden();
 });
@@ -202,7 +202,7 @@ test("a manifest draft is not rebased onto a manifest that changed on GitHub: th
     await expect(item).toBeVisible({ timeout: 20_000 });
     if (part === "native.json" || (await item.getAttribute("aria-expanded")) === "false") await item.click();
   }
-  await expect(page.locator("#current-page")).toHaveText(manifestPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", manifestPath);
   await expect(page.locator("#content .code-editor__conflict")).toBeVisible();
   await expect(page.locator("#content .code-editor__conflict")).toContainText("GitHub changed since this draft started.");
   page.once("dialog", (dialog) => void dialog.accept());

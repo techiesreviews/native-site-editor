@@ -17,7 +17,7 @@ test.beforeEach(async ({ page, baseURL }) => {
   pageErrors.length = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 });
 
@@ -67,7 +67,7 @@ async function openFile(page: Page, path: string, contains: string) {
     const expanded = await item.getAttribute("aria-expanded");
     if (index === parts.length - 1 || expanded === "false") await item.click();
   }
-  await expect(page.locator("#current-page")).toHaveText(path);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
   await expect(page.locator("#content .view-lines")).toContainText(contains, { timeout: 20_000 });
 }
 
@@ -206,7 +206,7 @@ test("a stylesheet a shared sheet imports applies in its layer and lists its rul
 
   // Selecting the section lists the imported rule with the imported file's path and range.
   await filler.click({ position: { x: 12, y: 2 } });
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.locator("#secondary-title")).toHaveText(sectionsPath);
   const chip = page.locator("#secondary-rules button", { hasText: ".filler" });
   await expect(chip).toHaveAttribute("title", new RegExp(`^\\.filler\n${sectionsPath} \\(imported by ${cssPath}\\)\n@layer sections\n`));

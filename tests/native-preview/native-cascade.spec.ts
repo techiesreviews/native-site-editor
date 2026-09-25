@@ -24,7 +24,7 @@ test.afterEach(() => {
 async function openFixture(page: Page, baseURL: string | undefined, name: string) {
   const id = 510 + fixtures.indexOf(name);
   await page.goto(`${baseURL}/#repo=${id}&branch=main&file=${encodeURIComponent(indexPath)}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   return page.frameLocator(".native-preview-frame");
 }
@@ -211,7 +211,7 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   await expect(link).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => frame.locator("site-footer footer").evaluate((el) => getComputedStyle(el).paddingTop)).toBe("24px");
   await link.click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
   await expect(page.locator("#secondary-title")).toHaveText("src/components/site-footer/site-footer.css");
   // The pointer is still over the link, so `a:hover` applies right now; the
   // panel lists the link's resting styles and the hover rule as a state.
@@ -239,6 +239,6 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   await page.mouse.move(0, 0);
   const pageLink = frame.locator("main a");
   await pageLink.click();
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expectWinner(page, pageLink, "color", { selector: "p a", path: "src/styles/elements.css", origin: "elements", value: "rgb(47, 109, 58)" });
 });

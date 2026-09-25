@@ -16,7 +16,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/slow?ms=0`);
 });
@@ -51,7 +51,7 @@ async function openFile(page: Page, path: string, contains: string) {
     const expanded = await item.getAttribute("aria-expanded");
     if (index === path.split("/").length - 1 || expanded === "false") await item.click();
   }
-  await expect(page.locator("#current-page")).toHaveText(path);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
   await expect(page.locator("#content [role=\"textbox\"]").first()).toBeAttached({ timeout: 20_000 });
   if (contains)
     await expect(page.locator("#content .view-lines")).toContainText(contains, { timeout: 20_000 });
@@ -338,7 +338,7 @@ test("unsaved local drafts recover after reload", async ({ page }) => {
   await expect(frame.getByRole("heading", { name: "Recovered local draft" })).toBeVisible();
 
   await page.reload();
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").getByRole("heading", { name: "Recovered local draft" })).toBeVisible({ timeout: 30_000 });
   await expect(saveTrigger(page)).toBeEnabled();
 });

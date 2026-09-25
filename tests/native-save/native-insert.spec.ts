@@ -14,7 +14,7 @@ const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 });
@@ -99,7 +99,7 @@ test("a plus between sections inserts a section component, and only those are of
   await page.keyboard.press("Enter");
   await expect(title).toHaveText("Only here");
   await expect.poll(() => editorText(page, "#content")).toContain(`<span slot="title">Only here</span>`);
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => editorText(page, "#content")).toBe(inserted);
@@ -150,7 +150,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
 test("with no section component the picker explains what fits", async ({ page, baseURL }) => {
   // Feature block's template made a <div>: nothing fits between sections.
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(featurePath)}`);
-  await expect(page.locator("#current-page")).toHaveText(featurePath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", featurePath, { timeout: 30_000 });
   const textbox = page.locator("#content [role='textbox']").first();
   await expect(textbox).toBeAttached({ timeout: 20_000 });
   await page.evaluate(async (text) => navigator.clipboard.writeText(text), featureSource.replaceAll("section", "div"));
@@ -161,7 +161,7 @@ test("with no section component the picker explains what fits", async ({ page, b
 
   await page.goto(`${baseURL}/${nativeHash}`);
   await page.reload();
-  await expect(page.locator("#current-page")).toHaveText(indexPath, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
@@ -175,12 +175,12 @@ test("with no section component the picker explains what fits", async ({ page, b
 test("inserting while a component file is open edits the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await frame.locator(".site-footer p").click();
-  await expect(page.locator("#current-page")).toHaveText("src/components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
   await scrollFrame(page, "top");
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
   await picker(page).getByRole("option", { name: /Feature block/ }).click();
-  await expect(page.locator("#current-page")).toHaveText(indexPath);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(frame.locator("main > feature-block:first-child + section.hero")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toContain(
     `<main class="page" data-key="main">\n  <feature-block data-key="feature-block">\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="hero"`,

@@ -4,11 +4,13 @@
 // element: a feature or testimonial block fits, a button or card does not.
 // There is no separate declaration; the template's own root says what the
 // component is. Inserting writes a new instance tag into the page source on
-// its own line, indented like its neighbour, as one range edit. The new
+// its own line, indented like its neighbour, as one range edit. A page whose
+// <main> holds no section yet gets one place at the end of <main>, so a
+// heading-only page can get sections too. The new
 // instance carries its own copy of each text slot, so typing in the preview
 // changes this page alone and the shared template stays as it is.
 
-import { locateNativeElementRange, startTags } from "./native-source-location";
+import { locateNativeElementRange, startTags, type ElementRange } from "./native-source-location";
 
 const COMMENTS = /<!--[\s\S]*?-->/g;
 const blank = (text: string) => !text.replace(COMMENTS, "").trim();
@@ -110,5 +112,28 @@ export function nativeInsertEdit(source: string, parent: number[], index: number
   // Past the last child, or the next element's range is ambiguous: right
   // after the previous one is the same position.
   const previous = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
-  return previous ? insertBesideEdit(source, previous, "after", markup) : undefined;
+  if (previous) return insertBesideEdit(source, previous, "after", markup);
+  if (index !== 0) return undefined;
+  const container = locateNativeElementRange(source, parent);
+  return container ? insertIntoEmptyEdit(source, container, markup) : undefined;
+}
+
+/**
+ * Inserts `markup` as the only element of the element at `range` (an empty
+ * `<main>`, say), on its own line one level deeper than the element's start
+ * tag, before its end tag. Undefined when it has no end tag or has element
+ * children already.
+ */
+export function insertIntoEmptyEdit(source: string, range: ElementRange, markup: string) {
+  if (!range.close) return undefined;
+  const inner = source.slice(range.tag.end, range.close.start);
+  if (startTags(inner).length) return undefined;
+  const lineStart = source.lastIndexOf("\n", range.start - 1) + 1;
+  const lead = source.slice(lineStart, range.start);
+  const indent = /^[ \t]*$/.test(lead) ? lead : "";
+  const newline = lineEnding(source);
+  const text = markup.split(/\r?\n/).join(`${newline}${indent}  `);
+  // Trailing blank space before the end tag gives way to the new line.
+  const start = range.tag.end + inner.trimEnd().length;
+  return { start, end: range.close.start, text: `${newline}${indent}  ${text}${newline}${indent}` };
 }

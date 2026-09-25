@@ -80,13 +80,9 @@ export function buildNativePagesTree(input: NativePagesInput): NativeCollectionN
     const route = mapped ?? nativePageRoute(file)!;
     const node: NativePageNode = { kind: "page", file, route, label: "", isNew: Boolean(input.isNew?.(file)) };
     if (!mapped && input.routes[route]) node.unusedFor = input.routes[route];
-    if (route === "/" && !node.unusedFor) {
-      node.special = "home";
-      node.label = "Home";
-    } else {
-      if (route === "/404/" && !node.unusedFor) node.special = "notFound";
-      node.label = title(route) ?? heading(file) ?? (node.special === "notFound" ? "Page not found" : routeHeading(route));
-    }
+    if (route === "/" && !node.unusedFor) node.special = "home";
+    else if (route === "/404/" && !node.unusedFor) node.special = "notFound";
+    node.label = pageLabel(file, route, node.special, input);
     return node;
   };
 
@@ -129,6 +125,26 @@ export function buildNativePagesTree(input: NativePagesInput): NativeCollectionN
   };
   settle(root);
   return root;
+}
+
+type LabelInput = Pick<NativePagesInput, "titles" | "heading">;
+
+function pageLabel(file: string, route: string, special: NativePageNode["special"], input: LabelInput): string {
+  if (special === "home") return "Home";
+  return input.titles?.[route]?.trim() || input.heading?.(file)?.trim() ||
+    (special === "notFound" ? "Page not found" : routeHeading(route));
+}
+
+/**
+ * The label the Pages tab gives the page file `file` (see
+ * buildNativePagesTree), or undefined when it is not one of the site's pages
+ * (not under `src/pages/`, or no route in `routes` is its).
+ */
+export function nativePageLabel(file: string, input: Pick<NativePagesInput, "routes" | "titles" | "heading">): string | undefined {
+  if (!file.startsWith(NATIVE_PAGES_DIR)) return undefined;
+  const route = Object.entries(input.routes).find(([, page]) => page === file)?.[0];
+  if (!route) return undefined;
+  return pageLabel(file, route, route === "/" ? "home" : route === "/404/" ? "notFound" : undefined, input);
 }
 
 /** The text of the first `<h1>` in `html`, tags dropped and whitespace collapsed. */

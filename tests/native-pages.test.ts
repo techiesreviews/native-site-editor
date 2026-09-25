@@ -6,6 +6,7 @@ import {
   buildNativePagesTree,
   firstHeadingText,
   nativeNewTarget,
+  nativePageLabel,
   slugify,
   type NativeCollectionNode,
   type NativeTreeNode,
@@ -119,6 +120,23 @@ test("the first h1's text labels a page", () => {
   assert.equal(firstHeadingText("<h1>  </h1>"), undefined);
   assert.equal(firstHeadingText(undefined), undefined);
   assert.equal(firstHeadingText("<h10>no</h10><h1 class=a>Yes</h1>"), "Yes");
+});
+
+test("a page's label on its own is the Pages tab's: title, else first heading, else its URL; other files have none", () => {
+  const routes = { "/": "src/pages/index.html", "/about/": "src/pages/about.html", "/work/fern/": "src/pages/work/fern.html", "/404/": "src/pages/404.html" };
+  const heading = (file: string) => (file === "src/pages/about.html" ? "About us" : undefined);
+  const label = (file: string, titles: Record<string, string | undefined> = {}) => nativePageLabel(file, { routes, titles, heading });
+  assert.equal(label("src/pages/about.html", { "/about/": " Our studio " }), "Our studio");
+  assert.equal(label("src/pages/about.html", { "/about/": "" }), "About us");
+  assert.equal(label("src/pages/work/fern.html"), "Fern");
+  assert.equal(label("src/pages/index.html", { "/": "Larkspur" }), "Home");
+  assert.equal(label("src/pages/404.html"), "Page not found");
+  assert.equal(label("src/styles/site.css"), undefined);
+  assert.equal(label("src/pages/_parts/note.html"), undefined);
+  // Same as the tree's.
+  const tree = buildNativePagesTree({ files: Object.values(routes), routes, heading });
+  const about = tree.children.find((node) => node.kind === "page" && node.file === "src/pages/about.html");
+  assert.equal(about?.label, label("src/pages/about.html"));
 });
 
 test("slugify: lowercase, diacritics stripped, anything else one dash", () => {

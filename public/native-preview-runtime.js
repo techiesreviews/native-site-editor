@@ -445,16 +445,49 @@
         });
       }
     });
+    var main = sectionlessMain();
+    var mainPath = main && elementIndexPath(main);
+    if (mainPath) {
+      var box = main.getBoundingClientRect();
+      var last = main.lastElementChild;
+      var rect = last && last.getBoundingClientRect();
+      var wide = rect && rect.right > rect.left;
+      out.push({
+        parent: mainPath,
+        index: main.children.length,
+        // Just below the last child, not over it: the plus shows while the
+        // pointer is anywhere in <main>, and must not cover what it clicks.
+        top: rect ? rect.bottom + 13 : box.top,
+        left: wide ? rect.left : box.left,
+        width: wide ? rect.width : box.width,
+        before: ""
+      });
+    }
     return out;
+  }
+
+  // A page whose <main> holds no section yet (a heading-only page, a site
+  // without sections) gets one place at the end of <main>, after its last
+  // child, so sections can be added to it at all.
+  function sectionlessMain() {
+    var main = pageEl && pageEl.querySelector("main");
+    return main && !Array.prototype.some.call(main.children, sectionLike) ? main : null;
   }
 
   // The item under the pointer among the children of a section-holding
   // element (sections themselves, from inside their shadow trees too), so the
-  // editor shows only the plus buttons just above and below it.
+  // editor shows only the plus buttons just above and below it. Anywhere in
+  // a <main> without sections counts as its last item, so its one place (at
+  // the end) shows.
   function hoveredItem() {
     if (!pageEl) return null;
+    var main = sectionlessMain();
     var current = hovered;
     while (current && current !== pageEl) {
+      if (current === main) {
+        var mainPath = elementIndexPath(main);
+        return mainPath ? { parent: mainPath, index: Math.max(main.children.length - 1, 0) } : null;
+      }
       var parentNode = current.parentElement;
       if (!parentNode) {
         var root = current.getRootNode && current.getRootNode();

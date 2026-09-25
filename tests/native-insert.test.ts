@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { componentLabel, insertBesideEdit, instanceMarkup, isSectionTemplate, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
+import { componentLabel, insertBesideEdit, insertIntoEmptyEdit, instanceMarkup, isSectionTemplate, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
+import { elementEnd, startTags } from "../src/native-source-location.ts";
 
 test("a component fits between sections only when its template is one section", () => {
   assert.equal(isSectionTemplate(`<section class="feature"><h2>Hi</h2><section>x</section></section>\n`), true);
@@ -83,4 +84,32 @@ test("a CRLF page gets CRLF in inserted markup", () => {
   const after = insertBesideEdit(source, second, "after", "<x-a>\n  <span slot=\"t\">T</span>\n</x-a>");
   assert.equal(after.text, `\r\n  <x-a>\r\n    <span slot="t">T</span>\r\n  </x-a>`);
   assert.equal(instanceMarkup(source, "x-a", `<a><slot name="t">T</slot></a>`), `<x-a data-key="x-a">\r\n  <span slot="t">T</span>\r\n</x-a>`);
+});
+
+test("a <main> without sections gets a section at its end: after its last child, or inside it when empty", () => {
+  const apply = (source: string, edit: { start: number; end: number; text: string } | undefined) =>
+    edit ? source.slice(0, edit.start) + edit.text + source.slice(edit.end) : undefined;
+  // A heading-only page: the place after <main>'s last child.
+  const heading = `<site-header></site-header>\n<main class="page" data-key="main">\n  <h1 data-key="title">About</h1>\n</main>\n`;
+  const tags = startTags(heading);
+  const h1 = elementEnd(heading, tags, tags.findIndex((tag) => tag.name === "h1"), heading.length)!;
+  assert.equal(
+    apply(heading, insertBesideEdit(heading, h1, "after", instanceMarkup(heading, "feature-block", `<section><slot name="t">T</slot></section>`))),
+    `<site-header></site-header>\n<main class="page" data-key="main">\n  <h1 data-key="title">About</h1>\n` +
+      `  <feature-block data-key="feature-block">\n    <span slot="t">T</span>\n  </feature-block>\n</main>\n`,
+  );
+  // An empty <main>, indented or not, with or without blank space inside.
+  const main = (source: string) => {
+    const all = startTags(source);
+    return elementEnd(source, all, all.findIndex((tag) => tag.name === "main"), source.length)!;
+  };
+  const empty = `<div>\n  <main id="main">\n  </main>\n</div>`;
+  assert.equal(apply(empty, insertIntoEmptyEdit(empty, main(empty), "<x-a>\n  <span slot=\"t\">T</span>\n</x-a>")),
+    `<div>\n  <main id="main">\n    <x-a>\n      <span slot="t">T</span>\n    </x-a>\n  </main>\n</div>`);
+  assert.equal(apply("<main></main>", insertIntoEmptyEdit("<main></main>", main("<main></main>"), "<x-a></x-a>")), "<main>\n  <x-a></x-a>\n</main>");
+  const crlf = "<main>\r\n</main>";
+  assert.equal(apply(crlf, insertIntoEmptyEdit(crlf, main(crlf), "<x-a></x-a>")), "<main>\r\n  <x-a></x-a>\r\n</main>");
+  // Text alone stays before the new line; element children mean it is not empty.
+  assert.equal(apply("<main>Hi </main>", insertIntoEmptyEdit("<main>Hi </main>", main("<main>Hi </main>"), "<x-a></x-a>")), "<main>Hi\n  <x-a></x-a>\n</main>");
+  assert.equal(insertIntoEmptyEdit(heading, main(heading), "<x-a></x-a>"), undefined);
 });

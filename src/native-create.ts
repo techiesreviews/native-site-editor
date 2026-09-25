@@ -8,6 +8,7 @@
 // from the home page, and what a new file adds to the manifest. It has no DOM
 // and no I/O; whether a path is already taken is the caller's to say.
 import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
+import { VOID_ELEMENTS, startTagAttribute, startTags, type StartTag } from "../shared/html-source";
 import { isNativeComponentTag } from "./native-manifest";
 import type { NativeRegistration } from "./native-page-meta";
 
@@ -94,22 +95,77 @@ const escapeHtml = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
+ * The start tag of the first `<section>` element directly in `<main>`, whose
+ * content runs from `from` to `to`: tags are followed by nesting depth (an
+ * unclosed element only makes later sections look nested, so none is found
+ * rather than a wrong one).
+ */
+function firstChildSection(html: string, from: number, to: number): StartTag | undefined {
+  const inner = html.slice(from, to);
+  const events = [
+    ...startTags(inner).map((tag) => ({ at: tag.start, tag, close: "" })),
+    ...[...inner.matchAll(/<\/([a-zA-Z][^\s/>]*)[^>]*>/g)].map((match) => ({ at: match.index, tag: undefined, close: match[1].toLowerCase() })),
+  ].sort((a, b) => a.at - b.at);
+  const open: string[] = [];
+  for (const { tag, close } of events) {
+    if (tag) {
+      if (!open.length && tag.name === "section")
+        return { name: tag.name, start: from + tag.start, nameEnd: from + tag.nameEnd, end: from + tag.end };
+      if (!VOID_ELEMENTS.has(tag.name) && !inner.slice(tag.start, tag.end).endsWith("/>")) open.push(tag.name);
+    } else {
+      const index = open.lastIndexOf(close);
+      if (index >= 0) open.length = index;
+    }
+  }
+  return undefined;
+}
+
+/** A copy of the `<section>` start tag `tag` in `html` without its `id` and `data-key`, keyed `hero` when `keyed`. */
+function sectionStartTag(html: string, tag: StartTag, keyed: boolean) {
+  const drop = ["id", "data-key"]
+    .map((name) => startTagAttribute(html, tag, name))
+    .filter((found) => found !== undefined)
+    .sort((a, b) => b.start - a.start);
+  let text = html.slice(tag.start, tag.end);
+  for (const found of drop) text = text.slice(0, found.start - tag.start) + text.slice(found.end - tag.start);
+  const attributes = text.slice(tag.nameEnd - tag.start, -1).replace(/\s*\/$/, "").trimEnd();
+  return `<section${attributes}${keyed ? ' data-key="hero"' : ""}>`;
+}
+
+/**
  * A new page's source made from the home page's: everything outside its
  * `<main>` (the header and footer components) as it is, the `<main>` start
- * tag kept, and its content replaced by one `<h1>`. A home page with no
- * `<main>` gives a page of just `<main id="main">` and the heading.
+ * tag kept, and its content replaced by one `<section>` holding one `<h1>`,
+ * so "Add to the page" has sections to add others beside. The section copies
+ * the start tag of the home page's first `<section>` directly in `<main>`
+ * (its class and other attributes, but no `id`, which would repeat), else it
+ * is a bare `<section>`. A page keyed for the editor (its `<main>` has a
+ * `data-key`) keys the section `hero` and the heading `title`. A home page
+ * with no `<main>` gives a page of just `<main id="main">`, the section and
+ * the heading.
  */
 export function nativePageTemplate(home: string | undefined, heading: string): string {
   const text = escapeHtml(heading);
-  const start = home ? /<main(?=[\s>/])[^>]*>/i.exec(home) : null;
-  const close = home && start ? home.toLowerCase().indexOf("</main>", start.index + start[0].length) : -1;
-  if (!home || !start || close < 0) return `<main id="main">\n  <h1>${text}</h1>\n</main>\n`;
-  const lineStart = home.lastIndexOf("\n", start.index) + 1;
-  const indent = /^[ \t]*$/.test(home.slice(lineStart, start.index)) ? home.slice(lineStart, start.index) : "";
+  const start = home ? startTags(home).find((tag) => tag.name === "main") : undefined;
+  const close = home && start ? home.toLowerCase().indexOf("</main>", start.end) : -1;
+  if (!home || !start || close < 0) return `<main id="main">\n  <section>\n    <h1>${text}</h1>\n  </section>\n</main>\n`;
+  const lineIndent = (at: number) => {
+    const lead = home.slice(home.lastIndexOf("\n", at - 1) + 1, at);
+    return /^[ \t]*$/.test(lead) ? lead : undefined;
+  };
+  const indent = lineIndent(start.start) ?? "";
   // A page keyed for the editor keeps keying its elements.
-  const key = /\sdata-key\s*=/i.test(start[0]) ? ' data-key="title"' : "";
-  const end = start.index + start[0].length;
-  return `${home.slice(0, end)}\n${indent}  <h1${key}>${text}</h1>\n${indent}${home.slice(close)}`;
+  const keyed = startTagAttribute(home, start, "data-key") !== undefined;
+  const section = firstChildSection(home, start.end, close);
+  // One level of indentation as the home page has it under <main>.
+  const sectionIndent = section ? lineIndent(section.start) : undefined;
+  const step = sectionIndent && sectionIndent.length > indent.length && sectionIndent.startsWith(indent)
+    ? sectionIndent.slice(indent.length)
+    : "  ";
+  const open = section ? sectionStartTag(home, section, keyed) : `<section${keyed ? ' data-key="hero"' : ""}>`;
+  const h1 = `<h1${keyed ? ' data-key="title"' : ""}>${text}</h1>`;
+  const inner = [`${indent}${step}${open}`, `${indent}${step}${step}${h1}`, `${indent}${step}</section>`].join("\n");
+  return `${home.slice(0, start.end)}\n${inner}\n${indent}${home.slice(close)}`;
 }
 
 /**

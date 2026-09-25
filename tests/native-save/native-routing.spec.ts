@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 // File-based routing (shared/native-routes.ts) over `fixtures/native-routing`,
 // served as the `native-routing` repository (id 530): its manifest lists no
 // page, so every route comes from where the page file is under src/pages/,
-// and "/work/fern-and-kettle/" has a metadata-only entry (a title, no file).
+// and "/work/fern-and-kettle/" has a metadata-only entry (a title, no file);
+// src/pages/work/notes.html is a heading-only page, with no section.
 const indexPath = "src/pages/index.html";
 const manifestPath = ".astro-editor/native.json";
 const hash = (file: string) => `#repo=530&branch=main&file=${encodeURIComponent(file)}`;
@@ -27,7 +28,7 @@ const follow = (page: Page, name: string) =>
 
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {
   await page.goto(`${baseURL}/${hash(file)}`);
-  await expect(page.locator("#current-page")).toHaveText(file, { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -51,7 +52,7 @@ test("nested pages are routed by their folders and #/ links follow to them", asy
   await frame(page).getByRole("link", { name: "All work", exact: true }).click();
   await page.getByRole("button", { name: "Address" }).click();
   const options = page.getByRole("listbox").getByRole("option");
-  await expect(options).toHaveText(["#/", "#/work/", "Fern & Kettle (#/work/fern-and-kettle/)"]);
+  await expect(options).toHaveText(["#/", "#/work/", "Fern & Kettle (#/work/fern-and-kettle/)", "#/work/notes/"]);
   await page.keyboard.press("Escape");
 
   await follow(page, "All work");
