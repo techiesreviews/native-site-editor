@@ -52,11 +52,17 @@ test("a new instance carries its own copy of the template's text slots", () => {
 </section>`;
   assert.deepEqual(slotMarkup(template), [
     `<span slot="title">What we <em>offer</em></span>`,
-    `<span slot="action"><a href="#/about/">Get in touch</a></span>`,
+    `<a slot="action" href="#/about/">Get in touch</a>`,
+  ]);
+  // Only a fallback that is exactly one element takes the slot itself.
+  assert.deepEqual(slotMarkup(`<slot name="a"><a href="#x">One</a> <a href="#y">Two</a></slot><slot name="b">Go <a href="#z">here</a></slot><slot name="c"><br></slot>`), [
+    `<span slot="a"><a href="#x">One</a> <a href="#y">Two</a></span>`,
+    `<span slot="b">Go <a href="#z">here</a></span>`,
+    `<span slot="c"><br></span>`,
   ]);
   assert.equal(
     instanceMarkup("", "feature-section", template),
-    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <span slot="action"><a href="#/about/">Get in touch</a></span>\n</feature-section>`,
+    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <a slot="action" href="#/about/">Get in touch</a>\n</feature-section>`,
   );
   assert.equal(instanceMarkup("", "site-hero", `<section><h2>Fixed</h2></section>`), `<site-hero data-key="site-hero"></site-hero>`);
   // Every line of a multi-line instance takes the neighbour's indentation.

@@ -10,7 +10,7 @@
 // instance carries its own copy of each text slot, so typing in the preview
 // changes this page alone and the shared template stays as it is.
 
-import { locateNativeElementRange, startTags, type ElementRange } from "./native-source-location";
+import { VOID_ELEMENTS, locateNativeElementRange, startTags, type ElementRange, type StartTag } from "./native-source-location";
 
 const COMMENTS = /<!--[\s\S]*?-->/g;
 const blank = (text: string) => !text.replace(COMMENTS, "").trim();
@@ -56,8 +56,10 @@ const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small"
 /**
  * Per-instance content for a template's slots: a `<span slot="…">` for each
  * named slot, holding the template's own fallback, so the text lives in the
- * page. A slot whose fallback is not plain text and inline markup (a list of
- * items, another component) is left to the template.
+ * page. A fallback that is one element (a button link) takes the `slot`
+ * attribute itself, so the template's `::slotted(a)` rules still reach it. A
+ * slot whose fallback is not plain text and inline markup (a list of items,
+ * another component) is left to the template.
  */
 export function slotMarkup(template: string) {
   const out: string[] = [];
@@ -66,9 +68,24 @@ export function slotMarkup(template: string) {
     const slot = (name?.[1] ?? name?.[2] ?? name?.[3] ?? "").trim();
     const content = match[2].replace(COMMENTS, "").trim();
     if (!content || !slot || !textOnly(content)) continue;
-    out.push(`<span slot="${slot}">${content.replace(/\s+/g, " ")}</span>`);
+    const text = content.replace(/\s+/g, " ");
+    const first = startTags(text)[0];
+    out.push(first && oneElement(text, first) && !/\sslot\s*=/i.test(text.slice(0, first.end))
+      ? `${text.slice(0, first.nameEnd)} slot="${slot}"${text.slice(first.nameEnd)}`
+      : `<span slot="${slot}">${text}</span>`);
   }
   return out;
+}
+
+/** Whether `html` is exactly the element `first` opens: its end tag is the last thing. */
+function oneElement(html: string, first: StartTag) {
+  if (first.start !== 0 || VOID_ELEMENTS.has(first.name)) return false;
+  let depth = 0;
+  for (const match of html.matchAll(new RegExp(`<(/?)${first.name}(?=[\\s/>])[^>]*>`, "gi"))) {
+    depth += match[1] ? -1 : 1;
+    if (depth === 0) return match.index + match[0].length === html.length;
+  }
+  return false;
 }
 
 function textOnly(html: string) {
