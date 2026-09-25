@@ -38,3 +38,25 @@ test("empty slot wrappers and unmet data-if elements are left out of the templat
   assert.equal(pruneEmptyTemplate(both, new Set()), `<p><slot>Fallback</slot></p>`);
   assert.equal(pruneEmptyTemplate(both, new Set(["b"])), `<div class="actions"><a><slot name="b"></slot></a></div><p><slot>Fallback</slot></p>`);
 });
+
+test("an optional slot (data-if on the slot) goes with its fallback unless the page fills it", () => {
+  const hero = `<section>
+  <slot name="title"><h1>Headline</h1></slot>
+  <div class="actions">
+    <slot name="primary" data-if><a href="#/a/">Get in touch</a></slot>
+    <slot name="secondary" data-if><a href="#/b/">See our work</a></slot>
+  </div>
+</section>`;
+  assert.equal(pruneEmptyTemplate(hero, new Set(["title", "primary"])), `<section>
+  <slot name="title"><h1>Headline</h1></slot>
+  <div class="actions">
+    <slot name="primary" data-if><a href="#/a/">Get in touch</a></slot>
+  </div>
+</section>`);
+  // With both buttons left out, the row goes too; a plain fallback still shows.
+  assert.equal(pruneEmptyTemplate(hero, new Set()), `<section>
+  <slot name="title"><h1>Headline</h1></slot>
+</section>`);
+  // data-if on a slot can name other slots.
+  assert.equal(pruneEmptyTemplate(`<p><slot name="note" data-if="title">Note</slot></p>`, new Set(["title"])), `<p><slot name="note" data-if="title">Note</slot></p>`);
+});

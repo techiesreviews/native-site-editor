@@ -4,7 +4,10 @@
 // shows only when the page assigned content to every named slot; an element
 // that holds slots, none of which has content (assigned by the page or given
 // as fallback in the template), and that has no text of its own, does not
-// show either. The runtime hides such elements; the exporter leaves them out.
+// show either. `data-if` on a `<slot>` makes it optional: it shows, fallback
+// and all, only when the page fills the named slots (a bare `data-if` names
+// the slot itself), and its fallback no longer keeps a wrapper showing. The
+// runtime hides such elements; the exporter leaves them out.
 
 import { VOID_ELEMENTS, startTagAttribute, startTags, type ElementRange, type StartTag } from "./html-source";
 
@@ -61,6 +64,14 @@ export function assignedSlotNames(inner: string) {
   return names;
 }
 
+/** Whether an optional slot (`data-if`) lacks a slot it names; false for any other slot. */
+function slotConditionUnmet(html: string, slot: StartTag, assigned: Set<string>) {
+  const condition = startTagAttribute(html, slot, "data-if");
+  if (!condition) return false;
+  const names = condition.value.trim() || (startTagAttribute(html, slot, "name")?.value.trim() ?? "");
+  return names.split(/\s+/).some((name) => !assigned.has(name));
+}
+
 /** The template without the elements the page's slot content leaves empty. */
 export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
   const html = blankOut(template);
@@ -69,8 +80,11 @@ export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
   const removed: { start: number; end: number }[] = [];
   tags.forEach((tag, index) => {
     const range = ranges[index];
-    if (tag.name === "slot") return;
     if (removed.some((cut) => tag.start >= cut.start && tag.start < cut.end)) return;
+    if (tag.name === "slot") {
+      if (slotConditionUnmet(html, tag, assigned)) removed.push({ start: range.start, end: range.end });
+      return;
+    }
     const inner = range.close ? html.slice(tag.end, range.close.start) : "";
     let empty: boolean;
     const condition = startTagAttribute(html, tag, "data-if");
@@ -83,8 +97,12 @@ export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
         const name = startTagAttribute(html, slot, "name")?.value.trim() ?? "";
         const slotRange = ranges[at];
         const fallback = slotRange.close ? html.slice(slot.end, slotRange.close.start) : "";
-        return assigned.has(name) || hasContent(fallback);
-      }) && !inner.replace(/<[^>]*>/g, "").trim();
+        return assigned.has(name) || (hasContent(fallback) && !slotConditionUnmet(html, slot, assigned));
+      }) && !slots.reduceRight((text, { at }) => {
+        // The element's own text, without what its slots hold.
+        const slotRange = ranges[at];
+        return text.slice(0, slotRange.start - tag.end) + text.slice(slotRange.end - tag.end);
+      }, inner).replace(/<[^>]*>/g, "").trim();
     }
     if (empty) removed.push({ start: range.start, end: range.end });
   });

@@ -1145,22 +1145,49 @@
   // automatically when it holds slots, none of them has content, and it has
   // no text of its own: a second button whose slot the page left empty, and
   // the wrapper around two such buttons, simply do not show.
+  // Content the page gave the slot; its fallback does not count (flattened
+  // alone, a slot with nothing assigned reports its fallback nodes).
   function slotAssigned(slot) {
+    if (!slot.assignedNodes().length) return false;
     return slot.assignedNodes({ flatten: true }).some(function (n) {
       return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
     });
   }
   function slotHasContent(slot) {
     if (slotAssigned(slot)) return true;
+    if (slotConditionUnmet(slot)) return false;
     return Array.prototype.some.call(slot.childNodes, function (n) {
       return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
+    });
+  }
+  // `data-if` on a slot: an optional slot, shown (fallback and all) only when
+  // the page fills the named slots; a bare `data-if` names the slot itself.
+  function slotConditionUnmet(slot) {
+    var condition = slot.getAttribute("data-if");
+    if (condition === null) return false;
+    var root = slot.getRootNode();
+    return (condition.trim() || slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
+      var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
+      return !named || !slotAssigned(named);
+    });
+  }
+  // An element's text outside its slots (a slot's fallback is the slot's).
+  function ownText(el) {
+    return Array.prototype.some.call(el.childNodes, function (n) {
+      if (n.nodeType === 3) return Boolean(n.textContent.trim());
+      return n.nodeType === 1 && n.localName !== "slot" && ownText(n);
     });
   }
   function applyEmptyRules(root) {
     var slotsByName = {};
     root.querySelectorAll("slot").forEach(function (slot) { slotsByName[slot.getAttribute("name") || ""] = slot; });
     root.querySelectorAll("*").forEach(function (el) {
-      if (el.localName === "style" || el.localName === "slot") return;
+      if (el.localName === "style") return;
+      if (el.localName === "slot") {
+        if (slotConditionUnmet(el)) el.setAttribute("data-native-empty", "");
+        else el.removeAttribute("data-native-empty");
+        return;
+      }
       var empty = false;
       var condition = el.getAttribute("data-if");
       if (condition !== null) {
@@ -1170,7 +1197,7 @@
         });
       } else {
         var slots = el.querySelectorAll("slot");
-        empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !el.textContent.trim();
+        empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !ownText(el);
       }
       if (empty) el.setAttribute("data-native-empty", "");
       else el.removeAttribute("data-native-empty");
