@@ -14,3 +14,11 @@ body {
 a {
   color: #2f6d3a;
 }
+
+.text-small {
+  font-size: 13px;
+}
+
+.text-large {
+  font-size: 23px;
+}

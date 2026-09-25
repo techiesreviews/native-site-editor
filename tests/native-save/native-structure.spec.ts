@@ -150,3 +150,41 @@ test("a skipped heading level and an unlabelled section get one-press fixes", as
   await expect.poll(() => editorText(page, "#content")).toContain(`<section class="cards" data-key="cards" aria-label="Project cards">`);
   await expect(bar(page).getByRole("button", { name: "Label", exact: true })).toBeVisible();
 });
+
+// Where the preview draws its selection box, against an element's box.
+async function selectionOn(page: Page, selector: string, nth = 0) {
+  const frame = page.frameLocator(".native-preview-frame");
+  const box = await frame.locator("[data-native-selection-box=selected]").boundingBox();
+  const target = await frame.locator(selector).nth(nth).boundingBox();
+  return Boolean(box && target && Math.abs(box.y - target.y) <= 2 && Math.abs(box.height - target.height) <= 2);
+}
+
+test("Duplicate gives every key in the copy a fresh value and selects the copy; removing the first section selects the next", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  // In view, so the bar shows over it.
+  await frame.locator("section.filler h2").scrollIntoViewIfNeeded();
+  await select(page, "section.filler");
+  await bar(page).getByRole("button", { name: "Duplicate" }).click();
+  await expect(frame.locator("section.filler")).toHaveCount(2);
+  await expect(page.locator("#status")).toHaveText("Section duplicated");
+  // MENU-03: fresh keys for the copy and everything in it.
+  await expect.poll(() => editorText(page, "#content")).toContain(
+    `  </section>\n  <section class="filler" data-key="filler-6">\n    <h2 data-key="filler-title-2">Scroll to verify</h2>\n    <p data-key="filler-1-2">`,
+  );
+  await expect.poll(() => selectionOn(page, "section.filler", 1)).toBe(true);
+  await undo(page);
+  await expect(frame.locator("section.filler")).toHaveCount(1);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+
+  // The first section has no previous one: the next one, now first, is selected.
+  await frame.locator("section.hero h1").scrollIntoViewIfNeeded();
+  await select(page, "section.hero");
+  await bar(page).getByRole("button", { name: "Remove" }).click();
+  await expect(frame.locator("section.hero")).toHaveCount(0);
+  await expect(page.locator("#status")).toHaveText("Section removed");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(bar(page).getByRole("button", { name: "Move up" })).toBeDisabled();
+  await expect.poll(() => selectionOn(page, "section.cards")).toBe(true);
+  await undo(page);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});

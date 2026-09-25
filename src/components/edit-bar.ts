@@ -65,9 +65,16 @@ export type EditBarControl =
       suggestions?: { label: string; value: string }[];
       // Opened, focused, as soon as the bar renders (a link just made).
       open?: boolean;
+      // More fields under the address in the same popover (a link's Open in
+      // new tab and title), applied as changed, in the same undo step.
+      extras?: AddressExtra[];
       onInput: (value: string) => void;
       onClose?: () => void;
     };
+
+export type AddressExtra =
+  | { kind: "checkbox"; label: string; checked: boolean; onChange: (checked: boolean) => void }
+  | { kind: "text"; label: string; value: string; placeholder?: string; onInput: (value: string) => void };
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 
@@ -461,7 +468,42 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       else if (event.key === "End") { event.preventDefault(); options[options.length - 1]?.focus(); }
       else if (event.key.length === 1 || event.key === "Backspace") input.focus();
     });
-    openPopover(item, control.suggestions ? [label, list] : [label], "dialog");
+    // The extras call the handlers of the control as it is now, since the
+    // bar re-renders after each change and hands the field a new control.
+    const extras = (control.extras ?? []).map((extra, index) => {
+      const current = () => address.control.extras?.[index];
+      if (extra.kind === "checkbox") {
+        const box = node("label", "edit-bar__check");
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = extra.checked;
+        check.addEventListener("change", () => {
+          const now = current();
+          if (now?.kind === "checkbox") now.onChange(check.checked);
+        });
+        box.append(check, document.createTextNode(extra.label));
+        return box;
+      }
+      const field = node("label", "edit-bar__field-label", extra.label);
+      const text = document.createElement("input");
+      text.type = "text";
+      text.className = "edit-bar__field-input";
+      text.value = extra.value;
+      text.placeholder = extra.placeholder ?? "";
+      text.autocomplete = "off";
+      text.addEventListener("input", () => {
+        const now = current();
+        if (now?.kind === "text") now.onInput(text.value.trim());
+      });
+      text.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        closePopover(true);
+      });
+      field.append(text);
+      return field;
+    });
+    openPopover(item, [label, ...(control.suggestions ? [list] : []), ...extras], "dialog");
     openAddress = address;
     renderSuggestions(address);
     input.focus();

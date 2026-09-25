@@ -206,3 +206,52 @@ test("no Link button without selected text, or for a selection that cuts through
   await expect(page.locator(".edit-bar__popover")).toBeHidden();
   expect(await editorText(page)).toContain("Edit <strong>plain</strong> HTML");
 });
+
+test("the Address offers Open in new tab and a title, applied as changed, one undo step per opening", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  const popover = page.locator(".edit-bar__popover");
+  const link = frame.locator(".hero p.lead a");
+  expect(await selectInLead(page, 5, 10)).toBe("plain");
+  await bar(page).getByRole("button", { name: "Link", exact: true }).click();
+  await popover.getByRole("option", { name: "#/", exact: true }).click();
+  await expect(link).toHaveAttribute("href", "#/");
+
+  await bar(page).getByRole("button", { name: "Address" }).click();
+  const newTab = popover.getByRole("checkbox", { name: "Open in new tab" });
+  const title = popover.getByRole("textbox", { name: "Title (optional)" });
+  await expect(newTab).not.toBeChecked();
+  await expect(title).toHaveValue("");
+  await newTab.check();
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener");
+  await expect(page.locator("#status")).toHaveText("Link opens in a new tab");
+  // The field stays open across the re-render, the box still ticked.
+  await expect(newTab).toBeChecked();
+  await title.fill("The home page");
+  await expect(link).toHaveAttribute("title", "The home page");
+  await title.press("Enter");
+  await expect(popover).toBeHidden();
+  const withBoth = linked("#/").replace(`<a href="#/">`, `<a href="#/" target="_blank" rel="noopener" title="The home page">`);
+  await expect.poll(() => editorText(page)).toBe(withBoth);
+
+  // Opened again: both show as written; unticking takes target and rel away, an emptied title goes.
+  await link.click();
+  await bar(page).getByRole("button", { name: "Address" }).click();
+  await expect(newTab).toBeChecked();
+  await expect(title).toHaveValue("The home page");
+  await newTab.uncheck();
+  await expect(link).not.toHaveAttribute("target", /.*/);
+  await expect(link).not.toHaveAttribute("rel", /.*/);
+  await title.fill("");
+  await expect(link).not.toHaveAttribute("title", /.*/);
+  await title.press("Escape");
+  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+
+  // Each opening was one undo step.
+  await bar(page).getByRole("button", { name: "Address" }).focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => editorText(page)).toBe(withBoth);
+  await bar(page).getByRole("button", { name: "Address" }).focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+});

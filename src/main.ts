@@ -42,7 +42,8 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
+import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
+import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -780,28 +781,11 @@ function nearestLink(source: string, node: number[], range: ElementRange | undef
   return undefined;
 }
 
-// Text sizes the bar offers, written as an inline `font-size` on the element.
-const nativeTextSizes = [
-  { value: "xs", label: "XS", css: "0.75rem" },
-  { value: "s", label: "S", css: "0.875rem" },
-  { value: "m", label: "M", css: "1rem" },
-  { value: "l", label: "L", css: "1.25rem" },
-  { value: "xl", label: "XL", css: "1.5rem" },
-  { value: "2xl", label: "2XL", css: "2rem" },
-  { value: "3xl", label: "3XL", css: "2.5rem" },
-  { value: "4xl", label: "4XL", css: "3rem" },
-];
-
 // Elements whose whole content the bar can make bold or italic.
 const nativeTextTags = new Set([
   "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "li", "button", "blockquote", "figcaption",
   "small", "label", "td", "th", "dt", "dd", "div", "summary", "legend", "caption",
 ]);
-
-// Split an inline style into declarations, keeping their order.
-function styleDeclarations(style: string) {
-  return style.split(";").map((part) => part.trim()).filter(Boolean);
-}
 
 // Whether `inner` is exactly one `tags` element (plus whitespace), the bar's
 // notion of "the whole element is bold/italic"; returns that wrapper's range.
@@ -875,14 +859,12 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // Text size is for elements that carry text themselves, not page containers or components.
   const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
   const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
-  if (range && textual) {
-    const tag = range.tag;
-    const style = startTagAttribute(source, tag, "style");
-    const declarations = style ? styleDeclarations(style.value) : [];
-    const current = declarations.find((declaration) => /^font-size\s*:/i.test(declaration));
-    const currentCss = current?.replace(/^font-size\s*:\s*/i, "").trim();
-    const value = !currentCss ? "default" : nativeTextSizes.find((size) => size.css === currentCss)?.value ?? "custom";
-    const options = [{ label: "Default", value: "default" }, ...nativeTextSizes.map((size) => ({ label: size.label, value: size.value }))];
+  if (range && textual && nativeManifest) {
+    // The site's own sizes (classes, else variables) when its stylesheets define them (`src/native-text-size.ts`).
+    const sources = nativeSources();
+    const scale = textSizeScale([...nativeManifest.styles, ...nativeImportedStyles].map((sheet) => sources[sheet] ?? ""));
+    const value = currentTextSize(source, range.tag, scale);
+    const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
     if (value === "custom") options.push({ label: "Custom", value: "custom" });
     controls.push({
       kind: "select",
@@ -890,18 +872,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       options,
       value,
       onChange: (next) => {
-        if (next === "custom") return;
-        const size = nativeTextSizes.find((item) => item.value === next);
-        const kept = declarations.filter((declaration) => declaration !== current);
-        if (size) kept.push(`font-size: ${size.css}`);
-        const text = kept.join("; ");
-        // A new attribute goes last in the start tag, before `>` or `/>`.
-        const insertAt = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
-        const edit = !style
-          ? { start: insertAt, end: insertAt, text: ` style="${text}"` }
-          : text ? { start: style.valueStart, end: style.valueEnd, text }
-            : { start: style.start, end: style.end, text: "" };
-        change([edit], node, size ? `Text size ${size.label}` : "Default text size");
+        const edit = textSizeEdit(source, range.tag, scale, next);
+        const size = scale.sizes.find((item) => item.value === next);
+        if (edit) change([edit], node, size ? `Text size ${size.label}` : "Default text size");
       },
     });
   }
@@ -1073,6 +1046,17 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
         return { label: title ? `${title} (#${route})` : `#${route}`, value: `#${route}` };
       }),
       open,
+      // Beside the address: a new tab (target and rel) and an optional title.
+      extras: [
+        { kind: "checkbox", label: "Open in new tab", checked: opensInNewTab(source, link.range.tag), onChange: (on) => {
+          if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
+          live(link.node, "a", (latest, tag) => [newTabEdit(latest, tag, on)], on ? "Link opens in a new tab" : "Link opens in the same tab");
+        } },
+        { kind: "text", label: "Title (optional)", value: startTagAttribute(source, link.range.tag, "title")?.value ?? "", placeholder: "Shown when the pointer rests on the link", onInput: (value) => {
+          if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
+          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "title", value || undefined)], value ? "Link title changed" : "Link title removed");
+        } },
+      ],
       onInput: (value) => {
         if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
         live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", value)], "Link changed");
@@ -1222,7 +1206,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       kind: "button",
       icon: "remove",
       label: "Remove",
-      onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : undefined, `${kind} removed`),
+      // The previous sibling is selected next, else the next one, which takes this index.
+      onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
     });
   }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };

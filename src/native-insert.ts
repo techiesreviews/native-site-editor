@@ -40,10 +40,11 @@ export function componentLabel(tag: string) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** `tag`, or `tag-2`, `tag-3`… when a `data-key` in `source` already uses it. */
-export function uniqueDataKey(source: string, tag: string) {
+/** `tag`, or `tag-2`, `tag-3`… when a `data-key` in `source` (or in `also`) already uses it. */
+export function uniqueDataKey(source: string, tag: string, also: Iterable<string> = []) {
   const taken = new Set([...source.matchAll(/\bdata-key\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)]
     .map((match) => match[1] ?? match[2] ?? match[3]));
+  for (const key of also) taken.add(key);
   if (!taken.has(tag)) return tag;
   let n = 2;
   while (taken.has(`${tag}-${n}`)) n++;
