@@ -11,6 +11,8 @@
 export interface NativePageMeta {
   title?: string;
   description?: string;
+  /** Structured data the export writes into the page as JSON-LD, as written. */
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 export interface NativeManifest {
@@ -20,7 +22,8 @@ export interface NativeManifest {
   /**
    * Route path to its title and description. In the JSON a route may be
    * written either as the page path alone or as
-   * `{ "file": "src/pages/about.html", "title": "About", "description": "…" }`;
+   * `{ "file": "src/pages/about.html", "title": "About", "description": "…" }`,
+   * optionally with a `jsonLd` object (or array of objects);
    * only routes written the long way appear here.
    */
   pages: Record<string, NativePageMeta>;
@@ -101,6 +104,12 @@ export function parseNativeManifest(text: string): NativeManifestResult {
         if (typeof entry[field] !== "string" || entry[field].length > 1000)
           return { ok: false, error: `native.json route ${JSON.stringify(route)} "${field}" must be a string.` };
         meta[field] = entry[field];
+      }
+      if (entry.jsonLd !== undefined) {
+        const items = Array.isArray(entry.jsonLd) ? entry.jsonLd : [entry.jsonLd];
+        if (!items.length || !items.every(isRecord))
+          return { ok: false, error: `native.json route ${JSON.stringify(route)} "jsonLd" must be an object or an array of objects.` };
+        meta.jsonLd = entry.jsonLd as NativePageMeta["jsonLd"];
       }
       pages[route] = meta;
     }

@@ -3,28 +3,38 @@
 // site with no JavaScript. Every site that opens in the editor gets the same
 // output rules, so no starter needs its own build script:
 //
-// - each route becomes `<route>/index.html`;
+// - each route becomes `<route>/index.html`, except the `/404/` route, which
+//   becomes `404.html` (served for unknown paths by Cloudflare's
+//   `not_found_handling: "404-page"`);
 // - each custom element is expanded into declarative shadow DOM
-//   (`<template shadowrootmode="open">`) that links the shared stylesheets and
-//   inlines the component's own stylesheet, in the order the preview runtime
-//   adopts them, so the cascade matches the preview;
-// - `#/route/` links become real paths, and the nav link for the current
-//   route gets `aria-current="page"`;
-// - shared stylesheets (with the repository files they `@import`) and
-//   `src/images/` are written under `/assets/` with content-hashed names
-//   and immutable cache headers (`_headers`); HTML is always revalidated;
+//   (`<template shadowrootmode="open">`) that links the site stylesheet and
+//   then the component's own, in the order the preview runtime adopts them,
+//   so the cascade matches the preview. A slot the page fills is written
+//   without its fallback content, and template parts the page leaves empty
+//   are left out;
+// - `#/route/` links become real paths, the nav link for the current route
+//   gets `aria-current="page"`, and the editor's `data-key` attributes go;
+// - the manifest's shared stylesheets are joined into one `site.[hash].css`
+//   (repository files they `@import` stay separate); that, each component's
+//   stylesheet and `src/images/` are written under `/assets/` with
+//   content-hashed names and immutable cache headers (`_headers`, which also
+//   carries the security headers); HTML is always revalidated;
 // - images get `width`/`height` from the file and `loading="lazy"` after the
 //   first section;
 // - the document head takes its title and description from the manifest's
 //   per-route metadata, else a leading `key: value` comment in the page, else
 //   the page's first `h1` and `p`; site-wide values come from
-//   `.astro-editor/site.json` when present.
+//   `.astro-editor/site.json` when present, including Organization and
+//   WebSite JSON-LD for the home page and the indexing switch;
+// - with a site URL, `sitemap.xml` and `robots.txt` are generated unless
+//   `src/public/` supplies them; everything in `src/public/` is copied to the
+//   site root.
 //
 // The module is pure: it takes a map of repository files and returns a map of
 // output files, so it runs in Node (see native-export-cli.ts) and in the
 // browser alike.
 import { parseNativeManifest, type NativeManifest } from "../src/native-manifest";
-import { assignedSlotNames, pruneEmptyTemplate } from "./native-conditionals";
+import { assignedSlotNames, dropFilledFallbacks, pruneEmptyTemplate } from "./native-conditionals";
 import { isExternalImport, parseCssImports, resolveImportPath } from "./css-imports";
 
 export type FileContent = string | Uint8Array;
@@ -50,7 +60,30 @@ export interface SiteMeta {
   themeColor?: string;
   favicon?: string;
   image?: string;
+  /** Alternative text for the social image (`og:image:alt`). */
+  imageAlt?: string;
   locale?: string;
+  /** `false` asks search engines not to index the site (header and meta tag). */
+  indexable?: boolean;
+  /** Cloudflare Content Signals for robots.txt, e.g. `{ "search": "yes", "ai-train": "no" }`. */
+  contentSignals?: Record<string, "yes" | "no">;
+  /** The business behind the site, for Organization JSON-LD on the home page. */
+  organization?: SiteOrganization;
+}
+
+export interface SiteOrganization {
+  /** schema.org type, e.g. "ProfessionalService"; default "Organization". */
+  type?: string;
+  name?: string;
+  email?: string;
+  telephone?: string;
+  /** A one-line address, or PostalAddress fields (`streetAddress`, `addressLocality`, `postalCode`, `addressCountry`, …). */
+  address?: string | Record<string, string>;
+  areaServed?: string | string[];
+  foundingDate?: string;
+  sameAs?: string[];
+  /** An image under src/images/ or an absolute URL. */
+  logo?: string;
 }
 
 export const MANIFEST_PATH = ".astro-editor/native.json";
@@ -180,20 +213,75 @@ export function readSiteMeta(files: Record<string, FileContent>): SiteMeta {
     throw new ExportError(`${SITE_PATH} is not valid JSON.`);
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ExportError(`${SITE_PATH} must be a JSON object.`);
+  const record = value as Record<string, unknown>;
   const site: SiteMeta = {};
-  for (const key of ["name", "url", "description", "themeColor", "favicon", "image", "locale"] as const) {
-    const field = (value as Record<string, unknown>)[key];
+  for (const key of ["name", "url", "description", "themeColor", "favicon", "image", "imageAlt", "locale"] as const) {
+    const field = record[key];
     if (field === undefined) continue;
     if (typeof field !== "string") throw new ExportError(`${SITE_PATH} "${key}" must be a string.`);
     site[key] = field;
   }
+  if (record.indexable !== undefined) {
+    if (typeof record.indexable !== "boolean") throw new ExportError(`${SITE_PATH} "indexable" must be true or false.`);
+    site.indexable = record.indexable;
+  }
+  if (record.contentSignals !== undefined) {
+    const signals = record.contentSignals;
+    if (!isPlainObject(signals) || !Object.entries(signals).every(([key, value]) => /^[a-z][a-z-]*$/.test(key) && (value === "yes" || value === "no")))
+      throw new ExportError(`${SITE_PATH} "contentSignals" must map signal names to "yes" or "no".`);
+    site.contentSignals = signals as SiteMeta["contentSignals"];
+  }
+  if (record.organization !== undefined) site.organization = readOrganization(record.organization);
   return site;
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function readOrganization(input: unknown): SiteOrganization {
+  const where = `${SITE_PATH} "organization"`;
+  if (!isPlainObject(input)) throw new ExportError(`${where} must be an object.`);
+  let value = input;
+  const org: SiteOrganization = {};
+  // `@type` is accepted too, as it is written in JSON-LD itself.
+  if (value.type === undefined && value["@type"] !== undefined) value = { ...value, type: value["@type"] };
+  for (const key of ["type", "name", "email", "telephone", "foundingDate", "logo"] as const) {
+    if (value[key] === undefined) continue;
+    if (typeof value[key] !== "string") throw new ExportError(`${where} "${key}" must be a string.`);
+    org[key] = value[key];
+  }
+  const strings = (field: unknown) => Array.isArray(field) && field.every((item) => typeof item === "string");
+  if (value.address !== undefined) {
+    const address = value.address;
+    if (typeof address !== "string" && !(isPlainObject(address) && Object.values(address).every((item) => typeof item === "string")))
+      throw new ExportError(`${where} "address" must be a string or an object of strings.`);
+    org.address = address as SiteOrganization["address"];
+  }
+  if (value.areaServed !== undefined) {
+    if (typeof value.areaServed !== "string" && !strings(value.areaServed)) throw new ExportError(`${where} "areaServed" must be a string or an array of strings.`);
+    org.areaServed = value.areaServed as SiteOrganization["areaServed"];
+  }
+  if (value.sameAs !== undefined) {
+    if (!strings(value.sameAs)) throw new ExportError(`${where} "sameAs" must be an array of URLs.`);
+    org.sameAs = value.sameAs as string[];
+  }
+  return org;
+}
+
+/** The route whose page becomes `404.html`, served for every unknown path. */
+export const NOT_FOUND_ROUTE = "/404/";
+/** Files under this folder are copied to the site root as they are (`src/public/robots.txt` → `robots.txt`). */
+const PUBLIC_DIR = "src/public/";
+const RASTER = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"]);
+
+/** JSON for a `<script type="application/ld+json">`, safe to put inside the element. */
+const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 export function exportNativeSite(input: ExportInput): ExportResult {
   const { files } = input;
   const out: Record<string, FileContent> = {};
   const log: string[] = [];
+  const warnings: string[] = [];
   const text = (path: string) => {
     const content = files[path];
     if (content === undefined) throw new ExportError(`Missing file ${path}`);
@@ -210,14 +298,13 @@ export function exportNativeSite(input: ExportInput): ExportResult {
   const manifest: NativeManifest = parsed.manifest;
   const site = readSiteMeta(files);
   const siteUrl = (input.siteUrl || site.url || "").replace(/\/$/, "");
+  const indexable = site.indexable !== false;
 
-  // Shared stylesheets: one hashed file each, linked in manifest order. A
-  // file they `@import` from the repository is written the same way and the
-  // import points at its hashed name, keeping its layer, supports() and media.
-  const styleUrls = new Map<string, string>();
-  function writeStyle(path: string, chain: string[]): string {
-    const written = styleUrls.get(path);
-    if (written) return written;
+  // Stylesheets. A file a shared stylesheet `@import`s from the repository is
+  // written as its own hashed file and the import points at it, keeping its
+  // layer, supports() and media.
+  let stylesheets = 0;
+  function importsRewritten(path: string, chain: string[]): string {
     let css = text(path);
     for (const item of parseCssImports(css).imports.reverse()) {
       const target = resolveImportPath(path, item.url);
@@ -227,15 +314,52 @@ export function exportNativeSite(input: ExportInput): ExportResult {
       }
       if (chain.includes(target)) throw new ExportError(`${path} imports ${target}, which imports it back.`);
       if (files[target] === undefined) throw new ExportError(`${path} imports ${target}, which is missing.`);
-      css = css.slice(0, item.urlStart) + `url("${writeStyle(target, [...chain, target])}")` + css.slice(item.urlEnd);
+      css = css.slice(0, item.urlStart) + `url("${writeImported(target, [...chain, target])}")` + css.slice(item.urlEnd);
     }
-    const name = `${basename(path, ".css")}.${contentHash(css)}.css`;
-    out[`assets/${name}`] = css;
-    styleUrls.set(path, `/assets/${name}`);
-    return `/assets/${name}`;
+    return css;
   }
-  const sharedLinks = manifest.styles.map((path) => `<link rel="stylesheet" href="${writeStyle(path, [path])}">`);
-  const sharedLinkTags = sharedLinks.join("");
+  const importedUrls = new Map<string, string>();
+  function writeImported(path: string, chain: string[]): string {
+    const written = importedUrls.get(path);
+    if (written) return written;
+    const url = writeAsset(basename(path, ".css"), importsRewritten(path, chain));
+    importedUrls.set(path, url);
+    return url;
+  }
+  function writeAsset(name: string, css: string) {
+    const file = `assets/${name}.${contentHash(css)}.css`;
+    if (out[file] === undefined) stylesheets++;
+    out[file] = css;
+    return `/${file}`;
+  }
+
+  // The manifest's shared stylesheets become one `site.[hash].css`, in
+  // manifest order, so a page and each shadow root link a single file. Only
+  // `@charset`, `@layer` statements and `@import` may come before other
+  // rules, and no layer statement may come after an import, so the head of
+  // the bundle holds the first file's layer statements, then those of each
+  // later file that imports, then every import, and the rest follows.
+  let siteCss: string | undefined;
+  if (manifest.styles.length) {
+    const layers: string[] = [];
+    const imports: string[] = [];
+    const bodies: string[] = [];
+    manifest.styles.forEach((path, index) => {
+      const css = importsRewritten(path, [path]);
+      const head = parseCssImports(css);
+      let headEnd = 0;
+      if (index === 0 || head.imports.length) {
+        if (index > 0 && head.imports.some((item) => item.layer === undefined))
+          warnings.push(`warning: ${path} is not first in "styles" and imports a stylesheet outside a layer; in site.css that import moves ahead of the files listed before it.`);
+        for (const range of head.layers) layers.push(css.slice(range.start, range.end));
+        for (const item of head.imports) imports.push(css.slice(item.start, item.end));
+        headEnd = Math.max(0, ...[...head.layers, ...head.imports].map((range) => range.end));
+      }
+      bodies.push(`/* ${path} */\n${css.slice(headEnd).replace(/^\s*\n/, "")}`);
+    });
+    siteCss = writeAsset("site", [...layers, ...imports, ...bodies].join("\n"));
+  }
+  const siteLink = siteCss ? `<link rel="stylesheet" href="${siteCss}">` : "";
 
   // Images: copied to hashed names; the map rewrites references in HTML.
   const imageMap = new Map<string, string>();
@@ -255,15 +379,19 @@ export function exportNativeSite(input: ExportInput): ExportResult {
     return url;
   };
 
-  // Components, expanded recursively into declarative shadow DOM.
-  const components: Record<string, { html: string; css: string }> = {};
+  // Components, expanded recursively into declarative shadow DOM. Each shadow
+  // root links the site stylesheet and then the component's own, the order the
+  // preview runtime adopts them in.
+  const components: Record<string, { html: string; cssUrl?: string }> = {};
   for (const [tag, path] of Object.entries(manifest.components)) {
     const cssPath = path.replace(/\.html$/, ".css");
-    components[tag] = { html: text(path), css: files[cssPath] !== undefined ? text(cssPath) : "" };
+    const css = files[cssPath] !== undefined ? text(cssPath) : "";
+    components[tag] = { html: text(path), cssUrl: css ? writeAsset(tag, css) : undefined };
   }
-  const styleBlock = (tag: string) => sharedLinkTags + (components[tag].css ? `<style>${components[tag].css}</style>` : "");
+  const styleBlock = (tag: string) =>
+    siteLink + (components[tag].cssUrl ? `<link rel="stylesheet" href="${components[tag].cssUrl}">` : "");
 
-  function expand(html: string, depth = 0): string {
+  function expand(html: string, used: Set<string>, depth = 0): string {
     if (depth > MAX_DEPTH) throw new ExportError("Recursive component templates detected");
     let result = "";
     let cursor = 0;
@@ -274,12 +402,15 @@ export function exportNativeSite(input: ExportInput): ExportResult {
       if (match.index < cursor || !components[tag]) continue;
       const close = closeOf(html, tag, match.index + open.length);
       if (!close) throw new ExportError(`Unclosed <${tag}> in page or template`);
+      used.add(tag);
       result += html.slice(cursor, match.index) + open;
-      // Template parts the page's slot content leaves empty are left out.
+      // Template parts the page's slot content leaves empty are left out, and
+      // so is the fallback of each slot the page fills.
       const inner = html.slice(match.index + open.length, close.innerEnd);
-      const template = pruneEmptyTemplate(components[tag].html, assignedSlotNames(inner));
-      result += `<template shadowrootmode="open">${styleBlock(tag)}${expand(template, depth + 1)}</template>`;
-      result += expand(inner, depth + 1);
+      const assigned = assignedSlotNames(inner);
+      const template = dropFilledFallbacks(pruneEmptyTemplate(components[tag].html, assigned), assigned);
+      result += `<template shadowrootmode="open">${styleBlock(tag)}${expand(template, used, depth + 1)}</template>`;
+      result += expand(inner, used, depth + 1);
       result += html.slice(close.innerEnd, close.outerEnd);
       cursor = close.outerEnd;
       re.lastIndex = cursor;
@@ -316,38 +447,87 @@ export function exportNativeSite(input: ExportInput): ExportResult {
     });
   }
 
-  const homeName = () => firstText(text(manifest.routes["/"]), "h1");
+  // `data-key` marks elements for the editor; the published site has no use for it.
+  const stripEditorKeys = (html: string) =>
+    html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\sdata-key(?:=(?:"[^"]*"|'[^']*'|[^\s"'>]+))?(?=[\s/>])/g, ""));
 
-  function document(route: string, body: string, meta: Record<string, string>) {
+  const homeName = () => firstText(text(manifest.routes["/"]), "h1");
+  const siteName = site.name || homeName() || "Site";
+  const absolute = (url: string) => (siteUrl && url.startsWith("/") ? siteUrl + url : url);
+
+  // Organization (or a subtype such as ProfessionalService) and WebSite, for the home page.
+  function siteJsonLd() {
+    const graph: Record<string, unknown>[] = [];
+    const org = site.organization;
+    const orgId = siteUrl ? `${siteUrl}/#organization` : undefined;
+    if (org) {
+      const node: Record<string, unknown> = { "@type": org.type || "Organization" };
+      if (orgId) node["@id"] = orgId;
+      node.name = org.name || siteName;
+      if (siteUrl) node.url = `${siteUrl}/`;
+      if (site.description) node.description = site.description;
+      if (org.logo) node.logo = absolute(org.logo.startsWith(IMAGES_DIR) ? assetUrl(org.logo) : org.logo);
+      for (const key of ["email", "telephone", "foundingDate", "areaServed", "sameAs"] as const) if (org[key] !== undefined) node[key] = org[key];
+      if (org.address !== undefined) node.address = typeof org.address === "string" ? org.address : { "@type": "PostalAddress", ...org.address };
+      graph.push(node);
+    }
+    const website: Record<string, unknown> = { "@type": "WebSite", name: siteName };
+    if (siteUrl) website.url = `${siteUrl}/`;
+    if (site.description) website.description = site.description;
+    if (site.locale) website.inLanguage = site.locale.replace(/_/g, "-");
+    if (org && orgId) website.publisher = { "@id": orgId };
+    graph.push(website);
+    return { "@context": "https://schema.org", "@graph": graph };
+  }
+
+  let svgImageWarned = false;
+  function document(route: string, body: string, meta: Record<string, string>, used: Set<string>) {
     const routeMeta = manifest.pages[route] ?? {};
-    const siteName = site.name || homeName() || "Site";
+    const notFound = route === NOT_FOUND_ROUTE;
     const pageTitle = routeMeta.title || meta.title || firstText(body, "h1") || siteName;
     const title = pageTitle === siteName ? siteName : `${pageTitle} · ${siteName}`;
     const description = routeMeta.description || meta.description || firstText(body, "p") || site.description || "";
-    const canonical = siteUrl ? siteUrl + route : "";
+    const canonical = siteUrl && !notFound ? siteUrl + route : "";
     const image = meta.image || site.image;
+    const imageExt = image ? extname(image) : "";
+    const imageDims = image && RASTER.has(imageExt) ? imageSize.get(image) : undefined;
+    if (image && imageExt === ".svg" && !svgImageWarned) {
+      svgImageWarned = true;
+      warnings.push(`warning: the social image ${image} is an SVG, which Facebook, LinkedIn, X, Slack and WhatsApp do not show; use a PNG or JPEG (1200×630).`);
+    }
     const faviconExt = site.favicon ? extname(site.favicon) : "";
+    const jsonLd: unknown[] = [];
+    if (route === "/") jsonLd.push(siteJsonLd());
+    if (routeMeta.jsonLd) jsonLd.push(routeMeta.jsonLd);
     const head = [
       `<meta charset="utf-8">`,
       `<meta name="viewport" content="width=device-width, initial-scale=1">`,
       `<title>${escapeHtml(title)}</title>`,
       `<meta name="description" content="${escapeHtml(description)}">`,
+      (!indexable || notFound) && `<meta name="robots" content="noindex">`,
       canonical && `<link rel="canonical" href="${escapeHtml(canonical)}">`,
       site.themeColor && `<meta name="theme-color" content="${escapeHtml(site.themeColor)}">`,
       site.favicon &&
         `<link rel="icon" href="${assetUrl(site.favicon)}" type="image/${faviconExt === ".svg" ? "svg+xml" : faviconExt.slice(1)}">`,
       `<meta property="og:type" content="website">`,
       `<meta property="og:site_name" content="${escapeHtml(siteName)}">`,
-      `<meta property="og:title" content="${escapeHtml(pageTitle)}">`,
+      `<meta property="og:title" content="${escapeHtml(title)}">`,
       `<meta property="og:description" content="${escapeHtml(description)}">`,
       canonical && `<meta property="og:url" content="${escapeHtml(canonical)}">`,
       site.locale && `<meta property="og:locale" content="${escapeHtml(site.locale)}">`,
-      image && canonical && `<meta property="og:image" content="${escapeHtml(siteUrl + assetUrl(image))}">`,
-      `<meta name="twitter:card" content="${image && canonical ? "summary_large_image" : "summary"}">`,
-      ...sharedLinks,
+      image && siteUrl && `<meta property="og:image" content="${escapeHtml(siteUrl + assetUrl(image))}">`,
+      image && siteUrl && imageDims && `<meta property="og:image:width" content="${imageDims.width}">`,
+      image && siteUrl && imageDims && `<meta property="og:image:height" content="${imageDims.height}">`,
+      image && siteUrl && site.imageAlt && `<meta property="og:image:alt" content="${escapeHtml(site.imageAlt)}">`,
+      `<meta name="twitter:card" content="${image && siteUrl ? "summary_large_image" : "summary"}">`,
+      siteLink,
+      // Start fetching the component stylesheets the shadow roots link while
+      // the site stylesheet blocks rendering.
+      ...[...used].filter((tag) => components[tag].cssUrl).map((tag) => `<link rel="preload" href="${components[tag].cssUrl}" as="style">`),
+      ...jsonLd.map((data) => `<script type="application/ld+json">${scriptJson(data)}</script>`),
     ].filter(Boolean);
     return `<!doctype html>
-<html lang="${escapeHtml((site.locale || "en").split("_")[0])}">
+<html lang="${escapeHtml((site.locale || "en").replace(/_/g, "-"))}">
 <head>
 ${head.join("\n")}
 </head>
@@ -358,22 +538,82 @@ ${body}
 `;
   }
 
+  // Files under src/public/ go to the site root unchanged.
+  const publicFiles = Object.keys(files).filter((path) => path.startsWith(PUBLIC_DIR)).sort();
+
+  const pages: string[] = [];
   for (const [route, path] of Object.entries(manifest.routes)) {
     const { meta, body: source } = pageMeta(text(path));
-    const body = annotateImages(markCurrent(rewriteLinks(expand(source)), route));
-    const outPath = `${route.slice(1)}index.html`;
-    out[outPath] = document(route, body, meta);
+    const used = new Set<string>();
+    const body = stripEditorKeys(annotateImages(markCurrent(rewriteLinks(expand(source, used)), route)));
+    const outPath = route === NOT_FOUND_ROUTE ? "404.html" : `${route.slice(1)}index.html`;
+    const html = document(route, body, meta, used);
+    out[outPath] = html;
+    pages.push(html);
     log.push(`${route} -> ${outPath}`);
   }
 
-  // Cache policy for Cloudflare's static assets: hashed files are immutable,
-  // HTML is always revalidated.
+  for (const source of publicFiles) {
+    const path = source.slice(PUBLIC_DIR.length);
+    if (out[path] !== undefined) throw new ExportError(`${source} would overwrite the exported ${path}.`);
+    out[path] = files[source];
+  }
+
+  // Search engines: a sitemap of the routes and a robots.txt that points at
+  // it, unless the repository supplies its own in src/public/.
+  const extras: string[] = [];
+  if (siteUrl) {
+    const routes = Object.keys(manifest.routes).filter((route) => route !== NOT_FOUND_ROUTE);
+    if (out["sitemap.xml"] === undefined) {
+      out["sitemap.xml"] = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${routes.map((route) => `  <url><loc>${escapeHtml(siteUrl + route)}</loc></url>`).join("\n")}
+</urlset>
+`;
+      extras.push("sitemap.xml");
+    }
+    if (out["robots.txt"] === undefined) {
+      const signals = Object.entries(site.contentSignals ?? {}).map(([name, value]) => `${name}=${value}`).join(", ");
+      out["robots.txt"] = [
+        "User-agent: *",
+        signals && `Content-Signal: ${signals}`,
+        "Allow: /",
+        indexable && `\nSitemap: ${siteUrl}/sitemap.xml`,
+      ].filter(Boolean).join("\n") + "\n";
+      extras.push("robots.txt");
+    }
+  }
+
+  // Headers for Cloudflare's static assets. HTML is always revalidated and
+  // hashed files are immutable. The content security policy allows no
+  // scripts (JSON-LD is data, not script) and only this site's stylesheets;
+  // inline styles are allowed only when a page carries a `style` attribute
+  // or element.
+  const inlineStyles = pages.some((html) => /<style[\s>]|<[^>]+\sstyle=/i.test(html));
+  const csp = [
+    "default-src 'self'",
+    "img-src 'self' data:",
+    `style-src 'self'${inlineStyles ? " 'unsafe-inline'" : ""}`,
+    "script-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
   out["_headers"] = `/*
   Cache-Control: max-age=0, must-revalidate
-/assets/*
+  Content-Security-Policy: ${csp}
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+${indexable ? "" : "  X-Robots-Tag: noindex, nofollow\n"}/assets/*
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 `;
-  log.push(`assets -> ${imageMap.size} images, ${styleUrls.size} stylesheets, _headers`);
+  log.push(
+    `assets -> ${imageMap.size} images, ${stylesheets} stylesheets, _headers` +
+      (extras.length ? `, ${extras.join(", ")}` : "") +
+      (publicFiles.length ? `, ${publicFiles.length} public files` : ""),
+  );
+  log.push(...warnings);
   return { files: out, log };
 }

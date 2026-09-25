@@ -101,3 +101,25 @@ export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
   }
   return out;
 }
+
+/**
+ * The template with the fallback content of every slot the page fills taken
+ * out (`<slot name="title">Untitled</slot>` becomes `<slot name="title"></slot>`).
+ * The browser never shows that fallback, but a reader of the raw HTML that
+ * does not attach declarative shadow roots would take it for page content.
+ */
+export function dropFilledFallbacks(template: string, assigned: Set<string>) {
+  const html = blankOut(template);
+  const tags = startTags(html);
+  const ranges = elementRanges(html, tags);
+  const cuts: { start: number; end: number }[] = [];
+  tags.forEach((tag, index) => {
+    const close = ranges[index].close;
+    if (tag.name !== "slot" || !close || close.start === tag.end) return;
+    if (cuts.some((cut) => tag.start >= cut.start && tag.start < cut.end)) return;
+    if (assigned.has(startTagAttribute(html, tag, "name")?.value.trim() ?? "")) cuts.push({ start: tag.end, end: close.start });
+  });
+  let out = template;
+  for (const cut of cuts.sort((a, b) => b.start - a.start)) out = out.slice(0, cut.start) + out.slice(cut.end);
+  return out;
+}

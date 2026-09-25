@@ -44,21 +44,23 @@ test("exports the fixture as one document per route with expanded components and
   const home = text(out["index.html"]);
   const about = text(out["about/index.html"]);
 
-  const css = text(files["src/styles/site.css"]);
+  const css = `/* src/styles/site.css */\n${text(files["src/styles/site.css"])}`;
   const cssName = `site.${contentHash(css)}.css`;
   assert.equal(text(out[`assets/${cssName}`]), css);
   assert.ok(home.includes(`<link rel="stylesheet" href="/assets/${cssName}">`));
 
-  // Components become declarative shadow DOM that links the shared sheet and
-  // inlines the component's own stylesheet; nested components expand too.
-  assert.ok(home.includes(`<site-header data-key="header"><template shadowrootmode="open"><link rel="stylesheet" href="/assets/${cssName}"><style>`));
-  assert.ok(home.includes(".site-header"));
+  // Components become declarative shadow DOM that links the site stylesheet
+  // and the component's own; nested components expand too.
+  const headerCss = text(files["src/components/site-header/site-header.css"]);
+  const headerName = `site-header.${contentHash(headerCss)}.css`;
+  assert.equal(text(out[`assets/${headerName}`]), headerCss);
+  assert.ok(home.includes(`<site-header><template shadowrootmode="open"><link rel="stylesheet" href="/assets/${cssName}"><link rel="stylesheet" href="/assets/${headerName}">`));
   assert.ok(/<project-card[^>]*><template shadowrootmode="open">[\s\S]*<card-note[^>]*><template shadowrootmode="open">/.test(home));
   assert.ok(!home.includes("#/about/"), "hash routes become paths");
   assert.ok(home.includes('href="/about/"'));
-  assert.ok(home.includes('<a href="/" data-key="nav-home" aria-current="page">'));
-  assert.ok(about.includes('<a href="/about/" data-key="nav-about" aria-current="page">'));
-  assert.ok(!about.includes('href="/" data-key="nav-home" aria-current'));
+  assert.ok(home.includes('<a href="/" aria-current="page">Home</a>'));
+  assert.ok(about.includes('<a href="/about/" aria-current="page">About</a>'));
+  assert.ok(about.includes('<a href="/">Home</a>'));
 
   // Images are copied under hashed names, referenced with size attributes.
   const placeholder = files["src/images/placeholder.svg"] as Uint8Array;
@@ -66,7 +68,7 @@ test("exports the fixture as one document per route with expanded components and
   assert.deepEqual(out[`assets/images/${imageName}`], placeholder);
   const size = imageDimensions(placeholder, ".svg");
   assert.ok(size);
-  assert.ok(home.includes(`<img class="hero-image" src="/assets/images/${imageName}" data-key="hero-image" width="${size.width}" height="${size.height}">`));
+  assert.ok(home.includes(`<img class="hero-image" src="/assets/images/${imageName}" width="${size.width}" height="${size.height}">`));
   assert.ok(!/hero-image[^>]*loading="lazy"/.test(home), "the first section's image is not lazy");
 
   // Head: title from the h1 with the site name, description from the first p.
@@ -75,13 +77,17 @@ test("exports the fixture as one document per route with expanded components and
   assert.ok(home.includes('<link rel="canonical" href="https://example.test/">'));
   assert.ok(about.includes('<link rel="canonical" href="https://example.test/about/">'));
   assert.ok(home.includes('<meta property="og:locale" content="en_GB">'));
-  assert.ok(home.includes('<html lang="en">'));
+  assert.ok(home.includes('<html lang="en-GB">'));
   assert.ok(home.includes(`<meta property="og:image" content="https://example.test/assets/images/studio-desk.${contentHash(files["src/images/studio-desk.svg"])}.svg">`));
   assert.ok(home.includes('<meta name="twitter:card" content="summary_large_image">'));
-  assert.ok(!home.includes("<script"));
+  assert.ok(!/<script(?! type="application\/ld\+json")/.test(home), "no script beyond JSON-LD data");
 
   assert.ok(text(out["_headers"]).includes("/assets/*\n  ! Cache-Control\n  Cache-Control: public, max-age=31536000, immutable"));
-  assert.deepEqual(log, ["/ -> index.html", "/about/ -> about/index.html", "assets -> 2 images, 1 stylesheets, _headers"]);
+  assert.deepEqual(log.slice(0, 3), [
+    "/ -> index.html",
+    "/about/ -> about/index.html",
+    "assets -> 2 images, 5 stylesheets, _headers, sitemap.xml, robots.txt",
+  ]);
 });
 
 test("manifest route metadata wins over the page comment and the h1", () => {
@@ -99,7 +105,7 @@ test("manifest route metadata wins over the page comment and the h1", () => {
   assert.ok(!home.includes("From the comment\ndescription"), "the comment is stripped from the output");
   assert.ok(about.includes("<title>About us · A native browser preview</title>"));
   assert.ok(about.includes('<meta name="description" content="From the manifest.">'));
-  assert.ok(about.includes('<meta property="og:title" content="About us">'));
+  assert.ok(about.includes('<meta property="og:title" content="About us · A native browser preview">'));
 });
 
 test("works without site.json or a site URL, leaving canonical and og:url out", () => {
@@ -166,7 +172,7 @@ test("stylesheets a shared sheet imports become hashed assets the import points 
   const home = text(out["index.html"]);
   assert.ok(home.includes(`<link rel="stylesheet" href="/assets/site.`));
   assert.ok(!home.includes(`href="/assets/${sectionsName}"`));
-  assert.ok(log.includes("assets -> 2 images, 3 stylesheets, _headers"));
+  assert.ok(log.includes("assets -> 2 images, 7 stylesheets, _headers"));
 });
 
 test("fails closed on a missing or circular stylesheet import", () => {
@@ -177,4 +183,223 @@ test("fails closed on a missing or circular stylesheet import", () => {
   circular["src/styles/site.css"] = `@import "sections.css";\n` + text(circular["src/styles/site.css"]);
   circular["src/styles/sections.css"] = `@import "site.css";\n.filler {}`;
   assert.throws(() => exportNativeSite({ files: circular }), /sections.css imports src\/styles\/site.css, which imports it back/);
+});
+
+const withSite = (extra: Record<string, unknown> = {}) => {
+  const files = fixtureFiles();
+  files[".astro-editor/site.json"] = JSON.stringify({ ...JSON.parse(site), ...extra });
+  return files;
+};
+const routeEntry = (files: Record<string, FileContent>, route: string, entry: unknown) => {
+  const manifest = JSON.parse(text(files[".astro-editor/native.json"]));
+  manifest.routes[route] = entry;
+  files[".astro-editor/native.json"] = JSON.stringify(manifest);
+};
+
+test("a slot the page fills is exported without its fallback; an empty slot keeps it", () => {
+  const files = fixtureFiles();
+  files["src/pages/about.html"] = `<project-card><span slot="title">Filled</span></project-card>`;
+  const about = text(exportNativeSite({ files }).files["about/index.html"]);
+  assert.ok(about.includes('<slot name="title"></slot>'));
+  assert.ok(!about.includes("Untitled project"));
+  assert.ok(about.includes('<slot name="body">No description yet.</slot>'), "the body slot is empty, so its fallback stays");
+  // The template's own card-note fills that component's default slot.
+  assert.ok(!about.includes("Shared note"));
+  files["src/pages/about.html"] = `<card-note></card-note><card-note> </card-note>`;
+  assert.equal(text(exportNativeSite({ files }).files["about/index.html"]).split("<slot>Shared note</slot>").length - 1, 2);
+});
+
+test("data-key attributes are left out of the export", () => {
+  const files = fixtureFiles();
+  files["src/pages/about.html"] = `<p data-key="a" class="x">Text about data-key="b"</p><img data-key='c' src="src/images/placeholder.svg" alt="">`;
+  const about = text(exportNativeSite({ files }).files["about/index.html"]);
+  assert.ok(!text(exportNativeSite({ files: fixtureFiles() }).files["index.html"]).includes("data-key"));
+  assert.ok(about.includes('<p class="x">Text about data-key="b"</p>'), "text that mentions data-key is untouched");
+  assert.ok(/<img src="\/assets\/images\/placeholder\.\w+\.svg" alt=""/.test(about));
+});
+
+test("the locale becomes a BCP 47 lang attribute", () => {
+  assert.ok(text(exportNativeSite({ files: withSite({ locale: "pt_BR" }) }).files["index.html"]).includes('<html lang="pt-BR">'));
+  assert.ok(text(exportNativeSite({ files: fixtureFiles() }).files["index.html"]).includes('<html lang="en">'));
+});
+
+test("the /404/ route is written to 404.html, kept out of the sitemap and not indexed", () => {
+  const files = withSite();
+  files["src/pages/404.html"] = `<site-header></site-header><main><h1>Page not found</h1><p>Try the <a href="#/">home page</a>.</p></main>`;
+  routeEntry(files, "/404/", "src/pages/404.html");
+  const { files: out, log } = exportNativeSite({ files });
+  assert.equal(out["404/index.html"], undefined);
+  const page = text(out["404.html"]);
+  assert.ok(page.includes("<title>Page not found · Native Studio</title>"));
+  assert.ok(page.includes('<a href="/">home page</a>'));
+  assert.ok(page.includes('<meta name="robots" content="noindex">'));
+  assert.ok(!page.includes('rel="canonical"'));
+  assert.ok(!text(out["sitemap.xml"]).includes("404"));
+  assert.ok(log.includes("/404/ -> 404.html"));
+});
+
+test("sitemap.xml and robots.txt come from the routes and site.json, unless the repository supplies them", () => {
+  const { files: out } = exportNativeSite({ files: withSite({ contentSignals: { search: "yes", "ai-input": "yes", "ai-train": "no" } }) });
+  assert.equal(
+    text(out["sitemap.xml"]),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.test/</loc></url>
+  <url><loc>https://example.test/about/</loc></url>
+</urlset>
+`,
+  );
+  assert.equal(
+    text(out["robots.txt"]),
+    "User-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=no\nAllow: /\n\nSitemap: https://example.test/sitemap.xml\n",
+  );
+  // No site URL: neither file, since both need absolute URLs.
+  const bare = exportNativeSite({ files: fixtureFiles() }).files;
+  assert.equal(bare["sitemap.xml"], undefined);
+  assert.equal(bare["robots.txt"], undefined);
+  // The repository's own robots.txt (under src/public/) wins.
+  const files = withSite();
+  files["src/public/robots.txt"] = "User-agent: *\nDisallow: /drafts/\n";
+  files["src/public/.well-known/security.txt"] = "Contact: mailto:a@example.test\n";
+  const own = exportNativeSite({ files });
+  assert.equal(text(own.files["robots.txt"]), "User-agent: *\nDisallow: /drafts/\n");
+  assert.ok(own.files[".well-known/security.txt"]);
+  assert.ok(own.log.includes("assets -> 2 images, 5 stylesheets, _headers, sitemap.xml, 2 public files"));
+  assert.throws(() => exportNativeSite({ files: withSite({ contentSignals: { search: true } }) }), /contentSignals/);
+  const clash = withSite();
+  clash["src/public/index.html"] = "<p>no</p>";
+  assert.throws(() => exportNativeSite({ files: clash }), /src\/public\/index.html would overwrite the exported index.html/);
+});
+
+test("indexable: false asks search engines to stay away", () => {
+  const { files: out } = exportNativeSite({ files: withSite({ indexable: false }) });
+  assert.ok(text(out["_headers"]).includes("/*\n  Cache-Control: max-age=0, must-revalidate\n"));
+  assert.ok(text(out["_headers"]).includes("  X-Robots-Tag: noindex, nofollow\n"));
+  assert.ok(text(out["index.html"]).includes('<meta name="robots" content="noindex">'));
+  assert.ok(text(out["about/index.html"]).includes('<meta name="robots" content="noindex">'));
+  assert.equal(text(out["robots.txt"]), "User-agent: *\nAllow: /\n");
+  const indexed = exportNativeSite({ files: withSite() }).files;
+  assert.ok(!text(indexed["_headers"]).includes("X-Robots-Tag"));
+  assert.ok(!text(indexed["index.html"]).includes('name="robots"'));
+  assert.throws(() => exportNativeSite({ files: withSite({ indexable: "no" }) }), /"indexable" must be true or false/);
+});
+
+test("_headers carries the security headers, allowing inline styles only when a page has them", () => {
+  const headers = text(exportNativeSite({ files: fixtureFiles() }).files["_headers"]);
+  assert.ok(headers.includes(
+    "  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\n" +
+      "  X-Content-Type-Options: nosniff\n" +
+      "  Referrer-Policy: strict-origin-when-cross-origin\n" +
+      "  Permissions-Policy: camera=(), microphone=(), geolocation=()\n",
+  ));
+  assert.ok(!headers.includes("Strict-Transport-Security"), "HSTS is left to the Cloudflare zone");
+  const files = fixtureFiles();
+  files["src/pages/about.html"] = `<p style="color: red">Red</p>`;
+  assert.ok(text(exportNativeSite({ files }).files["_headers"]).includes("style-src 'self' 'unsafe-inline';"));
+});
+
+test("site.json organization becomes Organization and WebSite JSON-LD on the home page; a route may add its own", () => {
+  const files = withSite({
+    organization: {
+      type: "ProfessionalService",
+      email: "hello@example.test",
+      telephone: "+44 20 7946 0000",
+      address: { streetAddress: "1 Lane", addressLocality: "Leeds", addressCountry: "GB" },
+      areaServed: "GB",
+      foundingDate: "2019",
+      sameAs: ["https://social.example/studio"],
+      logo: "src/images/placeholder.svg",
+    },
+  });
+  routeEntry(files, "/about/", { file: "src/pages/about.html", jsonLd: { "@context": "https://schema.org", "@type": "AboutPage", name: "About </script>" } });
+  const { files: out } = exportNativeSite({ files });
+  const blocks = (html: string) =>
+    [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((match) => JSON.parse(match[1]));
+  const [home] = blocks(text(out["index.html"]));
+  const logo = `https://example.test/assets/images/placeholder.${contentHash(files["src/images/placeholder.svg"])}.svg`;
+  assert.deepEqual(home, {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "ProfessionalService",
+        "@id": "https://example.test/#organization",
+        name: "Native Studio",
+        url: "https://example.test/",
+        description: "A studio.",
+        logo,
+        email: "hello@example.test",
+        telephone: "+44 20 7946 0000",
+        foundingDate: "2019",
+        areaServed: "GB",
+        sameAs: ["https://social.example/studio"],
+        address: { "@type": "PostalAddress", streetAddress: "1 Lane", addressLocality: "Leeds", addressCountry: "GB" },
+      },
+      {
+        "@type": "WebSite",
+        name: "Native Studio",
+        url: "https://example.test/",
+        description: "A studio.",
+        inLanguage: "en-GB",
+        publisher: { "@id": "https://example.test/#organization" },
+      },
+    ],
+  });
+  const about = text(out["about/index.html"]);
+  assert.ok(about.includes("About \\u003c/script>"), "a closing tag in the data cannot end the script element");
+  assert.deepEqual(blocks(about), [{ "@context": "https://schema.org", "@type": "AboutPage", name: "About </script>" }]);
+  // Without an organization, the home page still gets WebSite.
+  assert.equal(blocks(text(exportNativeSite({ files: withSite() }).files["index.html"]))[0]["@graph"][0]["@type"], "WebSite");
+  const bad = fixtureFiles();
+  routeEntry(bad, "/about/", { file: "src/pages/about.html", jsonLd: "nope" });
+  assert.throws(() => exportNativeSite({ files: bad }), /"jsonLd" must be an object or an array of objects/);
+  const typed = text(exportNativeSite({ files: withSite({ organization: { "@type": "LocalBusiness" } }) }).files["index.html"]);
+  assert.ok(typed.includes('"@graph":[{"@type":"LocalBusiness"'), "@type works as well as type");
+  assert.throws(() => exportNativeSite({ files: withSite({ organization: { sameAs: "x" } }) }), /"sameAs" must be an array/);
+});
+
+test("social metadata uses the full title, the image alt and a raster image's size, and warns about SVG images", () => {
+  const files = withSite({ image: "src/images/card.png", imageAlt: "A desk & a mug" });
+  const png = new Uint8Array(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 4, 0xb0, 0, 0, 2, 0x76]);
+  files["src/images/card.png"] = png;
+  const { files: out, log } = exportNativeSite({ files });
+  const about = text(out["about/index.html"]);
+  assert.ok(about.includes('<meta property="og:title" content="About this project · Native Studio">'));
+  assert.ok(about.includes('<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">'));
+  assert.ok(about.includes('<meta property="og:image:alt" content="A desk &amp; a mug">'));
+  assert.ok(!log.some((line) => line.startsWith("warning:")));
+  const svg = exportNativeSite({ files: withSite() });
+  const home = text(svg.files["index.html"]);
+  assert.ok(!home.includes("og:image:width"), "an SVG's size is not given");
+  assert.deepEqual(svg.log.filter((line) => line.startsWith("warning:")), [
+    "warning: the social image src/images/studio-desk.svg is an SVG, which Facebook, LinkedIn, X, Slack and WhatsApp do not show; use a PNG or JPEG (1200×630).",
+  ]);
+});
+
+test("shared stylesheets are joined into one site stylesheet, linked once per document and shadow root", () => {
+  const files = fixtureFiles();
+  const manifest = JSON.parse(text(files[".astro-editor/native.json"]));
+  manifest.styles = ["src/styles/site.css", "src/styles/extra.css"];
+  files[".astro-editor/native.json"] = JSON.stringify(manifest);
+  files["src/styles/site.css"] = "@layer base, extra;\n@layer base { p { color: red; } }\n";
+  files["src/styles/extra.css"] = `@import "parts/more.css" layer(extra);\n@layer extra { p { color: blue; } }\n`;
+  files["src/styles/parts/more.css"] = ".more {}";
+  const { files: out, log } = exportNativeSite({ files });
+  const siteFile = Object.keys(out).find((path) => /^assets\/site\.\w+\.css$/.test(path))!;
+  const moreUrl = `/assets/more.${contentHash(".more {}")}.css`;
+  // Imports lead the file, after the first file's layer order statement.
+  assert.equal(
+    text(out[siteFile]),
+    `@layer base, extra;\n@import url("${moreUrl}") layer(extra);\n/* src/styles/site.css */\n@layer base { p { color: red; } }\n\n/* src/styles/extra.css */\n@layer extra { p { color: blue; } }\n`,
+  );
+  const home = text(out["index.html"]);
+  assert.equal(home.split(`href="/${siteFile}"`).length - 1, 1 + home.split("<template shadowrootmode").length - 1);
+  assert.equal(home.split("<style").length - 1, 0, "component styles are files, not inline");
+  // Component sheets are preloaded from the head of the pages that use them.
+  const cardName = `project-card.${contentHash(text(files["src/components/project-card/project-card.css"]))}.css`;
+  assert.ok(home.includes(`<link rel="preload" href="/assets/${cardName}" as="style">`));
+  assert.ok(!text(out["about/index.html"]).includes(cardName));
+  assert.ok(!log.some((line) => line.startsWith("warning:")), "a layered import needs no warning");
+  files["src/styles/extra.css"] = `@import "parts/more.css";\n`;
+  assert.ok(exportNativeSite({ files }).log.some((line) => line.startsWith("warning: src/styles/extra.css is not first")));
 });

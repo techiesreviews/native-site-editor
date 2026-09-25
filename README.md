@@ -30,6 +30,10 @@ npm run dev
 
 Open http://127.0.0.1:8787. The app runs without credentials but needs GitHub App registration for a live connection. See [setup and deployment](docs/setup.md) for the guided setup, Cloudflare deployment, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
 
+## Static export
+
+A native site is published by the editor's exporter at `https://editor.techies.tools/native-export.mjs`, which turns it into plain HTML and CSS with no JavaScript: one page per route, a `404.html` from the `/404/` route, components as declarative shadow DOM, one hashed site stylesheet, `sitemap.xml`, `robots.txt`, and `_headers` with cache and security headers. Its conventions (`.astro-editor/site.json`, the not-found page, `src/public/`, JSON-LD, indexing and HSTS) are in [static export](docs/static-export.md).
+
 ## Starting context
 
 Lex is questioning the future direction of Phantom Studio after Facebook group updates and of Stacki Builder following his report that its maintainer is joining Webflow. These are user-reported motivations, not independently verified project-status claims.
