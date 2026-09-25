@@ -663,6 +663,9 @@
       var n = path[i];
       // A slot is how a template shows text, not an element of its own: its parent is the target.
       if (n instanceof HTMLSlotElement) continue;
+      // A section component's root <section> is the instance on the page: the
+      // page stays open, and Remove takes the instance out of this page alone.
+      if (n instanceof Element && n.parentNode instanceof ShadowRoot && sectionLike(n.parentNode.host) && n.parentNode.host.localName !== "section") return n.parentNode.host;
       if (n instanceof Element && n !== document.documentElement && n !== document.body && !n.hasAttribute("data-native-selection-box")) return n;
     }
     return e.target instanceof Element ? e.target : null;

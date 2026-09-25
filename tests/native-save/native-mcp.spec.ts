@@ -260,3 +260,38 @@ test("a component whose slot holds a heading puts that heading in the page", asy
     await client.close();
   }
 });
+
+test("clicking a section component's own area selects it on the page, and Remove takes it out of the page alone", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  const templatePath = "src/components/page-banner/page-banner.html";
+  const template = '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n</section>\n';
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    await call("write_file", { path: templatePath, content: template });
+    await call("write_file", { path: "src/components/page-banner/page-banner.css", content: "section {\n  padding: 48px;\n}\n" });
+    await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
+    const home = await call("get_page", { page: "/", source: false });
+    expect((await call("add_section", { page: "/", component: "page-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
+    const banner = frame(page).locator("main > page-banner");
+    await expect(frame(page).locator("main > page-banner > h2")).toBeVisible();
+
+    // The padding belongs to the template's <section>; the instance is selected.
+    await banner.click({ position: { x: 8, y: 8 } });
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Remove" }).click();
+    await expect(banner).toHaveCount(0);
+    // Back to the committed page, so its draft is gone.
+    await expect.poll(async () => (await draft(page, indexPath))?.content ?? indexSource).toBe(indexSource);
+    expect((await draft(page, templatePath)).content).toBe(template);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  } finally {
+    await client.close();
+  }
+});
