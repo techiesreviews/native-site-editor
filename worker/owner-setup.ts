@@ -41,6 +41,8 @@ export function githubAppManifest(origin = canonicalOrigin) {
     default_permissions: {
       contents: "write",
       metadata: "read",
+      // The Change status after a save reads the commit's workflow runs.
+      actions: "read",
     },
   };
 }

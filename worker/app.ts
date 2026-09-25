@@ -11,6 +11,7 @@ import {
 import { handleMcp } from "./mcp";
 import { publish } from "./publish";
 import { history, restore } from "./history";
+import { changeStatus } from "./change-status";
 import { GitHub, HttpError } from "./github";
 import {
   configuredApp,
@@ -526,6 +527,7 @@ async function route(
         "/api/files",
         "/api/raw",
         "/api/history",
+        "/api/change-status",
       ].includes(path)
     )
       throw new HttpError(404, "Endpoint not found.");
@@ -554,6 +556,8 @@ async function route(
           ? await github.subtree(repo, url.searchParams.get("sha") ?? "")
           : await github.directory(repo, url.searchParams.get("sha") ?? ""),
       );
+    if (path === "/api/change-status")
+      return json(await changeStatus(github, repo, url.searchParams.get("sha") ?? ""));
     if (path === "/api/raw")
       return json(await github.raw(repo, url.searchParams.get("sha") ?? ""));
     if (path === "/api/files")

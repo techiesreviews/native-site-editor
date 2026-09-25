@@ -11,7 +11,7 @@ export function createPublishMenu(options: {
   currentPath: string;
   onPublished: (result: PublishResult, submitted: SavedDraft[]) => void;
   onExpired: () => void;
-  /** Native projects relabel the menu as "Save to GitHub" and do not track deployment status. */
+  /** Native projects relabel the menu as "Save to GitHub"; the Change status shows in the top bar (components/site-actions.ts). */
   saveLabels?: boolean;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
   onDiscardChange?: (change: FileChange) => void;
@@ -233,7 +233,7 @@ export function createPublishMenu(options: {
           "span",
           "",
           options.saveLabels
-            ? " Deployment status is not tracked by this editor."
+            ? " Its status shows in the top bar."
             : " The status in the top bar follows the build.",
         ),
       );

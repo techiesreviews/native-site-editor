@@ -33,7 +33,7 @@ History lists up to 1,000 commits for the current path. Use GitHub for older his
 The original app registration requested read-only Contents access. Deploying code cannot change that registration.
 
 1. Open [Astro Site Editor Lex permissions](https://github.com/settings/apps/astro-site-editor-lex/permissions).
-2. Under **Repository permissions**, change **Contents** to **Read and write** and save. Keep **Metadata** read-only; no other permissions are needed.
+2. Under **Repository permissions**, change **Contents** to **Read and write** and save. Keep **Metadata** read-only. Set **Actions** to **Read-only** so the editor can show the Change status (Saved, Building, Live, Failed) of a save from its workflow runs (added 2026-09-25); without it the status stays "Saved".
 3. Open [installed GitHub Apps](https://github.com/settings/installations), find Astro Site Editor Lex, and accept its updated permissions for the selected repositories.
 4. Reconnect in the editor, edit a file and publish. An existing protected branch may still require a PR; this first direct-publish version will report that restriction rather than bypass it.
 

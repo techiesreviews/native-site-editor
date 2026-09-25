@@ -63,6 +63,7 @@ test("manifest registers the private hosted App with exact permissions and callb
   assert.deepEqual(manifest.default_permissions, {
     contents: "write",
     metadata: "read",
+    actions: "read",
   });
   assert.equal(manifest.request_oauth_on_install, false);
   assert.deepEqual(manifest.hook_attributes, {

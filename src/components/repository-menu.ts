@@ -43,7 +43,11 @@ export function createRepositoryMenu(options: {
     access.rel = "noopener noreferrer";
     panel.append(access);
   }
+  // "View live site" and "Download site" (components/site-actions.ts).
+  const siteSlot = node("div", "repository-menu__site");
+  siteSlot.id = "site-actions";
   panel.append(
+    siteSlot,
     button("Reload", options.onReload, actionClass),
     button("Disconnect", options.onDisconnect, actionClass),
   );
