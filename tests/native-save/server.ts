@@ -73,7 +73,8 @@ interface Change {
   sha?: string | null;
 }
 interface Git {
-  blobs: Map<string, string>;
+  // Bytes: text files and uploaded binary files alike.
+  blobs: Map<string, Buffer>;
   trees: Map<string, TreeEntry[]>;
   commits: Map<string, { tree: string; parents: string[] }>;
   head: string;
@@ -81,8 +82,8 @@ interface Git {
 
 const encoder = new TextEncoder();
 
-function blobSha(content: string): string {
-  const body = encoder.encode(content);
+function blobSha(content: string | Buffer): string {
+  const body = typeof content === "string" ? encoder.encode(content) : content;
   const hash = createHash("sha1");
   hash.update(encoder.encode(`blob ${body.length}\0`));
   hash.update(body);
@@ -126,7 +127,7 @@ function buildTree(
       const child = buildTree(git, root, rel);
       entries.push({ path: dirent.name, sha: child.sha, type: "tree", mode: "040000" });
     } else {
-      const content = readFileSync(join(root, rel), "utf8");
+      const content = readFileSync(join(root, rel));
       const sha = blobSha(content);
       git.blobs.set(sha, content);
       entries.push({
@@ -134,7 +135,7 @@ function buildTree(
         sha,
         type: "blob",
         mode: "100644",
-        size: encoder.encode(content).length,
+        size: content.length,
       });
     }
   }
@@ -204,12 +205,12 @@ function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
         else if (change.sha) {
           const content = git.blobs.get(change.sha);
           if (content === undefined) throw new Error(`Unknown blob ${change.sha}`);
-          entry = { path: name, sha: change.sha, type: "blob", mode: change.mode, size: encoder.encode(content).length };
+          entry = { path: name, sha: change.sha, type: "blob", mode: change.mode, size: content.length };
         } else {
-          const content = change.content ?? "";
+          const content = Buffer.from(change.content ?? "", "utf8");
           const sha = blobSha(content);
           git.blobs.set(sha, content);
-          entry = { path: name, sha, type: "blob", mode: change.mode, size: encoder.encode(content).length };
+          entry = { path: name, sha, type: "blob", mode: change.mode, size: content.length };
         }
       } else {
         const existing = entries.find((e) => e.path === name && e.type === "tree");
@@ -236,8 +237,16 @@ function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
   return empty;
 }
 
-function base64(content: string): string {
-  return Buffer.from(encoder.encode(content)).toString("base64");
+// The bytes at `path` in the head commit's tree, if it is a file there.
+function fileAt(git: Git, path: string): Buffer | undefined {
+  let entries = git.trees.get(git.commits.get(git.head)!.tree) ?? [];
+  const parts = path.split("/");
+  for (let index = 0; index < parts.length; index++) {
+    const entry = entries.find((item) => item.path === parts[index]);
+    if (!entry) return undefined;
+    if (index === parts.length - 1) return entry.type === "blob" ? git.blobs.get(entry.sha) : undefined;
+    entries = git.trees.get(entry.sha) ?? [];
+  }
 }
 
 // A fake `fetch` bound to one session's git models: the demo repository's,
@@ -301,10 +310,19 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>): typeof fetch 
       if (content === undefined) return jsonResponse({ message: "Not Found" }, 404);
       return jsonResponse({
         sha,
-        size: encoder.encode(content).length,
+        size: content.length,
         encoding: "base64",
-        content: base64(content),
+        content: content.toString("base64"),
       });
+    }
+    // An uploaded file's bytes, sent as base64 (worker/blobs.ts).
+    if (path === `${repoBase}/git/blobs` && method === "POST") {
+      if (body.encoding !== "base64" || typeof body.content !== "string")
+        return jsonResponse({ message: "Invalid blob" }, 422);
+      const content = Buffer.from(body.content, "base64");
+      const sha = blobSha(content);
+      git.blobs.set(sha, content);
+      return jsonResponse({ sha, url: `https://api.github.test${repoBase}/git/blobs/${sha}` }, 201);
     }
     if (path === `${repoBase}/git/trees` && method === "POST") {
       const changes: Change[] = (body.tree as { path: string; mode: string; content?: string; sha?: string | null }[]).map(
@@ -468,6 +486,13 @@ function workerMiddleware(): Connect.NextHandleFunction {
         publishDelays.set(id, Math.max(0, Number(url.searchParams.get("ms") ?? "0") || 0));
         res.statusCode = 204;
         return res.end();
+      }
+      if (path === "/__demo/file") {
+        // The bytes of a file on the demo branch, as committed.
+        const bytes = fileAt(sessions.get(id)!.git, url.searchParams.get("path") ?? "");
+        res.statusCode = bytes ? 200 : 404;
+        res.setHeader("Content-Type", "application/octet-stream");
+        return res.end(bytes ?? Buffer.alloc(0));
       }
       if (path === "/__demo/external-edit") {
         // Simulate an external commit that advances the branch, so the next save

@@ -63,6 +63,10 @@ export type EditBarControl =
       initial?: string;
       placeholder?: string;
       suggestions?: { label: string; value: string }[];
+      // Files from the computer (an image's Upload…, or files dropped on
+      // the field): `onFiles` adds them and resolves to the value to apply
+      // (the uploaded file's path), or nothing when none was added.
+      upload?: { label: string; accept?: string; onFiles: (files: File[]) => Promise<string | undefined> };
       // Opened, focused, as soon as the bar renders (a link just made).
       open?: boolean;
       onInput: (value: string) => void;
@@ -461,13 +465,66 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       else if (event.key === "End") { event.preventDefault(); options[options.length - 1]?.focus(); }
       else if (event.key.length === 1 || event.key === "Backspace") input.focus();
     });
-    openPopover(item, control.suggestions ? [label, list] : [label], "dialog");
+    const content = control.suggestions ? [label, list] : [label];
+    if (control.upload) content.push(uploadRow(address));
+    openPopover(item, content, "dialog");
     openAddress = address;
     renderSuggestions(address);
     input.focus();
     input.select();
     if (control.initial !== undefined && control.initial !== control.value) control.onInput(control.initial);
   }
+  // Upload…: a file picker, and the whole field takes a file dropped on it.
+  // The uploaded file's path applies as a picked suggestion does.
+  function uploadRow(address: NonNullable<typeof openAddress>) {
+    const row = node("div", "edit-bar__upload");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.hidden = true;
+    input.className = "edit-bar__upload-input";
+    if (address.control.upload?.accept) input.accept = address.control.upload.accept;
+    input.setAttribute("aria-label", address.control.upload?.label ?? "Upload");
+    const pick = button(address.control.upload?.label ?? "Upload…", () => input.click(), "edit-bar__menu-item edit-bar__upload-button");
+    input.addEventListener("change", () => {
+      const files = [...(input.files ?? [])];
+      input.value = "";
+      void uploadInto(address, files);
+    });
+    row.append(pick, node("span", "edit-bar__upload-hint", "or drop a file here"), input);
+    return row;
+  }
+  async function uploadInto(address: NonNullable<typeof openAddress>, files: File[]) {
+    const upload = address.control.upload;
+    if (!upload || !files.length) return;
+    popover.classList.add("is-uploading");
+    let value: string | undefined;
+    try {
+      value = await upload.onFiles(files.slice(0, 1));
+    } finally {
+      popover.classList.remove("is-uploading");
+    }
+    if (value === undefined) return;
+    address.input.value = value;
+    address.control.onInput(value);
+    if (openAddress === address) closePopover(true);
+  }
+  popover.addEventListener("dragover", (event) => {
+    if (!openAddress?.control.upload || !event.dataTransfer?.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    popover.classList.add("is-drop-target");
+  });
+  popover.addEventListener("dragleave", (event) => {
+    if (!popover.contains(event.relatedTarget as Node | null)) popover.classList.remove("is-drop-target");
+  });
+  popover.addEventListener("drop", (event) => {
+    popover.classList.remove("is-drop-target");
+    const address = openAddress;
+    if (!address?.control.upload || !event.dataTransfer?.files.length) return;
+    event.preventDefault();
+    void uploadInto(address, [...event.dataTransfer.files]);
+  });
+
   function addressButton(control: AddressControl) {
     const item = button(control.icon ? "" : control.warning ?? control.label, () => {
       if (popoverButton === item) { closePopover(true); return; }

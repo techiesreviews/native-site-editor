@@ -205,6 +205,8 @@ export function duplicateFile(store: DraftAccess, scope: DraftScope, file: Movab
     const text = draft ? undefined : file.text;
     copy = { ...stamp(scope, now), path: to, baseSha: null, original: text ?? "", content: text ?? "", sourceSha: blob };
     if (text === undefined) copy.opaque = true;
+    // A copy of an upload is one too: its bytes are still only in this browser.
+    if (draft?.upload) copy.upload = draft.upload;
   }
   if (file.mode === "100755" || draft?.mode) copy.mode = "100755";
   store.save(copy);

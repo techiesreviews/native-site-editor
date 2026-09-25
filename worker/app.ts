@@ -10,6 +10,7 @@ import {
 } from "./agent-context";
 import { handleMcp } from "./mcp";
 import { publish } from "./publish";
+import { requestBytes, uploadBlob } from "./blobs";
 import { history, restore } from "./history";
 import { GitHub, HttpError } from "./github";
 import {
@@ -191,6 +192,7 @@ async function route(
     request.method !== "GET" &&
     !(
       (path === "/api/publish" ||
+        path === "/api/blob" ||
         path === "/api/restore" ||
         path === "/auth/setup/unlock" ||
         path.startsWith("/api/agent/")) &&
@@ -492,6 +494,23 @@ async function route(
       url.searchParams.get("repo") ?? "",
     );
     return json(await publish(github, repo, data));
+  }
+  if (path === "/api/blob") {
+    // An uploaded file's bytes, made a blob for the publish that follows.
+    if (request.headers.get("Origin") !== url.origin)
+      throw new HttpError(403, "Invalid request origin.");
+    if (request.headers.get("Content-Type") !== "application/octet-stream")
+      throw new HttpError(415, "Send the file's bytes.");
+    const user = await session(request, env);
+    if (!user)
+      throw new HttpError(401, "Connect GitHub to publish your changes.");
+    const github = new GitHub(user.token, fetcher);
+    const repo = await github.authorizeRepository(
+      user.login,
+      url.searchParams.get("repo") ?? "",
+    );
+    const bytes = await requestBytes(request);
+    return json(await uploadBlob(github, repo, bytes, url.searchParams.get("sha") ?? undefined));
   }
   if (path === "/api/restore") {
     if (request.method !== "POST")

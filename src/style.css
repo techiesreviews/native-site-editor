@@ -595,6 +595,14 @@ h1 {
   margin-top: 20px;
   overflow-wrap: anywhere;
 }
+.upload-summary__image {
+  display: block;
+  max-width: 100%;
+  max-height: 50vh;
+  margin: 0 0 24px;
+  border-radius: 6px;
+  background: var(--surface);
+}
 .badge {
   display: inline-flex;
   font-size: 10px;

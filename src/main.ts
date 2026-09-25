@@ -30,6 +30,7 @@ import type { UrlPlan } from "./components/url-change";
 import { NATIVE_REDIRECTS_PATH, editNativeRedirects, folderFile, folderToLeaf, groupRouteChanges, isRouteWithin, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
 import {
@@ -221,6 +222,7 @@ function mountWorkspace() {
     remove: (target) => void deleteFileTarget(target),
     dropProblem: (source, folder) => dropProblem(source, folder),
     drop: (source, folder) => void dropFileTarget(source, folder),
+    dropFiles: (files, folder) => void uploadFilesTo(folder, files),
     announce,
   });
   fileActions.attachRoot(files);
@@ -1127,7 +1129,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     // Address: an image of this repository suggested as typed, or any address,
     // applied live. An alt that was never written or still equals the previous
     // file's name follows the new file's name; a written or empty one stays.
-    const images = (snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path);
+    const images = nativeImagePaths();
     controls.push({
       kind: "address",
       icon: "link",
@@ -1136,6 +1138,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       value: src?.value ?? "",
       placeholder: "Image in this repository or web address",
       suggestions: images.map((image) => ({ label: image, value: image })),
+      // An image from the computer, uploaded beside the site's images.
+      upload: { label: "Upload image…", accept: "image/*", onFiles: async (files) => (await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files))[0] },
       onInput: (value) => { if (node) live(node, "img", (latest, tag) => {
         const before = startTagAttribute(latest, tag, "src");
         const written = startTagAttribute(latest, tag, "alt");
@@ -1820,9 +1824,20 @@ async function loadNativeAssets() {
   if (!wanted.length) return;
   wanted.forEach((path) => nativeAssetRequests.add(path));
   let loaded = false;
+  const scope = draftScope();
   try {
     for (const path of wanted) {
-      const entry = await findEntry(path);
+      // A drafted image: an upload's bytes from this browser, a moved or
+      // copied one's blob; a deleted one is missing.
+      const draft = scope ? draftStore().get(scope, path) : undefined;
+      if (draft) nativeDraftAssets.add(path);
+      if (draft?.upload && scope) {
+        const url = await uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
+        if (epoch !== generation || request !== nativeSourcesRequest) return;
+        if (url) { nativeAssets.set(path, url); loaded = true; } else nativeMissingAssets.add(path);
+        continue;
+      }
+      const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
       if (epoch !== generation || request !== nativeSourcesRequest) return;
       if (!entry) { nativeMissingAssets.add(path); continue; }
       try {
@@ -1838,6 +1853,64 @@ async function loadNativeAssets() {
     wanted.forEach((path) => nativeAssetRequests.delete(path));
   }
   if (loaded && epoch === generation && request === nativeSourcesRequest) updateNativePreviewSources();
+}
+// Paths whose image came from a draft (or that a draft now covers) are read
+// again after files change, so an upload, move or discard shows at once.
+const nativeDraftAssets = new Set<string>();
+function forgetDraftedAssets() {
+  const scope = draftScope();
+  let forgot = false;
+  for (const path of [...nativeAssets.keys(), ...nativeMissingAssets])
+    if (nativeDraftAssets.has(path) || (scope && draftStore().get(scope, path))) {
+      forgot = nativeAssets.delete(path) || forgot;
+      nativeMissingAssets.delete(path);
+    }
+  nativeDraftAssets.clear();
+  if (forgot && nativeModeActive()) updateNativePreviewSources();
+  if (scope) void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
+}
+
+// Images an image's Address suggests: the branch's and the drafted ones, not deleted ones.
+function nativeImagePaths() {
+  const scope = draftScope();
+  const drafts = scope ? draftStore().list(scope) : [];
+  const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
+  return [...new Set([
+    ...(snapshot?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path),
+    ...drafts.filter((draft) => draft.baseSha === null && !draft.deleted && isImagePath(draft.path)).map((draft) => draft.path),
+  ])].filter((path) => !gone.has(path)).sort();
+}
+
+// Files from the computer as new-file drafts in `folder` (src/uploads.ts),
+// never over something that is there; resolves to the paths added.
+async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
+  const scope = draftScope();
+  if (!scope || !files.length) return [];
+  const added: string[] = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const file of files) {
+    const result = await addUpload({
+      drafts: draftStore(), bytes: uploadBytes(), scope, folder, file,
+      taken: async (path) => added.includes(path) || pathNow(path) !== undefined || (await branchPathProblem(path).catch(() => "unknown")) !== undefined,
+    });
+    if (!result.ok) { errors.push(result.error); continue; }
+    added.push(result.path);
+    if (result.warning) warnings.push(result.warning);
+  }
+  if (added.length) afterFileChanges();
+  if (errors.length) errorMessage(new Error(errors.join(" ")));
+  if (added.length) announce([`Uploaded ${added.join(", ")}.`, ...warnings].join(" "));
+  return added;
+}
+
+// An upload's Discard: its draft goes, and its bytes with it.
+function discardUpload(path: string) {
+  const scope = draftScope();
+  if (!scope || !draftStore().get(scope, path)?.upload) return;
+  deleteFile(draftStore(), scope, { path });
+  afterFileChanges();
+  announce(`Discarded ${path}.`);
 }
 
 // After a successful save, the committed content becomes the new clean baseline.
@@ -3558,6 +3631,7 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
     items.push(
       { label: "New file…", run: () => openCreateKind(target.path, "file") },
       { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
+      { label: "Upload files…", run: () => void pickFiles().then((picked) => uploadFilesTo(target.path, picked)) },
     );
   items.push({ label: "Rename", shortcut: "F2", run: () => fileActions?.rename(files, target.path) });
   if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
@@ -3749,6 +3823,7 @@ function releaseFiles(paths: Set<string>) {
 
 // After files changed: the drafts' listings, routes, both trees and the agent.
 function afterFileChanges() {
+  forgetDraftedAssets();
   editorModule?.refreshDrafts();
   commitHistory?.refresh();
   if (nativeManifest) {
@@ -3937,7 +4012,8 @@ function restoreFileTarget(target: FileRowTarget) {
 
 // A change's Restore (a deletion) or Move back (a rename) in the Save panel.
 function discardFileChange(change: FileChange) {
-  if (change.kind === "D") undoFileChanges({ restore: [change.path] });
+  if (change.kind === "A" && change.drafts[0]?.upload) discardUpload(change.path);
+  else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
   else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
 }
 
@@ -4475,6 +4551,8 @@ async function mountSource(
       )
         return;
       adoptNativeBaseSources(scope, result, submitted);
+      // Saved uploads are GitHub's now; this browser lets their bytes go.
+      void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
       void refreshPublishedSnapshot(scope.repo, scope.branch);
     },
     onDiscardNew: () => {
@@ -4644,12 +4722,39 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
   if (!options.keepExplorer) explorerDropdown?.close();
   setCurrentPage(draft.path);
   // A binary or large file moved or copied here: its text is not held.
+  if (draft.upload) {
+    showUpload(draft);
+    return;
+  }
   if (draft.opaque) {
     content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; save to GitHub to keep the change.`));
     status(`Selected ${draft.path}.`);
     return;
   }
   await mountSource(draft.path, "", null, false, epoch, selection);
+}
+
+// An uploaded file, opened: the image itself when it is one, and Discard.
+function showUpload(draft: SavedDraft) {
+  const panel = node("section", "directory-summary upload-summary");
+  const name = draft.path.split("/").pop() ?? draft.path;
+  panel.append(
+    node("span", "badge", "Uploaded"),
+    node("h1", "", name),
+    node("p", "intro", `${draft.path} (${formatBytes(draft.upload?.size ?? 0)}) is kept in this browser until you save it to GitHub.`),
+  );
+  const scope = draftScope();
+  if (isImagePath(draft.path) && scope) {
+    const image = node("img", "upload-summary__image");
+    image.alt = name;
+    void uploadDataUrl(uploadBytes(), scope, draft).then((url) => { if (url) image.src = url; });
+    panel.append(image);
+  }
+  const discard = button("Discard", () => { discardUpload(draft.path); void openAfter(undefined); }, "button secondary");
+  discard.setAttribute("aria-label", `Discard ${draft.path}`);
+  panel.append(discard);
+  content.replaceChildren(panel);
+  status(`Selected ${draft.path}.`);
 }
 
 // A file deleted in the drafts, opened (from the changes window, a link or a
