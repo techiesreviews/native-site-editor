@@ -57,7 +57,7 @@ test("the section icons move, duplicate and remove it as single undo steps", asy
   await bar(page).getByRole("button", { name: "Duplicate" }).click();
   await expect(frame.locator("section.cards")).toHaveCount(2);
   await expect(page.locator("#status")).toHaveText("Section duplicated");
-  await expect.poll(() => editorText(page, "#content")).toContain(`</section>\n  <section class="cards" data-key="cards-2">`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`</section>\n  <section class="cards" data-key="cards">`);
   await undo(page);
   await expect(frame.locator("section.cards")).toHaveCount(1);
 
@@ -159,7 +159,7 @@ async function selectionOn(page: Page, selector: string, nth = 0) {
   return Boolean(box && target && Math.abs(box.y - target.y) <= 2 && Math.abs(box.height - target.height) <= 2);
 }
 
-test("Duplicate gives every key in the copy a fresh value and selects the copy; removing the first section selects the next", async ({ page }) => {
+test("Duplicate copies the section as it is and selects the copy; removing the first section selects the next", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   // In view, so the bar shows over it.
   await frame.locator("section.filler h2").scrollIntoViewIfNeeded();
@@ -167,9 +167,8 @@ test("Duplicate gives every key in the copy a fresh value and selects the copy; 
   await bar(page).getByRole("button", { name: "Duplicate" }).click();
   await expect(frame.locator("section.filler")).toHaveCount(2);
   await expect(page.locator("#status")).toHaveText("Section duplicated");
-  // MENU-03: fresh keys for the copy and everything in it.
   await expect.poll(() => editorText(page, "#content")).toContain(
-    `  </section>\n  <section class="filler" data-key="filler-6">\n    <h2 data-key="filler-title-2">Scroll to verify</h2>\n    <p data-key="filler-1-2">`,
+    `  </section>\n  <section class="filler" data-key="filler">\n    <h2 data-key="filler-title">Scroll to verify</h2>\n    <p data-key="filler-1">`,
   );
   await expect.poll(() => selectionOn(page, "section.filler", 1)).toBe(true);
   await undo(page);

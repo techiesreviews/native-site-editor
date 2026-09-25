@@ -310,10 +310,10 @@ test("a page, a subpage under it (the page becomes a folder) and another are mad
   expect(await manifestDrafts(page)).toBe(0);
   await saveAll(page);
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect(await branchFile(page, routingRepo, "src/pages/videos/index.html")).toBe('<!--\ntitle: Videos\n-->\n<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">Videos</h1>\n  </section>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/index.html")).toBe('<!--\ntitle: Videos\n-->\n<main class="page" data-key="main">\n  <section class="hero">\n    <h1>Videos</h1>\n  </section>\n</main>\n');
   expect(await branchFile(page, routingRepo, "src/pages/videos.html")).toBeUndefined();
-  expect(await branchFile(page, routingRepo, "src/pages/videos/my-first-video.html")).toBe('<!--\ntitle: My first video\n-->\n<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">My first video</h1>\n  </section>\n</main>\n');
-  expect(await branchFile(page, routingRepo, "src/pages/videos/tutorials.html")).toContain("<h1 data-key=\"title\">Tutorials</h1>");
+  expect(await branchFile(page, routingRepo, "src/pages/videos/my-first-video.html")).toBe('<!--\ntitle: My first video\n-->\n<main class="page" data-key="main">\n  <section class="hero">\n    <h1>My first video</h1>\n  </section>\n</main>\n');
+  expect(await branchFile(page, routingRepo, "src/pages/videos/tutorials.html")).toContain("<h1>Tutorials</h1>");
   expect(JSON.parse((await branchFile(page, routingRepo, manifestPath))!).routes).toEqual({
     "/work/fern-and-kettle/": { title: "Fern & Kettle" },
   });

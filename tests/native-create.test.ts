@@ -78,14 +78,14 @@ test("a new page keeps the home page outside <main> and replaces its content wit
   const page = nativePageTemplate(starterHome, "Intro & <more>");
   assert.ok(page.startsWith(
     '<site-header data-key="header"></site-header>\n<main class="page" data-key="main">\n' +
-    '  <section class="hero" data-key="hero">\n    <h1 data-key="title">Intro &amp; &lt;more&gt;</h1>\n  </section>\n</main>',
+    '  <section class="hero">\n    <h1>Intro &amp; &lt;more&gt;</h1>\n  </section>\n</main>',
   ));
   assert.ok(page.endsWith(starterHome.slice(starterHome.indexOf("</main>"))));
   assert.ok(!page.includes("hero-title"));
   assert.equal(page.match(/<h1/g)?.length, 1);
   assert.equal(page.match(/<section/g)?.length, 1);
   assert.ok(nativePageTemplate(routingHome, "Intro").startsWith(
-    '<main class="page" data-key="main">\n  <section class="hero" data-key="hero">\n    <h1 data-key="title">Intro</h1>\n  </section>\n</main>',
+    '<main class="page" data-key="main">\n  <section class="hero">\n    <h1>Intro</h1>\n  </section>\n</main>',
   ));
   // The home page's leading metadata comment titles the home page only.
   assert.equal(
@@ -95,16 +95,16 @@ test("a new page keeps the home page outside <main> and replaces its content wit
 });
 
 test("the new page's section copies the home page's first section in <main>, without its id", () => {
-  // The starter's shape: attributes kept, the id dropped, the key replaced.
+  // The starter's shape: attributes kept, the id and key dropped, no keys added.
   const starter = '<site-header data-key="header"></site-header>\n<main class="page" id="main" data-key="main">\n' +
     '  <section class="hero flow" id="top" data-key="intro">\n    <h1 data-key="hero-title">Hi</h1>\n  </section>\n' +
     '  <section class="work flow" id="work" data-key="work"></section>\n</main>\n<site-footer></site-footer>\n';
   assert.equal(
     nativePageTemplate(starter, "About"),
     '<site-header data-key="header"></site-header>\n<main class="page" id="main" data-key="main">\n' +
-    '  <section class="hero flow" data-key="hero">\n    <h1 data-key="title">About</h1>\n  </section>\n</main>\n<site-footer></site-footer>\n',
+    '  <section class="hero flow">\n    <h1>About</h1>\n  </section>\n</main>\n<site-footer></site-footer>\n',
   );
-  // Unkeyed: no keys added, a section's own key dropped; the home page's indentation step is kept.
+  // A section's own key dropped; the home page's indentation step is kept.
   const unkeyed = "<main class=\"x\">\n    <div class=\"wrap\"><section class=\"inner\">a</section></div>\n    <section class='band' data-key=\"b\" id=b>b</section>\n</main>\n";
   assert.equal(
     nativePageTemplate(unkeyed, "Intro"),
@@ -114,9 +114,9 @@ test("the new page's section copies the home page's first section in <main>, wit
   const nested = "<main data-key=\"main\">\n  <div><section class=\"deep\">x</section></div>\n  <section-list></section-list>\n</main>";
   assert.equal(
     nativePageTemplate(nested, "Intro"),
-    "<main data-key=\"main\">\n  <section data-key=\"hero\">\n    <h1 data-key=\"title\">Intro</h1>\n  </section>\n</main>",
+    "<main data-key=\"main\">\n  <section>\n    <h1>Intro</h1>\n  </section>\n</main>",
   );
-  // A <main> indented inside a wrapper keeps its indentation; no data-key, none added.
+  // A <main> indented inside a wrapper keeps its indentation.
   const wrapped = "<div>\n  <main id=\"main\" class=\"x\">\n    <p>Old</p>\n  </main>\n</div>\n";
   assert.equal(
     nativePageTemplate(wrapped, "Intro"),

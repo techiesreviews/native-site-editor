@@ -192,7 +192,7 @@ function composePayload(
   // file, so only clicks inside the component select anything. It sits in
   // the same page container the home page uses, so it gets the page's width.
   if (alone) {
-    pages[componentRoute(alone)] = `${pageContainer(pages[nativeDefaultRoute(manifest)] ?? "")}\n  <${alone} data-key="${alone}"></${alone}>\n</main>`;
+    pages[componentRoute(alone)] = `${pageContainer(pages[nativeDefaultRoute(manifest)] ?? "")}\n  <${alone}></${alone}>\n</main>`;
     pagePaths[componentRoute(alone)] = "";
   }
   const components: Record<string, string> = {};

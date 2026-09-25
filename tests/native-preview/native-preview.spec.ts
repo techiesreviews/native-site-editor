@@ -120,6 +120,33 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
   expect(afterCss).toBe(before.id);
 });
 
+test("sections without data-key keep their nodes when moved, inserted around or duplicated", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  const section = (name: string) => `  <section class="probe"><h2>${name}</h2></section>\n`;
+  const page1 = (...names: string[]) => `<main>\n${names.map(section).join("")}</main>\n`;
+  const win = await frameWindow(page);
+  // Stamp each rendered section with its heading, then read the stamps back in page order.
+  const stamp = () => win.evaluate(() => document.querySelectorAll("section.probe").forEach((el) => {
+    (el as HTMLElement & { stamp?: string }).stamp = el.textContent ?? "";
+  }));
+  const stamps = () => win.evaluate(() =>
+    [...document.querySelectorAll("section.probe")].map((el) => (el as HTMLElement & { stamp?: string }).stamp ?? "new"));
+
+  await pasteSource(page, "A native browser preview", page1("A", "B", "C"));
+  await expect(frame.locator("section.probe")).toHaveCount(3);
+  await stamp();
+  // B moved to the top, a new section before C: A, B and C are the same nodes.
+  await pasteSource(page, "<main>", page1("B", "A", "New", "C"));
+  await expect(frame.locator("section.probe h2")).toHaveText(["B", "A", "New", "C"]);
+  expect(await stamps()).toEqual(["B", "A", "new", "C"]);
+  // A duplicated and C removed: the first A keeps its node, the copy is new.
+  await stamp();
+  await pasteSource(page, "<main>", page1("B", "A", "A", "New"));
+  await expect(frame.locator("section.probe h2")).toHaveText(["B", "A", "A", "New"]);
+  expect(await stamps()).toEqual(["B", "A", "new", "New"]);
+});
+
 test("editing while the preview is on About does not snap it back Home", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });

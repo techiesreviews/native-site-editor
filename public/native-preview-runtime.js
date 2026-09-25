@@ -86,7 +86,27 @@
     return t;
   }
 
+  // The markup each rendered element was made from, so a later render can
+  // tell an element that only moved (a section moved, inserted around,
+  // duplicated or removed) from one that changed.
+  var markupOf = new WeakMap();
+
+  /** A fresh copy of `html` to render, each element remembering its markup. */
+  function freshContent(html) {
+    var content = makeTemplate(html).content.cloneNode(true);
+    content.querySelectorAll("*").forEach(function (el) { markupOf.set(el, el.outerHTML); });
+    return content;
+  }
+
   function nodeKey(n) { return n.nodeType === 1 ? n.getAttribute("data-key") : null; }
+
+  /** What pairs a new node with a rendered one: its `data-key`, else an element's markup. */
+  function identity(n) {
+    var key = nodeKey(n);
+    if (key) return "key:" + key;
+    var markup = n.nodeType === 1 && markupOf.get(n);
+    return markup ? "markup:" + markup : null;
+  }
 
   function sameKind(a, b) {
     if (!a || !b || a.nodeType !== b.nodeType) return false;
@@ -96,28 +116,35 @@
 
   function reconcileChildren(target, fragment) {
     var desired = Array.prototype.slice.call(fragment.childNodes);
-    // Existing nodes per key, in order: a key that appears twice in the
-    // source (a duplicated element) pairs with its own existing node instead
-    // of folding both into one.
-    var keyed = new Map();
-    var keyedNodes = new Set();
+    // A new node pairs with a rendered node of the same key, else with one
+    // made from the same markup, in order, so a moved element keeps its node
+    // (its selection, images and component) and two identical ones stay two.
+    // A keyed node with no partner is new; any other takes the node at its
+    // position unless a later node claimed that one.
+    var byIdentity = new Map();
     Array.prototype.slice.call(target.childNodes).forEach(function (n) {
-      var k = nodeKey(n);
-      if (!k) return;
-      if (!keyed.has(k)) keyed.set(k, []);
-      keyed.get(k).push(n);
-      keyedNodes.add(n);
+      var id = identity(n);
+      if (!id) return;
+      if (!byIdentity.has(id)) byIdentity.set(id, []);
+      byIdentity.get(id).push(n);
+    });
+    var claimed = new Set();
+    var partners = desired.map(function (next) {
+      var found = byIdentity.get(identity(next));
+      var partner = found && found.shift();
+      if (partner) claimed.add(partner);
+      return partner || null;
     });
     desired.forEach(function (next, index) {
-      var key = nodeKey(next);
       var currentAtIndex = target.childNodes[index] || null;
-      var existing = key ? (keyed.get(key) || [])[0] || null : currentAtIndex;
+      var existing = partners[index] ||
+        (nodeKey(next) || claimed.has(currentAtIndex) ? null : currentAtIndex);
       if (!sameKind(existing, next)) {
         target.insertBefore(next, currentAtIndex);
-        if (currentAtIndex && !keyedNodes.has(currentAtIndex)) currentAtIndex.remove();
+        if (currentAtIndex && !claimed.has(currentAtIndex) && !nodeKey(currentAtIndex)) currentAtIndex.remove();
         return;
       }
-      if (key) keyed.get(key).shift();
+      if (next.nodeType === 1) markupOf.set(existing, markupOf.get(next));
       reconcileNode(existing, next);
       if (target.childNodes[index] !== existing) target.insertBefore(existing, target.childNodes[index] || null);
     });
@@ -155,8 +182,7 @@
     try {
       var root = host.shadowRoot || host.attachShadow({ mode: "open" });
       shadowRoots.add(root);
-      var t = makeTemplate(html);
-      reconcileChildren(root, t.content.cloneNode(true));
+      reconcileChildren(root, freshContent(html));
       syncRootStyles(root);
       watchSlots(root);
       applyEmptyRules(root);
@@ -214,8 +240,7 @@
       var keys = Object.keys(state.pages);
       html = keys.length ? state.pages[keys[0]] : "";
     }
-    var t = makeTemplate(html);
-    reconcileChildren(pageEl, t.content.cloneNode(true));
+    reconcileChildren(pageEl, freshContent(html));
     renderInstances();
     updateBoxes();
     scheduleInsertPoints();

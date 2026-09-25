@@ -102,13 +102,13 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     expect(added.state).toBe("applied");
     expect(added.result.section).toBe("1.1");
     await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
-    await expect(frame(page).locator("main > :nth-child(2)")).toHaveAttribute("data-key", "feature-block");
+    await expect(frame(page).locator("main > feature-block:nth-child(2)")).toHaveCount(1);
     const withSection = await call("get_page", { page: "/", source: false });
     expect(withSection.sections.map((section: { tag: string }) => section.tag)).toEqual(["section", "feature-block", "section", "section"]);
     // Moved to the end, then removed.
     const moved = await call("move_section", { page: "/", section: "1.1", after: "1.3", expectedHash: withSection.hash });
     expect(moved.state).toBe("applied");
-    await expect(frame(page).locator("main > :last-child")).toHaveAttribute("data-key", "feature-block");
+    await expect(frame(page).locator("main > feature-block:last-child")).toHaveCount(1);
     const movedPage = await call("get_page", { page: "/", source: false });
     const removed = await call("remove_section", { page: "/", section: "1.3", expectedHash: movedPage.hash });
     expect(removed.state).toBe("applied");
@@ -252,7 +252,7 @@ test("a component whose slot holds a heading puts that heading in the page", asy
     expect((await call("add_section", { page: "/", component: "page-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
 
     await expect.poll(async () => (await draft(page, indexPath))?.content).toContain(
-      `<page-banner data-key="page-banner">\n    <h2 slot="title" data-key="banner-title">A new banner</h2>\n    <a slot="action" href="#/about/" data-key="banner-action">Get in touch</a>\n  </page-banner>`,
+      `<page-banner>\n    <h2 slot="title" data-key="banner-title">A new banner</h2>\n    <a slot="action" href="#/about/" data-key="banner-action">Get in touch</a>\n  </page-banner>`,
     );
     await expect(frame(page).locator("main > page-banner > h2")).toHaveText("A new banner");
     await expect(frame(page).locator("main > page-banner > h2")).toBeVisible();

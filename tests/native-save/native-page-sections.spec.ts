@@ -68,7 +68,7 @@ test("a new page starts with a section and its heading, and a section component 
 
   // Its title comment, then the home page's shell, with <main> holding a copy of its first section's start tag.
   const shell = (inner: string) => `<!--\ntitle: Services\n-->\n${starterHome.slice(0, starterHome.indexOf("<main"))}<main class="page" data-key="main">\n${inner}${starterHome.slice(starterHome.indexOf("</main>"))}`;
-  const section = `  <section class="hero" data-key="hero">\n    <h1 data-key="title">Services</h1>\n  </section>\n`;
+  const section = `  <section class="hero">\n    <h1>Services</h1>\n  </section>\n`;
   await expect.poll(() => editorText(page)).toBe(shell(section));
 
   // A place before and after the section; the one after it adds a feature block.
@@ -81,7 +81,7 @@ test("a new page starts with a section and its heading, and a section component 
   await expect(frame(page).locator("section.hero + feature-block")).toHaveCount(1);
   await expect(page.locator("#status")).toHaveText("Feature block added");
   await expect.poll(() => editorText(page)).toBe(shell(
-    `${section}  <feature-block data-key="feature-block">\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n`,
+    `${section}  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n`,
   ));
 });
 

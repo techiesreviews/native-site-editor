@@ -4,7 +4,7 @@
 // overlap) computed from the element's exact source range, never a re-serialisation.
 
 import { startTagAttribute, startTags, textRangeInSource, type ElementRange, type StartTag } from "./native-source-location";
-import { componentLabel, uniqueDataKey } from "./native-insert";
+import { componentLabel } from "./native-insert";
 
 // What the edit bar and the page structure call an element: a kind in the
 // user's words, or the tag itself for anything else.
@@ -63,27 +63,11 @@ export function removeEdit(source: string, range: ElementRange): RangeEdit {
   return { ...wholeLines(source, range), text: "" };
 }
 
-/**
- * A copy of the element right after it, on its own lines with the same
- * indentation, in which every `data-key` (the root's and those of the
- * elements inside) is made unique in the file (MENU-03: fresh keys).
- */
+/** A copy of the element right after it, on its own lines with the same indentation. */
 export function duplicateEdit(source: string, range: ElementRange): RangeEdit {
   const lines = wholeLines(source, range);
   const indent = source.slice(lines.start, range.start);
-  let copy = source.slice(range.start, range.end);
-  const keys = startTags(copy).map((tag) => startTagAttribute(copy, tag, "data-key")).filter((key) => key?.value);
-  const assigned: string[] = [];
-  const fresh = keys.map((key) => {
-    const value = uniqueDataKey(source, key!.value, assigned);
-    assigned.push(value);
-    return value;
-  });
-  // From the last key back, so earlier offsets stay valid.
-  for (let index = keys.length - 1; index >= 0; index--) {
-    const key = keys[index]!;
-    copy = copy.slice(0, key.valueStart) + fresh[index] + copy.slice(key.valueEnd);
-  }
+  const copy = source.slice(range.start, range.end);
   const ownLines = lines.end > range.end || lines.start < range.start;
   const text = ownLines ? `${indent}${copy}\n` : `\n${indent}${copy}`;
   return { start: lines.end, end: lines.end, text };

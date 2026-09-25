@@ -22,7 +22,6 @@ A native site is plain HTML, CSS and custom-element components in a GitHub repos
   \`\`\`
 - Link between pages with hash routes: \`<a href="#/about/">\`. The editor preview follows them; the export rewrites them to real URLs. Do not use \`/about/\` or \`about.html\` in links.
 - Changing a page's URL (move_file on a page) updates links to it; \`src/public/_redirects\` (\`/old/ /new/ 301\`) keeps old URLs working.
-- Stable \`data-key\` attributes on elements identify them for the editor; keep existing ones and give new elements unique ones.
 
 ## Components
 - \`src/components/<tag>/<tag>.html\` (or \`src/components/<tag>.html\`) defines the custom element \`<tag>\`; the tag must contain a hyphen (\`site-header\`, \`feature-block\`).
@@ -33,31 +32,30 @@ A native site is plain HTML, CSS and custom-element components in a GitHub repos
 
 ### Building a section component
 Follow this pattern, so the page source shows real elements and a part the user removes from a page stays gone:
-- Root: exactly one \`<section data-key="<tag>">\`.
-- Each editable part is one slot wrapping one whole element, not a slot inside the element: \`<slot name="title" data-if><h1 data-key="…">Headline</h1></slot>\`, not \`<h1><slot name="title">Headline</slot></h1>\`. add_section copies a fallback that is one heading, paragraph, blockquote, link or image into the page as that element with the \`slot\` attribute (\`<h1 slot="title" data-key="…">Headline</h1>\`); anything else it copies inside a \`<span slot>\`, which loses the heading.
+- Root: exactly one \`<section>\`.
+- Each editable part is one slot wrapping one whole element, not a slot inside the element: \`<slot name="title" data-if><h1>Headline</h1></slot>\`, not \`<h1><slot name="title">Headline</slot></h1>\`. add_section copies a fallback that is one heading, paragraph, blockquote, link or image into the page as that element with the \`slot\` attribute (\`<h1 slot="title">Headline</h1>\`); anything else it copies inside a \`<span slot>\`, which loses the heading.
 - Mark every slot a page may leave out with a bare \`data-if\` on the \`<slot>\`: when the page removes that part, the slot and its fallback are hidden instead of the fallback showing again, and a wrapper whose slots are all hidden (a row of buttons) goes too. \`data-if="a b"\` on any template element shows it only when the page fills every named slot.
 - Keep structure that is the same on every page (a wrapper \`<div class="actions">\`) in the template around the slots.
-- Give every template element a \`data-key\` unique within the template; add_section numbers copies that clash on the page.
 - In the CSS, style each slotted part both as the fallback and as what the page slots in: \`h1, ::slotted(h1) { … }\`, \`.lead, ::slotted(.lead) { … }\`, \`.actions a, .actions ::slotted(a) { … }\`. Put the class on the fallback element (\`<p class="lead">\`) so it is copied into the page too. Page-wide element rules (\`h1 { font-size }\`) win over \`::slotted()\` rules; the site's shared element rules that size or space elements should be written \`h1:not([slot])\` so what a page slots into a component is left to the component.
 - Use the site's design tokens (\`var(--space-m)\`, \`var(--text-l)\`, \`var(--accent)\`) from \`src/styles/tokens.css\`; read it and an existing component's CSS first.
 - Then place it with add_section (never by hand-writing the instance), and fill its copied parts with edit_file.
 
 \`\`\`html
-<section data-key="section-hero">
-  <slot name="eyebrow" data-if><p class="eyebrow" data-key="hero-eyebrow">Studio name</p></slot>
-  <slot name="title" data-if><h1 data-key="hero-title">A short, clear headline.</h1></slot>
-  <slot name="lead" data-if><p class="lead" data-key="hero-lead">Who this is for and what they get.</p></slot>
-  <div class="actions" data-key="hero-actions">
-    <slot name="primary" data-if><a href="#/about/#contact" data-key="hero-primary">Get in touch</a></slot>
-    <slot name="secondary" data-if><a href="#/work/" data-key="hero-secondary">See our work</a></slot>
+<section>
+  <slot name="eyebrow" data-if><p class="eyebrow">Studio name</p></slot>
+  <slot name="title" data-if><h1>A short, clear headline.</h1></slot>
+  <slot name="lead" data-if><p class="lead">Who this is for and what they get.</p></slot>
+  <div class="actions">
+    <slot name="primary" data-if><a href="#/about/#contact">Get in touch</a></slot>
+    <slot name="secondary" data-if><a href="#/work/">See our work</a></slot>
   </div>
 </section>
 \`\`\`
 A page instance, as add_section writes it:
 \`\`\`html
-<section-hero data-key="section-hero">
-  <p slot="eyebrow" class="eyebrow" data-key="hero-eyebrow">Studio name</p>
-  <h1 slot="title" data-key="hero-title">A short, clear headline.</h1>
+<section-hero>
+  <p slot="eyebrow" class="eyebrow">Studio name</p>
+  <h1 slot="title">A short, clear headline.</h1>
   …
 </section-hero>
 \`\`\`

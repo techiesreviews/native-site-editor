@@ -85,7 +85,7 @@ test("a plus between sections inserts a section component, and only those are of
   // The instance carries its own copy of the template's text slots.
   const inserted = indexSource.replace(
     `  <section class="filler"`,
-    `  <feature-block data-key="feature-block">\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="filler"`,
+    `  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="filler"`,
   );
   await expect.poll(() => editorText(page, "#content")).toBe(inserted);
   await expect(page.locator("#status")).toHaveText("Feature block added");
@@ -143,7 +143,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await page.keyboard.press("Enter");
   await expect(page.frameLocator(".native-preview-frame").locator("section.filler + feature-block")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toContain(
-    `  </section>\n  <feature-block data-key="feature-block">\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n</main>`,
+    `  </section>\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n</main>`,
   );
 });
 
@@ -183,6 +183,6 @@ test("inserting while a component file is open edits the page", async ({ page })
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(frame.locator("main > feature-block:first-child + section.hero")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toContain(
-    `<main class="page" data-key="main">\n  <feature-block data-key="feature-block">\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="hero"`,
+    `<main class="page" data-key="main">\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="hero"`,
   );
 });

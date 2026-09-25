@@ -126,8 +126,8 @@ function firstChildSection(html: string, from: number, to: number): StartTag | u
   return undefined;
 }
 
-/** A copy of the `<section>` start tag `tag` in `html` without its `id` and `data-key`, keyed `hero` when `keyed`. */
-function sectionStartTag(html: string, tag: StartTag, keyed: boolean) {
+/** A copy of the `<section>` start tag `tag` in `html` without its `id` and `data-key`. */
+function sectionStartTag(html: string, tag: StartTag) {
   const drop = ["id", "data-key"]
     .map((name) => startTagAttribute(html, tag, name))
     .filter((found) => found !== undefined)
@@ -135,7 +135,7 @@ function sectionStartTag(html: string, tag: StartTag, keyed: boolean) {
   let text = html.slice(tag.start, tag.end);
   for (const found of drop) text = text.slice(0, found.start - tag.start) + text.slice(found.end - tag.start);
   const attributes = text.slice(tag.nameEnd - tag.start, -1).replace(/\s*\/$/, "").trimEnd();
-  return `<section${attributes}${keyed ? ' data-key="hero"' : ""}>`;
+  return `<section${attributes}>`;
 }
 
 /**
@@ -145,9 +145,7 @@ function sectionStartTag(html: string, tag: StartTag, keyed: boolean) {
  * so "Add to the page" has sections to add others beside. The section copies
  * the start tag of the home page's first `<section>` directly in `<main>`
  * (its class and other attributes, but no `id`, which would repeat), else it
- * is a bare `<section>`. A page keyed for the editor (its `<main>` has a
- * `data-key`) keys the section `hero` and the heading `title`. A home page
- * with no `<main>` gives a page of just `<main id="main">`, the section and
+ * is a bare `<section>`. A home page with no `<main>` gives a page of just `<main id="main">`, the section and
  * the heading. The home page's leading `<!-- title: … -->` comment is its
  * own and is left out.
  */
@@ -162,16 +160,14 @@ export function nativePageTemplate(source: string | undefined, heading: string):
     return /^[ \t]*$/.test(lead) ? lead : undefined;
   };
   const indent = lineIndent(start.start) ?? "";
-  // A page keyed for the editor keeps keying its elements.
-  const keyed = startTagAttribute(home, start, "data-key") !== undefined;
   const section = firstChildSection(home, start.end, close);
   // One level of indentation as the home page has it under <main>.
   const sectionIndent = section ? lineIndent(section.start) : undefined;
   const step = sectionIndent && sectionIndent.length > indent.length && sectionIndent.startsWith(indent)
     ? sectionIndent.slice(indent.length)
     : "  ";
-  const open = section ? sectionStartTag(home, section, keyed) : `<section${keyed ? ' data-key="hero"' : ""}>`;
-  const h1 = `<h1${keyed ? ' data-key="title"' : ""}>${text}</h1>`;
+  const open = section ? sectionStartTag(home, section) : "<section>";
+  const h1 = `<h1>${text}</h1>`;
   const inner = [`${indent}${step}${open}`, `${indent}${step}${step}${h1}`, `${indent}${step}</section>`].join("\n");
   return `${home.slice(0, start.end)}\n${inner}\n${indent}${home.slice(close)}`;
 }

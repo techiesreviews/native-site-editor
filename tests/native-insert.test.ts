@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { componentLabel, insertBesideEdit, insertIntoEmptyEdit, instanceMarkup, isSectionTemplate, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
+import { componentLabel, insertBesideEdit, insertIntoEmptyEdit, instanceMarkup, isSectionTemplate, slotMarkup } from "../src/native-insert.ts";
 import { elementEnd, startTags } from "../src/native-source-location.ts";
 
 test("a component fits between sections only when its template is one section", () => {
@@ -14,13 +14,8 @@ test("a component fits between sections only when its template is one section", 
   assert.equal(isSectionTemplate(""), false);
 });
 
-test("labels and data keys for a new instance", () => {
+test("labels for a new instance", () => {
   assert.equal(componentLabel("feature-block"), "Feature block");
-  assert.equal(uniqueDataKey(`<p data-key="x"></p>`, "feature-block"), "feature-block");
-  assert.equal(
-    uniqueDataKey(`<feature-block data-key="feature-block"></feature-block><i data-key='feature-block-2'></i>`, "feature-block"),
-    "feature-block-3",
-  );
 });
 
 test("inserted markup gets its own line with the neighbour's indentation", () => {
@@ -74,16 +69,16 @@ test("a new instance carries its own copy of the template's text slots", () => {
     `<h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>`,
     `<p slot="lead" data-key="hero-lead">Who it is for.</p>`,
   ]);
-  // Copied keys already on the page get a number, like the instance's own.
+  // The instance gets no data-key of its own; the fallbacks are copied as they are.
   assert.equal(
-    instanceMarkup(`<site-hero data-key="site-hero"><h1 slot="title" data-key="hero-title">x</h1></site-hero>`, "site-hero", hero),
-    `<site-hero data-key="site-hero-2">\n  <h1 slot="title" class="big" data-key="hero-title-2">A <em>clear</em> headline</h1>\n  <p slot="lead" data-key="hero-lead">Who it is for.</p>\n</site-hero>`,
+    instanceMarkup(`<site-hero><h1 slot="title" data-key="hero-title">x</h1></site-hero>`, "site-hero", hero),
+    `<site-hero>\n  <h1 slot="title" class="big" data-key="hero-title">A <em>clear</em> headline</h1>\n  <p slot="lead" data-key="hero-lead">Who it is for.</p>\n</site-hero>`,
   );
   assert.equal(
     instanceMarkup("", "feature-section", template),
-    `<feature-section data-key="feature-section">\n  <span slot="title">What we <em>offer</em></span>\n  <a slot="action" href="#/about/">Get in touch</a>\n  <p slot="items">Add items.</p>\n</feature-section>`,
+    `<feature-section>\n  <span slot="title">What we <em>offer</em></span>\n  <a slot="action" href="#/about/">Get in touch</a>\n  <p slot="items">Add items.</p>\n</feature-section>`,
   );
-  assert.equal(instanceMarkup("", "site-hero", `<section><h2>Fixed</h2></section>`), `<site-hero data-key="site-hero"></site-hero>`);
+  assert.equal(instanceMarkup("", "site-hero", `<section><h2>Fixed</h2></section>`), `<site-hero></site-hero>`);
   // Every line of a multi-line instance takes the neighbour's indentation.
   const source = `<main>\n  <section>a</section>\n</main>`;
   const edit = insertBesideEdit(source, { start: 9, end: 29 }, "after", "<x-a>\n  <span slot=\"t\">T</span>\n</x-a>");
@@ -103,12 +98,12 @@ test("a CRLF page gets CRLF in inserted markup", () => {
   const out = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   assert.equal(
     out,
-    `<main>\r\n  <section>a</section>\r\n  <x-a data-key="x-a">\r\n    <span slot="t">T</span>\r\n    <span slot="u">U</span>\r\n  </x-a>\r\n  <section>b</section>\r\n</main>`,
+    `<main>\r\n  <section>a</section>\r\n  <x-a>\r\n    <span slot="t">T</span>\r\n    <span slot="u">U</span>\r\n  </x-a>\r\n  <section>b</section>\r\n</main>`,
   );
   // Markup written with bare newlines is normalised to the page's endings.
   const after = insertBesideEdit(source, second, "after", "<x-a>\n  <span slot=\"t\">T</span>\n</x-a>");
   assert.equal(after.text, `\r\n  <x-a>\r\n    <span slot="t">T</span>\r\n  </x-a>`);
-  assert.equal(instanceMarkup(source, "x-a", `<a><slot name="t">T</slot></a>`), `<x-a data-key="x-a">\r\n  <span slot="t">T</span>\r\n</x-a>`);
+  assert.equal(instanceMarkup(source, "x-a", `<a><slot name="t">T</slot></a>`), `<x-a>\r\n  <span slot="t">T</span>\r\n</x-a>`);
 });
 
 test("a <main> without sections gets a section at its end: after its last child, or inside it when empty", () => {
@@ -121,7 +116,7 @@ test("a <main> without sections gets a section at its end: after its last child,
   assert.equal(
     apply(heading, insertBesideEdit(heading, h1, "after", instanceMarkup(heading, "feature-block", `<section><slot name="t">T</slot></section>`))),
     `<site-header></site-header>\n<main class="page" data-key="main">\n  <h1 data-key="title">About</h1>\n` +
-      `  <feature-block data-key="feature-block">\n    <span slot="t">T</span>\n  </feature-block>\n</main>\n`,
+      `  <feature-block>\n    <span slot="t">T</span>\n  </feature-block>\n</main>\n`,
   );
   // An empty <main>, indented or not, with or without blank space inside.
   const main = (source: string) => {

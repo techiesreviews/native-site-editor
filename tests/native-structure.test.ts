@@ -31,25 +31,14 @@ test("remove takes the element's own lines", () => {
   assert.equal(apply(inline, [removeEdit(inline, b)]), `<p><i>y</i></p>`);
 });
 
-test("duplicate copies the element after itself with a fresh data-key", () => {
+test("duplicate copies the element after itself as it is", () => {
   const a = rangeAt(page, 1);
   assert.equal(
     apply(page, [duplicateEdit(page, a)]),
-    `<main>\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <section class="a" data-key="a-2">\n    <h2>A</h2>\n  </section>\n  <section class="b" data-key="b"><p>B</p></section>\n  <img src="x.png" alt="">\n</main>`,
+    `<main>\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <section class="b" data-key="b"><p>B</p></section>\n  <img src="x.png" alt="">\n</main>`,
   );
   const inline = `<p><b>x</b></p>`;
   assert.equal(apply(inline, [duplicateEdit(inline, rangeAt(inline, 1))]), `<p><b>x</b>\n<b>x</b></p>`);
-});
-
-test("duplicate gives every data-key inside the copy a fresh value too", () => {
-  const source = `<main>\n  <section data-key="s">\n    <h2 data-key="t">T</h2>\n    <p data-key="p">1</p>\n    <p data-key="p-2">2</p>\n    <p>none</p>\n  </section>\n</main>`;
-  const copy = apply(source, [duplicateEdit(source, rangeAt(source, 1))]);
-  assert.equal(
-    copy.slice(source.length - "\n</main>".length),
-    `\n  <section data-key="s-2">\n    <h2 data-key="t-2">T</h2>\n    <p data-key="p-3">1</p>\n    <p data-key="p-2-2">2</p>\n    <p>none</p>\n  </section>\n</main>`,
-  );
-  const keys = [...copy.matchAll(/data-key="([^"]*)"/g)].map((match) => match[1]);
-  assert.equal(new Set(keys).size, keys.length);
 });
 
 test("setAttributesEdit rewrites one start tag for several attributes", () => {

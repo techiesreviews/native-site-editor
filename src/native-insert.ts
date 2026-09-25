@@ -40,17 +40,6 @@ export function componentLabel(tag: string) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** `tag`, or `tag-2`, `tag-3`… when a `data-key` in `source` (or in `also`) already uses it. */
-export function uniqueDataKey(source: string, tag: string, also: Iterable<string> = []) {
-  const taken = new Set([...source.matchAll(/\bdata-key\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)]
-    .map((match) => match[1] ?? match[2] ?? match[3]));
-  for (const key of also) taken.add(key);
-  if (!taken.has(tag)) return tag;
-  let n = 2;
-  while (taken.has(`${tag}-${n}`)) n++;
-  return `${tag}-${n}`;
-}
-
 // Elements that hold a line of text, which a slot fallback can be.
 const TEXT_BLOCKS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "figcaption", "dt", "dd", "address"]);
 
@@ -121,16 +110,8 @@ export function insertBesideEdit(source: string, anchor: { start: number; end: n
 
 /** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots. */
 export function instanceMarkup(source: string, tag: string, template: string) {
-  const key = uniqueDataKey(source, tag);
-  const open = `<${tag} data-key="${key}">`;
-  // Keys copied from the template's fallbacks stay unique in the page.
-  const taken = [key];
-  const slots = slotMarkup(template).map((line) =>
-    line.replace(/\bdata-key="([^"]*)"/g, (_, name: string) => {
-      const unique = uniqueDataKey(source, name, taken);
-      taken.push(unique);
-      return `data-key="${unique}"`;
-    }));
+  const open = `<${tag}>`;
+  const slots = slotMarkup(template);
   return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
 }
 
