@@ -1,0 +1,61 @@
+/* New file, folder or page. */
+.create-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.create-dialog::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.45); }
+.create-dialog__form { display: flex; flex-direction: column; gap: 14px; padding: 18px; }
+.create-dialog__title { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.create-dialog__kinds { display: flex; gap: 6px; margin: 0; padding: 0; border: 0; }
+.create-dialog__kinds[hidden], .create-dialog__kind[hidden], .create-dialog__field[hidden] { display: none; }
+.create-dialog__kind { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; background: var(--surface-subtle); font-size: 12px; cursor: pointer; }
+.create-dialog__kind:has(input:checked) { background: var(--selected); color: var(--green); }
+.create-dialog__kind input { accent-color: var(--green); margin: 0; }
+.create-dialog__kind:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
+.create-dialog__field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.create-dialog__field input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.create-dialog__field input:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; }
+.create-dialog__result { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.create-dialog__result.is-error { color: var(--warning-fg); }
+.create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The "+" beside a folder, and at the top of the tree. */
+.file-row-line { display: flex; align-items: center; }
+.file-row-line > .file-row { flex: 1; min-width: 0; }
+.file-add {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+.file-row-line:hover > .file-add, .file-add:focus-visible, .files-heading .file-add { opacity: 1; }
+.file-add:hover { background: var(--hover); color: var(--green); }
+.file-add:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+@media (hover: none) { .file-add { opacity: 1; } }
+.file-new { flex-shrink: 0; padding: 1px 5px; border-radius: 4px; background: var(--success-bg); color: var(--success-fg); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
+.explorer-actions { display: flex; gap: 8px; }
+.files-heading__end { display: inline-flex; align-items: center; gap: 6px; }
+.explorer-actions[hidden] { display: none; }

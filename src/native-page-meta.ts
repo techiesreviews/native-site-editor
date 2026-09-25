@@ -11,9 +11,11 @@
 // emptied is removed, a route left with only `file` goes back to the bare
 // form, and a metadata-only entry left empty is removed. Indentation and the
 // order of the file's other keys are kept, so the change reads as a small
-// diff. This module has no DOM and no knowledge of the editor; the caller
-// applies the returned range edit however it stores the file, and passes
-// only routes the site has.
+// diff. A file created in the editor is registered the same way: a new
+// stylesheet appended to `styles`, a new component template added to
+// `components` (`registerNativeFile`). This module has no DOM and no
+// knowledge of the editor; the caller applies the returned range edit however
+// it stores the file, and passes only routes the site has.
 
 export type NativePageMetaField = "title" | "description";
 
@@ -77,6 +79,21 @@ class Scanner {
     if (!match) throw new Error("value expected");
     return i + match[0].length;
   }
+  /** The elements of the array whose `[` is at `i`. */
+  elements(i: number): { start: number; end: number }[] {
+    if (this.text[i] !== "[") throw new Error("array expected");
+    const out: { start: number; end: number }[] = [];
+    let j = this.skip(i + 1);
+    if (this.text[j] === "]") return out;
+    for (;;) {
+      const end = this.value(j);
+      out.push({ start: j, end });
+      j = this.skip(end);
+      if (this.text[j] === ",") { j = this.skip(j + 1); continue; }
+      if (this.text[j] === "]") return out;
+      throw new Error("] expected");
+    }
+  }
   /** The members of the object whose `{` is at `i`. */
   members(i: number): Member[] {
     if (this.text[i] !== "{") throw new Error("object expected");
@@ -128,25 +145,8 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
     return { ok: false, error: "native.json could not be read as JSON." };
   }
   const literal = JSON.stringify(value);
-  const newline = text.includes("\r\n") ? "\r\n" : "\n";
-  const done = (edit: NativePageMetaEdit | null): NativePageMetaResult => {
-    if (!edit) return { ok: true, text, edit: null };
-    const next = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
-    try {
-      JSON.parse(next);
-    } catch {
-      return { ok: false, error: "The change would leave native.json invalid." };
-    }
-    return { ok: true, text: next, edit };
-  };
-  // The separator before a new member placed after `after`: on its own line,
-  // indented like `after`, when the object it joins is written one member per
-  // line from `open` (its `{`).
-  const separator = (open: number, first: Member, after: Member) => {
-    if (!text.slice(open, first.start).includes("\n")) return ", ";
-    const lineStart = text.lastIndexOf("\n", after.start) + 1;
-    return `,${newline}${text.slice(lineStart, after.start).match(/^[ \t]*/)![0]}`;
-  };
+  const done = (edit: NativePageMetaEdit | null) => finish(text, edit);
+  const separator = (open: number, first: Member, after: Member) => separatorAfter(text, open, first.start, after.start);
   const entry = `${JSON.stringify(route)}: { ${JSON.stringify(field)}: ${literal} }`;
 
   // No entry: a derived route's first field adds a metadata-only one.
@@ -191,6 +191,84 @@ export function editNativePageMeta(text: string, route: string, field: NativePag
   // A metadata-only entry left with nothing goes, as the route needs no entry.
   if (!rest.length) return done(removal(routeMembers, routeMember) ?? { start: routes!.valueStart, end: routes!.valueEnd, text: "{}" });
   return done(removal(members, existing)!);
+}
+
+/** `text` after `edit`, when it is still valid JSON. */
+function finish(text: string, edit: NativePageMetaEdit | null): NativePageMetaResult {
+  if (!edit) return { ok: true, text, edit: null };
+  const next = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+  try {
+    JSON.parse(next);
+  } catch {
+    return { ok: false, error: "The change would leave native.json invalid." };
+  }
+  return { ok: true, text: next, edit };
+}
+
+// The separator before a new member or element placed after the one starting
+// at `after`: on its own line, indented like it, when the object or array it
+// joins is written one per line from `open` (its `{` or `[`), whose first
+// member starts at `first`.
+function separatorAfter(text: string, open: number, first: number, after: number) {
+  if (!text.slice(open, first).includes("\n")) return ", ";
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  const lineStart = text.lastIndexOf("\n", after) + 1;
+  return `,${newline}${text.slice(lineStart, after).match(/^[ \t]*/)![0]}`;
+}
+
+/** What a new file adds to the manifest. */
+export type NativeRegistration =
+  | { kind: "style"; path: string }
+  | { kind: "component"; tag: string; path: string };
+
+/**
+ * The edit that registers a new file: a stylesheet's path appended to
+ * `styles`, a component's tag added to `components` (either created when the
+ * manifest has none). Nothing to do when the manifest already says so; an
+ * error when the tag already names another file.
+ */
+export function registerNativeFile(text: string, entry: NativeRegistration): NativePageMetaResult {
+  const scanner = new Scanner(text);
+  const unreadable: NativePageMetaResult = { ok: false, error: "native.json could not be read as JSON." };
+  let open: number;
+  let top: Member[];
+  try {
+    open = scanner.skip(0);
+    top = scanner.members(open);
+  } catch {
+    return unreadable;
+  }
+  const key = entry.kind === "style" ? "styles" : "components";
+  const item = entry.kind === "style" ? JSON.stringify(entry.path) : `${JSON.stringify(entry.tag)}: ${JSON.stringify(entry.path)}`;
+  const member = top.find((member) => member.key === key);
+  if (!member) {
+    const fresh = entry.kind === "style" ? `"styles": [${item}]` : `"components": { ${item} }`;
+    if (!top.length) return finish(text, { start: open + 1, end: open + 1, text: ` ${fresh} ` });
+    const last = top[top.length - 1];
+    return finish(text, { start: last.valueEnd, end: last.valueEnd, text: `${separatorAfter(text, open, top[0].start, last.start)}${fresh}` });
+  }
+  try {
+    if (entry.kind === "style") {
+      if (text[member.valueStart] !== "[") return { ok: false, error: 'native.json "styles" is not an array.' };
+      const items = scanner.elements(member.valueStart);
+      if (items.some((value) => text.slice(value.start, value.end) === item)) return finish(text, null);
+      if (!items.length) return finish(text, { start: member.valueStart, end: member.valueEnd, text: `[${item}]` });
+      const last = items[items.length - 1];
+      return finish(text, { start: last.end, end: last.end, text: `${separatorAfter(text, member.valueStart, items[0].start, last.start)}${item}` });
+    }
+    if (text[member.valueStart] !== "{") return { ok: false, error: 'native.json "components" is not an object.' };
+    const members = scanner.members(member.valueStart);
+    const existing = members.find((member) => member.key === entry.tag);
+    if (existing) {
+      if (text.slice(existing.valueStart, existing.valueEnd) === JSON.stringify(entry.path)) return finish(text, null);
+      return { ok: false, error: `native.json already names the component <${entry.tag}> with another file.` };
+    }
+    if (!members.length) return finish(text, { start: member.valueStart, end: member.valueEnd, text: `{ ${item} }` });
+    const last = members[members.length - 1];
+    return finish(text, { start: last.valueEnd, end: last.valueEnd, text: `${separatorAfter(text, member.valueStart, members[0].start, last.start)}${item}` });
+  } catch {
+    return unreadable;
+  }
 }
 
 /** The edit that takes `member` out of its object; undefined when it is the only one. */

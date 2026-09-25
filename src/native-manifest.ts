@@ -74,6 +74,11 @@ const RESERVED_TAGS = new Set([
   "missing-glyph",
 ]);
 
+/** Whether `tag` can name a component: a valid custom-element name the spec does not reserve. */
+export function isNativeComponentTag(tag: string): boolean {
+  return TAG.test(tag) && !RESERVED_TAGS.has(tag);
+}
+
 function safePath(path: string): boolean {
   return (
     typeof path === "string" &&

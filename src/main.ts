@@ -19,7 +19,9 @@ import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
-import { editNativePageMeta } from "./native-page-meta";
+import { editNativePageMeta, registerNativeFile, type NativePageMetaResult, type NativeRegistration } from "./native-page-meta";
+import { nativeNewPagePath, nativePageTemplate, nativeRegistration, newFilePath, newFolderPath, normalizeRoute, routeHeading, type Checked } from "./native-create";
+import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
 import {
   parseNativeManifest,
   nativeManifestPaths,
@@ -37,7 +39,7 @@ import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./st
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports } from "../shared/css-imports";
-import { NATIVE_PAGES_DIR } from "../shared/native-routes";
+import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
 import type {
   EditorContext,
   Directory,
@@ -121,9 +123,9 @@ function mountWorkspace() {
     </header>
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
-      <div class="files-heading"><span>FILES</span><span id="revision">—</span></div>
+      <div id="explorer-actions" class="explorer-actions" hidden></div>
+      <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+</button></span></div>
       <nav id="files" aria-label="Repository files"></nav>
-      <nav id="draft-files" aria-label="Unpublished files"></nav>
     </div>
     <div class="workspace">
       <aside class="sidebar" aria-label="Page structure">
@@ -180,6 +182,20 @@ function mountWorkspace() {
     panel: element("explorer"),
     anchor: "--explorer",
   });
+  createDialog = createCreateDialog({
+    plan: (request) => {
+      const planned = planCreation(request);
+      return planned.ok ? { ok: true, summary: planned.value.summary } : planned;
+    },
+    create: createFromRequest,
+    routePrefix: (folder) => (folder.startsWith(NATIVE_PAGES_DIR) ? `/${folder.slice(NATIVE_PAGES_DIR.length)}/` : "/"),
+  });
+  element("explorer").append(createDialog.root);
+  const newAtRoot = element<HTMLButtonElement>("new-at-root");
+  newAtRoot.addEventListener("click", () => openCreate("", newAtRoot));
+  const newPage = button("New page", () => openCreate(NATIVE_PAGES_DIR.slice(0, -1), newPage, "page"), "button secondary");
+  newPage.setAttribute("aria-haspopup", "dialog");
+  element("explorer-actions").append(newPage);
   codeResize = mountCodeResize(element("main"), element("code-split"));
   codeWidthResize = mountCodeWidthResize(
     element("code-split"),
@@ -1478,30 +1494,55 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
   }
   if (!result.ok) { errorMessage(new Error(result.error)); return; }
   const label = field === "title" ? "Title" : "Description";
-  if (result.edit) {
-    try {
-      if (editorModule?.isMounted(NATIVE_MANIFEST_PATH)) {
-        editorModule.replaceActiveRange({ path: NATIVE_MANIFEST_PATH, ...result.edit, expected: source.slice(result.edit.start, result.edit.end) }, true);
-      } else {
-        const scope = draftScope();
-        if (!scope || !nativeManifestBase) throw new Error("The manifest cannot be changed right now.");
-        // A draft keeps the base it began from; only a fresh one starts at the snapshot's blob.
-        const existing = draftStore().get(scope, NATIVE_MANIFEST_PATH);
-        const base = existing ? { sha: existing.baseSha, text: existing.original } : nativeManifestBase;
-        draftStore().save({ ...scope, version: 1, path: NATIVE_MANIFEST_PATH, baseSha: base.sha, original: base.text, content: result.text, updatedAt: Date.now() });
-        const failure = draftStore().error;
-        if (failure) throw new Error(failure);
-        editorModule?.refreshDrafts();
-        commitHistory?.refresh();
-      }
-    } catch (error) {
-      errorMessage(error);
-      return;
-    }
+  try {
+    writeNativeManifest(source, result, true);
+  } catch (error) {
+    errorMessage(error);
+    return;
   }
   const parsed = parseNativeManifest(result.text, nativePageFiles());
   if (parsed.ok) manifest.pages = parsed.manifest.pages;
   element("status").textContent = value ? `${label} updated` : `${label} removed`;
+}
+
+// Writes a manifest edit made from its effective text `source`: into the
+// manifest's editor model when it is open (`group` joins the previous edit's
+// undo step), else as a browser draft of the manifest file, which the Save to
+// GitHub list and diff then show. Throws when it cannot be written.
+function writeNativeManifest(source: string, result: Extract<NativePageMetaResult, { ok: true }>, group = false) {
+  if (!result.edit) return;
+  if (editorModule?.isMounted(NATIVE_MANIFEST_PATH)) {
+    editorModule.replaceActiveRange({ path: NATIVE_MANIFEST_PATH, ...result.edit, expected: source.slice(result.edit.start, result.edit.end) }, group);
+    return;
+  }
+  const scope = draftScope();
+  if (!scope || !nativeManifestBase) throw new Error("The manifest cannot be changed right now.");
+  // A draft keeps the base it began from; only a fresh one starts at the snapshot's blob.
+  const existing = draftStore().get(scope, NATIVE_MANIFEST_PATH);
+  const base = existing ? { sha: existing.baseSha, text: existing.original } : nativeManifestBase;
+  draftStore().save({ ...scope, version: 1, path: NATIVE_MANIFEST_PATH, baseSha: base.sha, original: base.text, content: result.text, updatedAt: Date.now() });
+  const failure = draftStore().error;
+  if (failure) throw new Error(failure);
+  editorModule?.refreshDrafts();
+  commitHistory?.refresh();
+}
+
+// Routes are derived from the page files when the project loads. A page file
+// created or discarded here, or a manifest entry written for a new file,
+// re-reads the manifest's effective text with the page files now, so the new
+// page routes (and a new stylesheet or component renders) at once.
+function refreshNativeRoutes() {
+  if (!nativeManifest) return;
+  const source = nativeManifestConflict() ? nativeManifestBase?.text : nativeManifestSource();
+  if (source === undefined) return;
+  const parsed = parseNativeManifest(source, nativePageFiles());
+  if (!parsed.ok) { errorMessage(new Error(parsed.error)); return; }
+  nativeManifest = parsed.manifest;
+  nativePreview?.setWarnings(parsed.warnings);
+  nativePreview?.activate(parsed.manifest);
+  updateNativePreviewSources();
+  updateAgentContext();
+  pageStructure?.refreshMeta();
 }
 
 // Resolve every manifest file to its effective source: a mounted editor model
@@ -1511,14 +1552,7 @@ function nativeSources(manifest = nativeManifest): Record<string, string> {
   if (!manifest) return out;
   const paths = new Set([...nativeManifestPaths(manifest), ...nativeComponentStyles.values()]);
   const scope = draftScope();
-  const effective = (path: string) => {
-    let content = nativeBaseSources.get(path);
-    const draft = scope ? draftStore().get(scope, path) : undefined;
-    if (draft) content = draft.content;
-    const mounted = editorModule?.getMountedSource(path);
-    if (mounted !== undefined) content = mounted;
-    return content;
-  };
+  const effective = (path: string) => nativeEffectiveSource(path, scope);
   for (const path of paths) out[path] = effective(path) ?? "";
   // An imported file that is neither in the branch nor a draft stays out, so
   // the preview reports the import as missing.
@@ -1528,6 +1562,15 @@ function nativeSources(manifest = nativeManifest): Record<string, string> {
     if (content !== undefined) out[path] = content;
   }
   return out;
+}
+
+function nativeEffectiveSource(path: string, scope = draftScope()) {
+  let content = nativeBaseSources.get(path);
+  const draft = scope ? draftStore().get(scope, path) : undefined;
+  if (draft) content = draft.content;
+  const mounted = editorModule?.getMountedSource(path);
+  if (mounted !== undefined) content = mounted;
+  return content;
 }
 
 // A page selection: the preview follows the newly opened page's route. Opening
@@ -1682,6 +1725,7 @@ function adoptNativeBaseSources(
 
 function deactivateNative() {
   nativeManifest = undefined;
+  updateExplorerActions();
   nativeManifestBase = undefined;
   nativeBasePageFiles = [];
   nativeEngaged = false;
@@ -2175,13 +2219,273 @@ function showDirectory(directory: Directory, path = "") {
   content.replaceChildren(panel);
 }
 
+// Folders open in the file tree, by path, so drawing it again (a file
+// created or discarded, a save) keeps them open; and the folder listings
+// read, by tree sha.
+const openFolders = new Set<string>();
+const folderListings = new Map<string, TreeEntry[]>();
+// The new files the tree was last drawn with.
+let drawnNewFiles = "";
+
+// Paths of the new files (drafts with no base blob) in the current scope.
+function newDraftPaths(scope = draftScope()) {
+  return scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null).map((draft) => draft.path) : [];
+}
+
+// A tree row: an entry of the branch, or a new file drafted in this browser,
+// or a folder only such files are in; neither of the last two has a sha.
+type FileTreeEntry = TreeEntry & { isNew?: boolean };
+
+// The folder `parentPath`'s entries with the new files drafted under it: one
+// directly in it as a file, one deeper as the folder it is in.
+function withNewFiles(entries: TreeEntry[], parentPath: string, drafted: string[]): FileTreeEntry[] {
+  const prefix = parentPath ? `${parentPath}/` : "";
+  const names = new Set(entries.map((entry) => entry.path));
+  const added = new Map<string, FileTreeEntry>();
+  for (const path of drafted) {
+    if (!path.startsWith(prefix)) continue;
+    const [name, ...rest] = path.slice(prefix.length).split("/");
+    if (names.has(name) || added.has(name)) continue;
+    added.set(name, rest.length
+      ? { path: name, type: "tree", mode: "040000", sha: "", isNew: true }
+      : { path: name, type: "blob", mode: "100644", sha: "", isNew: true });
+  }
+  if (!added.size) return entries;
+  return [...entries, ...added.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+// Draws the file tree from the snapshot, new files in place.
+function renderFileTree() {
+  if (!snapshot) return;
+  const drafted = newDraftPaths();
+  drawnNewFiles = drafted.join("\n");
+  files.replaceChildren(renderEntries(snapshot.entries, "", generation, drafted));
+}
+
+// Draws the tree again when a new file was created, discarded or saved.
+function renderDraftFiles() {
+  if (snapshot && newDraftPaths().join("\n") !== drawnNewFiles) renderFileTree();
+}
+
+// "New page" at the top of the explorer, for a native site.
+function updateExplorerActions() {
+  const actions = document.getElementById("explorer-actions");
+  if (actions) actions.hidden = !nativeManifest;
+}
+
+let createDialog: ReturnType<typeof createCreateDialog> | undefined;
+
+// What a creation writes: new files (drafts with no base blob), the manifest
+// entry a new stylesheet, component or titled page adds, and what to show
+// after. Planned as the name is typed, so the dialog says the result live.
+interface Creation {
+  files: { path: string; content: string }[];
+  register?: NativeRegistration;
+  title?: { route: string; value: string };
+  /** The file to open after; else the folder to show in the tree. */
+  open?: string;
+  folder?: string;
+  summary: string;
+  done: string;
+}
+
+function planCreation({ kind, folder, name, title }: CreateRequest): Checked<Creation> {
+  const scope = draftScope();
+  if (!scope || !snapshot) return { ok: false, error: "Open a repository first." };
+  const drafted = newDraftPaths(scope);
+  const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`);
+  // A folder is there when the branch has it or a file is (drafted) in it.
+  const folderExists = (folder: string) =>
+    entryAt(folder)?.type === "tree" || nativeBasePageFiles.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
+  // What stands in the way of a new file at `path`, as far as is known here;
+  // without the whole-commit tree, GitHub is asked on confirm.
+  const problem = (path: string) => {
+    if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
+    if (folderExists(path)) return `There is a folder ${path} already.`;
+    if (entryAt(path) || nativeBasePageFiles.includes(path)) return `${path} already exists.`;
+    const parts = path.split("/");
+    for (let index = 1; index < parts.length; index++) {
+      const parent = parts.slice(0, index).join("/");
+      if (entryAt(parent)?.type === "blob" || draftStore().get(scope, parent)) return `${parent} is a file, so nothing can go in it.`;
+    }
+    return undefined;
+  };
+  const routes = nativeManifest?.routes ?? {};
+  const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
+  const manifestSource = () => (nativeManifestConflict() ? undefined : nativeManifestSource());
+  const home = () => nativeEffectiveSource(routes["/"], scope);
+  const fail = (error: string): Checked<Creation> => ({ ok: false, error });
+
+  if (kind === "file") {
+    const path = newFilePath(folder, name);
+    if (!path.ok) return path;
+    const blocked = problem(path.value);
+    if (blocked) return fail(blocked);
+    const route = nativeManifest ? nativePageRoute(path.value) : undefined;
+    if (route && routeTaken(route)) return fail(routeTaken(route)!);
+    const register = nativeManifest ? nativeRegistration(path.value) : undefined;
+    if (register) {
+      const source = manifestSource();
+      if (source === undefined) return fail(MANIFEST_CONFLICT);
+      const check = registerNativeFile(source, register);
+      if (!check.ok) return check;
+    }
+    const adds = register?.kind === "style" ? " and adds it to the site's styles in native.json"
+      : register?.kind === "component" ? ` and adds the component <${register.tag}> to native.json` : "";
+    const page = route ? `, the page at ${route}` : "";
+    return { ok: true, value: {
+      files: [{ path: path.value, content: "" }], register, open: path.value,
+      summary: `Creates the empty file ${path.value}${page}${adds}.`,
+      done: `Created ${path.value}${page}.`,
+    } };
+  }
+
+  if (kind === "folder") {
+    const path = newFolderPath(folder, name);
+    if (!path.ok) return path;
+    if (folderExists(path.value) || entryAt(path.value)) return fail(`${path.value} already exists.`);
+    // A folder under src/pages is a page's: it starts with its index page.
+    const route = nativeManifest ? nativePageRoute(`${path.value}/index.html`) : undefined;
+    if (route) {
+      const file = `${path.value}/index.html`;
+      const blocked = problem(file) ?? routeTaken(route);
+      if (blocked) return fail(blocked);
+      return { ok: true, value: {
+        files: [{ path: file, content: nativePageTemplate(home(), routeHeading(route)) }], open: file,
+        summary: `Creates the page ${file} at ${route}.`,
+        done: `Created the page ${file} at ${route}.`,
+      } };
+    }
+    const keep = `${path.value}/.gitkeep`;
+    const blocked = problem(keep);
+    if (blocked) return fail(blocked);
+    return { ok: true, value: {
+      files: [{ path: keep, content: "" }], folder: path.value,
+      summary: `Creates ${keep}: git stores no empty folders, so the folder holds this empty file until it has others.`,
+      done: `Created the folder ${path.value}.`,
+    } };
+  }
+
+  if (!nativeManifest) return fail("Pages need a native site, with .astro-editor/native.json.");
+  const route = normalizeRoute(name);
+  if (!route.ok) return route;
+  const taken = routeTaken(route.value);
+  if (taken) return fail(taken);
+  const path = nativeNewPagePath(route.value, folderExists);
+  if (!path.ok) return path;
+  const blocked = problem(path.value);
+  if (blocked) return fail(blocked);
+  if (title) {
+    const source = manifestSource();
+    if (source === undefined) return fail(MANIFEST_CONFLICT);
+    const check = editNativePageMeta(source, route.value, "title", title);
+    if (!check.ok) return check;
+  }
+  return { ok: true, value: {
+    files: [{ path: path.value, content: nativePageTemplate(home(), title || routeHeading(route.value)) }],
+    title: title ? { route: route.value, value: title } : undefined,
+    open: path.value,
+    summary: `Creates ${path.value} at ${route.value}${title ? ", with its title in native.json" : ""}.`,
+    done: `Created the page ${path.value} at ${route.value}.`,
+  } };
+}
+
+// Whether the branch has `path`, or a file where a folder of it would go,
+// asked of GitHub a folder at a time; only needed without the whole-commit
+// tree, which the plan already checked.
+async function branchPathProblem(path: string) {
+  if (!snapshot || snapshot.tree || !currentRepo) return undefined;
+  let entries = snapshot.entries;
+  const parts = path.split("/");
+  for (let index = 0; index < parts.length; index++) {
+    const entry = entries.find((entry) => entry.path === parts[index]);
+    if (!entry) return undefined;
+    const at = parts.slice(0, index + 1).join("/");
+    if (index === parts.length - 1) return `${at} already exists on GitHub.`;
+    if (entry.type !== "tree") return `${at} is a file, so nothing can go in it.`;
+    let listing = folderListings.get(entry.sha);
+    if (!listing) {
+      listing = (await api<Directory>("tree", { repo: currentRepo.full_name, sha: entry.sha })).entries;
+      folderListings.set(entry.sha, listing);
+    }
+    entries = listing;
+  }
+  return undefined;
+}
+
+// Carries out a creation: the new files as drafts, the manifest edits, the
+// routes derived again, the tree drawn with the new files, and the new file
+// opened (a new folder shown). Resolves to an error message when it could not.
+async function createFromRequest(request: CreateRequest): Promise<string | undefined> {
+  const planned = planCreation(request);
+  if (!planned.ok) return planned.error;
+  const creation = planned.value;
+  const scope = draftScope()!;
+  const epoch = generation;
+  try {
+    for (const file of creation.files) {
+      const problem = await branchPathProblem(file.path);
+      if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+      if (problem) return problem;
+    }
+  } catch (error) {
+    return error instanceof Error ? error.message : "GitHub could not be asked whether the path is free.";
+  }
+  for (const file of creation.files)
+    draftStore().save({ ...scope, version: 1, path: file.path, baseSha: null, original: "", content: file.content, updatedAt: Date.now() });
+  const failure = draftStore().error;
+  if (failure) return failure;
+  // Checked when planned; a failure here leaves the file created and says why.
+  try {
+    for (const edit of [
+      creation.register && ((source: string) => registerNativeFile(source, creation.register!)),
+      creation.title && ((source: string) => editNativePageMeta(source, creation.title!.route, "title", creation.title!.value)),
+    ]) {
+      if (!edit) continue;
+      const source = nativeManifestSource();
+      if (source === undefined) throw new Error("The manifest cannot be changed right now.");
+      const result = edit(source);
+      if (!result.ok) throw new Error(result.error);
+      writeNativeManifest(source, result);
+    }
+  } catch (error) {
+    errorMessage(error);
+  }
+  editorModule?.refreshDrafts();
+  commitHistory?.refresh();
+  if (creation.files.some((file) => nativePageRoute(file.path)) || creation.register || creation.title) refreshNativeRoutes();
+  updateAgentContext();
+  if (creation.folder) {
+    // The new folder shows open in the tree, with the dialog's focus returned to it.
+    const parts = creation.folder.split("/");
+    parts.forEach((_, index) => openFolders.add(parts.slice(0, index + 1).join("/")));
+    renderFileTree();
+    const row = [...files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
+    if (row) createDialog?.returnFocusTo(row);
+  } else renderFileTree();
+  const opened = creation.open ? draftStore().get(scope, creation.open) : undefined;
+  if (opened) await openNewDraft(opened);
+  // Written as the user's own announcement, so a load finishing later keeps it.
+  element("status").textContent = creation.done;
+  return undefined;
+}
+
+// The "+" on a folder: a new file or folder in it, or a page under src/pages.
+function openCreate(folder: string, opener: HTMLElement, only?: CreateKind) {
+  if (!snapshot) return;
+  const pages = Boolean(nativeManifest) && `${folder}/`.startsWith(NATIVE_PAGES_DIR);
+  const kinds: CreateKind[] = only ? [only] : pages ? ["file", "folder", "page"] : ["file", "folder"];
+  createDialog?.open({ in: folder, kinds, first: pages ? "page" : "file", opener });
+}
+
 function renderEntries(
   entries: TreeEntry[],
   parentPath: string,
   epoch: number,
+  drafted = newDraftPaths(),
 ): HTMLUListElement {
   const list = node("ul", "file-list");
-  for (const entry of entries) {
+  for (const entry of withNewFiles(entries, parentPath, drafted)) {
     const item = node("li");
     const path = parentPath ? `${parentPath}/${entry.path}` : entry.path;
     const directory = entry.type === "tree";
@@ -2199,9 +2503,33 @@ function renderEntries(
     );
     icon.setAttribute("aria-hidden", "true");
     row.append(icon, node("span", "filename", entry.path));
-    row.title = path;
+    // A new file, or a folder only new files are in, is not on GitHub yet.
+    if (entry.isNew) row.append(node("span", "file-new", "New"));
+    row.title = entry.isNew ? `${path} (new, not saved to GitHub yet)` : path;
+    row.dataset.path = path;
+    if (!directory && path === currentPath) row.classList.add("selected");
     if (directory) row.setAttribute("aria-expanded", "false");
     let childList: HTMLUListElement | undefined;
+    const show = (children: TreeEntry[]) => {
+      childList = renderEntries(children, path, epoch, drafted);
+      if (!childList.children.length)
+        childList.append(node("li", "muted empty-folder", "Empty folder"));
+      item.append(childList);
+      icon.textContent = "▾";
+      row.setAttribute("aria-expanded", "true");
+      openFolders.add(path);
+    };
+    // A folder's listing: none for a folder only new files are in, else read once.
+    const cached = () => (entry.sha ? folderListings.get(entry.sha) : []);
+    const load = async () => {
+      if (!currentRepo) return undefined;
+      const result = await api<Directory>("tree", {
+        repo: currentRepo.full_name,
+        sha: entry.sha,
+      });
+      folderListings.set(entry.sha, result.entries);
+      return result.entries;
+    };
     row.addEventListener("click", async () => {
       if (epoch !== generation || !currentRepo) return;
       clearError();
@@ -2212,22 +2540,22 @@ function renderEntries(
           childList.hidden = !childList.hidden;
           icon.textContent = childList.hidden ? "▸" : "▾";
           row.setAttribute("aria-expanded", String(!childList.hidden));
+          if (childList.hidden) openFolders.delete(path);
+          else openFolders.add(path);
+          return;
+        }
+        const known = cached();
+        if (known) {
+          show(known);
+          status(`Opened ${path}.`);
           return;
         }
         row.disabled = true;
         status(`Loading ${path}…`);
         try {
-          const result = await api<Directory>("tree", {
-            repo: currentRepo.full_name,
-            sha: entry.sha,
-          });
-          if (epoch !== generation) return;
-          childList = renderEntries(result.entries, path, epoch);
-          if (!result.entries.length)
-            childList.append(node("li", "muted empty-folder", "Empty folder"));
-          item.append(childList);
-          icon.textContent = "▾";
-          row.setAttribute("aria-expanded", "true");
+          const children = await load();
+          if (epoch !== generation || !children) return;
+          show(children);
           status(`Opened ${path}.`);
         } catch (error) {
           if (epoch === generation) errorMessage(error);
@@ -2239,11 +2567,35 @@ function renderEntries(
           .querySelectorAll(".selected")
           .forEach((el) => el.classList.remove("selected"));
         row.classList.add("selected");
-        await openEntry(entry, path, epoch);
+        const scope = draftScope();
+        const draft = entry.isNew && scope ? draftStore().get(scope, path) : undefined;
+        if (draft) await openNewDraft(draft);
+        else if (!entry.isNew) await openEntry(entry, path, epoch);
       }
     });
-    item.append(row);
+    const line = node("div", "file-row-line");
+    line.append(row);
+    if (directory) {
+      const add = node("button", "file-add", "+");
+      add.type = "button";
+      add.setAttribute("aria-label", `New in ${path}`);
+      add.title = `New file or folder${nativeManifest && `${path}/`.startsWith(NATIVE_PAGES_DIR) ? ", or page," : ""} in ${path}`;
+      add.setAttribute("aria-haspopup", "dialog");
+      add.addEventListener("click", () => openCreate(path, add));
+      line.append(add);
+    }
+    item.append(line);
     list.append(item);
+    // A folder open before the tree was drawn again opens again.
+    if (directory && openFolders.has(path)) {
+      const known = cached();
+      if (known) show(known);
+      else
+        void load().then(
+          (children) => { if (children && epoch === generation && !childList && row.isConnected) show(children); },
+          () => openFolders.delete(path),
+        );
+    }
   }
   return list;
 }
@@ -2350,6 +2702,8 @@ async function mountSource(
       void refreshPublishedSnapshot(scope.repo, scope.branch);
     },
     onDiscardNew: () => {
+      // A discarded page no longer routes.
+      if (nativePageRoute(path)) refreshNativeRoutes();
       if (snapshot && info.user) {
         showDirectory(snapshot);
         rememberWorkspace(info.user.login, {
@@ -2464,27 +2818,6 @@ function nativeContextPages(manifest: NativeManifest): NonNullable<EditorContext
     return title ? { route, file, title } : { route, file };
   });
 }
-function renderDraftFiles() {
-  const target = document.getElementById("draft-files");
-  if (!target) return;
-  target.replaceChildren();
-  if (!info.user || !currentRepo || !snapshot) return;
-  const scope = {
-    account: info.user.login,
-    repoId: currentRepo.id,
-    repo: currentRepo.full_name,
-    branch: snapshot.branch,
-  };
-  const created = draftStore()
-    .list(scope)
-    .filter((draft) => draft.baseSha === null);
-  if (!created.length) return;
-  target.append(node("p", "files-heading", "NEW DRAFT FILES"));
-  for (const draft of created)
-    target.append(
-      button(draft.path, () => void openNewDraft(draft), "file-row"),
-    );
-}
 async function openNewDraft(draft: SavedDraft) {
   if (
     !snapshot ||
@@ -2537,6 +2870,7 @@ async function applyAgentCommand(command: AgentCommand) {
     updatedAt: Date.now(),
   };
   draftStore().save(draft); // The editor reports persistence failures and retains a downloadable in-memory draft.
+  if (nativePageRoute(draft.path)) refreshNativeRoutes();
   renderDraftFiles();
   await openNewDraft(draft);
 }
@@ -2611,10 +2945,9 @@ async function refreshPublishedSnapshot(repo: string, branch: string) {
       return;
     snapshot = result;
     updateAgentContext();
-    renderDraftFiles();
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
-    files.replaceChildren(renderEntries(result.entries, "", epoch));
+    renderFileTree();
     status("Selected files saved to GitHub. Deployment status is not tracked by this editor.");
   } catch (error) {
     if (epoch === generation) errorMessage(error);
@@ -2633,6 +2966,8 @@ async function loadSnapshot(
   fileGeneration++;
   clearError();
   snapshot = undefined;
+  openFolders.clear();
+  folderListings.clear();
   deactivateNative();
   setCurrentPage();
   const repo = currentRepo;
@@ -2653,7 +2988,6 @@ async function loadSnapshot(
     if (epoch !== generation) return;
     snapshot = result;
     updateAgentContext();
-    renderDraftFiles();
     updatePreview();
     // Start reading the file to reopen now, alongside the native manifest.
     const reopenEntry = reopen ? entryAt(reopen) : undefined;
@@ -2666,7 +3000,8 @@ async function loadSnapshot(
     const open = reopen ?? (isNative ? nativeManifest?.routes["/"] : undefined);
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
-    files.replaceChildren(renderEntries(result.entries, "", epoch));
+    renderFileTree();
+    updateExplorerActions();
     showDirectory(result);
     if (info.user)
       rememberWorkspace(info.user.login, {
