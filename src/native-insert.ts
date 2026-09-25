@@ -1,5 +1,6 @@
-// Inserting components between page sections, and atoms (a heading, text,
-// a button, an image) or non-section components inside a section.
+// Inserting a plain section or a section component between page sections,
+// and atoms (a heading, text, a button, an image) or non-section components
+// inside a section.
 //
 // A component fits between sections when its template is a single <section>
 // element: a feature or testimonial block fits, a button or card does not.
@@ -135,6 +136,39 @@ export function atomMarkup(source: string, kind: AtomKind, options: { level?: nu
     case "button": return `<a class="button" href="#/" data-key="${key}">${atomText.button}</a>`;
     case "image": return `<img src="${options.image ?? ""}" alt="" data-key="${key}">`;
   }
+}
+
+/** The placeholder text a new plain section's heading and paragraph start with. */
+export const sectionText = { title: "Something worth sharing", text: "Start writing here." };
+
+/**
+ * The indentation unit used under the element at `range` (its first
+ * indented child line beyond the element's own indentation: a tab, or the
+ * spaces found there), else two spaces.
+ */
+export function indentUnit(source: string, range: { start: number; end: number } | undefined) {
+  if (!range) return "  ";
+  const lineStart = source.lastIndexOf("\n", range.start - 1) + 1;
+  const lead = source.slice(lineStart, range.start);
+  const own = /^[ \t]*$/.test(lead) ? lead : "";
+  const child = /\n([ \t]+)\S/.exec(source.slice(range.start, range.end));
+  if (!child || !child[1].startsWith(own) || child[1].length <= own.length) return "  ";
+  return child[1].startsWith("\t", own.length) ? "\t" : child[1].slice(own.length);
+}
+
+/**
+ * The markup for a new plain section in `source`: an H2 and a paragraph
+ * with their placeholders, the inner lines indented by `indent`. The keys
+ * share the section's own key as their base.
+ */
+export function sectionMarkup(source: string, indent = "  ") {
+  const key = uniqueDataKey(source, "section");
+  return [
+    `<section data-key="${key}">`,
+    `${indent}<h2 data-key="${uniqueDataKey(source, `${key}-title`)}">${sectionText.title}</h2>`,
+    `${indent}<p data-key="${uniqueDataKey(source, `${key}-text`)}">${sectionText.text}</p>`,
+    `</section>`,
+  ].join("\n");
 }
 
 /**

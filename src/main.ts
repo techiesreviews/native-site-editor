@@ -29,7 +29,7 @@ import {
 import { locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
-import { ATOMS, atomMarkup, atomText, componentLabel, insertMarkupEdit, isSectionTemplate, nativeInsertEdit, newHeadingLevel, type AtomKind } from "./native-insert";
+import { ATOMS, atomMarkup, atomText, componentLabel, indentUnit, insertMarkupEdit, isSectionTemplate, nativeInsertEdit, newHeadingLevel, sectionMarkup, sectionText, type AtomKind } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, moveEdit, nativeKindLabel, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits } from "./native-structure";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
@@ -1048,10 +1048,12 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   }
 }
 
-// What fits at an insert point. Between page sections: components whose
-// template is a single <section>, read from their current source so a draft
-// counts. Inside a section: the atoms (heading, text, button, image) and
-// the other components, since those fit inside a section.
+// What fits at an insert point. Between page sections: a plain section,
+// then components whose template is a single <section>, read from their
+// current source so a draft counts. Inside a section: the atoms (heading,
+// text, button, image) and the other components, since those fit inside a
+// section.
+const SECTION_CHOICE: InsertChoice = { tag: "section", label: "Section", description: "A new section with a heading and a paragraph" };
 function nativeSectionChoices(point: InsertPoint): InsertChoice[] {
   if (!nativeManifest) return [];
   const sources = nativeSources();
@@ -1060,7 +1062,7 @@ function nativeSectionChoices(point: InsertPoint): InsertChoice[] {
     .filter(([, path]) => isSectionTemplate(sources[path] ?? "") !== inSection)
     .map(([tag]) => ({ tag, label: componentLabel(tag) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const atoms = inSection ? ATOMS.map((atom) => ({ tag: atom.kind, label: atom.label, description: atom.description })) : [];
+  const atoms = inSection ? ATOMS.map((atom) => ({ tag: atom.kind, label: atom.label, description: atom.description })) : [SECTION_CHOICE];
   return [...atoms, ...components];
 }
 
@@ -1073,10 +1075,13 @@ function nativePlaceholderImage() {
   return images.find((image) => image === "src/images/placeholder.svg") ?? images[0] ?? "";
 }
 
-// Puts a new atom or component instance into the page at `point`, as one
-// undo step, and selects it; a new heading or text starts being edited with
-// its placeholder selected, so typing replaces it. The page file opens first
-// when another file is in the editor, since edits go through the mounted editor.
+// Puts a new atom, plain section or component instance into the page at
+// `point`, as one undo step, and selects it; a new heading or text starts
+// being edited with its placeholder selected, so typing replaces it. For a
+// new section that is its heading (the runtime edits the selected element,
+// so the heading is what gets selected, not the section). The page file
+// opens first when another file is in the editor, since edits go through
+// the mounted editor.
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
   if (!nativePreview || !nativeManifest || !Object.values(nativeManifest.routes).includes(path)) return;
@@ -1090,10 +1095,20 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   if (!editor || !preview) return;
   const source = nativeSources()[path] ?? "";
   let edit: { start: number; end: number; text: string } | undefined;
-  if (isAtom(choice.tag)) {
+  let select = [...point.parent, point.index];
+  let text: { start: number; end: number; edit: true } | undefined;
+  if (choice.tag === "section" && point.kind === "page") {
+    // Indented like the children of the neighbouring section (the next one, else the previous).
+    const neighbour = locateNativeElementRange(source, select) ??
+      (point.index > 0 ? locateNativeElementRange(source, [...point.parent, point.index - 1]) : undefined);
+    edit = insertMarkupEdit(source, point.parent, point.index, sectionMarkup(source, indentUnit(source, neighbour)));
+    select = [...select, 0];
+    text = { start: 0, end: sectionText.title.length, edit: true };
+  } else if (isAtom(choice.tag)) {
     const section = point.kind === "section" ? locateNativeElementRange(source, point.parent) : undefined;
     const markup = atomMarkup(source, choice.tag, { level: newHeadingLevel(source, section), image: nativePlaceholderImage() });
     edit = insertMarkupEdit(source, point.parent, point.index, markup);
+    if (choice.tag === "heading" || choice.tag === "text") text = { start: 0, end: atomText[choice.tag].length, edit: true };
   } else {
     const template = nativeSources()[nativeManifest.components[choice.tag] ?? ""] ?? "";
     edit = nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
@@ -1102,8 +1117,8 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
   }
-  preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
-  if (choice.tag === "heading" || choice.tag === "text") preview.selectTextAfterUpdate({ start: 0, end: atomText[choice.tag].length, edit: true });
+  preview.selectAfterUpdate({ path, node: select });
+  if (text) preview.selectTextAfterUpdate(text);
   try {
     editor.replaceActiveRanges([{ path, ...edit, expected: "" }]);
     element("status").textContent = `${choice.label} added`;

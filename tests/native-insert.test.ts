@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { atomMarkup, componentLabel, insertBesideEdit, instanceMarkup, isSectionTemplate, newHeadingLevel, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
+import { atomMarkup, componentLabel, indentUnit, insertBesideEdit, instanceMarkup, isSectionTemplate, newHeadingLevel, sectionMarkup, slotMarkup, uniqueDataKey } from "../src/native-insert.ts";
 
 test("a component fits between sections only when its template is one section", () => {
   assert.equal(isSectionTemplate(`<section class="feature"><h2>Hi</h2><section>x</section></section>\n`), true);
@@ -85,5 +85,33 @@ test("atoms: placeholder markup, heading level and image path", () => {
   assert.equal(
     page.slice(0, edit.start) + edit.text + page.slice(edit.end),
     `<main>\n  <section>\n    <h1>T</h1>\n    <p data-key="text">Start writing here.</p>\n    <p>a</p>\n  </section>\n  <section>\n    <p>b</p>\n  </section>\n</main>`,
+  );
+});
+
+test("a plain section: heading and paragraph placeholders, unique keys, the neighbour's indentation unit", () => {
+  assert.equal(
+    sectionMarkup(""),
+    `<section data-key="section">\n  <h2 data-key="section-title">Something worth sharing</h2>\n  <p data-key="section-text">Start writing here.</p>\n</section>`,
+  );
+  // The inner keys share the section's own key as their base, and each is unique on its own.
+  assert.equal(
+    sectionMarkup(`<section data-key="section"></section><p data-key="section-2-text"></p>`, "\t"),
+    `<section data-key="section-2">\n\t<h2 data-key="section-2-title">Something worth sharing</h2>\n\t<p data-key="section-2-text-2">Start writing here.</p>\n</section>`,
+  );
+  const spaces = `<main>\n  <section>\n    <h1>T</h1>\n  </section>\n</main>`;
+  const section = { start: spaces.indexOf("<section>"), end: spaces.indexOf("</section>") + 10 };
+  assert.equal(indentUnit(spaces, section), "  ");
+  const four = `<main>\n    <section>\n        <h1>T</h1>\n    </section>\n</main>`;
+  assert.equal(indentUnit(four, { start: four.indexOf("<section>"), end: four.indexOf("</section>") + 10 }), "    ");
+  const tabs = `<main>\n\t<section>\n\t\t<h1>T</h1>\n\t</section>\n</main>`;
+  assert.equal(indentUnit(tabs, { start: tabs.indexOf("<section>"), end: tabs.indexOf("</section>") + 10 }), "\t");
+  // No indented child line, an inline section, or no neighbour: two spaces.
+  assert.equal(indentUnit(`<main>\n  <section><h1>T</h1></section>\n</main>`, { start: 9, end: 36 }), "  ");
+  assert.equal(indentUnit(spaces, undefined), "  ");
+  // Every line of the section takes the neighbour's indentation, as one edit.
+  const edit = insertBesideEdit(spaces, section, "before", sectionMarkup(spaces, indentUnit(spaces, section)));
+  assert.equal(
+    spaces.slice(0, edit.start) + edit.text + spaces.slice(edit.end),
+    `<main>\n  <section data-key="section">\n    <h2 data-key="section-title">Something worth sharing</h2>\n    <p data-key="section-text">Start writing here.</p>\n  </section>\n  <section>\n    <h1>T</h1>\n  </section>\n</main>`,
   );
 });

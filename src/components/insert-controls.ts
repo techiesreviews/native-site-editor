@@ -203,14 +203,8 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     const position = node("p", "insert-picker__position", at.before ? `Goes before “${at.before}”` : "Goes at the end");
     const scope = node("p", "insert-picker__scope", inSection
       ? "Headings, text, buttons, images and components that fit inside a section."
-      : "Components whose template is a single section.");
+      : "A new section, or components whose template is a single section.");
     const children: HTMLElement[] = [title, position];
-    if (!all.length) {
-      children.push(node("p", "insert-picker__empty",
-        "No components fit here yet. A component fits between sections when its template is one <section> element."));
-      picker.replaceChildren(...children);
-      return;
-    }
     const search = document.createElement("input");
     search.type = "search";
     search.className = "insert-picker__search";
@@ -236,7 +230,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       empty.append(
         node("p", "", inSection
           ? `Nothing matches “${query.trim()}”. Only what fits inside a section is listed.`
-          : `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
+          : `Nothing matches “${query.trim()}”. Only a section and components that fit between sections are listed.`),
         button("Clear search", () => {
           query = "";
           renderPicker(true);
