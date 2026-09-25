@@ -41,6 +41,8 @@ export function createPagesTree(options: {
   announce: (text: string) => void;
   /** Sets a page's title in the manifest ("" removes it); resolves to an error message, or nothing when done. */
   retitle?: (file: string, title: string) => string | undefined;
+  /** Why titles cannot be edited here now, when they cannot: Rename is then disabled with that hint. */
+  retitleBlocked?: () => string | undefined;
   /** Makes a copy of a page. */
   duplicate?: (file: string) => void;
   /** Deletes a page, or a collection with its pages (the caller confirms). */
@@ -269,17 +271,18 @@ export function createPagesTree(options: {
     return [
       { label: "Add page", run: () => startEditing("page", collection.folder, collectionKey(collection.folder)) },
       { label: "Add sub-collection", run: () => startEditing("collection", collection.folder, collectionKey(collection.folder)) },
-      ...(collection.overview && options.retitle ? [{ label: "Rename", shortcut: "F2", run: () => startRename(collectionKey(collection.folder)) }] : []),
+      ...(collection.overview && options.retitle ? [renameItem(collectionKey(collection.folder))] : []),
       ...(options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
     ];
   }
   function pageItems(page: NativePageNode): MenuItem[] {
     return [
-      ...(options.retitle ? [{ label: "Rename", shortcut: "F2", run: () => startRename(pageKey(page.file)) }] : []),
+      ...(options.retitle ? [renameItem(pageKey(page.file))] : []),
       ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file) }] : []),
       ...(options.remove && page.special !== "home" ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(pageTarget(page)) }] : []),
     ];
   }
+  const renameItem = (key: string): MenuItem => ({ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) });
   const pageTarget = (page: NativePageNode): NativePagesTarget => ({ kind: "page", file: page.file, label: page.label, home: page.special === "home" });
   function collectionTarget(collection: NativeCollectionNode): NativePagesTarget {
     let pages = collection.overview ? 1 : 0;
@@ -300,6 +303,8 @@ export function createPagesTree(options: {
     const target = item ? nodeOf(item) : undefined;
     const file = target?.kind === "page" ? target.file : target?.kind === "collection" ? target.overview?.file : undefined;
     if (!item || !file || !options.retitle || !target || target.kind === "add") return;
+    const blocked = options.retitleBlocked?.();
+    if (blocked) { options.announce(blocked); return; }
     cancelRename(false);
     const label = item.querySelector<HTMLElement>(":scope > .pages-row > .pages-label");
     if (!label) return;

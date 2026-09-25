@@ -4,10 +4,12 @@
 // pages under `src/pages/` (routed by where they are, see
 // shared/native-routes.ts), custom-element templates under `src/components/`
 // (either flat `<name>.html` or one folder per component, `<name>/<name>.html`),
-// and `src/styles/*.css` — with no build step. The manifest is the explicit,
-// versioned contract that names the components and stylesheets and adds page
-// metadata; it is validated defensively because it comes from repository
-// contents that the editor does not control.
+// and `src/styles/*.css` — with no build step. The manifest is optional: the
+// explicit, versioned contract that names components and stylesheets and adds
+// page metadata where the conventions do not (shared/native-project.ts
+// completes it by convention, and stands in for it when there is none); it is
+// validated defensively because it comes from repository contents that the
+// editor does not control.
 import { deriveNativeRoutes, nativePageRoute } from "../shared/native-routes";
 
 /** Per-route page metadata, used by the static exporter for the document head. */
@@ -48,6 +50,13 @@ export interface NativeManifest {
   components: Record<string, string>;
   /** Shared stylesheet source files under `src/styles/`. */
   styles: string[];
+  /**
+   * What `.astro-editor/native.json` gave itself, set by
+   * `resolveNativeProject` (shared/native-project.ts), which completes the
+   * manifest by convention: whether there is a manifest at all, and whether
+   * it lists `styles` (else they are found by convention).
+   */
+  explicit?: { manifest: boolean; styles: boolean };
 }
 
 export type NativeManifestResult =

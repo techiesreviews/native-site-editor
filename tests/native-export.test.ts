@@ -6,19 +6,19 @@ import { contentHash, exportNativeSite, imageDimensions, pageMeta, type FileCont
 
 const fixture = "fixtures/native-starter";
 
-function fixtureFiles() {
+function fixtureFiles(root = fixture) {
   const files: Record<string, FileContent> = {};
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const full = join(dir, name);
       if (statSync(full).isDirectory()) walk(full);
       else {
-        const path = relative(fixture, full);
+        const path = relative(root, full);
         files[path] = /\.(html|css|json)$/.test(name) ? readFileSync(full, "utf8") : new Uint8Array(readFileSync(full));
       }
     }
   };
-  walk(fixture);
+  walk(root);
   return files;
 }
 
@@ -437,4 +437,53 @@ test("shared stylesheets are joined into one site stylesheet, linked once per do
   assert.ok(!log.some((line) => line.startsWith("warning:")), "a layered import needs no warning");
   files["src/styles/extra.css"] = `@import "parts/more.css";\n`;
   assert.ok(exportNativeSite({ files }).log.some((line) => line.startsWith("warning: src/styles/extra.css is not first")));
+});
+
+test("a site with no manifest exports exactly as its manifest would have it", () => {
+  const files = fixtureFiles();
+  files[".astro-editor/site.json"] = site;
+  const withManifest = exportNativeSite({ files });
+  // The starter's manifest names what the conventions find: every page by its
+  // place, every src/components/<tag>/<tag>.html, and src/styles/site.css.
+  delete files[".astro-editor/native.json"];
+  const without = exportNativeSite({ files });
+  assert.deepEqual(without.files, withManifest.files);
+  assert.deepEqual(without.log, withManifest.log);
+
+  // src/site.json stands in for .astro-editor/site.json; the latter wins when both exist.
+  delete files[".astro-editor/site.json"];
+  files["src/site.json"] = site;
+  assert.deepEqual(exportNativeSite({ files }).files, withManifest.files);
+  files[".astro-editor/site.json"] = JSON.stringify({ name: "Elsewhere" });
+  assert.ok(text(exportNativeSite({ files }).files["index.html"]).includes(" · Elsewhere</title>"));
+  files[".astro-editor/site.json"] = "{";
+  assert.throws(() => exportNativeSite({ files }), /\.astro-editor\/site\.json is not valid JSON/);
+  delete files[".astro-editor/site.json"];
+  files["src/site.json"] = "[]";
+  assert.throws(() => exportNativeSite({ files }), /src\/site\.json must be a JSON object/);
+});
+
+test("exports the manifest-less conventions fixture: comment titles, convention components and site.css with its imports", () => {
+  const files = fixtureFiles("fixtures/native-conventions");
+  assert.equal(files[".astro-editor/native.json"], undefined);
+  const { files: out, log } = exportNativeSite({ files });
+  assert.deepEqual(Object.keys(out).filter((path) => path.endsWith(".html")).sort(), ["index.html", "notes/first-note/index.html"]);
+  assert.deepEqual(
+    Object.keys(out).filter((path) => path.startsWith("assets/")).map((path) => path.replace(/\.[0-9a-f]{10}\.css$/, ".css")).sort(),
+    ["assets/base.css", "assets/layout.css", "assets/promo-card.css", "assets/site-header.css", "assets/site.css"],
+  );
+  assert.ok(!log.some((line) => line.startsWith("warning:")), log.join("\n"));
+  const home = text(out["index.html"]);
+  assert.ok(home.includes("<title>Built by convention · Conventions</title>"));
+  assert.ok(home.includes('<meta name="description" content="A site with no native.json: its pages, components and styles are found where they are.">'));
+  assert.ok(home.includes('<html lang="en-GB">'));
+  assert.ok(!home.includes("title: Built by convention"), "the page comment is not published");
+  assert.ok(/<site-header><template shadowrootmode="open">/.test(home));
+  assert.ok(/<promo-card><template shadowrootmode="open">/.test(home));
+  assert.ok(text(out["notes/first-note/index.html"]).includes("<title>The first note · Conventions</title>"));
+  assert.ok(text(out["sitemap.xml"]).includes("https://conventions.example/notes/first-note/"));
+  // The shared stylesheet is site.css alone; the files it imports are assets it points at.
+  const siteCss = text(Object.entries(out).find(([path]) => /^assets\/site\.[0-9a-f]{10}\.css$/.test(path))![1]);
+  assert.ok(!siteCss.includes("src/styles/base.css"));
+  assert.match(siteCss, /@import url\("\/assets\/base\.[0-9a-f]{10}\.css"\) layer\(base\);/);
 });

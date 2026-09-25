@@ -45,6 +45,11 @@
 .page-structure__field input:disabled {
   opacity: 0.6;
 }
+/* Read-only: a site with no manifest shows its page comment's values. */
+.page-structure__field input[readonly] {
+  background: transparent;
+  border-style: dashed;
+}
 .page-structure__meta-notice {
   margin: 0;
   font-size: 11px;

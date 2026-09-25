@@ -16,7 +16,8 @@
 //   are left out;
 // - `#/route/` links become real paths, the nav link for the current route
 //   gets `aria-current="page"`, and the editor's `data-key` attributes go;
-// - the manifest's shared stylesheets are joined into one `site.[hash].css`
+// - the shared stylesheets (the manifest's `styles`, else by convention; see
+//   native-project.ts, which also finds the components) are joined into one `site.[hash].css`
 //   (repository files they `@import` stay separate); that, each component's
 //   stylesheet and `src/images/` are written under `/assets/` with
 //   content-hashed names and immutable cache headers (`_headers`, which also
@@ -26,7 +27,7 @@
 // - the document head takes its title and description from the manifest's
 //   per-route metadata, else a leading `key: value` comment in the page, else
 //   the page's first `h1` and `p`; site-wide values come from
-//   `.astro-editor/site.json` when present, including Organization and
+//   `.astro-editor/site.json`, else `src/site.json`, when present, including Organization and
 //   WebSite JSON-LD for the home page and the indexing switch;
 // - with a site URL, `sitemap.xml` and `robots.txt` are generated unless
 //   `src/public/` supplies them; everything in `src/public/` is copied to the
@@ -35,7 +36,8 @@
 // The module is pure: it takes a map of repository files and returns a map of
 // output files, so it runs in Node (see native-export-cli.ts) and in the
 // browser alike.
-import { parseNativeManifest, type NativeManifest } from "../src/native-manifest";
+import type { NativeManifest } from "../src/native-manifest";
+import { NATIVE_MANIFEST_PATH, NATIVE_SITE_PATHS, nativePageComment, resolveNativeProject } from "./native-project";
 import { assignedSlotNames, dropFilledFallbacks, pruneEmptyTemplate } from "./native-conditionals";
 import { isExternalImport, parseCssImports, resolveImportPath } from "./css-imports";
 
@@ -88,8 +90,9 @@ export interface SiteOrganization {
   logo?: string;
 }
 
-export const MANIFEST_PATH = ".astro-editor/native.json";
-export const SITE_PATH = ".astro-editor/site.json";
+export const MANIFEST_PATH = NATIVE_MANIFEST_PATH;
+/** Where site settings are read from: `.astro-editor/site.json`, else `src/site.json`. */
+export const SITE_PATHS = NATIVE_SITE_PATHS;
 const IMAGES_DIR = "src/images/";
 
 export class ExportError extends Error {}
@@ -175,16 +178,7 @@ const basename = (path: string, ext = "") => {
 };
 
 /** A page's leading `<!-- key: value -->` comment, and the page without it. */
-export function pageMeta(html: string): { meta: Record<string, string>; body: string } {
-  const meta: Record<string, string> = {};
-  const match = /^\s*<!--([\s\S]*?)-->\s*/.exec(html);
-  if (!match) return { meta, body: html };
-  for (const line of match[1].split("\n")) {
-    const kv = /^\s*([a-z-]+):\s*(.+?)\s*$/i.exec(line);
-    if (kv) meta[kv[1].toLowerCase()] = kv[2];
-  }
-  return { meta, body: html.slice(match[0].length) };
-}
+export const pageMeta = nativePageComment;
 
 const firstText = (html: string, tag: string) =>
   new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(html)?.[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
@@ -206,42 +200,43 @@ function closeOf(html: string, tag: string, openEnd: number) {
 
 /** The site-wide metadata file, or an empty object when the project has none. */
 export function readSiteMeta(files: Record<string, FileContent>): SiteMeta {
-  const raw = files[SITE_PATH];
-  if (raw === undefined) return {};
+  const sitePath = SITE_PATHS.find((path) => files[path] !== undefined);
+  if (sitePath === undefined) return {};
+  const raw = files[sitePath];
   let value: unknown;
   try {
     value = JSON.parse(typeof raw === "string" ? raw : decoder.decode(raw));
   } catch {
-    throw new ExportError(`${SITE_PATH} is not valid JSON.`);
+    throw new ExportError(`${sitePath} is not valid JSON.`);
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ExportError(`${SITE_PATH} must be a JSON object.`);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ExportError(`${sitePath} must be a JSON object.`);
   const record = value as Record<string, unknown>;
   const site: SiteMeta = {};
   for (const key of ["name", "url", "description", "themeColor", "favicon", "image", "imageAlt", "locale"] as const) {
     const field = record[key];
     if (field === undefined) continue;
-    if (typeof field !== "string") throw new ExportError(`${SITE_PATH} "${key}" must be a string.`);
+    if (typeof field !== "string") throw new ExportError(`${sitePath} "${key}" must be a string.`);
     site[key] = field;
   }
   if (record.indexable !== undefined) {
-    if (typeof record.indexable !== "boolean") throw new ExportError(`${SITE_PATH} "indexable" must be true or false.`);
+    if (typeof record.indexable !== "boolean") throw new ExportError(`${sitePath} "indexable" must be true or false.`);
     site.indexable = record.indexable;
   }
   if (record.contentSignals !== undefined) {
     const signals = record.contentSignals;
     if (!isPlainObject(signals) || !Object.entries(signals).every(([key, value]) => /^[a-z][a-z-]*$/.test(key) && (value === "yes" || value === "no")))
-      throw new ExportError(`${SITE_PATH} "contentSignals" must map signal names to "yes" or "no".`);
+      throw new ExportError(`${sitePath} "contentSignals" must map signal names to "yes" or "no".`);
     site.contentSignals = signals as SiteMeta["contentSignals"];
   }
-  if (record.organization !== undefined) site.organization = readOrganization(record.organization);
+  if (record.organization !== undefined) site.organization = readOrganization(record.organization, sitePath);
   return site;
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-function readOrganization(input: unknown): SiteOrganization {
-  const where = `${SITE_PATH} "organization"`;
+function readOrganization(input: unknown, sitePath: string): SiteOrganization {
+  const where = `${sitePath} "organization"`;
   if (!isPlainObject(input)) throw new ExportError(`${where} must be an object.`);
   let value = input;
   const org: SiteOrganization = {};
@@ -295,8 +290,9 @@ export function exportNativeSite(input: ExportInput): ExportResult {
     return typeof content === "string" ? encoder.encode(content) : content;
   };
 
-  // Pages are routed by where they are under src/pages/ (shared/native-routes.ts).
-  const parsed = parseNativeManifest(text(MANIFEST_PATH), Object.keys(files));
+  // Pages are routed by where they are under src/pages/ (shared/native-routes.ts);
+  // components and styles the manifest leaves out are found by convention.
+  const parsed = resolveNativeProject(Object.keys(files), files[MANIFEST_PATH] === undefined ? undefined : text(MANIFEST_PATH));
   if (!parsed.ok) throw new ExportError(parsed.error);
   const manifest: NativeManifest = parsed.manifest;
   warnings.push(...parsed.warnings.map((warning) => `warning: ${warning}`));

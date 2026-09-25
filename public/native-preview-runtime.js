@@ -180,7 +180,18 @@
           if (this.shadowRoot) shadowRoots.delete(this.shadowRoot);
         }
         render() {
-          if (!state || state.components[tag] === undefined) return;
+          if (!state) return;
+          if (state.components[tag] === undefined) {
+            // No longer a component (its template deleted or moved away): an
+            // element can keep neither its definition nor its shadow root, so
+            // the root shows the element's own content instead.
+            var root = this.shadowRoot;
+            if (root && !(root.childNodes.length === 1 && root.firstChild.localName === "slot" && !root.firstChild.name)) {
+              root.replaceChildren(document.createElement("slot"));
+              root.adoptedStyleSheets = [];
+            }
+            return;
+          }
           hydrateShadow(this, state.components[tag]);
         }
       });

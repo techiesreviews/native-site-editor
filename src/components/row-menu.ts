@@ -6,6 +6,8 @@ export interface MenuItem {
   run: () => void;
   /** Shown beside the label, as a hint (a key such as F2). */
   shortcut?: string;
+  /** Why the action is unavailable: the item shows it and does nothing. */
+  disabled?: string;
 }
 
 /**
@@ -14,6 +16,8 @@ export interface MenuItem {
  * Tab close it and return focus to where it opened from. Positioned fixed in
  * the viewport, so it works inside the explorer popover (the top layer).
  */
+let noteIds = 0;
+
 export function createRowMenu(host: HTMLElement) {
   const element = node("div", "pages-menu row-menu");
   element.setAttribute("role", "menu");
@@ -48,8 +52,21 @@ export function createRowMenu(host: HTMLElement) {
       api.opener = opener = anchor;
       element.setAttribute("aria-label", label ?? anchor.getAttribute("aria-label") ?? "Actions");
       element.replaceChildren(...entries.map((entry) => {
-        const item = button("", () => { close(false); entry.run(); }, "pages-menu__item");
+        const item = button("", () => {
+          if (entry.disabled) return;
+          close(false);
+          entry.run();
+        }, "pages-menu__item");
         item.append(node("span", "", entry.label));
+        if (entry.disabled) {
+          // Still focusable, as a disabled menu item should be, with its reason.
+          item.setAttribute("aria-disabled", "true");
+          item.title = entry.disabled;
+          const note = node("span", "row-menu__note", entry.disabled);
+          note.id = `row-menu-note-${++noteIds}`;
+          item.setAttribute("aria-describedby", note.id);
+          item.append(note);
+        }
         if (entry.shortcut) {
           const hint = node("span", "row-menu__shortcut", entry.shortcut);
           hint.setAttribute("aria-hidden", "true");

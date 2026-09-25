@@ -30,7 +30,6 @@ import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restore
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeNewTarget, type NativeNewTarget } from "./native-pages";
 import {
-  parseNativeManifest,
   nativeManifestPaths,
   nativeDefaultRoute,
   nativeOrphanWarning,
@@ -48,6 +47,7 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports } from "../shared/css-imports";
 import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
+import { NATIVE_HOME_PAGE, NATIVE_MANIFEST_PATH, nativePageComment, nativePageInfo, nativePageWithCommentTitle, resolveNativeProject } from "../shared/native-project";
 import type {
   EditorContext,
   Directory,
@@ -232,6 +232,7 @@ function mountWorkspace() {
     create: createNativeNew,
     announce: (text) => { element("status").textContent = text; },
     retitle: retitleNativePage,
+    retitleBlocked: () => (nativeManifest && !nativeManifestBase ? NO_MANIFEST_RETITLE : undefined),
     duplicate: (file) => void duplicateNativePage(file),
     remove: (target) => void removeNativePagesTarget(target),
   });
@@ -1051,7 +1052,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       value: href?.value ?? "",
       placeholder: "Page or web address",
       suggestions: Object.keys(manifest.routes).map((route) => {
-        const title = manifest.pages[route]?.title;
+        const title = nativeRouteInfo(route).title;
         return { label: title ? `${title} (#${route})` : `#${route}`, value: `#${route}` };
       }),
       open,
@@ -1441,11 +1442,13 @@ async function selectNativeSource(selection: NativePreviewSelection) {
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
-// The validated `.astro-editor/native.json` of the loaded project, when present.
+// The effective manifest of the loaded native project: `.astro-editor/native.json`
+// when there is one, completed by convention (shared/native-project.ts).
 let nativeManifest: NativeManifest | undefined;
-// True whenever the project carries a `.astro-editor/native.json`, even when
-// that manifest is invalid or its sources fail to load: the preview then shows
-// the error instead of the plain file browser.
+// True whenever the project is native (it has `.astro-editor/native.json` or
+// `src/pages/index.html`), even when the manifest is invalid or its sources
+// fail to load: the preview then shows the error instead of the plain file
+// browser.
 let nativeEngaged = false;
 const nativeBaseSources = new Map<string, string>();
 const nativeComponentStyles = new Map<string, string>();
@@ -1459,10 +1462,13 @@ const nativeImportedStyles = new Set<string>();
 const nativeMissingImportedStyles = new Set<string>();
 const nativeImportedStyleRequests = new Set<string>();
 let nativeSourcesRequest = 0;
-// Every file under `src/pages/` on the branch; pages are routed by where they
-// are (shared/native-routes.ts), so this list, with new page files drafted in
-// the browser (`nativePageFiles`), decides the site's routes.
+// Every file under `src/` on the branch; pages are routed by where they are
+// (shared/native-routes.ts) and components and styles are found by convention
+// (shared/native-project.ts), so this list, with new files drafted in the
+// browser (`nativePageFiles`), decides the site's routes, components and
+// styles.
 let nativeBasePageFiles: string[] = [];
+const NATIVE_SOURCE_DIR = "src/";
 
 function nativeModeActive() {
   return Boolean(nativeManifest);
@@ -1475,9 +1481,11 @@ function nativeRouteForPath(path: string | undefined) {
   return Object.entries(nativeManifest.routes).find(([, file]) => file === path)?.[0];
 }
 
-const NATIVE_MANIFEST_PATH = ".astro-editor/native.json";
-// The manifest as GitHub has it, for the draft written by the Page fields.
+// The manifest as GitHub has it, for the draft written by the Page fields;
+// undefined when the project has no manifest.
 let nativeManifestBase: { sha: string; text: string } | undefined;
+const NO_MANIFEST_NOTE = "From the page's leading <!-- title: … --> comment; edit it in the page source.";
+const NO_MANIFEST_RETITLE = "This site has no native.json: a page's title is its leading <!-- title: … --> comment; edit it in the page source.";
 
 function draftScope() {
   return currentRepo && snapshot && info.user
@@ -1510,17 +1518,34 @@ function nativeManifestSource() {
 }
 
 // The manifest's title and description for the page file `path`, read from
-// the manifest's effective text; nothing when the file is not one of the
-// site's routes. With a conflicting draft the values are GitHub's and the
-// notice says why the fields are closed.
+// the manifest's effective text, with the page's leading comment's as
+// placeholders; nothing when the file is not one of the site's routes. With a
+// conflicting draft the values are GitHub's and the notice says why the
+// fields are closed. With no manifest the fields show the comment's values,
+// read-only.
 function nativePageMeta(path: string) {
   const route = nativeRouteForPath(path);
   if (!route || !nativeManifest) return undefined;
+  const comment = nativePageComment(nativeEffectiveSource(path) ?? "").meta;
+  if (!nativeManifestBase)
+    return { title: comment.title ?? "", description: comment.description ?? "", readOnly: true, notice: NO_MANIFEST_NOTE };
   const conflict = nativeManifestConflict();
   const source = conflict ? nativeManifestBase?.text : nativeManifestSource();
-  const parsed = source !== undefined ? parseNativeManifest(source, nativePageFiles()) : undefined;
+  const parsed = source !== undefined ? resolveNativeProject(nativePageFiles(), source) : undefined;
   const meta = (parsed?.ok ? parsed.manifest.pages : nativeManifest.pages)[route] ?? {};
-  return { title: meta.title ?? "", description: meta.description ?? "", notice: conflict ? MANIFEST_CONFLICT : undefined };
+  return {
+    title: meta.title ?? "",
+    description: meta.description ?? "",
+    placeholders: { title: comment.title, description: comment.description },
+    notice: conflict ? MANIFEST_CONFLICT : undefined,
+  };
+}
+
+// The title and description the page at `route` has: the manifest's, else
+// its leading comment's.
+function nativeRouteInfo(route: string, manifest = nativeManifest) {
+  if (!manifest || !Object.hasOwn(manifest.routes, route)) return {};
+  return nativePageInfo(manifest.pages, route, nativeEffectiveSource(manifest.routes[route]));
 }
 
 // Writes a Page field into the manifest as one minimal text edit: into the
@@ -1530,7 +1555,7 @@ function nativePageMeta(path: string) {
 // metadata follows the text at once; routes and the rest do not live-reparse.
 function writeNativePageMeta(path: string, field: PageMetaField, value: string) {
   const route = nativeRouteForPath(path);
-  const source = nativeManifestSource();
+  const source = nativeManifestBase ? nativeManifestSource() : undefined;
   const manifest = nativeManifest;
   if (!route || source === undefined || !manifest) return;
   if (nativeManifestConflict()) { errorMessage(new Error(MANIFEST_CONFLICT)); return; }
@@ -1551,7 +1576,7 @@ function writeNativePageMeta(path: string, field: PageMetaField, value: string) 
     errorMessage(error);
     return;
   }
-  const parsed = parseNativeManifest(result.text, nativePageFiles());
+  const parsed = resolveNativeProject(nativePageFiles(), result.text);
   if (parsed.ok) manifest.pages = parsed.manifest.pages;
   element("status").textContent = value ? `${label} updated` : `${label} removed`;
 }
@@ -1580,13 +1605,13 @@ function writeNativeManifest(source: string, result: Extract<NativePageMetaResul
 
 // Routes are derived from the page files when the project loads. A page file
 // created or discarded here, or a manifest entry written for a new file,
-// re-reads the manifest's effective text with the page files now, so the new
-// page routes (and a new stylesheet or component renders) at once.
+// re-reads the manifest's effective text with the files now, so the new page
+// routes (and a new stylesheet or component renders) at once.
 function refreshNativeRoutes() {
   if (!nativeManifest) return;
-  const source = nativeManifestConflict() ? nativeManifestBase?.text : nativeManifestSource();
-  if (source === undefined) return;
-  const parsed = parseNativeManifest(source, nativePageFiles());
+  const source = !nativeManifestBase ? undefined : nativeManifestConflict() ? nativeManifestBase.text : nativeManifestSource();
+  if (nativeManifestBase && source === undefined) return;
+  const parsed = resolveNativeProject(nativePageFiles(), source);
   if (!parsed.ok) { errorMessage(new Error(parsed.error)); return; }
   nativeManifest = parsed.manifest;
   nativePreview?.setWarnings(nativeWarningItems(parsed));
@@ -1776,7 +1801,7 @@ function adoptNativeBaseSources(
       continue;
     }
     if (!draft.opaque) nativeBaseSources.set(draft.path, draft.content);
-    if (draft.path.startsWith(NATIVE_PAGES_DIR) && !nativeBasePageFiles.includes(draft.path))
+    if (draft.path.startsWith(NATIVE_SOURCE_DIR) && !nativeBasePageFiles.includes(draft.path))
       nativeBasePageFiles = [...nativeBasePageFiles, draft.path];
     const sha = result.files.find((file) => file.path === draft.path)?.sha;
     if (draft.path === NATIVE_MANIFEST_PATH && sha) nativeManifestBase = { sha, text: draft.content };
@@ -1848,59 +1873,63 @@ async function loadNativeComponentStyles(tags: string[]) {
   if (epoch === generation && request === nativeSourcesRequest && nativeManifest === manifest) updateNativePreviewSources();
 }
 
-// Every file under `src/pages/` on the branch: from the snapshot's recursive
-// tree when it has one, else from one recursive listing of that folder.
+// Every file under `src/` on the branch: from the snapshot's recursive tree
+// when it has one, else from one recursive listing of that folder.
 async function listNativePageFiles(repo: Repository, result: Snapshot): Promise<string[]> {
   if (result.tree)
-    return result.tree.filter((entry) => entry.type === "blob" && entry.path.startsWith(NATIVE_PAGES_DIR)).map((entry) => entry.path);
+    return result.tree.filter((entry) => entry.type === "blob" && entry.path.startsWith(NATIVE_SOURCE_DIR)).map((entry) => entry.path);
   const src = result.entries.find((entry) => entry.path === "src" && entry.type === "tree");
   if (!src) return [];
-  const pages = (await api<Directory>("tree", { repo: repo.full_name, sha: src.sha })).entries
-    .find((entry) => entry.path === "pages" && entry.type === "tree");
-  if (!pages) return [];
-  const listed = await api<Directory>("tree", { repo: repo.full_name, sha: pages.sha, recursive: "1" });
-  return listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${NATIVE_PAGES_DIR}${entry.path}`);
+  const listed = await api<Directory>("tree", { repo: repo.full_name, sha: src.sha, recursive: "1" });
+  return listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${NATIVE_SOURCE_DIR}${entry.path}`);
 }
 
-// The page files routes are derived from: the branch's, plus new files under
-// `src/pages/` drafted in the browser in `scope`.
+// The files routes, components and styles are derived from: the branch's
+// under `src/`, plus new files there drafted in the browser in `scope`.
 function nativePageFiles(scope = draftScope()): string[] {
-  const drafts = scope ? draftStore().list(scope).filter((draft) => draft.path.startsWith(NATIVE_PAGES_DIR)) : [];
+  const drafts = scope ? draftStore().list(scope).filter((draft) => draft.path.startsWith(NATIVE_SOURCE_DIR)) : [];
   const drafted = drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path);
-  // A page deleted, or renamed or moved away, in the drafts is not routed.
+  // A file deleted, or renamed or moved away, in the drafts is not routed or found.
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([...nativeBasePageFiles.filter((path) => !gone.has(path)), ...drafted])];
 }
 
-// Reads and validates `.astro-editor/native.json`, prefetches every referenced
-// source file from the current snapshot, and activates the native preview. All
-// async steps are guarded against a superseding navigation (`epoch`).
+// Reads and validates `.astro-editor/native.json` when there is one, completes
+// it by convention from the files under `src/` (a project with only
+// `src/pages/index.html` is native too), prefetches every referenced source
+// file from the current snapshot, and activates the native preview. All async
+// steps are guarded against a superseding navigation (`epoch`).
 async function activateNativeManifest(repo: Repository, result: Snapshot, epoch: number) {
   const request = ++nativeSourcesRequest;
   const live = () => epoch === generation && request === nativeSourcesRequest;
   const placeholder: NativeManifest = { version: 1, routes: { "/": "src/pages/index.html" }, pages: {}, components: {}, styles: [] };
   const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
-  // Locate the manifest first. A failure *before* we confirm native.json exists
-  // cannot be attributed to native intent, so the project opens as plain files.
-  // Once the file is found, the project is native and every later failure
-  // surfaces as a native error rather than silently hiding the preview.
-  let manifestText: string;
+  // Locate the manifest, else the home page, first. A failure *before* we
+  // confirm either exists cannot be attributed to native intent, so the
+  // project opens as plain files. Once one is found, the project is native
+  // and every later failure surfaces as a native error rather than silently
+  // hiding the preview.
+  let manifestText: string | undefined;
   try {
     const dir = result.entries.find((entry) => entry.path === ".astro-editor" && entry.type === "tree");
-    if (!dir) return false;
-    const file = await findEntry(".astro-editor/native.json");
+    const file = dir ? await findEntry(NATIVE_MANIFEST_PATH) : undefined;
     if (!live()) return false;
-    if (!file) return false;
+    if (!file) {
+      const src = result.entries.find((entry) => entry.path === "src" && entry.type === "tree");
+      const home = src ? await findEntry(NATIVE_HOME_PAGE) : undefined;
+      if (!live() || !home) return false;
+    }
     // The project is native from here on.
     nativeEngaged = true;
     nativeManifest = undefined;
-    manifestText = await readFile(repo.full_name, file.sha);
+    nativeManifestBase = undefined;
+    manifestText = file ? await readFile(repo.full_name, file.sha) : undefined;
     if (!live()) return true;
-    nativeManifestBase = { sha: file.sha, text: manifestText };
+    if (file && manifestText !== undefined) nativeManifestBase = { sha: file.sha, text: manifestText };
     nativeBasePageFiles = await listNativePageFiles(repo, result);
     if (!live()) return true;
-    const draft = scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
-    if (draft && scope) {
+    const draft = file && scope ? draftStore().get(scope, NATIVE_MANIFEST_PATH) : undefined;
+    if (file && draft && scope) {
       if (draft.baseSha === file.sha) manifestText = draft.content;
       // A publish whose response was lost: the branch already has the draft.
       else if (draft.content === manifestText) draftStore().remove(scope, NATIVE_MANIFEST_PATH);
@@ -1916,7 +1945,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
     nativePreview?.setError(error instanceof Error ? error.message : "native.json could not be loaded.");
     return true;
   }
-  const parsed = parseNativeManifest(manifestText, nativePageFiles(scope));
+  const parsed = resolveNativeProject(nativePageFiles(scope), manifestText);
   if (!parsed.ok) {
     // A present-but-invalid manifest is a visible native error, never a silent
     // fall-back to plain files that would confuse the project's intent.
@@ -1945,7 +1974,7 @@ async function activateNativeManifest(repo: Repository, result: Snapshot, epoch:
       if (drafted.has(path)) continue;
       const entry = await findEntry(path);
       if (!live()) return true;
-      if (!entry) throw new Error(`native.json references ${path}, which is missing from this branch.`);
+      if (!entry) throw new Error(`${manifestText === undefined ? "The site" : "native.json"} references ${path}, which is missing from this branch.`);
       sources.push({ path, sha: entry.sha });
     }
     const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
@@ -2261,7 +2290,7 @@ function showDirectory(directory: Directory, path = "") {
       "intro",
       nativeEngaged
         ? `${directory.entries.length} entries. Pages, components and styles render live in the preview.`
-        : `${directory.entries.length} entries. Add .astro-editor/native.json to preview this project in the browser.`,
+        : `${directory.entries.length} entries. Add src/pages/index.html to preview this project in the browser.`,
     ),
   );
   const meta = node("dl", "project-meta");
@@ -2438,7 +2467,7 @@ function renderPagesTree(focus?: { file?: string; folder?: string }) {
   const site = buildNativePagesTree({
     files: nativePageFiles(scope),
     routes: manifest.routes,
-    titles: Object.fromEntries(Object.entries(manifest.pages).map(([route, meta]) => [route, meta.title])),
+    titles: Object.fromEntries(Object.keys(manifest.routes).map((route) => [route, nativeRouteInfo(route, manifest).title])),
     heading: (file) => firstHeadingText(nativeEffectiveSource(file, scope)),
     isNew: (file) => drafted.has(file),
   });
@@ -2452,9 +2481,9 @@ function nativePagesPathExists(path: string) {
 }
 
 // What a new page or collection typed in the Pages tab writes: its file (from
-// the home page's shell, its heading the title) and the title's manifest
-// entry, or why it cannot.
-function planNativeNew(request: NativeNewRequest): Checked<NativeNewTarget & { title: string; content: string; manifest: { source: string; result: Extract<NativePageMetaResult, { ok: true }> } }> {
+// the home page's shell, its heading the title) and, when the site has a
+// manifest, the title's manifest entry, or why it cannot.
+function planNativeNew(request: NativeNewRequest): Checked<NativeNewTarget & { title: string; content: string; manifest?: { source: string; result: Extract<NativePageMetaResult, { ok: true }> } }> {
   const manifest = nativeManifest;
   if (!manifest || !draftScope()) return { ok: false, error: "Open a native site first." };
   const title = request.title.trim();
@@ -2465,12 +2494,13 @@ function planNativeNew(request: NativeNewRequest): Checked<NativeNewTarget & { t
     exists: nativePagesPathExists,
   });
   if (!target.ok) return target;
+  const content = nativePageTemplate(nativeEffectiveSource(manifest.routes["/"]), title);
+  if (!nativeManifestBase) return { ok: true, value: { ...target.value, title, content } };
   if (nativeManifestConflict()) return { ok: false, error: MANIFEST_CONFLICT };
   const source = nativeManifestSource();
   if (source === undefined) return { ok: false, error: "The manifest cannot be changed right now." };
   const result = editNativePageMeta(source, target.value.route, "title", title);
   if (!result.ok) return result;
-  const content = nativePageTemplate(nativeEffectiveSource(manifest.routes["/"]), title);
   return { ok: true, value: { ...target.value, title, content, manifest: { source, result } } };
 }
 
@@ -2512,7 +2542,7 @@ async function commitNativePage(page: {
   route: string;
   title: string;
   content: string;
-  manifest: { source: string; result: Extract<NativePageMetaResult, { ok: true }> };
+  manifest?: { source: string; result: Extract<NativePageMetaResult, { ok: true }> };
   collection?: string;
   done: string;
 }): Promise<string | undefined> {
@@ -2526,7 +2556,7 @@ async function commitNativePage(page: {
     return failure;
   }
   try {
-    writeNativeManifest(page.manifest.source, page.manifest.result);
+    if (page.manifest) writeNativeManifest(page.manifest.source, page.manifest.result);
   } catch (error) {
     // Neither part stays: the page goes with the title that could not be written.
     draftStore().remove(scope, page.file);
@@ -2555,6 +2585,7 @@ async function commitNativePage(page: {
 // A page's title in the manifest, as the Page block's Title field sets it.
 function retitleNativePage(file: string, title: string): string | undefined {
   if (!nativeManifest || !nativeRouteForPath(file)) return "This page has no URL in the site.";
+  if (!nativeManifestBase) return NO_MANIFEST_RETITLE;
   if (nativeManifestConflict()) return MANIFEST_CONFLICT;
   writeNativePageMeta(file, "title", title);
   editorModule?.closeActiveEditGroup(NATIVE_MANIFEST_PATH);
@@ -2564,7 +2595,8 @@ function retitleNativePage(file: string, title: string): string | undefined {
 }
 
 // A copy of a page beside it: `<slug>-copy` (then `-copy-2`, …), its content
-// as it is now, titled "… (copy)", made like a new page.
+// as it is now, titled "… (copy)", made like a new page. With no manifest the
+// title is the copy's leading comment's, when it has one.
 async function duplicateNativePage(file: string) {
   const manifest = nativeManifest;
   const route = nativeRouteForPath(file);
@@ -2580,15 +2612,16 @@ async function duplicateNativePage(file: string) {
   }
   if (!target?.ok) { errorMessage(new Error(target?.error ?? "No name is free for the copy.")); return; }
   if (nativeManifestConflict()) { errorMessage(new Error(MANIFEST_CONFLICT)); return; }
-  const source = nativeManifestSource();
-  const content = nativeEffectiveSource(file);
-  if (source === undefined || content === undefined) { errorMessage(new Error("The page could not be read.")); return; }
-  const label = manifest.pages[route]?.title?.trim() || (route === "/" ? "Home" : firstHeadingText(content)) || routeHeading(route);
+  const source = nativeManifestBase ? nativeManifestSource() : undefined;
+  const original = nativeEffectiveSource(file);
+  if ((nativeManifestBase && source === undefined) || original === undefined) { errorMessage(new Error("The page could not be read.")); return; }
+  const label = nativeRouteInfo(route, manifest).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
   const title = `${label} (copy)`;
-  const result = editNativePageMeta(source, target.value.route, "title", title);
-  if (!result.ok) { errorMessage(new Error(result.error)); return; }
+  const content = source === undefined ? nativePageWithCommentTitle(original, title) : original;
+  const result = source === undefined ? undefined : editNativePageMeta(source, target.value.route, "title", title);
+  if (result && !result.ok) { errorMessage(new Error(result.error)); return; }
   const error = await commitNativePage({
-    kind: "page", file: target.value.file, route: target.value.route, title, content, manifest: { source, result },
+    kind: "page", file: target.value.file, route: target.value.route, title, content, manifest: source !== undefined && result?.ok ? { source, result } : undefined,
     done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
   });
   if (error) errorMessage(new Error(error));
@@ -2791,7 +2824,10 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
     if (blocked) return fail(blocked);
     const route = nativeManifest ? nativePageRoute(path.value) : undefined;
     if (route && routeTaken(route)) return fail(routeTaken(route)!);
-    const register = nativeManifest ? nativeRegistration(path.value) : undefined;
+    // With no manifest, or a stylesheet where the manifest lists no styles,
+    // the file is found by convention and nothing is registered.
+    const found = nativeManifest && nativeManifestBase ? nativeRegistration(path.value) : undefined;
+    const register = found?.kind === "style" && !nativeManifest?.explicit?.styles ? undefined : found;
     if (register) {
       const source = manifestSource();
       if (source === undefined) return fail(MANIFEST_CONFLICT);
@@ -3822,11 +3858,12 @@ function updateAgentContext() {
     ...(nativeManifest ? { pages: nativeContextPages(nativeManifest) } : {}),
   });
 }
-// The native site's pages by route for the agent context.
+// The native site's pages by route for the agent context, with the title and
+// description the manifest or the page's leading comment gives.
 function nativeContextPages(manifest: NativeManifest): NonNullable<EditorContext["pages"]> {
   return Object.entries(manifest.routes).slice(0, 500).map(([route, file]) => {
-    const title = manifest.pages[route]?.title;
-    return title ? { route, file, title } : { route, file };
+    const { title, description } = nativeRouteInfo(route, manifest);
+    return { route, file, ...(title ? { title: title.slice(0, 1000) } : {}), ...(description ? { description: description.slice(0, 1000) } : {}) };
   });
 }
 // The page shown after the page `path` is gone: the overview of the nearest

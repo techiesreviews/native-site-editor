@@ -30,3 +30,6 @@
 
 .pages-menu__item { display: flex; align-items: center; gap: 16px; }
 .row-menu__shortcut { margin-left: auto; color: var(--muted); font-size: 11px; }
+.pages-menu__item[aria-disabled="true"] { flex-wrap: wrap; color: var(--muted); cursor: default; }
+.pages-menu__item[aria-disabled="true"]:hover { background: none; }
+.row-menu__note { flex-basis: 100%; max-width: 260px; font-size: 11px; line-height: 1.35; white-space: normal; text-align: left; }
