@@ -315,12 +315,52 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       handlers.onTextEdit?.({ path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after });
       return;
     }
+    // Messages that carry a user's action (`text-edit` above, `route`,
+    // `format`, `move`, and a `section-drag` cancel) are read even when they
+    // carry an older render context: they are not descriptions of a render,
+    // and the host checks what they ask against the current source. The
+    // rest (`select`, `text-selection`, `insert-points`, `structure`, the
+    // rects, a drag's start, target and end) describe the runtime's DOM and
+    // are dropped when a render requested since is still pending; the
+    // runtime reports them again after that render.
     // A link click inside the preview (including inside shadow roots) navigates
-    // the preview only, keeping the current source edits untouched. It is the
-    // user's action, not a description of a render, so it counts even while a
-    // render requested since (component styles arriving) is still pending.
+    // the preview only, keeping the current source edits untouched.
     if (data.type === "route" && typeof data.route === "string" && manifest) {
       followRoute(`#${data.route}`);
+      return;
+    }
+    if (data.type === "format") {
+      const format = (data as { format?: unknown }).format;
+      if (format === "strong" || format === "em") handlers.onFormat?.(format);
+      return;
+    }
+    if (data.type === "move") {
+      const direction = (data as { direction?: unknown }).direction;
+      if (direction === "up" || direction === "down") handlers.onMove?.(direction);
+      return;
+    }
+    if (data.type === "section-drag" && manifest) {
+      const raw = data as { phase?: unknown; parent?: unknown; index?: unknown };
+      const stale = data.context !== context;
+      // A drag's gaps are counted in the runtime's DOM of the render it saw;
+      // after a render requested since they may not be the source's. A stale
+      // start or target is ignored; a stale end (or any cancel, including the
+      // one the runtime sends when a render replaces the page under a drag)
+      // ends the drag with nothing moved, announced as cancelled.
+      if (raw.phase === "cancel" || (stale && raw.phase === "end")) {
+        insertControls.dragEnd();
+        handlers.onSectionDrag?.(undefined);
+        return;
+      }
+      if (stale) return;
+      if (!indexes(raw.parent) || !Number.isInteger(raw.index) || (raw.index as number) < 0) return;
+      const gap = { parent: raw.parent, index: raw.index as number };
+      if (raw.phase === "start") insertControls.dragStart(gap);
+      else if (raw.phase === "target") insertControls.dragTarget(gap);
+      else if (raw.phase === "end") {
+        insertControls.dragEnd();
+        handlers.onSectionDrag?.(gap);
+      }
       return;
     }
     if (data.type !== "ready" && data.context !== context) {
@@ -366,23 +406,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       insertControls.update(points);
       return;
     }
-    if (data.type === "section-drag" && manifest) {
-      const raw = data as { phase?: unknown; parent?: unknown; index?: unknown };
-      if (raw.phase === "cancel") {
-        insertControls.dragEnd();
-        handlers.onSectionDrag?.(undefined);
-        return;
-      }
-      if (!indexes(raw.parent) || !Number.isInteger(raw.index) || (raw.index as number) < 0) return;
-      const gap = { parent: raw.parent, index: raw.index as number };
-      if (raw.phase === "start") insertControls.dragStart(gap);
-      else if (raw.phase === "target") insertControls.dragTarget(gap);
-      else if (raw.phase === "end") {
-        insertControls.dragEnd();
-        handlers.onSectionDrag?.(gap);
-      }
-      return;
-    }
     if (data.type === "section-hover") {
       const item = (data as { item?: unknown }).item as { parent?: unknown; index?: unknown } | null | undefined;
       const valid = item && Array.isArray(item.parent) && item.parent.every((index) => Number.isInteger(index) && index >= 0) &&
@@ -411,16 +434,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         });
       };
       handlers.onStructure?.({ path, items: readItems(raw.items, 0) });
-      return;
-    }
-    if (data.type === "format") {
-      const format = (data as { format?: unknown }).format;
-      if (format === "strong" || format === "em") handlers.onFormat?.(format);
-      return;
-    }
-    if (data.type === "move") {
-      const direction = (data as { direction?: unknown }).direction;
-      if (direction === "up" || direction === "down") handlers.onMove?.(direction);
       return;
     }
     if (data.type === "selection-rect") {
