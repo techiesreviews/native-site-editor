@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton, showPublish } from "./publish";
 
 // Uploading images and other binary files (src/uploads.ts): the image
 // Address's Upload image… and drop, the Files tab's Upload files… and drop
@@ -32,7 +33,7 @@ const popover = (page: Page) => page.locator(".edit-bar__popover");
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const saveTrigger = publishButton;
 const panel = (page: Page) => page.locator("#publish-files");
 
 async function open(page: Page, baseURL: string | undefined) {
@@ -100,7 +101,7 @@ test("Upload image… in the image's Address uploads to images/, shows it at onc
   await expect(popover(page)).toBeHidden();
 
   // It is an A change, uploaded, with the page's edit beside it.
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(panel(page)).toBeVisible();
   const files = panel(page).locator(".publish-menu__file");
   await expect(files).toHaveText([/images\/team-photo\.png/, /index\.html/]);
@@ -118,9 +119,9 @@ test("Upload image… in the image's Address uploads to images/, shows it at onc
   await page.keyboard.press("Escape");
 
   // Saved: the bytes on GitHub are the file's, and the browser lets its copy go.
-  await saveTrigger(page).click();
+  await showPublish(page);
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect((await committed(page, "images/team-photo.png"))?.equals(png)).toBe(true);
   expect((await committed(page, indexPath))?.toString()).toContain(`src="/images/team-photo.png"`);
@@ -138,7 +139,7 @@ test("a file dropped on the image's Address uploads it; Discard in the Save pane
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await expect(status(page)).toHaveText("Image replaced");
 
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(panel(page).locator(".publish-menu__file")).toHaveCount(2);
   await panel(page).getByRole("button", { name: "Discard images/placeholder-2.svg" }).click();
   await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
@@ -148,7 +149,7 @@ test("a file dropped on the image's Address uploads it; Discard in the Save pane
   await expect.poll(() => storedUploads(page)).toBe(0);
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
 });
 
@@ -192,10 +193,10 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`);
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(panel(page).locator(".publish-menu__file")).toHaveCount(3);
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect((await committed(page, "images/logo.png"))?.equals(png)).toBe(true);
   expect((await committed(page, "about/photo.png"))?.equals(png)).toBe(true);

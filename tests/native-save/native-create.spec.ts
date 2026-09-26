@@ -1,3 +1,4 @@
+import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -34,7 +35,7 @@ test.afterEach(() => {
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = indexPath) {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
@@ -83,11 +84,11 @@ async function branchFile(page: Page, repo: string, path: string): Promise<strin
 }
 
 async function saveAll(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
 }
 
 test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; discarding a new file removes it from the tree", async ({ page, baseURL }) => {
@@ -109,7 +110,7 @@ test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; 
   await expect(page.locator("#status")).toHaveText("Created styles/print.css.");
 
   // The save list has the new file alone: nothing registers it.
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel.getByRole("button", { name: "New file, 1 lines. Show changes in styles/print.css" })).toBeVisible();
   await expect(panel.locator(".publish-menu__file")).toHaveCount(1);
@@ -150,8 +151,8 @@ test("a new file whose path appeared on GitHub meanwhile is refused on save and 
 
   // Someone else commits the same path.
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "docs/notes.md", content: "# Their notes\n" } });
-  await saveTrigger(page).click();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await showPublish(page);
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("GitHub changed these files: docs/notes.md", { timeout: 30_000 });
   expect(await branchFile(page, starterRepo, "docs/notes.md")).toBe("# Their notes\n");
   await page.keyboard.press("Escape");

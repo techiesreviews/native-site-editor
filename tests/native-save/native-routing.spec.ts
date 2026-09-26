@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton, showPublish } from "./publish";
 
 // The repository is the site (shared/native-routes.ts) over
 // `fixtures/native-routing`, served as the `native-routing` repository (id
@@ -74,7 +75,7 @@ test("opening a nested page file shows its route, and titling it writes its <tit
   await expect(page.locator("#content .view-lines")).toContainText("<title>Our work</title>");
 
   // The only change is the page.
-  await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
+  await showPublish(page);
   await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(1);
   await expect(page.locator("#publish-files .publish-menu__file")).toContainText("work/index.html");
   await page.keyboard.press("Escape");
@@ -82,7 +83,7 @@ test("opening a nested page file shows its route, and titling it writes its <tit
   // The title as it was: nothing left to save.
   await title(page).fill("Work");
   await expect(page.locator("#status")).toHaveText("Title updated");
-  await expect(page.getByRole("button", { name: "Save to GitHub", exact: true })).toBeDisabled();
+  await expect(publishButton(page)).toBeDisabled();
 });
 
 test("without the whole-commit tree, the repository is listed with one recursive request per top-level folder", async ({ page, baseURL }) => {

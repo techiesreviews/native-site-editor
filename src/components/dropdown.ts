@@ -6,6 +6,8 @@ export function mountDropdown(options: {
   panel: HTMLElement;
   anchor: string;
   closeOnAction?: boolean;
+  /** A click runs this, with the panel held open, instead of toggling the panel. */
+  onClick?: () => void;
 }) {
   const { trigger, panel } = options;
   const controller = new AbortController();
@@ -43,7 +45,8 @@ export function mountDropdown(options: {
     }, 180);
   }
   trigger.addEventListener("click", () => {
-    if (pinned && isOpen()) close();
+    if (options.onClick) { open(); pinned = true; options.onClick(); }
+    else if (pinned && isOpen()) close();
     else { open(); pinned = true; }
   }, { signal });
   trigger.addEventListener("pointerenter", event => {

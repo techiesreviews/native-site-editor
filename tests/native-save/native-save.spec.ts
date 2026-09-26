@@ -1,3 +1,4 @@
+import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -58,11 +59,11 @@ async function openFile(page: Page, path: string, contains: string) {
     await expect(page.locator("#content .view-lines")).toContainText(contains, { timeout: 20_000 });
 }
 
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
-const saveSubmit = (page: Page) => page.getByRole("button", { name: /^Save \d+ changes?$/ });
+const saveTrigger = publishButton;
+const saveSubmit = publishButton;
 
 async function openSaveMenu(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(page.locator("#publish-files")).toBeVisible();
 }
 
@@ -145,7 +146,9 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
 
   // The native save menu commits to GitHub; the Change status shows in the top bar (native-change-status.spec.ts).
   await openSaveMenu(page);
-  await expect(page.locator("#publish-files")).toContainText("A connected host may deploy this commit automatically");
+  // Hovering shows no heading, idle text or second button: Publish itself commits.
+  await expect(page.locator("#publish-files strong, #publish-files button.primary")).toHaveCount(0);
+  await expect(page.locator("#publish-files .publish-menu__message")).toBeHidden();
   // The change the commit would make is listed before it is made.
   const changes = page.locator("#publish-files .publish-menu__changes");
   await expect(changes).toHaveText("1 added, 1 removed");
@@ -173,26 +176,27 @@ test("multi-file save keeps every committed file's content (no revert to stale b
   await pasteSource(page, "--accent", cssSource.replace("--muted: #5c665a;", "--muted: rgb(190, 20, 40);"));
 
   await openSaveMenu(page);
-  // Both drafts appear, already selected; the trigger counts them.
+  // Both drafts appear, already selected, under their grand total; Publish counts them.
   const panel = page.locator("#publish-files");
   await expect(panel).toContainText(indexPath);
   await expect(panel).toContainText(cssPath);
   await expect(saveTrigger(page).locator(".publish-menu__count")).toHaveText("2");
+  await expect(saveTrigger(page)).toHaveAttribute("title", "Publish 2 changes to main");
   for (const box of await panel.locator("input[type=checkbox]").all()) await expect(box).toBeChecked();
-  // The grand total, unfolded, shows every difference.
-  const total = panel.locator(".publish-menu__total");
-  await expect(total.locator("summary")).toHaveText("All 2 changes · 2 added, 2 removed");
-  await expect(total.locator(".publish-menu__diff-line:visible")).toHaveCount(0);
-  await total.locator("summary").click();
-  await expect(total.locator(".publish-menu__total-path")).toHaveText([`M${indexPath}`, `M${cssPath}`]);
-  await expect(total.locator(".publish-menu__diff-line.is-add")).toContainText(["Multi save heading", "rgb(190, 20, 40)"]);
-  // Unticking one updates the total and the button.
+  const summary = panel.locator(".publish-menu__total-summary");
+  await expect(summary).toHaveText("All 2 changes · 2 added, 2 removed");
+  await expect(panel.locator(".publish-menu__changes")).toHaveText(["1 added, 1 removed", "1 added, 1 removed"]);
+  // Folded, the total hides the list.
+  await summary.click();
+  await expect(panel.locator(".publish-menu__file")).toHaveCount(2);
+  await expect(panel.locator(".publish-menu__file").first()).toBeHidden();
+  await summary.click();
+  // Unticking one updates the total and what Publish commits.
   await panel.locator(".publish-menu__file", { hasText: cssPath }).getByRole("checkbox").uncheck();
-  await expect(total.locator("summary")).toHaveText("1 change of 2 · 1 added, 1 removed");
-  await expect(total.locator(".publish-menu__total-path")).toHaveCount(1);
-  await expect(saveSubmit(page)).toHaveText("Save 1 change");
+  await expect(summary).toHaveText("1 change of 2 · 1 added, 1 removed");
+  await expect(saveTrigger(page)).toHaveAttribute("title", "Publish 1 change to main");
   await panel.locator(".publish-menu__file", { hasText: cssPath }).getByRole("checkbox").check();
-  await expect(saveSubmit(page)).toHaveText("Save 2 changes");
+  await expect(summary).toHaveText("All 2 changes · 2 added, 2 removed");
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 

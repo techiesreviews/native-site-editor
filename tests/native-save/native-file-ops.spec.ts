@@ -1,3 +1,4 @@
+import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -29,7 +30,7 @@ const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
@@ -82,11 +83,11 @@ async function draft(page: Page, path: string) {
 }
 
 async function saveAll(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
 }
 
 test("F2 renames a file in its row; the Save panel lists one rename, and saving moves it on GitHub", async ({ page, baseURL }) => {
@@ -126,14 +127,14 @@ test("F2 renames a file in its row; the Save panel lists one rename, and saving 
 
   // One change in the Save panel, selected as a whole.
   await page.keyboard.press("Escape");
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel.locator(".publish-menu__file")).toHaveCount(1);
   await expect(panel.locator(".publish-menu__file")).toContainText("_parts/note.html → _parts/aside.html");
   await expect(panel.locator(".publish-menu__status [aria-hidden]")).toHaveText("R");
   await expect(panel.locator(".publish-menu__changes")).toContainText("Renamed, no other changes");
   await panel.locator(".publish-menu__file input").check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect(await branchFile(page, routingRepo, "_parts/aside.html")).toBe(note);
   expect(await branchFile(page, routingRepo, "_parts/note.html")).toBeUndefined();
@@ -192,13 +193,13 @@ test("a file deleted from its menu stays struck through with Restore; Delete, Sh
 
   // Saving removes it from GitHub, and from the tree.
   await page.keyboard.press("Escape");
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel.locator(".publish-menu__file")).toHaveCount(1);
   await expect(panel.locator(".publish-menu__status [aria-hidden]")).toHaveText("D");
   await expect(panel.getByRole("button", { name: "Restore _parts/note.html" })).toBeVisible();
   await panel.locator(".publish-menu__file input").check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect(await branchFile(page, routingRepo, "_parts/note.html")).toBeUndefined();
   expect(await branchFile(page, routingRepo, "index.html")).toBeDefined();

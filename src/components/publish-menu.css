@@ -1,12 +1,13 @@
 .publish-menu__panel { width: min(380px, calc(100vw - 32px)); padding: 18px; }
-.publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 16px; max-height: 40dvh; overflow: auto; }
+.publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 10px 0; max-height: 40dvh; overflow: auto; }
 .publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: 12px; overflow-wrap: anywhere; }
 .publish-menu__file input { accent-color: var(--green); }
 .publish-menu__changes { margin: -6px 0 2px 24px; }
 .publish-menu__show-changes { padding: 2px 6px; margin-left: -6px; border: 0; border-radius: 4px; background: none; color: var(--green); font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .publish-menu__show-changes:hover { background: var(--hover); }
 .publish-menu__show-changes:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.publish-menu__message { font-size: 12px; line-height: 1.6; }
+.publish-menu__message { margin-bottom: 0; font-size: 12px; line-height: 1.6; }
+.publish-menu__message:empty { display: none; }
 @supports (position-area: bottom) { .publish-menu__panel { position-area: bottom span-left; justify-self: end; } }
 .code-editor__conflict { padding: 10px 20px; background: var(--warning-bg); color: var(--warning-fg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
 .code-editor__conflict[hidden] { display: none; }
@@ -66,19 +67,7 @@
 /* The count of waiting changes on the trigger. */
 .publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: 11px; font-weight: 600; }
 .publish-menu__count:empty { display: none; }
-/* The grand total, unfolding to every selected change's differences. */
-.publish-menu__panel.is-wide { width: min(720px, calc(100vw - 32px)); }
-.publish-menu__total { margin-block: -6px 12px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
-.publish-menu__total-summary { padding: 6px 10px; font-weight: 600; cursor: pointer; }
+/* The grand total, unfolding to the changes, each with its counts. */
+.publish-menu__total { font-size: 12px; }
+.publish-menu__total-summary { font-weight: 600; cursor: pointer; }
 .publish-menu__total-summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.publish-menu__total-body {
-  --diff-add-bg: var(--success-bg);
-  --diff-add-fg: var(--success-fg);
-  --diff-del-bg: oklch(from var(--success-bg) l c 25);
-  --diff-del-fg: oklch(from var(--success-fg) l c 25);
-  max-height: 50dvh; overflow: auto; border-top: 1px solid var(--line);
-}
-.publish-menu__total-file + .publish-menu__total-file { border-top: 1px solid var(--line); }
-.publish-menu__total-path { display: flex; gap: 8px; align-items: center; margin: 0; padding: 6px 10px; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; background: var(--surface-subtle); }
-.publish-menu__total-file > .publish-menu__note { margin: 0; padding: 6px 10px; }
-.publish-menu__total-diff { margin: 0; padding: 4px 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

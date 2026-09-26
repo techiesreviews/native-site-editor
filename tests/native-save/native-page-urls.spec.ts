@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton, showPublish } from "./publish";
 
 // A folder page (`x/index.html`) can have subpages, which are in its folder;
 // a single-file page (`x.html`) has none. A page's URL can change
@@ -29,7 +30,7 @@ const explorer = (page: Page) => page.locator("#explorer");
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
 const block = (page: Page) => page.getByRole("group", { name: "Page" });
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
@@ -62,11 +63,11 @@ async function draft(page: Page, path: string) {
 }
 
 async function saveAll(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 }
 

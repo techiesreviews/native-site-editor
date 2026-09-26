@@ -12,7 +12,7 @@ export function createPublishMenu(options: {
   currentPath: string;
   onPublished: (result: PublishResult, submitted: SavedDraft[]) => void;
   onExpired: () => void;
-  /** Native projects relabel the menu as "Save to GitHub"; the Change status shows in the top bar (components/site-actions.ts). */
+  /** Native projects word the progress as saving to GitHub; the Change status shows in the top bar (components/site-actions.ts). */
   saveLabels?: boolean;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
   onDiscardChange?: (change: FileChange) => void;
@@ -21,47 +21,28 @@ export function createPublishMenu(options: {
   /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
   onSettleDeleted?: (path: string, keep: boolean) => void;
 }) {
-  const labels = options.saveLabels
-    ? {
-        trigger: "Save to GitHub",
-        panelAria: "Save files to GitHub",
-        heading: `Save to ${options.scope.branch}`,
-        submit: "Save",
-        idle: "Selected files are committed together. A connected host may deploy this commit automatically.",
-        pending: "Saving to GitHub…",
-      }
-    : {
-        trigger: "Publish",
-        panelAria: "Publish files",
-        heading: `Publish to ${options.scope.branch}`,
-        submit: "Publish",
-        idle: "Selected files are committed together. Site deployment requires a connected build pipeline.",
-        pending: "Publishing to GitHub…",
-      };
+  // Publish commits the selected changes to the branch in one go; hovering it shows them.
+  const pendingText = options.saveLabels ? "Saving to GitHub…" : "Publishing to GitHub…";
   const root = node("div", "publish-menu");
   const panel = node("div", "publish-menu__panel");
   panel.id = "publish-files";
-  panel.setAttribute("aria-label", labels.panelAria);
-  const trigger = node("button", "button primary", labels.trigger);
+  panel.setAttribute("aria-label", "Changes to publish");
+  const trigger = node("button", "button primary", "Publish");
   trigger.type = "button";
   // How many changes wait; the button keeps its name, the count is seen.
   const count = node("span", "publish-menu__count");
   count.setAttribute("aria-hidden", "true");
   trigger.append(count);
-  const heading = node("strong", "", labels.heading);
-  const list = node("div", "publish-menu__files");
-  // The grand total of the selected changes; unfolded, every one of their differences.
+  // The grand total of the selected changes, unfolding to the changes themselves.
   const total = node("details", "publish-menu__total");
   const totalSummary = node("summary", "publish-menu__total-summary");
-  const totalBody = node("div", "publish-menu__total-body");
-  total.append(totalSummary, totalBody);
-  total.addEventListener("toggle", () => { panel.classList.toggle("is-wide", total.open); if (total.open) renderTotal(); });
+  const list = node("div", "publish-menu__files");
+  total.append(totalSummary, list);
   const message = node("p", "muted publish-menu__message");
   message.setAttribute("role", "status");
-  const submit = button(labels.submit, () => void send(), "button primary");
-  panel.append(heading, list, total, message, submit);
+  panel.append(total, message);
   root.append(trigger, panel);
-  const dropdown = mountDropdown({ trigger, panel, anchor: "--publish-files" });
+  const dropdown = mountDropdown({ trigger, panel, anchor: "--publish-files", onClick: () => void send() });
   // Every change is selected unless it was unticked here.
   const unticked = new Set<string>();
   let records: FileChange[] = [];
@@ -96,7 +77,7 @@ export function createPublishMenu(options: {
       list.append(label, changes(change));
     }
     updateTotal();
-    if (resetMessage) message.textContent = labels.idle;
+    if (resetMessage) message.textContent = "";
   }
   // The text a change compares, GitHub's before the draft's; none for a
   // deletion, an upload, a copy or a rename with no other edit.
@@ -104,8 +85,7 @@ export function createPublishMenu(options: {
     const [draft] = change.drafts;
     if (gone(change) || change.kind === "D" || draft.opaque || draft.upload) return null;
     if (change.kind === "R" && draft.content === draft.original) return null;
-    const isNew = draft.baseSha === null;
-    return { before: isNew ? "" : draft.original, after: draft.content, isNew };
+    return { before: draft.baseSha === null ? "" : draft.original, after: draft.content };
   }
   function updateTotal() {
     const chosen = records.filter(selected);
@@ -120,30 +100,7 @@ export function createPublishMenu(options: {
     const changesWord = `${n} ${n === 1 ? "change" : "changes"}`;
     totalSummary.textContent = `${n === records.length ? `All ${changesWord}` : `${changesWord} of ${records.length}`} · ${added} added, ${removed} removed`;
     total.hidden = records.length === 0;
-    submit.textContent = `${labels.submit} ${changesWord}`;
-    submit.disabled = n === 0;
-    if (total.open) renderTotal();
-  }
-  // Unfolded, the total lists each selected change with its differences in one column.
-  function renderTotal() {
-    totalBody.replaceChildren();
-    for (const change of records.filter(selected)) {
-      const section = node("section", "publish-menu__total-file");
-      const head = node("h3", "publish-menu__total-path");
-      const status = node("span", `publish-menu__status is-${change.kind}`, change.kind);
-      status.title = CHANGE_WORDS[change.kind];
-      head.append(status, node("span", "", change.from ? `${change.from} → ${change.path}` : change.path));
-      section.append(head);
-      const text = comparison(change);
-      const [draft] = change.drafts;
-      if (text) section.append(unifiedView(text.before, text.after, "publish-menu__total-diff"));
-      else section.append(node("p", "publish-menu__note",
-        change.kind === "D" ? "Deleted"
-          : change.kind === "R" ? "Renamed, no other changes"
-          : draft.upload ? `Uploaded, ${formatBytes(draft.upload.size)}`
-          : "New file, a copy"));
-      totalBody.append(section);
-    }
+    trigger.title = n ? `Publish ${changesWord} to ${options.scope.branch}` : "Nothing selected to publish";
   }
   const gone = (change: FileChange) => change.kind === "M" && Boolean(options.deletedUpstream?.(change.path));
   // What the commit would change in a file, as counts; the button opens the
@@ -274,8 +231,8 @@ export function createPublishMenu(options: {
     return table;
   }
   // The narrow fallback: the changed lines in one column.
-  function unifiedView(before: string, after: string, className = "publish-diff__unified") {
-    const pre = node("pre", `publish-menu__diff ${className}`);
+  function unifiedView(before: string, after: string) {
+    const pre = node("pre", "publish-menu__diff publish-diff__unified");
     diffHunks(before, after, 3).forEach((hunk, index) => {
       if (index) pre.append(node("span", "publish-menu__diff-gap", "⋯\n"));
       for (const line of hunk.lines) {
@@ -294,10 +251,11 @@ export function createPublishMenu(options: {
   async function send() {
     const chosen = listChanges(draftStore().list(options.scope)).filter(selected);
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
-    if (pending || !submitted.length) return;
-    pending = true; trigger.disabled = true; submit.disabled = true;
+    if (pending) return;
+    if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }
+    pending = true; trigger.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
-    message.textContent = labels.pending;
+    message.textContent = pendingText;
     try {
       // Uploaded files become GitHub blobs first; the commit names them.
       await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));

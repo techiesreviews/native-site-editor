@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton, showPublish } from "./publish";
 
 // Drafts of files GitHub deleted since they began (src/file-changes.ts
 // settleDeletedUpstream), over `native-conventions` (id 531): a browser
@@ -23,8 +24,8 @@ test.afterEach(() => {
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const panel = (page: Page) => page.locator("#publish-files");
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
-const saveSubmit = (page: Page) => page.getByRole("button", { name: /^Save \d+ changes?$/ });
+const saveTrigger = publishButton;
+const saveSubmit = publishButton;
 const row = (page: Page, path: string) => panel(page).locator(".publish-menu__file", { hasText: path });
 
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {
@@ -49,7 +50,7 @@ async function seedStaleDrafts(page: Page) {
 }
 
 async function openSaveMenu(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(panel(page)).toBeVisible();
 }
 

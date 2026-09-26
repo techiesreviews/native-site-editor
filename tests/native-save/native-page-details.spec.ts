@@ -1,3 +1,4 @@
+import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -34,7 +35,7 @@ const description = (page: Page) => block(page).getByLabel("Description");
 const undo = (page: Page) => page.locator(".code-editor__undo").first();
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const code = (page: Page) => page.locator("#content .view-lines");
-const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const saveTrigger = publishButton;
 const follow = (page: Page, name: string) =>
   frame(page).locator("site-header a", { hasText: name }).click({ modifiers: ["ControlOrMeta"] });
 
@@ -63,11 +64,11 @@ async function branchFile(page: Page, repo: string, path: string): Promise<strin
 }
 
 async function saveAll(page: Page) {
-  await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
+  await showPublish(page);
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   await page.keyboard.press("Escape");
 }
@@ -89,7 +90,7 @@ async function expand(page: Page, path: string) {
 }
 
 async function openSaveMenu(page: Page) {
-  await saveTrigger(page).click();
+  await showPublish(page);
   await expect(page.locator("#publish-files")).toBeVisible();
 }
 async function closeSaveMenu(page: Page) {

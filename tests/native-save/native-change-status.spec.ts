@@ -1,3 +1,4 @@
+import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -40,8 +41,8 @@ async function editAndSave(page: Page, heading: string) {
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
   await expect(frame.getByRole("heading", { name: heading })).toBeVisible();
-  await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
-  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
+  await showPublish(page);
+  await publishButton(page).click();
   const message = page.locator(".publish-menu__message");
   await expect(message).toContainText("Saved to GitHub", { timeout: 30_000 });
   await expect(message).toContainText("Its status shows in the top bar.");
@@ -160,5 +161,5 @@ test("Download site zips the repository's files as edited, unsaved drafts includ
   expect(names).toContain(aboutPath);
   await expect(page.locator("#status")).toHaveText(`Downloaded native-demo-site.zip, ${names.length} files.`);
   // Nothing was saved: the draft is still there.
-  await expect(page.getByRole("button", { name: "Save to GitHub", exact: true })).toBeEnabled();
+  await expect(publishButton(page)).toBeEnabled();
 });
