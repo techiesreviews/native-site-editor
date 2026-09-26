@@ -79,7 +79,7 @@ See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration
 
 ## Test repository
 
-`fixtures/native-starter/` is a complete native site: two pages, four custom-element components with their own stylesheets, a shared stylesheet, and the `.astro-editor/native.json` manifest that maps them. Copy it into a separate GitHub repository with the manifest at the repository root and install the GitHub App on that repository. There is no build step.
+`fixtures/native-starter/` is a small native site, test data for the editor: `index.html` and `about/index.html` as full pages, components under `components/`, a shared stylesheet in `styles/` and `.editor/config.json`. For a real site start from `native-site-editor-starter`, whose repository root is the site: copy it into a GitHub repository and install the GitHub App on that repository. There is no build step (see [hosting](hosting.md)).
 
 ## Verification and current limits
 

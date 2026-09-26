@@ -58,12 +58,12 @@ Start with `get_site`. Reads come from what the editor tab last reported (pages,
 | `edit_file` | Exact text replacements in any text file (each old text once, or `all`), given the hash read. |
 | `write_file` | Create a file (the path must be free) or replace a whole file (given its hash). |
 | `create_page` | The Pages tab's New page: title, optional parent URL and slug. A parent with no subpages becomes a folder at the same URL. Returns the file and URL. |
-| `set_page_details` | Title and/or description in the page's leading comment (and out of `native.json` when it still has them). |
+| `set_page_details` | Title and/or description in the page's `<head>` (`<title>`, `<meta name="description">`, and `og:title`/`og:description` when present). |
 | `add_section` | A section component's new instance, with its own copy of the slot text, before or after a section (default: the end), given the page hash. |
 | `move_section` | A section before or after a sibling section, given the page hash. |
 | `remove_section` | A section removed, given the page hash. |
 | `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it, links to it are rewritten, and `keepOldUrl` adds a redirect to `src/public/_redirects` (default: yes for a page already on GitHub). |
-| `delete_file` | The Files tab's delete (a deletion the user can restore). `native.json` and the home page are protected as in the editor. |
+| `delete_file` | The Files tab's delete (a deletion the user can restore). The home page is protected as in the editor. |
 | `open_page` | Shows a page (or opens any file) in the editor. |
 | `get_command_status` | The state, message and result of a change this connection queued. |
 
