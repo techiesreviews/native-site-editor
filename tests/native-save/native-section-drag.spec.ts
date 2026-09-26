@@ -7,7 +7,7 @@ import { expect, test, type Page } from "@playwright/test";
 // edit bar's grip. Both are one undo step, keep the section selected, and
 // cancel cleanly.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 

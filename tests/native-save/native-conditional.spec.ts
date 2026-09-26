@@ -6,8 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
 // page left empty is hidden, `data-if` follows a named slot, and both
 // follow the page as it changes.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
-const cardPath = "src/components/project-card/project-card.html";
+const indexPath = "index.html";
+const cardPath = "components/project-card/project-card.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const cardSource = readFileSync(resolve(fixture, cardPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
@@ -37,7 +37,7 @@ test("an empty slot's wrapper is hidden until the page fills it", async ({ page 
 
   await pasteInto(page, "#content", indexSource.replace(
     `<span slot="title">Reusable cards</span>`,
-    `<span slot="title">Reusable cards</span>\n      <a slot="link" href="#/about/">See the project</a>`,
+    `<span slot="title">Reusable cards</span>\n      <a slot="link" href="/about/">See the project</a>`,
   ));
   await expect.poll(() => display(page, 0)).toBe("block");
   await expect(page.frameLocator(".native-preview-frame").getByRole("link", { name: "See the project" })).toBeVisible();

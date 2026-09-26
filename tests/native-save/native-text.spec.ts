@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // in it, and Enter, blur or a click elsewhere writes only the changed text
 // into the source as one undo step.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -91,7 +91,7 @@ test("text inside a component template is typed into that template", async ({ pa
   const frame = page.frameLocator(".native-preview-frame");
   const footer = frame.locator(".site-footer p");
   await footer.click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
   await page.keyboard.press("Home");
   await page.keyboard.type("New: ");
   await page.keyboard.press("Enter");

@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Linking a word in a paragraph from the edit bar: Link wraps the selected
 // text in `<a href="">` and opens its Address at once; Remove link unwraps.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -81,12 +81,12 @@ test("Link wraps the selected word, its Address opens at once and applies as typ
   await expect(bar(page).getByRole("button", { name: "Link", exact: true })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Remove link" })).toBeVisible();
 
-  await address.pressSequentially("#/about/");
+  await address.pressSequentially("/about/");
   await expect(address).toBeFocused();
-  await expect(lead.locator("a")).toHaveAttribute("href", "#/about/");
+  await expect(lead.locator("a")).toHaveAttribute("href", "/about/");
   await page.keyboard.press("Enter");
   await expect(popover).toBeHidden();
-  await expect.poll(() => editorText(page)).toBe(linked("#/about/"));
+  await expect.poll(() => editorText(page)).toBe(linked("/about/"));
 
   // The wrap and the typed address are one undo step.
   await bar(page).getByRole("button", { name: "Bold" }).focus();
@@ -103,14 +103,14 @@ test("Ctrl+K in the preview links the selection, and a picked page is its addres
   const popover = page.locator(".edit-bar__popover");
   const address = popover.getByRole("combobox", { name: "Address" });
   await expect(address).toBeFocused();
-  await popover.getByRole("option", { name: "#/about/" }).click();
+  await popover.getByRole("option", { name: "/about/" }).click();
   await expect(popover).toBeHidden();
-  await expect.poll(() => editorText(page)).toBe(linked("#/about/"));
-  await expect(lead.locator("a")).toHaveAttribute("href", "#/about/");
+  await expect.poll(() => editorText(page)).toBe(linked("/about/"));
+  await expect(lead.locator("a")).toHaveAttribute("href", "/about/");
 
   // With the linked word selected again, Remove link keeps the text and drops the tags.
   expect(await selectInLead(page, 5, 10)).toBe("plain");
-  await expect(bar(page).getByRole("button", { name: "Address" })).toHaveAttribute("title", "Address: #/about/");
+  await expect(bar(page).getByRole("button", { name: "Address" })).toHaveAttribute("title", "Address: /about/");
   await bar(page).getByRole("button", { name: "Remove link" }).click();
   await expect.poll(() => editorText(page)).toBe(indexSource);
   await expect(lead.locator("a")).toHaveCount(0);
@@ -120,7 +120,7 @@ test("Ctrl+K in the preview links the selection, and a picked page is its addres
   // Undo brings the link back in one step.
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(() => editorText(page)).toBe(linked("#/about/"));
+  await expect.poll(() => editorText(page)).toBe(linked("/about/"));
 });
 
 test("Escape with the address empty removes the new link; Ctrl+K works from the bar", async ({ page }) => {
@@ -140,8 +140,8 @@ test("Escape with the address empty removes the new link; Ctrl+K works from the 
   expect(await selectInLead(page, 5, 10)).toBe("plain");
   await bar(page).getByRole("button", { name: "Link", exact: true }).click();
   await expect(address).toBeFocused();
-  await address.pressSequentially("#/");
-  await expect(lead.locator("a")).toHaveAttribute("href", "#/");
+  await address.pressSequentially("/");
+  await expect(lead.locator("a")).toHaveAttribute("href", "/");
   await address.fill("");
   await expect(lead.locator("a")).toHaveAttribute("href", "");
   await page.keyboard.press("Escape");
@@ -152,13 +152,13 @@ test("a selected link inside a paragraph gets Address and Remove link", async ({
   const frame = page.frameLocator(".native-preview-frame");
   expect(await selectInLead(page, 5, 10)).toBe("plain");
   await bar(page).getByRole("button", { name: "Link", exact: true }).click();
-  await page.locator(".edit-bar__popover").getByRole("option", { name: "#/", exact: true }).click();
-  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+  await page.locator(".edit-bar__popover").getByRole("option", { name: "Native Studio (/)", exact: true }).click();
+  await expect.poll(() => editorText(page)).toBe(linked("/"));
   // While typing in the paragraph, a click puts the caret in the link: the
   // paragraph stays selected and the bar offers the link's Address and Remove link.
   await frame.locator(".hero p.lead a").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect(bar(page).getByRole("button", { name: "Address" })).toHaveAttribute("title", "Address: #/");
+  await expect(bar(page).getByRole("button", { name: "Address" })).toHaveAttribute("title", "Address: /");
   await expect(bar(page).getByRole("button", { name: "Link", exact: true })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Remove link" }).click();
   await expect.poll(() => editorText(page)).toBe(indexSource);
@@ -167,7 +167,7 @@ test("a selected link inside a paragraph gets Address and Remove link", async ({
   // Undo, then select the link itself (from outside the paragraph): Remove link unwraps it too.
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+  await expect.poll(() => editorText(page)).toBe(linked("/"));
   await frame.locator(".hero h1").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await frame.locator(".hero p.lead a").click();
@@ -213,8 +213,8 @@ test("the Address offers Open in new tab and a title, applied as changed, one un
   const link = frame.locator(".hero p.lead a");
   expect(await selectInLead(page, 5, 10)).toBe("plain");
   await bar(page).getByRole("button", { name: "Link", exact: true }).click();
-  await popover.getByRole("option", { name: "#/", exact: true }).click();
-  await expect(link).toHaveAttribute("href", "#/");
+  await popover.getByRole("option", { name: "Native Studio (/)", exact: true }).click();
+  await expect(link).toHaveAttribute("href", "/");
 
   await bar(page).getByRole("button", { name: "Address" }).click();
   const newTab = popover.getByRole("checkbox", { name: "Open in new tab" });
@@ -231,7 +231,7 @@ test("the Address offers Open in new tab and a title, applied as changed, one un
   await expect(link).toHaveAttribute("title", "The home page");
   await title.press("Enter");
   await expect(popover).toBeHidden();
-  const withBoth = linked("#/").replace(`<a href="#/">`, `<a href="#/" target="_blank" rel="noopener" title="The home page">`);
+  const withBoth = linked("/").replace(`<a href="/">`, `<a href="/" target="_blank" rel="noopener" title="The home page">`);
   await expect.poll(() => editorText(page)).toBe(withBoth);
 
   // Opened again: both show as written; unticking takes target and rel away, an emptied title goes.
@@ -245,7 +245,7 @@ test("the Address offers Open in new tab and a title, applied as changed, one un
   await title.fill("");
   await expect(link).not.toHaveAttribute("title", /.*/);
   await title.press("Escape");
-  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+  await expect.poll(() => editorText(page)).toBe(linked("/"));
 
   // Each opening was one undo step.
   await bar(page).getByRole("button", { name: "Address" }).focus();
@@ -253,5 +253,5 @@ test("the Address offers Open in new tab and a title, applied as changed, one un
   await expect.poll(() => editorText(page)).toBe(withBoth);
   await bar(page).getByRole("button", { name: "Address" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(() => editorText(page)).toBe(linked("#/"));
+  await expect.poll(() => editorText(page)).toBe(linked("/"));
 });

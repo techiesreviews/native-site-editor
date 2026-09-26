@@ -6,9 +6,9 @@ import { expect, test, type Page } from "@playwright/test";
 // fit a section slot (template is one <section>); choosing one writes an
 // instance into the page source as one undo step and selects it.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
-const featurePath = "src/components/feature-block/feature-block.html";
+const featurePath = "components/feature-block/feature-block.html";
 const featureSource = readFileSync(resolve(fixture, featurePath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -175,7 +175,7 @@ test("with no section component the picker explains what fits", async ({ page, b
 test("inserting while a component file is open edits the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await frame.locator(".site-footer p").click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
   await scrollFrame(page, "top");
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();

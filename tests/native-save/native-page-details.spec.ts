@@ -1,16 +1,17 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// Page details live in the page: the Page block's Title and Description and
-// the Pages tab's Rename write the page's leading <!-- title: … --> comment
-// (shared/native-project.ts `nativePageCommentEdit`), taking the manifest's
-// field for the route out in the same undo step; the notice moves every
-// route's details out of native.json and then offers to remove it; and a
-// Files-tab rename of a page updates the links to it like Change URL.
-// `native-routing` (id 530) has a manifest titling /work/fern-and-kettle/;
-// `native-conventions` (id 531) has none.
-const manifestPath = ".astro-editor/native.json";
-const fernPath = "src/pages/work/fern-and-kettle.html";
+// Page details live in the page's <head>: the Page block's Title and
+// Description, and the Pages tab's Rename, write its <title> and
+// <meta name="description"> (og:title and og:description along; see
+// shared/native-project.ts `nativePageWithDetail`) as typed, and Save to
+// GitHub commits them with the page; a Files-tab rename of a page updates
+// the links to it like Change URL. The starter (id 501), `native-routing`
+// (id 530) and `native-conventions` (id 531).
+const fernPath = "work/fern-and-kettle/index.html";
 const routingRepo = "native-demo-user/native-routing";
+const starterHome = readFileSync(resolve("fixtures/native-starter/index.html"), "utf8");
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page }) => {
@@ -31,9 +32,13 @@ const block = (page: Page) => page.getByRole("group", { name: "Page" });
 const title = (page: Page) => block(page).getByLabel("Title");
 const description = (page: Page) => block(page).getByLabel("Description");
 const undo = (page: Page) => page.locator(".code-editor__undo").first();
-const notice = (page: Page) => page.locator(".native-preview-warning");
+const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
+const code = (page: Page) => page.locator("#content .view-lines");
+const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
+const follow = (page: Page, name: string) =>
+  frame(page).locator("site-header a", { hasText: name }).click({ modifiers: ["ControlOrMeta"] });
 
-async function open(page: Page, baseURL: string | undefined, repo: number, file = "src/pages/index.html") {
+async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
@@ -83,70 +88,117 @@ async function expand(page: Page, path: string) {
   }
 }
 
-test("the Page block writes the page comment and takes the manifest's field out in the same undo step; saving commits both", async ({ page, baseURL }) => {
-  await open(page, baseURL, 530, fernPath);
-  // The manifest's title applies, so the field shows it.
-  await expect(title(page)).toHaveValue("Fern & Kettle");
-  await expect(title(page)).toBeEditable();
-  await expect(description(page)).toHaveValue("");
-  await expect(description(page)).toHaveAttribute("placeholder", "");
-  await expect(title(page)).toHaveAttribute("placeholder", "Fern and Kettle");
+async function openSaveMenu(page: Page) {
+  await saveTrigger(page).click();
+  await expect(page.locator("#publish-files")).toBeVisible();
+}
+async function closeSaveMenu(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#publish-files")).toBeHidden();
+}
 
-  await title(page).fill("Fern & Kettle café");
-  await expect(status(page)).toHaveText("Title updated");
-  await expect(page.locator("#content .view-lines")).toContainText("title: Fern & Kettle café");
-  // The manifest's entry went with its only field; the route needs none.
-  expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({});
-  await expect(page.locator("#current-page")).toHaveText("Fern & Kettle café");
-  await page.keyboard.press("Enter");
+test("the fields show the page's head, sit above the tree, and are absent for a component alone", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501);
+  await expect(block(page)).toBeVisible();
+  await expect(title(page)).toHaveValue("Native Studio");
+  await expect(description(page)).toHaveValue("A small site built from plain HTML, CSS and shared components.");
+  await expect(title(page)).toHaveAttribute("placeholder", "A native browser preview");
+  const blockBox = (await block(page).boundingBox())!;
+  const treeBox = (await tree(page).boundingBox())!;
+  expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(treeBox.y);
 
-  await description(page).fill("A café identity.");
-  await expect(status(page)).toHaveText("Description updated");
-  await page.keyboard.press("Enter");
-  expect((await draft(page, fernPath)).content).toMatch(/^<!--\ntitle: Fern & Kettle café\ndescription: A café identity\.\n-->\n<main/);
-  // The comment never shows in the preview.
-  await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
-  await expect(frame(page).locator("body")).not.toContainText("title:");
-
-  // Undo: the description, then the title with the manifest's entry.
-  await undo(page).click();
-  await expect(description(page)).toHaveValue("");
-  await undo(page).click();
-  await expect(title(page)).toHaveValue("Fern & Kettle");
-  await expect(page.locator("#content .view-lines")).not.toContainText("title:");
-  expect(await draft(page, manifestPath)).toBeUndefined();
-  expect(await draft(page, fernPath)).toBeUndefined();
-
-  await title(page).fill("Fern & Kettle café");
-  await page.keyboard.press("Enter");
-  await description(page).fill("A café identity.");
-  await page.keyboard.press("Enter");
-  await saveAll(page);
-  expect(await branchFile(page, routingRepo, fernPath)).toMatch(/^<!--\ntitle: Fern & Kettle café\ndescription: A café identity\.\n-->\n<main/);
-  expect(JSON.parse((await branchFile(page, routingRepo, manifestPath))!).routes).toEqual({});
-  await page.reload();
-  await expect(title(page)).toHaveValue("Fern & Kettle café", { timeout: 30_000 });
-  await expect(description(page)).toHaveValue("A café identity.");
-
-  // Emptying both removes the comment.
-  await title(page).fill("");
-  await page.keyboard.press("Enter");
-  await description(page).fill("");
-  await expect(status(page)).toHaveText("Description removed");
-  expect((await draft(page, fernPath)).content).toMatch(/^<main/);
+  // A component no page uses shows by itself: no page, so no Page fields.
+  await expand(page, "components/feature-block");
+  await row(page, "feature-block.html").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
+  await expect(page.locator("#structure .sidebar-hint")).toContainText("component by itself", { timeout: 30_000 });
+  await expect(block(page)).toBeHidden();
 });
 
-test("with no manifest the Page block and the Pages tab's Rename edit the page comment", async ({ page, baseURL }) => {
-  await open(page, baseURL, 531);
-  await expect(title(page)).toHaveValue("Built by convention");
-  await expect(title(page)).toBeEditable();
-  await expect(block(page).locator(".page-structure__meta-notice")).toBeHidden();
-  await title(page).fill("Built by folders");
+test("typing a title and a description writes the head, og tags along, one undo step each; back as it was, nothing to save", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501);
+  await title(page).fill("Home & <more>");
   await expect(status(page)).toHaveText("Title updated");
+  await expect(code(page)).toContainText("<title>Home &amp; &lt;more></title>");
+  await expect(page.locator("#current-page")).toHaveText("Home");
   await page.keyboard.press("Enter");
-  await description(page).fill("");
-  await expect(status(page)).toHaveText("Description removed");
-  expect((await draft(page, "src/pages/index.html")).content).toMatch(/^<!--\ntitle: Built by folders\n-->\n/);
+  await description(page).fill('The "home" page');
+  await expect(status(page)).toHaveText("Description updated");
+  await page.keyboard.press("Enter");
+  const written = (await draft(page, "index.html")).content;
+  expect(written).toBe(starterHome
+    .replace("<title>Native Studio</title>", "<title>Home &amp; &lt;more></title>")
+    .replace('<meta property="og:title" content="Native Studio">', '<meta property="og:title" content="Home &amp; <more>">')
+    .replace(/content="A small site built from plain HTML, CSS and shared components\."/g, 'content="The &quot;home&quot; page"'));
+  // The head never shows in the preview.
+  await expect(frame(page).locator("body")).not.toContainText('"home" page');
+  await openSaveMenu(page);
+  await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(1);
+  await expect(page.locator("#publish-files")).toContainText("index.html");
+  await closeSaveMenu(page);
+
+  // Undo: the description, then the title.
+  await undo(page).click();
+  await expect(description(page)).toHaveValue("A small site built from plain HTML, CSS and shared components.");
+  await undo(page).click();
+  await expect(title(page)).toHaveValue("Native Studio");
+  expect(await draft(page, "index.html")).toBeUndefined();
+  await expect(saveTrigger(page)).toBeDisabled();
+
+  // An emptied title leaves an empty <title>, and the top bar falls back to the heading.
+  await open(page, baseURL, 501, "about/index.html");
+  await title(page).fill("");
+  await expect(status(page)).toHaveText("Title removed");
+  await expect(code(page)).toContainText("<title></title>");
+  await expect(page.locator("#current-page")).toHaveText("About this project");
+});
+
+test("the fields follow the preview's page and keep what was typed on each page", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501);
+  await title(page).fill("Home");
+  await page.keyboard.press("Enter");
+  await expect(title(page)).not.toBeFocused();
+  await follow(page, "About");
+  await expect(tree(page).getByRole("treeitem", { name: "Heading About this project" })).toBeVisible();
+  await expect(title(page)).toHaveValue("About this project");
+  await title(page).fill("About");
+  await description(page).fill("Who made this");
+  await follow(page, "Home");
+  await expect(tree(page).getByRole("treeitem", { name: "Heading A native browser preview" })).toBeVisible();
+  await expect(title(page)).toHaveValue("Home");
+  await follow(page, "About");
+  await expect(tree(page).getByRole("treeitem", { name: "Heading About this project" })).toBeVisible();
+  await expect(title(page)).toHaveValue("About");
+  await expect(description(page)).toHaveValue("Who made this");
+  await openSaveMenu(page);
+  await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(2);
+});
+
+test("a typed title survives a reload, and saving commits it in the page", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530, fernPath);
+  await expect(title(page)).toHaveValue("Fern & Kettle");
+  await title(page).fill("Fern & Kettle café");
+  await expect(status(page)).toHaveText("Title updated");
+  await page.reload();
+  await expect(title(page)).toHaveValue("Fern & Kettle café", { timeout: 30_000 });
+  await saveAll(page);
+  expect(await branchFile(page, routingRepo, fernPath)).toContain("<title>Fern &amp; Kettle café</title>");
+  await expect(saveTrigger(page)).toBeDisabled();
+  // Saved on the branch: a fresh load reads it from GitHub, with no draft left.
+  await page.reload();
+  await expect(title(page)).toHaveValue("Fern & Kettle café", { timeout: 30_000 });
+  await expect(page.locator("#current-page")).toHaveText("Fern & Kettle café");
+  await expect(saveTrigger(page)).toBeDisabled();
+});
+
+test("a description a page lacks is added after its title; the Pages tab's Rename writes the title", async ({ page, baseURL }) => {
+  await open(page, baseURL, 531, "notes/first-note/index.html");
+  await expect(title(page)).toHaveValue("The first note");
+  await expect(description(page)).toHaveValue("");
+  await description(page).fill("Notes, the first.");
+  await expect(status(page)).toHaveText("Description updated");
+  await page.keyboard.press("Enter");
+  expect((await draft(page, "notes/first-note/index.html")).content).toContain('  <title>The first note</title>\n  <meta name="description" content="Notes, the first.">\n');
 
   await openExplorer(page, "Pages");
   const note = item(page, "The first note");
@@ -157,80 +209,27 @@ test("with no manifest the Page block and the Pages tab's Rename edit the page c
   await page.keyboard.press("Enter");
   await expect(status(page)).toHaveText("Renamed The first note to Note one");
   await expect(item(page, "Note one")).toBeVisible();
-  expect((await draft(page, "src/pages/notes/first-note.html")).content).toContain("title: Note one");
-  const manifestDrafts = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes(".astro-editor/native.json")).length);
-  expect(manifestDrafts).toBe(0);
+  expect((await draft(page, "notes/first-note/index.html")).content).toContain("<title>Note one</title>");
 });
 
-test("Move page details into the pages, then Remove native.json: the site still previews and saves without it", async ({ page, baseURL }) => {
+test("renaming a page's folder in the Files tab updates the links to it and can keep its old URL working", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
-  await expect(notice(page)).toContainText("native.json gives 1 page its title or description.");
-  await notice(page).getByRole("button", { name: "Move page details into the pages" }).click();
-  await expect(status(page)).toHaveText("Moved the titles and descriptions of 1 page into the pages; native.json now says nothing the files do not, so it can be removed.");
-  expect((await draft(page, fernPath)).content).toMatch(/^<!--\ntitle: Fern & Kettle\n-->\n<main/);
-  expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({});
-
-  // Undo takes the whole move back.
-  await undo(page).click();
-  expect(await draft(page, fernPath)).toBeUndefined();
-  expect(await draft(page, manifestPath)).toBeUndefined();
-  await expect(notice(page)).toContainText("native.json gives 1 page its title or description.");
-  await notice(page).getByRole("button", { name: "Move page details into the pages" }).click();
-
-  await expect(notice(page)).toContainText("native.json says nothing the files do not already say.");
-  await notice(page).getByRole("button", { name: "Remove native.json" }).click();
-  await expect(status(page)).toContainText("Deleted .astro-editor/native.json");
-  expect((await draft(page, manifestPath)).deleted).toBe(true);
-  await expect(page.locator(".native-preview-error")).toBeHidden();
-  await expect(frame(page).locator("h1")).toHaveText("Routed by folders");
-  await expect(notice(page)).toBeHidden();
-
-  await saveAll(page);
-  expect(await branchFile(page, routingRepo, manifestPath)).toBeUndefined();
-  expect(await branchFile(page, routingRepo, fernPath)).toMatch(/^<!--\ntitle: Fern & Kettle\n-->\n/);
-
-  // A fresh load: native by its home page, the title from the comment.
-  await page.goto(`${baseURL}/#repo=530&branch=main&file=${encodeURIComponent(fernPath)}`);
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", fernPath, { timeout: 30_000 });
-  await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle", { timeout: 30_000 });
-  await expect(page.locator(".native-preview-error")).toBeHidden();
-  await expect(title(page)).toHaveValue("Fern & Kettle");
-  await expect(page.locator("#current-page")).toHaveText("Fern & Kettle");
-});
-
-test("the Files tab deletes native.json only when the site has a home page, saying what goes with it", async ({ page, baseURL }) => {
-  await open(page, baseURL, 530);
-  await expand(page, ".astro-editor");
-  await row(page, "native.json").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete" }).click();
-  const dialog = page.getByRole("dialog", { name: "Delete .astro-editor/native.json?" });
-  await expect(dialog).toContainText("what native.json adds (page titles and descriptions");
-  await dialog.getByRole("button", { name: "Delete" }).click();
-  await expect(status(page)).toHaveText("Deleted .astro-editor/native.json.");
-  await expect(page.locator(".native-preview-error")).toBeHidden();
-  await expect(frame(page).locator("h1")).toHaveText("Routed by folders");
-});
-
-test("renaming a page in the Files tab updates the links to it and can keep its old URL working", async ({ page, baseURL }) => {
-  await open(page, baseURL, 530);
-  await expand(page, "src/pages/work");
-  await row(page, "fern-and-kettle.html").focus();
+  await expand(page, "work");
+  await row(page, "fern-and-kettle").focus();
   await page.keyboard.press("F2");
-  await explorer(page).getByRole("textbox", { name: `New name for ${fernPath}` }).fill("fern.html");
+  await explorer(page).getByRole("textbox", { name: "New name for work/fern-and-kettle" }).fill("fern");
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: `Rename ${fernPath} to src/pages/work/fern.html?` });
+  const dialog = page.getByRole("dialog", { name: "Rename work/fern-and-kettle to work/fern?" });
   await expect(dialog).toContainText("Its URL changes from /work/fern-and-kettle/ to /work/fern/.");
   await expect(dialog).toContainText("Updates 1 link in 1 file.");
   const keep = dialog.getByRole("checkbox", { name: "Keep the old URL working (/work/fern-and-kettle/ redirects to /work/fern/)" });
   await expect(keep).toBeChecked();
   await dialog.getByRole("button", { name: "Rename" }).click();
-  await expect(status(page)).toHaveText(`Renamed ${fernPath} to src/pages/work/fern.html — 1 link updated in 1 file; /work/fern-and-kettle/ redirects there.`);
-  expect((await draft(page, "src/pages/work/index.html")).content).toContain('href="#/work/fern/"');
-  expect((await draft(page, "src/public/_redirects")).content).toBe("/work/fern-and-kettle/ /work/fern/ 301\n");
+  await expect(status(page)).toHaveText("Renamed the folder work/fern-and-kettle to work/fern — 1 link updated in 1 file; /work/fern-and-kettle/ redirects there.");
+  expect((await draft(page, "work/index.html")).content).toContain('href="/work/fern/"');
+  expect((await draft(page, "_redirects")).content).toBe("/work/fern-and-kettle/ /work/fern/ 301\n");
   await page.keyboard.press("Escape");
   await expect(explorer(page)).toBeHidden();
-  // The manifest's title followed the page to its new URL.
-  expect(JSON.parse((await draft(page, manifestPath)).content).routes).toEqual({ "/work/fern/": { title: "Fern & Kettle" } });
   // The updated link leads to the page at its new URL.
   await frame(page).getByRole("link", { name: "Our work" }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame(page).locator("h1")).toHaveText("Work");

@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // the preview, the edit bar and the page structure sidebar: one undo step,
 // nothing at the ends, nothing for an atom.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -151,7 +151,7 @@ test("Alt+Down on a page structure row while a component file is open opens the 
     const card = document.querySelector("project-card") as HTMLElement;
     (card.shadowRoot!.querySelector(".project-card__body") as HTMLElement).click();
   });
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect(tree(page)).toBeVisible();
   // Focus the section's row without clicking it (a click would open the page by itself).
   await row(page, "Section").evaluate((el) => (el as HTMLElement).focus());

@@ -21,7 +21,9 @@
 // native repository (`cascade-<folder>`, ids from 510 in folder order), each a
 // site with its own CSS structure for the style panel's cascade tests, and
 // `fixtures/native-routing` is `native-routing` (id 530), a site with pages
-// in folders, a single-file page and a partial that is not a page.
+// in folders, a single-file page and a partial that is not a page, and
+// `fixtures/native-conventions` is `native-conventions` (id 531), a site
+// with components, layered shared styles and a folder with no page.
 //
 // Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
 // (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
@@ -167,6 +169,9 @@ if (!demoMode)
   FIXTURE_REPOS.push({
     root: resolve(projectRoot, "fixtures/native-routing"),
     repo: { ...DEMO_REPO, id: 530, name: "native-routing", full_name: `${DEMO_LOGIN}/native-routing` },
+  }, {
+    root: resolve(projectRoot, "fixtures/native-conventions"),
+    repo: { ...DEMO_REPO, id: 531, name: "native-conventions", full_name: `${DEMO_LOGIN}/native-conventions` },
   });
 const initialFixtureGits = new Map<string, Git>();
 

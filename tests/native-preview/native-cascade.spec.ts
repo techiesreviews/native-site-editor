@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const fixtures = readdirSync("fixtures/cascade", { withFileTypes: true })
   .filter((dirent) => dirent.isDirectory()).map((dirent) => dirent.name).sort();
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const pageErrors: string[] = [];
 
 test.beforeEach(({ page }) => {
@@ -96,17 +96,17 @@ test("no layers: specificity and order across files, conditions, nesting and the
   const note = frame.locator("#flat-note");
   await expect(note).toBeVisible({ timeout: 30_000 });
   await note.click();
-  await expectWinner(page, note, "color", { selector: ".note", path: "src/styles/theme.css", value: "rgb(3, 3, 3)" });
-  await expectOverridden(page, ".note", "src/styles/base.css", "");
-  await expectWinner(page, note, "margin-top", { selector: "p", path: "src/styles/base.css" });
-  await expectWinner(page, note, "text-transform", { selector: ".note--loud", path: "src/styles/base.css", value: "uppercase" });
-  await expectOverridden(page, "p.note", "src/styles/theme.css");
-  await expectWinner(page, note, "letter-spacing", { selector: ".card .note", path: "src/styles/base.css", origin: "@media" });
-  await expectWinner(page, note, "font-style", { selector: "& .note", path: "src/styles/theme.css", value: "italic" });
-  await expectWinner(page, note, "text-indent", { selector: "p", path: "src/styles/base.css", origin: "@scope", value: "3px" });
+  await expectWinner(page, note, "color", { selector: ".note", path: "styles/theme.css", value: "rgb(3, 3, 3)" });
+  await expectOverridden(page, ".note", "styles/base.css", "");
+  await expectWinner(page, note, "margin-top", { selector: "p", path: "styles/base.css" });
+  await expectWinner(page, note, "text-transform", { selector: ".note--loud", path: "styles/base.css", value: "uppercase" });
+  await expectOverridden(page, "p.note", "styles/theme.css");
+  await expectWinner(page, note, "letter-spacing", { selector: ".card .note", path: "styles/base.css", origin: "@media" });
+  await expectWinner(page, note, "font-style", { selector: "& .note", path: "styles/theme.css", value: "italic" });
+  await expectWinner(page, note, "text-indent", { selector: "p", path: "styles/base.css", origin: "@scope", value: "3px" });
   // Two @container rules: the one the computed value shows applies wins; the
   // other is neither winning nor claimed overridden.
-  await expectWinner(page, note, "word-spacing", { selector: ".note", path: "src/styles/base.css", origin: "@container", value: "4px" });
+  await expectWinner(page, note, "word-spacing", { selector: ".note", path: "styles/base.css", origin: "@container", value: "4px" });
   const containers = (await chips(page)).filter((chip) => chip.origin === "@container");
   expect(containers.map((chip) => chip.cascade).sort()).toEqual(["neutral", "wins"]);
   expect(containers.find((chip) => chip.cascade === "neutral")!.title).toContain("word-spacing: 9px — @container not met");
@@ -118,7 +118,7 @@ test("no layers: specificity and order across files, conditions, nesting and the
   const plain = frame.locator(".plain");
   await plain.click();
   await expectWinner(page, plain, "color", { selector: "style=\"…\"", path: indexPath, origin: "", value: "rgb(5, 5, 5)" });
-  await expectOverridden(page, ".plain", "src/styles/base.css");
+  await expectOverridden(page, ".plain", "styles/base.css");
 });
 
 test("layers declared up front: unlayered wins normal declarations, earlier layers win !important", async ({ page, baseURL }) => {
@@ -127,12 +127,12 @@ test("layers declared up front: unlayered wins normal declarations, earlier laye
   await expect(link).toBeVisible({ timeout: 30_000 });
   await link.click();
   // A plain unlayered `a` beats `.button` in a layer.
-  await expectWinner(page, link, "color", { selector: "a", path: "src/styles/site.css", origin: "", value: "rgb(9, 9, 9)" });
+  await expectWinner(page, link, "color", { selector: "a", path: "styles/site.css", origin: "", value: "rgb(9, 9, 9)" });
   // A later layer beats an earlier one, whatever the specificity.
-  await expectWinner(page, link, "padding-top", { selector: ".button", path: "src/styles/site.css", origin: "components", value: "4px" });
+  await expectWinner(page, link, "padding-top", { selector: ".button", path: "styles/site.css", origin: "components", value: "4px" });
   // !important: the earliest layer wins, and a layered one beats an unlayered one.
-  await expectWinner(page, link, "text-decoration-line", { selector: "a", path: "src/styles/site.css", origin: "reset", value: "none" });
-  await expectWinner(page, link, "font-weight", { selector: "p a", path: "src/styles/site.css", origin: "base", value: "700" });
+  await expectWinner(page, link, "text-decoration-line", { selector: "a", path: "styles/site.css", origin: "reset", value: "none" });
+  await expectWinner(page, link, "font-weight", { selector: "p a", path: "styles/site.css", origin: "base", value: "700" });
   const unlayered = (await chips(page)).find((chip) => chip.selector === "a" && chip.origin === "")!;
   expect(unlayered.overridden).toEqual(["font-weight"]);
   await expectDecidingFirst(page);
@@ -143,15 +143,15 @@ test("layers in first-use order, anonymous and nested", async ({ page, baseURL }
   const title = frame.locator("#title");
   await expect(title).toBeVisible({ timeout: 30_000 });
   await title.click();
-  await expectWinner(page, title, "color", { selector: "h1", path: "src/styles/one.css", origin: "base", value: "rgb(50, 0, 0)" });
-  await expectWinner(page, title, "font-size", { selector: "h1", path: "src/styles/one.css", origin: "base", value: "30px" });
-  await expectWinner(page, title, "letter-spacing", { selector: "h1", path: "src/styles/two.css", origin: "anonymous layer", value: "1px" });
-  await expectWinner(page, title, "text-transform", { selector: "h1", path: "src/styles/two.css", origin: "outer", value: "lowercase" });
-  await expectOverridden(page, "h1", "src/styles/one.css", "theme");
-  await expectOverridden(page, "h1", "src/styles/one.css", "anonymous layer");
-  await expectOverridden(page, "#title.title", "src/styles/two.css", "theme");
-  await expectOverridden(page, "#title", "src/styles/two.css", "base.type");
-  await expectOverridden(page, "#title", "src/styles/two.css", "outer.inner");
+  await expectWinner(page, title, "color", { selector: "h1", path: "styles/one.css", origin: "base", value: "rgb(50, 0, 0)" });
+  await expectWinner(page, title, "font-size", { selector: "h1", path: "styles/one.css", origin: "base", value: "30px" });
+  await expectWinner(page, title, "letter-spacing", { selector: "h1", path: "styles/two.css", origin: "anonymous layer", value: "1px" });
+  await expectWinner(page, title, "text-transform", { selector: "h1", path: "styles/two.css", origin: "outer", value: "lowercase" });
+  await expectOverridden(page, "h1", "styles/one.css", "theme");
+  await expectOverridden(page, "h1", "styles/one.css", "anonymous layer");
+  await expectOverridden(page, "#title.title", "styles/two.css", "theme");
+  await expectOverridden(page, "#title", "styles/two.css", "base.type");
+  await expectOverridden(page, "#title", "styles/two.css", "outer.inner");
   await expectDecidingFirst(page);
 });
 
@@ -162,15 +162,15 @@ test("@import with layer(), media and a declared layer order", async ({ page, ba
   await expect.poll(() => intro.evaluate((el) => getComputedStyle(el).fontStyle)).toBe("italic");
   await intro.click();
   // `@layer base, theme;` puts theme after base, though base is imported later.
-  await expectWinner(page, intro, "color", { selector: ".intro", path: "src/styles/theme.css", origin: "theme", value: "rgb(70, 0, 0)" });
-  await expectWinner(page, intro, "font-weight", { selector: ".intro", path: "src/styles/parts/base.css", origin: "base", value: "700" });
-  await expectWinner(page, intro, "font-style", { selector: "p.intro", path: "src/styles/parts/base.css", origin: "base" });
-  await expectWinner(page, intro, "text-decoration-line", { selector: ".intro", path: "src/styles/wide.css", origin: "wide @media", value: "underline" });
-  await expectWinner(page, intro, "margin-top", { selector: ".intro", path: "src/styles/site.css", origin: "" });
-  expect((await chips(page)).some((chip) => chip.path === "src/styles/print.css")).toBe(false);
-  const base = (await chips(page)).find((chip) => chip.selector === ".intro" && chip.path === "src/styles/parts/base.css")!;
+  await expectWinner(page, intro, "color", { selector: ".intro", path: "styles/theme.css", origin: "theme", value: "rgb(70, 0, 0)" });
+  await expectWinner(page, intro, "font-weight", { selector: ".intro", path: "styles/parts/base.css", origin: "base", value: "700" });
+  await expectWinner(page, intro, "font-style", { selector: "p.intro", path: "styles/parts/base.css", origin: "base" });
+  await expectWinner(page, intro, "text-decoration-line", { selector: ".intro", path: "styles/wide.css", origin: "wide @media", value: "underline" });
+  await expectWinner(page, intro, "margin-top", { selector: ".intro", path: "styles/site.css", origin: "" });
+  expect((await chips(page)).some((chip) => chip.path === "styles/print.css")).toBe(false);
+  const base = (await chips(page)).find((chip) => chip.selector === ".intro" && chip.path === "styles/parts/base.css")!;
   expect(base.overridden).toEqual(["color"]);
-  expect(base.title).toContain("(imported by src/styles/site.css)");
+  expect(base.title).toContain("(imported by styles/site.css)");
 });
 
 test("shadow DOM: the page beats ::slotted() and :host, except for !important", async ({ page, baseURL }) => {
@@ -181,14 +181,14 @@ test("shadow DOM: the page beats ::slotted() and :host, except for !important", 
   // The component's stylesheet arrives after the first render.
   await expect.poll(() => lead.evaluate((el) => getComputedStyle(el).fontStyle)).toBe("italic");
   await lead.click();
-  await expectWinner(page, lead, "color", { selector: ".lead", path: "src/styles/site.css", value: "rgb(100, 0, 0)" });
-  await expectWinner(page, lead, "font-style", { selector: "::slotted(p)", path: "src/components/info-box/info-box.css", origin: "::slotted" });
-  await expectWinner(page, lead, "letter-spacing", { selector: ".lead", path: "src/styles/site.css", value: "5px" });
-  await expectWinner(page, lead, "font-weight", { selector: "slot::slotted(.lead)", path: "src/components/info-box/info-box.css", origin: "::slotted", value: "700" });
+  await expectWinner(page, lead, "color", { selector: ".lead", path: "styles/site.css", value: "rgb(100, 0, 0)" });
+  await expectWinner(page, lead, "font-style", { selector: "::slotted(p)", path: "components/info-box/info-box.css", origin: "::slotted" });
+  await expectWinner(page, lead, "letter-spacing", { selector: ".lead", path: "styles/site.css", value: "5px" });
+  await expectWinner(page, lead, "font-weight", { selector: "slot::slotted(.lead)", path: "components/info-box/info-box.css", origin: "::slotted", value: "700" });
   // A rule written only as `.lead` reaches the slotted lead through its added twin.
   await expect.poll(() => lead.evaluate((el) => getComputedStyle(el).textTransform)).toBe("uppercase");
-  await expectWinner(page, lead, "text-transform", { selector: "::slotted(.lead)", path: "src/components/info-box/info-box.css", origin: "::slotted", value: "uppercase" });
-  await expectOverridden(page, "p", "src/styles/site.css");
+  await expectWinner(page, lead, "text-transform", { selector: "::slotted(.lead)", path: "components/info-box/info-box.css", origin: "::slotted", value: "uppercase" });
+  await expectOverridden(page, "p", "styles/site.css");
   const slotted = (await chips(page)).find((chip) => chip.selector === "::slotted(p)")!;
   expect(slotted.overridden).toEqual(["color"]);
   await expectDecidingFirst(page);
@@ -196,26 +196,26 @@ test("shadow DOM: the page beats ::slotted() and :host, except for !important", 
   // A click on the host itself (its padding), not on the slotted paragraph.
   await box.evaluate((el) => (el as HTMLElement).click());
   await expect(page.locator("#secondary-rules")).toContainText(":host");
-  await expectWinner(page, box, "padding-top", { selector: "info-box", path: "src/styles/site.css", value: "9px" });
-  await expectWinner(page, box, "margin-top", { selector: "info-box.boxed", path: "src/styles/site.css", value: "1px" });
-  await expectWinner(page, box, "display", { selector: ":host", path: "src/components/info-box/info-box.css", origin: ":host", value: "block" });
-  await expectWinner(page, box, "color", { selector: ":host", path: "src/components/info-box/info-box.css", origin: ":host" });
-  await expectOverridden(page, ":host(.boxed)", "src/components/info-box/info-box.css", ":host");
+  await expectWinner(page, box, "padding-top", { selector: "info-box", path: "styles/site.css", value: "9px" });
+  await expectWinner(page, box, "margin-top", { selector: "info-box.boxed", path: "styles/site.css", value: "1px" });
+  await expectWinner(page, box, "display", { selector: ":host", path: "components/info-box/info-box.css", origin: ":host", value: "block" });
+  await expectWinner(page, box, "color", { selector: ":host", path: "components/info-box/info-box.css", origin: ":host" });
+  await expectOverridden(page, ":host(.boxed)", "components/info-box/info-box.css", ":host");
   await expectDecidingFirst(page);
 });
 
 test("the starter's footer link: the component's unlayered `a` beats the shared layered `p a`", async ({ page, baseURL }) => {
   const frame = await openFixture(page, baseURL, "starter");
   // With nothing selected, the stylesheet the cascade puts first for <body> opens.
-  await expect(page.locator("#secondary-title")).toHaveText("src/styles/elements.css", { timeout: 30_000 });
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css", { timeout: 30_000 });
   await expect(page.locator("#secondary-rules")).toContainText("body");
 
   const link = frame.locator("site-footer a");
   await expect(link).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => frame.locator("site-footer footer").evaluate((el) => getComputedStyle(el).paddingTop)).toBe("24px");
   await link.click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-footer/site-footer.html");
-  await expect(page.locator("#secondary-title")).toHaveText("src/components/site-footer/site-footer.css");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
+  await expect(page.locator("#secondary-title")).toHaveText("components/site-footer/site-footer.css");
   // The pointer is still over the link, so `a:hover` applies right now; the
   // panel lists the link's resting styles and the hover rule as a state.
   await expect.poll(async () => (await chips(page)).map((chip) => `${chip.selector} ${chip.cascade}`)).toEqual([
@@ -227,13 +227,13 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   expect(winner.wins).toEqual(["color"]);
   expect(winner.title).toContain("✓ color: var(--muted)");
   const layered = (await chips(page))[2];
-  expect(layered.path).toBe("src/styles/elements.css");
+  expect(layered.path).toBe("styles/elements.css");
   expect(layered.origin).toBe("elements");
   expect(layered.title).toContain("✕ color: var(--accent) — overridden by a (site-footer.css)");
   expect((await chips(page))[1].title).toContain("in :hover state");
   // The shared rule is crossed out in its file.
   await page.locator("#secondary-rules button", { hasText: "p a" }).click();
-  await expect(page.locator("#secondary-title")).toHaveText("src/styles/elements.css");
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
   // Monaco splits the mark per token; together they are the one declaration.
   await expect.poll(() => page.locator("#content-secondary .code-editor__overridden")
     .evaluateAll((marks) => marks.map((mark) => mark.textContent).join("").replace(/\u00a0/g, " "))).toBe("color: var(--accent);");
@@ -243,5 +243,5 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   const pageLink = frame.locator("main a");
   await pageLink.click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await expectWinner(page, pageLink, "color", { selector: "p a", path: "src/styles/elements.css", origin: "elements", value: "rgb(47, 109, 58)" });
+  await expectWinner(page, pageLink, "color", { selector: "p a", path: "styles/elements.css", origin: "elements", value: "rgb(47, 109, 58)" });
 });

@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The edit bar's section icons (move, duplicate, remove), image Address and
 // Alt text, and the accessibility fields that come with a selection.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -91,7 +91,7 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await expect(input).toHaveValue("Placeholder");
   await expect(popover(page).getByRole("button")).toHaveCount(0);
   await page.keyboard.press("Enter");
-  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="src/images/placeholder.svg" data-key="hero-image" alt="Placeholder">`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="/images/placeholder.svg" data-key="hero-image" alt="Placeholder">`);
   await expect(page.locator("#status")).toHaveText("Alt text updated");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
 
@@ -100,9 +100,9 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await expect(bar(page).getByRole("button", { name: "Replace" })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Address" }).click();
   const images = popover(page).getByRole("listbox");
-  await expect(images.getByRole("option", { name: "src/images/placeholder.svg" })).toHaveAttribute("aria-selected", "true");
-  await images.getByRole("option", { name: "src/images/studio-desk.svg" }).click();
-  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="src/images/studio-desk.svg" data-key="hero-image" alt="Studio desk">`);
+  await expect(images.getByRole("option", { name: "/images/placeholder.svg" })).toHaveAttribute("aria-selected", "true");
+  await images.getByRole("option", { name: "/images/studio-desk.svg" }).click();
+  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="Studio desk">`);
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await expect(page.locator("#status")).toHaveText("Image replaced");
 

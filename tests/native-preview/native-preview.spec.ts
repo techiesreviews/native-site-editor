@@ -3,9 +3,9 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
-const cssPath = "src/styles/site.css";
-const cardPath = "src/components/project-card/project-card.html";
+const indexPath = "index.html";
+const cssPath = "styles/site.css";
+const cardPath = "components/project-card/project-card.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const cssSource = readFileSync(resolve(fixture, cssPath), "utf8");
 const cardSource = readFileSync(resolve(fixture, cardPath), "utf8");
@@ -179,8 +179,8 @@ test("nested shared-component template edits reach every instance", async ({ pag
   await expect(frame.getByText("Reusable cards")).toBeVisible({ timeout: 30_000 });
   // card-note is nested inside project-card's shadow root, three instances deep.
   await expect(frame.locator(".card-note")).toHaveCount(3);
-  await openFile(page, "src/components/card-note/card-note.html", "card-note");
-  const noteSource = readFileSync(resolve(fixture, "src/components/card-note/card-note.html"), "utf8");
+  await openFile(page, "components/card-note/card-note.html", "card-note");
+  const noteSource = readFileSync(resolve(fixture, "components/card-note/card-note.html"), "utf8");
   await pasteSource(page, "card-note", noteSource.replace('class="card-note"', 'class="card-note edited-note"'));
   await expect(frame.locator(".card-note.edited-note")).toHaveCount(3);
 });
@@ -214,14 +214,14 @@ test("preview route links switch pages while preserving the frame", async ({ pag
 });
 
 test("a stylesheet a shared sheet imports applies in its layer and lists its rules under its own path", async ({ page }) => {
-  const sectionsPath = "src/styles/sections.css";
+  const sectionsPath = "styles/sections.css";
   const sectionsSource = readFileSync(resolve(fixture, sectionsPath), "utf8");
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   const filler = frame.locator("section.filler");
   expect(await filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
 
-  // sections.css is not in the manifest: site.css imports it into a layer.
+  // No page links sections.css: site.css imports it into a layer.
   await openFile(page, cssPath, "--accent");
   await pasteSource(page, "--accent", `@import url("sections.css") layer(sections);\n${cssSource}`);
   await expect.poll(() => filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("6px");

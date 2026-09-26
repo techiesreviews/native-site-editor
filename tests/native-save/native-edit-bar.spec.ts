@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The edit bar over the native preview: anchored to the selection, with
 // heading level, text size, Bold, Italic and the link Address editing the source.
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -208,18 +208,18 @@ test("a selected link takes an address as typed with page suggestions, and the b
   // A link's Address applies as typed: pages of the site are suggested, and
   // any other text is the address itself. No Page menu, no Follow link, no Apply.
   await frame.getByRole("link", { name: "About", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-header/site-header.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page).getByRole("button", { name: "Follow link" })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Page" })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Address" }).click();
   const popover = page.locator(".edit-bar__popover");
   const address = popover.getByRole("combobox", { name: "Address" });
-  await expect(address).toHaveValue("#/about/");
+  await expect(address).toHaveValue("/about/");
   await expect(popover.getByRole("button", { name: "Apply" })).toHaveCount(0);
   const pages = popover.getByRole("listbox", { name: "Pages of this site" });
   await expect(pages.getByRole("option")).toHaveCount(2);
-  await expect(pages.getByRole("option", { name: "#/about/" })).toHaveAttribute("aria-selected", "true");
+  await expect(pages.getByRole("option", { name: "/about/" })).toHaveAttribute("aria-selected", "true");
   await address.fill("https://example.test/");
   // No page matches a web address; the field stays open and focused while the
   // bar re-renders from the changed source (its button title shows the new href).
@@ -230,22 +230,22 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(frame.getByRole("link", { name: "About", exact: true })).toHaveAttribute("href", "https://example.test/");
   await address.fill("ab");
   await expect(pages.getByRole("option")).toHaveCount(1);
-  await expect(pages.getByRole("option", { name: "#/about/" })).toBeVisible();
+  await expect(pages.getByRole("option", { name: "/about/" })).toBeVisible();
   // Enter takes the one page left.
   await page.keyboard.press("Enter");
   await expect(popover).toBeHidden();
-  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="#/about/" data-key="nav-about">About</a>`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="/about/" data-key="nav-about">About</a>`);
   expect(await editorText(page, "#content")).not.toContain("https://example.test/");
   // Or a page is picked from the list.
   await bar(page).getByRole("button", { name: "Address" }).click();
-  await pages.getByRole("option", { name: "#/", exact: true }).click();
+  await pages.getByRole("option", { name: "Native Studio (/)", exact: true }).click();
   await expect(popover).toBeHidden();
-  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="#/" data-key="nav-about">About</a>`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="/" data-key="nav-about">About</a>`);
   await expect(page.locator("#status")).toHaveText("Link changed");
   // One undo step per opening of the field.
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="#/about/" data-key="nav-about">About</a>`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`<a href="/about/" data-key="nav-about">About</a>`);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   // Ctrl/⌘+click still follows a page link.
   await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
@@ -258,9 +258,8 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await page.locator("#explorer-toggle").click();
   // The file tree is the explorer's Files tab; a native site opens on Pages.
   await page.getByRole("tab", { name: "Files" }).click();
-  await page.locator("#files").getByRole("button", { name: "src", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "styles", exact: true }).click();
   await page.locator("#files").getByRole("button", { name: "site.css", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/styles/site.css");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(bar(page)).toBeHidden();
 });

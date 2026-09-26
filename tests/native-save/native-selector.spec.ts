@@ -3,13 +3,12 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
-const cssPath = "src/styles/site.css";
-const componentCssPath = "src/components/project-card/project-card.css";
+const indexPath = "index.html";
+const cssPath = "styles/site.css";
+const componentCssPath = "components/project-card/project-card.css";
 const cssSource = readFileSync(resolve(fixture, cssPath), "utf8");
 const componentCssSource = readFileSync(resolve(fixture, componentCssPath), "utf8");
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
-const manifestSource = readFileSync(resolve(fixture, ".astro-editor/native.json"), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -108,7 +107,7 @@ test("selecting inside a shadow component opens the component owner and shared C
     body.click();
   });
 
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
@@ -175,7 +174,7 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
 
   await frame.locator(".hero h1").click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   await expect(page.locator("#secondary-rules")).toContainText(".hero h1");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".hero h1");
 
@@ -187,15 +186,15 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
       type: "select",
       context: "stale",
       path: "../../etc/passwd",
-      selectors: [{ path: "src/styles/site.css", selector: "body" }],
+      selectors: [{ path: "styles/site.css", selector: "body" }],
     }, "*");
   });
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
 
   // A plain click on a link selects it (the link lives in the header component)
   // and does not navigate: the About page stays rendered.
   await frame.getByRole("link", { name: "Home", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/site-header/site-header.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
   await expect(page.locator("#secondary-rules")).toContainText(".site-nav a");
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   await frame.getByRole("link", { name: "Home", exact: true }).click({ modifiers: ["ControlOrMeta"] });
@@ -203,7 +202,7 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
 });
 
 test("component CSS loads on demand, scopes to matching shadow root, and edits live", async ({ page }) => {
-  expect(JSON.parse(manifestSource).styles).not.toContain(componentCssPath);
+  expect(indexSource).not.toContain(componentCssPath);
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
   await expect
@@ -339,7 +338,7 @@ test("selecting an element puts the caret after its start tag in the owning sour
     const card = document.querySelectorAll("project-card")[2] as HTMLElement;
     (card.shadowRoot!.querySelector("card-note") as HTMLElement).click();
   });
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Shared across cards</card-note>");
 
   // Edits above the element keep the mark on it.
@@ -427,7 +426,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   // The file tree is the explorer's Files tab; a native site opens on Pages.
   await page.getByRole("tab", { name: "Files" }).click();
   await expect(page.locator("#explorer")).toBeVisible();
-  for (const part of ["src", "components", "project-card"]) {
+  for (const part of ["components", "project-card"]) {
     const item = await explorerItem(page, part);
     if ((await item.getAttribute("aria-expanded")) === "false") await item.click();
     await expect(item).toHaveAttribute("aria-expanded", "true");
@@ -443,7 +442,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await (await explorerItem(page, "project-card")).click();
 
   await (await explorerItem(page, "project-card.html")).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect(page.locator("#content .view-lines")).toContainText("project-card__title", { timeout: 20_000 });
   await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
   await expect(page.locator("#content-secondary .view-lines")).toContainText("project-card");
@@ -457,7 +456,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   const featureFolder = await explorerItem(page, "feature-block");
   if ((await featureFolder.getAttribute("aria-expanded")) === "false") await featureFolder.click();
   await (await explorerItem(page, "feature-block.html")).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/feature-block/feature-block.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   // No page uses it, so the preview shows the component by itself, still editable.
   const frame = page.frameLocator(".native-preview-frame");
@@ -469,7 +468,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   expect((await frame.locator("feature-block").boundingBox())!.width).toBeLessThanOrEqual(960);
   await featureTitle.click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/components/feature-block/feature-block.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   // Editing the template renders in place.
   await page.keyboard.press("End");
   await page.keyboard.type("!");
@@ -481,9 +480,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await page.locator("#explorer-toggle").click();
   // The file tree is the explorer's Files tab; a native site opens on Pages.
   await page.getByRole("tab", { name: "Files" }).click();
-  const pages = await explorerItem(page, "pages");
-  if ((await pages.getAttribute("aria-expanded")) === "false") await pages.click();
-  await (await explorerItem(page, "index.html")).click();
+  await page.locator("#explorer .file-row[data-path='index.html']").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(frame.locator(".hero h1")).toBeVisible();
   await expect(frame.locator("feature-block")).toHaveCount(0);

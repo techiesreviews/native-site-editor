@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Drafts of files GitHub deleted since they began (src/file-changes.ts
-// settleDeletedUpstream), over `native-conventions` (id 531), which has no
-// `.astro-editor/native.json`: a browser still holding an edit of the
-// manifest (and of another file) from before it was deleted. Such a draft is
-// not saved as it is; Discard draft or Keep as new file settles it, from the
-// Save panel or the code editor, and the rest saves.
-const indexPath = "src/pages/index.html";
-const manifestPath = ".astro-editor/native.json";
+// settleDeletedUpstream), over `native-conventions` (id 531): a browser
+// still holding edits of a stylesheet and of another file from before they
+// were deleted. Such a draft is not saved as it is; Discard draft or Keep as
+// new file settles it, from the Save panel or the code editor, and the rest
+// saves.
+const indexPath = "index.html";
+const stalePath = "styles/old.css";
 const notesPath = "docs/notes.md";
 const hash = (file: string) => `#repo=531&branch=main&file=${encodeURIComponent(file)}`;
 const pageErrors: string[] = [];
@@ -36,16 +36,16 @@ async function open(page: Page, baseURL: string | undefined, file = indexPath) {
 
 // Drafts as a browser kept them: edits that began from blobs GitHub has since deleted.
 async function seedStaleDrafts(page: Page) {
-  await page.evaluate(([manifest, notes]) => {
+  await page.evaluate(([stale, notes]) => {
     const scope = { account: "native-demo-user", repoId: 531, repo: "native-demo-user/native-conventions", branch: "main" };
     for (const [path, original, content] of [
-      [manifest, '{ "version": 1 }\n', '{ "version": 1, "pages": {} }\n'],
+      [stale, "h1 { color: red; }\n", "h1 { color: blue; }\n"],
       [notes, "# Notes\n", "# Notes\n\nKept from an old draft.\n"],
     ]) {
       const key = "astro-site-editor:draft:v1:" + JSON.stringify([scope.account, scope.repoId, scope.branch, path]);
       localStorage.setItem(key, JSON.stringify({ ...scope, version: 1, path, baseSha: "a".repeat(40), original, content, updatedAt: Date.now() }));
     }
-  }, [manifestPath, notesPath]);
+  }, [stalePath, notesPath]);
 }
 
 async function openSaveMenu(page: Page) {
@@ -57,19 +57,19 @@ test("in Save to GitHub, a draft of a deleted file says so and is discarded or k
   await open(page, baseURL);
   await seedStaleDrafts(page);
   await open(page, baseURL);
-  // No manifest on GitHub: the site loads by convention whatever the old draft says.
-  await expect(frame(page).locator("h1")).toHaveText("No manifest here", { timeout: 30_000 });
+  // The stylesheet is not on GitHub: the site loads as it is whatever the old draft says.
+  await expect(frame(page).locator("h1")).toHaveText("Found where they are", { timeout: 30_000 });
   await expect(page.locator(".native-preview-error")).toBeHidden();
 
   await openSaveMenu(page);
-  for (const path of [manifestPath, notesPath]) {
+  for (const path of [stalePath, notesPath]) {
     await expect(row(page, path).getByRole("checkbox")).toBeDisabled();
     await expect(row(page, path).getByRole("checkbox")).not.toBeChecked();
   }
   await expect(panel(page).locator(".publish-menu__note", { hasText: "Deleted on GitHub" })).toHaveCount(2);
 
-  await panel(page).getByRole("button", { name: `Discard the draft of ${manifestPath}` }).click();
-  await expect(row(page, manifestPath)).toHaveCount(0);
+  await panel(page).getByRole("button", { name: `Discard the draft of ${stalePath}` }).click();
+  await expect(row(page, stalePath)).toHaveCount(0);
   await panel(page).getByRole("button", { name: `Keep ${notesPath} as a new file` }).click();
   await expect(panel(page).getByRole("button", { name: `Show changes in ${notesPath}` })).toHaveText(/New file, 4 lines/);
   const notes = row(page, notesPath).getByRole("checkbox");
@@ -78,7 +78,7 @@ test("in Save to GitHub, a draft of a deleted file says so and is discarded or k
   await saveSubmit(page).click();
   await expect(panel(page).locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 
-  // Reloaded: nothing is left to save, the notes are back on GitHub and the manifest is not.
+  // Reloaded: nothing is left to save, the notes are back on GitHub and the stylesheet is not.
   await open(page, baseURL, notesPath);
   await expect(page.locator("#content .view-lines")).toContainText("Kept from an old draft.");
   await expect(page.locator("#content .code-editor__conflict")).toBeHidden();
@@ -86,7 +86,7 @@ test("in Save to GitHub, a draft of a deleted file says so and is discarded or k
   const drafts = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("astro-site-editor:draft:v1:")).length);
   expect(drafts).toBe(0);
   await open(page, baseURL);
-  await expect(frame(page).locator("h1")).toHaveText("No manifest here", { timeout: 30_000 });
+  await expect(frame(page).locator("h1")).toHaveText("Found where they are", { timeout: 30_000 });
 });
 
 test("opened in the code editor, a draft of a deleted file offers Discard draft and Keep as new file", async ({ page, baseURL }) => {
@@ -103,18 +103,18 @@ test("opened in the code editor, a draft of a deleted file offers Discard draft 
   await expect(page.locator("#content .code-editor__conflict")).toBeHidden();
   await expect(page.locator("#content .view-lines")).toContainText("Kept from an old draft.");
 
-  // The manifest's draft, opened from its path, is discarded; the home page opens.
-  await open(page, baseURL, manifestPath);
+  // The stylesheet's draft, opened from its path, is discarded; the home page opens.
+  await open(page, baseURL, stalePath);
   await expect(page.locator("#content .code-editor__conflict")).toContainText("GitHub deleted this file since this draft started.");
   await page.locator("#content .code-editor__conflict").getByRole("button", { name: "Discard draft" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
-  await expect(page.locator("#status")).toContainText(`Discarded the draft of ${manifestPath}.`);
+  await expect(page.locator("#status")).toContainText(`Discarded the draft of ${stalePath}.`);
 
   await openSaveMenu(page);
-  await expect(row(page, manifestPath)).toHaveCount(0);
+  await expect(row(page, stalePath)).toHaveCount(0);
   await expect(panel(page).locator(".publish-menu__note", { hasText: "Deleted on GitHub" })).toHaveCount(0);
   await row(page, notesPath).getByRole("checkbox").check();
   await saveSubmit(page).click();
   await expect(panel(page).locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await expect(frame(page).locator("h1")).toHaveText("No manifest here");
+  await expect(frame(page).locator("h1")).toHaveText("Found where they are");
 });

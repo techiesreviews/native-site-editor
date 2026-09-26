@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The page structure sidebar: the rendered page's elements as a tree that
 // follows the preview's selection, selects in the preview, folds, and keeps
 // up with route changes and structural edits.
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -93,7 +93,7 @@ test("the tree follows the preview route and structural edits", async ({ page })
   await expect(tree(page).locator("[aria-selected='true']")).toHaveCount(0);
   // A row on the About page opens that file and selects there.
   await row(page, "Heading About this project").click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(row(page, "Heading About this project")).toHaveAttribute("aria-selected", "true");
 });

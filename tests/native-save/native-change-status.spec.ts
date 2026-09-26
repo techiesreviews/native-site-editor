@@ -8,9 +8,9 @@ import { unzipStored } from "../../src/zip.ts";
 // through /__demo/actions), View live site from .editor/config.json, and
 // Download site (the repository's files as edited, as a .zip).
 
-const indexPath = "src/pages/index.html";
-const aboutPath = "src/pages/about.html";
-const stylesPath = "src/styles/site.css";
+const indexPath = "index.html";
+const aboutPath = "about/index.html";
+const stylesPath = "styles/site.css";
 const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 

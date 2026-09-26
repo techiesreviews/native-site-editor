@@ -6,8 +6,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 // side-by-side pane. A press released within 4 px is a click and toggles; a
 // drag resizes and never toggles; Enter and Space toggle; hover or focus
 // makes the handle bigger; the state and the size to come back to persist.
-const indexPath = "src/pages/index.html";
-const cssPath = "src/styles/site.css";
+const indexPath = "index.html";
+const cssPath = "styles/site.css";
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 async function load(page: Page, baseURL: string | undefined) {

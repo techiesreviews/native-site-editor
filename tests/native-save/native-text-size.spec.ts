@@ -8,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 // (fixtures/native-conventions' base.css, imported by site.css: --text-s,
 // --text-m, --text-l). The starter fixture, with neither, keeps the inline
 // rem scale (native-edit-bar.spec.ts).
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 
 async function open(page: Page, baseURL: string | undefined, repo: number) {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(indexPath)}`);

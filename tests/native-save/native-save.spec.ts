@@ -7,8 +7,8 @@ import { expect, test, type Page } from "@playwright/test";
 // GitHub network and the session are faked (see server.ts). No real token.
 
 const fixture = "fixtures/native-starter";
-const indexPath = "src/pages/index.html";
-const cssPath = "src/styles/site.css";
+const indexPath = "index.html";
+const cssPath = "styles/site.css";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
 const cssSource = readFileSync(resolve(fixture, cssPath), "utf8");
 
@@ -45,11 +45,12 @@ async function openExplorer(page: Page) {
 
 async function openFile(page: Page, path: string, contains: string) {
   await openExplorer(page);
-  for (const [index, part] of path.split("/").entries()) {
-    const item = page.locator("#explorer").getByRole("button", { name: part, exact: true }).first();
+  const parts = path.split("/");
+  for (let index = 1; index <= parts.length; index++) {
+    const item = page.locator(`#explorer .file-row[data-path='${parts.slice(0, index).join("/")}']`);
     await expect(item).toBeVisible({ timeout: 20_000 });
     const expanded = await item.getAttribute("aria-expanded");
-    if (index === path.split("/").length - 1 || expanded === "false") await item.click();
+    if (index === parts.length || expanded === "false") await item.click();
   }
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
   await expect(page.locator("#content [role=\"textbox\"]").first()).toBeAttached({ timeout: 20_000 });
@@ -301,7 +302,7 @@ test("shared component edits update every instance and survive save", async ({ p
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByText("Shared across cards")).toHaveCount(3, { timeout: 30_000 });
 
-  const componentPath = "src/components/card-note/card-note.html";
+  const componentPath = "components/card-note/card-note.html";
   await openFile(page, componentPath, "Shared note");
   await pasteSource(page, "Shared note", '<p class="card-note" data-key="card-note">Saved component note <slot>Shared note</slot></p>\n');
   await expect(frame.getByText("Saved component note")).toHaveCount(3);
@@ -323,7 +324,7 @@ test("switching files during a slow save still adopts the saved native baseline"
     response.url().includes("/api/publish") && response.request().method() === "POST",
   );
   await saveSubmit(page).click();
-  await openFile(page, "src/pages/about.html", "About this project");
+  await openFile(page, "about/index.html", "About this project");
   const response = await publish;
   expect(response.ok()).toBeTruthy();
 

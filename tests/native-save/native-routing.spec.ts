@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// File-based routing (shared/native-routes.ts) over `fixtures/native-routing`,
-// served as the `native-routing` repository (id 530): its manifest lists no
-// page, so every route comes from where the page file is under src/pages/,
-// and "/work/fern-and-kettle/" has a metadata-only entry (a title, no file);
-// src/pages/work/notes.html is a heading-only page, with no section.
-const indexPath = "src/pages/index.html";
+// The repository is the site (shared/native-routes.ts) over
+// `fixtures/native-routing`, served as the `native-routing` repository (id
+// 530): index.html is /, work/index.html is /work/,
+// work/fern-and-kettle/index.html is /work/fern-and-kettle/,
+// work/notes.html is /work/notes.html (a heading-only page, with no
+// section), and _parts/note.html is not a page. Each page's title is its
+// <title>.
+const indexPath = "index.html";
 const hash = (file: string) => `#repo=530&branch=main&file=${encodeURIComponent(file)}`;
 const pageErrors: string[] = [];
 
@@ -31,56 +33,59 @@ async function open(page: Page, baseURL: string | undefined, file = indexPath) {
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 }
 
-test("nested pages are routed by their folders and #/ links follow to them", async ({ page, baseURL }) => {
+test("pages are routed by their paths, and root and relative links follow to them", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await expect(heading(page)).toHaveText("Routed by folders");
-  // Only the notice that the manifest still titles a page.
-  await expect(page.locator(".native-preview-warning")).toHaveText(/^native\.json gives 1 page its title or description\./);
+  await expect(page.locator(".native-preview-warning")).toBeHidden();
+  await expect(title(page)).toHaveValue("Routed by folders");
 
-  // src/pages/work/index.html is /work/.
+  // work/index.html is /work/.
   await follow(page, "Our work");
   await expect(heading(page)).toHaveText("Work");
-  await expect(title(page)).toHaveValue("");
+  await expect(title(page)).toHaveValue("Work");
 
-  // src/pages/work/fern-and-kettle.html is /work/fern-and-kettle/, titled by
-  // its metadata-only manifest entry.
+  // work/fern-and-kettle/index.html is /work/fern-and-kettle/, titled by its <title>.
   await follow(page, "Fern and Kettle");
   await expect(heading(page)).toHaveText("Fern and Kettle");
   await expect(title(page)).toHaveValue("Fern & Kettle");
 
-  // The link Address suggests the derived routes; a page under _parts/ is not one.
+  // The link Address suggests the site's pages by title; a page under _parts/ is not one.
   await frame(page).getByRole("link", { name: "All work", exact: true }).click();
   await page.getByRole("button", { name: "Address" }).click();
   const options = page.getByRole("listbox").getByRole("option");
-  await expect(options).toHaveText(["#/", "#/work/", "Fern & Kettle (#/work/fern-and-kettle/)", "#/work/notes/"]);
+  await expect(options).toHaveText(["Routed by folders (/)", "Work (/work/)", "Fern & Kettle (/work/fern-and-kettle/)", "Notes (/work/notes.html)"]);
   await page.keyboard.press("Escape");
 
+  // A relative link (../), resolved against the page's URL.
   await follow(page, "All work");
   await expect(heading(page)).toHaveText("Work");
+  await follow(page, "Notes");
+  await expect(heading(page)).toHaveText("Notes");
+  await open(page, baseURL, "work/index.html");
   await follow(page, "Home");
   await expect(heading(page)).toHaveText("Routed by folders");
 });
 
-test("opening a nested page file shows its route, and titling it writes the page's comment", async ({ page, baseURL }) => {
-  await open(page, baseURL, "src/pages/work/index.html");
+test("opening a nested page file shows its route, and titling it writes its <title>", async ({ page, baseURL }) => {
+  await open(page, baseURL, "work/index.html");
   await expect(heading(page)).toHaveText("Work");
   await title(page).fill("Our work");
   await expect(page.locator("#status")).toHaveText("Title updated");
-  await expect(page.locator("#content .view-lines")).toContainText("title: Our work");
+  await expect(page.locator("#content .view-lines")).toContainText("<title>Our work</title>");
 
-  // The manifest is untouched: the only change is the page.
+  // The only change is the page.
   await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
   await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(1);
-  await expect(page.locator("#publish-files .publish-menu__file")).toContainText("src/pages/work/index.html");
+  await expect(page.locator("#publish-files .publish-menu__file")).toContainText("work/index.html");
   await page.keyboard.press("Escape");
 
-  // Emptying the title removes the comment again: nothing left to save.
-  await title(page).fill("");
-  await expect(page.locator("#status")).toHaveText("Title removed");
+  // The title as it was: nothing left to save.
+  await title(page).fill("Work");
+  await expect(page.locator("#status")).toHaveText("Title updated");
   await expect(page.getByRole("button", { name: "Save to GitHub", exact: true })).toBeDisabled();
 });
 
-test("without the whole-commit tree, src/pages is listed in one recursive request", async ({ page, baseURL }) => {
+test("without the whole-commit tree, the repository is listed with one recursive request per top-level folder", async ({ page, baseURL }) => {
   const recursive: string[] = [];
   await page.route("**/api/snapshot?**", async (route) => {
     const response = await route.fetch();
@@ -97,21 +102,22 @@ test("without the whole-commit tree, src/pages is listed in one recursive reques
   await follow(page, "Our work");
   await follow(page, "Fern and Kettle");
   await expect(heading(page)).toHaveText("Fern and Kettle");
-  expect(recursive).toHaveLength(1);
+  // _parts, styles and work.
+  expect(recursive).toHaveLength(3);
 });
 
-test("two files on one route show a warning above the page, which still renders", async ({ page, baseURL }) => {
-  // A `work.html` beside `work/index.html`, added to the branch listing.
+test("two files for one component show a warning above the page, which still renders", async ({ page, baseURL }) => {
+  // components/site-note.html beside components/site-note/site-note.html, added to the branch listing.
   await page.route("**/api/snapshot?**", async (route) => {
     const response = await route.fetch();
     const snapshot = await response.json();
-    const index = snapshot.tree.find((entry: { path: string }) => entry.path === "src/pages/work/index.html");
-    snapshot.tree.push({ ...index, path: "src/pages/work.html" });
+    const note = snapshot.tree.find((entry: { path: string }) => entry.path === "_parts/note.html");
+    snapshot.tree.push({ ...note, path: "components/site-note.html" }, { ...note, path: "components/site-note/site-note.html" });
     await route.fulfill({ response, json: snapshot });
   });
   await open(page, baseURL);
   await expect(page.locator(".native-preview-warning")).toContainText(
-    'src/pages/work.html and src/pages/work/index.html both give the route /work/; src/pages/work/index.html is used. Rename one, or map "/work/" to a file in native.json.',
+    "components/site-note.html and components/site-note/site-note.html both give the component <site-note>; components/site-note/site-note.html is used. Remove or rename one.",
   );
   await expect(page.locator(".native-preview-warning")).toHaveAttribute("role", "status");
   await follow(page, "Our work");

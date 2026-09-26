@@ -9,7 +9,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 // preview as an ordinary unsaved draft (Undo, Save to GitHub). The official
 // MCP client talks to the real worker handler on the native-save server;
 // GitHub is the server's fake, which the agent never writes to.
-const indexPath = "src/pages/index.html";
+const indexPath = "index.html";
 const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), "utf8");
 const pageErrors: string[] = [];
 
@@ -120,24 +120,27 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     // A new page under the site, opened in the editor, then its details.
     const created = await call("create_page", { title: "Our team" });
     expect(created.state).toBe("applied");
-    expect(created.result).toMatchObject({ file: "src/pages/our-team.html", route: "/our-team/" });
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/our-team.html");
-    await expect(frame(page).locator("h1").first()).toHaveText("Our team");
+    expect(created.result).toMatchObject({ file: "our-team/index.html", route: "/our-team/" });
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "our-team/index.html");
+    await expect(page.locator("#current-page")).toHaveText("Our team");
+    await expect(frame(page).locator("main")).toBeEmpty();
     const details = await call("set_page_details", { page: "/our-team/", description: "The people behind the studio." });
     expect(details.state).toBe("applied");
-    expect((await draft(page, "src/pages/our-team.html")).content).toMatch(/^<!--\ntitle: Our team\ndescription: The people behind the studio\.\n-->/);
+    const made = (await draft(page, "our-team/index.html")).content;
+    expect(made).toContain("<title>Our team</title>");
+    expect(made).toContain('<meta name="description" content="The people behind the studio.">');
     const after = await call("get_site");
-    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "src/pages/our-team.html", title: "Our team", new: true });
+    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "our-team/index.html", title: "Our team", new: true });
     expect(after.changes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "M", path: indexPath }),
-      expect.objectContaining({ kind: "A", path: "src/pages/our-team.html" }),
+      expect.objectContaining({ kind: "A", path: "our-team/index.html" }),
     ]));
 
     // open_page shows another page; nothing reached GitHub.
     expect((await call("open_page", { page: "/about/" })).state).toBe("applied");
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
     const snapshot = await (await page.request.get(`/api/snapshot?repo=native-demo-user/native-demo&branch=main`)).json();
-    expect((snapshot.tree as { path: string }[]).some((item) => item.path === "src/pages/our-team.html")).toBe(false);
+    expect((snapshot.tree as { path: string }[]).some((item) => item.path === "our-team/index.html")).toBe(false);
   } finally {
     await client.close();
   }
@@ -199,7 +202,7 @@ test("an MCP client connected by OAuth reaches the open editor tab", async ({ pa
     await expect(page.locator(".agent-menu__connection")).toContainText("Playwright OAuth");
     const opened = result(await client.callTool({ name: "open_page", arguments: { page: "/about/" } }));
     expect(opened.state).toBe("applied");
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "src/pages/about.html");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   } finally {
     await client.close();
   }
@@ -214,10 +217,10 @@ test("a component an agent creates opens its new stylesheet beside the page", as
     expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
     return body;
   };
-  const cssPath = "src/components/hero-banner/hero-banner.css";
+  const cssPath = "components/hero-banner/hero-banner.css";
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
-    await call("write_file", { path: "src/components/hero-banner/hero-banner.html", content: '<section data-key="hero-banner">\n  <h2 data-key="banner-title"><slot name="title">A new banner</slot></h2>\n</section>\n' });
+    await call("write_file", { path: "components/hero-banner/hero-banner.html", content: '<section data-key="hero-banner">\n  <h2 data-key="banner-title"><slot name="title">A new banner</slot></h2>\n</section>\n' });
     await call("write_file", { path: cssPath, content: "h2 {\n  color: rebeccapurple;\n}\n" });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "hero-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });
@@ -244,15 +247,15 @@ test("a component whose slot holds a heading puts that heading in the page", asy
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
     await call("write_file", {
-      path: "src/components/page-banner/page-banner.html",
-      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <slot name="action"><a href="#/about/" data-key="banner-action">Get in touch</a></slot>\n</section>\n',
+      path: "components/page-banner/page-banner.html",
+      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <slot name="action"><a href="/about/" data-key="banner-action">Get in touch</a></slot>\n</section>\n',
     });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });
     expect((await call("add_section", { page: "/", component: "page-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
 
     await expect.poll(async () => (await draft(page, indexPath))?.content).toContain(
-      `<page-banner>\n    <h2 slot="title">A new banner</h2>\n    <a slot="action" href="#/about/">Get in touch</a>\n  </page-banner>`,
+      `<page-banner>\n    <h2 slot="title">A new banner</h2>\n    <a slot="action" href="/about/">Get in touch</a>\n  </page-banner>`,
     );
     await expect(frame(page).locator("main > page-banner > h2")).toHaveText("A new banner");
     await expect(frame(page).locator("main > page-banner > h2")).toBeVisible();
@@ -270,12 +273,12 @@ test("clicking a section component's own area selects it on the page, and Remove
     expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
     return body;
   };
-  const templatePath = "src/components/page-banner/page-banner.html";
+  const templatePath = "components/page-banner/page-banner.html";
   const template = '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n</section>\n';
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
     await call("write_file", { path: templatePath, content: template });
-    await call("write_file", { path: "src/components/page-banner/page-banner.css", content: "section {\n  padding: 48px;\n}\n" });
+    await call("write_file", { path: "components/page-banner/page-banner.css", content: "section {\n  padding: 48px;\n}\n" });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });
     expect((await call("add_section", { page: "/", component: "page-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
@@ -308,8 +311,8 @@ test("an optional slot's fallback hides once the page removes what filled it", a
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
     await call("write_file", {
-      path: "src/components/page-banner/page-banner.html",
-      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <div class="actions" data-key="banner-actions">\n    <slot name="primary" data-if><a href="#/about/" data-key="banner-primary">Get in touch</a></slot>\n    <slot name="secondary" data-if><a href="#/" data-key="banner-secondary">See our work</a></slot>\n  </div>\n</section>\n',
+      path: "components/page-banner/page-banner.html",
+      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <div class="actions" data-key="banner-actions">\n    <slot name="primary" data-if><a href="/about/" data-key="banner-primary">Get in touch</a></slot>\n    <slot name="secondary" data-if><a href="/" data-key="banner-secondary">See our work</a></slot>\n  </div>\n</section>\n',
     });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });
