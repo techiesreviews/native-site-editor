@@ -8,8 +8,8 @@ import "./page-structure.css";
 // element in the preview (and brings it to the middle of the frame); a
 // preview selection marks its row. Rows with children fold; the folded
 // state is kept per element while the same page stays on show. Above the
-// tree, a Page block holds the route's title and description from the
-// manifest; they apply as typed. A section row can be dragged with the
+// tree, a Page block holds the page's title and description from its
+// `<head>`; they apply as typed. A section row can be dragged with the
 // pointer onto another gap among its siblings (7 px of movement starts the
 // drag, so a plain press still selects); only the rows sharing its parent
 // take the drop.
@@ -18,15 +18,12 @@ export type PageMetaField = "title" | "description";
 
 export interface PageStructureHandlers {
   /**
-   * The manifest's title and description for the page at `path`, empty
-   * strings when the route is a bare path; nothing when the file is not a
-   * route of the site (the fields then stay out of the sidebar). A `notice`
-   * closes the fields and says why (the manifest changed on GitHub under a
-   * draft); with `readOnly` the fields show their values but cannot be
-   * changed, and the notice says where the values come from (a site with no
-   * manifest, titled by the page's leading comment). `placeholders` show in
-   * an empty field (the page comment's values, which apply when the manifest
-   * has none).
+   * The title and description of the page at `path`, empty strings when it
+   * has none; nothing when the file is not a page of the site (the fields
+   * then stay out of the sidebar). A `notice` closes the fields and says
+   * why; with `readOnly` the fields show their values but cannot be
+   * changed, and the notice says why. `placeholders` show in an empty
+   * field (the page's first heading for the title).
    */
   pageMeta?: (path: string) => {
     title: string;
@@ -35,7 +32,7 @@ export interface PageStructureHandlers {
     readOnly?: boolean;
     placeholders?: { title?: string; description?: string };
   } | undefined;
-  /** A page field changed: write `value` (empty removes the field) to the manifest. */
+  /** A page field changed: write `value` into the page's head. */
   onPageMeta?: (path: string, field: PageMetaField, value: string) => void;
   /** A page field closed (Enter, Escape or focus loss): its edits are one step. */
   onPageMetaClose?: (path: string, field: PageMetaField) => void;
@@ -444,7 +441,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const current = setSelected(id);
       current?.scrollIntoView({ block: "nearest" });
     },
-    /** The manifest changed under the fields: show its title and description again. */
+    /** The page changed under the fields: show its title and description again. */
     refreshMeta() {
       if (structure?.path) renderMeta(structure.path);
     },

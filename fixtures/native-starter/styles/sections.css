@@ -1,0 +1,4 @@
+/* Section styles, for a stylesheet to @import (no page links it). */
+.filler {
+  border-top: 6px solid rgb(47, 109, 58);
+}

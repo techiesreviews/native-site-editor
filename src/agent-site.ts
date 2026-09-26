@@ -3,13 +3,12 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
-import { minimalTextEdit } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, minimalTextEdit, nativePageStylesheets, type NativeSite } from "../shared/native-project";
 import { outlineId, parseOutlineId, textHash, type AgentCommand } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import type { NativeManifest } from "./native-manifest";
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
 import { locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
@@ -102,10 +101,7 @@ export interface AgentSiteInput {
   mountedSource(path: string): string | undefined;
   /** The native site, when the project is one. */
   native?: {
-    manifest: NativeManifest;
-    hasManifest: boolean;
-    /** Every file routes and components are found from (under src/). */
-    files: string[];
+    site: NativeSite;
     routeInfo(route: string): { title?: string; description?: string };
     source(path: string): string | undefined;
     exists(path: string): boolean;
@@ -144,10 +140,9 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
   };
   const native = input.native;
   if (!native) return context;
-  const { manifest } = native;
+  const { site: manifest } = native;
   const newFiles = new Set(input.drafts.filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path));
   const tree = buildNativePagesTree({
-    files: native.files,
     routes: manifest.routes,
     titles: Object.fromEntries(Object.keys(manifest.routes).map((route) => [route, native.routeInfo(route).title])),
     heading: (file) => firstHeadingText(native.source(file)),
@@ -157,7 +152,6 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
   const walk = (node: NativePageNode) => node.children.forEach((child) => { parents.set(child, node.route); walk(child); });
   tree.children.forEach(walk);
   context.pages = nativeTreePages(tree)
-    .filter((node) => !node.unusedFor)
     .slice(0, 500)
     .map((node) => {
       const info = node.file ? native.routeInfo(node.route) : {};
@@ -203,10 +197,10 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
     selection: selection?.node?.length
       ? { file: selection.path, id: outlineId(selection.node), tag: selection.tag.slice(0, 100), text: clip(selection.text, 200) }
       : null,
-    manifest: native.hasManifest,
+    manifest: false,
     components,
-    styles: manifest.styles.slice(0, 100),
-    settings: ["src/site.json", ".astro-editor/site.json"].find((path) => native.exists(path)) ?? null,
+    styles: nativePageStylesheets(native.source(manifest.routes["/"]) ?? "", manifest.routes["/"] ?? "index.html").slice(0, 100),
+    settings: native.exists(NATIVE_CONFIG_PATH) ? NATIVE_CONFIG_PATH : null,
     outlines,
     changes: listChanges(input.drafts).slice(0, 500).map((change) => ({ kind: change.kind, path: change.path, ...(change.from ? { from: change.from } : {}) })),
   };

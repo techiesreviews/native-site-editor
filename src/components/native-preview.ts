@@ -1,22 +1,27 @@
 import { button, node } from "../ui/dom";
 import {
   nativeDefaultRoute,
-  nativeManifestPaths,
-  type NativeManifest,
-} from "../native-manifest";
+  nativePageBody,
+  nativePageStylesheets,
+  nativeSitePaths,
+  type NativeSite,
+} from "../../shared/native-project";
+import { nativeLinkTarget } from "../../shared/native-routes";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
-import { expandStyleImports } from "../../shared/css-imports";
+import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
 import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import "./native-preview.css";
 
-// Browser-native preview: a persistent sandboxed iframe that renders plain
-// `src/pages/**.html` routes and custom elements defined under `src/components/`
-// (flat `<name>.html` or one folder per component, `<name>/<name>.html`) from
-// in-memory source, patched over `postMessage` and never reloaded per edit.
+// Browser-native preview: a persistent sandboxed iframe that renders a
+// site's pages (the `<body>` of each `.html` document, see
+// shared/native-project.ts) and the custom elements defined under
+// `components/` (flat `<name>.html` or one folder per component,
+// `<name>/<name>.html`) from in-memory source, patched over `postMessage`
+// and never reloaded per edit, the way the site's own loader renders them.
 //
 // This is the editor's only preview: a sandboxed frame rendered in place. It
 // deliberately supports NO arbitrary page JavaScript: `<script>`, `on*`
@@ -42,7 +47,7 @@ const RUNTIME_DOC = `<!doctype html>
 interface UpdateInput {
   sources?: Record<string, string>;
   componentStyles?: Record<string, string>;
-  // Repository image paths to data URLs, so `<img src>` shows in the frame.
+  // Repository image paths to data URLs, so `<img src>` and CSS `url()`s show in the frame.
   assets?: Record<string, string>;
   route?: string;
   // The component whose template is open: the preview shows a page that uses
@@ -62,13 +67,13 @@ const usesTag = (html: string, tag: string) => new RegExp(`<${tag}[\\s>/]`, "i")
 
 // Whether the page at `routePath` shows `tag`, directly or inside another
 // component's template (a note inside a card inside the page).
-function routeUsesTag(manifest: NativeManifest, sources: Record<string, string>, routePath: string, tag: string) {
+function routeUsesTag(site: NativeSite, sources: Record<string, string>, routePath: string, tag: string) {
   const seen = new Set<string>();
-  const queue = [sources[manifest.routes[routePath]] ?? ""];
+  const queue = [pageOf(sources[site.routes[routePath]] ?? "")];
   while (queue.length) {
     const html = queue.pop()!;
     if (usesTag(html, tag)) return true;
-    for (const [name, path] of Object.entries(manifest.components)) {
+    for (const [name, path] of Object.entries(site.components)) {
       if (seen.has(name) || !usesTag(html, name)) continue;
       seen.add(name);
       queue.push(sources[path] ?? "");
@@ -117,7 +122,7 @@ export interface NativeTextSelection {
 // Bold, italic, or a link on the selected text (Ctrl/⌘+K).
 export type NativeFormat = "strong" | "em" | "link";
 
-/** A manifest warning with the one-click fixes it offers. */
+/** A warning about the site with the one-click fixes it offers. */
 export interface NativeWarning {
   text: string;
   fixes: { label: string; run: () => void; title?: string; ariaLabel?: string }[];
@@ -172,8 +177,30 @@ interface NativePreviewHandlers {
 const indexes = (value: unknown): value is number[] =>
   Array.isArray(value) && value.length <= 500 && value.every((index) => Number.isInteger(index) && index >= 0);
 
+// The part of a page document the preview renders: its <body> content.
+function pageOf(source: string) {
+  const { start, end } = nativePageBody(source);
+  return source.slice(start, end);
+}
+
+// `css` (the file `path`) with each `url()` that names a repository image
+// the host has read shown from its data URL: the frame cannot reach the
+// repository, and a root path would resolve against the editor.
+function withAssetUrls(css: string, path: string, assets: Record<string, string>) {
+  return rewriteCssUrls(css, (url) => {
+    const target = resolveImportPath(path, url);
+    return target !== undefined && Object.hasOwn(assets, target) ? assets[target] : undefined;
+  });
+}
+
+/** The stylesheets the page at `route` links (the home page's for a component shown alone). */
+export function routeStylesheets(site: NativeSite, sources: Record<string, string>, route: string) {
+  const file = site.routes[route] ?? site.routes[nativeDefaultRoute(site)];
+  return file ? nativePageStylesheets(sources[file] ?? "", file) : [];
+}
+
 function composePayload(
-  manifest: NativeManifest,
+  site: NativeSite,
   sources: Record<string, string>,
   componentStyles: Record<string, string>,
   assets: Record<string, string>,
@@ -185,48 +212,45 @@ function composePayload(
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
-  for (const [routePath, filePath] of Object.entries(manifest.routes))
+  for (const [routePath, filePath] of Object.entries(site.routes)) {
     pagePaths[routePath] = filePath;
-  for (const [routePath, filePath] of Object.entries(manifest.routes))
-    pages[routePath] = sources[filePath] ?? "";
+    pages[routePath] = pageOf(sources[filePath] ?? "");
+  }
   // A component on its own: a page of just one instance, belonging to no
   // file, so only clicks inside the component select anything. It sits in
   // the same page container the home page uses, so it gets the page's width.
   if (alone) {
-    pages[componentRoute(alone)] = `${pageContainer(pages[nativeDefaultRoute(manifest)] ?? "")}\n  <${alone}></${alone}>\n</main>`;
+    pages[componentRoute(alone)] = `${pageContainer(pages[nativeDefaultRoute(site)] ?? "")}\n  <${alone}></${alone}>\n</main>`;
     pagePaths[componentRoute(alone)] = "";
   }
   const components: Record<string, string> = {};
   const componentPaths: Record<string, string> = {};
-  for (const [tag, filePath] of Object.entries(manifest.components))
+  for (const [tag, filePath] of Object.entries(site.components)) {
     componentPaths[tag] = filePath;
-  for (const [tag, filePath] of Object.entries(manifest.components))
     components[tag] = sources[filePath] ?? "";
+  }
   // Each component rule also styles what a page slots in (shared/slotted-css.ts).
   const stylesByComponent: Record<string, { path: string; source: string }> = {};
   for (const [tag, path] of Object.entries(componentStyles)) {
-    if (!Object.hasOwn(manifest.components, tag)) continue;
-    stylesByComponent[tag] = { path, source: withSlottedRules(sources[path] ?? "") };
+    if (!Object.hasOwn(site.components, tag)) continue;
+    stylesByComponent[tag] = { path, source: withAssetUrls(withSlottedRules(sources[path] ?? ""), path, assets) };
   }
-  // Shared stylesheets with their `@import`s expanded: one sheet per file,
-  // each import before the sheet that imports it (see shared/css-imports.ts).
-  const expanded = expandStyleImports(manifest.styles, (path) => sources[path]);
-  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source, wrappers, importer, kind }));
-  const styleErrors = expanded.errors;
+  // The page's linked stylesheets with their `@import`s expanded: one sheet
+  // per file, each import before the sheet that imports it (see
+  // shared/css-imports.ts).
+  const linked = routeStylesheets(site, sources, alone ? "/" : route);
+  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path]);
+  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
+  const page = site.routes[alone ? "/" : route] ?? "";
+  const styleErrors = [
+    ...linked.filter((path) => sources[path] === undefined).map((path) => `${page} links ${path}, which is missing from this branch.`),
+    ...expanded.errors,
+  ];
   // Section components count as sections when the runtime looks for places to insert one.
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
-  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, context, selectNode, selectText };
-}
-
-function routeCandidate(manifest: NativeManifest, href: string) {
-  if (!href.startsWith("#")) return undefined;
-  const raw = href.slice(1) || "/";
-  const next = raw.endsWith("/") ? raw : `${raw}/`;
-  return Object.hasOwn(manifest.routes, raw)
-    ? raw
-    : Object.hasOwn(manifest.routes, next)
-      ? next
-      : undefined;
+  // Relative image paths resolve against the page's URL, as on the live site.
+  const base = alone ? "/" : route;
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText };
 }
 
 export function createNativePreview(host: HTMLElement, handlers: NativePreviewHandlers = {}) {
@@ -245,8 +269,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const errorBox = node("div", "native-preview-error");
   errorBox.setAttribute("role", "alert");
   errorBox.hidden = true;
-  // Manifest problems that leave the site usable (two files on one route,
-  // metadata for a route with no page): shown above the page, which renders.
+  // Problems that leave the site usable (two files for one component):
+  // shown above the page, which renders.
   const warningBox = node("div", "native-preview-warning");
   warningBox.setAttribute("role", "status");
   warningBox.hidden = true;
@@ -266,7 +290,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
   });
 
-  let manifest: NativeManifest | undefined;
+  let site: NativeSite | undefined;
   let sources: Record<string, string> = {};
   let componentStyles: Record<string, string> = {};
   let assets: Record<string, string> = {};
@@ -283,7 +307,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let mounted = false;
   let rafHandle = 0;
   let messageId = 0;
-  // A load/manifest failure (frame hidden) outranks a transient runtime error
+  // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
   let selectNode: NativeNodeRequest | undefined;
@@ -302,8 +326,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
 
   function post() {
     rafHandle = 0;
-    if (!manifest || !ready || !mounted) return;
-    const payload = composePayload(manifest, sources, componentStyles, assets, route, alone, context, selectNode, selectText);
+    if (!site || !ready || !mounted) return;
+    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText);
     selectNode = undefined;
     selectText = undefined;
     frame.contentWindow?.postMessage(
@@ -312,7 +336,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     );
   }
   function schedule() {
-    if (!manifest) return;
+    if (!site) return;
     renderVersion++;
     context = [
       renderVersion,
@@ -329,21 +353,24 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // shared stylesheets and every stylesheet those import.
   function styleSourcePaths() {
     return new Set([
-      ...(manifest ? nativeManifestPaths(manifest) : []),
+      ...(site ? nativeSitePaths(site) : []),
       ...Object.values(componentStyles),
-      ...(manifest ? expandStyleImports(manifest.styles, (path) => sources[path]).imported : []),
+      ...(site ? (() => {
+        const linked = routeStylesheets(site, sources, alone ? "/" : route);
+        return [...linked, ...expandStyleImports(linked, (path) => sources[path]).imported];
+      })() : []),
     ]);
   }
 
   function onMessage(event: MessageEvent) {
     if (event.source !== frame.contentWindow) return;
-    const data = event.data as { source?: string; type?: string; route?: string; context?: string } | undefined;
+    const data = event.data as { source?: string; type?: string; href?: string; context?: string } | undefined;
     if (data?.source !== "astro-native-preview") return;
     // Typed text is checked against the current source, so it counts even
     // when a render was requested since.
-    if (data.type === "text-edit" && manifest) {
+    if (data.type === "text-edit" && site) {
       const raw = data as unknown as Record<string, unknown>;
-      if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
+      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       if (typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return;
       if (!Array.isArray(raw.node) || raw.node.length > 500 || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
       handlers.onTextEdit?.({ path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after });
@@ -357,10 +384,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // rects, a drag's start, target and end) describe the runtime's DOM and
     // are dropped when a render requested since is still pending; the
     // runtime reports them again after that render.
-    // A link click inside the preview (including inside shadow roots) navigates
-    // the preview only, keeping the current source edits untouched.
-    if (data.type === "route" && typeof data.route === "string" && manifest) {
-      followRoute(`#${data.route}`);
+    // A Ctrl/⌘+click on a link inside the preview (including inside shadow
+    // roots) to one of the site's pages navigates the preview only, keeping
+    // the current source edits untouched.
+    if (data.type === "route" && typeof data.href === "string" && site) {
+      followRoute(data.href);
       return;
     }
     if (data.type === "format") {
@@ -373,7 +401,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (direction === "up" || direction === "down") handlers.onMove?.(direction);
       return;
     }
-    if (data.type === "section-drag" && manifest) {
+    if (data.type === "section-drag" && site) {
       const raw = data as { phase?: unknown; parent?: unknown; index?: unknown };
       const stale = data.context !== context;
       // A drag's gaps are counted in the runtime's DOM of the render it saw;
@@ -418,10 +446,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!loadError) showBanner(undefined, false);
       return;
     }
-    if (data.type === "insert-points" && manifest) {
+    if (data.type === "insert-points" && site) {
       const raw = data as unknown as { path?: unknown; points?: unknown };
       const path = raw.path;
-      if (typeof path !== "string" || manifest.routes[route] !== path || !Array.isArray(raw.points)) return;
+      if (typeof path !== "string" || site.routes[route] !== path || !Array.isArray(raw.points)) return;
       const points = raw.points.slice(0, 500).flatMap((item): InsertPoint[] => {
         if (!item || typeof item !== "object") return [];
         const point = item as Record<string, unknown>;
@@ -451,9 +479,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       handlers.onTextSelection?.(readTextSelection((data as { selection?: unknown }).selection));
       return;
     }
-    if (data.type === "structure" && manifest) {
+    if (data.type === "structure" && site) {
       const raw = data as unknown as { path?: unknown; items?: unknown };
-      const path = typeof raw.path === "string" && (raw.path === "" || manifest.routes[route] === raw.path) ? raw.path : undefined;
+      const path = typeof raw.path === "string" && (raw.path === "" || site.routes[route] === raw.path) ? raw.path : undefined;
       if (path === undefined) return;
       let count = 0;
       const readItems = (value: unknown, depth: number): NativeStructureItem[] => {
@@ -475,7 +503,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (rect) editBar.move(rect);
       return;
     }
-    if (data.type === "select" && manifest) {
+    if (data.type === "select" && site) {
       const raw = data as unknown as {
         path?: unknown;
         tag?: unknown;
@@ -496,7 +524,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
         return;
       }
-      if (typeof raw.path !== "string" || !nativeManifestPaths(manifest).includes(raw.path)) return;
+      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
       handlers.onSelect?.({
         path: raw.path,
@@ -514,15 +542,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       });
       return;
     }
-    if (data.type === "default-styles" && manifest) {
+    if (data.type === "default-styles" && site) {
       const raw = data as unknown as { selectors?: unknown; cascade?: unknown };
       handlers.onDefaultStyles?.({ selectors: readSelectedRules(raw.selectors, styleSourcePaths()), cascade: readCascade(raw.cascade) });
       return;
     }
-    if (data.type === "component-styles" && manifest) {
+    if (data.type === "component-styles" && site) {
       const raw = data as unknown as { tags?: unknown };
       const tags = Array.isArray(raw.tags)
-        ? raw.tags.filter((tag): tag is string => typeof tag === "string" && Object.hasOwn(manifest!.components, tag))
+        ? raw.tags.filter((tag): tag is string => typeof tag === "string" && Object.hasOwn(site!.components, tag))
         : [];
       if (tags.length) handlers.onComponentStyles?.([...new Set(tags)]);
     }
@@ -549,8 +577,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     return caret ? { start, end, text: "", wrappers, caret } : { start, end, text: value.text, wrappers };
   }
   function followRoute(href: string) {
-    if (!manifest) return false;
-    const candidate = routeCandidate(manifest, href);
+    if (!site) return false;
+    const candidate = nativeLinkTarget(href, alone ? "/" : route, site.routes);
     if (!candidate) return false;
     if (candidate !== route) {
       route = candidate;
@@ -572,9 +600,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
 
   return {
-    /** Show the pane and adopt a manifest. Idempotent for the same manifest. */
-    activate(next: NativeManifest) {
-      manifest = next;
+    /** Show the pane and adopt a site. Idempotent for the same site. */
+    activate(next: NativeSite) {
+      site = next;
       if (!Object.hasOwn(next.routes, route)) {
         route = nativeDefaultRoute(next);
         alone = undefined;
@@ -590,13 +618,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
       if (input.assets) assets = input.assets;
-      if (manifest && input.component && Object.hasOwn(manifest.components, input.component)) {
+      if (site && input.component && Object.hasOwn(site.components, input.component)) {
         // The page already on show wins; then any page that uses the component; else the component alone.
         const tag = input.component;
-        const uses = (routePath: string) => routeUsesTag(manifest!, sources, routePath, tag);
-        const next = alone !== tag && Object.hasOwn(manifest.routes, route) && uses(route)
+        const uses = (routePath: string) => routeUsesTag(site!, sources, routePath, tag);
+        const next = alone !== tag && Object.hasOwn(site.routes, route) && uses(route)
           ? route
-          : Object.keys(manifest.routes).find(uses) ?? componentRoute(tag);
+          : Object.keys(site.routes).find(uses) ?? componentRoute(tag);
         if (next !== route) {
           route = next;
           insertControls.clear();
@@ -607,7 +635,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           postClearSelection();
         }
         alone = next === componentRoute(tag) ? tag : undefined;
-      } else if (input.route && manifest && Object.hasOwn(manifest.routes, input.route) && input.route !== route) {
+      } else if (input.route && site && Object.hasOwn(site.routes, input.route) && input.route !== route) {
         route = input.route;
         alone = undefined;
         insertControls.clear();
@@ -627,11 +655,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectTextAfterUpdate(range: { start: number; end: number } | undefined) {
       selectText = range;
     },
-    /** Whether `href` (a `#route` link) can be followed in the preview. */
+    /** Whether `href` (a link on the page shown) goes to one of the site's pages. */
     canFollow(href: string) {
-      return Boolean(manifest && routeCandidate(manifest, href));
+      return Boolean(site && nativeLinkTarget(href, alone ? "/" : route, site.routes));
     },
-    /** Navigate the preview to a `#route` link; the current source edits stay. */
+    /** Navigate the preview to the page a link goes to; the current source edits stay. */
     follow(href: string) {
       return followRoute(href);
     },
@@ -651,7 +679,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       showBanner(message, true);
     },
     /**
-     * Show the manifest's warnings, one per line, each with the fixes it
+     * Show the site's warnings, one per line, each with the fixes it
      * offers as buttons after it; none hides the box.
      */
     setWarnings(warnings: (string | NativeWarning)[]) {
@@ -671,7 +699,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     deactivate() {
       if (!mounted) return;
       mounted = false;
-      manifest = undefined;
+      site = undefined;
       componentStyles = {};
       loadError = false;
       insertControls.clear();

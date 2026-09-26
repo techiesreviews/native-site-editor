@@ -1,46 +1,68 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { deriveNativeRoutes, nativePageRoute } from "../shared/native-routes.ts";
+import { deriveNativeRoutes, isFolderRoute, nativeLinkTarget, nativePageRoute, nativeRouteFile } from "../shared/native-routes.ts";
 
-test("a page's route is its path under src/pages", () => {
-  assert.equal(nativePageRoute("src/pages/index.html"), "/");
-  assert.equal(nativePageRoute("src/pages/about.html"), "/about/");
-  assert.equal(nativePageRoute("src/pages/404.html"), "/404/");
-  assert.equal(nativePageRoute("src/pages/work/index.html"), "/work/");
-  assert.equal(nativePageRoute("src/pages/work/fern-and-kettle.html"), "/work/fern-and-kettle/");
-  assert.equal(nativePageRoute("src/pages/a/b/c.v2.html"), "/a/b/c.v2/");
-  assert.equal(nativePageRoute("src/pages/index/index.html"), "/index/");
+test("a page's route is its path: index.html is its folder's, any other .html file is itself", () => {
+  assert.equal(nativePageRoute("index.html"), "/");
+  assert.equal(nativePageRoute("about/index.html"), "/about/");
+  assert.equal(nativePageRoute("work/fern-and-kettle/index.html"), "/work/fern-and-kettle/");
+  assert.equal(nativePageRoute("404.html"), "/404.html");
+  assert.equal(nativePageRoute("notes.html"), "/notes.html");
+  assert.equal(nativePageRoute("work/notes.v2.html"), "/work/notes.v2.html");
+  assert.equal(nativePageRoute("index/index.html"), "/index/");
+  assert.equal(nativePageRoute("components.html"), "/components.html");
 });
 
-test("names starting with _ and other files are not pages", () => {
+test("components, node_modules, names starting with . or _ and other files are not pages", () => {
   for (const path of [
-    "src/pages/_draft.html",
-    "src/pages/_parts/header.html",
-    "src/pages/work/_wip/index.html",
-    "src/pages/notes.txt",
-    "src/pages/about.HTML",
-    "src/pages/about us.html",
-    "src/pages/../secret.html",
-    "src/pages/a//b.html",
-    "src/pages/.html",
-    "src/components/site-header.html",
-    "pages/index.html",
-    "src/pages/café.html",
+    "components/site-header/site-header.html",
+    "components/site-header.html",
+    "node_modules/pkg/index.html",
+    "_draft.html",
+    "_parts/header.html",
+    "work/_wip/index.html",
+    ".editor/index.html",
+    ".github/page.html",
+    "notes.txt",
+    "about.HTML",
+    "about us.html",
+    "../secret.html",
+    "a//b.html",
+    "café.html",
   ])
     assert.equal(nativePageRoute(path), undefined, path);
 });
 
-test("derivation takes a plain list of paths and reports routes two files give", () => {
-  const { routes, warnings } = deriveNativeRoutes([
-    "src/pages/work.html",
+test("a route's file is the inverse of its route", () => {
+  for (const path of ["index.html", "about/index.html", "a/b/index.html", "404.html", "work/notes.html"])
+    assert.equal(nativeRouteFile(nativePageRoute(path)!), path);
+  assert.equal(isFolderRoute("/about/"), true);
+  assert.equal(isFolderRoute("/notes.html"), false);
+});
+
+test("derivation takes a plain list of paths, in route order", () => {
+  const routes = deriveNativeRoutes([
+    "work/index.html",
     "README.md",
-    "src/pages/index.html",
-    "src/pages/work/index.html",
-    "src/pages/index.html",
+    "index.html",
+    "work.html",
+    "components/site-footer/site-footer.html",
+    "index.html",
   ]);
-  assert.deepEqual(routes, { "/": "src/pages/index.html", "/work/": "src/pages/work/index.html" });
-  assert.deepEqual(Object.keys(routes), ["/", "/work/"]);
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /^src\/pages\/work\.html and src\/pages\/work\/index\.html both give the route \/work\//);
-  assert.deepEqual(deriveNativeRoutes([]), { routes: {}, warnings: [] });
+  assert.deepEqual(routes, { "/": "index.html", "/work.html": "work.html", "/work/": "work/index.html" });
+  assert.deepEqual(deriveNativeRoutes([]), {});
+});
+
+test("a link goes to a page by its root path, relative path, or without its trailing slash", () => {
+  const routes = { "/": "index.html", "/about/": "about/index.html", "/about/team/": "about/team/index.html", "/notes.html": "notes.html" };
+  assert.equal(nativeLinkTarget("/about/", "/", routes), "/about/");
+  assert.equal(nativeLinkTarget("/about/#contact", "/", routes), "/about/");
+  assert.equal(nativeLinkTarget("/about?x=1", "/", routes), "/about/");
+  assert.equal(nativeLinkTarget("/about/index.html", "/", routes), "/about/");
+  assert.equal(nativeLinkTarget("team/", "/about/", routes), "/about/team/");
+  assert.equal(nativeLinkTarget("../", "/about/team/", routes), "/about/");
+  assert.equal(nativeLinkTarget("notes.html", "/", routes), "/notes.html");
+  assert.equal(nativeLinkTarget("/", "/about/", routes), "/");
+  for (const href of ["#top", "", "https://example.com/about/", "//example.com/", "mailto:a@b.c", "/missing/", "javascript:alert(1)"])
+    assert.equal(nativeLinkTarget(href, "/", routes), undefined, href);
 });

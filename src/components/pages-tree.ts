@@ -1,6 +1,8 @@
 import { button, node } from "../ui/dom";
 import { nativeSubpageCount, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import type { Checked } from "../native-create";
+import { parentRoute } from "../native-page-moves";
+import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
@@ -252,7 +254,7 @@ export function createPagesTree(options: {
   // ---- Rows. ----
   const rows = () => [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")];
   const rowByKey = (key: string | undefined) => (key ? rows().find((row) => row.dataset.key === key) : undefined);
-  const rowOfRoute = (route: string) => rows().find((row) => row.dataset.route === route && !row.dataset.unused);
+  const rowOfRoute = (route: string) => rows().find((row) => row.dataset.route === route);
   // Rows a person can reach: not inside a collapsed row.
   const visibleRows = () => rows().filter((row) => !row.parentElement?.closest("[role='group'][hidden]"));
 
@@ -270,14 +272,14 @@ export function createPagesTree(options: {
   }
 
   const isOpen = (page: NativePageNode, level: number) =>
-    expanded.get(page.route) ?? (level === 1 || Boolean(current && current.startsWith(`src/pages${page.route}`)));
+    expanded.get(page.route) ?? (level === 1 || Boolean(current && isFolderRoute(page.route) && current.startsWith(page.route.slice(1))));
 
   function pageAt(route: string): NativePageNode | undefined {
     if (!model) return undefined;
     if (route === "/") return model.home;
     const find = (list: NativePageNode[]): NativePageNode | undefined => {
       for (const page of list) {
-        if (page.route === route && !page.unusedFor) return page;
+        if (page.route === route) return page;
         const found = route.startsWith(page.route) ? find(page.children) : undefined;
         if (found) return found;
       }
@@ -293,7 +295,6 @@ export function createPagesTree(options: {
   function items(page: NativePageNode): MenuItem[] {
     const target = targetOf(page);
     const key = keyOf(page);
-    if (page.unusedFor) return options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : [];
     if (!page.file) {
       return [
         ...(options.createPage ? [{ label: "Create page", run: () => options.createPage!(page.route) }] : []),
@@ -302,7 +303,7 @@ export function createPagesTree(options: {
     }
     const home = page.special === "home";
     return [
-      { label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) },
+      ...(isFolderRoute(page.route) ? [{ label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) }] : []),
       ...(options.retitle ? [{ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) }] : []),
       ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),
       ...(!home && options.moveTo ? [{ label: "Move to…", run: () => options.moveTo!(target) }] : []),
@@ -432,12 +433,12 @@ export function createPagesTree(options: {
     const edge = Math.min(8, box.height / 4);
     const onto = event.clientY > box.top + edge && event.clientY < box.bottom - edge;
     if (page.special === "home") return { parent: "/", className: "is-drop-target" };
-    if (onto && !page.unusedFor) return { parent: page.route, className: "is-drop-target" };
-    const parent = page.route.slice(0, page.route.slice(0, -1).lastIndexOf("/") + 1) || "/";
+    if (onto && isFolderRoute(page.route)) return { parent: page.route, className: "is-drop-target" };
+    const parent = parentRoute(page.route);
     return { parent, className: event.clientY <= box.top + edge ? "is-drop-before" : "is-drop-after" };
   }
   function wireDrag(item: HTMLElement, row: HTMLElement, page: NativePageNode) {
-    const movable = Boolean(page.file && !page.unusedFor && page.special !== "home" && options.drop);
+    const movable = Boolean(page.file && page.special !== "home" && options.drop);
     if (movable) {
       row.draggable = true;
       row.addEventListener("dragstart", (event) => {
@@ -507,7 +508,6 @@ export function createPagesTree(options: {
     item.setAttribute("aria-level", String(level));
     item.dataset.key = keyOf(page);
     item.dataset.route = page.route;
-    if (page.unusedFor) item.dataset.unused = "true";
     if (page.special) item.dataset.special = page.special;
     item.tabIndex = -1;
     const selected = Boolean(page.file && page.file === current);
@@ -520,13 +520,12 @@ export function createPagesTree(options: {
     item.setAttribute("aria-description", [
       page.route,
       !page.file ? "no page" : undefined,
-      page.unusedFor ? `not used: ${page.unusedFor} gives this URL` : undefined,
       count ? `${count} ${count === 1 ? "subpage" : "subpages"}` : undefined,
       page.isNew && page.file ? "new, not saved to GitHub yet" : undefined,
     ].filter(Boolean).join(", "));
     const row = node("div", `pages-row${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
     row.style.setProperty("--level", String(level));
-    row.title = page.unusedFor ? `${page.file} is not used: ${page.unusedFor} gives ${page.route}` : page.file ?? `src/pages${page.route} has pages but no page of its own`;
+    row.title = page.file ?? `${page.route.slice(1)} has pages but no page of its own`;
     const twisty = node("span", "pages-twisty", hasChildren ? (open ? "▾" : "▸") : "");
     twisty.setAttribute("aria-hidden", "true");
     if (hasChildren)
@@ -538,9 +537,8 @@ export function createPagesTree(options: {
       });
     row.append(twisty, icon(page.special === "home" ? "⌂" : page.file ? "◻" : "▢"), label(page.label));
     if (!page.file) row.append(node("span", "pages-note", "(no page)"));
-    if (page.unusedFor) row.append(node("span", "pages-note", "not used"));
     if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
-    if (page.file && !page.unusedFor && page.special !== "home" && options.changeUrl) {
+    if (page.file && page.special !== "home" && options.changeUrl) {
       const url = node("button", "pages-url pages-url--button", page.route);
       url.type = "button";
       url.tabIndex = -1;
@@ -553,7 +551,7 @@ export function createPagesTree(options: {
       });
       row.append(url);
     } else row.append(node("span", "pages-url", page.route));
-    if (!page.unusedFor) {
+    if (isFolderRoute(page.route)) {
       const add = node("button", "pages-add", "+");
       add.type = "button";
       add.tabIndex = -1;
@@ -725,11 +723,8 @@ export function createPagesTree(options: {
         editing.item.remove();
         editing = undefined;
       }
-      const target = focus?.route ?? (focus?.file ? `/${focus.file.slice("src/pages/".length).replace(/(?:index)?\.html$/, "")}` : undefined);
-      if (target) {
-        const parts = target.split("/").filter(Boolean);
-        parts.slice(0, -1).forEach((_, index) => expanded.set(`/${parts.slice(0, index + 1).join("/")}/`, true));
-      }
+      const target = focus?.route ?? (focus?.file ? nativePageRoute(focus.file) : undefined);
+      if (target) for (let parent = parentRoute(target); parent !== "/"; parent = parentRoute(parent)) expanded.set(parent, true);
       const hadFocus = tree.contains(document.activeElement) && document.activeElement?.getAttribute("role") === "treeitem";
       const drawn: HTMLElement[] = [];
       if (site.home) drawn.push(pageRow(site.home, 1));

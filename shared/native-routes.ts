@@ -1,57 +1,79 @@
-// File-based routing for native projects: where a page file is under
-// `src/pages/` is its URL. The editor, the static exporter and the agent
-// context all route pages through this one rule:
+// The repository is the site (docs/adr/0001-the-repository-is-the-site.md):
+// a page's URL is its file's path. The editor and the agent context route
+// pages through this one rule:
 //
-// - `src/pages/index.html` is `/`;
-// - `src/pages/<dir>/index.html` is `/<dir>/`;
-// - `src/pages/<path>.html` is `/<path>/` (`about.html` is `/about/`,
-//   `work/fern-and-kettle.html` is `/work/fern-and-kettle/`, `404.html` is
-//   `/404/`);
-// - a file or folder whose name starts with `_` is not a page, nor is a name
-//   outside the manifest's safe path characters (letters, digits, `_`, `.`,
-//   `-`).
+// - `index.html` is `/`;
+// - `<dir>/index.html` is `/<dir>/`;
+// - any other `<path>.html` is `/<path>.html` (`404.html` at the root is the
+//   page hosts show for addresses the site does not have);
+// - nothing under `components/` or `node_modules/` is a page, nor is a file
+//   or folder whose name starts with `.` or `_`, nor a name outside the safe
+//   path characters (letters, digits, `_`, `.`, `-`).
 //
-// When a file and a folder's index give the same route (`work.html` and
-// `work/index.html`), the folder's index wins and a warning says so. The
-// module takes a plain list of paths, so repository files and new files
-// drafted in the browser route alike; it has no DOM and no I/O.
+// Two files never give one route. The module takes a plain list of paths, so
+// repository files and new files drafted in the browser route alike; it has
+// no DOM and no I/O.
 
-export const NATIVE_PAGES_DIR = "src/pages/";
+export const NATIVE_HOME_PAGE = "index.html";
+export const NATIVE_NOT_FOUND_PAGE = "404.html";
+/** The route of the not-found page. */
+export const NATIVE_NOT_FOUND_ROUTE = "/404.html";
 
 const SEGMENT = /^[\w.-]+$/;
+const NOT_PAGES = new Set(["components", "node_modules"]);
 
-/** The route `path` serves under file-based routing; undefined when it is not a page. */
+/** The route `path` serves; undefined when it is not a page. */
 export function nativePageRoute(path: string): string | undefined {
-  if (typeof path !== "string" || path.length > 1024 || !path.startsWith(NATIVE_PAGES_DIR) || !path.endsWith(".html")) return undefined;
-  const parts = path.slice(NATIVE_PAGES_DIR.length, -".html".length).split("/");
-  if (parts.some((part) => !SEGMENT.test(part) || part.startsWith("_") || part === "." || part === "..")) return undefined;
-  if (parts[parts.length - 1] === "index") parts.pop();
+  if (typeof path !== "string" || path.length > 1024 || !path.endsWith(".html")) return undefined;
+  const parts = path.split("/");
+  if (NOT_PAGES.has(parts[0]) && parts.length > 1) return undefined;
+  if (parts.some((part) => !SEGMENT.test(part) || part.startsWith("_") || part.startsWith("."))) return undefined;
+  if (parts[parts.length - 1] !== "index.html") return `/${path}`;
+  parts.pop();
   return parts.length ? `/${parts.join("/")}/` : "/";
 }
 
-export interface NativeDerivedRoutes {
-  /** Route to page file, in route order. */
-  routes: Record<string, string>;
-  /** One line per route two files would give, naming the file used. */
-  warnings: string[];
+/** The file that gives `route`: `/` is `index.html`, `/a/b/` is `a/b/index.html`, `/x.html` is `x.html`. */
+export function nativeRouteFile(route: string): string {
+  if (route.endsWith("/")) return `${route.slice(1)}index.html`;
+  return route.slice(1);
 }
 
-/** Every page among `paths` by the route its place under `src/pages/` gives it. */
-export function deriveNativeRoutes(paths: Iterable<string>): NativeDerivedRoutes {
-  const byRoute = new Map<string, string[]>();
-  for (const path of [...new Set(paths)].sort()) {
+/** Whether `route` is a folder's (`/`, `/a/b/`), which can have subpages, rather than a file's (`/x.html`). */
+export const isFolderRoute = (route: string) => route.endsWith("/");
+
+/** Every page among `paths` by its route, in route order. */
+export function deriveNativeRoutes(paths: Iterable<string>): Record<string, string> {
+  const found: [string, string][] = [];
+  for (const path of new Set(paths)) {
     const route = nativePageRoute(path);
-    if (route === undefined) continue;
-    byRoute.set(route, [...(byRoute.get(route) ?? []), path]);
+    if (route !== undefined) found.push([route, path]);
   }
-  const routes: Record<string, string> = {};
-  const warnings: string[] = [];
-  for (const [route, files] of [...byRoute].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    // Only `<dir>.html` and `<dir>/index.html` can meet on one route.
-    const chosen = files.find((file) => file.endsWith("/index.html")) ?? files[0];
-    routes[route] = chosen;
-    if (files.length > 1)
-      warnings.push(`${files.filter((file) => file !== chosen).join(", ")} and ${chosen} both give the route ${route}; ${chosen} is used. Rename one, or map "${route}" to a file in native.json.`);
+  found.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return Object.fromEntries(found);
+}
+
+const SITE = "https://site.invalid";
+
+/**
+ * The route a link on the page at `from` goes to, among `routes`: a root
+ * link (`/about/`, `/about/#team`), a relative one (`../about/`) resolved
+ * against `from`, `/about` and `/about/index.html` for `/about/`. Undefined
+ * for an external link, a link within the page (`#team`), or no page.
+ */
+export function nativeLinkTarget(href: string, from: string, routes: Record<string, string>): string | undefined {
+  const value = href.trim();
+  if (!value || value.startsWith("#") || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value)) return undefined;
+  let path: string;
+  try {
+    const url = new URL(value, `${SITE}${from.startsWith("/") ? from : `/${from}`}`);
+    if (url.origin !== SITE) return undefined;
+    path = decodeURI(url.pathname);
+  } catch {
+    return undefined;
   }
-  return { routes, warnings };
+  const candidates = [path];
+  if (path.endsWith("/index.html")) candidates.push(path.slice(0, -"index.html".length));
+  else if (!path.endsWith("/") && !path.endsWith(".html")) candidates.push(`${path}/`);
+  return candidates.find((candidate) => Object.hasOwn(routes, candidate));
 }

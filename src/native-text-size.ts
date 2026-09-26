@@ -1,8 +1,8 @@
 // The edit bar's Text size: the sizes a site defines for itself, and the
 // start-tag edit that gives an element one of them.
 //
-// Detection reads the site's shared stylesheets (the manifest's or the
-// conventional ones, with the files they `@import`), in this order:
+// Detection reads the page's shared stylesheets (the ones its head links,
+// with the files they `@import`), in this order:
 // 1. Size classes: a rule whose whole selector is one class named
 //    `text-*`, `font-size-*` or `fs-*` and that sets `font-size`
 //    (`.text-large { font-size: 22px }`). The bar writes the class.

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Native Studio</title>
+  <meta name="description" content="A small site built from plain HTML, CSS and shared components.">
+  <meta property="og:title" content="Native Studio">
+  <meta property="og:description" content="A small site built from plain HTML, CSS and shared components.">
+  <link rel="stylesheet" href="/styles/site.css">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body>
+<site-header data-key="header"></site-header>
+<main class="page" data-key="main">
+  <section class="hero" data-key="hero">
+    <h1 data-key="hero-title">A native browser preview</h1>
+    <p class="lead" data-key="hero-lead">Edit plain HTML, CSS, and shared component templates and watch the preview update in place — no build, no iframe reload.</p>
+    <img class="hero-image" src="/images/placeholder.svg" data-key="hero-image">
+  </section>
+  <section class="cards" data-key="cards">
+    <project-card title="Reusable cards" data-key="card-1">
+      <span slot="title">Reusable cards</span>
+      <p slot="body">This card and the next one share a single template. Edit the template once and both update together.</p>
+    </project-card>
+    <project-card title="Shared chrome" data-key="card-2">
+      <span slot="title">Shared chrome</span>
+      <p slot="body">The header and footer are custom elements shared across Home and About.</p>
+    </project-card>
+    <project-card title="Fast edits" data-key="card-3">
+      <span slot="title">Fast edits</span>
+      <p slot="body">Every keystroke patches the live DOM through a persistent sandboxed frame.</p>
+    </project-card>
+  </section>
+  <section class="filler" data-key="filler">
+    <h2 data-key="filler-title">Scroll to verify</h2>
+    <p data-key="filler-1">This section adds enough height that the preview scrolls. Scroll down, edit source, and the scroll position stays put.</p>
+    <p data-key="filler-2">Paragraph two of filler content to give the page real vertical length for scroll verification.</p>
+    <p data-key="filler-3">Paragraph three of filler content, still plain semantic HTML rendered natively.</p>
+    <p data-key="filler-4">Paragraph four keeps the page tall enough to exercise scrolling in the preview pane.</p>
+    <p data-key="filler-5">Paragraph five closes out the filler block on the home route.</p>
+  </section>
+</main>
+<site-footer data-key="footer"></site-footer>
+</body>
+</html>

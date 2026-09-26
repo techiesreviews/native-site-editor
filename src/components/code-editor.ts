@@ -93,7 +93,7 @@ type VisualHistoryEntry = {
   /** Changes to other files made with this edit: undone and redone with it. */
   companions?: HistoryCompanion[];
 };
-/** A change outside the edited model (the manifest, as a draft) that belongs to an edit's undo step. */
+/** A change outside the edited model (another file, as a draft) that belongs to an edit's undo step. */
 export interface HistoryCompanion {
   undo(): void;
   redo(): void;
@@ -872,7 +872,7 @@ function reconcilePublished(result: PublishResult, submitted: SavedDraft[]) {
     const key = draftKey(sent, sent.path);
     const open = drafts.get(key);
     // Saved, a renamed or copied file is a file like any other.
-    const { movedFrom: _from, sourceSha: _source, opaque, mode: _mode, entries: _entries, ...plain } = sent;
+    const { movedFrom: _from, sourceSha: _source, opaque, mode: _mode, ...plain } = sent;
     // Edits typed during publishing remain a new draft on top of the committed content.
     if (open) {
       open.original = sent.content;
@@ -887,7 +887,7 @@ function reconcilePublished(result: PublishResult, submitted: SavedDraft[]) {
     } else if (opaque) {
       if (latest?.opaque) store.remove(sent, sent.path);
     } else if (latest) {
-      const { movedFrom: _f, sourceSha: _s, opaque: _o, mode: _m, entries: _e, ...rest } = latest;
+      const { movedFrom: _f, sourceSha: _s, opaque: _o, mode: _m, ...rest } = latest;
       store.save({
         ...rest,
         baseSha: sha,

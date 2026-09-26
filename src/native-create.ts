@@ -3,15 +3,11 @@
 // A new file is a browser draft with no base blob, published like any other
 // draft. This module decides what a creation writes, as plain text: the
 // repository path a typed name gives (letters, digits, `_`, `.` and `-` per
-// segment, a `/` for folders under it), the file a new page's URL gives under
-// file-based routing (shared/native-routes.ts), the new page's source made
-// from the home page, and what a new file adds to the manifest. It has no DOM
-// and no I/O; whether a path is already taken is the caller's to say.
-import { NATIVE_PAGES_DIR, nativePageRoute } from "../shared/native-routes";
-import { VOID_ELEMENTS, startTagAttribute, startTags, type StartTag } from "../shared/html-source";
-import { nativePageComment } from "../shared/native-project";
-import { isNativeComponentTag } from "./native-manifest";
-import type { NativeRegistration } from "./native-page-meta";
+// segment, a `/` for folders under it), the route a typed URL is, and a new
+// page's document made from the home page's. It has no DOM and no I/O;
+// whether a path is already taken is the caller's to say.
+import { startTags } from "../shared/html-source";
+import { nativePageWithDetails } from "../shared/native-project";
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -58,12 +54,18 @@ export function newFolderPath(folder: string, name: string): Checked<string> {
   return joinPath(folder, name, "folder");
 }
 
-/** A page URL as typed (`/videos/intro/`, `videos/intro`, `#/videos/intro`) as a route. */
+/**
+ * A page URL as typed (`/videos/intro/`, `videos/intro`, `/notes.html`,
+ * `/videos/index.html`) as a route: a folder's (`/videos/intro/`) unless it
+ * names an `.html` file.
+ */
 export function normalizeRoute(input: string): Checked<string> {
   let text = input.trim();
-  if (text.startsWith("#")) text = text.slice(1);
   if (!text) return { ok: false, error: "Enter the page's URL, such as /videos/intro/." };
   if (text.startsWith("/")) text = text.slice(1);
+  if (text === "index.html") return { ok: true, value: "/" };
+  if (text.endsWith("/index.html")) text = text.slice(0, -"index.html".length);
+  const file = text.endsWith(".html");
   if (text.endsWith("/")) text = text.slice(0, -1);
   if (!text) return { ok: true, value: "/" };
   const parts = text.split("/");
@@ -72,116 +74,57 @@ export function normalizeRoute(input: string): Checked<string> {
     return { ok: false, error: "Use letters, digits, -, _ and . in the URL, with / between parts." };
   if (parts.some((part) => part.startsWith("_") || part.startsWith(".")))
     return { ok: false, error: "A URL part cannot start with _ or . (such files are not pages)." };
-  return { ok: true, value: `/${parts.join("/")}/` };
-}
-
-/**
- * The file a new page at `route` goes in: `/a/b/` is `src/pages/a/b.html`,
- * or `src/pages/a/b/index.html` when the folder `src/pages/a/b` already
- * exists (on the branch or as drafts), so the page sits with its folder.
- */
-export function nativeNewPagePath(route: string, folderExists: (folder: string) => boolean): Checked<string> {
-  if (route === "/") return { ok: true, value: `${NATIVE_PAGES_DIR}index.html` };
-  const folder = `${NATIVE_PAGES_DIR}${route.slice(1, -1)}`;
-  const path = folderExists(folder) ? `${folder}/index.html` : `${folder}.html`;
-  // `/a/index/` would be `src/pages/a/index.html`, which is `/a/`.
-  if (nativePageRoute(path) !== route) return { ok: false, error: `No page file can give the URL ${route}.` };
-  return { ok: true, value: path };
+  if (parts[0] === "components" || parts[0] === "node_modules")
+    return { ok: false, error: `/${parts[0]}/ is not for pages.` };
+  return { ok: true, value: file ? `/${parts.join("/")}` : `/${parts.join("/")}/` };
 }
 
 /** A route's last part as a heading: `/videos/my-first_clip/` is "My first clip". */
 export function routeHeading(route: string): string {
-  const last = route.split("/").filter(Boolean).at(-1);
+  const last = route.split("/").filter(Boolean).at(-1)?.replace(/\.html$/, "");
   if (!last) return "Home";
   const words = last.replace(/[-_.]+/g, " ").trim();
   return words ? words[0].toUpperCase() + words.slice(1) : last;
 }
 
-const escapeHtml = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const MINIMAL_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <meta name="description" content="">
+</head>
+<body>
+  <main>
+  </main>
+</body>
+</html>
+`;
 
 /**
- * The start tag of the first `<section>` element directly in `<main>`, whose
- * content runs from `from` to `to`: tags are followed by nesting depth (an
- * unclosed element only makes later sections look nested, so none is found
- * rather than a wrong one).
+ * A new page's document made from the home page's: the same head (its
+ * stylesheets, scripts and meta tags) with the new `title` and an empty
+ * description (`og:title` and `og:description` along, when there), the same
+ * body outside `<main>` (the header and footer components), and `<main>`
+ * kept but emptied, so "Add to the page" starts from nothing. A home page
+ * with no `<main>` gives its body a `<main>` alone; no home page, a minimal
+ * document.
  */
-function firstChildSection(html: string, from: number, to: number): StartTag | undefined {
-  const inner = html.slice(from, to);
-  const events = [
-    ...startTags(inner).map((tag) => ({ at: tag.start, tag, close: "" })),
-    ...[...inner.matchAll(/<\/([a-zA-Z][^\s/>]*)[^>]*>/g)].map((match) => ({ at: match.index, tag: undefined, close: match[1].toLowerCase() })),
-  ].sort((a, b) => a.at - b.at);
-  const open: string[] = [];
-  for (const { tag, close } of events) {
-    if (tag) {
-      if (!open.length && tag.name === "section")
-        return { name: tag.name, start: from + tag.start, nameEnd: from + tag.nameEnd, end: from + tag.end };
-      if (!VOID_ELEMENTS.has(tag.name) && !inner.slice(tag.start, tag.end).endsWith("/>")) open.push(tag.name);
-    } else {
-      const index = open.lastIndexOf(close);
-      if (index >= 0) open.length = index;
-    }
+export function nativePageTemplate(home: string | undefined, title: string): string {
+  const source = home ?? MINIMAL_PAGE;
+  const text = nativePageWithDetails(source, { title, description: "" });
+  const lower = text.toLowerCase();
+  const main = startTags(text).find((tag) => tag.name === "main");
+  const close = main ? lower.indexOf("</main", main.end) : -1;
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  if (main && close >= 0) {
+    const lead = text.slice(text.lastIndexOf("\n", main.start - 1) + 1, main.start);
+    const indent = /^[ \t]*$/.test(lead) ? lead : "";
+    return `${text.slice(0, main.end)}${newline}${indent}${text.slice(close)}`;
   }
-  return undefined;
-}
-
-/** A copy of the `<section>` start tag `tag` in `html` without its `id` and `data-key`. */
-function sectionStartTag(html: string, tag: StartTag) {
-  const drop = ["id", "data-key"]
-    .map((name) => startTagAttribute(html, tag, name))
-    .filter((found) => found !== undefined)
-    .sort((a, b) => b.start - a.start);
-  let text = html.slice(tag.start, tag.end);
-  for (const found of drop) text = text.slice(0, found.start - tag.start) + text.slice(found.end - tag.start);
-  const attributes = text.slice(tag.nameEnd - tag.start, -1).replace(/\s*\/$/, "").trimEnd();
-  return `<section${attributes}>`;
-}
-
-/**
- * A new page's source made from the home page's: everything outside its
- * `<main>` (the header and footer components) as it is, the `<main>` start
- * tag kept, and its content replaced by one `<section>` holding one `<h1>`,
- * so "Add to the page" has sections to add others beside. The section copies
- * the start tag of the home page's first `<section>` directly in `<main>`
- * (its class and other attributes, but no `id`, which would repeat), else it
- * is a bare `<section>`. A home page with no `<main>` gives a page of just `<main id="main">`, the section and
- * the heading. The home page's leading `<!-- title: … -->` comment is its
- * own and is left out.
- */
-export function nativePageTemplate(source: string | undefined, heading: string): string {
-  const home = source === undefined ? undefined : nativePageComment(source).body;
-  const text = escapeHtml(heading);
-  const start = home ? startTags(home).find((tag) => tag.name === "main") : undefined;
-  const close = home && start ? home.toLowerCase().indexOf("</main>", start.end) : -1;
-  if (!home || !start || close < 0) return `<main id="main">\n  <section>\n    <h1>${text}</h1>\n  </section>\n</main>\n`;
-  const lineIndent = (at: number) => {
-    const lead = home.slice(home.lastIndexOf("\n", at - 1) + 1, at);
-    return /^[ \t]*$/.test(lead) ? lead : undefined;
-  };
-  const indent = lineIndent(start.start) ?? "";
-  const section = firstChildSection(home, start.end, close);
-  // One level of indentation as the home page has it under <main>.
-  const sectionIndent = section ? lineIndent(section.start) : undefined;
-  const step = sectionIndent && sectionIndent.length > indent.length && sectionIndent.startsWith(indent)
-    ? sectionIndent.slice(indent.length)
-    : "  ";
-  const open = section ? sectionStartTag(home, section) : "<section>";
-  const h1 = `<h1>${text}</h1>`;
-  const inner = [`${indent}${step}${open}`, `${indent}${step}${step}${h1}`, `${indent}${step}</section>`].join("\n");
-  return `${home.slice(0, start.end)}\n${inner}\n${indent}${home.slice(close)}`;
-}
-
-/**
- * What a new file at `path` adds to the manifest: a stylesheet directly in
- * `src/styles/` is one of the site's styles; a template
- * `src/components/<tag>/<tag>.html` with a valid custom-element tag is that
- * component. Other files add nothing.
- */
-export function nativeRegistration(path: string): NativeRegistration | undefined {
-  if (/^src\/styles\/[\w.-]+\.css$/.test(path)) return { kind: "style", path };
-  const component = /^src\/components\/([\w.-]+)\/([\w.-]+)\.html$/.exec(path);
-  if (component && component[1] === component[2] && isNativeComponentTag(component[1]))
-    return { kind: "component", tag: component[1], path };
-  return undefined;
+  const body = startTags(text).find((tag) => tag.name === "body");
+  const bodyClose = body ? lower.lastIndexOf("</body") : -1;
+  if (!body || bodyClose < body.end) return nativePageWithDetails(MINIMAL_PAGE, { title, description: "" });
+  return `${text.slice(0, body.end)}${newline}  <main>${newline}  </main>${newline}${text.slice(bodyClose)}`;
 }

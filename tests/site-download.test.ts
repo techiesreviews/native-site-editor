@@ -69,21 +69,22 @@ function fixtureSite(held: Record<string, string>, deleted: string[] = []): Site
 }
 
 test("Download site zips the repository's files as they are, drafts included", async () => {
-  const index = readFileSync("fixtures/native-starter/src/pages/index.html", "utf8");
+  const index = readFileSync("fixtures/native-starter/index.html", "utf8");
   const edited = index.replace("A native browser preview", "Unsaved draft heading");
   const site = fixtureSite({
-    "src/pages/index.html": edited,
+    "index.html": edited,
     "draft-only/index.html": "<!doctype html>\n<title>Only in the browser</title>\n",
-  }, ["src/pages/about.html"]);
+  }, ["about/index.html"]);
   const files = await collectSiteFiles(site);
-  assert.equal(typeof files["src/styles/site.css"], "string", "CSS reads as text");
-  assert.ok(files["src/images/studio-desk.svg"] !== undefined);
+  assert.equal(typeof files["styles/site.css"], "string", "CSS reads as text");
+  assert.equal(typeof files[".editor/config.json"], "string", "the editor's settings go along");
+  assert.ok(files["images/studio-desk.svg"] !== undefined);
   const { zip, count } = await buildSiteZip(site);
   const read = unzipStored(zip);
   assert.equal(Object.keys(read).length, count);
-  assert.equal(decoder.decode(read["src/pages/index.html"]), edited, "the draft, byte for byte");
+  assert.equal(decoder.decode(read["index.html"]), edited, "the draft, byte for byte");
   assert.equal(decoder.decode(read["draft-only/index.html"]), "<!doctype html>\n<title>Only in the browser</title>\n");
-  assert.equal(decoder.decode(read["src/styles/site.css"]), readFileSync("fixtures/native-starter/src/styles/site.css", "utf8"));
-  assert.deepEqual([...read["src/images/studio-desk.svg"]], [...readFileSync("fixtures/native-starter/src/images/studio-desk.svg")]);
-  assert.equal(read["src/pages/about.html"], undefined, "a deleted file is left out");
+  assert.equal(decoder.decode(read["styles/site.css"]), readFileSync("fixtures/native-starter/styles/site.css", "utf8"));
+  assert.deepEqual([...read["images/studio-desk.svg"]], [...readFileSync("fixtures/native-starter/images/studio-desk.svg")]);
+  assert.equal(read["about/index.html"], undefined, "a deleted file is left out");
 });

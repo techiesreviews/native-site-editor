@@ -16,8 +16,8 @@
   var editing = null;
   var editingText = "";
   var editingHtml = "";
-  // Shared stylesheets as constructed sheets: one CSSStyleSheet per manifest
-  // entry for the whole document, adopted by the document and by every
+  // Shared stylesheets as constructed sheets: one CSSStyleSheet per sheet
+  // the page links (and each file those import) for the whole document, adopted by the document and by every
   // component shadow root, so a token declared once at document level is
   // inherited everywhere and no shadow root carries its own copy. Component
   // CSS is one sheet per tag, adopted after the shared ones by that tag's
@@ -64,11 +64,21 @@
     return fragment;
   }
 
-  // Repository image paths (as written in `src`, or with a leading "/" or
-  // "./") shown from the data URLs the host read for them.
+  // Repository images (a root path such as "/images/x.svg", or one relative
+  // to the page's URL, as on the live site) shown from the data URLs the
+  // host read for them.
+  var SITE = "https://site.invalid";
   function assetFor(src) {
     if (!state || !state.assets || typeof src !== "string") return null;
-    var key = src.replace(/^\.?\//, "").split(/[?#]/)[0];
+    if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src.trim())) return null;
+    var key;
+    try {
+      var url = new URL(src.trim(), SITE + (state.base || "/"));
+      if (url.origin !== SITE) return null;
+      key = decodeURI(url.pathname).replace(/^\//, "");
+    } catch (e) {
+      return null;
+    }
     return Object.prototype.hasOwnProperty.call(state.assets, key) ? state.assets[key] : null;
   }
   function resolveAssets(fragment) {
@@ -341,6 +351,7 @@
       componentStyles: payload.componentStyles || {},
       assets: payload.assets || {},
       route: payload.route || "/",
+      base: typeof payload.base === "string" ? payload.base : "/",
       sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
       context: String(payload.context || "")
     };
@@ -1472,11 +1483,13 @@
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
     var link = nearestLinkFromPath(path, e.target);
     if (link && (e.ctrlKey || e.metaKey)) {
-      var href = link.getAttribute("href");
-      if (href && href.charAt(0) === "#") {
+      // A link within the site (a root or relative one, not an external
+      // address or an anchor on this page): the host shows its page.
+      var href = (link.getAttribute("href") || "").trim();
+      if (href && href.charAt(0) !== "#" && !/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href)) {
         e.preventDefault();
         e.stopPropagation();
-        emit("route", { route: href.slice(1) || "/" });
+        emit("route", { href: href });
         return;
       }
     }

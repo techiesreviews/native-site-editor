@@ -1,52 +1,64 @@
-// A native project's effective manifest: what `.astro-editor/native.json`
-// says, completed by convention, so a site needs no manifest at all. The
-// editor, the static exporter and the agent context all read a site through
-// `resolveNativeProject`:
+// A native site as the editor, and the agent context, read it
+// (docs/adr/0001-the-repository-is-the-site.md): the repository root is the
+// site root.
 //
-// - a repository is a native project when it has `.astro-editor/native.json`
-//   or a home page, `src/pages/index.html` (`isNativeProject`);
-// - pages are routed by where they are under `src/pages/`
-//   (shared/native-routes.ts); a manifest route mapped to a file wins;
-// - every `src/components/<name>/<name>.html` (or flat
-//   `src/components/<name>.html`) whose `<name>` is a valid, unreserved
-//   custom-element tag is the component `<name>`; a manifest `components`
-//   entry wins for its tag and for its file;
-// - the shared stylesheets are the manifest's `styles` when it lists them,
-//   else `src/styles/site.css` when there is one (it may `@import` the
-//   others), else every `.css` file directly in `src/styles/`, in name order;
-// - a page's title and description are the manifest's for its route, else
-//   the page's leading `<!-- title: …\ndescription: … -->` comment
-//   (`nativePageComment`, `nativePageInfo`).
+// - a repository is a native site when it has a home page, `index.html`
+//   (`isNativeProject`);
+// - pages are the `.html` files, routed by where they are
+//   (shared/native-routes.ts), and each is a full document: its `<head>`
+//   holds the title, the description and the stylesheet links, its `<body>`
+//   the page;
+// - every `components/<tag>/<tag>.html` (or flat `components/<tag>.html`)
+//   whose `<tag>` is a valid, unreserved custom-element name is the
+//   component `<tag>`, with a sibling `.css`;
+// - the shared stylesheets of a page are the ones its `<head>` links
+//   (`<link rel="stylesheet" href>`, resolved against the page's path to
+//   repository paths; `nativePageStylesheets`), each with its `@import`s;
+// - `.editor/config.json` holds editor-only settings.
 //
 // The module takes plain path lists and text; it has no DOM and no I/O.
-import {
-  isNativeComponentTag,
-  parseNativeManifest,
-  type NativeManifest,
-  type NativeManifestResult,
-  type NativePageMeta,
-} from "../src/native-manifest";
+import { resolveImportPath } from "./css-imports";
+import { startTagAttribute, startTags, type StartTag } from "./html-source";
+import { NATIVE_HOME_PAGE, deriveNativeRoutes } from "./native-routes";
 
-export const NATIVE_MANIFEST_PATH = ".astro-editor/native.json";
-export const NATIVE_HOME_PAGE = "src/pages/index.html";
+export { NATIVE_HOME_PAGE, NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from "./native-routes";
+
 /** Editor-only site settings: `{ "site": { "name": "…", "url": "https://…" } }`. */
 export const NATIVE_CONFIG_PATH = ".editor/config.json";
-/** The shared stylesheet that, when present and the manifest names none, is the only one. */
-export const NATIVE_SITE_STYLESHEET = "src/styles/site.css";
+/** Redirects at the site root (Cloudflare Pages and Workers, Netlify). */
+export const NATIVE_REDIRECTS_PATH = "_redirects";
+export const NATIVE_COMPONENTS_DIR = "components/";
 
-const FOLDER_COMPONENT = /^src\/components\/([\w.-]+)\/([\w.-]+)\.html$/;
-const FLAT_COMPONENT = /^src\/components\/([\w.-]+)\.html$/;
-const STYLESHEET = /^src\/styles\/[\w.-]+\.css$/;
+const FOLDER_COMPONENT = /^components\/([\w.-]+)\/([\w.-]+)\.html$/;
+const FLAT_COMPONENT = /^components\/([\w.-]+)\.html$/;
+// Custom element names: at least one dash, lowercase, starts with a letter.
+const TAG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
+// Names the spec reserves; `customElements.define` throws on these.
+const RESERVED_TAGS = new Set([
+  "annotation-xml",
+  "color-profile",
+  "font-face",
+  "font-face-src",
+  "font-face-uri",
+  "font-face-format",
+  "font-face-name",
+  "missing-glyph",
+]);
 
-/** Whether the repository paths make a native project: a manifest, or a home page. */
+/** Whether `tag` can name a component: a valid custom-element name the spec does not reserve. */
+export function isNativeComponentTag(tag: string): boolean {
+  return TAG.test(tag) && !RESERVED_TAGS.has(tag);
+}
+
+/** Whether the repository paths make a native site: it has a home page. */
 export function isNativeProject(paths: Iterable<string>): boolean {
-  for (const path of paths) if (path === NATIVE_MANIFEST_PATH || path === NATIVE_HOME_PAGE) return true;
+  for (const path of paths) if (path === NATIVE_HOME_PAGE) return true;
   return false;
 }
 
 /**
- * The components among `paths` by convention, tag to template file: each
- * `src/components/<tag>/<tag>.html`, and each flat `src/components/<tag>.html`
+ * The components among `paths`, tag to template file: each
+ * `components/<tag>/<tag>.html`, and each flat `components/<tag>.html`
  * whose tag has no folder, for a tag `isNativeComponentTag` accepts.
  */
 export function nativeConventionComponents(paths: Iterable<string>): { components: Record<string, string>; warnings: string[] } {
@@ -64,95 +76,137 @@ export function nativeConventionComponents(paths: Iterable<string>): { component
     const chosen = folder.get(tag) ?? flat.get(tag)!;
     components[tag] = chosen;
     if (folder.has(tag) && flat.has(tag))
-      warnings.push(`${flat.get(tag)} and ${chosen} both give the component <${tag}>; ${chosen} is used. Rename one, or name the component's file in native.json.`);
+      warnings.push(`${flat.get(tag)} and ${chosen} both give the component <${tag}>; ${chosen} is used. Remove or rename one.`);
   }
   return { components, warnings };
 }
 
-/**
- * The shared stylesheets among `paths` by convention: `src/styles/site.css`
- * alone when it exists, else every `.css` file directly in `src/styles/` in
- * name order.
- */
-export function nativeConventionStyles(paths: Iterable<string>): string[] {
-  const styles = [...new Set(paths)].filter((path) => STYLESHEET.test(path)).sort();
-  return styles.includes(NATIVE_SITE_STYLESHEET) ? [NATIVE_SITE_STYLESHEET] : styles;
+/** A native site: its pages by route, and its components by tag. */
+export interface NativeSite {
+  /** Route (`/`, `/about/`, `/404.html`) to page file, in route order. */
+  routes: Record<string, string>;
+  /** Custom-element tag to template file. */
+  components: Record<string, string>;
 }
 
-/**
- * The effective manifest of the project whose repository paths (and new files
- * drafted in the browser) are `paths`, from the manifest's text when there is
- * one (`undefined` when there is not): routes, page metadata, components and
- * styles, with the warnings to show. `explicit` on the manifest says what the
- * manifest gave itself.
- */
-export function resolveNativeProject(paths: Iterable<string>, manifestText?: string): NativeManifestResult {
+export type NativeSiteResult =
+  | { ok: true; site: NativeSite; warnings: string[] }
+  | { ok: false; error: string };
+
+/** The site whose repository paths (and new files drafted in the browser) are `paths`. */
+export function resolveNativeProject(paths: Iterable<string>): NativeSiteResult {
   const files = [...new Set(paths)];
-  const parsed = parseNativeManifest(manifestText ?? '{"version":1}', files);
-  if (!parsed.ok) {
-    if (manifestText === undefined && /no home page/.test(parsed.error))
-      return { ok: false, error: `The site has no home page: add ${NATIVE_HOME_PAGE}.` };
-    return parsed;
-  }
-  const declared = manifestText === undefined ? {} : (JSON.parse(manifestText) as Record<string, unknown>);
-  const manifest: NativeManifest = parsed.manifest;
-  const warnings = [...parsed.warnings];
+  const routes = deriveNativeRoutes(files);
+  if (!Object.hasOwn(routes, "/")) return { ok: false, error: `The site has no home page: add ${NATIVE_HOME_PAGE}.` };
+  const { components, warnings } = nativeConventionComponents(files);
+  return { ok: true, site: { routes, components }, warnings };
+}
 
-  const conventional = nativeConventionComponents(files);
-  const named = new Set(Object.values(manifest.components));
-  const components = { ...manifest.components };
-  for (const [tag, path] of Object.entries(conventional.components)) {
-    if (Object.hasOwn(components, tag) || named.has(path)) continue;
-    components[tag] = path;
-  }
-  // A two-files warning matters only when the manifest left the tag to convention.
-  warnings.push(...conventional.warnings.filter((warning) => {
-    const tag = /<([^>]+)>/.exec(warning)?.[1];
-    return tag === undefined || !Object.hasOwn(manifest.components, tag);
-  }));
+/** Every page and component template of the site, for prefetching. */
+export function nativeSitePaths(site: NativeSite): string[] {
+  return [...new Set([...Object.values(site.routes), ...Object.values(site.components)])];
+}
 
-  const listsStyles = Object.hasOwn(declared, "styles");
-  return {
-    ok: true,
-    manifest: {
-      ...manifest,
-      components,
-      styles: listsStyles ? manifest.styles : nativeConventionStyles(files),
-      explicit: { manifest: manifestText !== undefined, styles: listsStyles },
-    },
-    warnings,
-    orphans: parsed.orphans,
-  };
+/** The route to show when the open file is not itself a page: the home page. */
+export function nativeDefaultRoute(site: NativeSite): string {
+  return Object.hasOwn(site.routes, "/") ? "/" : Object.keys(site.routes)[0];
+}
+
+/** A component's stylesheet: its template's sibling `.css`. */
+export const nativeComponentCssPath = (template: string) => template.replace(/\.html$/, ".css");
+
+// ---- Page documents ----
+
+/**
+ * Where the page is in a document: the content of its `<body>` (after the
+ * start tag, before `</body>`); without a `<body>` start tag, everything
+ * after `</head>` (or the whole text). The preview renders exactly this
+ * range, and element-child indexes count from its start.
+ */
+export function nativePageBody(html: string): { start: number; end: number } {
+  const lower = html.toLowerCase();
+  const body = startTags(html).find((tag) => tag.name === "body");
+  if (body) {
+    const close = lower.lastIndexOf("</body");
+    const htmlClose = lower.lastIndexOf("</html");
+    return { start: body.end, end: close >= body.end ? close : htmlClose >= body.end ? htmlClose : html.length };
+  }
+  const head = lower.indexOf("</head");
+  const start = head < 0 ? 0 : Math.max(html.indexOf(">", head) + 1, head);
+  const close = lower.lastIndexOf("</html");
+  return { start, end: close >= start ? close : html.length };
+}
+
+/** The start tags of a document's `<head>` part: everything before its `<body>` (or its page, without one). */
+function headTags(html: string): { tags: StartTag[]; end: number } {
+  const end = nativePageBody(html).start;
+  return { tags: startTags(html).filter((tag) => tag.start < end && tag.name !== "body"), end };
 }
 
 /**
- * A page's leading `<!-- key: value -->` comment (keys lowercased), and the
- * page without it. Any comment that leads the page counts; lines that are not
- * `key: value` are ignored.
+ * The stylesheets the document at `path` links in its head, in order, as
+ * repository paths: each `<link rel="stylesheet" href>` resolved against
+ * the page's own path (`/styles/site.css` from anywhere, `../site.css` from
+ * `about/index.html`). External and unresolvable ones are left out.
  */
-export function nativePageComment(html: string): { meta: Record<string, string>; body: string } {
-  const meta: Record<string, string> = {};
-  const match = /^\s*<!--([\s\S]*?)-->\s*/.exec(html);
-  if (!match) return { meta, body: html };
-  for (const line of match[1].split("\n")) {
-    const kv = /^\s*([a-z-]+):\s*(.+?)\s*$/i.exec(line);
-    if (kv) meta[kv[1].toLowerCase()] = kv[2];
+export function nativePageStylesheets(html: string, path: string): string[] {
+  const out: string[] = [];
+  for (const tag of headTags(html).tags) {
+    if (tag.name !== "link") continue;
+    const rel = startTagAttribute(html, tag, "rel")?.value.toLowerCase().split(/\s+/) ?? [];
+    if (!rel.includes("stylesheet") || rel.includes("alternate")) continue;
+    const href = startTagAttribute(html, tag, "href")?.value;
+    const resolved = href === undefined ? undefined : resolveImportPath(path, href);
+    if (resolved && !out.includes(resolved)) out.push(resolved);
   }
-  return { meta, body: html.slice(match[0].length) };
+  return out;
 }
 
-/**
- * The title and description of the page at `route` whose source is `source`:
- * the manifest's for the route, else the page comment's.
- */
-export function nativePageInfo(pages: Record<string, NativePageMeta>, route: string, source: string | undefined): { title?: string; description?: string } {
-  const entry = pages[route] ?? {};
-  const comment = source === undefined ? {} : nativePageComment(source).meta;
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " " };
+function decodeText(text: string) {
+  return text
+    .replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (whole, dec, hex, name) => {
+      if (dec || hex) return String.fromCodePoint(Number.parseInt(dec ?? hex, dec ? 10 : 16) || 32);
+      return ENTITIES[name.toLowerCase()] ?? whole;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+/** The details a page's head gives. */
+export type NativePageDetail = "title" | "description";
+
+interface HeadParts {
+  title?: { tag: StartTag; inner: { start: number; end: number } };
+  meta: Partial<Record<"description" | "og:title" | "og:description", StartTag>>;
+  head?: StartTag;
+}
+
+function headParts(html: string): HeadParts {
+  const { tags, end } = headTags(html);
+  const parts: HeadParts = { meta: {} };
+  for (const tag of tags) {
+    if (tag.name === "head" && !parts.head) parts.head = tag;
+    if (tag.name === "title" && !parts.title) {
+      const close = html.toLowerCase().indexOf("</title", tag.end);
+      if (close >= 0 && close <= end) parts.title = { tag, inner: { start: tag.end, end: close } };
+    }
+    if (tag.name !== "meta") continue;
+    const key = (startTagAttribute(html, tag, "name") ?? startTagAttribute(html, tag, "property"))?.value.trim().toLowerCase();
+    if ((key === "description" || key === "og:title" || key === "og:description") && !parts.meta[key]) parts.meta[key] = tag;
+  }
+  return parts;
+}
+
+/** A page's title (its `<title>`) and description (`<meta name="description">`), as text. */
+export function nativePageHead(html: string): { title?: string; description?: string } {
+  const parts = headParts(html);
   const out: { title?: string; description?: string } = {};
-  for (const field of ["title", "description"] as const) {
-    const value = entry[field] || comment[field];
-    if (value) out[field] = value;
-  }
+  if (parts.title) out.title = decodeText(html.slice(parts.title.inner.start, parts.title.inner.end));
+  const description = parts.meta.description && startTagAttribute(html, parts.meta.description, "content");
+  if (description) out.description = decodeText(description.value);
   return out;
 }
 
@@ -163,13 +217,9 @@ export interface NativeTextEdit {
   text: string;
 }
 
-export type NativePageDetail = "title" | "description";
-
-const COMMENT_LINE = /^([ \t]*)([a-z-]+):[ \t]*(.*?)[ \t\r]*$/i;
-
-/** A value as a comment line can carry it: one line, no `-->`, trimmed. */
-function commentValue(value: string) {
-  return value.replace(/--+>?/g, "-").replace(/[\r\n]+/g, " ").trim();
+/** `html` with `edit` made. */
+export function applyTextEdit(html: string, edit: NativeTextEdit | null | undefined): string {
+  return edit ? html.slice(0, edit.start) + edit.text + html.slice(edit.end) : html;
 }
 
 /** The smallest edit that turns `before` into `after`; null when they are the same. */
@@ -183,110 +233,80 @@ export function minimalTextEdit(before: string, after: string): NativeTextEdit |
   return { start, end: before.length - tail, text: after.slice(start, after.length - tail) };
 }
 
-/**
- * The edit that sets `field` in the page's leading metadata comment to
- * `value` (empty removes the line), as small as it can be:
- * - with no metadata comment (none, or a leading comment with no
- *   `key: value` line), one is put first: `<!--\ntitle: …\n-->\n`;
- * - an existing line has its value replaced; a new `title:` line goes first
- *   in the comment, a new `description:` line after the title (else last);
- *   other lines (`image: …`, notes) stay as they are;
- * - a one-line comment stays one line while it has one field, and is
- *   written one field per line when it gets a second;
- * - a comment left with nothing goes, with the line break after it.
- * Null when the page already says this.
- */
-export function nativePageCommentEdit(html: string, field: NativePageDetail, value: string): NativeTextEdit | null {
-  const wanted = commentValue(value);
+/** `html` with the `content` of the meta tag `tag` set to `value`. */
+function withContent(html: string, tag: StartTag, value: string) {
+  const content = startTagAttribute(html, tag, "content");
+  const escaped = escapeAttribute(value);
+  if (!content) {
+    const at = html.slice(tag.start, tag.end).replace(/\s*\/?>$/, "").length + tag.start;
+    return `${html.slice(0, at)} content="${escaped}"${html.slice(at)}`;
+  }
+  // A value written bare or in single quotes is written in double quotes.
+  const quoted = html[content.valueStart - 1] === "\"" && html[content.valueEnd] === "\"";
+  return quoted
+    ? html.slice(0, content.valueStart) + escaped + html.slice(content.valueEnd)
+    : `${html.slice(0, content.start)} content="${escaped}"${html.slice(content.end)}`;
+}
+
+/** The indentation of the line `at` is on, when only indentation precedes it there. */
+function lineIndent(html: string, at: number) {
+  const lead = html.slice(html.lastIndexOf("\n", at - 1) + 1, at);
+  return /^[ \t]*$/.test(lead) ? lead : undefined;
+}
+
+/** `html` with `line` inserted on its own line right after the element ending at `after`, indented like `like`. */
+function insertLine(html: string, after: number, like: number | undefined, line: string) {
   const newline = html.includes("\r\n") ? "\r\n" : "\n";
-  const found = /^\s*<!--([\s\S]*?)-->/.exec(html);
-  const bodyStart = found ? found[0].length - 3 - found[1].length : 0;
-  const lines = found ? found[1].split("\n") : [];
-  const keyed = lines.map((line) => COMMENT_LINE.exec(line));
-  const isMeta = Boolean(found) && (keyed.some(Boolean) || !found![1].trim());
-  if (!isMeta) {
-    if (!wanted) return null;
-    return { start: 0, end: 0, text: `<!--${newline}${field}: ${wanted}${newline}-->${newline}` };
-  }
-  const commentStart = bodyStart - 4;
-  const commentEnd = found![0].length;
-  const at = keyed.findIndex((match) => match?.[2].toLowerCase() === field);
-  const indent = keyed.find((match, index) => match && index > 0)?.[1] ?? "";
-  // A line followed by a break carries the file's `\r` before it.
-  const cr = newline === "\r\n" ? "\r" : "";
-  const next = [...lines];
-  const last = lines.length - 1;
-  if (at >= 0) {
-    const match = keyed[at]!;
-    if (match[3] === wanted) return null;
-    if (wanted) {
-      const colon = match[1].length + match[2].length + 1;
-      const space = /^[ \t]*/.exec(lines[at].slice(colon))![0].length;
-      next[at] = `${lines[at].slice(0, colon)}${space ? lines[at].slice(colon, colon + space) : " "}${wanted}${lines[at].slice(colon + space + match[3].length)}`;
-    } else if (at === 0 || at === last) next[at] = at === last ? "" : cr;
-    // The line after `<!--` or before `-->` keeps its break; any other line goes whole.
-    else next.splice(at, 1);
-  } else {
-    if (!wanted) return null;
-    const line = `${indent}${field}: ${wanted}`;
-    if (!last) {
-      // One line: one field keeps the one-line form, a second makes it one per line.
-      if (!lines[0].trim()) next[0] = ` ${line.trimStart()} `;
-      else {
-        const other = lines[0].trim();
-        next.splice(0, 1, cr, ...(field === "title" ? [line, other] : [other, line]).map((item) => `${item.trimStart()}${cr}`), "");
-      }
-    } else if (field === "title") {
-      if (!lines[0].trim()) next.splice(1, 0, `${line}${cr}`);
-      else next.splice(0, 1, cr, `${line}${cr}`, lines[0].trimStart());
-    } else {
-      const title = keyed.findIndex((match) => match?.[2].toLowerCase() === "title");
-      if (title >= 0 && title < last) next.splice(title + 1, 0, `${line}${cr}`);
-      else if (!lines[last].trim()) next.splice(last, 0, `${line}${cr}`);
-      else next.splice(last, 1, `${lines[last].trimEnd()}${cr}`, `${line}${cr}`, "");
-    }
-  }
-  const body = next.join("\n");
-  // Nothing left: the comment goes, with the line break after it.
-  if (!body.trim()) {
-    const after = html.startsWith("\r\n", commentEnd) ? 2 : html.startsWith("\n", commentEnd) ? 1 : 0;
-    return { start: commentStart, end: commentEnd + after, text: "" };
-  }
-  const edit = minimalTextEdit(found![1], body);
-  return edit && { start: edit.start + bodyStart, end: edit.end + bodyStart, text: edit.text };
-}
-
-/** `html` with `edit` made. */
-export function applyTextEdit(html: string, edit: NativeTextEdit | null): string {
-  return edit ? html.slice(0, edit.start) + edit.text + html.slice(edit.end) : html;
+  const indent = like === undefined ? "  " : lineIndent(html, like) ?? "  ";
+  return `${html.slice(0, after)}${newline}${indent}${line}${html.slice(after)}`;
 }
 
 /**
- * The page with the details given set in its leading comment (an empty
- * value removes the line): `nativePageCommentEdit` for each.
+ * The page with its `field` set to `value` in its head, as small a change
+ * as it can be: the title is the `<title>`'s text (a `<title>` is added
+ * after the `<head>` start tag when there is none), the description the
+ * `content` of `<meta name="description">` (added after the title when
+ * there is none and `value` is not empty); `og:title` and `og:description`
+ * follow when the page has them.
  */
-export function nativePageWithDetails(html: string, details: Partial<Record<NativePageDetail, string>>): string {
+export function nativePageWithDetail(html: string, field: NativePageDetail, value: string): string {
+  const wanted = value.replace(/[\r\n]+/g, " ").trim();
   let text = html;
-  for (const field of ["title", "description"] as const) {
-    const value = details[field];
-    if (value !== undefined) text = applyTextEdit(text, nativePageCommentEdit(text, field, value));
+  const og = field === "title" ? "og:title" : "og:description";
+  const ogTag = headParts(text).meta[og];
+  if (ogTag) text = withContent(text, ogTag, wanted);
+  const parts = headParts(text);
+  if (field === "title") {
+    if (parts.title) return text.slice(0, parts.title.inner.start) + escapeText(wanted) + text.slice(parts.title.inner.end);
+    const line = `<title>${escapeText(wanted)}</title>`;
+    if (parts.head) {
+      const next = startTags(text).find((tag) => tag.start >= parts.head!.end);
+      return insertLine(text, parts.head.end, next && lineIndent(text, next.start) !== undefined ? next.start : undefined, line);
+    }
+    // No <head>: before the <body> start tag, else before the page.
+    const at = startTags(text).find((tag) => tag.name === "body")?.start ?? nativePageBody(text).start;
+    return `${text.slice(0, at)}${line}${text.includes("\r\n") ? "\r\n" : "\n"}${text.slice(at)}`;
+  }
+  if (parts.meta.description) return withContent(text, parts.meta.description, wanted);
+  if (!wanted) return text;
+  const line = `<meta name="description" content="${escapeAttribute(wanted)}">`;
+  if (parts.title) {
+    const close = text.indexOf(">", parts.title.inner.end);
+    return insertLine(text, close + 1, parts.title.tag.start, line);
+  }
+  if (parts.head) {
+    const next = startTags(text).find((tag) => tag.start >= parts.head!.end);
+    return insertLine(text, parts.head.end, next && lineIndent(text, next.start) !== undefined ? next.start : undefined, line);
   }
   return text;
 }
 
-/**
- * The page with its leading comment's `title:` line set to `title`; the page
- * as it is when its leading comment has no title (or there is none).
- */
-export function nativePageWithCommentTitle(html: string, title: string): string {
-  if (!nativePageComment(html).meta.title) return html;
-  return applyTextEdit(html, nativePageCommentEdit(html, "title", title));
-}
-
-/**
- * The page titled `title` in its leading comment, the comment made when it
- * has none: what a new page, a copy or a subpage carries.
- */
-export function nativePageWithTitle(html: string, title: string): string {
-  return applyTextEdit(html, nativePageCommentEdit(html, "title", title));
+/** The page with each detail given set (`nativePageWithDetail`). */
+export function nativePageWithDetails(html: string, details: Partial<Record<NativePageDetail, string>>): string {
+  let text = html;
+  for (const field of ["title", "description"] as const) {
+    const value = details[field];
+    if (value !== undefined) text = nativePageWithDetail(text, field, value);
+  }
+  return text;
 }

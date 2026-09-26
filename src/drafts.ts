@@ -34,17 +34,6 @@ export interface SavedDraft extends DraftScope {
    */
   upload?: { size: number; type: string };
   mode?: "100755";
-  /** Manifest entries removed with the file (src/native-page-meta.ts), put back when it is restored. */
-  entries?: NativeDroppedEntries;
-}
-/** What a deleted or moved file took out of `.astro-editor/native.json`. */
-export interface NativeDroppedEntries {
-  /** Route to its entry's JSON value, as written. */
-  routes?: Record<string, string>;
-  /** Component tag to its template path. */
-  components?: Record<string, string>;
-  /** Stylesheets with their place in `styles`. */
-  styles?: { path: string; index: number }[];
 }
 const prefix = "astro-site-editor:draft:v1:";
 export const draftKey = (scope: DraftScope, path: string) =>

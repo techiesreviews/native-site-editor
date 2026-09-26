@@ -1,198 +1,161 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  isNativeComponentTag,
   isNativeProject,
   nativeConventionComponents,
-  nativeConventionStyles,
-  nativePageComment,
-  nativePageCommentEdit,
-  nativePageWithCommentTitle,
+  nativePageBody,
+  nativePageHead,
+  nativePageStylesheets,
+  nativePageWithDetail,
   nativePageWithDetails,
-  nativePageWithTitle,
-  nativePageInfo,
+  nativeSitePaths,
   resolveNativeProject,
 } from "../shared/native-project.ts";
 
 const site = [
-  "src/pages/index.html",
-  "src/pages/about.html",
-  "src/pages/notes/first.html",
-  "src/components/site-header/site-header.html",
-  "src/components/site-header/site-header.css",
-  "src/components/promo-card/promo-card.html",
-  "src/components/flat-note.html",
-  "src/styles/site.css",
-  "src/styles/base.css",
-  "src/styles/layout.css",
-  "src/images/logo.svg",
+  "index.html",
+  "about/index.html",
+  "notes/first/index.html",
+  "notes.html",
+  "404.html",
+  "_drafts/idea.html",
+  "components/components.js",
+  "components/site-header/site-header.html",
+  "components/site-header/site-header.css",
+  "components/promo-card/promo-card.html",
+  "components/flat-note.html",
+  "styles/site.css",
+  "images/logo.svg",
+  ".editor/config.json",
+  "README.md",
 ];
 
-function resolved(paths: string[], text?: string) {
-  const result = resolveNativeProject(paths, text);
-  assert.ok(result.ok, result.ok ? "" : result.error);
-  return result;
-}
-
-test("a repository is native with a manifest or a home page", () => {
-  assert.equal(isNativeProject([".astro-editor/native.json"]), true);
-  assert.equal(isNativeProject(["README.md", "src/pages/index.html"]), true);
-  assert.equal(isNativeProject(["src/pages/about.html", "src/index.html", "package.json"]), false);
+test("a repository is a native site when it has index.html at its root", () => {
+  assert.equal(isNativeProject(["README.md", "index.html"]), true);
+  assert.equal(isNativeProject(["src/pages/index.html", "about/index.html", ".astro-editor/native.json"]), false);
   assert.equal(isNativeProject([]), false);
 });
 
-test("with no manifest, pages, components and styles are all found by convention", () => {
-  const { manifest, warnings, orphans } = resolved(site);
-  assert.deepEqual(manifest.routes, {
-    "/": "src/pages/index.html",
-    "/about/": "src/pages/about.html",
-    "/notes/first/": "src/pages/notes/first.html",
+test("pages and components are found where they are", () => {
+  const result = resolveNativeProject(site);
+  assert.ok(result.ok);
+  assert.deepEqual(result.site.routes, {
+    "/": "index.html",
+    "/404.html": "404.html",
+    "/about/": "about/index.html",
+    "/notes.html": "notes.html",
+    "/notes/first/": "notes/first/index.html",
   });
-  assert.deepEqual(manifest.pages, {});
-  assert.deepEqual(manifest.components, {
-    "flat-note": "src/components/flat-note.html",
-    "promo-card": "src/components/promo-card/promo-card.html",
-    "site-header": "src/components/site-header/site-header.html",
+  assert.deepEqual(result.site.components, {
+    "flat-note": "components/flat-note.html",
+    "promo-card": "components/promo-card/promo-card.html",
+    "site-header": "components/site-header/site-header.html",
   });
-  assert.deepEqual(manifest.styles, ["src/styles/site.css"]);
-  assert.deepEqual(manifest.explicit, { manifest: false, styles: false });
-  assert.deepEqual(warnings, []);
-  assert.deepEqual(orphans, []);
-});
-
-test("with no manifest and no home page, the error names the home page only", () => {
-  const result = resolveNativeProject(["src/pages/about.html"]);
-  assert.deepEqual(result, { ok: false, error: "The site has no home page: add src/pages/index.html." });
-});
-
-test("styles: site.css alone when it exists, else every stylesheet directly in src/styles in name order", () => {
-  assert.deepEqual(nativeConventionStyles(site), ["src/styles/site.css"]);
-  assert.deepEqual(
-    nativeConventionStyles(["src/styles/theme.css", "src/styles/base.css", "src/styles/parts/x.css", "src/styles/notes.txt", "src/styles/Z.css", "src/other.css"]),
-    ["src/styles/Z.css", "src/styles/base.css", "src/styles/theme.css"],
-  );
-  assert.deepEqual(nativeConventionStyles(["src/pages/index.html"]), []);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(nativeSitePaths(result.site).slice(0, 2), ["index.html", "404.html"]);
+  assert.deepEqual(resolveNativeProject(["about/index.html"]), { ok: false, error: "The site has no home page: add index.html." });
 });
 
 test("components: valid, unreserved tags only; a folder beats a flat file of the same tag", () => {
   const { components, warnings } = nativeConventionComponents([
-    "src/components/site-header/site-header.html",
-    "src/components/site-header.html",
-    "src/components/header/header.html", // no dash
-    "src/components/Big-Card/Big-Card.html", // uppercase
-    "src/components/font-face/font-face.html", // reserved
-    "src/components/annotation-xml.html", // reserved
-    "src/components/promo-card/card.html", // name differs from its folder
-    "src/components/deep/nested/x-y.html",
-    "src/components/_parts/part-a.html",
-    "src/components/info-box/info-box.css",
-    "src/components/news-item.html",
+    "components/site-header/site-header.html",
+    "components/site-header.html",
+    "components/header/header.html", // no dash
+    "components/Big-Card/Big-Card.html", // uppercase
+    "components/font-face/font-face.html", // reserved
+    "components/annotation-xml.html", // reserved
+    "components/promo-card/card.html", // name differs from its folder
+    "components/deep/nested/x-y.html",
+    "components/info-box/info-box.css",
+    "components/news-item.html",
+    "src/components/old-card/old-card.html",
   ]);
   assert.deepEqual(components, {
-    "news-item": "src/components/news-item.html",
-    "site-header": "src/components/site-header/site-header.html",
+    "news-item": "components/news-item.html",
+    "site-header": "components/site-header/site-header.html",
   });
   assert.deepEqual(warnings, [
-    "src/components/site-header.html and src/components/site-header/site-header.html both give the component <site-header>; src/components/site-header/site-header.html is used. Rename one, or name the component's file in native.json.",
+    "components/site-header.html and components/site-header/site-header.html both give the component <site-header>; components/site-header/site-header.html is used. Remove or rename one.",
   ]);
+  assert.equal(isNativeComponentTag("site-header"), true);
+  assert.equal(isNativeComponentTag("font-face"), false);
 });
 
-test("a manifest with no components or styles is completed by convention", () => {
-  const { manifest } = resolved(site, JSON.stringify({ version: 1, routes: { "/about/": { title: "About us" } } }));
-  assert.deepEqual(manifest.pages, { "/about/": { title: "About us" } });
-  assert.equal(Object.keys(manifest.components).length, 3);
-  assert.deepEqual(manifest.styles, ["src/styles/site.css"]);
-  assert.deepEqual(manifest.explicit, { manifest: true, styles: false });
+const page = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>About &amp; contact</title>
+  <meta name="description" content="Who we are.">
+  <meta property="og:title" content="About &amp; contact">
+  <meta property="og:description" content="Who we are.">
+  <link rel="stylesheet" href="/styles/site.css">
+  <link rel="stylesheet" href="../styles/print.css" media="print">
+  <link rel="alternate stylesheet" href="/styles/dark.css">
+  <link rel="stylesheet" href="https://fonts.example/a.css">
+  <link rel="icon" href="/images/logo.svg">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body class="about">
+  <main><h1>About</h1></main>
+</body>
+</html>
+`;
+
+test("a page is its <body>: the preview renders that range, and indexes count from it", () => {
+  const { start, end } = nativePageBody(page);
+  assert.equal(page.slice(start, end), "\n  <main><h1>About</h1></main>\n");
+  // A template, or a document with no <body> tag, is all page after its head.
+  assert.deepEqual(nativePageBody("<section><h2>Hi</h2></section>"), { start: 0, end: 30 });
+  const bare = "<!doctype html><head><title>x</title></head><main></main>";
+  assert.equal(bare.slice(nativePageBody(bare).start), "<main></main>");
 });
 
-test("manifest components win for their tag and their file; listed styles replace the convention", () => {
-  const text = JSON.stringify({
-    version: 1,
-    components: {
-      "site-header": "src/components/promo-card/promo-card.html",
-      "fancy-note": "src/components/flat-note.html",
-    },
-    styles: ["src/styles/base.css", "src/styles/layout.css"],
-  });
-  const { manifest } = resolved(site, text);
-  assert.deepEqual(manifest.components, {
-    "site-header": "src/components/promo-card/promo-card.html",
-    "fancy-note": "src/components/flat-note.html",
-  });
-  assert.deepEqual(manifest.styles, ["src/styles/base.css", "src/styles/layout.css"]);
-  assert.deepEqual(manifest.explicit, { manifest: true, styles: true });
-
-  // An empty list is a list: no shared stylesheets.
-  assert.deepEqual(resolved(site, '{"version":1,"styles":[]}').manifest.styles, []);
+test("the head gives the title, the description and the stylesheets, resolved against the page's path", () => {
+  assert.deepEqual(nativePageHead(page), { title: "About & contact", description: "Who we are." });
+  assert.deepEqual(nativePageHead("<main></main>"), {});
+  assert.deepEqual(nativePageStylesheets(page, "about/index.html"), ["styles/site.css", "styles/print.css"]);
+  assert.deepEqual(nativePageStylesheets('<head><link href="site.css" rel="stylesheet"></head>', "work/notes.html"), ["work/site.css"]);
+  // Links in the body are not the page's stylesheets.
+  assert.deepEqual(nativePageStylesheets('<head></head><body><link rel="stylesheet" href="/x.css"></body>', "index.html"), []);
 });
 
-test("a component the manifest names takes no two-files warning; one left to convention does", () => {
-  const paths = [...site, "src/components/site-header.html"];
-  assert.equal(resolved(paths).warnings.length, 1);
-  assert.deepEqual(resolved(paths, '{"version":1,"components":{"site-header":"src/components/site-header.html"}}').warnings, []);
+test("page details are written in the head, og tags along, as small an edit as can be", () => {
+  const retitled = nativePageWithDetail(page, "title", "Company <info> & more");
+  assert.match(retitled, /<title>Company &lt;info> &amp; more<\/title>/);
+  assert.match(retitled, /<meta property="og:title" content="Company <info> &amp; more">/);
+  assert.equal(nativePageHead(retitled).title, "Company <info> & more");
+  const described = nativePageWithDetail(page, "description", 'Say "hi"');
+  assert.match(described, /<meta name="description" content="Say &quot;hi&quot;">/);
+  assert.match(described, /<meta property="og:description" content="Say &quot;hi&quot;">/);
+  assert.equal(nativePageHead(described).description, 'Say "hi"');
+  // Emptied, the tags stay with empty values; the rest of the document is as it was.
+  const emptied = nativePageWithDetails(page, { title: "", description: "" });
+  assert.match(emptied, /<title><\/title>/);
+  assert.match(emptied, /<meta name="description" content="">/);
+  assert.equal(emptied.replace(/<title>.*<\/title>/, "").replace(/content="[^"]*"/g, ""), page.replace(/<title>.*<\/title>/, "").replace(/content="[^"]*"/g, ""));
+  assert.equal(nativePageWithDetail(page, "title", "About & contact"), page);
 });
 
-test("a manifest's errors and route warnings pass through", () => {
-  assert.deepEqual(resolveNativeProject(site, "{"), { ok: false, error: "native.json is not valid JSON." });
-  assert.equal(resolveNativeProject(site, '{"version":1,"components":{"font-face":"src/components/x.html"}}').ok, false);
-  const result = resolved(site, '{"version":1,"routes":{"/gone/":{"title":"Gone"}}}');
-  assert.deepEqual(result.orphans, ["/gone/"]);
-  assert.equal(result.warnings.length, 1);
+test("a missing title or description is added in the head, indented like it", () => {
+  const bare = "<!doctype html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n</head>\n<body></body>\n</html>\n";
+  const titled = nativePageWithDetail(bare, "title", "Hello");
+  assert.equal(titled, "<!doctype html>\n<html>\n<head>\n  <title>Hello</title>\n  <meta charset=\"utf-8\">\n</head>\n<body></body>\n</html>\n");
+  const described = nativePageWithDetail(titled, "description", "World");
+  assert.equal(described, "<!doctype html>\n<html>\n<head>\n  <title>Hello</title>\n  <meta name=\"description\" content=\"World\">\n  <meta charset=\"utf-8\">\n</head>\n<body></body>\n</html>\n");
+  // No description is added for an empty value.
+  assert.equal(nativePageWithDetail(titled, "description", ""), titled);
+  // CRLF files keep their line endings; a single-quoted or bare value is rewritten quoted.
+  assert.equal(nativePageWithDetail("<head>\r\n  <meta charset=utf-8>\r\n</head>", "title", "A"), "<head>\r\n  <title>A</title>\r\n  <meta charset=utf-8>\r\n</head>");
+  assert.equal(nativePageWithDetail("<head><meta name=description content='x'></head>", "description", "y"), "<head><meta name=description content=\"y\"></head>");
 });
 
-test("a page's leading comment gives its metadata; the manifest's wins", () => {
-  const page = "<!--\ntitle: From the comment\ndescription: Said in the page.\n-->\n<main><h1>Heading</h1></main>";
-  assert.deepEqual(nativePageComment(page), {
-    meta: { title: "From the comment", description: "Said in the page." },
-    body: "<main><h1>Heading</h1></main>",
-  });
-  assert.deepEqual(nativePageComment("<main><!-- title: late --></main>").meta, {});
-  assert.deepEqual(nativePageComment("  <!-- title: One line -->\n<p>x</p>").meta, { title: "One line" });
-
-  assert.deepEqual(nativePageInfo({}, "/", page), { title: "From the comment", description: "Said in the page." });
-  assert.deepEqual(nativePageInfo({ "/": { title: "Manifest" } }, "/", page), { title: "Manifest", description: "Said in the page." });
-  assert.deepEqual(nativePageInfo({ "/": { title: "", description: "Manifest says" } }, "/", page), { title: "From the comment", description: "Manifest says" });
-  assert.deepEqual(nativePageInfo({ "/about/": { title: "About" } }, "/", "<main></main>"), {});
-  assert.deepEqual(nativePageInfo({ "/": { title: "Only" } }, "/", undefined), { title: "Only" });
-});
-
-test("a copy's title is written into its leading comment's title line only", () => {
-  assert.equal(nativePageWithCommentTitle("<!--\ntitle: Notes\ndescription: All -->\n<main></main>", "Notes (copy)"), "<!--\ntitle: Notes (copy)\ndescription: All -->\n<main></main>");
-  assert.equal(nativePageWithCommentTitle("<!-- title: Home -->\n<h1>Home</h1>", "Home (copy)"), "<!-- title: Home (copy) -->\n<h1>Home</h1>");
-  assert.equal(nativePageWithCommentTitle("<!-- description: x -->\n<h1>A</h1>", "A (copy)"), "<!-- description: x -->\n<h1>A</h1>");
-  assert.equal(nativePageWithCommentTitle("<h1>A</h1><!-- title: late -->", "A (copy)"), "<h1>A</h1><!-- title: late -->");
-  assert.equal(nativePageWithCommentTitle("<!-- title: A -->", "B --> <script>"), "<!-- title: B - <script> -->");
-  assert.equal(nativePageComment(nativePageWithCommentTitle("<!-- title: A -->", "B --> x")).meta.title, "B - x");
-});
-
-test("page details are written into the leading comment, made when missing", () => {
-  assert.equal(nativePageWithTitle("<main></main>", "About"), "<!--\ntitle: About\n-->\n<main></main>");
-  assert.equal(nativePageWithDetails("<main></main>", { title: "About", description: "Who we are." }), "<!--\ntitle: About\ndescription: Who we are.\n-->\n<main></main>");
-  // A leading comment that is no metadata stays, after the new one.
-  assert.equal(nativePageWithTitle("<!-- hero -->\n<main></main>", "A"), "<!--\ntitle: A\n-->\n<!-- hero -->\n<main></main>");
-  // Unsafe text cannot end the comment or break its lines.
-  assert.deepEqual(nativePageComment(nativePageWithDetails("<p></p>", { title: "A --> b", description: "x\ny" })).meta, { title: "A - b", description: "x y" });
-  // Nothing to write, nothing made.
-  assert.equal(nativePageCommentEdit("<main></main>", "title", "  "), null);
-});
-
-test("page details update in place, keep other keys, and go with an empty comment", () => {
-  const page = "<!--\ntitle: About\nimage: src/images/about.png\n-->\n<main></main>";
-  // A value replaced is the smallest edit: only the changed characters.
-  assert.deepEqual(nativePageCommentEdit(page, "title", "About us"), { start: 17, end: 17, text: " us" });
-  assert.equal(nativePageCommentEdit(page, "title", "About"), null);
-  // A description goes after the title; other keys stay.
-  assert.equal(nativePageWithDetails(page, { description: "Who" }), "<!--\ntitle: About\ndescription: Who\nimage: src/images/about.png\n-->\n<main></main>");
-  // A title goes first.
-  assert.equal(nativePageWithTitle("<!--\ndescription: D\n-->\n<p></p>", "T"), "<!--\ntitle: T\ndescription: D\n-->\n<p></p>");
-  // Removing a line keeps the others; the comment goes when nothing is left.
-  assert.equal(nativePageWithDetails(page, { title: "" }), "<!--\nimage: src/images/about.png\n-->\n<main></main>");
-  assert.equal(nativePageWithDetails("<!--\ntitle: A\ndescription: B\n-->\n<main></main>", { title: "", description: "" }), "<main></main>");
-  // One line stays one line with one field, and becomes one per line with two.
-  assert.equal(nativePageWithTitle("<!-- title: Home -->\n<h1>Home</h1>", "Start"), "<!-- title: Start -->\n<h1>Home</h1>");
-  assert.equal(nativePageWithDetails("<!-- title: Home -->\n<h1>Home</h1>", { description: "D" }), "<!--\ntitle: Home\ndescription: D\n-->\n<h1>Home</h1>");
-  assert.equal(nativePageWithDetails("<!-- title: Home -->\n<h1>Home</h1>", { title: "" }), "<h1>Home</h1>");
-  // Fields on the comment's own lines; CRLF files keep CRLF.
-  assert.equal(nativePageWithDetails("<!--\ntitle: X -->\n<p></p>", { description: "D" }), "<!--\ntitle: X\ndescription: D\n-->\n<p></p>");
-  assert.equal(nativePageWithDetails("<!--\r\ntitle: X\r\n-->\r\n<p></p>", { description: "D" }), "<!--\r\ntitle: X\r\ndescription: D\r\n-->\r\n<p></p>");
-  assert.equal(nativePageWithTitle("<!--\ntitle:\n-->\n<p></p>", "Z"), "<!--\ntitle: Z\n-->\n<p></p>");
+test("the fixture's pages are full documents with a title and the shared stylesheet", () => {
+  for (const path of ["index.html", "about/index.html"]) {
+    const source = readFileSync(`fixtures/native-starter/${path}`, "utf8");
+    assert.ok(nativePageHead(source).title, path);
+    assert.deepEqual(nativePageStylesheets(source, path), ["styles/site.css"], path);
+  }
 });

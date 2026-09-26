@@ -14,7 +14,7 @@
 // it came from, so binary files move too. A folder is renamed, moved or
 // deleted file by file. This module has no DOM and no I/O: it reads and
 // writes a draft store given to it.
-import type { DraftScope, NativeDroppedEntries, SavedDraft } from "./drafts";
+import type { DraftScope, SavedDraft } from "./drafts";
 import type { PublishFile } from "../shared/types";
 
 export type ChangeKind = "A" | "M" | "R" | "D";
@@ -94,8 +94,7 @@ export function settleDeletedUpstream(store: DraftAccess, scope: DraftScope, dra
 export function keepAsNewFile(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): boolean {
   const draft = store.get(scope, path);
   if (!draft || draft.deleted || draft.baseSha === null) return false;
-  const { entries: _, ...rest } = draft;
-  return store.save({ ...rest, baseSha: null, updatedAt: now });
+  return store.save({ ...draft, baseSha: null, updatedAt: now });
 }
 
 /** Whether a new path's draft is saved as the blob it came from rather than as text. */
@@ -124,10 +123,9 @@ const stamp = (scope: DraftScope, now: number) => ({
 /**
  * Deletes `file`: a new file's draft is dropped (it was never on GitHub; a
  * renamed one leaves its old path deleted), anything else becomes a
- * deletion that keeps the text it had, for Restore. `entries` are the
- * manifest entries removed with it. Returns what happened.
+ * deletion that keeps the text it had, for Restore. Returns what happened.
  */
-export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableFile, entries?: NativeDroppedEntries, now = Date.now()): "deleted" | "discarded" | "none" {
+export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableFile, now = Date.now()): "deleted" | "discarded" | "none" {
   const draft = store.get(scope, file.path);
   if (draft?.deleted) return "none";
   if (draft && draft.baseSha === null) {
@@ -135,7 +133,7 @@ export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableF
     const origin = draft.movedFrom ? store.get(scope, draft.movedFrom) : undefined;
     if (origin?.deleted && origin.movedTo === file.path) {
       const { movedTo: _, ...plain } = origin;
-      store.save({ ...plain, entries: mergeEntries(origin.entries, entries), updatedAt: now });
+      store.save({ ...plain, updatedAt: now });
       return "deleted";
     }
     return "discarded";
@@ -145,7 +143,6 @@ export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableF
   const original = draft?.original ?? file.text ?? "";
   store.save({
     ...stamp(scope, now), path: file.path, baseSha, original, content: draft?.content ?? original, deleted: true,
-    ...(entries && hasEntries(entries) ? { entries } : {}),
   });
   return "deleted";
 }
@@ -156,7 +153,7 @@ export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableF
  * file simply moves; a renamed file moved back where it came from is the
  * old path again, keeping its edits as an edit there.
  */
-export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFile, to: string, entries?: NativeDroppedEntries, now = Date.now()): "moved" | "returned" | "none" {
+export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFile, to: string, now = Date.now()): "moved" | "returned" | "none" {
   if (to === file.path) return "none";
   const draft = store.get(scope, file.path);
   if (draft?.deleted) return "none";
@@ -171,7 +168,7 @@ export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFil
       return "returned";
     }
     store.save({ ...draft, path: to, updatedAt: now, ...(paired ? {} : { movedFrom: undefined }) });
-    if (paired) store.save({ ...paired, movedTo: to, entries: mergeEntries(paired.entries, entries), updatedAt: now });
+    if (paired) store.save({ ...paired, movedTo: to, updatedAt: now });
     return "moved";
   }
   const baseSha = draft?.baseSha ?? file.sha;
@@ -187,7 +184,6 @@ export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFil
   store.save(moved);
   store.save({
     ...stamp(scope, now), path: file.path, baseSha, original: text ?? "", content: "", deleted: true, movedTo: to,
-    ...(entries && hasEntries(entries) ? { entries } : {}),
   });
   return "moved";
 }
@@ -216,9 +212,9 @@ export function duplicateFile(store: DraftAccess, scope: DraftScope, file: Movab
 /**
  * Undoes the deletion at `path`: the file is back, with the edits it had
  * when it was deleted. A rename's old path is undone by moving the file
- * back. Returns the paths involved and the manifest entries to put back.
+ * back. Returns the paths involved.
  */
-export function restoreFile(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): { path: string; from?: string; entries?: NativeDroppedEntries } | undefined {
+export function restoreFile(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): { path: string; from?: string } | undefined {
   const marker = store.get(scope, path);
   if (!marker?.deleted) return undefined;
   if (marker.movedTo) {
@@ -228,15 +224,15 @@ export function restoreFile(store: DraftAccess, scope: DraftScope, path: string,
   store.remove(scope, path);
   if (marker.content !== marker.original)
     store.save({ ...stamp(scope, now), path, baseSha: marker.baseSha, original: marker.original, content: marker.content });
-  return { path, entries: marker.entries };
+  return { path };
 }
 
 /**
  * Undoes the rename that made `path`: the file is at its old path again,
  * its edits kept there as an edit (a binary file has none). Returns the old
- * path (`path`), the new one (`from`) and the manifest entries to put back.
+ * path (`path`) and the new one (`from`).
  */
-export function moveBack(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): { path: string; from: string; entries?: NativeDroppedEntries } | undefined {
+export function moveBack(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): { path: string; from: string } | undefined {
   const draft = store.get(scope, path);
   if (!draft || draft.baseSha !== null || !draft.movedFrom) return undefined;
   const origin = store.get(scope, draft.movedFrom);
@@ -246,19 +242,5 @@ export function moveBack(store: DraftAccess, scope: DraftScope, path: string, no
   const baseSha = paired ? origin!.baseSha : draft.sourceSha;
   if (baseSha && !draft.opaque && draft.content !== draft.original)
     store.save({ ...stamp(scope, now), path: draft.movedFrom, baseSha, original: draft.original, content: draft.content });
-  return { path: draft.movedFrom, from: path, entries: paired ? origin!.entries : undefined };
-}
-
-export function hasEntries(entries: NativeDroppedEntries | undefined) {
-  return Boolean(entries && (Object.keys(entries.routes ?? {}).length || Object.keys(entries.components ?? {}).length || entries.styles?.length));
-}
-
-export function mergeEntries(a: NativeDroppedEntries | undefined, b: NativeDroppedEntries | undefined): NativeDroppedEntries | undefined {
-  if (!hasEntries(a)) return hasEntries(b) ? b : undefined;
-  if (!hasEntries(b)) return a;
-  return {
-    routes: { ...a!.routes, ...b!.routes },
-    components: { ...a!.components, ...b!.components },
-    styles: [...(a!.styles ?? []), ...(b!.styles ?? [])],
-  };
+  return { path: draft.movedFrom, from: path };
 }

@@ -103,30 +103,28 @@ test("a duplicate is a new file: text as it is now, or the same blob when unchan
   assert.equal(store.get(scope, "b-copy.html")?.sourceSha, undefined);
 });
 
-test("the home page and native.json cannot be deleted, renamed or moved", () => {
-  assert.match(protectedPathProblem(["src/pages/index.html"], "delete", "src/pages/index.html", true)!, /home page .* cannot be deleted/);
-  assert.match(protectedPathProblem(["a", ".astro-editor/native.json"], "move", "src/pages/index.html", true)!, /native.json cannot be moved/);
-  assert.equal(protectedPathProblem(["src/pages/about.html"], "rename", "src/pages/index.html", true), undefined);
-  assert.equal(protectedPathProblem([".astro-editor/native.json"], "delete", undefined, false), undefined);
-  // The manifest can be deleted when src/pages/index.html keeps the site native; never renamed or moved.
-  assert.equal(protectedPathProblem([".astro-editor/native.json"], "delete", "src/pages/index.html", true, true), undefined);
-  assert.match(protectedPathProblem([".astro-editor/native.json"], "delete", "src/pages/index.html", true, false)!, /cannot be deleted: without src\/pages\/index.html/);
-  assert.match(protectedPathProblem([".astro-editor/native.json"], "rename", "src/pages/index.html", true, true)!, /cannot be renamed/);
+test("the home page cannot be deleted, renamed or moved", () => {
+  assert.match(protectedPathProblem(["index.html"], "delete", "index.html", true)!, /home page index.html cannot be deleted/);
+  assert.match(protectedPathProblem(["a", "index.html"], "move", "index.html", true)!, /cannot be moved/);
+  assert.equal(protectedPathProblem(["about/index.html"], "rename", "index.html", true), undefined);
+  assert.equal(protectedPathProblem(["index.html"], "delete", undefined, false), undefined);
 });
 
-test("links to a page are counted per file, a lower bound when a source is not loaded", () => {
+test("root links to a page are counted per file, a lower bound when a source is not loaded", () => {
   const sources = {
-    "src/pages/index.html": `<a href="#/about/">About</a> <a href='#/about'>again</a>`,
-    "src/pages/work.html": `<a href="#/about/#team">Team</a>`,
-    "src/components/site-header/site-header.html": `<a href=#/about/>About</a>`,
-    "src/pages/about.html": `<a href="#/about/">self</a>`,
-    "src/pages/other.html": `<a href="#/aboutus/">no</a>`,
+    "index.html": `<a href="/about/">About</a> <a href='/about'>again</a>`,
+    "work/index.html": `<a href="/about/#team">Team</a>`,
+    "components/site-header/site-header.html": `<a href=/about/>About</a>`,
+    "about/index.html": `<a href="/about/">self</a>`,
+    "other/index.html": `<a href="/aboutus/">no</a> <a href="#/about/">old</a>`,
+    "styles/site.css": `.x { background: url(/about/bg.png) }`,
   };
-  const found = filesLinkingTo(sources, ["/about/"], new Set(["src/pages/about.html"]));
-  assert.deepEqual(found, { files: ["src/components/site-header/site-header.html", "src/pages/index.html", "src/pages/work.html"], complete: true });
-  assert.equal(linkNote(found, ["/about/"], "deleted"), "2 pages and 1 component link to #/about/; those links will lead nowhere.");
-  const partial = filesLinkingTo({ ...sources, "src/pages/x.html": undefined }, ["/work/"]);
-  assert.equal(linkNote(partial, ["/work/"], "moved"), "At least 0 pages link to #/work/; those links are not updated.");
+  const found = filesLinkingTo(sources, ["/about/"], new Set(["about/index.html"]));
+  assert.deepEqual(found, { files: ["components/site-header/site-header.html", "index.html", "work/index.html"], complete: true });
+  assert.equal(linkNote(found, ["/about/"], "deleted"), "2 pages and 1 component link to /about/; those links will lead nowhere.");
+  assert.deepEqual(filesLinkingTo({ "index.html": `<a href="/about/index.html">A</a> <a href="/notes.html">N</a>` }, ["/about/", "/notes.html"]).files, ["index.html"]);
+  const partial = filesLinkingTo({ ...sources, "x.html": undefined }, ["/work/"]);
+  assert.equal(linkNote(partial, ["/work/"], "moved"), "At least 0 pages link to /work/; those links are not updated.");
   assert.equal(linkNote(filesLinkingTo(sources, ["/none/"]), ["/none/"], "moved"), undefined);
 });
 
