@@ -66,7 +66,7 @@ async function saveAll(page: Page) {
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 }
 

@@ -24,7 +24,7 @@ test.afterEach(() => {
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const panel = (page: Page) => page.locator("#publish-files");
 const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
-const saveSubmit = (page: Page) => page.getByRole("button", { name: "Save selected files", exact: true });
+const saveSubmit = (page: Page) => page.getByRole("button", { name: /^Save \d+ changes?$/ });
 const row = (page: Page, path: string) => panel(page).locator(".publish-menu__file", { hasText: path });
 
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {

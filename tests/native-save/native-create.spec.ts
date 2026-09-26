@@ -87,7 +87,7 @@ async function saveAll(page: Page) {
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
 }
 
 test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; discarding a new file removes it from the tree", async ({ page, baseURL }) => {
@@ -151,7 +151,7 @@ test("a new file whose path appeared on GitHub meanwhile is refused on save and 
   // Someone else commits the same path.
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "docs/notes.md", content: "# Their notes\n" } });
   await saveTrigger(page).click();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("GitHub changed these files: docs/notes.md", { timeout: 30_000 });
   expect(await branchFile(page, starterRepo, "docs/notes.md")).toBe("# Their notes\n");
   await page.keyboard.press("Escape");

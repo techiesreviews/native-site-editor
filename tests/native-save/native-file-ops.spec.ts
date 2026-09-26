@@ -86,7 +86,7 @@ async function saveAll(page: Page) {
   const panel = page.locator("#publish-files");
   await expect(panel).toBeVisible();
   for (const box of await panel.locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
 }
 
 test("F2 renames a file in its row; the Save panel lists one rename, and saving moves it on GitHub", async ({ page, baseURL }) => {
@@ -133,7 +133,7 @@ test("F2 renames a file in its row; the Save panel lists one rename, and saving 
   await expect(panel.locator(".publish-menu__status [aria-hidden]")).toHaveText("R");
   await expect(panel.locator(".publish-menu__changes")).toContainText("Renamed, no other changes");
   await panel.locator(".publish-menu__file input").check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect(await branchFile(page, routingRepo, "_parts/aside.html")).toBe(note);
   expect(await branchFile(page, routingRepo, "_parts/note.html")).toBeUndefined();
@@ -198,7 +198,7 @@ test("a file deleted from its menu stays struck through with Restore; Delete, Sh
   await expect(panel.locator(".publish-menu__status [aria-hidden]")).toHaveText("D");
   await expect(panel.getByRole("button", { name: "Restore _parts/note.html" })).toBeVisible();
   await panel.locator(".publish-menu__file input").check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect(await branchFile(page, routingRepo, "_parts/note.html")).toBeUndefined();
   expect(await branchFile(page, routingRepo, "index.html")).toBeDefined();

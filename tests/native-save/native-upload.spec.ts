@@ -120,7 +120,7 @@ test("Upload image… in the image's Address uploads to images/, shows it at onc
   // Saved: the bytes on GitHub are the file's, and the browser lets its copy go.
   await saveTrigger(page).click();
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect((await committed(page, "images/team-photo.png"))?.equals(png)).toBe(true);
   expect((await committed(page, indexPath))?.toString()).toContain(`src="/images/team-photo.png"`);
@@ -195,7 +195,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   await saveTrigger(page).click();
   await expect(panel(page).locator(".publish-menu__file")).toHaveCount(3);
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   expect((await committed(page, "images/logo.png"))?.equals(png)).toBe(true);
   expect((await committed(page, "about/photo.png"))?.equals(png)).toBe(true);

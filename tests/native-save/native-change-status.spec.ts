@@ -41,7 +41,7 @@ async function editAndSave(page: Page, heading: string) {
   await page.keyboard.press("ControlOrMeta+V");
   await expect(frame.getByRole("heading", { name: heading })).toBeVisible();
   await page.getByRole("button", { name: "Save to GitHub", exact: true }).click();
-  await page.getByRole("button", { name: "Save selected files", exact: true }).click();
+  await page.getByRole("button", { name: /^Save \d+ changes?$/ }).click();
   const message = page.locator(".publish-menu__message");
   await expect(message).toContainText("Saved to GitHub", { timeout: 30_000 });
   await expect(message).toContainText("Its status shows in the top bar.");

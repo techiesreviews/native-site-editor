@@ -59,7 +59,7 @@ async function openFile(page: Page, path: string, contains: string) {
 }
 
 const saveTrigger = (page: Page) => page.getByRole("button", { name: "Save to GitHub", exact: true });
-const saveSubmit = (page: Page) => page.getByRole("button", { name: "Save selected files", exact: true });
+const saveSubmit = (page: Page) => page.getByRole("button", { name: /^Save \d+ changes?$/ });
 
 async function openSaveMenu(page: Page) {
   await saveTrigger(page).click();
@@ -173,11 +173,26 @@ test("multi-file save keeps every committed file's content (no revert to stale b
   await pasteSource(page, "--accent", cssSource.replace("--muted: #5c665a;", "--muted: rgb(190, 20, 40);"));
 
   await openSaveMenu(page);
-  // Both drafts appear; select all and save.
-  await expect(page.locator("#publish-files")).toContainText(indexPath);
-  await expect(page.locator("#publish-files")).toContainText(cssPath);
-  for (const box of await page.locator("#publish-files input[type=checkbox]").all())
-    if (!(await box.isChecked())) await box.check();
+  // Both drafts appear, already selected; the trigger counts them.
+  const panel = page.locator("#publish-files");
+  await expect(panel).toContainText(indexPath);
+  await expect(panel).toContainText(cssPath);
+  await expect(saveTrigger(page).locator(".publish-menu__count")).toHaveText("2");
+  for (const box of await panel.locator("input[type=checkbox]").all()) await expect(box).toBeChecked();
+  // The grand total, unfolded, shows every difference.
+  const total = panel.locator(".publish-menu__total");
+  await expect(total.locator("summary")).toHaveText("All 2 changes · 2 added, 2 removed");
+  await expect(total.locator(".publish-menu__diff-line:visible")).toHaveCount(0);
+  await total.locator("summary").click();
+  await expect(total.locator(".publish-menu__total-path")).toHaveText([`M${indexPath}`, `M${cssPath}`]);
+  await expect(total.locator(".publish-menu__diff-line.is-add")).toContainText(["Multi save heading", "rgb(190, 20, 40)"]);
+  // Unticking one updates the total and the button.
+  await panel.locator(".publish-menu__file", { hasText: cssPath }).getByRole("checkbox").uncheck();
+  await expect(total.locator("summary")).toHaveText("1 change of 2 · 1 added, 1 removed");
+  await expect(total.locator(".publish-menu__total-path")).toHaveCount(1);
+  await expect(saveSubmit(page)).toHaveText("Save 1 change");
+  await panel.locator(".publish-menu__file", { hasText: cssPath }).getByRole("checkbox").check();
+  await expect(saveSubmit(page)).toHaveText("Save 2 changes");
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 
