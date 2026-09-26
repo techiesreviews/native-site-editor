@@ -185,6 +185,9 @@ test("shadow DOM: the page beats ::slotted() and :host, except for !important", 
   await expectWinner(page, lead, "font-style", { selector: "::slotted(p)", path: "src/components/info-box/info-box.css", origin: "::slotted" });
   await expectWinner(page, lead, "letter-spacing", { selector: ".lead", path: "src/styles/site.css", value: "5px" });
   await expectWinner(page, lead, "font-weight", { selector: "slot::slotted(.lead)", path: "src/components/info-box/info-box.css", origin: "::slotted", value: "700" });
+  // A rule written only as `.lead` reaches the slotted lead through its added twin.
+  await expect.poll(() => lead.evaluate((el) => getComputedStyle(el).textTransform)).toBe("uppercase");
+  await expectWinner(page, lead, "text-transform", { selector: "::slotted(.lead)", path: "src/components/info-box/info-box.css", origin: "::slotted", value: "uppercase" });
   await expectOverridden(page, "p", "src/styles/site.css");
   const slotted = (await chips(page)).find((chip) => chip.selector === "::slotted(p)")!;
   expect(slotted.overridden).toEqual(["color"]);

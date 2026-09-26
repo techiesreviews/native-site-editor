@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { test } from "node:test";
 import { contentHash, exportNativeSite, imageDimensions, pageMeta, type FileContent } from "../shared/native-export.ts";
+import { withSlottedRules } from "../shared/slotted-css.ts";
 
 const fixture = "fixtures/native-starter";
 
@@ -50,8 +51,10 @@ test("exports the fixture as one document per route with expanded components and
   assert.ok(home.includes(`<link rel="stylesheet" href="/assets/${cssName}">`));
 
   // Components become declarative shadow DOM that links the site stylesheet
-  // and the component's own; nested components expand too.
-  const headerCss = text(files["src/components/site-header/site-header.css"]);
+  // and the component's own, whose rules also style what a page slots in;
+  // nested components expand too.
+  const headerCss = withSlottedRules(text(files["src/components/site-header/site-header.css"]));
+  assert.ok(headerCss.includes(".site-nav a:hover, .site-nav ::slotted(a:hover) {"));
   const headerName = `site-header.${contentHash(headerCss)}.css`;
   assert.equal(text(out[`assets/${headerName}`]), headerCss);
   assert.ok(home.includes(`<site-header><template shadowrootmode="open"><link rel="stylesheet" href="/assets/${cssName}"><link rel="stylesheet" href="/assets/${headerName}">`));
@@ -266,7 +269,7 @@ test("a component stylesheet's imports are inlined into its own file", () => {
   const { files: out } = exportNativeSite({ files });
   const cardFile = Object.keys(out).find((path) => /^assets\/project-card\.[0-9a-f]{10}\.css$/.test(path))!;
   const image = Object.keys(out).find((path) => /^assets\/images\/studio-desk\./.test(path))!;
-  assert.equal(text(out[cardFile]), `@layer shared {\n.shared { background: url("/${image}"); }\n}\n` + card);
+  assert.equal(text(out[cardFile]), withSlottedRules(`@layer shared {\n.shared { background: url("/${image}"); }\n}\n` + card));
   assert.ok(!cssAssets(out).includes("assets/shared"));
 });
 
@@ -573,7 +576,7 @@ test("shared stylesheets are joined into one site stylesheet, linked once per do
   assert.equal(home.split(`href="/${siteFile}"`).length - 1, 1 + home.split("<template shadowrootmode").length - 1);
   assert.equal(home.split("<style").length - 1, 0, "component styles are files, not inline");
   // Component sheets are preloaded from the head of the pages that use them.
-  const cardName = `project-card.${contentHash(text(files["src/components/project-card/project-card.css"]))}.css`;
+  const cardName = `project-card.${contentHash(withSlottedRules(text(files["src/components/project-card/project-card.css"])))}.css`;
   assert.ok(home.includes(`<link rel="preload" href="/assets/${cardName}" as="style">`));
   assert.ok(!text(out["about/index.html"]).includes(cardName));
   assert.ok(!log.some((line) => line.startsWith("warning:")), "a layered import needs no warning");

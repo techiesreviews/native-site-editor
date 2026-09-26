@@ -31,10 +31,11 @@ const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small"
  * Per-instance content for a template's slots: a `<span slot="…">` for each
  * named slot, holding the template's own fallback, so the text lives in the
  * page. A fallback that is one element (a heading, a paragraph, a button
- * link, an image) takes the `slot` attribute itself, so the page source shows that
- * element and the template's `::slotted(h1)` rules still reach it. A slot
- * whose fallback is not plain text and inline markup (a list of items,
- * another component) is left to the template. Copies leave out `data-key`.
+ * link, an image) takes the `slot` attribute itself, so the page source
+ * shows that element and the template's `h1` rules (through the
+ * `::slotted()` twins of shared/slotted-css.ts) still reach it. A slot whose
+ * fallback is not plain text and inline markup (a list of items, another
+ * component) is left to the template. Copies leave out `data-key`.
  */
 export function slotMarkup(template: string) {
   const out: string[] = [];

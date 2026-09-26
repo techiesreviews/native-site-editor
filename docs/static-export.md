@@ -77,6 +77,7 @@ The editor routes pages by the same rule (`shared/native-routes.ts`), so the pre
 Pages:
 
 - Each custom element becomes declarative shadow DOM (`<template shadowrootmode="open">`). Its shadow root links `site.[hash].css` and then the component's own stylesheet, the order the preview adopts them in, so the cascade matches the preview. The document links `site.[hash].css` once in the head and preloads the component stylesheets the page uses.
+- A component's stylesheet gets a `::slotted()` twin for each selector (`shared/slotted-css.ts`, as in the preview): `h1` also reads `::slotted(h1)`, `.actions a` also `.actions ::slotted(a)`, so a rule written for the template's own elements also styles the element a page slots in. Only selector lists change; a selector whose last compound `::slotted()` cannot take (a pseudo-element, `:host`, `&`, `:has()`, a pseudo-class argument with a combinator) and a twin the list already has are left out.
 - A slot the page fills is written empty (`<slot name="title"></slot>`): the browser never shows its fallback, and a crawler that does not attach shadow roots would read it as page content. A slot the page leaves empty keeps its fallback. Template parts the page leaves empty are left out, as the preview hides them.
 - `#/route/` links become paths, and the nav link for the current route gets `aria-current="page"`.
 - `data-key` attributes are removed. The editor no longer needs or writes them (older pages may still carry them); nothing on the published site reads them.

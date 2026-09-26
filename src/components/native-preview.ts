@@ -9,6 +9,7 @@ import { createInsertControls, type InsertChoice, type InsertPoint } from "./ins
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
 import { expandStyleImports } from "../../shared/css-imports";
+import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import "./native-preview.css";
 
@@ -201,10 +202,11 @@ function composePayload(
     componentPaths[tag] = filePath;
   for (const [tag, filePath] of Object.entries(manifest.components))
     components[tag] = sources[filePath] ?? "";
+  // Each component rule also styles what a page slots in (shared/slotted-css.ts).
   const stylesByComponent: Record<string, { path: string; source: string }> = {};
   for (const [tag, path] of Object.entries(componentStyles)) {
     if (!Object.hasOwn(manifest.components, tag)) continue;
-    stylesByComponent[tag] = { path, source: sources[path] ?? "" };
+    stylesByComponent[tag] = { path, source: withSlottedRules(sources[path] ?? "") };
   }
   // Shared stylesheets with their `@import`s expanded: one sheet per file,
   // each import before the sheet that imports it (see shared/css-imports.ts).

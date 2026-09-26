@@ -1,5 +1,7 @@
 // Finds the stylesheets and rules behind a selected preview element, so the
 // code pane can open the stylesheet beside the page and highlight its rules.
+import { slottedTwin } from "../shared/slotted-css";
+
 export interface StyleRule {
   path: string;
   selector: string;
@@ -86,8 +88,10 @@ function scanRules(css: string) {
 // The source rules behind rules the preview matched, in the order of
 // `matches`. A match with a `ruleIndex` (the CSSOM's count of style rules in
 // its file) maps to that one rule, and only while its selector is still in
-// the rule's selector list; one without maps to every rule of its file that
-// lists the selector. Ordering is the caller's (see shared/cascade.ts).
+// the rule's selector list, or is the `::slotted()` twin the preview adds to
+// a component rule's selector (shared/slotted-css.ts); one without maps to
+// every rule of its file that lists the selector. Ordering is the caller's
+// (see shared/cascade.ts).
 export function findStyleRulesInSources(
   files: Readonly<Record<string, string>>,
   matches: readonly { path: string; selector: string; ruleIndex?: number }[],
@@ -106,7 +110,8 @@ export function findStyleRulesInSources(
     const found = rulesOf(match.path);
     if (match.ruleIndex !== undefined) {
       const rule = found[match.ruleIndex];
-      if (rule && rule.selectors.map(comparableSelector).includes(comparableSelector(match.selector)))
+      const wanted = comparableSelector(match.selector);
+      if (rule && rule.selectors.some((selector) => comparableSelector(selector) === wanted || comparableSelector(slottedTwin(selector) ?? "") === wanted))
         rules.push({ path: match.path, selector: match.selector, start: rule.start, end: rule.end, match: index });
       return;
     }

@@ -39,6 +39,7 @@
 import type { NativeManifest } from "../src/native-manifest";
 import { NATIVE_MANIFEST_PATH, NATIVE_SITE_PATHS, nativePageComment, resolveNativeProject } from "./native-project";
 import { assignedSlotNames, dropFilledFallbacks, pruneEmptyTemplate } from "./native-conditionals";
+import { withSlottedRules } from "./slotted-css";
 import { isExternalImport, parseCssImports, resolveImportPath, rewriteCssUrls, supportsCondition, wrapImported, type CssImport, type ImportWrapper } from "./css-imports";
 
 export type FileContent = string | Uint8Array;
@@ -467,7 +468,8 @@ export function exportNativeSite(input: ExportInput): ExportResult {
   for (const [tag, path] of Object.entries(manifest.components)) {
     const cssPath = path.replace(/\.html$/, ".css");
     const source = files[cssPath] !== undefined ? text(cssPath) : "";
-    const css = !source ? "" : parseCssImports(source).imports.length ? bundleStyles([cssPath], tag, false) : urlsRewritten(cssPath, source);
+    // Each rule also styles what a page slots in, as in the preview.
+    const css = !source ? "" : withSlottedRules(parseCssImports(source).imports.length ? bundleStyles([cssPath], tag, false) : urlsRewritten(cssPath, source));
     components[tag] = { html: text(path), cssUrl: css ? writeAsset(tag, css) : undefined };
   }
   const styleBlock = (tag: string) =>

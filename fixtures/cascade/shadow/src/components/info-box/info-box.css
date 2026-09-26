@@ -17,3 +17,9 @@ slot::slotted(.lead) {
   font-weight: 700 !important;
   letter-spacing: 2px;
 }
+
+/* Written for the template's own elements: the editor adds the
+   ::slotted(.lead) twin, so the page's slotted lead gets it too. */
+.lead {
+  text-transform: uppercase;
+}
