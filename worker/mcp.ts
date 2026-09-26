@@ -9,7 +9,7 @@ import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
   getHub,
-  grantContext,
+  connectionContext,
   operateHub,
   type AgentHub,
   type authenticateAgent,
@@ -133,7 +133,7 @@ export function siteSummary(hub: AgentHub | undefined, context: EditorContext | 
     return {
       repository: grantRepo,
       available: false,
-      note: "The editor tab is not sharing this repository right now. Ask the user to open it in the editor at https://editor.techies.tools and keep the tab open.",
+      note: "The editor tab is not sharing a site right now. Ask the user to open the site in the editor at https://editor.techies.tools and keep the tab open. The connection works on whichever repository the tab shows.",
     };
   const age = contextAge(hub);
   const site = context.site;
@@ -180,14 +180,14 @@ export function createSiteServer(connection: Connection, env: Env) {
 
   async function state() {
     const hub = await getHub(env, grant.sessionId);
-    return { hub, context: grantContext(hub, grant) };
+    return { hub, context: connectionContext(hub, connection.repo) };
   }
   async function current() {
     const { hub, context } = await state();
     if (!context)
       throw new HttpError(
         409,
-        "The editor tab is not sharing this repository. Ask the user to open it in the editor and keep the tab open, then try again.",
+        "The editor tab is not sharing a site right now. Ask the user to open it in the editor and keep the tab open, then try again.",
       );
     return { hub, context, files: new SiteFiles(connection.github, connection.repo, context) };
   }
@@ -235,7 +235,7 @@ export function createSiteServer(connection: Connection, env: Env) {
       ...(input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {}),
       ...(input.args ? { args: input.args } : {}),
       grantId: connection.id,
-      repoId: grant.repoId,
+      repoId: connection.repo.id,
       state: "pending",
       createdAt: Date.now(),
     };
@@ -278,7 +278,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     },
     async () => {
       const { hub, context } = await state();
-      return text(siteSummary(hub, context, grant.repo));
+      return text(siteSummary(hub, context, connection.repo.full_name));
     },
   );
   server.registerTool(
@@ -707,7 +707,7 @@ export function createSiteServer(connection: Connection, env: Env) {
       const { hub, context } = await state();
       return {
         contents: [
-          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, grant.repo)) },
+          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, connection.repo.full_name)) },
         ],
       };
     },
@@ -726,7 +726,7 @@ export function createSiteServer(connection: Connection, env: Env) {
             role: "user",
             content: {
               type: "text",
-              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, grant.repo))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
+              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, connection.repo.full_name))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
             },
           },
         ],

@@ -8,7 +8,7 @@ Every change goes **through your open editor tab**. The Worker checks it and que
 
 ## Connect
 
-Two ways, both scoped to **one repository** and to your signed-in editor session.
+Two ways, both scoped to your signed-in editor session. A connection works on **the repository your editor tab shows**: switch repositories in the editor and the agent follows.
 
 ### OAuth: claude.ai, Claude Desktop, Claude Code
 
@@ -30,19 +30,19 @@ claude mcp add --transport http native-site-editor https://editor.techies.tools/
 
 Then run `/mcp` in Claude Code, select `native-site-editor` and choose **Authenticate**; the browser opens the same sign-in and consent. Add `--scope user` to use it in every project.
 
-A connection lasts as long as the editor session it was made in (up to eight hours of GitHub sign-in). There are no refresh tokens: when it ends, the client asks you to connect again (claude.ai shows the connector as needing to reconnect; in Claude Code, authenticate again from `/mcp`). Each authorization is one repository; connect again to choose another.
+A connection lasts as long as the editor session it was made in (up to eight hours of GitHub sign-in). There are no refresh tokens: when it ends, the client asks you to connect again (claude.ai shows the connector as needing to reconnect; in Claude Code, authenticate again from `/mcp`). The repository chosen on the consent page is where the connection starts; after that it follows the editor tab.
 
 ### Token: any MCP client with a header
 
 1. Open the site in the editor and open the **project selector** (the repository name at the top left).
-2. Choose **Connect with MCP**. The editor makes a token for the open repository and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex).
+2. Choose **Connect with MCP**. The editor makes a token for this editor session and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex).
 3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**; its tooltip names the agent (from MCP `initialize`).
 
-The token is a password for this repository's drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.
+The token is a password for your editor session's sites and drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.
 
 ### In the editor
 
-While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes. **Disconnect MCP** revokes every connection to the open repository, OAuth ones included. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
+While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes. **Disconnect MCP** revokes every connection of the session, OAuth ones included. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
 
 ## Tools
 
@@ -72,7 +72,7 @@ Every change is checked twice: by the Worker against what the tab last reported 
 
 ## Boundaries
 
-- **Scope.** A connection is one repository and one signed-in editor session. Every MCP request rechecks the session and that the GitHub App installation still includes the repository. When the tab shows another repository, reads report the site unavailable and edits are refused; a branch or revision change refuses queued changes made for the old one.
+- **Scope.** A connection is one signed-in editor session, working on the repository its editor tab shows (before any tab shares, the one it was made in). Every MCP request rechecks the session and that the GitHub App installation includes that repository. A repository, branch or revision change refuses queued changes made for the old one.
 - **Lifetime and revocation.** Choose **Disconnect MCP**, sign out, or let the session expire (eight hours at most), and the token stops working. Expired records are removed by the Durable Object alarm.
 - **Secrets.** Only the SHA-256 of a token is stored; OAuth codes are stored hashed, single-use and live five minutes; the consent request is bound to the session that saw it. The GitHub token stays in the Worker and is never given to an agent. `/mcp` refuses a request whose `Origin` is not the editor's own (browsers cannot call it from other sites); the consent form must come from the editor's origin.
 - **Clients.** Dynamic registration accepts public clients (`token_endpoint_auth_method: none`) whose redirect URIs are HTTPS, or HTTP to `localhost`/`127.0.0.1`/`[::1]`. Registrations last 180 days. Client ID metadata documents are not supported.
@@ -87,7 +87,7 @@ Every change is checked twice: by the Worker against what the tab last reported 
 
 ## Validation
 
-- `tests/mcp-runtime.test.ts` (official MCP client against the real Worker in Miniflare, over a small site in the repository-as-site layout, `tests/mcp-harness.ts`): tool list and descriptions, `get_site` (settings, pages with head details, the not-found page, components, stylesheets with imports), the conventions resource and prompt, `list_files` and `read_file` with drafts over GitHub, `get_page` by URL in its link forms or by file, outlines, `edit_file` hash and uniqueness checks, retries by `requestId`, `write_file` rules, section checks, `create_page` under folder pages only, waiting for the tab, conflicts reported by the tab, a second tab refused a claimed change, repository switching, installation removal, revocation and logout, and no GitHub writes.
+- `tests/mcp-runtime.test.ts` (official MCP client against the real Worker in Miniflare, over a small site in the repository-as-site layout, `tests/mcp-harness.ts`): tool list and descriptions, `get_site` (settings, pages with head details, the not-found page, components, stylesheets with imports), the conventions resource and prompt, `list_files` and `read_file` with drafts over GitHub, `get_page` by URL in its link forms or by file, outlines, `edit_file` hash and uniqueness checks, retries by `requestId`, `write_file` rules, section checks, `create_page` under folder pages only, waiting for the tab, conflicts reported by the tab, a second tab refused a claimed change, following the tab to another repository the installation includes (and refusing one it does not), installation removal, revocation and logout, and no GitHub writes.
 - `tests/agent-site.test.ts`: the stylesheets the tab reports (linked from the pages' heads, home page first, with their imports); `tests/native-project.test.ts` and `tests/native-create.test.ts`: the settings, and a new page's canonical and `og:url`.
 - `tests/mcp-oauth.test.ts`: discovery documents, CORS, registration rules, the SDK's OAuth flow (discovery, registration, sign-in that returns to the authorization, consent refusing a foreign origin, another session and Cancel, PKCE token exchange, a wrong verifier and a reused code refused), then the tools with the issued token, and revocation.
 - `tests/native-save/native-mcp.spec.ts` (Playwright, native-save server): with the editor open, an MCP client reads the site, edits the home page's heading, adds, moves and removes a section (and the user's Undo brings it back), gives the site an address, creates a page (its own canonical and `og:url`) and sets its description, and opens a page, each visible at once in the preview and as a draft, with nothing saved to GitHub; components it writes render and select as the page builder's; and a client connected by OAuth in the browser (consent page, token exchange) reaches the open tab.

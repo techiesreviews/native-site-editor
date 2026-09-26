@@ -8,9 +8,9 @@
 // - the authorization code grant with PKCE (S256 only).
 //
 // The authorize step is the editor's own GitHub sign-in: a signed-in session
-// (or a sign-in that returns here) picks one repository on a consent page,
+// (or a sign-in that returns here) picks a starting repository on a consent page,
 // and the token issued is the same kind of connection "Connect with MCP"
-// copies: one repository, one editor session, stored only as a hash,
+// copies: one editor session, following the repository its tab shows, stored only as a hash,
 // revoked with the session or from the editor. There are no refresh tokens:
 // a connection lasts as long as the editor session (up to eight hours), then
 // the client asks the user to connect again. Everything is kept in the
@@ -313,7 +313,7 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
 <form method="post" action="/auth/mcp/authorize" class="panel" id="consent">
   <input type="hidden" name="request" value="${nonce}">
   ${repositories.length ? `<fieldset><legend>Repository</legend>${choices}</fieldset>` : `<p>The editor's GitHub App is not installed on any repository you can use. Install it first, then connect again.</p>`}
-  <p class="muted">It can read this repository's files and your unsaved changes in the editor, and make changes that appear in your open editor tab as unsaved drafts. It cannot save to GitHub or publish; you review and save. The connection lasts until you sign out of the editor (at most eight hours) or choose Disconnect MCP.</p>
+  <p class="muted">It works on the repository your editor tab shows, starting with the one chosen here. It can read that repository's files and your unsaved changes in the editor, and make changes that appear in your open editor tab as unsaved drafts. It cannot save to GitHub or publish; you review and save. The connection lasts until you sign out of the editor (at most eight hours) or choose Disconnect MCP.</p>
   <p class="actions">
     ${repositories.length ? `<button name="decision" value="allow" class="primary">Allow</button>` : ""}
     <button name="decision" value="deny" formnovalidate>Cancel</button>

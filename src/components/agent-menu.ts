@@ -7,11 +7,12 @@ import "./agent-menu.css";
 // connection.
 //
 // Agents connect to `/mcp` with OAuth (a custom connector in claude.ai or
-// Claude Desktop) or with a token in the prompt copied here. Either way the connection belongs to this editor session and one
-// repository; the Worker keeps the session's connections, the context the
-// sharing tab last reported, and the changes agents queued in one hub
-// (worker/agent-context.ts). This tab polls that hub: while a connection
-// for the open repository exists it reports its context (built only when
+// Claude Desktop) or with a token in the prompt copied here. Either way the
+// connection belongs to this editor session and works on whichever
+// repository the sharing tab shows; the Worker keeps the session's
+// connections, the context the sharing tab last reported, and the changes
+// agents queued in one hub (worker/agent-context.ts). This tab polls that
+// hub: while a connection exists it reports its context (built only when
 // sent) and applies queued changes with `onCommand`, then reports the new
 // context before it acknowledges each change, so an agent reading after
 // "applied" sees it. Of several tabs, the one that reported last (a
@@ -91,13 +92,11 @@ export function createAgentMenu(options: {
     if (!response.ok) throw new Error(result.error ?? "Agent connection failed.");
     return result;
   }
-  const repoGrants = () => {
-    const repo = options.repository();
-    return repo ? hub.grants.filter((grant) => grant.repoId === repo.id) : [];
-  };
-  const usedGrants = () => repoGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
+  // A connection follows the open repository, so every one of the session's counts.
+  const liveGrants = () => (options.repository() ? hub.grants : []);
+  const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
   /** The token this tab made, while no agent has used it yet. */
-  const waiting = () => Boolean(token && tokenId && repoGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
+  const waiting = () => Boolean(token && tokenId && liveGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
   function state() {
     if (!options.repository()) return "closed";
     if (usedGrants().length) return "connected";
@@ -113,15 +112,12 @@ export function createAgentMenu(options: {
     const names = [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
     action.title =
       current === "connected"
-        ? `${names} connected. Choose to revoke its access to this repository.`
+        ? `${names} connected. Choose to revoke its access.`
         : current === "waiting"
           ? "Copy the prompt again"
           : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = current !== "waiting";
-    let text = "";
-    if (current === "waiting") text = "Prompt copied. Paste it into Claude, Codex or another agent.";
-    else if (current === "idle" && hub.grants.length && !repoGrants().length)
-      text = "Your agent is connected to another repository.";
+    const text = current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent." : "";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
   }
@@ -147,7 +143,7 @@ export function createAgentMenu(options: {
     paint();
     try {
       // Tokens made earlier that no agent used cannot be copied again.
-      for (const grant of repoGrants())
+      for (const grant of liveGrants())
         if (grant.via === "token" && !grant.usedAt) await api("revoke", { id: grant.id }).catch(() => undefined);
       const result = await api("connect", { repo: repo.fullName, repoId: repo.id });
       if (disposed) return;
@@ -169,7 +165,7 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      await api("revoke", { all: true, repoId: options.repository()?.id });
+      await api("revoke", { all: true });
       token = tokenId = undefined;
       changing = false;
       await poll(true);
@@ -200,7 +196,7 @@ export function createAgentMenu(options: {
   }
   async function doSync(force: boolean) {
     if (disposed) return;
-    const grants = repoGrants();
+    const grants = liveGrants();
     if (!grants.length) {
       if (shared) {
         shared = false;
@@ -242,7 +238,7 @@ export function createAgentMenu(options: {
     if (disposed || polling || changing) return;
     // A tab in the background keeps applying changes while an agent is
     // connected (browsers may slow its timer); otherwise it waits to be seen.
-    if (document.visibilityState === "hidden" && !now && !repoGrants().length) return;
+    if (document.visibilityState === "hidden" && !now && !liveGrants().length) return;
     const interval = hub.grants.length ? FAST : SLOW;
     if (!now && Date.now() - lastPoll < interval - 100) return;
     polling = true;
@@ -266,7 +262,7 @@ export function createAgentMenu(options: {
           }
           try {
             if (!repo || command.repoId !== undefined && command.repoId !== repo.id)
-              throw new Error("The editor shows another repository.");
+              throw new Error("The editor switched to another repository. Read the site again.");
             if (Date.now() - command.createdAt > 120_000)
               throw new Error("This change expired before the editor received it.");
             const outcome = (await options.onCommand(command)) || {};
@@ -334,7 +330,7 @@ export function createAgentMenu(options: {
 
 /** What to paste into an agent so it connects itself (or says how). */
 export function connectionPrompt(url: string, token: string, repo: string) {
-  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo}.
+  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo} (and whichever site I open in the editor after it).
 
 Server URL: ${url} (streamable HTTP)
 Header: Authorization: Bearer ${token}

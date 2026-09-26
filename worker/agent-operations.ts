@@ -77,7 +77,7 @@ export function agentOperation(hub: AgentHub, action: any) {
     if (context.repository.id !== command.repoId)
       throw new HttpError(
         409,
-        "The editor tab shows another repository. Open this repository in the editor.",
+        "The editor tab switched to another repository. Read the site again.",
       );
     if (context.branch !== command.branch || context.commit !== command.commit)
       throw new HttpError(

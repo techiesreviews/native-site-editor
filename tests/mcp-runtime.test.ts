@@ -176,11 +176,16 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal(conflicted.isError, true);
     assert.equal(payload(conflicted).state, "conflict");
 
-    // Sharing another repository pauses reads for this connection.
+    // The connection follows the repository the tab shows, when the
+    // installation includes it.
+    const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };
+    github.others.push(otherRepo);
     await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
-    assert.equal(payload(await call("get_site")).available, false);
-    assert.equal((await call("read_file", { path: "styles/site.css" })).isError, true);
+    assert.equal(payload(await call("get_site")).repository, "lex/other");
+    github.others.length = 0;
+    await assert.rejects(() => call("get_site"));
     await tab.share(context);
+    assert.equal(payload(await call("get_site")).repository, "lex/starter");
     assert.equal(github.writes, 0, "MCP must not write to GitHub");
 
     // Installation removed, revoked, logged out: the connection stops working.

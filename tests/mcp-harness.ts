@@ -48,7 +48,7 @@ export async function startWorker() {
     external: ["cloudflare:workers"],
     target: "es2022",
   });
-  const github = { allowed: true, writes: 0 };
+  const github = { allowed: true, writes: 0, others: [] as (typeof repo)[] };
   const worker = new Miniflare(
     convertV4MiniflareOptions({
       modules: true,
@@ -65,7 +65,7 @@ export async function startWorker() {
         if (path === "/user/installations")
           return Response.json({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
         if (path === "/user/installations/1/repositories")
-          return Response.json({ repositories: github.allowed ? [repo] : [] });
+          return Response.json({ repositories: github.allowed ? [repo, ...github.others] : [] });
         if (path === `/repos/lex/starter/git/commits/${commit}`) return Response.json({ tree: { sha: treeSha } });
         if (path === `/repos/lex/starter/git/trees/${treeSha}`) {
           const folders = new Set<string>();

@@ -146,9 +146,10 @@ export function validateContext(value: unknown): EditorContext {
 
 /**
  * One agent connection: a bearer token (copied from the editor, or issued by
- * the OAuth token endpoint) scoped to one repository and one signed-in
- * editor session. Stored under the SHA-256 of the token; the token itself
- * is never stored.
+ * the OAuth token endpoint) scoped to one signed-in editor session. It works
+ * on the repository the session's editor tab shows; `repo` is the one it was
+ * made in, used until a tab shares its context. Stored under the SHA-256 of
+ * the token; the token itself is never stored.
  */
 export interface AgentGrant {
   kind: "agent";
@@ -317,12 +318,19 @@ export async function operateHub(env: Env, sessionId: string, action: unknown) {
   return result;
 }
 
-/** The hub's context when it belongs to the grant's repository, else nothing (sharing is paused). */
-export function grantContext(hub: AgentHub | undefined, grant: AgentGrant) {
+/**
+ * The hub's context when it still shows the repository the request was
+ * authorized for, else nothing (sharing is paused, or the tab switched
+ * repository since).
+ */
+export function connectionContext(
+  hub: AgentHub | undefined,
+  repo: { id: number; full_name: string },
+) {
   const context = hub?.context;
   return context &&
-    context.repository.id === grant.repoId &&
-    context.repository.fullName === grant.repo
+    context.repository.id === repo.id &&
+    context.repository.fullName === repo.full_name
     ? context
     : undefined;
 }
@@ -354,9 +362,13 @@ export async function authenticateAgent(
     session.login !== grant.login
   )
     throw new HttpError(401, "The editor session ended. Reconnect the agent.");
+  // The connection follows the repository the editor tab shows, rechecked
+  // against the GitHub App installation on every request.
   const github = new GitHub(session.token, fetcher);
-  const repo = await github.authorizeRepository(session.login, grant.repo);
-  if (repo.id !== grant.repoId)
+  const shown = (await getHub(env, grant.sessionId))?.context?.repository;
+  const target = shown ?? { id: grant.repoId, fullName: grant.repo };
+  const repo = await github.authorizeRepository(session.login, target.fullName);
+  if (repo.id !== target.id)
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
   return { grant, github, repo, id };
 }
