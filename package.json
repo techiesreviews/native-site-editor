@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm run build:ui && wrangler pages dev dist",
     "dev:ui": "vite --host 127.0.0.1",
-    "build:ui": "vite build && npm run build:export",
+    "build:ui": "vite build",
     "build:functions": "wrangler pages functions build --outdir .scratch/pages-functions",
     "build": "npm run check && npm run build:ui && npm run build:functions",
     "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
@@ -22,9 +22,7 @@
     "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
     "setup": "node scripts/setup-browser.mjs",
     "setup:manual": "bash scripts/setup-github.sh",
-    "setup:browser": "node scripts/setup-browser.mjs",
-    "build:export": "esbuild shared/native-export-cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/native-export.mjs --log-level=warning",
-    "export": "tsx shared/native-export-cli.ts"
+    "setup:browser": "node scripts/setup-browser.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260917.1",

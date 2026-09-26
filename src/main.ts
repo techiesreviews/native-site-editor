@@ -19,7 +19,6 @@ import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
-import { NATIVE_SITE_PATHS } from "../shared/native-project";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, type NativeWarning, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
@@ -2020,24 +2019,32 @@ async function listNativePageFiles(repo: Repository, result: Snapshot): Promise<
   return listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${NATIVE_SOURCE_DIR}${entry.path}`);
 }
 
-// The site as edited, for Download site and the site's address: every file
-// under `src/` with its drafts, and the manifest and the root site settings
-// when the site has them. Undefined when no native site is open.
-async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
-  const repo = currentRepo?.full_name;
-  const scope = draftScope();
-  if (!repo || !scope || !nativeModeActive()) return undefined;
-  const draftAt = (path: string) => draftStore().get(scope, path);
-  const extra: string[] = [];
-  if (nativeHasManifest()) extra.push(NATIVE_MANIFEST_PATH);
-  for (const path of NATIVE_SITE_PATHS) {
-    if (path.startsWith(NATIVE_SOURCE_DIR)) continue;
-    const draft = draftAt(path);
-    if (draft ? !draft.deleted : await findEntry(path)) extra.push(path);
+// Every file on the branch, from the snapshot's recursive tree when it has
+// one, else from one recursive listing per top-level folder.
+async function listRepositoryFiles(repo: Repository, result: Snapshot): Promise<string[]> {
+  if (result.tree) return result.tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
+  const out = result.entries.filter((entry) => entry.type === "blob").map((entry) => entry.path);
+  for (const folder of result.entries.filter((entry) => entry.type === "tree" && entry.path !== "node_modules")) {
+    const listed = await api<Directory>("tree", { repo: repo.full_name, sha: folder.sha, recursive: "1" });
+    out.push(...listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${folder.path}/${entry.path}`));
   }
+  return out;
+}
+
+// The site as edited, for Download site and the site's address: every file
+// of the repository with its drafts. Undefined when no native site is open.
+async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
+  const repo = currentRepo;
+  const scope = draftScope();
+  if (!repo || !scope || !snapshot || !nativeModeActive()) return undefined;
+  const draftAt = (path: string) => draftStore().get(scope, path);
+  const drafts = draftStore().list(scope);
+  const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
+  const drafted = drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path);
+  const branch = await listRepositoryFiles(repo, snapshot);
   return {
-    repository: repo,
-    paths: [...nativePageFiles(scope), ...extra],
+    repository: repo.full_name,
+    paths: [...new Set([...branch.filter((path) => !gone.has(path)), ...drafted])],
     held: (path) => (path === NATIVE_MANIFEST_PATH ? nativeManifestSource() : nativeEffectiveSource(path, scope)),
     blob: async (path) => {
       const draft = draftAt(path);
@@ -2045,8 +2052,8 @@ async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
       if (draft?.opaque) return draft.sourceSha;
       return (await findEntry(path))?.sha;
     },
-    readTexts: (shas) => readFiles(repo, shas),
-    readBase64: async (sha) => (await api<{ content: string }>("raw", { repo, sha })).content,
+    readTexts: (shas) => readFiles(repo.full_name, shas),
+    readBase64: async (sha) => (await api<{ content: string }>("raw", { repo: repo.full_name, sha })).content,
   };
 }
 

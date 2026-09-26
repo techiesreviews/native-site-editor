@@ -1,17 +1,18 @@
-// Download site: the static export (shared/native-export.ts, the same module
-// the deploy workflow runs as native-export.mjs) of the site as the editor
-// has it, unsaved drafts included, as a .zip. Also reads the site's own
-// address from its settings for "View live site".
-import { exportNativeSite, SITE_PATHS, type FileContent } from "../shared/native-export";
+// Download site: the repository's files as the editor has them, unsaved
+// drafts included, zipped as they are. The repository is the site, so the
+// archive is what any static host serves (docs/hosting.md). Also reads the
+// site's own address from `.editor/config.json` for "View live site".
 import { zipFiles } from "./zip";
 
-/** Files the exporter reads as text; everything else goes as bytes (as the CLI reads them). */
-const TEXT = /\.(html|css|json)$/i;
+export type FileContent = string | Uint8Array;
+
+/** Files read as text (a batch per request); everything else goes as bytes. */
+const TEXT = /\.(?:html?|css|m?js|json|md|txt|xml|svg|webmanifest)$|(?:^|\/)_(?:redirects|headers)$/i;
 
 export interface SiteFiles {
   /** The repository's full name, for the download's file name. */
   repository: string;
-  /** Every path in the site as drafted: the branch's files under `src/`, new drafts, the manifest and site settings that exist. */
+  /** Every file of the repository as drafted: the branch's not deleted, and new drafts. */
   paths: string[];
   /** The text the editor holds for a path (an open model, a draft, a loaded file), if any. */
   held(path: string): string | undefined;
@@ -30,7 +31,7 @@ function fromBase64(value: string) {
   return bytes;
 }
 
-/** Collects every file of the site as the exporter wants it: text for HTML, CSS and JSON, bytes otherwise. */
+/** Collects every file of the site: text where the editor holds it or it reads as text, bytes otherwise. */
 export async function collectSiteFiles(site: SiteFiles): Promise<Record<string, FileContent>> {
   const files: Record<string, FileContent> = {};
   const texts: { path: string; sha: string }[] = [];
@@ -54,10 +55,10 @@ export async function collectSiteFiles(site: SiteFiles): Promise<Record<string, 
   return files;
 }
 
-/** The exported site as a store-only .zip, and the exporter's log. */
-export async function buildSiteZip(site: SiteFiles): Promise<{ zip: Uint8Array; log: string[]; count: number }> {
-  const result = exportNativeSite({ files: await collectSiteFiles(site) });
-  return { zip: zipFiles(result.files), log: result.log, count: Object.keys(result.files).length };
+/** The site's files as a store-only .zip, and how many files it holds. */
+export async function buildSiteZip(site: SiteFiles): Promise<{ zip: Uint8Array; count: number }> {
+  const files = await collectSiteFiles(site);
+  return { zip: zipFiles(files), count: Object.keys(files).length };
 }
 
 /** A file name for the download: `<repository>-site.zip`. */
@@ -80,24 +81,20 @@ export function saveBytes(bytes: Uint8Array, name: string, type = "application/z
 }
 
 /**
- * The site's address from its settings' `url` (`.astro-editor/site.json`
- * wins over `src/site.json`, as in the exporter), when it is an http(s) URL.
- * No address is guessed.
+ * The site's address from `.editor/config.json`'s `site.url`, when it is an
+ * http(s) URL. No address is guessed.
  */
-export function siteUrlFromSettings(settings: Record<string, string | undefined>): string | undefined {
-  for (const path of SITE_PATHS) {
-    const text = settings[path];
-    if (text === undefined) continue;
-    let value: unknown;
-    try { value = JSON.parse(text); } catch { return undefined; }
-    const url = value && typeof value === "object" ? (value as { url?: unknown }).url : undefined;
-    if (typeof url !== "string" || !url.trim()) return undefined;
-    try {
-      const parsed = new URL(url.trim());
-      return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-    } catch {
-      return undefined;
-    }
+export function siteUrlFromConfig(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return undefined; }
+  const site = value && typeof value === "object" ? (value as { site?: unknown }).site : undefined;
+  const url = site && typeof site === "object" ? (site as { url?: unknown }).url : undefined;
+  if (typeof url !== "string" || !url.trim()) return undefined;
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
+  } catch {
+    return undefined;
   }
-  return undefined;
 }

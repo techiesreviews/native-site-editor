@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { crc32, unzipStored, zipFiles } from "../src/zip.ts";
-import { buildSiteZip, collectSiteFiles, siteUrlFromSettings, siteZipName, type SiteFiles } from "../src/site-download.ts";
+import { buildSiteZip, collectSiteFiles, siteUrlFromConfig, siteZipName, type SiteFiles } from "../src/site-download.ts";
 
 const decoder = new TextDecoder();
 
@@ -32,14 +32,16 @@ test("zipFiles writes a store-only archive that reads back byte for byte", () =>
   assert.equal(unzipStored(zipFiles({})).constructor, Object);
 });
 
-test("the site's address comes only from a settings url, root settings first", () => {
-  assert.equal(siteUrlFromSettings({ "src/site.json": '{"url":"https://larkspur.example"}' }), "https://larkspur.example/");
-  assert.equal(siteUrlFromSettings({ ".astro-editor/site.json": '{"url":"https://a.example/x"}', "src/site.json": '{"url":"https://b.example"}' }), "https://a.example/x");
-  assert.equal(siteUrlFromSettings({ "src/site.json": '{"name":"No url"}' }), undefined);
-  assert.equal(siteUrlFromSettings({ "src/site.json": '{"url":"javascript:alert(1)"}' }), undefined);
-  assert.equal(siteUrlFromSettings({ "src/site.json": '{"url":"larkspur.example"}' }), undefined);
-  assert.equal(siteUrlFromSettings({ "src/site.json": "{not json" }), undefined);
-  assert.equal(siteUrlFromSettings({}), undefined);
+test("the site's address comes only from .editor/config.json's site.url", () => {
+  const config = (site: unknown) => JSON.stringify({ site });
+  assert.equal(siteUrlFromConfig(config({ name: "Larkspur", url: "https://larkspur.example" })), "https://larkspur.example/");
+  assert.equal(siteUrlFromConfig(config({ url: "https://a.example/x" })), "https://a.example/x");
+  assert.equal(siteUrlFromConfig(config({ name: "No url" })), undefined);
+  assert.equal(siteUrlFromConfig(JSON.stringify({ url: "https://top-level.example" })), undefined);
+  assert.equal(siteUrlFromConfig(config({ url: "javascript:alert(1)" })), undefined);
+  assert.equal(siteUrlFromConfig(config({ url: "larkspur.example" })), undefined);
+  assert.equal(siteUrlFromConfig("{not json"), undefined);
+  assert.equal(siteUrlFromConfig(undefined), undefined);
   assert.equal(siteZipName("lex/native-site-editor-starter"), "native-site-editor-starter-site.zip");
 });
 
@@ -66,19 +68,22 @@ function fixtureSite(held: Record<string, string>, deleted: string[] = []): Site
   };
 }
 
-test("Download site exports the site as edited, drafts included", async () => {
+test("Download site zips the repository's files as they are, drafts included", async () => {
   const index = readFileSync("fixtures/native-starter/src/pages/index.html", "utf8");
+  const edited = index.replace("A native browser preview", "Unsaved draft heading");
   const site = fixtureSite({
-    "src/pages/index.html": index.replace("A native browser preview", "Unsaved draft heading"),
-    "src/pages/draft-only.html": "<main><h1>Only in the browser</h1></main>\n",
-  });
+    "src/pages/index.html": edited,
+    "draft-only/index.html": "<!doctype html>\n<title>Only in the browser</title>\n",
+  }, ["src/pages/about.html"]);
   const files = await collectSiteFiles(site);
-  assert.ok(files["src/images/studio-desk.svg"] instanceof Uint8Array, "images are bytes");
-  assert.equal(typeof files[".astro-editor/native.json"], "string");
+  assert.equal(typeof files["src/styles/site.css"], "string", "CSS reads as text");
+  assert.ok(files["src/images/studio-desk.svg"] !== undefined);
   const { zip, count } = await buildSiteZip(site);
   const read = unzipStored(zip);
   assert.equal(Object.keys(read).length, count);
-  assert.match(decoder.decode(read["index.html"]), /Unsaved draft heading/);
-  assert.ok(read["_headers"]);
-  assert.ok(Object.keys(read).some((path) => /^assets\/site\.[0-9a-f]+\.css$/.test(path)));
+  assert.equal(decoder.decode(read["src/pages/index.html"]), edited, "the draft, byte for byte");
+  assert.equal(decoder.decode(read["draft-only/index.html"]), "<!doctype html>\n<title>Only in the browser</title>\n");
+  assert.equal(decoder.decode(read["src/styles/site.css"]), readFileSync("fixtures/native-starter/src/styles/site.css", "utf8"));
+  assert.deepEqual([...read["src/images/studio-desk.svg"]], [...readFileSync("fixtures/native-starter/src/images/studio-desk.svg")]);
+  assert.equal(read["src/pages/about.html"], undefined, "a deleted file is left out");
 });

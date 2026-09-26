@@ -4,6 +4,5 @@
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["./**/*.ts", "../shared", "../functions"],
-  "exclude": ["../shared/native-export-cli.ts"]
+  "include": ["./**/*.ts", "../shared", "../functions"]
 }

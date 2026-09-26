@@ -1,13 +1,14 @@
 // The site beyond the editor: the Change status of the last save in the top
 // bar (Saved → Building → Live or Failed, read through the Worker's
 // `/api/change-status`, so the GitHub token never reaches the browser), and,
-// in the project menu, "View live site" (from the site settings' `url`) and
-// "Download site" (the static export of the site as edited, drafts included).
+// in the project menu, "View live site" (from `.editor/config.json`'s
+// `site.url`) and "Download site" (the repository's files as edited, drafts
+// included, as a .zip).
 import "./site-actions.css";
 import { button, link, node } from "../ui/dom";
 import { changeStatusLabel, changeStatusPending, type ChangeState, type ChangeStatus } from "../../shared/change-status";
-import { buildSiteZip, saveBytes, siteUrlFromSettings, siteZipName, type SiteFiles } from "../site-download";
-import { SITE_PATHS } from "../../shared/native-export";
+import { buildSiteZip, saveBytes, siteUrlFromConfig, siteZipName, type SiteFiles } from "../site-download";
+import { NATIVE_CONFIG_PATH } from "../../shared/native-project";
 
 export interface SavedCommit {
   repo: string;
@@ -37,17 +38,13 @@ const FOLLOW_LIMIT = 30 * 60_000;
 const MAX_ERRORS = 5;
 
 export async function readSiteUrl(site: SiteFiles): Promise<string | undefined> {
-  const settings: Record<string, string | undefined> = {};
-  for (const path of SITE_PATHS) {
-    if (!site.paths.includes(path)) continue;
-    let text = site.held(path);
-    if (text === undefined) {
-      const sha = await site.blob(path);
-      if (sha) text = (await site.readTexts([sha]))[sha];
-    }
-    settings[path] = text;
+  if (!site.paths.includes(NATIVE_CONFIG_PATH)) return undefined;
+  let text = site.held(NATIVE_CONFIG_PATH);
+  if (text === undefined) {
+    const sha = await site.blob(NATIVE_CONFIG_PATH);
+    if (sha) text = (await site.readTexts([sha]))[sha];
   }
-  return siteUrlFromSettings(settings);
+  return siteUrlFromConfig(text);
 }
 
 export function mountSiteActions(options: SiteActionsOptions) {
@@ -72,7 +69,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
   liveSite.hidden = true;
   const download = button("Download site", () => void downloadSite(), "text-button repository-menu__action site-actions__download");
   download.hidden = true;
-  download.title = "Export the site as it is in the editor, unsaved changes included, as a .zip";
+  download.title = "Download the site's files as they are in the editor, unsaved changes included, as a .zip";
   options.menuHost.replaceChildren(liveSite, download);
 
   let siteUrl: string | undefined;
@@ -100,7 +97,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
     if (downloading) return;
     downloading = true;
     download.disabled = true;
-    options.announce("Exporting the site…");
+    options.announce("Preparing the download…");
     try {
       const site = await options.siteFiles();
       if (!site) throw new Error("Open a native site to download it.");
@@ -109,7 +106,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
       saveBytes(zip, name);
       options.announce(`Downloaded ${name}, ${count} files.`);
     } catch (error) {
-      options.announce(`The site could not be exported: ${error instanceof Error ? error.message : String(error)}`);
+      options.announce(`The site could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       downloading = false;
       download.disabled = false;

@@ -30,9 +30,9 @@ npm run dev
 
 Open http://127.0.0.1:8787. The app runs without credentials but needs GitHub App registration for a live connection. See [setup and deployment](docs/setup.md) for the guided setup, Cloudflare deployment, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
 
-## Static export
+## Hosting
 
-A native site is published by the editor's exporter at `https://editor.techies.tools/native-export.mjs`, which turns it into plain HTML and CSS with no JavaScript: one page per route, a `404.html` from the `/404/` route, components as declarative shadow DOM, one hashed site stylesheet, `sitemap.xml`, `robots.txt`, and `_headers` with cache and security headers. Its conventions (`.astro-editor/site.json`, the not-found page, `src/public/`, JSON-LD, indexing and HSTS) are in [static export](docs/static-export.md).
+The repository is the site: pages are `.html` files at their URLs, and any static host serves the repository as it is, with no build step. Host settings and redirects are in [hosting](docs/hosting.md).
 
 ## Starting context
 

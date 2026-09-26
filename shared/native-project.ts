@@ -29,8 +29,8 @@ import {
 
 export const NATIVE_MANIFEST_PATH = ".astro-editor/native.json";
 export const NATIVE_HOME_PAGE = "src/pages/index.html";
-/** Site settings for the exporter, in the order they are looked for: the first that exists is used. */
-export const NATIVE_SITE_PATHS = [".astro-editor/site.json", "src/site.json"] as const;
+/** Editor-only site settings: `{ "site": { "name": "…", "url": "https://…" } }`. */
+export const NATIVE_CONFIG_PATH = ".editor/config.json";
 /** The shared stylesheet that, when present and the manifest names none, is the only one. */
 export const NATIVE_SITE_STYLESHEET = "src/styles/site.css";
 

@@ -5,10 +5,12 @@ import { unzipStored } from "../../src/zip.ts";
 
 // Change status after Save to GitHub (Saved → Building → Live or Failed, read
 // through the Worker from the fake GitHub's workflow runs, which the tests set
-// through /__demo/actions), View live site from src/site.json, and Download
-// site (the static export of the site as edited, as a .zip).
+// through /__demo/actions), View live site from .editor/config.json, and
+// Download site (the repository's files as edited, as a .zip).
 
 const indexPath = "src/pages/index.html";
+const aboutPath = "src/pages/about.html";
+const stylesPath = "src/styles/site.css";
 const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
@@ -55,9 +57,9 @@ async function openProjectMenu(page: Page) {
 }
 
 test("a save shows Saved, then Building while its workflow runs, then Live with View live site", async ({ page, baseURL }) => {
-  // The site's address comes from src/site.json, committed on GitHub.
+  // The site's address comes from .editor/config.json, committed on GitHub.
   await page.request.post(`${baseURL}/__demo/external-edit`, {
-    data: { path: "src/site.json", content: JSON.stringify({ name: "Demo", url: "https://larkspur.example" }, null, 2) + "\n" },
+    data: { path: ".editor/config.json", content: JSON.stringify({ site: { name: "Demo", url: "https://larkspur.example" } }, null, 2) + "\n" },
   });
   await page.reload();
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
@@ -132,11 +134,12 @@ test("a repository with no workflows just shows Saved, and no View live site wit
   await expect(page.locator("#repository-actions").getByRole("link", { name: /View live site/ })).toHaveCount(0);
 });
 
-test("Download site exports the site as edited, unsaved drafts included, as a .zip", async ({ page }) => {
+test("Download site zips the repository's files as edited, unsaved drafts included", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#content .view-lines")).toContainText("A native browser preview", { timeout: 20_000 });
-  await page.evaluate(async (text) => navigator.clipboard.writeText(text), indexSource.replace("A native browser preview", "Unsaved download heading"));
+  const edited = indexSource.replace("A native browser preview", "Unsaved download heading");
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), edited);
   await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
@@ -151,14 +154,10 @@ test("Download site exports the site as edited, unsaved drafts included, as a .z
   const files = unzipStored(new Uint8Array(readFileSync(path)));
   const names = Object.keys(files);
   const decoder = new TextDecoder();
-  const home = decoder.decode(files["index.html"]);
-  expect(home).toContain("Unsaved download heading");
-  expect(home).toContain("shadowrootmode=\"open\"");
-  expect(home).not.toContain("data-key");
-  expect(names).toContain("about/index.html");
-  expect(names).toContain("_headers");
-  expect(names.some((name) => /^assets\/site\.[0-9a-f]+\.css$/.test(name))).toBe(true);
-  expect(names.some((name) => /^assets\/images\/studio-desk\.[0-9a-f]+\.svg$/.test(name))).toBe(true);
+  // The draft as it is, and every other file as the branch has it.
+  expect(decoder.decode(files[indexPath])).toBe(edited);
+  expect(decoder.decode(files[stylesPath])).toBe(readFileSync(resolve("fixtures/native-starter", stylesPath), "utf8"));
+  expect(names).toContain(aboutPath);
   await expect(page.locator("#status")).toHaveText(`Downloaded native-demo-site.zip, ${names.length} files.`);
   // Nothing was saved: the draft is still there.
   await expect(page.getByRole("button", { name: "Save to GitHub", exact: true })).toBeEnabled();

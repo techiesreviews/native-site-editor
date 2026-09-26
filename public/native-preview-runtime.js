@@ -1162,8 +1162,9 @@
     return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
   }
 
-  // Conditional parts of a template (shared/native-conditionals.ts has the
-  // exporter's copy of these rules). A slot has content when the page
+  // Conditional parts of a template (the site's own loader,
+  // `components/components.js`, applies the same rules on the live site). A
+  // slot has content when the page
   // assigned it something real (an element or non-blank text) or, for the
   // automatic rule, when the template gave it a fallback. An element is
   // hidden when its `data-if="name other"` slots are not all assigned, or
