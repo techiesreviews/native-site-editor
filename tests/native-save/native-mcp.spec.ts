@@ -53,7 +53,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
     new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }),
   );
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".agent-menu__hint")).toContainText("playwright-agent connected");
+  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /playwright-agent connected/);
   await page.keyboard.press("Escape");
   return client;
 }
@@ -243,7 +243,7 @@ test("an MCP client connected by OAuth reaches the open editor tab", async ({ pa
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).editor?.openFile, { timeout: 15_000 }).toBe(indexPath);
     await page.locator(".repository-menu__trigger").click();
-    await expect(page.locator(".agent-menu__hint")).toContainText("Playwright OAuth connected");
+    await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /Playwright OAuth connected/);
     const opened = result(await client.callTool({ name: "open_page", arguments: { page: "/about/" } }));
     expect(opened.state).toBe("applied");
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");

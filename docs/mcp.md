@@ -36,13 +36,13 @@ A connection lasts as long as the editor session it was made in (up to eight hou
 
 1. Open the site in the editor and open the **project selector** (the repository name at the top left).
 2. Choose **Connect with MCP**. The editor makes a token for the open repository and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex).
-3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**, with the agent's name (from MCP `initialize`) below.
+3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**; its tooltip names the agent (from MCP `initialize`).
 
 The token is a password for this repository's drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.
 
 ### In the editor
 
-While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes; the line under the button names the agents and says so. **Disconnect MCP** revokes every connection to the open repository, OAuth ones included. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
+While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes. **Disconnect MCP** revokes every connection to the open repository, OAuth ones included. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
 
 ## Tools
 

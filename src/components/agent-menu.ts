@@ -110,22 +110,17 @@ export function createAgentMenu(options: {
     action.disabled = changing || current === "closed";
     action.textContent =
       current === "connected" ? "Disconnect MCP" : current === "waiting" ? "Waiting for connection…" : "Connect with MCP";
+    const names = [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
     action.title =
       current === "connected"
-        ? "Revoke the agents' access to this repository"
+        ? `${names} connected. Choose to revoke its access to this repository.`
         : current === "waiting"
           ? "Copy the prompt again"
           : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = current !== "waiting";
     let text = "";
     if (current === "waiting") text = "Prompt copied. Paste it into Claude, Codex or another agent.";
-    else if (current === "connected") {
-      const names = [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
-      text =
-        hub.tabId && hub.tabId !== tabId
-          ? `${names} connected. Another editor tab is sharing its site.`
-          : `${names} connected. Its changes appear here as drafts.`;
-    } else if (current === "idle" && hub.grants.length && !repoGrants().length)
+    else if (current === "idle" && hub.grants.length && !repoGrants().length)
       text = "Your agent is connected to another repository.";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
