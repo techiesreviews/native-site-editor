@@ -90,7 +90,7 @@ test("Workers runtime completes GitHub sign-in and lists selected repositories",
       { headers: { Cookie: sessionCookie } },
     );
     assert.equal(repositories.status, 200);
-    assert.deepEqual(await repositories.json(), [repo]);
+    assert.deepEqual(await repositories.json(), [{ ...repo, installation_id: 1 }]);
   } finally {
     await worker.dispose();
   }

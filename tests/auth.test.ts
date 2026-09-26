@@ -161,6 +161,66 @@ test("logout rejects cross-origin requests and invalidates the server session", 
   }
 });
 
+test("several GitHub accounts stay signed in, switch, and sign out one at a time", async () => {
+  const { env, records } = environment();
+  const cookies = new Map<string, string>();
+  const jar = () => [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
+  const keep = (response: Response) => {
+    for (const header of response.headers.getSetCookie()) {
+      const [pair, ...attributes] = header.split(";");
+      const [name, value] = pair.split("=");
+      if (attributes.some((part) => part.trim() === "Max-Age=0")) cookies.delete(name);
+      else cookies.set(name, value);
+    }
+  };
+  async function signIn(login: string, add = false) {
+    const start = await handle(request(add ? "/auth/login?add=1" : "/auth/login", jar()), env);
+    const target = new URL(start.headers.get("location")!);
+    assert.equal(target.searchParams.get("prompt"), add ? "select_account" : null);
+    keep(start);
+    const state = target.searchParams.get("state")!;
+    const callback = await handle(request(`/auth/callback?code=code&state=${state}`, jar()), env, async (input) =>
+      String(input).includes("/access_token")
+        ? Response.json({ access_token: `token-${login}`, expires_in: 28800 })
+        : Response.json({ login, avatar_url: `https://avatars.githubusercontent.com/${login}` }),
+    );
+    assert.equal(callback.headers.get("location"), "/");
+    keep(callback);
+  }
+  const accounts = async () => {
+    const info = await (await handle(request("/api/session", jar()), env, async () => Response.json({ installations: [] }))).json();
+    return info.accounts.map((account: { login: string; current: boolean }) => `${account.login}${account.current ? "*" : ""}`);
+  };
+  await signIn("lex");
+  await signIn("work", true);
+  assert.deepEqual(await accounts(), ["work*", "lex"]);
+  // Signing in to an account already here replaces its session.
+  await signIn("lex", true);
+  assert.deepEqual(await accounts(), ["lex*", "work"]);
+  assert.equal([...records.values()].filter((value) => value.kind === "user").length, 2);
+  const post = (path: string, body?: unknown, from = origin) =>
+    new Request(origin + path, {
+      method: "POST",
+      headers: { Origin: from, Cookie: jar(), "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  assert.equal((await handle(post("/api/accounts/switch", { login: "work" }, "https://other.example"), env)).status, 403);
+  assert.equal((await handle(post("/api/accounts/switch", { login: "stranger" }), env)).status, 404);
+  const switched = await handle(post("/api/accounts/switch", { login: "work" }), env);
+  assert.equal(switched.status, 204);
+  keep(switched);
+  assert.deepEqual(await accounts(), ["work*", "lex"]);
+  const first = await handle(post("/auth/logout"), env);
+  assert.deepEqual(await first.json(), { login: "lex" });
+  keep(first);
+  assert.deepEqual(await accounts(), ["lex*"]);
+  const last = await handle(post("/auth/logout"), env);
+  assert.equal(last.status, 204);
+  keep(last);
+  assert.equal([...records.values()].filter((value) => value.kind === "user").length, 0);
+  assert.equal(cookies.size, 0);
+});
+
 test("all repository data endpoints recheck the selected repository boundary", async () => {
   const { env, records } = environment();
   const id = "c".repeat(64);

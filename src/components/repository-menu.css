@@ -6,11 +6,11 @@
   anchor-name: --repository-menu;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   max-width: min(38vw, 360px);
-  padding: 8px 10px;
+  padding: 7px 10px 7px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   font-size: 15px;
   font-weight: 600;
@@ -38,35 +38,330 @@
   color: var(--muted);
 }
 
+.repository-menu__caret {
+  color: var(--muted);
+}
+
 .repository-menu__trigger:hover,
 .repository-menu__trigger[aria-expanded="true"] {
   background: var(--background);
 }
 
+/* A letter tile per repository, with a hue from its name. */
+.repository-menu__initial {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: oklch(from var(--primary) 0.58 0.12 var(--initial-hue, h));
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.repository-menu__badge {
+  display: contents;
+}
+
+.repository-menu__trigger .repository-menu__initial {
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+
 .repository-menu__popover {
-  width: min(320px, calc(100vw - 32px));
+  --menu-hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --menu-line: color-mix(in oklch, var(--text) 13%, transparent);
+  width: min(340px, calc(100vw - 32px));
+  padding: 6px;
 }
 
-.repository-menu__project {
-  padding: 10px 10px 14px;
+.repository-menu__popover [hidden] {
+  display: none;
 }
 
-.repository-menu__project .branch-row {
-  margin-top: 12px;
+.repository-menu__section {
+  padding: 6px 0;
+}
+
+.repository-menu__section + .repository-menu__section,
+.repository-menu__agent + .repository-menu__section {
+  border-top: 1px solid var(--menu-line);
+}
+
+.repository-menu__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.repository-menu__search {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 2px 6px 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--menu-line);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.repository-menu__search[hidden],
+.repository-menu__empty[hidden] {
+  display: none;
+}
+
+.repository-menu__repos {
+  max-height: min(320px, 45dvh);
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-menu__item {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.repository-menu__item:hover,
+.repository-menu__item:focus-within,
+.repository-menu__item:has([aria-current="true"]) {
+  background: var(--menu-hover);
+}
+
+.repository-menu__repo {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repository-menu__repo-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.repository-menu__repo-name,
+.repository-menu__repo-owner,
+.repository-menu__account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-menu__repo-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.repository-menu__repo-owner {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.repository-menu__repo[aria-current="true"] .repository-menu__repo-name {
+  color: var(--text);
+}
+
+.repository-menu__check {
+  flex: none;
+  margin-left: auto;
+  padding-right: 4px;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.repository-menu__remove {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.repository-menu__item:hover .repository-menu__remove,
+.repository-menu__remove:focus-visible,
+.repository-menu__remove[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.repository-menu__remove:hover {
+  background: var(--menu-hover);
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .repository-menu__remove {
+    opacity: 1;
+  }
+}
+
+.repository-menu__confirm {
+  flex-basis: 100%;
+  margin: 0 8px 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.repository-menu__confirm p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.repository-menu__confirm .button {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.repository-menu__empty {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.repository-menu__branch .branch-row {
+  margin: 4px 10px 8px;
 }
 
 .repository-menu__action {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 11px 10px;
-  border-radius: 4px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
   text-align: left;
   text-decoration: none;
 }
 
 .repository-menu__action:hover,
-.repository-menu__action:focus-visible {
-  background: var(--background);
+.repository-menu__action:focus-visible,
+.repository-menu__agent .agent-menu > .text-button:hover {
+  background: var(--menu-hover);
+}
+
+.repository-menu__agent,
+.repository-menu__agent .agent-menu {
+  display: block;
+  justify-self: stretch;
+}
+
+.repository-menu__agent .agent-menu > .text-button {
+  padding: 9px 10px;
+  color: inherit;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.repository-menu__heading-button {
+  width: 24px;
+  height: 24px;
+  margin: -4px -4px -4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.repository-menu__heading-button:hover {
+  background: var(--menu-hover);
+  color: var(--text);
+}
+
+.repository-menu__add,
+.repository-menu__quiet {
+  color: var(--muted);
+}
+
+.repository-menu__add:hover,
+.repository-menu__quiet:hover {
+  color: var(--text);
+}
+
+.repository-menu__account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.repository-menu__account[aria-current="true"] {
+  font-weight: 600;
+}
+
+.repository-menu__account .repository-menu__initial {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 11px;
+}
+
+.repository-menu__avatar {
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.repository-menu__hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.repository-menu__account:hover .repository-menu__hint,
+.repository-menu__account:focus-visible .repository-menu__hint {
+  opacity: 1;
 }
 
 @media (max-width: 650px) {

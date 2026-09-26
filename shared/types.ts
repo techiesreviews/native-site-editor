@@ -5,6 +5,8 @@ export interface Repository {
   private: boolean;
   default_branch: string;
   owner: { login: string; type: string };
+  /** The GitHub App installation that grants access, whose settings page adds and removes repositories. */
+  installation_id?: number;
 }
 
 export interface TreeEntry {
@@ -38,6 +40,8 @@ export interface FilesResult {
 export interface SessionInfo {
   configured: boolean;
   user: { login: string; avatar_url: string } | null;
+  /** Every GitHub account signed in on this browser, the current one included. */
+  accounts?: { login: string; avatar_url: string; current: boolean }[];
   installUrl: string | null;
   ownerSetupUrl?: string | null;
   /**

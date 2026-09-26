@@ -163,8 +163,13 @@ function mountWorkspace() {
   });
   repositoryMenu = createRepositoryMenu({
     installUrl: info.installUrl,
+    accounts:
+      info.accounts ??
+      (info.user ? [{ ...info.user, current: true }] : []),
     onReload: () => void loadRepositories(),
-    onDisconnect: disconnect,
+    onAccessChanged: () => void refreshRepositoryList(),
+    onSwitchAccount: (login) => void switchAccount(login),
+    onSignOut: disconnect,
   });
   element("repository-menu").append(repositoryMenu.root);
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
@@ -4769,6 +4774,7 @@ async function loadRepositories(prefetched?: Repository[]) {
   branchSelect.disabled = true;
   refreshButton.disabled = true;
   options(repositorySelect, [{ value: "", label: "Loading repositories…" }]);
+  repositoryMenu?.setRepositories([], "Loading repositories…");
   options(branchSelect, [{ value: "", label: "—" }]);
   files.replaceChildren();
   content.replaceChildren(
@@ -4780,6 +4786,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     const result = prefetched ?? (await api<Repository[]>("repositories"));
     if (epoch !== generation) return;
     repositories = result;
+    repositoryMenu?.setRepositories(repositories);
     if (!repositories.length) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
@@ -4809,13 +4816,7 @@ async function loadRepositories(prefetched?: Repository[]) {
       status("Connected. Choose repositories to continue.");
       return;
     }
-    options(repositorySelect, [
-      { value: "", label: "Select a repository…" },
-      ...repositories.map((repo) => ({
-        value: String(repo.id),
-        label: `${repo.name}${repo.private ? " · private" : ""}`,
-      })),
-    ]);
+    repositoryOptions();
     repositorySelect.disabled = false;
     const linked = readWorkspaceUrl();
     if (location.hash && !linked) {
@@ -4862,6 +4863,10 @@ async function loadRepositories(prefetched?: Repository[]) {
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
       ]);
+      repositoryMenu?.setRepositories(
+        [],
+        "Repositories could not be loaded. Use Reload to try again.",
+      );
       content.replaceChildren(
         node(
           "p",
@@ -4871,6 +4876,72 @@ async function loadRepositories(prefetched?: Repository[]) {
       );
       errorMessage(error);
     }
+  }
+}
+
+function repositoryOptions() {
+  options(repositorySelect, [
+    { value: "", label: "Select a repository…" },
+    ...repositories.map((repo) => ({
+      value: String(repo.id),
+      label: `${repo.name}${repo.private ? " · private" : ""}`,
+    })),
+  ]);
+}
+
+// After a visit to GitHub's repository access page: list the repositories
+// again, keeping the open one open unless it is no longer available.
+async function refreshRepositoryList() {
+  let next: Repository[];
+  try {
+    next = await api<Repository[]>("repositories");
+  } catch (error) {
+    errorMessage(error);
+    return;
+  }
+  if (
+    next.length === repositories.length &&
+    next.every((repo, index) => repo.id === repositories[index].id)
+  )
+    return;
+  if (!currentRepo || !next.some((repo) => repo.id === currentRepo!.id)) {
+    if (currentRepo) history.replaceState(null, "", location.pathname);
+    await loadRepositories(next);
+    return;
+  }
+  const added = next.filter(
+    (repo) => !repositories.some((known) => known.id === repo.id),
+  ).length;
+  const removed = repositories.length + added - next.length;
+  repositories = next;
+  repositoryOptions();
+  repositorySelect.value = String(currentRepo.id);
+  repositoryMenu?.setRepositories(repositories);
+  announce(
+    [
+      added ? `${added} ${added === 1 ? "repository" : "repositories"} added` : "",
+      removed ? `${removed} removed` : "",
+    ]
+      .filter(Boolean)
+      .join(", ") + ".",
+  );
+}
+
+async function switchAccount(login: string) {
+  try {
+    const response = await fetch("/api/accounts/switch", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Could not switch accounts. Try again.");
+    }
+    location.assign("/");
+  } catch (error) {
+    errorMessage(error);
   }
 }
 

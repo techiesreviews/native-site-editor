@@ -1,59 +1,108 @@
 import "./repository-menu.css";
 import { mountDropdown } from "./dropdown";
 import { button, link, node } from "../ui/dom";
-import type { Repository } from "../../shared/types";
+import type { Repository, SessionInfo } from "../../shared/types";
 
+type Account = NonNullable<SessionInfo["accounts"]>[number];
+
+// GitHub decides which repositories the editor's GitHub App can reach, and
+// its API only lets classic tokens change that, so adding and removing a
+// repository happens on the installation's GitHub page. The menu opens that
+// page and checks the list again when the editor tab gets focus back.
 export function createRepositoryMenu(options: {
   installUrl: string | null;
+  accounts: Account[];
   onReload: () => void;
-  onDisconnect: () => void;
+  /** GitHub may have changed which repositories the editor can reach. */
+  onAccessChanged: () => void;
+  onSwitchAccount: (login: string) => void;
+  onSignOut: () => void;
 }) {
-  // Project selection lives here, next to the GitHub connection actions.
-  const project = node("div", "repository-menu__project");
-  project.innerHTML = `
-    <label class="field-label" for="repository">Repository</label>
-    <select id="repository" disabled><option>Loading repositories…</option></select>
-    <div class="branch-row"><div><label class="field-label" for="branch">Branch</label><select id="branch" disabled><option>—</option></select></div><button id="refresh" class="icon-button" title="Refresh from GitHub" aria-label="Refresh from GitHub" disabled>↻</button></div>
-  `;
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
   trigger.type = "button";
+  const badge = node("span", "repository-menu__badge");
+  badge.setAttribute("aria-hidden", "true");
   const name = node("span", "repository-menu__name");
-  const caret = node("span", "", "⌄");
+  const caret = node("span", "repository-menu__caret", "⌄");
   caret.setAttribute("aria-hidden", "true");
   const identity = node("span", "repository-menu__identity");
   const repository = node("span", "repository-menu__repository");
   identity.append(repository, name);
-  trigger.append(identity, caret);
+  trigger.append(badge, identity, caret);
   trigger.setAttribute("aria-controls", "repository-actions");
   trigger.setAttribute("aria-expanded", "false");
   const panel = node("div", "repository-menu__popover");
   panel.id = "repository-actions";
   panel.popover = "auto";
   panel.setAttribute("aria-label", "Repository actions");
-  panel.append(project);
+
+  // The repository list. The hidden select keeps the value the workspace
+  // reads; choosing a row sets it and sends `change`.
+  const sites = node("section", "repository-menu__section");
+  const heading = node("div", "repository-menu__heading");
+  const title = node("span", "", "Repositories");
+  title.id = "repository-menu-title";
+  const reload = button("↻", options.onReload, "repository-menu__heading-button");
+  reload.title = "Reload repositories";
+  reload.setAttribute("aria-label", "Reload repositories");
+  heading.append(title, reload);
+  const search = node("input", "repository-menu__search");
+  search.type = "search";
+  search.placeholder = "Find a repository…";
+  search.setAttribute("aria-label", "Find a repository");
+  search.hidden = true;
+  const list = node("ul", "repository-menu__repos");
+  list.setAttribute("aria-labelledby", title.id);
+  const empty = node("p", "repository-menu__empty", "Loading repositories…");
+  const select = node("select", "");
+  select.id = "repository";
+  select.hidden = true;
+  select.disabled = true;
+  const add = accessLink("Add repositories", "repository-menu__add");
+  sites.append(heading, search, list, empty, select);
+  if (add) sites.append(add);
+
+  const project = node("div", "repository-menu__section repository-menu__branch");
+  project.innerHTML = `
+    <div class="branch-row"><div><label class="field-label" for="branch">Branch</label><select id="branch" disabled><option>—</option></select></div><button id="refresh" class="icon-button" title="Refresh from GitHub" aria-label="Refresh from GitHub" disabled>↻</button></div>
+  `;
+
   const actionClass = "text-button repository-menu__action";
-  if (options.installUrl) {
-    const access = link(
-      "Repository access ↗",
-      options.installUrl,
-      actionClass,
-    );
-    access.target = "_blank";
-    access.rel = "noopener noreferrer";
-    panel.append(access);
-  }
   // "View live site" and "Download site" (components/site-actions.ts).
   const siteSlot = node("div", "repository-menu__site");
   siteSlot.id = "site-actions";
-  panel.append(
-    siteSlot,
-    button("Reload", options.onReload, actionClass),
-    button("Disconnect", options.onDisconnect, actionClass),
-  );
+  const actions = node("div", "repository-menu__section repository-menu__actions");
+  actions.append(siteSlot);
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
-  panel.append(agentSlot);
+
+  const accounts = node("section", "repository-menu__section repository-menu__accounts");
+  const accountsTitle = node("div", "repository-menu__heading");
+  accountsTitle.append(node("span", "", "GitHub accounts"));
+  accounts.append(accountsTitle);
+  const current = options.accounts.find((account) => account.current);
+  for (const account of options.accounts) {
+    const row = account.current
+      ? node("div", "repository-menu__account")
+      : button("", () => options.onSwitchAccount(account.login), "repository-menu__account repository-menu__action");
+    row.append(avatar(account.login, account.avatar_url), node("span", "repository-menu__account-name", account.login));
+    if (account.current) {
+      row.setAttribute("aria-current", "true");
+      row.append(node("span", "repository-menu__check", "✓"));
+    } else {
+      row.title = `Switch to ${account.login}`;
+      row.append(node("span", "repository-menu__hint", "Switch"));
+    }
+    accounts.append(row);
+  }
+  const addAccount = link("+ Add another account", "/auth/login?add=1", `${actionClass} repository-menu__quiet`);
+  accounts.append(
+    addAccount,
+    button(current ? `Sign out of ${current.login}` : "Sign out", options.onSignOut, `${actionClass} repository-menu__quiet`),
+  );
+
+  panel.append(sites, project, actions, agentSlot, accounts);
   root.append(trigger, panel);
   const dropdown = mountDropdown({
     trigger,
@@ -66,20 +115,168 @@ export function createRepositoryMenu(options: {
       trigger.focus();
     }
   });
+
+  let repositories: Repository[] = [];
+  let currentId: number | undefined;
+  let confirming: number | undefined;
+  let awaitingAccess = false;
+  const controller = new AbortController();
+  window.addEventListener(
+    "focus",
+    () => {
+      if (!awaitingAccess) return;
+      awaitingAccess = false;
+      options.onAccessChanged();
+    },
+    { signal: controller.signal },
+  );
+  search.addEventListener("input", () => render());
+  search.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const first = list.querySelector<HTMLButtonElement>(".repository-menu__repo");
+    if (first) {
+      event.preventDefault();
+      first.click();
+    }
+  });
+
+  function accessUrl(repo?: Repository) {
+    const installation = repo?.installation_id ?? repositories.find((item) => item.installation_id)?.installation_id;
+    return installation ? `https://github.com/settings/installations/${installation}` : options.installUrl;
+  }
+  function accessLink(text: string, className: string) {
+    if (!options.installUrl) return undefined;
+    const result = link(`+ ${text} ↗`, options.installUrl, `text-button repository-menu__action ${className}`);
+    result.target = "_blank";
+    result.rel = "noopener noreferrer";
+    result.title = "Choose the repositories this editor can use, on GitHub";
+    result.addEventListener("click", () => {
+      result.href = accessUrl() ?? result.href;
+      awaitingAccess = true;
+    });
+    return result;
+  }
+  function choose(repo: Repository) {
+    if (String(repo.id) === select.value) {
+      dropdown.close();
+      trigger.focus();
+      return;
+    }
+    select.value = String(repo.id);
+    select.dispatchEvent(new Event("change"));
+  }
+  function render() {
+    const query = search.value.trim().toLowerCase();
+    const shown = repositories.filter((repo) => !query || repo.full_name.toLowerCase().includes(query));
+    list.replaceChildren(...shown.map(row));
+    if (repositories.length && !shown.length) {
+      empty.textContent = "No repository matches.";
+      empty.hidden = false;
+    } else if (repositories.length) empty.hidden = true;
+  }
+  function row(repo: Repository) {
+    const item = node("li", "repository-menu__item");
+    const selected = repo.id === currentId;
+    const open = node("button", "repository-menu__repo");
+    open.type = "button";
+    if (selected) open.setAttribute("aria-current", "true");
+    const text = node("span", "repository-menu__repo-text");
+    text.append(
+      node("span", "repository-menu__repo-name", repo.name),
+      node("span", "repository-menu__repo-owner", `${repo.owner.login}${repo.private ? " · private" : ""}`),
+    );
+    open.append(initial(repo.name), text);
+    if (selected) open.append(node("span", "repository-menu__check", "✓"));
+    open.addEventListener("click", () => choose(repo));
+    const remove = node("button", "repository-menu__remove", "×");
+    remove.type = "button";
+    remove.title = `Remove ${repo.name} from the editor`;
+    remove.setAttribute("aria-label", `Remove ${repo.name}`);
+    remove.setAttribute("aria-expanded", String(confirming === repo.id));
+    remove.addEventListener("click", () => {
+      confirming = confirming === repo.id ? undefined : repo.id;
+      render();
+      list.querySelector<HTMLElement>(".repository-menu__confirm a")?.focus();
+    });
+    item.append(open, remove);
+    if (confirming === repo.id) {
+      const confirm = node("div", "repository-menu__confirm");
+      confirm.append(
+        node("p", "", `GitHub controls which repositories this editor can use. On the page that opens, uncheck ${repo.name} and save. Nothing in the repository changes.`),
+      );
+      const go = link("Remove on GitHub ↗", accessUrl(repo) ?? "#", "button primary");
+      go.target = "_blank";
+      go.rel = "noopener noreferrer";
+      go.addEventListener("click", () => {
+        awaitingAccess = true;
+        confirming = undefined;
+        render();
+      });
+      confirm.append(
+        go,
+        button("Cancel", () => {
+          confirming = undefined;
+          render();
+          list.querySelector<HTMLElement>(`[aria-label="Remove ${CSS.escape(repo.name)}"]`)?.focus();
+        }, "text-button"),
+      );
+      item.append(confirm);
+    }
+    return item;
+  }
+
   function setRepository(repo?: Repository) {
-    repository.textContent = repo?.full_name ?? "GitHub connected";
+    currentId = repo?.id;
+    project.hidden = actions.hidden = !repo;
+    repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
+    badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "·"));
     trigger.title = repo?.full_name ?? "Repository actions";
     trigger.setAttribute(
       "aria-label",
       `${name.textContent} — repository actions`,
     );
+    render();
+  }
+  /** The repositories to list, or none with a message while loading or after a failure. */
+  function setRepositories(next: Repository[], message?: string) {
+    repositories = next;
+    if (confirming !== undefined && !next.some((repo) => repo.id === confirming)) confirming = undefined;
+    search.hidden = next.length < 6;
+    empty.hidden = Boolean(next.length);
+    if (!next.length) empty.textContent = message ?? "This editor can't use any of your repositories yet. Add one on GitHub.";
+    render();
   }
   setRepository();
   return {
     root,
     setRepository,
+    setRepositories,
     close: dropdown.close,
-    destroy: dropdown.destroy,
+    destroy() {
+      controller.abort();
+      dropdown.destroy();
+    },
   };
+}
+
+function initial(text: string) {
+  const result = node("span", "repository-menu__initial", (text.match(/[a-z0-9]/i)?.[0] ?? "·").toUpperCase());
+  // A stable hue per name tells repositories apart at a glance.
+  let hash = 0;
+  for (const character of text) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  result.style.setProperty("--initial-hue", String(hash % 360));
+  result.setAttribute("aria-hidden", "true");
+  return result;
+}
+
+function avatar(login: string, url: string) {
+  const image = node("img", "repository-menu__avatar");
+  image.alt = "";
+  image.width = 24;
+  image.height = 24;
+  image.referrerPolicy = "no-referrer";
+  image.src = `${url}${url.includes("?") ? "&" : "?"}s=48`;
+  image.addEventListener("error", () => image.replaceWith(initial(login)), { once: true });
+  return image;
 }

@@ -92,8 +92,27 @@ function cookie(request: Request, kind: string): string | null {
     ?.slice(name.length + 1);
   return value && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
+// The other GitHub accounts signed in on this browser: their session ids,
+// most recent first, so the editor can switch between them without signing
+// in again. Each session still expires on its own.
+const maxAccounts = 5;
+const accountsLifetime = 28800;
+function accountIds(request: Request): string[] {
+  const name = cookieName(new URL(request.url), "accounts");
+  const value = (request.headers.get("Cookie") ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+  const ids = (value ?? "").split(".").filter((id) => /^[a-f0-9]{64}$/.test(id));
+  const current = cookie(request, "session");
+  return [...new Set([...(current ? [current] : []), ...ids])].slice(0, maxAccounts);
+}
 function setCookie(url: URL, kind: string, value: string, maxAge: number) {
   return `${cookieName(url, kind)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${url.protocol === "https:" ? "; Secure" : ""}`;
+}
+function sessionMaxAge(user: Session) {
+  return Math.max(1, Math.floor((user.expiresAt - Date.now()) / 1000));
 }
 function redirect(location: string, cookies: string[] = []) {
   const headers = new Headers({ Location: location });
@@ -133,7 +152,9 @@ async function sessionWithId(request: Request, env: Env) {
 }
 async function session(request: Request, env: Env): Promise<Session | null> {
   const id = cookie(request, "session");
-  if (!id) return null;
+  return id ? loadSession(env, id) : null;
+}
+async function loadSession(env: Env, id: string): Promise<Session | null> {
   const response = await store(env, id);
   if (!response.ok) return null;
   const value = (await response.json()) as StoredSession;
@@ -205,12 +226,46 @@ async function route(
       throw new HttpError(405, "Use POST to disconnect.");
     if (request.headers.get("Origin") !== url.origin)
       throw new HttpError(403, "Invalid request origin.");
+    // Signing out of one account moves to the next one still signed in.
     const id = cookie(request, "session");
     if (id) await store(env, id, "DELETE");
-    return new Response(null, {
-      status: 204,
-      headers: { "Set-Cookie": setCookie(url, "session", "", 0) },
-    });
+    const rest: { id: string; user: Session }[] = [];
+    for (const other of accountIds(request).filter((other) => other !== id)) {
+      const user = await loadSession(env, other);
+      if (user) rest.push({ id: other, user });
+    }
+    const headers = new Headers();
+    const next = rest[0];
+    headers.append(
+      "Set-Cookie",
+      next
+        ? setCookie(url, "session", next.id, sessionMaxAge(next.user))
+        : setCookie(url, "session", "", 0),
+    );
+    headers.append(
+      "Set-Cookie",
+      setCookie(url, "accounts", rest.map((entry) => entry.id).join("."), rest.length ? accountsLifetime : 0),
+    );
+    return next
+      ? Response.json({ login: next.user.login }, { headers })
+      : new Response(null, { status: 204, headers });
+  }
+  if (path === "/api/accounts/switch") {
+    if (request.method !== "POST")
+      throw new HttpError(405, "Use POST to switch accounts.");
+    if (request.headers.get("Origin") !== url.origin)
+      throw new HttpError(403, "Invalid request origin.");
+    const data = await requestJson(request, 1024);
+    const login = typeof data?.login === "string" ? data.login.toLowerCase() : "";
+    for (const id of accountIds(request)) {
+      const user = await loadSession(env, id);
+      if (user && user.login.toLowerCase() === login)
+        return new Response(null, {
+          status: 204,
+          headers: { "Set-Cookie": setCookie(url, "session", id, sessionMaxAge(user)) },
+        });
+    }
+    throw new HttpError(404, "That account's sign-in ended. Add it again.");
   }
   if (
     (path.startsWith("/api/") || path.startsWith("/auth/")) &&
@@ -220,6 +275,7 @@ async function route(
         path === "/api/blob" ||
         path === "/api/restore" ||
         path === "/auth/setup/unlock" ||
+        path === "/api/accounts/switch" ||
         path.startsWith("/api/agent/")) &&
       request.method === "POST"
     )
@@ -432,6 +488,11 @@ async function route(
     target.searchParams.set("client_id", app.clientId);
     target.searchParams.set("redirect_uri", `${url.origin}/auth/callback`);
     target.searchParams.set("state", id);
+    // Adding an account asks GitHub to show its account picker; signing an
+    // expired account back in names it.
+    const account = url.searchParams.get("login") ?? "";
+    if (/^[A-Za-z0-9-]{1,39}$/.test(account)) target.searchParams.set("login", account);
+    if (url.searchParams.has("add")) target.searchParams.set("prompt", "select_account");
     return redirect(target.href, [setCookie(url, "oauth", id, 600)]);
   }
   if (path === "/auth/callback") {
@@ -494,10 +555,22 @@ async function route(
       avatar_url: user.avatar_url,
       expiresAt: Date.now() + duration * 1000,
     });
-    const previous = cookie(request, "session");
-    if (previous) await store(env, previous, "DELETE");
+    // Keep the other accounts signed in on this browser; a new sign-in to
+    // an account already here replaces its old session.
+    const kept: string[] = [];
+    for (const other of accountIds(request)) {
+      const existing = await loadSession(env, other);
+      if (!existing) continue;
+      if (
+        existing.login.toLowerCase() === user.login.toLowerCase() ||
+        kept.length >= maxAccounts - 1
+      )
+        await store(env, other, "DELETE");
+      else kept.push(other);
+    }
     return redirect(state.returnTo ?? "/", [
       setCookie(url, "session", id, duration),
+      setCookie(url, "accounts", [id, ...kept].join("."), accountsLifetime),
       setCookie(url, "oauth", "", 0),
     ]);
   }
@@ -509,11 +582,22 @@ async function route(
     // A signed-in session also carries the selected repositories so the
     // workspace opens in one round trip. A listing failure is not a session
     // failure; the browser retries through /api/repositories and shows the error.
-    const repositories = user
-      ? await new GitHub(user.token, fetcher)
-          .repositories(user.login)
-          .catch(() => null)
-      : undefined;
+    const current = cookie(request, "session");
+    const [repositories, accounts] = user
+      ? await Promise.all([
+          new GitHub(user.token, fetcher)
+            .repositories(user.login)
+            .catch(() => null),
+          Promise.all(
+            accountIds(request).map(async (id) => {
+              const account = await loadSession(env, id);
+              return account
+                ? { login: account.login, avatar_url: account.avatar_url, current: id === current }
+                : null;
+            }),
+          ).then((list) => list.filter((account) => account !== null)),
+        ])
+      : [undefined, undefined];
     return json({
       configured: Boolean(app),
       user: user ? { login: user.login, avatar_url: user.avatar_url } : null,
@@ -521,7 +605,7 @@ async function route(
         ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
         : null,
       ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
-      ...(user ? { repositories } : {}),
+      ...(user ? { repositories, accounts } : {}),
     });
   }
   if (path === "/api/publish") {

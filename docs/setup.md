@@ -73,7 +73,11 @@ npm run deploy
 
 `.dev.vars` is local only; it is not uploaded by deployment. The `SESSIONS` SQLite Durable Object is provisioned through the Wrangler migration. Add the deployed HTTPS origin's `/auth/callback` to the GitHub App and update its setup/homepage URLs. Use HTTPS in production for secure host-only session cookies.
 
-The initial session lasts at most eight hours. Expired or revoked GitHub access asks the user to reconnect; refresh-token storage is deliberately deferred. Disconnect deletes the editor session, but does not uninstall the GitHub App or revoke its grant. Those controls remain in GitHub settings.
+The initial session lasts at most eight hours. Expired or revoked GitHub access asks the user to reconnect; refresh-token storage is deliberately deferred. Signing out deletes that account's editor session, but does not uninstall the GitHub App or revoke its grant. Those controls remain in GitHub settings.
+
+Several GitHub accounts can be signed in on one browser (up to five). "Add another account" in the repository menu signs in again with GitHub's account picker; the other accounts' sessions stay, each with its own eight-hour limit, and the menu switches between them. Signing out of one moves to the next still signed in.
+
+The repository menu adds and removes repositories through the GitHub App installation's settings page: GitHub only lets classic personal access tokens change an installation's repositories, so the editor cannot do it itself. The menu opens that page and lists the repositories again when the editor tab gets focus back.
 
 See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration/secrets/) and [static asset bindings](https://developers.cloudflare.com/workers/static-assets/binding/).
 

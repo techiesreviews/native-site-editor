@@ -216,6 +216,7 @@ export class GitHub {
             private: repo.private,
             default_branch: repo.default_branch,
             owner: { login: repo.owner.login, type: repo.owner.type },
+            installation_id: installation.id,
           });
         }
       }
