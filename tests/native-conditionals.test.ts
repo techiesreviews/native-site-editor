@@ -60,3 +60,21 @@ test("an optional slot (data-if on the slot) goes with its fallback unless the p
   // data-if on a slot can name other slots.
   assert.equal(pruneEmptyTemplate(`<p><slot name="note" data-if="title">Note</slot></p>`, new Set(["title"])), `<p><slot name="note" data-if="title">Note</slot></p>`);
 });
+
+test("every slot of a section component is optional once the instance fills any slot", () => {
+  const hero = `<section>
+  <slot name="title"><h1>Headline</h1></slot>
+  <slot name="lead"><p>Lead</p></slot>
+  <div class="actions">
+    <slot name="primary"><a href="#/a/">Get in touch</a></slot>
+  </div>
+</section>`;
+  assert.equal(pruneEmptyTemplate(hero, new Set(["title"])), `<section>
+  <slot name="title"><h1>Headline</h1></slot>
+</section>`);
+  // A bare instance (or the component shown by itself) keeps its fallbacks.
+  assert.equal(pruneEmptyTemplate(hero, new Set()), hero);
+  // Other components keep plain fallbacks as defaults.
+  const card = `<article><h3><slot name="title">Untitled</slot></h3><p><slot name="body">No description yet.</slot></p></article>`;
+  assert.equal(pruneEmptyTemplate(card, new Set(["title"])), card);
+});

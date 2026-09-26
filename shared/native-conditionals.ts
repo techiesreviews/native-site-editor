@@ -6,10 +6,14 @@
 // as fallback in the template), and that has no text of its own, does not
 // show either. `data-if` on a `<slot>` makes it optional: it shows, fallback
 // and all, only when the page fills the named slots (a bare `data-if` names
-// the slot itself), and its fallback no longer keeps a wrapper showing. The
-// runtime hides such elements; the exporter leaves them out.
+// the slot itself), and its fallback no longer keeps a wrapper showing. In a
+// section component every slot is optional without `data-if`, since each new
+// instance gets its own copy of every fallback: a part the page leaves out
+// was removed. An instance that fills nothing at all (a bare tag, or the
+// component shown by itself) still shows the fallbacks. The runtime hides
+// such elements; the exporter leaves them out.
 
-import { VOID_ELEMENTS, startTagAttribute, startTags, type ElementRange, type StartTag } from "./html-source";
+import { VOID_ELEMENTS, isSectionTemplate, startTagAttribute, startTags, type ElementRange, type StartTag } from "./html-source";
 
 const blankOut = (html: string) => html.replace(/<!--[\s\S]*?-->/g, (comment) => " ".repeat(comment.length));
 const hasContent = (html: string) => /<[a-zA-Z]/.test(html) || Boolean(html.replace(/<[^>]*>/g, "").trim());
@@ -64,16 +68,20 @@ export function assignedSlotNames(inner: string) {
   return names;
 }
 
-/** Whether an optional slot (`data-if`) lacks a slot it names; false for any other slot. */
-function slotConditionUnmet(html: string, slot: StartTag, assigned: Set<string>) {
-  const condition = startTagAttribute(html, slot, "data-if");
-  if (!condition) return false;
-  const names = condition.value.trim() || (startTagAttribute(html, slot, "name")?.value.trim() ?? "");
+/**
+ * Whether an optional slot (`data-if`, or any slot of a section component
+ * whose instance fills some slot) lacks a slot it names; false for any other slot.
+ */
+function slotConditionUnmet(html: string, slot: StartTag, assigned: Set<string>, optionalSlots: boolean) {
+  const condition = startTagAttribute(html, slot, "data-if")?.value ?? (optionalSlots ? "" : undefined);
+  if (condition === undefined) return false;
+  const names = condition.trim() || (startTagAttribute(html, slot, "name")?.value.trim() ?? "");
   return names.split(/\s+/).some((name) => !assigned.has(name));
 }
 
 /** The template without the elements the page's slot content leaves empty. */
 export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
+  const optionalSlots = assigned.size > 0 && isSectionTemplate(template);
   const html = blankOut(template);
   const tags = startTags(html);
   const ranges = elementRanges(html, tags);
@@ -82,7 +90,7 @@ export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
     const range = ranges[index];
     if (removed.some((cut) => tag.start >= cut.start && tag.start < cut.end)) return;
     if (tag.name === "slot") {
-      if (slotConditionUnmet(html, tag, assigned)) removed.push({ start: range.start, end: range.end });
+      if (slotConditionUnmet(html, tag, assigned, optionalSlots)) removed.push({ start: range.start, end: range.end });
       return;
     }
     const inner = range.close ? html.slice(tag.end, range.close.start) : "";
@@ -97,7 +105,7 @@ export function pruneEmptyTemplate(template: string, assigned: Set<string>) {
         const name = startTagAttribute(html, slot, "name")?.value.trim() ?? "";
         const slotRange = ranges[at];
         const fallback = slotRange.close ? html.slice(slot.end, slotRange.close.start) : "";
-        return assigned.has(name) || (hasContent(fallback) && !slotConditionUnmet(html, slot, assigned));
+        return assigned.has(name) || (hasContent(fallback) && !slotConditionUnmet(html, slot, assigned, optionalSlots));
       }) && !slots.reduceRight((text, { at }) => {
         // The element's own text, without what its slots hold.
         const slotRange = ranges[at];

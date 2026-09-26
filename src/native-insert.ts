@@ -10,29 +10,11 @@
 // instance carries its own copy of each text slot, so typing in the preview
 // changes this page alone and the shared template stays as it is.
 
-import { VOID_ELEMENTS, locateNativeElementRange, startTags, type ElementRange, type StartTag } from "./native-source-location";
+import { VOID_ELEMENTS, isSectionTemplate, locateNativeElementRange, startTags, type ElementRange, type StartTag } from "./native-source-location";
+
+export { isSectionTemplate };
 
 const COMMENTS = /<!--[\s\S]*?-->/g;
-const blank = (text: string) => !text.replace(COMMENTS, "").trim();
-
-/** Whether a component template is exactly one `<section>` element. */
-export function isSectionTemplate(html: string) {
-  const tags = startTags(html);
-  const first = tags[0];
-  if (first?.name !== "section" || !blank(html.slice(0, first.start))) return false;
-  // Opening and closing section tags in source order; the first section
-  // ends where the depth first returns to zero.
-  const events = [
-    ...tags.filter((tag) => tag.name === "section").map((tag) => ({ at: tag.start, depth: 1, end: -1 })),
-    ...[...html.matchAll(/<\/section\s*>/gi)].map((match) => ({ at: match.index, depth: -1, end: match.index + match[0].length })),
-  ].sort((a, b) => a.at - b.at);
-  let depth = 0;
-  for (const event of events) {
-    depth += event.depth;
-    if (depth === 0) return blank(html.slice(event.end));
-  }
-  return false;
-}
 
 /** "feature-block" → "Feature block". */
 export function componentLabel(tag: string) {

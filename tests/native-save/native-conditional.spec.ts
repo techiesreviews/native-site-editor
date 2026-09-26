@@ -61,3 +61,19 @@ test("data-if shows an element only when its named slot is filled", async ({ pag
   await pasteInto(page, "#content", cardSource.replace(`<card-note data-key="card-note">`, `<card-note data-if="link" data-key="card-note">`));
   for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
 });
+
+test("a section component hides the parts its instance leaves out, unless it fills none", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  const shown = (selector: string) => frame.locator("feature-block")
+    .evaluate((el, s) => getComputedStyle(el.shadowRoot!.querySelector(s)!).display, selector);
+  await pasteInto(page, "#content", indexSource.replace("</main>", `  <feature-block>\n    <span slot="title">Only a title</span>\n  </feature-block>\n</main>`));
+  await expect(frame.locator("feature-block [slot='title']")).toHaveText("Only a title");
+  await expect.poll(() => shown("h2")).not.toBe("none");
+  // No data-if: the body the instance left out is hidden, fallback and all.
+  await expect.poll(() => shown("p")).toBe("none");
+
+  // A bare instance shows the template's fallbacks.
+  await pasteInto(page, "#content", indexSource.replace("</main>", `  <feature-block></feature-block>\n</main>`));
+  await expect.poll(() => shown("p")).not.toBe("none");
+  await expect.poll(() => shown("h2")).not.toBe("none");
+});

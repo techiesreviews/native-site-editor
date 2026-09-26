@@ -232,3 +232,24 @@ export function startTagAttribute(html: string, tag: StartTag, name: string): Ta
   const valueEnd = match[3] !== undefined || match[1] === undefined && match[2] === undefined ? end : end - 1;
   return { start, end, valueStart: valueEnd - value.length, valueEnd, value };
 }
+
+const blankSource = (text: string) => !text.replace(/<!--[\s\S]*?-->/g, "").trim();
+
+/** Whether a component template is exactly one `<section>` element. */
+export function isSectionTemplate(html: string) {
+  const tags = startTags(html);
+  const first = tags[0];
+  if (first?.name !== "section" || !blankSource(html.slice(0, first.start))) return false;
+  // Opening and closing section tags in source order; the first section
+  // ends where the depth first returns to zero.
+  const events = [
+    ...tags.filter((tag) => tag.name === "section").map((tag) => ({ at: tag.start, depth: 1, end: -1 })),
+    ...[...html.matchAll(/<\/section\s*>/gi)].map((match) => ({ at: match.index, depth: -1, end: match.index + match[0].length })),
+  ].sort((a, b) => a.at - b.at);
+  let depth = 0;
+  for (const event of events) {
+    depth += event.depth;
+    if (depth === 0) return blankSource(html.slice(event.end));
+  }
+  return false;
+}

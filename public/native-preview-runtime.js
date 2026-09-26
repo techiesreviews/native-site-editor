@@ -1187,13 +1187,24 @@
   }
   // `data-if` on a slot: an optional slot, shown (fallback and all) only when
   // the page fills the named slots; a bare `data-if` names the slot itself.
+  // Every slot of a section component is optional without it, since each new
+  // instance gets its own copy of every fallback, unless the instance fills
+  // nothing at all (a bare tag, or the component shown by itself).
   function slotConditionUnmet(slot) {
     var condition = slot.getAttribute("data-if");
-    if (condition === null) return false;
     var root = slot.getRootNode();
+    if (condition === null) {
+      if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
+      condition = "";
+    }
     return (condition.trim() || slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
       var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
       return !named || !slotAssigned(named);
+    });
+  }
+  function fillsAnySlot(host) {
+    return Array.prototype.some.call(host.childNodes, function (n) {
+      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
     });
   }
   // An element's text outside its slots (a slot's fallback is the slot's).
