@@ -109,6 +109,8 @@ test("a page is its <body>: the preview renders that range, and indexes count fr
   assert.equal(page.slice(start, end), "\n  <main><h1>About</h1></main>\n");
   // A template, or a document with no <body> tag, is all page after its head.
   assert.deepEqual(nativePageBody("<section><h2>Hi</h2></section>"), { start: 0, end: 30 });
+  // </header> is not </head>, nor </htmlx> an end of the document.
+  assert.deepEqual(nativePageBody("<header><a href=\"/\">Home</a></header>"), { start: 0, end: 37 });
   const bare = "<!doctype html><head><title>x</title></head><main></main>";
   assert.equal(bare.slice(nativePageBody(bare).start), "<main></main>");
 });

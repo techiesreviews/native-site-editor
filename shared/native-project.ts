@@ -124,17 +124,23 @@ export const nativeComponentCssPath = (template: string) => template.replace(/\.
  * range, and element-child indexes count from its start.
  */
 export function nativePageBody(html: string): { start: number; end: number } {
-  const lower = html.toLowerCase();
   const body = startTags(html).find((tag) => tag.name === "body");
+  const htmlClose = lastEndTag(html, "html");
   if (body) {
-    const close = lower.lastIndexOf("</body");
-    const htmlClose = lower.lastIndexOf("</html");
+    const close = lastEndTag(html, "body");
     return { start: body.end, end: close >= body.end ? close : htmlClose >= body.end ? htmlClose : html.length };
   }
-  const head = lower.indexOf("</head");
-  const start = head < 0 ? 0 : Math.max(html.indexOf(">", head) + 1, head);
-  const close = lower.lastIndexOf("</html");
-  return { start, end: close >= start ? close : html.length };
+  // `</head>`, not `</header>`.
+  const head = /<\/head\s*>/i.exec(html);
+  const start = head ? head.index + head[0].length : 0;
+  return { start, end: htmlClose >= start ? htmlClose : html.length };
+}
+
+/** Where the last `</name>` end tag starts, or -1. */
+function lastEndTag(html: string, name: string) {
+  let at = -1;
+  for (const match of html.matchAll(new RegExp(`</${name}\\s*>`, "gi"))) at = match.index;
+  return at;
 }
 
 /** The start tags of a document's `<head>` part: everything before its `<body>` (or its page, without one). */

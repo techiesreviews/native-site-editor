@@ -18,7 +18,7 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 /** Above this an image is heavy for a web page: uploaded, with a warning. */
 export const WARN_IMAGE_BYTES = 2 * 1024 * 1024;
 /** Where images go unless a folder is chosen (the starter keeps its images there). */
-export const DEFAULT_IMAGE_FOLDER = "src/images";
+export const DEFAULT_IMAGE_FOLDER = "images";
 
 const IMAGE_TYPES: Record<string, string> = {
   svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",

@@ -1123,9 +1123,13 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       warning: src?.value.trim() ? undefined : "No image",
       value: src?.value ?? "",
       placeholder: "Image in this repository or web address",
-      suggestions: images.map((image) => ({ label: image, value: image })),
+      // As root paths, which work from every page.
+      suggestions: images.map((image) => ({ label: `/${image}`, value: `/${image}` })),
       // An image from the computer, uploaded beside the site's images.
-      upload: { label: "Upload image…", accept: "image/*", onFiles: async (files) => (await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files))[0] },
+      upload: { label: "Upload image…", accept: "image/*", onFiles: async (files) => {
+        const [uploaded] = await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files);
+        return uploaded === undefined ? undefined : `/${uploaded}`;
+      } },
       onInput: (value) => { if (node) live(node, "img", (latest, tag) => {
         const before = startTagAttribute(latest, tag, "src");
         const written = startTagAttribute(latest, tag, "alt");
