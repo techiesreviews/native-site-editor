@@ -121,6 +121,11 @@ Do not run them without an explicit deployment request.
 
 ## Verification
 
+QA fixes on the starter's real content, 2026-09-26:
+
+- As described in the QA fixes bullet of Current Slice; also checked by hand against the starter's v2 content (a work page's `<card-note>` selects and types on the page, the header's `/` links carry `aria-current`, `<main>` is no longer named by the hero's heading, no `@import` warning).
+- `npm run check` clean, `npm test` passed 198/198 (new cases in `tests/native-project.test.ts`, `native-create.test.ts`, `native-pages.test.ts`, `native-routes.test.ts`, `native-structure.test.ts`), `npm run test:browser` passed 129/129 (new `native-preview-links.spec.ts`, new cases in `native-text.spec.ts` and `native-page-structure.spec.ts`, canonical checks in `native-page-urls.spec.ts` and `native-page-details.spec.ts`; `native-resize-toggle.spec.ts`'s narrow-layout tap test failed once and passed on 4 reruns), `npm run test:browser-preview` passed 15/15.
+
 The repository is the site (ADR 0001), 2026-09-26:
 
 - The editor reads a site from its files: pages at their URLs as full documents, components under `components/`, shared styles from each page's head, `.editor/config.json`; the manifest, the page comment, `#/` routes, the `src/` layout and the static export are gone (see the first bullets of Current Slice). The fixtures (`native-starter`, `native-routing`, `native-conventions`, `cascade/*`) are in the starter's layout; `fixtures/native-starter/components/components.js` is a placeholder pointing at native-site-editor-starter.
