@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { deriveNativeRoutes, isFolderRoute, nativeLinkTarget, nativePageRoute, nativeRouteFile } from "../shared/native-routes.ts";
+import { deriveNativeRoutes, isFolderRoute, nativeLinkFragment, nativeLinkTarget, nativePageRoute, nativeRouteFile } from "../shared/native-routes.ts";
 
 test("a page's route is its path: index.html is its folder's, any other .html file is itself", () => {
   assert.equal(nativePageRoute("index.html"), "/");
@@ -65,4 +65,12 @@ test("a link goes to a page by its root path, relative path, or without its trai
   assert.equal(nativeLinkTarget("/", "/about/", routes), "/");
   for (const href of ["#top", "", "https://example.com/about/", "//example.com/", "mailto:a@b.c", "/missing/", "javascript:alert(1)"])
     assert.equal(nativeLinkTarget(href, "/", routes), undefined, href);
+});
+
+test("a link's fragment is the id it names, decoded", () => {
+  assert.equal(nativeLinkFragment("/about/#contact"), "contact");
+  assert.equal(nativeLinkFragment("../#caf%C3%A9"), "café");
+  assert.equal(nativeLinkFragment("/about/#%E0%A4%A"), "%E0%A4%A");
+  assert.equal(nativeLinkFragment("/about/"), undefined);
+  assert.equal(nativeLinkFragment("/about/#"), undefined);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, linkWrapEdit, moveEdit, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, setAttributesEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, setAttributesEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -151,6 +151,12 @@ test("nativeKindLabel names elements in the user's words and leaves other tags a
   assert.equal(nativeKindLabel("p"), "Paragraph");
   assert.equal(nativeKindLabel("section"), "Section");
   assert.equal(nativeKindLabel("project-card"), "project-card");
+  // Formatting is named for what it does.
+  assert.equal(nativeKindLabel("strong"), "Bold");
+  assert.equal(nativeKindLabel("b"), "Bold");
+  assert.equal(nativeKindLabel("em"), "Italic");
+  assert.equal(nativeKindLabel("i"), "Italic");
+  assert.equal(nativeKindLabel("span"), "Text");
 });
 
 test("structureLabel names a container by its first heading and an atom by its own text", () => {
@@ -158,6 +164,8 @@ test("structureLabel names a container by its first heading and an atom by its o
   assert.deepEqual(structureLabel({ tag: "section", text: "Intro Hello there", heading: "Intro", children: { length: 2 } }, false), { kind: "Section", text: "Intro" });
   assert.deepEqual(structureLabel({ tag: "section", text: "Only text", heading: "", children: { length: 1 } }, false), { kind: "Section", text: "" });
   assert.deepEqual(structureLabel({ tag: "p", text: "Hello there", heading: "", children: none }, false), { kind: "Paragraph", text: "Hello there" });
+  assert.deepEqual(structureLabel({ tag: "card-note", text: "Cafe · 2025", heading: "", children: none }, true), { kind: "Card note", text: "Cafe · 2025" });
+  assert.deepEqual(structureLabel({ tag: "site-header", text: "", heading: "", children: none }, true), { kind: "Site header", text: "" });
   // A component instance is a container even without slotted children.
   assert.deepEqual(structureLabel({ tag: "project-card", text: "Reusable cards", heading: "Reusable cards", children: none }, true), { kind: "Project card", text: "Reusable cards" });
   assert.deepEqual(structureLabel({ tag: "site-header", text: "", heading: "", children: none }, true), { kind: "Site header", text: "" });
@@ -202,4 +210,10 @@ test("unwrapEdits removes a link's tags and keeps its text and formatting", () =
   const range: ElementRange = { tag, start: tag.start, end: closeAt + 4, close: { start: closeAt, end: closeAt + 4 } };
   assert.equal(apply(source, unwrapEdits(range)!), "<p>Read <em>more</em> &amp; more here</p>");
   assert.equal(unwrapEdits({ tag, start: tag.start, end: tag.end }), undefined);
+});
+
+test("nativeElementLabel names a component instance by its component, as the page structure does", () => {
+  assert.equal(nativeElementLabel("section-split", true), "Section split");
+  assert.equal(nativeElementLabel("section", false), "Section");
+  assert.equal(nativeElementLabel("my-thing", false), "my-thing");
 });

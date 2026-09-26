@@ -6,7 +6,7 @@ import {
   nativeSitePaths,
   type NativeSite,
 } from "../../shared/native-project";
-import { nativeLinkTarget } from "../../shared/native-routes";
+import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import { isSectionTemplate } from "../native-insert";
@@ -209,6 +209,7 @@ function composePayload(
   context: string,
   selectNode: NativeNodeRequest | undefined,
   selectText: { start: number; end: number } | undefined,
+  hash?: string,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -250,7 +251,7 @@ function composePayload(
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
-  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText };
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText, hash };
 }
 
 export function createNativePreview(host: HTMLElement, handlers: NativePreviewHandlers = {}) {
@@ -312,6 +313,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let loadError = false;
   let selectNode: NativeNodeRequest | undefined;
   let selectText: { start: number; end: number } | undefined;
+  // The id a followed link's fragment names, scrolled to after the next render.
+  let scrollHash: string | undefined;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -327,9 +330,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!site || !ready || !mounted) return;
-    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText);
+    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText, scrollHash);
     selectNode = undefined;
     selectText = undefined;
+    scrollHash = undefined;
     frame.contentWindow?.postMessage(
       { source: "astro-native-preview-host", type: "update", id: ++messageId, payload },
       "*",
@@ -580,13 +584,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!site) return false;
     const candidate = nativeLinkTarget(href, alone ? "/" : route, site.routes);
     if (!candidate) return false;
-    if (candidate !== route) {
+    scrollHash = nativeLinkFragment(href);
+    const moved = candidate !== route;
+    if (moved) {
       route = candidate;
       alone = undefined;
       insertControls.clear();
       clearSelection();
-      schedule();
     }
+    // A fragment on the page on show scrolls there too.
+    if (moved || scrollHash) schedule();
     return true;
   }
   function postClearSelection() {

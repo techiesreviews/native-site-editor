@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // The page structure sidebar: the rendered page's elements as a tree that
@@ -96,4 +98,35 @@ test("the tree follows the preview route and structural edits", async ({ page })
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(row(page, "Heading About this project")).toHaveAttribute("aria-selected", "true");
+});
+
+test("a section component names itself, not <main>; formatting inside a line of text is no row of its own", async ({ page }) => {
+  const source = readFileSync(resolve("fixtures/native-starter/index.html"), "utf8");
+  const textbox = page.locator("#content [role='textbox']").first();
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), source
+    // A section component first in <main>, its heading slotted in by the page.
+    .replace(`<main class="page" data-key="main">\n`, `<main class="page" data-key="main">\n  <feature-block data-key="feature">\n    <h2 slot="title">Slotted feature</h2>\n  </feature-block>\n`)
+    .replace(`This section adds enough height`, `This section adds <strong>enough</strong> <a href="/about/">height</a>`));
+  await textbox.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+
+  await expect(row(page, "Feature block Slotted feature")).toBeVisible();
+  const top = tree(page).locator("[role='treeitem'][aria-level='1']");
+  await expect(top).toHaveText(["Site header", "Main", "Site footer"]);
+  // The paragraph is summed up by all its text, bold and link included, with no rows inside.
+  const paragraph = row(page, /^Paragraph This section adds enough height/);
+  await expect(paragraph).toBeVisible();
+  await expect(paragraph).not.toHaveAttribute("aria-expanded", /.*/);
+  await expect(row(page, /^Bold/)).toHaveCount(0);
+  await expect(row(page, /^Link/)).toHaveCount(0);
+  // Selecting the bold word names it, and marks its paragraph's row.
+  await page.frameLocator(".native-preview-frame").locator("section.filler p strong").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await select(page, "section.filler p strong");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Bold");
+  await expect(paragraph).toHaveAttribute("aria-selected", "true");
+  // A section component's edit bar says its name, as the structure does.
+  await page.frameLocator(".native-preview-frame").locator("feature-block").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await select(page, "feature-block");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Feature block");
 });

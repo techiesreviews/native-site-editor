@@ -381,9 +381,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   function setSelected(id: string | undefined) {
     selected = id;
+    // Formatting inside a line of text has no row of its own: its line's row is marked.
+    let shown = id;
+    while (shown !== undefined && !rows.has(shown)) shown = shown.includes(".") ? shown.slice(0, shown.lastIndexOf(".")) : undefined;
     let current: HTMLElement | undefined;
     for (const [rowId, el] of rows) {
-      const on = rowId === id;
+      const on = rowId === shown;
       el.setAttribute("aria-selected", String(on));
       if (on) current = el;
     }

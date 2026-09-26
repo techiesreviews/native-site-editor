@@ -39,7 +39,7 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
+import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
 import { createCommitHistory } from "./components/commit-history";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
@@ -835,7 +835,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   }
   const source = nativeSources()[path] ?? "";
   const range = node ? locateNativeElementRange(source, node) : undefined;
-  const kind = nativeKindLabel(selection.tag);
+  const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
   // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
   if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
     editor.closeActiveEditGroup(nativeNewLink.path);

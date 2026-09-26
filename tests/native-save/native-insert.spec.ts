@@ -90,7 +90,7 @@ test("a plus between sections inserts a section component, and only those are of
   await expect.poll(() => editorText(page, "#content")).toBe(inserted);
   await expect(page.locator("#status")).toHaveText("Feature block added");
   // The new instance is selected.
-  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("feature-block");
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Feature block");
   // Typing in its title changes this page, not the shared template.
   const title = frame.locator("feature-block [slot='title']");
   await title.click();

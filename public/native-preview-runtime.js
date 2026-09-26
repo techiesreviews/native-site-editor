@@ -193,12 +193,33 @@
       var root = host.shadowRoot || host.attachShadow({ mode: "open" });
       shadowRoots.add(root);
       reconcileChildren(root, freshContent(html));
+      markCurrentPage(root);
       syncRootStyles(root);
       watchSlots(root);
       applyEmptyRules(root);
     } finally {
       renderDepth--;
     }
+  }
+
+  // Links in a component's shadow root that point at the page on show get
+  // aria-current="page", as the site's loader marks them on the live site
+  // (a header's nav link to this page). Shown only: the source is not
+  // changed, and a render starts from the template again (see syncAttrs).
+  function samePage(path) { return path.replace(/\/index\.html$/, "/"); }
+  function markCurrentPage(root) {
+    if (!state) return;
+    var here = samePage(state.route);
+    root.querySelectorAll("a[href]").forEach(function (link) {
+      var href = link.getAttribute("href") || "";
+      if (href.indexOf("#") >= 0 || link.hasAttribute("aria-current")) return;
+      try {
+        var url = new URL(href, SITE + (state.base || "/"));
+        if (url.origin === SITE && samePage(decodeURI(url.pathname)) === here) link.setAttribute("aria-current", "page");
+      } catch (e) {
+        // Not a URL: not this page.
+      }
+    });
   }
 
   function defineTag(tag) {
@@ -279,10 +300,49 @@
     if (entry.source === source) return;
     entry.source = source;
     try {
-      entry.sheet.replaceSync(source);
+      entry.sheet.replaceSync(withoutImports(source));
     } catch (e) {
       reportError("Stylesheet " + entry.path + " could not be applied: " + (e && e.message ? e.message : e));
     }
+  }
+
+  // A constructed sheet cannot hold @import (the browser drops each with a
+  // console warning), and the host already expanded them into sheets of
+  // their own: the leading @import statements are taken out first. They
+  // may only come before every rule but @charset and @layer statements, so
+  // the scan stops at the first other rule; comments and strings are skipped.
+  function withoutImports(css) {
+    var out = "", pos = 0, cut = false;
+    while (pos < css.length) {
+      var rest = css.slice(pos);
+      var space = /^(?:\s+|\/\*[\s\S]*?(?:\*\/|$))/.exec(rest);
+      if (space) { out += space[0]; pos += space[0].length; continue; }
+      var at = /^@(import|charset|layer)\b/i.exec(rest);
+      if (!at) break;
+      var end = statementEnd(css, pos);
+      if (end < 0) break;
+      if (at[1].toLowerCase() === "import") cut = true;
+      else out += css.slice(pos, end + 1);
+      pos = end + 1;
+    }
+    return cut ? out + css.slice(pos) : css;
+  }
+  // The index of the `;` ending the statement at `pos`, outside strings and
+  // parentheses; -1 when a block starts first (an @layer block).
+  function statementEnd(css, pos) {
+    var depth = 0, quote = "";
+    for (var i = pos; i < css.length; i++) {
+      var c = css[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = "";
+      } else if (c === "\"" || c === "'") quote = c;
+      else if (c === "(") depth++;
+      else if (c === ")" && depth) depth--;
+      else if (depth === 0 && c === ";") return i;
+      else if (depth === 0 && c === "{") return -1;
+    }
+    return -1;
   }
 
   function syncSharedSheets() {
@@ -370,6 +430,8 @@
     // A replaced element (a renamed heading, an undo) stays typeable.
     var wasEditing = !!editing;
     if (editing && !editing.isConnected) editing = null;
+    if (typeof payload.hash === "string" && payload.hash) scrollTarget = { id: payload.hash, until: Date.now() + 1500 };
+    scrollToTarget();
     if (payload.selectNode) {
       var requested = resolveNodePath(payload.selectNode);
       if (requested) {
@@ -393,6 +455,31 @@
     reportStructure();
     requestAnimationFrame(requestComponentStyles);
   }
+
+  // A followed link's fragment (`/about/#contact`): the element with that id
+  // is scrolled to the top once the page shows, and again while the layout
+  // settles (component styles arrive in later renders), until the user
+  // scrolls, clicks or types, or a moment has passed.
+  var scrollTarget = null;
+  function fragmentTarget(id) {
+    var found = pageEl && pageEl.querySelector("[id=\"" + CSS.escape(id) + "\"]");
+    if (found) return found;
+    var roots = Array.from(shadowRoots);
+    for (var i = 0; i < roots.length; i++) {
+      var inner = roots[i].host.isConnected && roots[i].getElementById(id);
+      if (inner) return inner;
+    }
+    return null;
+  }
+  function scrollToTarget() {
+    if (!scrollTarget) return;
+    if (Date.now() > scrollTarget.until) { scrollTarget = null; return; }
+    var el = fragmentTarget(scrollTarget.id);
+    if (el) el.scrollIntoView({ block: "start" });
+  }
+  ["wheel", "keydown", "mousedown", "touchstart"].forEach(function (type) {
+    window.addEventListener(type, function () { scrollTarget = null; }, true);
+  });
 
   function requestComponentStyles() {
     if (!state) return;
@@ -594,21 +681,42 @@
         text: (child.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
         heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",
         slot: child.getAttribute("slot") || "",
-        children: structureItems(child, depth + 1)
+        children: textRun(child) ? [] : structureItems(child, depth + 1)
       });
     }
     return out;
   }
+  // A line of text with inline formatting in it (a paragraph with a bold
+  // word or a link): one row, summarised by all its text, with no rows for
+  // the formatting inside. A text element holding only formatting counts,
+  // and so does any element with text of its own beside it; a block of two
+  // button links does not.
+  var TEXT_RUN = /^(h[1-6]|p|li|button|blockquote|figcaption|dt|dd|summary|legend|caption|label|td|th|a|strong|em|b|i|small|cite|q|mark|code)$/;
+  function textRun(el) {
+    if (!el.children.length) return false;
+    var all = el.querySelectorAll("*");
+    for (var i = 0; i < all.length; i++) {
+      if (!INLINE_TAGS.test(all[i].localName) || all[i].hasAttribute("slot")) return false;
+    }
+    if (TEXT_RUN.test(el.localName)) return true;
+    return Array.prototype.some.call(el.childNodes, function (n) { return n.nodeType === 3 && Boolean(n.textContent.trim()); });
+  }
   // The heading that names a container: the first one inside it that no
   // nested section, article or other landmark claims first (so <main> is not
   // named by its first section's heading). For a component instance, the
-  // first heading at the top of its template.
+  // first heading at the top of its template. A section component instance
+  // (<section-hero>) is a section too, so the heading it holds names it and
+  // not the <main> around it.
   var SECTIONING = "section,article,main,header,footer,nav,aside";
+  function sectioningAncestor(n) {
+    for (var p = n.parentElement; p; p = p.parentElement) if (p.matches(SECTIONING) || sectionLike(p)) return p;
+    return null;
+  }
   function ownHeading(el) {
     if (el.matches("h1,h2,h3,h4,h5,h6")) return null;
     var list = el.querySelectorAll("h1,h2,h3,h4,h5,h6");
     for (var i = 0; i < list.length; i++) {
-      var owner = list[i].closest(SECTIONING);
+      var owner = sectioningAncestor(list[i]);
       if (owner === el || !el.contains(owner)) return list[i];
     }
     if (!el.shadowRoot) return null;
@@ -695,7 +803,21 @@
 
   function deepestElement(e) {
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
-    for (var i = 0; i < path.length; i++) {
+    var from = 0;
+    // Text is never an event's target: a press on text lands on the element
+    // that shows it, which for text a slot shows is the slot. Text the page
+    // assigned to the slot belongs to the element it sits in on the page (a
+    // <card-note> holding plain text), not to the template around the slot;
+    // a slot's own fallback text belongs to the slot's parent in the template.
+    if (path[0] instanceof HTMLSlotElement) {
+      var slot = path[0];
+      var holder = slot.assignedNodes().length
+        ? slot.getRootNode().host
+        : slot.parentNode instanceof Element ? slot.parentNode : null;
+      var at = holder ? path.indexOf(holder) : -1;
+      if (at > 0) from = at;
+    }
+    for (var i = from; i < path.length; i++) {
       var n = path[i];
       // A slot is how a template shows text, not an element of its own: its parent is the target.
       if (n instanceof HTMLSlotElement) continue;
@@ -1409,7 +1531,7 @@
   var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
   var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
   function editableText(el) {
-    if (!el || !TEXT_TAGS.test(el.localName) || !(el.textContent || "").trim()) return false;
+    if (!el || !(TEXT_TAGS.test(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
     var all = el.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
       if (!INLINE_TAGS.test(all[i].localName)) return false;
@@ -1417,6 +1539,15 @@
       if (all[i] instanceof HTMLSlotElement && all[i].assignedNodes().length) return false;
     }
     return true;
+  }
+  // A component instance that holds only text (and inline formatting) for
+  // its default slot, such as <card-note>Cafe · 2025</card-note>: that text
+  // is the page's, typed into in place through the slot.
+  function textHost(el) {
+    if (el.localName.indexOf("-") < 0 || !el.shadowRoot || sectionLike(el)) return false;
+    return Array.prototype.every.call(el.children, function (child) {
+      return INLINE_TAGS.test(child.localName) && !child.hasAttribute("slot");
+    });
   }
   function startEditing(el) {
     if (editing === el) return;
@@ -1665,6 +1796,6 @@
   });
   pageEl = document.getElementById("page");
   // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(scheduleInsertPoints).observe(pageEl);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); }).observe(pageEl);
   parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
 })();

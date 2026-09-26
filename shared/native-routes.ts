@@ -77,3 +77,15 @@ export function nativeLinkTarget(href: string, from: string, routes: Record<stri
   else if (!path.endsWith("/") && !path.endsWith(".html")) candidates.push(`${path}/`);
   return candidates.find((candidate) => Object.hasOwn(routes, candidate));
 }
+
+/** The element id a link's fragment names (`/about/#contact` gives `contact`), decoded; none without one. */
+export function nativeLinkFragment(href: string): string | undefined {
+  const at = href.indexOf("#");
+  const raw = at < 0 ? "" : href.slice(at + 1).trim();
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}

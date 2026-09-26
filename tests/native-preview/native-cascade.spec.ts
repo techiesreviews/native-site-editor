@@ -156,6 +156,10 @@ test("layers in first-use order, anonymous and nested", async ({ page, baseURL }
 });
 
 test("@import with layer(), media and a declared layer order", async ({ page, baseURL }) => {
+  // The @imports are expanded into sheets of their own; the constructed
+  // sheet of the importing file gets none, so the browser warns of none.
+  const warnings: string[] = [];
+  page.on("console", (message) => { if (/@import/.test(message.text())) warnings.push(message.text()); });
   const frame = await openFixture(page, baseURL, "imports");
   const intro = frame.locator("#intro");
   await expect(intro).toBeVisible({ timeout: 30_000 });
@@ -171,6 +175,7 @@ test("@import with layer(), media and a declared layer order", async ({ page, ba
   const base = (await chips(page)).find((chip) => chip.selector === ".intro" && chip.path === "styles/parts/base.css")!;
   expect(base.overridden).toEqual(["color"]);
   expect(base.title).toContain("(imported by styles/site.css)");
+  expect(warnings).toEqual([]);
 });
 
 test("shadow DOM: the page beats ::slotted() and :host, except for !important", async ({ page, baseURL }) => {

@@ -98,3 +98,54 @@ test("text inside a component template is typed into that template", async ({ pa
   await expect(footer).toContainText("New: ");
   await expect.poll(() => editorText(page, "#content")).toMatch(/<p[^>]*>New: /);
 });
+
+// A real click on the text an element shows, as a user makes it: text is no
+// event target, so the press lands on whatever shows it (a slot, for text a
+// page gives a component).
+async function clickText(page: Page, selector: string, nth = 0) {
+  const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+  const at = await page.frameLocator(".native-preview-frame").locator(selector).nth(nth).evaluate((el) => {
+    el.scrollIntoView({ block: "center" });
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const box = range.getBoundingClientRect();
+    return { x: box.left + 12, y: box.top + box.height / 2 };
+  });
+  await page.mouse.click(frameBox.x + at.x, frameBox.y + at.y);
+}
+
+async function pasteInto(page: Page, host: string, source: string) {
+  const textbox = page.locator(`${host} [role="textbox"]`).first();
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), source);
+  await textbox.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+}
+
+test("text a page gives a component's default slot is the page's: a click selects the instance and typing edits the page", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  const withNote = indexSource.replace(
+    `<h2 data-key="filler-title">Scroll to verify</h2>`,
+    `<h2 data-key="filler-title">Scroll to verify</h2>\n    <card-note data-key="page-note">Cafe · Identity and site · 2025</card-note>`,
+  );
+  await pasteInto(page, "#content", withNote);
+  const note = frame.locator("card-note[data-key='page-note']");
+  await expect.poll(() => note.evaluate((el) => el.textContent)).toBe("Cafe · Identity and site · 2025");
+
+  await clickText(page, "card-note[data-key='page-note']");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Card note");
+  await expect(note).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("End");
+  await page.keyboard.type(" · Visit");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => editorText(page, "#content")).toContain(
+    `<card-note data-key="page-note">Cafe · Identity and site · 2025 · Visit</card-note>`,
+  );
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+
+  // The same inside a template: the card's note text belongs to the card's template.
+  await clickText(page, "project-card >> card-note", 1);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await expect(frame.locator("project-card").nth(1).locator("card-note")).toHaveAttribute("contenteditable", /plaintext-only|true/);
+});

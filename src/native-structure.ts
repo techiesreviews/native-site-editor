@@ -14,9 +14,14 @@ export function nativeKindLabel(tag: string) {
     p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
     ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
     footer: "Footer", nav: "Navigation", main: "Main", aside: "Aside", figure: "Figure", blockquote: "Quote",
-    table: "Table", form: "Form", span: "Text", strong: "Text", em: "Text", slot: "Slot", div: "Block",
+    table: "Table", form: "Form", span: "Text", strong: "Bold", b: "Bold", em: "Italic", i: "Italic", slot: "Slot", div: "Block",
   };
   return labels[tag] ?? tag;
+}
+
+/** What the edit bar and the page structure call an element: a component's name ("Section split") for an instance, else its kind. */
+export function nativeElementLabel(tag: string, component: boolean) {
+  return component ? componentLabel(tag) : nativeKindLabel(tag);
 }
 
 /** One rendered page element as the runtime reports it for the page structure. */
@@ -32,12 +37,13 @@ export interface StructureItemInfo {
  * name for an instance) and the text that tells it apart. A container (an
  * element with children, or a component instance) is named by the first
  * heading inside it, since its own text is everything it holds; an atom by
- * its own text.
+ * its own text, and so is a component instance holding only text.
  */
 export function structureLabel(item: StructureItemInfo, component: boolean) {
-  const kind = component ? componentLabel(item.tag) : nativeKindLabel(item.tag);
+  const kind = nativeElementLabel(item.tag, component);
   const container = component || item.children.length > 0;
-  const text = container ? item.heading : item.text;
+  // An instance holding only text (<card-note>Cafe · 2025</card-note>) with no heading is named by that text.
+  const text = container ? item.heading || (component && !item.children.length ? item.text : "") : item.text;
   return { kind, text: text.length > 60 ? `${text.slice(0, 59).trimEnd()}…` : text };
 }
 
