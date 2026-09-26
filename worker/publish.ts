@@ -10,7 +10,15 @@ const encoder = new TextEncoder();
 const validSha = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 /** Paths one commit may change: edits, new files, and both sides of every rename. */
-export const MAX_PUBLISH_FILES = 100;
+export const MAX_PUBLISH_FILES = 2000;
+/** Text one commit may carry, per file and in all; beyond what browser drafts can hold. */
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_BATCH_BYTES = 24 * 1024 * 1024;
+/** The publish request, unpacked: the files' text and their JSON around it. */
+export const MAX_PUBLISH_REQUEST_BYTES = 32 * 1024 * 1024;
+/** One git/trees request stays small; a larger commit's tree is built in steps. */
+const TREE_STEP_ENTRIES = 200;
+const TREE_STEP_BYTES = 4 * 1024 * 1024;
 const invalidPath = (path: unknown) =>
   typeof path !== "string" ||
   path.length > 1024 ||
@@ -69,10 +77,10 @@ export function validatePublish(value: unknown): PublishRequest {
     paths.add(file.path);
     const size = encoder.encode(file.content).length;
     bytes += size;
-    if (size > 128 * 1024 || bytes > 1024 * 1024)
+    if (size > MAX_FILE_BYTES || bytes > MAX_BATCH_BYTES)
       throw new HttpError(
         413,
-        "Publish supports 128 KB per file and 1 MB per batch.",
+        "Publish supports 4 MB per file and 24 MB per commit.",
       );
   }
   return data as PublishRequest;
@@ -184,17 +192,21 @@ export async function publish(
     );
   let result = head;
   if (changes.length) {
-    const tree = await github.write<{ sha: string }>(
-      `${base}/git/trees`,
-      "POST",
-      { base_tree: commit.tree.sha, tree: changes },
-    );
+    // Each step's tree is the next one's base, so the commit still has one tree.
+    let tree = commit.tree.sha;
+    for (const step of treeSteps(changes)) {
+      tree = (await github.write<{ sha: string }>(
+        `${base}/git/trees`,
+        "POST",
+        { base_tree: tree, tree: step },
+      )).sha;
+    }
     const created = await github.write<{ sha: string }>(
       `${base}/git/commits`,
       "POST",
       {
         message: `${commitSummary(data.files, changes)} with Native Site Editor`,
-        tree: tree.sha,
+        tree,
         parents: [head],
       },
     );
@@ -214,6 +226,23 @@ export async function publish(
     deleted,
     unchanged: changes.length === 0,
   };
+}
+
+/** Changes split into git/trees requests of at most TREE_STEP_ENTRIES entries and TREE_STEP_BYTES of text. */
+export function treeSteps<T extends { content: string } | { sha: string | null }>(changes: T[]): T[][] {
+  const steps: T[][] = [];
+  let step: T[] = [], bytes = 0;
+  for (const change of changes) {
+    const size = "content" in change ? encoder.encode(change.content).length : 0;
+    if (step.length && (step.length >= TREE_STEP_ENTRIES || bytes + size > TREE_STEP_BYTES)) {
+      steps.push(step);
+      step = []; bytes = 0;
+    }
+    step.push(change);
+    bytes += size;
+  }
+  if (step.length) steps.push(step);
+  return steps;
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   resourceMetadataUrl,
   type OAuthRecord,
 } from "./oauth";
-import { publish } from "./publish";
+import { MAX_PUBLISH_REQUEST_BYTES, publish } from "./publish";
 import { requestBytes, uploadBlob } from "./blobs";
 import { history, restore } from "./history";
 import { changeStatus } from "./change-status";
@@ -629,7 +629,7 @@ async function route(
     const user = await session(request, env);
     if (!user)
       throw new HttpError(401, "Connect GitHub to publish your changes.");
-    const data = await requestJson(request, 2 * 1024 * 1024);
+    const data = await requestJson(request, MAX_PUBLISH_REQUEST_BYTES);
     const github = new GitHub(user.token, fetcher);
     const repo = await github.authorizeRepository(
       user.login,

@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { GitHub, HttpError } from "../worker/github.ts";
-import { publish, blobSha, validatePublish } from "../worker/publish.ts";
+import { publish, blobSha, treeSteps, validatePublish } from "../worker/publish.ts";
+import { requestJson } from "../worker/http.ts";
 import type { Repository } from "../shared/types.ts";
 const repo: Repository = {
   id: 1,
@@ -167,7 +168,7 @@ test("invalid paths, duplicate files, workflow changes and large content are rej
   for (const values of [
     [],
     [...files, ...files],
-    [{ ...files[0], content: "é".repeat(128 * 1024) }],
+    [{ ...files[0], content: "é".repeat(2 * 1024 * 1024 + 1) }],
     [{ ...files[0], baseSha: "oops" }],
   ]) {
     assert.throws(
@@ -257,8 +258,8 @@ test("deletions and blob references are validated", () => {
     { path: "a", baseSha: null, content: "", movedFrom: "../b" },
   ])
     assert.throws(() => validatePublish({ branch: "main", files: [file] }), HttpError);
-  assert.equal(validatePublish({ branch: "main", files: Array.from({ length: 100 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }).files.length, 100);
-  assert.throws(() => validatePublish({ branch: "main", files: Array.from({ length: 101 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }), HttpError);
+  assert.equal(validatePublish({ branch: "main", files: Array.from({ length: 2000 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }).files.length, 2000);
+  assert.throws(() => validatePublish({ branch: "main", files: Array.from({ length: 2001 }, (_, i) => ({ path: `f${i}`, baseSha, content: "", delete: true })) }), HttpError);
 });
 
 test("the commit message counts renames, updates and deletions", async () => {
@@ -279,4 +280,34 @@ test("the commit message counts renames, updates and deletions", async () => {
   assert.equal(commitSummary(requested, [...changes, { path: "c", sha: null }, { path: "d" }]), "Update 1 file, rename 2 and delete 1");
   assert.equal(commitSummary([], [{ path: "c", sha: null }]), "Delete c");
   assert.equal(commitSummary([], [{ path: "c" }, { path: "d" }]), "Update 2 files");
+});
+
+test("a commit of hundreds of pages is accepted, and its tree is built in steps", () => {
+  const many = Array.from({ length: 450 }, (_, index) => ({ path: `pages/${index}.html`, baseSha, content: "<p>x</p>\n".repeat(4000) }));
+  assert.equal(validatePublish({ branch: "main", files: many }).files.length, 450);
+  const steps = treeSteps(many.map(({ path, content }) => ({ path, mode: "100644", type: "blob" as const, content })));
+  assert.ok(steps.length > 1);
+  assert.equal(steps.flat().length, 450);
+  for (const step of steps) assert.ok(step.length <= 200);
+  assert.deepEqual(treeSteps([{ path: "a", sha: null }]), [[{ path: "a", sha: null }]]);
+});
+
+test("a gzipped JSON request is unpacked, and the limit holds for what it unpacks to", async () => {
+  const gzipped = (text: string) =>
+    new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+  const request = async (text: string, limit?: number) =>
+    requestJson(new Request("https://editor.test/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
+      body: await gzipped(text),
+    }), limit);
+  assert.deepEqual(await request(JSON.stringify({ branch: "main" })), { branch: "main" });
+  const big = JSON.stringify({ text: "a".repeat(100_000) });
+  await assert.rejects(request(big, 50_000), (error: HttpError) => error.status === 413);
+  await assert.rejects(
+    requestJson(new Request("https://editor.test/", {
+      method: "POST", headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" }, body: "not gzip",
+    })),
+    (error: HttpError) => error.status === 400,
+  );
 });

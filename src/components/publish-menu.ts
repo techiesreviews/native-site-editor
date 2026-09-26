@@ -259,9 +259,12 @@ export function createPublishMenu(options: {
     try {
       // Uploaded files become GitHub blobs first; the commit names them.
       await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+      // Gzipped, a commit of many pages stays a small request.
+      const body = await gzip(JSON.stringify({ branch: options.scope.branch, files: publishFiles(chosen) }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
-        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch: options.scope.branch, files: publishFiles(chosen) }),
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
+        body,
       });
       if (response.status === 401) { options.onExpired(); return; }
       const data = await response.json();
@@ -298,4 +301,9 @@ export function createPublishMenu(options: {
   panel.addEventListener("beforetoggle", event => { if ((event as ToggleEvent).newState === "open") refresh(); });
   refresh();
   return { root, refresh, destroy() { disposed = true; if (dialog.open) dialog.close(); dropdown.destroy(); } };
+}
+
+/** Text as gzip bytes. */
+function gzip(text: string): Promise<Blob> {
+  return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).blob();
 }
