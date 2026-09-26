@@ -3,6 +3,7 @@
 // archive is what any static host serves (docs/hosting.md). Also reads the
 // site's own address from `.editor/config.json` for "View live site".
 import { zipFiles } from "./zip";
+import { nativeSiteSettings } from "../shared/native-project";
 
 export type FileContent = string | Uint8Array;
 
@@ -85,16 +86,5 @@ export function saveBytes(bytes: Uint8Array, name: string, type = "application/z
  * http(s) URL. No address is guessed.
  */
 export function siteUrlFromConfig(text: string | undefined): string | undefined {
-  if (text === undefined) return undefined;
-  let value: unknown;
-  try { value = JSON.parse(text); } catch { return undefined; }
-  const site = value && typeof value === "object" ? (value as { site?: unknown }).site : undefined;
-  const url = site && typeof site === "object" ? (site as { url?: unknown }).url : undefined;
-  if (typeof url !== "string" || !url.trim()) return undefined;
-  try {
-    const parsed = new URL(url.trim());
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-  } catch {
-    return undefined;
-  }
+  return nativeSiteSettings(text).url;
 }

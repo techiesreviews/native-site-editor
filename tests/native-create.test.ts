@@ -77,6 +77,20 @@ test("a new page is the home page's document with the new title, no description 
   assert.ok(page.endsWith(starterHome.slice(starterHome.indexOf("</main>"))));
 });
 
+test("a new page has its own address in canonical and og:url, or neither without the site's address", () => {
+  const home = starterHome.replace(
+    '<meta property="og:title" content="Native Studio">',
+    '<link rel="canonical" href="https://studio.example/">\n  <meta property="og:title" content="Native Studio">\n  <meta property="og:url" content="https://studio.example/">',
+  );
+  const page = nativePageTemplate(home, "Our team", "https://studio.example/our-team/");
+  assert.match(page, /<link rel="canonical" href="https:\/\/studio\.example\/our-team\/">/);
+  assert.match(page, /<meta property="og:url" content="https:\/\/studio\.example\/our-team\/">/);
+  assert.match(page, /<meta property="og:title" content="Our team">/);
+  const bare = nativePageTemplate(home, "Our team");
+  assert.doesNotMatch(bare, /canonical|og:url|studio\.example/);
+  assert.equal(bare, nativePageTemplate(starterHome, "Our team"));
+});
+
 test("an indented <main> keeps its indentation; without one, the body gets a <main>; without a home page, a minimal document", () => {
   const wrapped = "<!doctype html>\n<head><title>Home</title></head>\n<body>\n  <div>\n    <main id=\"main\" class=\"x\">\n      <p>Old</p>\n    </main>\n  </div>\n</body>\n";
   assert.equal(

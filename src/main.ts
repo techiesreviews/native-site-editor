@@ -48,7 +48,7 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
-import { NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageWithDetail, nativeSitePaths, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import type {
   EditorContext,
   Directory,
@@ -2013,7 +2013,9 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     // a page are then found (and updated) everywhere when its URL changes.
     // A file drafted as new has no blob; its draft is its source.
     const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : []);
-    const wanted = new Set([...nativeSitePaths(site), ...nativeFiles(scope).filter(isNativeTextFile).slice(0, 2000)]);
+    // The site settings too, for new pages' addresses and the agent context.
+    const files = nativeFiles(scope);
+    const wanted = new Set([...nativeSitePaths(site), ...files.filter(isNativeTextFile).slice(0, 2000), ...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : [])]);
     const sources: { path: string; sha: string }[] = [];
     for (const path of wanted) {
       if (drafted.has(path)) continue;
@@ -2569,7 +2571,13 @@ function planNativeNew(request: NativeNewRequest): Checked<NativeNewPlan> {
     exists: nativePathExists,
   });
   if (!target.ok) return target;
-  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title) } };
+  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(target.value.route)) } };
+}
+
+// The address of the page at `route` on the live site, from
+// `.editor/config.json`'s `site.url`; none without one.
+function nativeAddress(route: string) {
+  return nativePageUrl(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, route);
 }
 
 // The Pages tab's label of the page file `file`.
@@ -2613,7 +2621,7 @@ async function createNativeFolderPage(route: string) {
   if (scope && draftStore().get(scope, file)?.deleted) { undoFileChanges({ restore: [file] }); return; }
   if (site.routes[route] || nativePathExists(file)) { errorMessage(new Error(`The URL ${route} has a page already.`)); return; }
   const title = routeHeading(route);
-  const content = nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title);
+  const content = nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(route));
   const error = await commitNativePage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
   if (error) errorMessage(new Error(error));
 }
@@ -2683,7 +2691,8 @@ async function duplicateNativePage(file: string) {
   const label = nativeRouteInfo(route, site).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
   const title = `${label} (copy)`;
   const error = await commitNativePage({
-    file: target.value.file, route: target.value.route, title, content: nativePageWithDetail(original, "title", title),
+    file: target.value.file, route: target.value.route, title,
+    content: nativePageWithUrl(nativePageWithDetail(original, "title", title), nativeAddress(target.value.route)),
     done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
   });
   if (error) errorMessage(new Error(error));

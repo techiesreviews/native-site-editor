@@ -7,7 +7,7 @@
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
 import { startTags } from "../shared/html-source";
-import { nativePageWithDetails } from "../shared/native-project";
+import { nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -105,15 +105,17 @@ const MINIMAL_PAGE = `<!doctype html>
 /**
  * A new page's document made from the home page's: the same head (its
  * stylesheets, scripts and meta tags) with the new `title` and an empty
- * description (`og:title` and `og:description` along, when there), the same
- * body outside `<main>` (the header and footer components), and `<main>`
- * kept but emptied, so "Add to the page" starts from nothing. A home page
- * with no `<main>` gives its body a `<main>` alone; no home page, a minimal
+ * description (`og:title` and `og:description` along, when there), its own
+ * address `url` in `<link rel="canonical">` and `og:url` when the home page
+ * has them (both removed when the site has no address), the same body
+ * outside `<main>` (the header and footer components), and `<main>` kept but
+ * emptied, so "Add to the page" starts from nothing. A home page with no
+ * `<main>` gives its body a `<main>` alone; no home page, a minimal
  * document.
  */
-export function nativePageTemplate(home: string | undefined, title: string): string {
+export function nativePageTemplate(home: string | undefined, title: string, url?: string): string {
   const source = home ?? MINIMAL_PAGE;
-  const text = nativePageWithDetails(source, { title, description: "" });
+  const text = nativePageWithUrl(nativePageWithDetails(source, { title, description: "" }), url);
   const lower = text.toLowerCase();
   const main = startTags(text).find((tag) => tag.name === "main");
   const close = main ? lower.indexOf("</main", main.end) : -1;

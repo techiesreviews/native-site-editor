@@ -10,7 +10,10 @@ import {
   nativePageStylesheets,
   nativePageWithDetail,
   nativePageWithDetails,
+  nativePageUrl,
+  nativePageWithUrl,
   nativeSitePaths,
+  nativeSiteSettings,
   resolveNativeProject,
 } from "../shared/native-project.ts";
 
@@ -160,4 +163,39 @@ test("the fixture's pages are full documents with a title and the shared stylesh
     assert.ok(nativePageHead(source).title, path);
     assert.deepEqual(nativePageStylesheets(source, path), ["styles/site.css"], path);
   }
+});
+
+test("the site settings are .editor/config.json's site name and http(s) address", () => {
+  const config = (site: unknown) => JSON.stringify({ site });
+  assert.deepEqual(nativeSiteSettings(config({ name: " Larkspur ", url: "https://larkspur.example" })), { name: "Larkspur", url: "https://larkspur.example/" });
+  assert.deepEqual(nativeSiteSettings(config({ name: "No url" })), { name: "No url" });
+  for (const text of [config({ url: "javascript:alert(1)" }), config({ url: "larkspur.example" }), config("x"), JSON.stringify({ url: "https://top.example" }), "{not json", undefined])
+    assert.deepEqual(nativeSiteSettings(text), {}, String(text));
+  assert.equal(nativePageUrl("https://larkspur.example/", "/about/"), "https://larkspur.example/about/");
+  assert.equal(nativePageUrl("https://larkspur.example/x/", "/"), "https://larkspur.example/x/");
+  assert.equal(nativePageUrl(undefined, "/about/"), undefined);
+});
+
+test("a page's own address sets its canonical link and og:url, or removes both", () => {
+  const head = [
+    "<!doctype html>",
+    "<head>",
+    "  <title>Home</title>",
+    '  <link rel="canonical" href="https://a.example/">',
+    '  <meta property="og:title" content="Home">',
+    "  <meta property='og:url' content=https://a.example/>",
+    '  <link rel="stylesheet" href="/styles/site.css">',
+    "</head>",
+    "<body></body>",
+    "",
+  ].join("\n");
+  const moved = nativePageWithUrl(head, "https://a.example/about/");
+  assert.match(moved, /<link rel="canonical" href="https:\/\/a\.example\/about\/">/);
+  assert.match(moved, /<meta property='og:url' content="https:\/\/a\.example\/about\/">/);
+  assert.equal(moved.split("\n").length, head.split("\n").length);
+  const gone = nativePageWithUrl(head, undefined);
+  assert.equal(gone, head.replace('  <link rel="canonical" href="https://a.example/">\n', "").replace("  <meta property='og:url' content=https://a.example/>\n", ""));
+  // Nothing is added to a page that has neither, and the body's links are not the head's.
+  const bare = '<head><title>x</title></head><body><link rel="canonical" href="/x/"></body>';
+  assert.equal(nativePageWithUrl(bare, "https://a.example/x/"), bare);
 });

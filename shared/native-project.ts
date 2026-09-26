@@ -25,6 +25,40 @@ export { NATIVE_HOME_PAGE, NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from 
 
 /** Editor-only site settings: `{ "site": { "name": "…", "url": "https://…" } }`. */
 export const NATIVE_CONFIG_PATH = ".editor/config.json";
+
+/** The site settings `.editor/config.json` gives. */
+export interface NativeSiteSettings {
+  /** The site's name. */
+  name?: string;
+  /** Its address, an http(s) URL; no address is guessed. */
+  url?: string;
+}
+
+/** The settings in the text of `.editor/config.json`; none when it is missing or not JSON. */
+export function nativeSiteSettings(text: string | undefined): NativeSiteSettings {
+  if (text === undefined) return {};
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return {}; }
+  const site = value && typeof value === "object" ? (value as { site?: unknown }).site : undefined;
+  if (!site || typeof site !== "object") return {};
+  const { name, url } = site as { name?: unknown; url?: unknown };
+  const out: NativeSiteSettings = {};
+  if (typeof name === "string" && name.trim()) out.name = name.trim();
+  if (typeof url === "string" && url.trim()) {
+    try {
+      const parsed = new URL(url.trim());
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") out.url = parsed.href;
+    } catch {
+      // Not a URL: no address.
+    }
+  }
+  return out;
+}
+
+/** The address of the page at `route` on the site at `siteUrl` (`https://x.example` and `/about/` give `https://x.example/about/`). */
+export function nativePageUrl(siteUrl: string | undefined, route: string): string | undefined {
+  return siteUrl ? `${siteUrl.replace(/\/+$/, "")}${route}` : undefined;
+}
 /** Redirects at the site root (Cloudflare Pages and Workers, Netlify). */
 export const NATIVE_REDIRECTS_PATH = "_redirects";
 export const NATIVE_COMPONENTS_DIR = "components/";
@@ -186,7 +220,9 @@ export type NativePageDetail = "title" | "description";
 
 interface HeadParts {
   title?: { tag: StartTag; inner: { start: number; end: number } };
-  meta: Partial<Record<"description" | "og:title" | "og:description", StartTag>>;
+  meta: Partial<Record<"description" | "og:title" | "og:description" | "og:url", StartTag>>;
+  /** `<link rel="canonical">`. */
+  canonical?: StartTag;
   head?: StartTag;
 }
 
@@ -199,9 +235,11 @@ function headParts(html: string): HeadParts {
       const close = html.toLowerCase().indexOf("</title", tag.end);
       if (close >= 0 && close <= end) parts.title = { tag, inner: { start: tag.end, end: close } };
     }
+    if (tag.name === "link" && !parts.canonical && startTagAttribute(html, tag, "rel")?.value.toLowerCase().split(/\s+/).includes("canonical"))
+      parts.canonical = tag;
     if (tag.name !== "meta") continue;
     const key = (startTagAttribute(html, tag, "name") ?? startTagAttribute(html, tag, "property"))?.value.trim().toLowerCase();
-    if ((key === "description" || key === "og:title" || key === "og:description") && !parts.meta[key]) parts.meta[key] = tag;
+    if ((key === "description" || key === "og:title" || key === "og:description" || key === "og:url") && !parts.meta[key]) parts.meta[key] = tag;
   }
   return parts;
 }
@@ -239,19 +277,28 @@ export function minimalTextEdit(before: string, after: string): NativeTextEdit |
   return { start, end: before.length - tail, text: after.slice(start, after.length - tail) };
 }
 
-/** `html` with the `content` of the meta tag `tag` set to `value`. */
-function withContent(html: string, tag: StartTag, value: string) {
-  const content = startTagAttribute(html, tag, "content");
+/** `html` with the attribute `name` (`content` of a meta tag) of the start tag `tag` set to `value`. */
+function withContent(html: string, tag: StartTag, value: string, name = "content") {
+  const content = startTagAttribute(html, tag, name);
   const escaped = escapeAttribute(value);
   if (!content) {
     const at = html.slice(tag.start, tag.end).replace(/\s*\/?>$/, "").length + tag.start;
-    return `${html.slice(0, at)} content="${escaped}"${html.slice(at)}`;
+    return `${html.slice(0, at)} ${name}="${escaped}"${html.slice(at)}`;
   }
   // A value written bare or in single quotes is written in double quotes.
   const quoted = html[content.valueStart - 1] === "\"" && html[content.valueEnd] === "\"";
   return quoted
     ? html.slice(0, content.valueStart) + escaped + html.slice(content.valueEnd)
-    : `${html.slice(0, content.start)} content="${escaped}"${html.slice(content.end)}`;
+    : `${html.slice(0, content.start)} ${name}="${escaped}"${html.slice(content.end)}`;
+}
+
+/** `html` without the start tag `tag` (a void element), and its line when it has one to itself. */
+function withoutTag(html: string, tag: StartTag) {
+  const lineStart = html.lastIndexOf("\n", tag.start - 1) + 1;
+  const lineEnd = /^[ \t]*(?:\r?\n|$)/.exec(html.slice(tag.end))?.[0].length;
+  if (/^[ \t]*$/.test(html.slice(lineStart, tag.start)) && lineEnd !== undefined)
+    return html.slice(0, lineStart) + html.slice(tag.end + lineEnd);
+  return html.slice(0, tag.start) + html.slice(tag.end);
 }
 
 /** The indentation of the line `at` is on, when only indentation precedes it there. */
@@ -313,6 +360,23 @@ export function nativePageWithDetails(html: string, details: Partial<Record<Nati
   for (const field of ["title", "description"] as const) {
     const value = details[field];
     if (value !== undefined) text = nativePageWithDetail(text, field, value);
+  }
+  return text;
+}
+
+/**
+ * The page with its own address: the `href` of `<link rel="canonical">`
+ * and the `content` of `og:url` set to `url`, or both removed when there is
+ * no `url` (a site with no address in `.editor/config.json`). Neither is
+ * added to a page that has none.
+ */
+export function nativePageWithUrl(html: string, url: string | undefined): string {
+  let text = html;
+  for (const which of ["og:url", "canonical"] as const) {
+    const parts = headParts(text);
+    const tag = which === "canonical" ? parts.canonical : parts.meta["og:url"];
+    if (!tag) continue;
+    text = url === undefined ? withoutTag(text, tag) : withContent(text, tag, url, which === "canonical" ? "href" : "content");
   }
   return text;
 }
