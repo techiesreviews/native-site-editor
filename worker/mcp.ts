@@ -413,7 +413,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "write_file",
     {
       description:
-        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (components/<tag>/<tag>.html and .css), read the native-site://conventions resource and follow its section component pattern; then add the tag to the list in components/components.js and to the :not(:defined) rule in styles/site.css with edit_file, or the live site will not show it.",
+        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (components/<tag>/<tag>.html, plus an optional components/<tag>/<tag>.css), read the native-site://conventions resource and follow its section component pattern. Those files are all a component needs: the loader, components/components.js, finds components by tag, so nothing is registered anywhere else.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
         content: z.string().max(131072),

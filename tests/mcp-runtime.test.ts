@@ -78,7 +78,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.ok(!JSON.stringify(site).includes("github-private-token"));
     const conventions = JSON.stringify(await client.readResource({ uri: "native-site://conventions" }));
     assert.match(conventions, /components\/<tag>\/<tag>\.html/);
-    assert.match(conventions, /TAGS/);
+    assert.match(conventions, /A new component is just its files/);
+    assert.doesNotMatch(conventions, /TAGS/);
     assert.match(conventions, /:not\(:defined\)/);
     assert.match(conventions, /slot name=\\"title\\"><h2/);
     assert.match(conventions, /_redirects/);
