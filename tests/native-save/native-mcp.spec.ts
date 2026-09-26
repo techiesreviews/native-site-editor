@@ -38,21 +38,23 @@ async function draft(page: Page, path: string) {
   }, path);
 }
 
-// Connects an agent with a token from the Agent context panel.
+// Connects an agent with the prompt "Connect with MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Agent context", exact: true }).click();
-  await page.getByRole("button", { name: "Connect with a token", exact: true }).click();
-  await page.getByRole("button", { name: "Copy MCP connection", exact: true }).click();
-  const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
-  const server = copied.mcpServers["native-site-editor"];
-  expect(server.url).toBe(`${baseURL}/mcp`);
-  await expect(page.locator(".agent-menu__connection")).toHaveCount(1);
-  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  const prompt = await page.evaluate(() => navigator.clipboard.readText());
+  const url = /Server URL: (\S+)/.exec(prompt)![1];
+  const token = /Authorization: Bearer (ase_[a-f0-9]{64})/.exec(prompt)![1];
+  expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(
-    new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: server.headers } }),
+    new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }),
   );
+  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".agent-menu__hint")).toContainText("playwright-agent connected");
+  await page.keyboard.press("Escape");
   return client;
 }
 
@@ -166,6 +168,29 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
   }
 });
 
+test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agent used", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  try {
+    await page.locator(".repository-menu__trigger").click();
+    await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
+    await expect(client.callTool({ name: "get_site", arguments: {} })).rejects.toThrow();
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  const token = /Bearer (ase_[a-f0-9]{64})/.exec(await page.evaluate(() => navigator.clipboard.readText()))![1];
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
+  const response = await page.request.post(`${baseURL}/mcp`, {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+  });
+  expect(response.status()).toBe(401);
+});
+
 test("an MCP client connected by OAuth reaches the open editor tab", async ({ page, context, baseURL }) => {
   await open(page, baseURL);
   const callback = `${baseURL}/oauth-test-callback`;
@@ -218,8 +243,7 @@ test("an MCP client connected by OAuth reaches the open editor tab", async ({ pa
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).editor?.openFile, { timeout: 15_000 }).toBe(indexPath);
     await page.locator(".repository-menu__trigger").click();
-    await page.getByRole("button", { name: "Agent context", exact: true }).click();
-    await expect(page.locator(".agent-menu__connection")).toContainText("Playwright OAuth");
+    await expect(page.locator(".agent-menu__hint")).toContainText("Playwright OAuth connected");
     const opened = result(await client.callTool({ name: "open_page", arguments: { page: "/about/" } }));
     expect(opened.state).toBe("applied");
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");

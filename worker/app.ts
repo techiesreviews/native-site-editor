@@ -4,6 +4,7 @@ import {
   createGrant,
   getGrant,
   getHub,
+  markGrantUsed,
   operateHub,
   revokeGrant,
   validateContext,
@@ -369,7 +370,17 @@ async function route(
     const connection = await authenticateAgent(request, env, fetcher);
     if (request.method !== "POST")
       return new Response(null, { status: 405, headers: { Allow: "POST" } });
-    return handleMcp(request, connection, env, await requestJson(request));
+    const body = await requestJson(request);
+    // The first request of a connection marks it used; an MCP client names
+    // itself in `initialize`.
+    if (!connection.grant.usedAt)
+      await markGrantUsed(
+        env,
+        connection.id,
+        connection.grant,
+        body?.method === "initialize" ? body.params?.clientInfo?.name : undefined,
+      ).catch(() => undefined);
+    return handleMcp(request, connection, env, body);
   }
   if (path.startsWith("/api/agent/")) {
     const user = await session(request, env);

@@ -21,6 +21,13 @@ export function agentOperation(hub: AgentHub, action: any) {
   if (action.type === "add-grant") {
     const grant = action.grant as HubGrant;
     hub.grants = [...hub.grants.filter((item) => item.id !== grant.id), grant].slice(-20);
+  } else if (action.type === "use-grant") {
+    const grant = hub.grants.find((item) => item.id === action.id);
+    if (grant) {
+      grant.usedAt ??= Number(action.usedAt) || Date.now();
+      if (!grant.client && typeof action.client === "string" && action.client)
+        grant.client = action.client.slice(0, 100);
+    }
   } else if (action.type === "remove-grant") {
     hub.grants = hub.grants.filter((item) => item.id !== action.id);
     hub.commands = hub.commands?.filter(

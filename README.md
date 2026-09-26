@@ -18,7 +18,7 @@ Refresh restores the last accessible repository, branch and file for the signed-
 
 The address bar tracks the selected repository ID, branch and file, for example `/#repo=123&branch=main&file=src%2Fpages%2Findex.astro`. Bookmark or copy this URL to reopen that file. Explicit links take priority over remembered navigation and survive GitHub sign-in in the same tab. Links grant no access: the signed-in account still needs repository permission. Fragments are not sent with HTTP requests; draft contents and agent credentials never appear in the URL. New unpublished files can only reopen where their browser-local draft exists.
 
-The **Agent context** section inside the project selector connects MCP clients to the active file, selection, diagnostics and draft changes. Agents can update the active draft or create a new unpublished file; the browser applies changes with conflict checks and undo. Publishing remains in the editor. See [MCP setup and tools](docs/mcp.md).
+**Connect with MCP** in the project selector copies a prompt that connects Claude, Codex or another MCP client to the open site; **Disconnect MCP** revokes it. Agents can update the active draft or create a new unpublished file; the browser applies changes with conflict checks and undo. Publishing remains in the editor. See [MCP setup and tools](docs/mcp.md).
 
 GitHub sign-in is configured on the reference deployment; your own installation registers its own GitHub App during setup. A private test repository is ready at [techiesreviews/astro-editor-starter](https://github.com/techiesreviews/astro-editor-starter).
 

@@ -1,14 +1,13 @@
 import { button, node } from "../ui/dom";
-import { mountDropdown } from "./dropdown";
 import type { EditorContext } from "../../shared/types";
 import type { AgentCommand } from "../../shared/agent";
 import "./agent-menu.css";
 
-// The Agent context panel, and the editor tab's side of the MCP connection.
+// The "Connect with MCP" button, and the editor tab's side of the MCP
+// connection.
 //
 // Agents connect to `/mcp` with OAuth (a custom connector in claude.ai or
-// Claude Desktop, `claude mcp add` in Claude Code) or with a token copied
-// here. Either way the connection belongs to this editor session and one
+// Claude Desktop) or with a token in the prompt copied here. Either way the connection belongs to this editor session and one
 // repository; the Worker keeps the session's connections, the context the
 // sharing tab last reported, and the changes agents queued in one hub
 // (worker/agent-context.ts). This tab polls that hub: while a connection
@@ -29,6 +28,7 @@ interface HubGrant {
   via: "token" | "oauth";
   client?: string;
   createdAt: number;
+  usedAt?: number;
 }
 interface HubState {
   grants: HubGrant[];
@@ -43,7 +43,6 @@ const SLOW = 30_000;
 
 export function createAgentMenu(options: {
   account: string;
-  embedded?: boolean;
   /** The open repository, for the panel; nothing before one is open. */
   repository: () => { id: number; fullName: string } | undefined;
   /** The context to share, built when it is sent. */
@@ -52,7 +51,8 @@ export function createAgentMenu(options: {
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
-  let token: string | undefined;
+  let token: string | undefined,
+    tokenId: string | undefined;
   let disposed = false,
     polling = false,
     changing = false,
@@ -64,71 +64,21 @@ export function createAgentMenu(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
 
+  // One button: "Connect with MCP" makes a token and copies a prompt that
+  // tells an agent how to connect; it waits until an agent first uses the
+  // connection, then offers "Disconnect MCP", which revokes the
+  // repository's connections (OAuth ones included).
   const root = node("div", "agent-menu");
-  const trigger = node("button", "text-button", "Agent context");
-  trigger.type = "button";
-  const panel = node("div", "agent-menu__panel");
-  panel.id = "agent-context";
-  panel.setAttribute("aria-label", "Agent context");
-  const status = node("p", "muted agent-menu__status");
-  status.setAttribute("role", "status");
-  const endpoint = node("input", "agent-menu__endpoint");
-  endpoint.readOnly = true;
-  endpoint.value = `${location.origin}/mcp`;
-  endpoint.setAttribute("aria-label", "MCP server URL");
-  const list = node("ul", "agent-menu__connections");
-  list.setAttribute("aria-label", "Connected agents");
-  const connect = button("Connect with a token", () => void start(), "button secondary");
-  const copy = button("Copy MCP connection", () => void copyConnection("json"), "button primary");
-  const copyCommand = button("Copy Claude Code command", () => void copyConnection("claude"), "button secondary");
-  copy.hidden = copyCommand.hidden = true;
-  const stop = button("Revoke all", () => void revoke({ all: true }), "text-button");
-  stop.hidden = true;
-  const copyContext = button(
-    "Copy current context",
-    async () => {
-      try {
-        const value = await options.context();
-        if (!value) return;
-        await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
-        status.textContent = "Context copied.";
-      } catch {
-        status.textContent = "Clipboard access was denied. Allow it in your browser and retry.";
-      }
-    },
-    "text-button",
-  );
-  panel.append(
-    node("strong", "", "Work with an agent"),
-    node(
-      "p",
-      "muted",
-      "Add this editor to Claude as a custom connector (or any MCP client) with the URL below and sign in; or connect with a token. Agents read your site and make changes here as unsaved drafts you can undo. Saving to GitHub stays with you.",
-    ),
-    endpoint,
-    status,
-    list,
-    copy,
-    copyCommand,
-    connect,
-    stop,
-    copyContext,
-  );
-  root.append(trigger, panel);
-  let dropdown: ReturnType<typeof mountDropdown> | undefined;
-  if (options.embedded) {
-    root.classList.add("agent-menu--embedded");
-    panel.hidden = true;
-    trigger.setAttribute("aria-controls", panel.id);
-    trigger.setAttribute("aria-expanded", "false");
-    trigger.addEventListener("click", () => {
-      panel.hidden = !panel.hidden;
-      trigger.setAttribute("aria-expanded", String(!panel.hidden));
-      if (!panel.hidden) void poll(true);
-    });
-  } else {
-    dropdown = mountDropdown({ trigger, panel, anchor: "--agent-context" });
-  }
+  const action = button("Connect with MCP", () => void act(), "text-button agent-menu__action");
+  const hint = node("p", "agent-menu__hint");
+  hint.setAttribute("role", "status");
+  const again = button("Copy again", () => void copyPrompt(), "text-button agent-menu__link");
+  const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
+  const links = node("span", "agent-menu__links");
+  links.append(again, cancel);
+  root.append(action, hint, links);
+  /** A message that replaces the state's own hint until the state changes. */
+  let notice: { text: string; state: string } | undefined;
 
   async function api(action: string, body?: unknown) {
     const response = await fetch(`/api/agent/${action}`, {
@@ -145,32 +95,55 @@ export function createAgentMenu(options: {
     const repo = options.repository();
     return repo ? hub.grants.filter((grant) => grant.repoId === repo.id) : [];
   };
+  const usedGrants = () => repoGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
+  /** The token this tab made, while no agent has used it yet. */
+  const waiting = () => Boolean(token && tokenId && repoGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
+  function state() {
+    if (!options.repository()) return "closed";
+    if (usedGrants().length) return "connected";
+    return waiting() ? "waiting" : "idle";
+  }
   function paint() {
-    const repo = options.repository();
-    const grants = repoGrants();
-    connect.disabled = !repo || changing;
-    copyContext.disabled = !repo;
-    stop.hidden = grants.length < 2;
-    list.replaceChildren(
-      ...grants.map((grant) => {
-        const item = node("li", "agent-menu__connection");
-        const name = grant.via === "oauth" ? grant.client ?? "OAuth app" : "Token connection";
-        item.append(node("span", "", name));
-        const revokeOne = button("Revoke", () => void revoke({ id: grant.id }), "text-button");
-        revokeOne.setAttribute("aria-label", `Revoke ${name}`);
-        item.append(revokeOne);
-        return item;
-      }),
-    );
-    if (!repo) status.textContent = "Open a project, then connect your agent.";
-    else if (!grants.length)
-      status.textContent = hub.grants.length
-        ? "Sharing paused: your agents are connected to another repository."
-        : `No agent is connected to ${repo.fullName}.`;
-    else if (hub.tabId && hub.tabId !== tabId)
-      status.textContent = "Connected. Another editor tab is sharing its context.";
-    else
-      status.textContent = `Connected (${grants.length}). Agents' changes appear here as drafts while this tab is open.`;
+    const current = state();
+    if (notice && notice.state !== current) notice = undefined;
+    root.dataset.state = current;
+    action.disabled = changing || current === "closed";
+    action.textContent =
+      current === "connected" ? "Disconnect MCP" : current === "waiting" ? "Waiting for connection…" : "Connect with MCP";
+    action.title =
+      current === "connected"
+        ? "Revoke the agents' access to this repository"
+        : current === "waiting"
+          ? "Copy the prompt again"
+          : "Copy a prompt that connects Claude, Codex or another agent to this site";
+    links.hidden = current !== "waiting";
+    let text = "";
+    if (current === "waiting") text = "Prompt copied. Paste it into Claude, Codex or another agent.";
+    else if (current === "connected") {
+      const names = [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
+      text =
+        hub.tabId && hub.tabId !== tabId
+          ? `${names} connected. Another editor tab is sharing its site.`
+          : `${names} connected. Its changes appear here as drafts.`;
+    } else if (current === "idle" && hub.grants.length && !repoGrants().length)
+      text = "Your agent is connected to another repository.";
+    hint.textContent = notice?.text ?? text;
+    hint.hidden = !hint.textContent;
+  }
+  function say(text: string) {
+    const shown = (notice = { text, state: state() });
+    paint();
+    setTimeout(() => {
+      if (notice !== shown) return;
+      notice = undefined;
+      paint();
+    }, 8000);
+  }
+  async function act() {
+    const current = state();
+    if (current === "connected") await revoke();
+    else if (current === "waiting") await copyPrompt();
+    else await start();
   }
   async function start() {
     const repo = options.repository();
@@ -178,58 +151,48 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
+      // Tokens made earlier that no agent used cannot be copied again.
+      for (const grant of repoGrants())
+        if (grant.via === "token" && !grant.usedAt) await api("revoke", { id: grant.id }).catch(() => undefined);
       const result = await api("connect", { repo: repo.fullName, repoId: repo.id });
       if (disposed) return;
       token = result.token;
-      copy.hidden = copyCommand.hidden = false;
+      tokenId = result.id;
       sentRevision = -1;
       changing = false;
       await poll(true);
-      status.textContent = "Token connection made. Copy it into your MCP client now; it is not shown again.";
+      await copyPrompt();
     } catch (error) {
-      status.textContent = (error as Error).message;
+      say((error as Error).message);
     } finally {
       changing = false;
-      connect.disabled = !options.repository();
+      paint();
     }
   }
-  async function revoke(what: { id?: string; all?: boolean }) {
+  async function revoke() {
+    if (changing) return;
+    changing = true;
+    paint();
     try {
-      const repo = options.repository();
-      await api("revoke", what.all ? { all: true, repoId: repo?.id } : { id: what.id });
-      token = undefined;
-      copy.hidden = copyCommand.hidden = true;
+      await api("revoke", { all: true, repoId: options.repository()?.id });
+      token = tokenId = undefined;
+      changing = false;
       await poll(true);
     } catch (error) {
-      status.textContent = (error as Error).message;
+      say((error as Error).message);
+    } finally {
+      changing = false;
+      paint();
     }
   }
-  async function copyConnection(kind: "json" | "claude") {
-    if (!token) return;
-    const text =
-      kind === "json"
-        ? JSON.stringify(
-            {
-              mcpServers: {
-                "native-site-editor": {
-                  type: "http",
-                  url: endpoint.value,
-                  headers: { Authorization: `Bearer ${token}` },
-                },
-              },
-            },
-            null,
-            2,
-          )
-        : `claude mcp add --transport http native-site-editor ${endpoint.value} --header "Authorization: Bearer ${token}"`;
+  async function copyPrompt() {
+    const repo = options.repository();
+    if (!token || !repo) return;
     try {
-      await navigator.clipboard.writeText(text);
-      status.textContent =
-        kind === "json"
-          ? "MCP connection copied. Paste it into your client's configuration. Treat the token as a password."
-          : "Command copied. Run it in a terminal. Treat the token as a password.";
+      await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName));
+      paint();
     } catch {
-      status.textContent = "Clipboard access was denied. Allow it in your browser and retry.";
+      say("Clipboard access was denied. Allow it in your browser, then choose Copy again.");
     }
   }
 
@@ -276,7 +239,7 @@ export function createAgentMenu(options: {
       sentRevision = version;
       lastSent = Date.now();
     } catch (error) {
-      if (!disposed) status.textContent = (error as Error).message;
+      if (!disposed) say((error as Error).message);
     }
   }
 
@@ -327,10 +290,10 @@ export function createAgentMenu(options: {
           await sync(true);
         }
         await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack });
-        status.textContent = ack.message;
+        say(ack.message);
       }
     } catch (error) {
-      if (!disposed) status.textContent = (error as Error).message;
+      if (!disposed) say((error as Error).message);
     } finally {
       polling = false;
     }
@@ -369,8 +332,28 @@ export function createAgentMenu(options: {
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("focus", wake);
       window.removeEventListener("storage", onStorage);
-      token = undefined;
-      dropdown?.destroy();
+      token = tokenId = undefined;
     },
   };
+}
+
+/** What to paste into an agent so it connects itself (or says how). */
+export function connectionPrompt(url: string, token: string, repo: string) {
+  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo}.
+
+Server URL: ${url} (streamable HTTP)
+Header: Authorization: Bearer ${token}
+
+Add it to your MCP servers as "native-site-editor":
+- Claude Code: run
+  claude mcp add --transport http native-site-editor ${url} --header "Authorization: Bearer ${token}"
+- Codex: add to ~/.codex/config.toml, then restart Codex:
+  [mcp_servers.native_site_editor]
+  url = "${url}"
+  http_headers = { Authorization = "Bearer ${token}" }
+- Any other MCP client: an HTTP server with that URL and header.
+
+If you cannot change your own MCP settings, tell me exactly what to do. Once connected, call get_site to see what I have open. Your changes appear in my editor as unsaved drafts that I review and save.
+
+The token works like a password: keep it out of files, commits and chats other than this one. It stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
 }

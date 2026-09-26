@@ -161,6 +161,8 @@ export interface AgentGrant {
   /** The OAuth client's name, as it registered. */
   client?: string;
   createdAt?: number;
+  /** When an agent first used the connection. */
+  usedAt?: number;
 }
 /** A connection as the editor tab lists it. */
 export interface HubGrant {
@@ -170,6 +172,7 @@ export interface HubGrant {
   via: "token" | "oauth";
   client?: string;
   createdAt: number;
+  usedAt?: number;
 }
 /**
  * Everything the agents of one editor session share: the connections, the
@@ -264,6 +267,25 @@ export async function createGrant(
   });
   return { id, token };
 }
+/**
+ * Records a connection's first use, and the MCP client's name when a token
+ * connection brings one, so the editor can show the agent as connected.
+ */
+export async function markGrantUsed(
+  env: Env,
+  id: string,
+  grant: AgentGrant,
+  client?: string,
+) {
+  if (grant.usedAt) return;
+  const name = typeof client === "string"
+    ? client.trim().replace(/[\u0000-\u001f]/g, "").slice(0, 100)
+    : "";
+  const usedAt = Date.now();
+  const named = grant.client ?? (name || undefined);
+  await agentRecord(env, id, "PUT", { ...grant, usedAt, ...(named ? { client: named } : {}) });
+  await operateHub(env, grant.sessionId, { type: "use-grant", id, usedAt, client: named });
+}
 export async function revokeGrant(env: Env, id: string, sessionId: string) {
   await agentRecord(env, id, "DELETE");
   await operateHub(env, sessionId, { type: "remove-grant", id }).catch(
@@ -316,7 +338,7 @@ export async function authenticateAgent(
   if (!token)
     throw new HttpError(
       401,
-      "Connect with OAuth, or supply the MCP token created in the editor's Agent context menu.",
+      "Connect with OAuth, or supply the MCP token from the editor's Connect with MCP prompt.",
     );
   const id = await tokenId(token);
   const grant = await getGrant(env, id);

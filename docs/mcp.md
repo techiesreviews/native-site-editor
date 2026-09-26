@@ -34,18 +34,15 @@ A connection lasts as long as the editor session it was made in (up to eight hou
 
 ### Token: any MCP client with a header
 
-1. Open the site in the editor, open the **project selector** (the repository name at the top left) and expand **Agent context**.
-2. Choose **Connect with a token**, then **Copy MCP connection** (a `mcpServers` entry with `url` and `headers.Authorization`) or **Copy Claude Code command**:
+1. Open the site in the editor and open the **project selector** (the repository name at the top left).
+2. Choose **Connect with MCP**. The editor makes a token for the open repository and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex).
+3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**, with the agent's name (from MCP `initialize`) below.
 
-   ```sh
-   claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"
-   ```
-
-The token is a password for this repository's drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. Paste it only into your MCP client's configuration.
+The token is a password for this repository's drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.
 
 ### In the editor
 
-**Agent context** lists the connections for the open repository (an OAuth app by the name it registered, or "Token connection"), each with **Revoke**. While one exists, the tab shares its context and applies queued changes; the panel's status says so. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab. **Copy current context** copies the shared snapshot as JSON for a one-off handoff.
+While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes; the line under the button names the agents and says so. **Disconnect MCP** revokes every connection to the open repository, OAuth ones included. Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
 
 ## Tools
 
@@ -76,7 +73,7 @@ Every change is checked twice: by the Worker against what the tab last reported 
 ## Boundaries
 
 - **Scope.** A connection is one repository and one signed-in editor session. Every MCP request rechecks the session and that the GitHub App installation still includes the repository. When the tab shows another repository, reads report the site unavailable and edits are refused; a branch or revision change refuses queued changes made for the old one.
-- **Lifetime and revocation.** Revoke in **Agent context**, sign out, or let the session expire (eight hours at most), and the token stops working. Expired records are removed by the Durable Object alarm.
+- **Lifetime and revocation.** Choose **Disconnect MCP**, sign out, or let the session expire (eight hours at most), and the token stops working. Expired records are removed by the Durable Object alarm.
 - **Secrets.** Only the SHA-256 of a token is stored; OAuth codes are stored hashed, single-use and live five minutes; the consent request is bound to the session that saw it. The GitHub token stays in the Worker and is never given to an agent. `/mcp` refuses a request whose `Origin` is not the editor's own (browsers cannot call it from other sites); the consent form must come from the editor's origin.
 - **Clients.** Dynamic registration accepts public clients (`token_endpoint_auth_method: none`) whose redirect URIs are HTTPS, or HTTP to `localhost`/`127.0.0.1`/`[::1]`. Registrations last 180 days. Client ID metadata documents are not supported.
 - **Untrusted content.** File contents, page text, draft text and diagnostics are the site owner's data, not instructions to the agent; the tool descriptions and conventions say so.

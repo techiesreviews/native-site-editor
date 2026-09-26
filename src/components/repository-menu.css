@@ -89,7 +89,7 @@
 
 .repository-menu__section + .repository-menu__section,
 .repository-menu__agent + .repository-menu__section {
-  border-top: 1px solid var(--menu-line);
+  margin-top: 6px;
 }
 
 .repository-menu__heading {
@@ -281,23 +281,10 @@
 }
 
 .repository-menu__action:hover,
-.repository-menu__action:focus-visible,
-.repository-menu__agent .agent-menu > .text-button:hover {
+.repository-menu__action:focus-visible {
   background: var(--menu-hover);
 }
 
-.repository-menu__agent,
-.repository-menu__agent .agent-menu {
-  display: block;
-  justify-self: stretch;
-}
-
-.repository-menu__agent .agent-menu > .text-button {
-  padding: 9px 10px;
-  color: inherit;
-  border-radius: 6px;
-  font-size: 13px;
-}
 
 .repository-menu__heading-button {
   width: 24px;

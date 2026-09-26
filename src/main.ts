@@ -4965,7 +4965,6 @@ async function start() {
       resumeWorkspaceLink();
       mountWorkspace();
       agentMenu = createAgentMenu({
-        embedded: true,
         account: info.user.login,
         repository: agentRepository,
         context: agentContext,
