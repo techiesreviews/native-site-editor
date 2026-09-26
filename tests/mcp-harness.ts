@@ -19,12 +19,19 @@ export const repo = {
   owner: { login: "lex", type: "User" },
 };
 
+// The repository is the site (docs/adr/0001-the-repository-is-the-site.md).
+const page = (title: string, body: string) =>
+  `<!doctype html>\n<html lang="en">\n<head>\n  <title>${title}</title>\n  <link rel="stylesheet" href="/styles/site.css">\n  <script type="module" src="/components/components.js"></script>\n</head>\n<body>\n${body}</body>\n</html>\n`;
 export const files: Record<string, string> = {
-  "src/pages/index.html": `<!--\ntitle: Home\n-->\n<site-header data-key="header"></site-header>\n<main data-key="main">\n  <section class="hero" data-key="hero">\n    <h1>Welcome</h1>\n  </section>\n  <feature-block data-key="feature"><span slot="title">Fast</span></feature-block>\n</main>\n`,
-  "src/pages/about.html": `<!--\ntitle: About\n-->\n<main>\n  <section><h1>About us</h1></section>\n</main>\n`,
-  "src/components/feature-block/feature-block.html": `<section class="feature-block">\n  <h2><slot name="title">A feature</slot></h2>\n</section>\n`,
-  "src/components/site-header/site-header.html": `<header><a href="#/">Home</a></header>\n`,
-  "src/styles/site.css": `body { margin: 0; }\n`,
+  "index.html": page("Home", `<site-header></site-header>\n<main>\n  <section class="hero" data-key="hero">\n    <h1>Welcome</h1>\n  </section>\n  <feature-block data-key="feature"><h2 slot="title">Fast</h2></feature-block>\n</main>\n`),
+  "about/index.html": page("About", `<main>\n  <section><h1>About us</h1></section>\n</main>\n`),
+  "404.html": page("Page not found", `<main>\n  <section><h1>Page not found</h1></section>\n</main>\n`),
+  "components/components.js": `const TAGS = ["feature-block", "site-header"];\n`,
+  "components/feature-block/feature-block.html": `<section class="feature-block">\n  <slot name="title"><h2>A feature</h2></slot>\n</section>\n`,
+  "components/site-header/site-header.html": `<header><a href="/">Home</a></header>\n`,
+  "styles/site.css": `@import url("tokens.css");\nbody { margin: 0; }\n`,
+  "styles/tokens.css": `:root { --accent: green; }\n`,
+  ".editor/config.json": `{ "site": { "name": "Starter", "url": "https://starter.example" } }\n`,
 };
 const shas = Object.fromEntries(
   Object.keys(files).map((path, index) => [path, index.toString(16).padStart(40, "0")]),
@@ -121,56 +128,57 @@ export function editorTab(worker: Miniflare, cookie: string, tabId = "tab-test-0
   };
 }
 
-/** What the editor tab reports for the fake site, with one draft of the about page. */
+/** What the editor tab reports for the fake site, with one draft of the about page and a new page. */
 export async function siteContext(): Promise<EditorContext> {
-  const about = files["src/pages/about.html"].replace("About us", "About the studio");
-  const home = files["src/pages/index.html"];
+  const about = files["about/index.html"].replace("About us", "About the studio");
+  const home = files["index.html"];
+  const fresh = page("New", "<main></main>\n");
   return {
     repository: { id: repo.id, fullName: repo.full_name },
     branch: "main",
     commit,
     file: null,
     drafts: [
-      { path: "src/pages/about.html", baseSha: shas["src/pages/about.html"], updatedAt: Date.now(), hash: await textHash(about), content: about },
-      { path: "src/pages/new.html", baseSha: null, updatedAt: Date.now(), hash: await textHash("<main></main>"), content: "<main></main>" },
+      { path: "about/index.html", baseSha: shas["about/index.html"], updatedAt: Date.now(), hash: await textHash(about), content: about },
+      { path: "new/index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(fresh), content: fresh },
     ],
     pages: [
-      { route: "/", file: "src/pages/index.html", title: "Home" },
-      { route: "/about/", file: "src/pages/about.html", title: "About" },
-      { route: "/about/team/", file: "src/pages/about/team.html", title: "Team", parent: "/about/" },
-      { route: "/new/", file: "src/pages/new.html", title: "New", isNew: true },
+      { route: "/", file: "index.html", title: "Home" },
+      { route: "/about/", file: "about/index.html", title: "About", description: "Who we are." },
+      { route: "/about/team/", file: "about/team/index.html", title: "Team", parent: "/about/" },
+      { route: "/new/", file: "new/index.html", title: "New", isNew: true },
+      { route: "/404.html", file: "404.html", title: "Page not found" },
     ],
     site: {
-      openFile: "src/pages/index.html",
+      openFile: "index.html",
       openRoute: "/",
-      selection: { file: "src/pages/index.html", id: "1.0", tag: "section", text: "Welcome" },
-      manifest: false,
+      selection: { file: "index.html", id: "1.0", tag: "section", text: "Welcome" },
       components: [
-        { tag: "feature-block", file: "src/components/feature-block/feature-block.html", section: true, slots: ["title"] },
-        { tag: "site-header", file: "src/components/site-header/site-header.html", section: false, slots: [] },
+        { tag: "feature-block", file: "components/feature-block/feature-block.html", section: true, slots: ["title"] },
+        { tag: "site-header", file: "components/site-header/site-header.html", section: false, slots: [] },
       ],
-      styles: ["src/styles/site.css"],
-      settings: null,
+      stylesheets: [{ file: "styles/site.css", imports: ["styles/tokens.css"] }],
+      settings: { file: ".editor/config.json", name: "Starter", url: "https://starter.example/" },
       outlines: [
         {
-          file: "src/pages/index.html",
+          file: "index.html",
           hash: await textHash(home),
           containers: [{ id: "1", tag: "main", children: 2 }],
           sections: [
             { id: "1.0", tag: "section", key: "hero", heading: "Welcome" },
-            { id: "1.1", tag: "feature-block", component: true, key: "feature", slots: { title: "Fast" } },
+            { id: "1.1", tag: "feature-block", component: true, key: "feature", heading: "Fast", slots: { title: "Fast" } },
           ],
         },
         {
-          file: "src/pages/about.html",
+          file: "about/index.html",
           hash: await textHash(about),
           containers: [{ id: "0", tag: "main", children: 1 }],
           sections: [{ id: "0.0", tag: "section", heading: "About the studio" }],
         },
       ],
       changes: [
-        { kind: "M", path: "src/pages/about.html" },
-        { kind: "A", path: "src/pages/new.html" },
+        { kind: "M", path: "about/index.html" },
+        { kind: "A", path: "new/index.html" },
       ],
     },
   };

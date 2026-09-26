@@ -78,6 +78,10 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     expect(site.pages[0]).toMatchObject({ route: "/", file: indexPath });
     expect(site.pages.map((item: { route: string }) => item.route)).toEqual(["/", "/about/"]);
     expect(site.components.find((item: { tag: string }) => item.tag === "feature-block")).toMatchObject({ section: true, slots: ["title", "body"] });
+    expect(site.settings).toEqual({ file: ".editor/config.json", name: "Native Studio" });
+    expect(site.stylesheets).toEqual([{ file: "styles/site.css", imports: [] }]);
+    expect(site.notFound).toBeNull();
+    expect(site.pages[0]).toMatchObject({ title: "Native Studio", description: "A small site built from plain HTML, CSS and shared components." });
 
     // Page text through edit_file: the preview shows it, as a draft with Undo.
     const home = await call("get_page", { page: "/" });
@@ -117,6 +121,17 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     await undo(page).click();
     await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
 
+    // The site gets an address, and the home page its canonical and og:url.
+    const config = await call("read_file", { path: ".editor/config.json" });
+    await call("edit_file", { path: ".editor/config.json", expectedHash: config.hash, edits: [{ oldText: '"name": "Native Studio"', newText: '"name": "Native Studio",\n    "url": "https://studio.example"' }] });
+    const head = await call("read_file", { path: indexPath });
+    await call("edit_file", {
+      path: indexPath,
+      expectedHash: head.hash,
+      edits: [{ oldText: '<meta property="og:title"', newText: '<link rel="canonical" href="https://studio.example/">\n  <meta property="og:url" content="https://studio.example/">\n  <meta property="og:title"' }],
+    });
+    await expect.poll(async () => (await call("get_site")).settings?.url).toBe("https://studio.example/");
+
     // A new page under the site, opened in the editor, then its details.
     const created = await call("create_page", { title: "Our team" });
     expect(created.state).toBe("applied");
@@ -129,8 +144,13 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     const made = (await draft(page, "our-team/index.html")).content;
     expect(made).toContain("<title>Our team</title>");
     expect(made).toContain('<meta name="description" content="The people behind the studio.">');
+    // Its own address, not the home page's; og:title and og:description follow.
+    expect(made).toContain('<link rel="canonical" href="https://studio.example/our-team/">');
+    expect(made).toContain('<meta property="og:url" content="https://studio.example/our-team/">');
+    expect(made).toContain('<meta property="og:title" content="Our team">');
+    expect(made).toContain('<meta property="og:description" content="The people behind the studio.">');
     const after = await call("get_site");
-    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "our-team/index.html", title: "Our team", new: true });
+    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "our-team/index.html", title: "Our team", description: "The people behind the studio.", new: true });
     expect(after.changes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "M", path: indexPath }),
       expect.objectContaining({ kind: "A", path: "our-team/index.html" }),

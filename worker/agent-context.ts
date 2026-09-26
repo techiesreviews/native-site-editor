@@ -16,7 +16,8 @@ const path = z
       value.split("/").every((part) => part && part !== "." && part !== "..") &&
       !/[\\\u0000-\u001f]/.test(value),
   );
-const route = z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*$/);
+// `/`, `/about/`, and a single-file page's `/notes.html` or `/404.html`.
+const route = z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*(?:[\w.-]+\.html)?$/);
 const outlineId = z.string().max(320).regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/);
 const short = (max: number) => z.string().max(max);
 const schema = z.object({
@@ -87,7 +88,6 @@ const schema = z.object({
       selection: z
         .object({ file: path, id: outlineId, tag: short(100), text: short(200) })
         .nullable(),
-      manifest: z.boolean(),
       components: z
         .array(
           z.object({
@@ -99,8 +99,8 @@ const schema = z.object({
           }),
         )
         .max(300),
-      styles: z.array(path).max(100),
-      settings: path.nullable(),
+      stylesheets: z.array(z.object({ file: path, imports: z.array(path).max(100) })).max(50),
+      settings: z.object({ file: path, name: short(200).optional(), url: short(1000).optional() }).nullable(),
       outlines: z
         .array(
           z.object({

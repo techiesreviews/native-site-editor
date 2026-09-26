@@ -3,7 +3,8 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
-import { NATIVE_CONFIG_PATH, minimalTextEdit, nativePageStylesheets, type NativeSite } from "../shared/native-project";
+import { expandStyleImports } from "../shared/css-imports";
+import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { outlineId, parseOutlineId, textHash, type AgentCommand } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
@@ -103,6 +104,7 @@ export interface AgentSiteInput {
   native?: {
     site: NativeSite;
     routeInfo(route: string): { title?: string; description?: string };
+    /** A page's, template's, stylesheet's or the settings' text as edited; undefined when it was not read. */
     source(path: string): string | undefined;
     exists(path: string): boolean;
     openFile?: string;
@@ -140,11 +142,11 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
   };
   const native = input.native;
   if (!native) return context;
-  const { site: manifest } = native;
+  const { site } = native;
   const newFiles = new Set(input.drafts.filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path));
   const tree = buildNativePagesTree({
-    routes: manifest.routes,
-    titles: Object.fromEntries(Object.keys(manifest.routes).map((route) => [route, native.routeInfo(route).title])),
+    routes: site.routes,
+    titles: Object.fromEntries(Object.keys(site.routes).map((route) => [route, native.routeInfo(route).title])),
     heading: (file) => firstHeadingText(native.source(file)),
     isNew: (file) => newFiles.has(file),
   });
@@ -167,17 +169,17 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
     });
   const sectionTags = new Set<string>();
   const components: AgentSiteContext["components"] = [];
-  for (const [tag, file] of Object.entries(manifest.components).slice(0, 300)) {
+  for (const [tag, file] of Object.entries(site.components).slice(0, 300)) {
     const template = native.source(file) ?? "";
     const section = isSectionTemplate(template);
     if (section) sectionTags.add(tag);
-    const css = file.replace(/\.html$/, ".css");
+    const css = nativeComponentCssPath(file);
     const slots = [...new Set([...template.matchAll(/<slot\b[^>]*\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)].map((match) => (match[1] ?? match[2] ?? match[3]).slice(0, 100)))].slice(0, 50);
     components.push({ tag, file, ...(native.exists(css) ? { css } : {}), section, slots });
   }
   const tags = [...sectionTags].sort().join(",");
   const outlines: AgentPageOutline[] = [];
-  for (const file of new Set(Object.values(manifest.routes))) {
+  for (const file of new Set(Object.values(site.routes))) {
     const source = native.source(file);
     if (source === undefined || outlines.length >= 500) continue;
     const cached = outlineCache.get(file);
@@ -190,22 +192,40 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
     outlines.push(outline);
   }
   const selection = native.selection;
-  const openRoute = native.openFile ? Object.entries(manifest.routes).find(([, file]) => file === native.openFile)?.[0] : undefined;
+  const openRoute = native.openFile ? Object.entries(site.routes).find(([, file]) => file === native.openFile)?.[0] : undefined;
   context.site = {
     openFile: native.openFile ?? null,
     openRoute: openRoute ?? null,
     selection: selection?.node?.length
       ? { file: selection.path, id: outlineId(selection.node), tag: selection.tag.slice(0, 100), text: clip(selection.text, 200) }
       : null,
-    manifest: false,
     components,
-    styles: nativePageStylesheets(native.source(manifest.routes["/"]) ?? "", manifest.routes["/"] ?? "index.html").slice(0, 100),
-    settings: native.exists(NATIVE_CONFIG_PATH) ? NATIVE_CONFIG_PATH : null,
+    stylesheets: linkedStylesheets(site, native.source),
+    settings: native.exists(NATIVE_CONFIG_PATH) ? { file: NATIVE_CONFIG_PATH, ...clipSettings(nativeSiteSettings(native.source(NATIVE_CONFIG_PATH))) } : null,
     outlines,
     changes: listChanges(input.drafts).slice(0, 500).map((change) => ({ kind: change.kind, path: change.path, ...(change.from ? { from: change.from } : {}) })),
   };
   return context;
 }
+
+/**
+ * The stylesheets the pages' heads link, in page order (the home page
+ * first), each with every file it `@import`s, as the preview adopts them.
+ */
+export function linkedStylesheets(site: NativeSite, source: (path: string) => string | undefined): AgentSiteContext["stylesheets"] {
+  const linked: string[] = [];
+  for (const [, file] of Object.entries(site.routes))
+    for (const path of nativePageStylesheets(source(file) ?? "", file)) if (!linked.includes(path)) linked.push(path);
+  return linked.slice(0, 50).map((file) => ({
+    file,
+    imports: source(file) === undefined ? [] : [...expandStyleImports([file], source).imported].slice(0, 100),
+  }));
+}
+
+const clipSettings = ({ name, url }: { name?: string; url?: string }) => ({
+  ...(name ? { name: name.slice(0, 200) } : {}),
+  ...(url && url.length <= 1000 ? { url } : {}),
+});
 
 // ---- Applying agents' changes ----
 

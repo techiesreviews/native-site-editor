@@ -180,7 +180,7 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     assert.equal(site.repository, "lex/starter");
     const queued = payload(await client.callTool({ name: "open_page", arguments: { page: "/about/", waitSeconds: 0 } }));
     assert.equal(queued.state, "pending");
-    assert.equal((await tab.hub()).commands[0].path, "src/pages/about.html");
+    assert.equal((await tab.hub()).commands[0].path, "about/index.html");
 
     // Revoking in the editor ends it.
     assert.equal((await tab.post("/api/agent/revoke", { all: true, repoId: repo.id })).status, 200);

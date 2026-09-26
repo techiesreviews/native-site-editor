@@ -143,10 +143,9 @@ export interface EditorContext {
     movedFrom?: string;
   }[];
   /**
-   * A native project's pages by route (shared/native-routes.ts: where a file
-   * is under `src/pages/` is its URL, unless native.json maps the route), with
-   * the title and description native.json gives the route, else the page's
-   * leading `<!-- title: … -->` comment, and the route of the row it sits
+   * A native project's pages by route (shared/native-routes.ts: a page's
+   * URL is its file's path, `about/index.html` is `/about/`), with the title
+   * and description its `<head>` gives, and the route of the row it sits
    * under in the Pages tab (`parent`). A folder of pages with no page of its
    * own has no `file`. Absent for other projects.
    */
@@ -183,12 +182,11 @@ export interface AgentSiteContext {
   openRoute: string | null;
   /** The element selected in the preview. */
   selection: { file: string; id: string; tag: string; text: string } | null;
-  /** Whether `.astro-editor/native.json` exists. */
-  manifest: boolean;
   components: { tag: string; file: string; css?: string; section: boolean; slots: string[] }[];
-  styles: string[];
-  /** The site settings file, when there is one. */
-  settings: string | null;
+  /** The stylesheets the pages' heads link, in order, each with the files it `@import`s (in cascade order). */
+  stylesheets: { file: string; imports: string[] }[];
+  /** `.editor/config.json`, when there is one, with the site's name and address. */
+  settings: { file: string; name?: string; url?: string } | null;
   outlines: AgentPageOutline[];
   /** Draft changes as the Save panel lists them. */
   changes: { kind: "A" | "M" | "R" | "D"; path: string; from?: string }[];

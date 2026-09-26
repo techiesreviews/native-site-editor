@@ -24,6 +24,7 @@ import {
   type AgentOperation,
 } from "../shared/agent";
 import type { AgentPageOutline, EditorContext } from "../shared/types";
+import { NATIVE_NOT_FOUND_ROUTE, nativeLinkTarget } from "../shared/native-routes";
 import { HttpError } from "./github";
 import { SiteFiles, writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
@@ -34,6 +35,7 @@ interface PageNode {
   route: string;
   file?: string;
   title?: string;
+  description?: string;
   new?: true;
   subpages?: PageNode[];
 }
@@ -76,7 +78,7 @@ const pageRef = z
   .string()
   .min(1)
   .max(1024)
-  .describe('The page: its URL ("/about/") or its file ("src/pages/about.html").');
+  .describe('The page: its URL ("/about/", "/404.html") or its file ("about/index.html").');
 const sectionId = z
   .string()
   .max(320)
@@ -91,6 +93,7 @@ export function pageTree(pages: Page[]): PageNode[] {
       route: page.route,
       ...(page.file ? { file: page.file } : {}),
       ...(page.title ? { title: page.title } : {}),
+      ...(page.description ? { description: page.description } : {}),
       ...(page.isNew ? { new: true as const } : {}),
     });
   const roots: PageNode[] = [];
@@ -101,6 +104,24 @@ export function pageTree(pages: Page[]): PageNode[] {
     else roots.push(node);
   }
   return roots;
+}
+
+/** The page hosts show for addresses the site does not have: the root `404.html`. */
+function notFoundPage(pages: Page[]) {
+  const page = pages.find((item) => item.route === NATIVE_NOT_FOUND_ROUTE && item.file);
+  return page ? { route: page.route, file: page.file } : null;
+}
+
+/**
+ * The page `ref` names among `pages`: its file, or its URL as a link would
+ * give it (`/about/`, `/about`, `/about/index.html`, `about/`).
+ */
+export function findPageRef(pages: Page[], ref: string): Page | undefined {
+  const byFile = pages.find((item) => item.file === ref);
+  if (byFile) return byFile;
+  const routes = Object.fromEntries(pages.filter((item) => item.file).map((item) => [item.route, item.file!]));
+  const route = nativeLinkTarget(ref.startsWith("/") ? ref : `/${ref}`, "/", routes);
+  return route === undefined ? undefined : pages.find((item) => item.route === route);
 }
 
 function contextAge(hub: AgentHub | undefined) {
@@ -137,11 +158,11 @@ export function siteSummary(hub: AgentHub | undefined, context: EditorContext | 
     ...(context.pages
       ? {
           native: true,
-          pages: pageTree(context.pages),
-          components: site?.components ?? [],
-          styles: site?.styles ?? [],
           settings: site?.settings ?? null,
-          manifest: site?.manifest ?? false,
+          pages: pageTree(context.pages),
+          notFound: notFoundPage(context.pages),
+          components: site?.components ?? [],
+          stylesheets: site?.stylesheets ?? [],
         }
       : { native: false }),
     changes: site?.changes ?? context.drafts.map((draft) => ({ path: draft.path })),
@@ -173,7 +194,7 @@ export function createSiteServer(connection: Connection, env: Env) {
   function findPage(context: EditorContext, ref: string) {
     const pages = context.pages;
     if (!pages) throw new HttpError(400, "This repository is not a native site.");
-    const page = pages.find((item) => item.file && (item.route === ref || item.file === ref || item.route === ref.replace(/^\/?/, "/").replace(/\/?$/, "/")));
+    const page = findPageRef(pages, ref);
     if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
     return page as Page & { file: string };
   }
@@ -251,7 +272,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "get_site",
     {
       description:
-        "Start here. The site as the user's editor tab shows it: repository, branch, the open file and page, the element selected in the preview, pages as a tree by URL (with files and titles), components (section components can be added between page sections; slots are their fillable parts), stylesheets, the settings file, and unsaved draft changes.",
+        "Start here. The site as the user's editor tab shows it: repository, branch, the open file and page, the element selected in the preview, the site's name and address (.editor/config.json), pages as a tree by URL (file, and the title and description from each page's <head>), the not-found page (404.html), components (template, stylesheet, whether it is a section component that can go between page sections, and its slots: the parts a page fills), the stylesheets the pages link with the files they @import, and unsaved draft changes.",
       inputSchema: z.object({}),
       annotations: readOnly,
     },
@@ -266,7 +287,7 @@ export function createSiteServer(connection: Connection, env: Env) {
       description:
         "List repository file paths at the revision the editor shows, with the user's unsaved drafts applied (draft: A added, M modified, R renamed here).",
       inputSchema: z.object({
-        folder: z.string().max(1024).optional().describe('Only files under this folder, such as "src/components".'),
+        folder: z.string().max(1024).optional().describe('Only files under this folder, such as "components".'),
       }),
       annotations: readOnly,
     },
@@ -305,7 +326,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "get_page",
     {
       description:
-        "Read a page: its URL, title, description, source and content hash, and its outline: the elements holding sections (containers) and each section with its id, tag, heading or text, and for a section component its slot text. Section ids are what add_section, move_section and remove_section take.",
+        "Read a page (a full HTML document): its URL, file, title and description (from its <head>), source and content hash, and the outline of its <body>: the elements holding sections (containers) and each section with its id, tag, heading or text, and for a section component its slot text. Section ids are what add_section, move_section and remove_section take.",
       inputSchema: z.object({
         page: pageRef,
         source: z.boolean().optional().describe("Include the page's HTML source (default true)."),
@@ -392,7 +413,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "write_file",
     {
       description:
-        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (src/components/<tag>/<tag>.html and .css), read the native-site://conventions resource and follow its section component pattern.",
+        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (components/<tag>/<tag>.html and .css), read the native-site://conventions resource and follow its section component pattern; then add the tag to the list in components/components.js and to the :not(:defined) rule in styles/site.css with edit_file, or the live site will not show it.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
         content: z.string().max(131072),
@@ -430,11 +451,11 @@ export function createSiteServer(connection: Connection, env: Env) {
     "move_file",
     {
       description:
-        "Rename or move a file or folder, as the editor's Files tab does: a page's URL follows its file, links to it are updated, and keepOldUrl adds a redirect from the old URL. Unsaved until the user saves.",
+        "Rename or move a file or folder, as the editor's Files tab does. A page's URL is its path, so moving a page changes its URL: root links to it (href=\"/about/\") in every page, template and stylesheet are updated, and keepOldUrl adds \"/old/ /new/ 301\" to _redirects. Move a page's folder (about → company/about) to take its subpages and images along. Unsaved until the user saves.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
-        to: z.string().min(1).max(1024).describe("The full new path, such as src/pages/company/about.html."),
-        keepOldUrl: z.boolean().optional().describe("For a page on the live site: redirect its old URL to the new one (default: yes when it is live)."),
+        to: z.string().min(1).max(1024).describe("The full new path, such as company/about (a folder page's folder) or company/about/index.html."),
+        keepOldUrl: z.boolean().optional().describe("For a page already saved to GitHub: redirect its old URL to the new one in _redirects (default: yes)."),
         requestId,
         waitSeconds,
       }),
@@ -475,10 +496,10 @@ export function createSiteServer(connection: Connection, env: Env) {
     "create_page",
     {
       description:
-        "Create a page, as the Pages tab does: its file from the home page's layout with the title as its heading and in its page comment, under a parent page (a page with no subpages yet becomes a folder, keeping its URL). Returns the new file and URL.",
+        "Create a page, as the Pages tab does: <parent folder>/<slug>/index.html at <parent URL><slug>/, a copy of the home page's document with the new <title> (and og:title), the description cleared, its own address in canonical and og:url (from the site's address in .editor/config.json; removed without one), and <main> emptied (header and footer stay). Add sections to it with add_section. Returns the new file and URL.",
       inputSchema: z.object({
         title: z.string().min(1).max(200),
-        parent: z.string().max(1024).optional().describe('The URL of the page it goes under (default "/", the top of the site).'),
+        parent: z.string().max(1024).optional().describe('The URL of the page it goes under, a folder page such as "/work/" (default "/", the top of the site).'),
         slug: z
           .string()
           .regex(/^[a-z0-9][a-z0-9-]{0,79}$/)
@@ -494,9 +515,10 @@ export function createSiteServer(connection: Connection, env: Env) {
       if (!context.pages) return failure("This repository is not a native site.");
       const under = parent ? parent.replace(/^\/?/, "/").replace(/\/?$/, "/") : "/";
       if (under !== "/" && !context.pages.some((page) => page.route === under))
-        return failure(`No page at ${under}. get_site lists the pages.`);
+        return failure(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
       return queue("create_page", context, {
-        path: `src/pages${under.slice(0, -1)}`,
+        // The parent's folder: one new page there waits at a time.
+        path: under === "/" ? "." : under.slice(1, -1),
         args: { parent: under, title, ...(slug ? { slug } : {}) },
         requestId,
         waitSeconds,
@@ -507,7 +529,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "set_page_details",
     {
       description:
-        "Set a page's title and/or description, as the Page block does: in the page's leading comment (and out of native.json when that still has them). An empty string removes one.",
+        "Set a page's title and/or description, as the Page block does: the <title> and <meta name=\"description\"> in the page's <head>, with og:title and og:description when the page has them. An empty string empties one.",
       inputSchema: z.object({
         page: pageRef,
         title: z.string().max(200).optional(),
@@ -541,7 +563,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     },
     async ({ page: ref, requestId, waitSeconds }) => {
       const { context } = await current();
-      const page = context.pages?.find((item) => item.file && (item.route === ref || item.file === ref));
+      const page = context.pages && findPageRef(context.pages, ref);
       const path = page?.file ?? ref;
       const problem = writablePathProblem(path);
       if (problem) return failure(problem);
@@ -576,7 +598,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     "add_section",
     {
       description:
-        "Add a section component to a page between its sections, as the page builder's + does: a new instance with its own copy of the template's slot text, which you can then change with edit_file. Without before/after it goes at the end. Needs the page hash from get_page.",
+        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance with a copy of each slot's fallback as a whole element (<h2 slot=\"title\">…</h2>), which you can then change with edit_file. Without before/after it goes at the end. Needs the page hash from get_page.",
       inputSchema: z.object({
         page: pageRef,
         component: z.string().min(1).max(100).describe("A component tag get_site marks as a section component."),

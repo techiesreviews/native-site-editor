@@ -99,7 +99,7 @@ export function writablePathProblem(path: string): string | undefined {
       ) ||
     /[\\\u0000-\u001f]/.test(path)
   )
-    return "Invalid path. Use a repository path such as src/pages/about.html.";
+    return "Invalid path. Use a repository path such as about/index.html.";
   if (path.startsWith(".github/workflows/"))
     return "Workflows cannot be changed through the editor.";
   return undefined;
