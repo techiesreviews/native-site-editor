@@ -7,6 +7,7 @@ import {
   nativeConventionComponents,
   nativePageBody,
   nativePageHead,
+  nativePageMovedUrl,
   nativePageStylesheets,
   nativePageWithDetail,
   nativePageWithDetails,
@@ -198,4 +199,17 @@ test("a page's own address sets its canonical link and og:url, or removes both",
   // Nothing is added to a page that has neither, and the body's links are not the head's.
   const bare = '<head><title>x</title></head><body><link rel="canonical" href="/x/"></body>';
   assert.equal(nativePageWithUrl(bare, "https://a.example/x/"), bare);
+});
+
+test("a moved page's canonical and og:url follow it: the site's address when there is one, else the host they name", () => {
+  const page = '<head>\n  <title>Team</title>\n  <link rel="canonical" href="https://old.example/about/team/">\n  <meta property="og:url" content="https://old.example/about/team/">\n</head>\n<body></body>';
+  const addressed = nativePageMovedUrl(page, "/about/team/", "/people/", "https://studio.example");
+  assert.match(addressed, /<link rel="canonical" href="https:\/\/studio\.example\/people\/">/);
+  assert.match(addressed, /<meta property="og:url" content="https:\/\/studio\.example\/people\/">/);
+  const kept = nativePageMovedUrl(page, "/about/team/", "/people/", undefined);
+  assert.equal(kept, page.replaceAll("https://old.example/about/team/", "https://old.example/people/"));
+  // One that does not point at the old URL, or a page with neither, stays as it is.
+  const other = page.replace('content="https://old.example/about/team/"', 'content="https://old.example/"');
+  assert.match(nativePageMovedUrl(other, "/about/team/", "/people/", undefined), /og:url" content="https:\/\/old\.example\/"/);
+  assert.equal(nativePageMovedUrl("<head><title>T</title></head>", "/a/", "/b/", "https://studio.example"), "<head><title>T</title></head>");
 });

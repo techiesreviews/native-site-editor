@@ -211,6 +211,9 @@ test("changing the URL of a page with subpages in the Pages tab moves its folder
   expect(await branchFile(page, routingRepo, "projects/index.html")).toContain('href="/projects/fern-and-kettle/"');
   // A relative link needs no change.
   expect(await branchFile(page, routingRepo, "projects/fern-and-kettle/index.html")).toContain('href="../"');
+  // A subpage's canonical and og:url follow it too.
+  expect(await branchFile(page, routingRepo, "projects/fern-and-kettle/index.html")).toContain('<link rel="canonical" href="https://routing.example/projects/fern-and-kettle/">');
+  expect(await branchFile(page, routingRepo, "projects/fern-and-kettle/index.html")).toContain('<meta property="og:url" content="https://routing.example/projects/fern-and-kettle/">');
   expect(await branchFile(page, routingRepo, "projects/notes.html")).toBeDefined();
   expect(await branchFile(page, routingRepo, redirectsPath)).toContain("/work/ /projects/ 301\n");
 });

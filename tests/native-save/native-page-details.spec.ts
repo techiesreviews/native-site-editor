@@ -228,6 +228,10 @@ test("renaming a page's folder in the Files tab updates the links to it and can 
   await expect(status(page)).toHaveText("Renamed the folder work/fern-and-kettle to work/fern — 1 link updated in 1 file; /work/fern-and-kettle/ redirects there.");
   expect((await draft(page, "work/index.html")).content).toContain('href="/work/fern/"');
   expect((await draft(page, "_redirects")).content).toBe("/work/fern-and-kettle/ /work/fern/ 301\n");
+  // The page's own address follows it, on the host it names (the site has no address set).
+  const moved = (await draft(page, "work/fern/index.html")).content;
+  expect(moved).toContain('<link rel="canonical" href="https://routing.example/work/fern/">');
+  expect(moved).toContain('<meta property="og:url" content="https://routing.example/work/fern/">');
   await page.keyboard.press("Escape");
   await expect(explorer(page)).toBeHidden();
   // The updated link leads to the page at its new URL.

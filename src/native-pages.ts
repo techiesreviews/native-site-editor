@@ -120,6 +120,17 @@ export function nativePageLabel(file: string, input: Pick<NativePagesInput, "rou
   return pageLabel(file, route, route === "/" ? "home" : route === NATIVE_NOT_FOUND_ROUTE ? "notFound" : undefined, input);
 }
 
+/**
+ * The pages a link's Address suggests, as "Title (/route/)": every page of
+ * the site but the not-found page, which nothing links to.
+ */
+export function nativeLinkSuggestions(routes: Iterable<string>, title: (route: string) => string | undefined): { label: string; value: string }[] {
+  return [...routes].filter((route) => route !== NATIVE_NOT_FOUND_ROUTE).map((route) => {
+    const text = title(route);
+    return { label: text ? `${text} (${route})` : route, value: route };
+  });
+}
+
 /** The text of the first `<h1>` in `html`, tags dropped and whitespace collapsed. */
 export function firstHeadingText(html: string | undefined): string | undefined {
   if (!html) return undefined;

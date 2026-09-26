@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import {
+  nativeNewPageTitle,
   nativePageTemplate,
   newFilePath,
   newFolderPath,
@@ -106,4 +107,29 @@ test("an indented <main> keeps its indentation; without one, the body gets a <ma
     assert.equal(nativePageHead(page).title, "Intro", String(home));
     assert.match(page, /<body>\n  <main>\n  <\/main>\n<\/body>/, String(home));
   }
+});
+
+test("a new page's title takes the home page's form: \"X · Site\" gives \"New · Site\"", () => {
+  assert.equal(nativeNewPageTitle("Small, editable websites · Larkspur Studio", "New"), "New · Larkspur Studio");
+  assert.equal(nativeNewPageTitle("Home | Studio", " Team "), "Team | Studio");
+  assert.equal(nativeNewPageTitle("A — B — Studio", "Team"), "Team — Studio");
+  // Already in that form, or the site's name itself: as typed.
+  assert.equal(nativeNewPageTitle("Home · Studio", "Team · Studio"), "Team · Studio");
+  assert.equal(nativeNewPageTitle("Home · Studio", "Studio"), "Studio");
+  // A home page title with no site part, or none at all.
+  assert.equal(nativeNewPageTitle("Native Studio", "Team"), "Team");
+  assert.equal(nativeNewPageTitle(undefined, "Team"), "Team");
+  assert.equal(nativeNewPageTitle("Home · ", "Team"), "Team");
+});
+
+test("a new page is titled in the home page's form and leaves out its structured data", () => {
+  const home = starterHome
+    .replace("<title>Native Studio</title>", "<title>Plain websites · Native Studio</title>")
+    .replace('<meta property="og:title" content="Native Studio">', '<meta property="og:title" content="Plain websites · Native Studio">')
+    .replace("</head>", '  <script type="application/ld+json">\n    { "@context": "https://schema.org", "@type": "Organization", "name": "Native Studio" }\n  </script>\n</head>');
+  const page = nativePageTemplate(home, "Our team");
+  assert.equal(nativePageHead(page).title, "Our team · Native Studio");
+  assert.match(page, /<meta property="og:title" content="Our team · Native Studio">/);
+  assert.doesNotMatch(page, /ld\+json|schema\.org/);
+  assert.match(page, /<script type="module" src="\/components\/components.js"><\/script>\n<\/head>/);
 });

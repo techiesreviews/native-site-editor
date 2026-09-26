@@ -34,7 +34,7 @@ import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
-import { buildNativePagesTree, firstHeadingText, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
+import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
@@ -48,7 +48,7 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import type {
   EditorContext,
   Directory,
@@ -1045,10 +1045,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       warning: current ? undefined : "No address",
       value: href?.value ?? "",
       placeholder: "Page or web address",
-      suggestions: Object.keys(site.routes).map((route) => {
-        const title = nativeRouteInfo(route).title;
-        return { label: title ? `${title} (${route})` : route, value: route };
-      }),
+      suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => nativeRouteInfo(route).title),
       open,
       // Beside the address: a new tab (target and rel) and an optional title.
       extras: [
@@ -2580,6 +2577,21 @@ function nativeAddress(route: string) {
   return nativePageUrl(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, route);
 }
 
+// Pages whose URL changes keep their own address: the canonical link and
+// og:url of each (`file`, at `moved` after the move) follow it from `from`
+// to `to`, written into `edits` (by the path after the move) on top of the
+// link updates there.
+function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[]) {
+  const siteUrl = nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url;
+  for (const page of pages) {
+    const path = page.moved ?? page.file;
+    const text = edits.get(path) ?? nativeEffectiveSource(page.file);
+    if (text === undefined) continue;
+    const next = nativePageMovedUrl(text, page.from, page.to, siteUrl);
+    if (next !== text) edits.set(path, next);
+  }
+}
+
 // The Pages tab's label of the page file `file`.
 function nativePageLabelOf(file: string) {
   const site = nativeSite;
@@ -2867,6 +2879,8 @@ async function changeNativeUrl(file: string, value: string, keep: boolean): Prom
   if (!planned.ok) return planned.error === UNCHANGED_URL ? undefined : planned.error;
   const change = planned.value;
   const edits = new Map(change.links.map((item) => [item.path, item.text]));
+  const moved = new Map(change.move.moves.map((item) => [item.from, item.to]));
+  withMovedPageUrls(edits, change.move.routes.map(([from, to]) => ({ file: nativeSite!.routes[from], moved: moved.get(nativeSite!.routes[from]), from, to })));
   let redirects: string | undefined;
   try {
     redirects = await readNativeRedirects();
@@ -3712,6 +3726,8 @@ interface FileMoveUrls {
   live: boolean;
   /** Pages among the files that stop being pages (their links lead nowhere). */
   gone: string[];
+  /** Pages whose URL changes: the file, where it goes, its old and new URL. */
+  pages: { file: string; moved: string; from: string; to: string }[];
 }
 function planFileMoveUrls(ops: { file: MovableFile; to: string }[]): FileMoveUrls | undefined {
   const site = nativeSite;
@@ -3723,12 +3739,16 @@ function planFileMoveUrls(ops: { file: MovableFile; to: string }[]): FileMoveUrl
   const routeOf = new Map(Object.entries(after.site.routes).map(([route, file]) => [file, route]));
   const pairs: [string, string][] = [];
   const gone: string[] = [];
+  const pages: FileMoveUrls["pages"] = [];
   for (const [route, file] of Object.entries(site.routes)) {
     const to = moved.get(file);
     if (!to) continue;
     const next = routeOf.get(to);
     if (!next) gone.push(file);
-    else if (next !== route) pairs.push([route, next]);
+    else if (next !== route) {
+      pairs.push([route, next]);
+      pages.push({ file, moved: to, from: route, to: next });
+    }
   }
   if (!pairs.length) return undefined;
   const changes = groupRouteChanges(Object.keys(site.routes), pairs);
@@ -3751,7 +3771,7 @@ function planFileMoveUrls(ops: { file: MovableFile; to: string }[]): FileMoveUrl
     redirect.set(change, routes.filter((route) => pairs.some(([from]) => from === route) && onBranchHere(site.routes[route])));
   }
   const live = pairs.some(([route]) => onBranchHere(site.routes[route]));
-  return { changes, links, complete, redirect, live, gone };
+  return { changes, links, complete, redirect, live, gone, pages };
 }
 
 // A Files-tab rename or move that changes pages' URLs: a confirmation that
@@ -3783,6 +3803,7 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
   });
   if (!answer.value) { announce(`Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`); return undefined; }
   const edits = new Map(urls.links.map((item) => [item.path, item.text]));
+  withMovedPageUrls(edits, urls.pages);
   let redirects: string | undefined;
   try {
     redirects = await readNativeRedirects();

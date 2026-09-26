@@ -380,3 +380,28 @@ export function nativePageWithUrl(html: string, url: string | undefined): string
   }
   return text;
 }
+
+/**
+ * A page that moved from the URL `from` to `to`, with its own address
+ * following it: with the site's address (`siteUrl`, from
+ * `.editor/config.json`) its canonical link and `og:url` become that
+ * address plus `to` (`nativePageWithUrl`); without one, each of them that
+ * points at `from` on whatever host it names points at `to` there instead,
+ * and the rest are left alone.
+ */
+export function nativePageMovedUrl(html: string, from: string, to: string, siteUrl: string | undefined): string {
+  if (siteUrl) return nativePageWithUrl(html, nativePageUrl(siteUrl, to));
+  let text = html;
+  for (const which of ["og:url", "canonical"] as const) {
+    const parts = headParts(text);
+    const tag = which === "canonical" ? parts.canonical : parts.meta["og:url"];
+    const name = which === "canonical" ? "href" : "content";
+    const value = tag && startTagAttribute(text, tag, name)?.value;
+    if (!tag || !value) continue;
+    let url: URL;
+    try { url = new URL(value.trim()); } catch { continue; }
+    if (decodeURI(url.pathname) !== from) continue;
+    text = withContent(text, tag, `${url.origin}${to}`, name);
+  }
+  return text;
+}

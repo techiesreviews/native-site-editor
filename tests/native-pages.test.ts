@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   buildNativePagesTree,
   firstHeadingText,
+  nativeLinkSuggestions,
   nativeNewTarget,
   nativePageLabel,
   slugify,
@@ -152,4 +153,13 @@ test("a new page is refused where the URL or the path is taken", () => {
   // A folder with no page of its own has no route, but its URL is still taken.
   assert.equal(error(nativeNewTarget("/", "videos", taken)), "The URL /videos/ is taken: videos is already there.");
   assert.equal(nativeNewTarget("/videos/", "intro", taken).ok, true);
+});
+
+test("a link's Address suggests every page but the not-found page", () => {
+  const titles: Record<string, string> = { "/": "Home", "/about/": "About" };
+  assert.deepEqual(nativeLinkSuggestions(["/", "/about/", "/notes.html", "/404.html"], (route) => titles[route]), [
+    { label: "Home (/)", value: "/" },
+    { label: "About (/about/)", value: "/about/" },
+    { label: "/notes.html", value: "/notes.html" },
+  ]);
 });

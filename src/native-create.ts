@@ -6,8 +6,8 @@
 // segment, a `/` for folders under it), the route a typed URL is, and a new
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
-import { startTags } from "../shared/html-source";
-import { nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
+import { startTagAttribute, startTags } from "../shared/html-source";
+import { nativePageHead, nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -102,9 +102,48 @@ const MINIMAL_PAGE = `<!doctype html>
 </html>
 `;
 
+// What sets a site's name off in a title: "About · Larkspur Studio".
+const TITLE_SEPARATORS = [" · ", " | ", " — ", " – ", " - ", " :: ", " • "];
+
+/**
+ * A new page's title in the form the home page's has: with the home page
+ * titled "Small websites · Larkspur Studio", the page "New" is titled
+ * "New · Larkspur Studio"; a title that already ends so, or a home page
+ * title with no such part, leaves `title` as it is.
+ */
+export function nativeNewPageTitle(homeTitle: string | undefined, title: string): string {
+  const typed = title.trim();
+  if (!homeTitle || !typed) return typed;
+  let at = -1;
+  let separator = "";
+  for (const candidate of TITLE_SEPARATORS) {
+    const found = homeTitle.lastIndexOf(candidate);
+    if (found > at) { at = found; separator = candidate; }
+  }
+  if (at <= 0) return typed;
+  const suffix = homeTitle.slice(at);
+  if (!homeTitle.slice(at + separator.length).trim() || typed.endsWith(suffix) || typed === suffix.slice(separator.length)) return typed;
+  return `${typed}${suffix}`;
+}
+
+/** `html` without its structured data (`<script type="application/ld+json">`), each with its own lines. */
+function withoutStructuredData(html: string): string {
+  let text = html;
+  for (;;) {
+    const tag = startTags(text).find((item) => item.name === "script" && startTagAttribute(text, item, "type")?.value.trim().toLowerCase() === "application/ld+json");
+    if (!tag) return text;
+    const close = /<\/script\s*>/i.exec(text.slice(tag.end));
+    const end = close ? tag.end + close.index + close[0].length : text.length;
+    const lineStart = text.lastIndexOf("\n", tag.start - 1) + 1;
+    const own = /^[ \t]*$/.test(text.slice(lineStart, tag.start)) && /^[ \t]*(?:\r?\n|$)/.exec(text.slice(end));
+    text = own ? text.slice(0, lineStart) + text.slice(end + own[0].length) : text.slice(0, tag.start) + text.slice(end);
+  }
+}
+
 /**
  * A new page's document made from the home page's: the same head (its
- * stylesheets, scripts and meta tags) with the new `title` and an empty
+ * stylesheets, scripts and meta tags, not its structured data) with the
+ * new `title` in the home page's form (`nativeNewPageTitle`) and an empty
  * description (`og:title` and `og:description` along, when there), its own
  * address `url` in `<link rel="canonical">` and `og:url` when the home page
  * has them (both removed when the site has no address), the same body
@@ -114,8 +153,9 @@ const MINIMAL_PAGE = `<!doctype html>
  * document.
  */
 export function nativePageTemplate(home: string | undefined, title: string, url?: string): string {
-  const source = home ?? MINIMAL_PAGE;
-  const text = nativePageWithUrl(nativePageWithDetails(source, { title, description: "" }), url);
+  const source = withoutStructuredData(home ?? MINIMAL_PAGE);
+  const full = nativeNewPageTitle(nativePageHead(source).title, title);
+  const text = nativePageWithUrl(nativePageWithDetails(source, { title: full, description: "" }), url);
   const lower = text.toLowerCase();
   const main = startTags(text).find((tag) => tag.name === "main");
   const close = main ? lower.indexOf("</main", main.end) : -1;
@@ -127,6 +167,6 @@ export function nativePageTemplate(home: string | undefined, title: string, url?
   }
   const body = startTags(text).find((tag) => tag.name === "body");
   const bodyClose = body ? lower.lastIndexOf("</body") : -1;
-  if (!body || bodyClose < body.end) return nativePageWithDetails(MINIMAL_PAGE, { title, description: "" });
+  if (!body || bodyClose < body.end) return nativePageWithDetails(MINIMAL_PAGE, { title: full, description: "" });
   return `${text.slice(0, body.end)}${newline}  <main>${newline}  </main>${newline}${text.slice(bodyClose)}`;
 }
