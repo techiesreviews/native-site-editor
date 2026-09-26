@@ -32,6 +32,13 @@ export interface Snapshot extends Directory {
   tree?: TreeEntry[];
 }
 
+/**
+ * Most blobs one `/api/files` request reads. Each is its own GitHub fetch, and
+ * a Worker request may make only 50 (Cloudflare's free plan), with a few spent
+ * on the session and repository checks.
+ */
+export const MAX_BATCH_FILES = 40;
+
 /** `/api/files`: blob contents keyed by SHA, fetched in one round trip. */
 export interface FilesResult {
   files: Record<string, string>;

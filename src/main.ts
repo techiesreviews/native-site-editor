@@ -59,6 +59,7 @@ import type {
   Snapshot,
   TreeEntry,
 } from "../shared/types";
+import { MAX_BATCH_FILES } from "../shared/types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
@@ -2232,8 +2233,8 @@ function readFile(repo: string, sha: string): Promise<string> {
 // reused rather than fetched twice.
 async function readFiles(repo: string, shas: string[]): Promise<Record<string, string>> {
   const missing = [...new Set(shas)].filter((sha) => !fileContents.has(`${repo}\n${sha}`));
-  for (let start = 0; start < missing.length; start += 64) {
-    const chunk = missing.slice(start, start + 64);
+  for (let start = 0; start < missing.length; start += MAX_BATCH_FILES) {
+    const chunk = missing.slice(start, start + MAX_BATCH_FILES);
     const batch = api<FilesResult>("files", { repo, shas: chunk.join(",") });
     void batch.catch(() => {});
     for (const sha of chunk)

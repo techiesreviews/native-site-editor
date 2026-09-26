@@ -4,6 +4,7 @@ import type {
   Snapshot,
   TreeEntry,
 } from "../shared/types";
+import { MAX_BATCH_FILES } from "../shared/types";
 
 export class HttpError extends Error {
   constructor(
@@ -20,7 +21,6 @@ const apiRoot = "https://api.github.com";
 const maxPages = 50;
 const maxFileBytes = 128 * 1024;
 const maxAssetBytes = 2 * 1024 * 1024;
-export const maxBatchFiles = 64;
 const batchConcurrency = 8;
 
 // Selected-repository listings are remembered briefly per access token so the
@@ -321,8 +321,8 @@ export class GitHub {
   async files(repo: Repository, shas: string[]): Promise<Record<string, string>> {
     const unique = [...new Set(shas)];
     if (!unique.length) throw new HttpError(400, "Choose files to read.");
-    if (unique.length > maxBatchFiles)
-      throw new HttpError(400, `Read at most ${maxBatchFiles} files at once.`);
+    if (unique.length > MAX_BATCH_FILES)
+      throw new HttpError(400, `Read at most ${MAX_BATCH_FILES} files at once.`);
     for (const sha of unique)
       if (!/^[a-f0-9]{40}$/.test(sha))
         throw new HttpError(400, "Invalid file revision.");
