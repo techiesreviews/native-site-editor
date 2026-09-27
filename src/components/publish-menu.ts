@@ -304,6 +304,6 @@ export function createPublishMenu(options: {
 }
 
 /** Text as gzip bytes. */
-function gzip(text: string): Promise<Blob> {
+export function gzip(text: string): Promise<Blob> {
   return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).blob();
 }

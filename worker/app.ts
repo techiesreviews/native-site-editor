@@ -7,6 +7,7 @@ import {
   markGrantUsed,
   operateHub,
   revokeGrant,
+  storeDraftTexts,
   validateContext,
   type AgentGrant,
   type AgentHub,
@@ -370,7 +371,8 @@ async function route(
     const connection = await authenticateAgent(request, env, fetcher);
     if (request.method !== "POST")
       return new Response(null, { status: 405, headers: { Allow: "POST" } });
-    const body = await requestJson(request);
+    // A write carries a whole file (up to AGENT_TEXT_LIMIT), escaped as JSON.
+    const body = await requestJson(request, 3 * 1024 * 1024);
     // The first request of a connection marks it used; an MCP client names
     // itself in `initialize`.
     if (!connection.grant.usedAt)
@@ -417,7 +419,7 @@ async function route(
     // The session's connections, the tab sharing its context, and the
     // changes waiting for it (src/components/agent-menu.ts polls this).
     if (path === "/api/agent/hub" && request.method === "GET") {
-      const hub = await getHub(env, sessionId);
+      const hub = await getHub(env, sessionId, { context: false, texts: true });
       return json({
         grants: hub?.grants ?? [],
         tabId: hub?.tabId ?? null,
@@ -448,11 +450,17 @@ async function route(
       return json(await operateHub(env, sessionId, { type: "pause", tabId: data?.tabId }));
     }
     if (path === "/api/agent/context" && request.method === "POST") {
-      const data = await requestJson(request, 1200 * 1024);
+      // Draft texts go apart (below), so this is paths and hashes.
+      const data = await requestJson(request, 1800 * 1024);
       const context = validateContext(data?.context);
       return json(
         await operateHub(env, sessionId, { type: "context", tabId: data?.tabId, context }),
       );
+    }
+    // The draft texts the context response named missing, in batches.
+    if (path === "/api/agent/drafts" && request.method === "POST") {
+      const data = await requestJson(request, 8 * 1024 * 1024);
+      return json(await storeDraftTexts(env, sessionId, data));
     }
     if (path === "/api/agent/claim" && request.method === "POST") {
       const data = await requestJson(request, 4096);

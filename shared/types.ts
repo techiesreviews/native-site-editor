@@ -141,8 +141,10 @@ export interface EditorContext {
   } | null;
   /**
    * The browser drafts of this repository and branch: a changed file's text
-   * and content hash (`textHash`), a deletion, or a rename (`movedFrom`).
-   * `content` is left out past the context's size budget; `hash` never is.
+   * content hash (`textHash`), a deletion, or a rename (`movedFrom`). The
+   * text goes apart, by its hash (POST /api/agent/drafts); `content` inline
+   * is what older tabs sent. A text past AGENT_TEXT_LIMIT has no hash but
+   * its `size`; a binary (or not loaded) file's is `binary`.
    */
   drafts: {
     path: string;
@@ -150,6 +152,8 @@ export interface EditorContext {
     updatedAt: number;
     hash?: string;
     content?: string;
+    size?: number;
+    binary?: boolean;
     deleted?: boolean;
     movedFrom?: string;
   }[];

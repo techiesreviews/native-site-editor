@@ -36,6 +36,8 @@ export interface AgentCommand {
   expectedHash?: string | null;
   /** New text (`write_file` and the Astro-era operations); empty otherwise. */
   content: string;
+  /** The hub keeps a change's text apart, by this hash (worker/agent-store.ts), and fills it in for the tab. */
+  contentHash?: string;
   /** Operation arguments, validated by the Worker. */
   args?: AgentCommandArgs;
   /** The connection that queued it; only it can read its status. */
@@ -70,6 +72,10 @@ export interface AgentCommandArgs {
   to?: string;
   keepOldUrl?: boolean;
 }
+
+/** The most text one file's draft holds for agents to read or write, in UTF-8 bytes. */
+export const AGENT_TEXT_LIMIT = 1024 * 1024;
+export const textBytes = (text: string) => new TextEncoder().encode(text).length;
 
 export async function textHash(content: string) {
   return [

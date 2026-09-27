@@ -11,7 +11,7 @@ import {
   type WorkspaceLocation,
 } from "./workspace-state";
 import { createAgentMenu } from "./components/agent-menu";
-import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions } from "./agent-site";
+import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import type { AgentCommand } from "../shared/agent";
 import { draftStore, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
@@ -4280,7 +4280,7 @@ function updateAgentContext() {
 function agentRepository() {
   return currentRepo && snapshot && info.user ? { id: currentRepo.id, fullName: currentRepo.full_name } : undefined;
 }
-async function agentContext(): Promise<EditorContext | undefined> {
+async function agentContext(): Promise<SharedContext | undefined> {
   const scope = draftScope();
   if (!currentRepo || !snapshot || !scope) return undefined;
   const site = nativeSite;

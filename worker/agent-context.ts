@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { GitHub, HttpError } from "./github";
-import type { AgentCommand } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, textBytes, textHash, type AgentCommand } from "../shared/agent";
 import type { EditorContext } from "../shared/types";
 import type { Env, StoredSession } from "./app";
 
@@ -63,11 +63,13 @@ const schema = z.object({
         updatedAt: z.number().finite(),
         hash: hash.optional(),
         content: z.string().max(131072).optional(),
+        size: z.number().int().min(0).optional(),
+        binary: z.boolean().optional(),
         deleted: z.boolean().optional(),
         movedFrom: path.optional(),
       }),
     )
-    .max(200),
+    .max(5000),
   pages: z
     .array(
       z.object({
@@ -133,7 +135,7 @@ const schema = z.object({
             from: path.optional(),
           }),
         )
-        .max(500),
+        .max(5000),
     })
     .optional(),
 });
@@ -180,6 +182,7 @@ export interface HubGrant {
  * context the active editor tab last reported, and the queued commands. One
  * Durable Object per session (`agent-hub:<session id>`), so a connection
  * made by OAuth reaches the open tab without the tab knowing its token.
+ * The context and draft texts are stored apart (worker/agent-store.ts).
  */
 export interface AgentHub {
   kind: "agent-hub";
@@ -294,13 +297,52 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
   );
 }
 
-export async function getHub(env: Env, sessionId: string): Promise<AgentHub | undefined> {
+/**
+ * The session's hub: with the context the tab shared (unless `context` is
+ * false), and with `texts` each pending change's text, for the tab.
+ */
+export async function getHub(
+  env: Env,
+  sessionId: string,
+  options: { context?: boolean; texts?: boolean } = {},
+): Promise<AgentHub | undefined> {
+  const query = `${options.context === false ? "context=0&" : ""}${options.texts ? "texts=1" : ""}`;
   const response = await durable(env, `agent-hub:${sessionId}`).fetch(
-    new Request("https://session.internal/"),
+    new Request(`https://session.internal/?${query}`),
   );
   if (!response.ok) return undefined;
   const hub = (await response.json()) as AgentHub;
   return hub.kind === "agent-hub" && hub.expiresAt > Date.now() ? hub : undefined;
+}
+/** A draft's text the tab shared, by its hash; undefined when not (yet) there. */
+export async function draftText(env: Env, sessionId: string, hash: string) {
+  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
+    new Request(`https://session.internal/agent-draft?hash=${hash}`),
+  );
+  return response.ok ? response.text() : undefined;
+}
+/** Stores draft texts the tab sends, each checked against its hash. */
+export async function storeDraftTexts(env: Env, sessionId: string, value: unknown) {
+  const texts = (value as { texts?: unknown })?.texts;
+  if (!Array.isArray(texts) || texts.length > 500)
+    throw new HttpError(400, "Send at most 500 draft texts at once.");
+  for (const item of texts) {
+    if (typeof item?.hash !== "string" || typeof item.content !== "string")
+      throw new HttpError(400, "Invalid draft text.");
+    if (textBytes(item.content) > AGENT_TEXT_LIMIT)
+      throw new HttpError(413, "A draft text is larger than agents can read.");
+    if ((await textHash(item.content)) !== item.hash)
+      throw new HttpError(400, "A draft text does not match its hash.");
+  }
+  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
+    new Request("https://session.internal/agent-drafts", {
+      method: "POST",
+      body: JSON.stringify(texts.map(({ hash, content }) => ({ hash, content }))),
+    }),
+  );
+  const result: any = await response.json();
+  if (!response.ok) throw new HttpError(response.status, result.error ?? "Draft texts could not be stored.");
+  return result;
 }
 export async function operateHub(env: Env, sessionId: string, action: unknown) {
   const response = await durable(env, `agent-hub:${sessionId}`).fetch(

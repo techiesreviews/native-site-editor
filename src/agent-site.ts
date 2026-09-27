@@ -5,7 +5,7 @@
 // with Undo. main.ts supplies the editor's state and actions.
 import { expandStyleImports } from "../shared/css-imports";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { outlineId, parseOutlineId, textHash, type AgentCommand } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
@@ -112,27 +112,48 @@ export interface AgentSiteInput {
   };
 }
 
-// Draft text shared with agents, in total: the rest is hashed but not sent.
-const DRAFT_TEXT_BUDGET = 400 * 1024;
+// A draft's hash and size, recomputed only when its text changed.
+const hashCache = new Map<string, { text: string; hash: string; size: number }>();
+async function measured(path: string, text: string) {
+  const cached = hashCache.get(path);
+  if (cached?.text === text) return cached;
+  const entry = { text, hash: await textHash(text), size: textBytes(text) };
+  hashCache.set(path, entry);
+  return entry;
+}
 
-export async function buildAgentContext(input: AgentSiteInput): Promise<EditorContext> {
-  const drafts = [...input.drafts].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 200);
-  let budget = DRAFT_TEXT_BUDGET;
+/**
+ * The context lists every draft with its text's hash; the texts themselves
+ * (each up to AGENT_TEXT_LIMIT) go apart, by hash, as the Worker asks for
+ * them (src/components/agent-menu.ts), so no number of drafts crowds one out.
+ */
+export interface SharedContext {
+  context: EditorContext;
+  texts: Map<string, string>;
+}
+
+export async function buildAgentContext(input: AgentSiteInput): Promise<SharedContext> {
+  const drafts = [...input.drafts].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5000);
+  const texts = new Map<string, string>();
   const sharedDrafts: EditorContext["drafts"] = [];
+  const paths = new Set<string>();
   for (const draft of drafts) {
+    paths.add(draft.path);
     const content = draft.deleted || draft.opaque ? undefined : input.mountedSource(draft.path) ?? draft.content;
     const entry: EditorContext["drafts"][number] = { path: draft.path, baseSha: draft.baseSha, updatedAt: draft.updatedAt };
     if (draft.deleted) entry.deleted = true;
     if (draft.movedFrom) entry.movedFrom = draft.movedFrom;
-    if (content !== undefined && content.length <= 131072) {
-      entry.hash = await textHash(content);
-      if (content.length <= budget) {
-        entry.content = content;
-        budget -= content.length;
-      }
+    if (!draft.deleted && draft.opaque) entry.binary = true;
+    if (content !== undefined) {
+      const { hash, size } = await measured(draft.path, content);
+      if (size <= AGENT_TEXT_LIMIT) {
+        entry.hash = hash;
+        texts.set(hash, content);
+      } else entry.size = size;
     }
     sharedDrafts.push(entry);
   }
+  for (const path of hashCache.keys()) if (!paths.has(path)) hashCache.delete(path);
   const context: EditorContext = {
     repository: input.repository,
     branch: input.branch,
@@ -141,7 +162,7 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
     drafts: sharedDrafts,
   };
   const native = input.native;
-  if (!native) return context;
+  if (!native) return { context, texts };
   const { site } = native;
   const newFiles = new Set(input.drafts.filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path));
   const tree = buildNativePagesTree({
@@ -203,9 +224,9 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<EditorCo
     stylesheets: linkedStylesheets(site, native.source),
     settings: native.exists(NATIVE_CONFIG_PATH) ? { file: NATIVE_CONFIG_PATH, ...clipSettings(nativeSiteSettings(native.source(NATIVE_CONFIG_PATH))) } : null,
     outlines,
-    changes: listChanges(input.drafts).slice(0, 500).map((change) => ({ kind: change.kind, path: change.path, ...(change.from ? { from: change.from } : {}) })),
+    changes: listChanges(input.drafts).slice(0, 5000).map((change) => ({ kind: change.kind, path: change.path, ...(change.from ? { from: change.from } : {}) })),
   };
-  return context;
+  return { context, texts };
 }
 
 /**

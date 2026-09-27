@@ -1,6 +1,7 @@
 import { button, node } from "../ui/dom";
-import type { EditorContext } from "../../shared/types";
-import type { AgentCommand } from "../../shared/agent";
+import { textBytes, type AgentCommand } from "../../shared/agent";
+import type { SharedContext } from "../agent-site";
+import { gzip } from "./publish-menu";
 import "./agent-menu.css";
 
 // The "Connect with MCP" button, and the editor tab's side of the MCP
@@ -15,7 +16,8 @@ import "./agent-menu.css";
 // hub: while a connection exists it reports its context (built only when
 // sent) and applies queued changes with `onCommand`, then reports the new
 // context before it acknowledges each change, so an agent reading after
-// "applied" sees it. Of several tabs, the one that reported last (a
+// "applied" sees it. The context lists the drafts by hash; their texts go
+// apart, only those the Worker says it lacks. Of several tabs, the one that reported last (a
 // visible one) applies the changes.
 
 export interface AgentCommandOutcome {
@@ -46,8 +48,8 @@ export function createAgentMenu(options: {
   account: string;
   /** The open repository, for the panel; nothing before one is open. */
   repository: () => { id: number; fullName: string } | undefined;
-  /** The context to share, built when it is sent. */
-  context: () => Promise<EditorContext | undefined>;
+  /** The context to share and its drafts' texts, built when it is sent. */
+  context: () => Promise<SharedContext | undefined>;
   onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
@@ -81,12 +83,12 @@ export function createAgentMenu(options: {
   /** A message that replaces the state's own hint until the state changes. */
   let notice: { text: string; state: string } | undefined;
 
-  async function api(action: string, body?: unknown) {
+  async function api(action: string, body?: unknown, zipped = false) {
     const response = await fetch(`/api/agent/${action}`, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
+      body: body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error ?? "Agent connection failed.");
@@ -216,10 +218,11 @@ export function createAgentMenu(options: {
     if (!force && !mine) return;
     if (!force && sentRevision === version && hub.tabId === tabId && Date.now() - lastSent < 30_000) return;
     try {
-      const context = await options.context();
+      const built = await options.context();
       if (disposed) return;
-      if (context) {
-        await api("context", { tabId, context });
+      if (built) {
+        const { missing } = await api("context", { tabId, context: built.context }, true);
+        await sendTexts(Array.isArray(missing) ? missing : [], built.texts);
         hub.tabId = tabId;
         hub.updatedAt = Date.now();
         shared = true;
@@ -232,6 +235,25 @@ export function createAgentMenu(options: {
     } catch (error) {
       if (!disposed) say((error as Error).message);
     }
+  }
+
+  // The draft texts the Worker lacks, a few MB of JSON at a time.
+  async function sendTexts(missing: string[], texts: Map<string, string>) {
+    let batch: { hash: string; content: string }[] = [],
+      size = 0;
+    for (const hash of missing) {
+      const content = texts.get(hash);
+      if (content === undefined || disposed) continue;
+      const bytes = textBytes(JSON.stringify(content)) + 80;
+      if (batch.length && (size + bytes > 4 * 1024 * 1024 || batch.length >= 200)) {
+        await api("drafts", { texts: batch }, true);
+        batch = [];
+        size = 0;
+      }
+      batch.push({ hash, content });
+      size += bytes;
+    }
+    if (batch.length) await api("drafts", { texts: batch }, true);
   }
 
   async function poll(now = false) {

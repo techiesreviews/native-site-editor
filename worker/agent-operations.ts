@@ -55,6 +55,7 @@ export function agentOperation(hub: AgentHub, action: any) {
         existing.path !== command.path ||
         existing.operation !== command.operation ||
         existing.content !== command.content ||
+        existing.contentHash !== command.contentHash ||
         existing.expectedHash !== command.expectedHash ||
         JSON.stringify(existing.args ?? {}) !== JSON.stringify(command.args ?? {}) ||
         existing.branch !== command.branch ||

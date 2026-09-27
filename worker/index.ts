@@ -1,6 +1,5 @@
-import { agentOperation, newHub } from "./agent-operations";
 import type { AgentHub } from "./agent-context";
-import { HttpError } from "./github";
+import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import type { GitHubAppConfig } from "./owner-setup";
@@ -8,42 +7,22 @@ import type { GitHubAppConfig } from "./owner-setup";
 export class SessionStore extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
-    if (new URL(request.url).pathname === "/agent-operation") {
-      return this.ctx.blockConcurrencyWhile(async () => {
-        const action = await request.json();
-        const stored = await storage.get<StoredValue>("session");
-        let value: AgentHub | undefined =
-          stored?.kind === "agent-hub" && stored.expiresAt > Date.now()
-            ? stored
-            : undefined;
-        if (!value) {
-          value = newHub(action);
-          if (value) await storage.setAlarm(value.expiresAt);
-        }
-        if (!value)
-          return Response.json(
-            { error: "Agent connection expired." },
-            { status: 401 },
-          );
-        try {
-          const result = agentOperation(value, action);
-          await storage.put("session", value);
-          return Response.json(result);
-        } catch (error) {
-          return Response.json(
-            {
-              error:
-                error instanceof HttpError
-                  ? error.message
-                  : "Agent operation failed.",
-            },
-            { status: error instanceof HttpError ? error.status : 500 },
-          );
-        }
-      });
+    const url = new URL(request.url);
+    // The agent hub, its context and draft texts (worker/agent-store.ts).
+    if (url.pathname === "/agent-operation") {
+      const action = await request.json();
+      return this.ctx.blockConcurrencyWhile(() =>
+        hubOperation(storage, action, (at) => storage.setAlarm(at)),
+      );
     }
+    if (url.pathname === "/agent-drafts" && request.method === "POST") {
+      const texts = (await request.json()) as { hash: string; content: string }[];
+      return this.ctx.blockConcurrencyWhile(() => storeDrafts(storage, texts));
+    }
+    if (url.pathname === "/agent-draft")
+      return readDraft(storage, url.searchParams.get("hash") ?? "");
     if (request.method === "PUT") {
-      if (new URL(request.url).pathname === "/config") {
+      if (url.pathname === "/config") {
         return this.ctx.blockConcurrencyWhile(async () => {
           const existing = await storage.get<GitHubAppConfig>("config");
           if (existing) return new Response(null, { status: 409 });
@@ -57,26 +36,27 @@ export class SessionStore extends DurableObject {
       return new Response(null, { status: 204 });
     }
     if (request.method === "DELETE") {
-      await storage.delete("session");
+      await clearHub(storage);
       await storage.deleteAlarm();
       return new Response(null, { status: 204 });
     }
     const read = async () => {
-      if (new URL(request.url).pathname === "/config") {
+      if (url.pathname === "/config") {
         const value = await storage.get<GitHubAppConfig>("config");
         return value ? Response.json(value) : new Response(null, { status: 404 });
       }
       const value = await storage.get<StoredValue>("session");
       if (!value || value.expiresAt <= Date.now())
         return new Response(null, { status: 404 });
-      if (new URL(request.url).pathname === "/consume")
-        await storage.delete("session");
+      if (url.pathname === "/consume") await storage.delete("session");
+      if (value.kind === "agent-hub")
+        return Response.json(await hubView(storage, value as AgentHub, url));
       return Response.json(value);
     };
     return this.ctx.blockConcurrencyWhile(read);
   }
   async alarm() {
-    await this.ctx.storage.delete("session");
+    await clearHub(this.ctx.storage);
   }
 }
 

@@ -10,6 +10,7 @@ import { z } from "zod";
 import {
   getHub,
   connectionContext,
+  draftText,
   operateHub,
   type AgentHub,
   type authenticateAgent,
@@ -17,7 +18,9 @@ import {
 import { contextMaxAge } from "./agent-operations";
 import type { Env } from "./app";
 import {
+  AGENT_TEXT_LIMIT,
   applyReplacements,
+  textBytes,
   parseOutlineId,
   type AgentCommand,
   type AgentCommandArgs,
@@ -189,7 +192,7 @@ export function createSiteServer(connection: Connection, env: Env) {
         409,
         "The editor tab is not sharing a site right now. Ask the user to open it in the editor and keep the tab open, then try again.",
       );
-    return { hub, context, files: new SiteFiles(connection.github, connection.repo, context) };
+    return { hub, context, files: new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash)) };
   }
   function findPage(context: EditorContext, ref: string) {
     const pages = context.pages;
@@ -416,7 +419,7 @@ export function createSiteServer(connection: Connection, env: Env) {
         "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (components/<tag>/<tag>.html, plus an optional components/<tag>/<tag>.css), read the native-site://conventions resource and follow its section component pattern. Those files are all a component needs: the loader, components/components.js, finds components by tag, so nothing is registered anywhere else.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
-        content: z.string().max(131072),
+        content: z.string().max(AGENT_TEXT_LIMIT),
         expectedHash: hash.nullable().optional().describe("The current hash when replacing a file; omit or null to create one."),
         requestId,
         waitSeconds,
@@ -737,8 +740,8 @@ export function createSiteServer(connection: Connection, env: Env) {
 }
 
 function checkContent(content: string) {
-  if (new TextEncoder().encode(content).length > 128 * 1024 || content.includes("\0"))
-    throw new HttpError(400, "Drafts hold text files up to 128 KB.");
+  if (textBytes(content) > AGENT_TEXT_LIMIT || content.includes("\0"))
+    throw new HttpError(400, `Drafts hold text files up to ${AGENT_TEXT_LIMIT / 1024 / 1024} MB.`);
 }
 
 export async function handleMcp(

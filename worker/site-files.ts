@@ -1,7 +1,7 @@
 // Repository files as the connected editor tab sees them, for the MCP site
 // tools: GitHub at the revision the tab shows, overlaid with the tab's
 // browser drafts (new, changed, renamed and deleted files).
-import { textHash } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, textHash } from "../shared/agent";
 import type { EditorContext, Repository, TreeEntry } from "../shared/types";
 import { HttpError, type GitHub } from "./github";
 
@@ -23,6 +23,8 @@ export class SiteFiles {
     private github: GitHub,
     private repo: Repository,
     private context: EditorContext,
+    /** A draft's text the tab shared, by its hash. */
+    private text?: (hash: string) => Promise<string | undefined>,
   ) {}
 
   private entries() {
@@ -55,16 +57,14 @@ export class SiteFiles {
     const draft = this.draft(path);
     if (draft?.deleted) return undefined;
     if (draft) {
-      if (draft.content === undefined)
-        throw new HttpError(
-          413,
-          `${path} has a browser draft too large (or binary) to share with agents. Open it in the editor, or ask the user to save it first.`,
-        );
+      // The text is inline (older tabs), or stored apart by its hash.
+      const content = draft.content ?? (draft.hash ? await this.text?.(draft.hash) : undefined);
+      if (content === undefined) throw draftProblem(path, draft);
       return {
         path,
         source: "draft",
-        content: draft.content,
-        hash: draft.hash ?? (await textHash(draft.content)),
+        content,
+        hash: draft.hash ?? (await textHash(content)),
         baseSha: draft.baseSha,
       };
     }
@@ -81,6 +81,17 @@ export class SiteFiles {
     const prefix = `${path}/`;
     return (await this.paths()).some((item) => item.path.startsWith(prefix));
   }
+}
+
+/** Why agents cannot read a draft: binary, too large, or its text not here yet. */
+function draftProblem(path: string, draft: Draft) {
+  if (draft.hash)
+    return new HttpError(409, `The editor tab is still sharing ${path}'s unsaved draft. Try again in a moment.`);
+  if (draft.binary)
+    return new HttpError(415, `${path} is a binary file (or one the editor has not loaded) in the user's unsaved changes, so agents cannot read it. Ask the user to save it first.`);
+  if (draft.size !== undefined)
+    return new HttpError(413, `${path}'s unsaved draft is ${Math.ceil(draft.size / 1024)} KB, larger than the ${AGENT_TEXT_LIMIT / 1024 / 1024} MB agents can read or write. Ask the user to save it first.`);
+  return new HttpError(409, `The editor tab did not share ${path}'s unsaved draft. Reload the editor, or ask the user to save it first.`);
 }
 
 /** Paths agents may write: text files outside Git internals and workflows. */

@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import { createServer, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
-import { agentOperation, newHub } from "../../worker/agent-operations.ts";
+import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
@@ -390,6 +390,24 @@ interface SessionSlot {
   fixtureGits?: Map<string, Git>;
 }
 const sessions = new Map<string, SessionSlot>();
+// A Durable Object's other keys (the agent hub's context and draft texts).
+const storedKeys = new Map<string, Map<string, unknown>>();
+// A Durable Object's storage: "session" is the slot's value.
+function storageOf(id: string): HubStorage {
+  const keys = storedKeys.get(id) ?? storedKeys.set(id, new Map()).get(id)!;
+  const copy = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
+  return {
+    get: async <T>(key: string) => copy((key === "session" ? sessions.get(id)?.value : keys.get(key)) as T | undefined),
+    put: async (entries) => {
+      for (const [key, value] of Object.entries(entries))
+        if (key === "session") sessions.set(id, { ...sessions.get(id), value: copy(value) as StoredSession });
+        else keys.set(key, copy(value));
+    },
+    delete: async (list) => {
+      for (const key of list) key === "session" ? sessions.delete(id) : keys.delete(key);
+    },
+  };
+}
 let initialGit: Git;
 
 function newSessionId(): string {
@@ -408,35 +426,25 @@ function env(): Env {
         fetch: async (request: Request): Promise<Response> => {
           const slot = sessions.get(id);
           const url = new URL(request.url);
-          // The agent hub's operations, as worker/index.ts runs them.
-          if (url.pathname === "/agent-operation") {
-            const action = await request.json();
-            let hub = slot?.value.kind === "agent-hub" && slot.value.expiresAt > Date.now() ? (slot.value as unknown as AgentHub) : undefined;
-            if (!hub) {
-              hub = newHub(action);
-              if (hub) sessions.set(id, { value: hub as unknown as StoredSession });
-            }
-            if (!hub) return Response.json({ error: "Agent connection expired." }, { status: 401 });
-            try {
-              const result = agentOperation(hub, action);
-              return Response.json(JSON.parse(JSON.stringify(result)));
-            } catch (error) {
-              const status = (error as { status?: number }).status ?? 500;
-              return Response.json({ error: (error as Error).message }, { status });
-            }
-          }
+          // The agent hub, as worker/index.ts runs it.
+          const storage = storageOf(id);
+          if (url.pathname === "/agent-operation") return hubOperation(storage, await request.json(), async () => undefined);
+          if (url.pathname === "/agent-drafts") return storeDrafts(storage, await request.json());
+          if (url.pathname === "/agent-draft") return readDraft(storage, url.searchParams.get("hash") ?? "");
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
             sessions.set(id, { value, git: slot?.git ?? (value.kind === "user" ? cloneGit(initialGit) : undefined) });
             return new Response(null, { status: 204 });
           }
           if (request.method === "DELETE") {
+            await clearHub(storage);
             sessions.delete(id);
             return new Response(null, { status: 204 });
           }
           if (!slot || slot.value.expiresAt <= Date.now())
             return new Response(null, { status: 404 });
           if (url.pathname === "/consume") sessions.delete(id);
+          if (slot.value.kind === "agent-hub") return Response.json(await hubView(storage, slot.value as unknown as AgentHub, url));
           return Response.json(slot.value);
         },
       }),

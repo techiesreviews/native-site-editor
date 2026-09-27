@@ -210,3 +210,84 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     await worker.dispose();
   }
 });
+
+test("every draft up to 1 MB is readable and writable however many there are; a larger or binary one is refused by name", async () => {
+  const { worker } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker);
+    const tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    // 150 drafts of about 5 KB each (750 KB, past the old 400 KB budget),
+    // listed by hash only; their texts go apart.
+    const texts = Array.from({ length: 150 }, (_, index) => `/* ${index} */\n${`.rule-${index} { color: red; }\n`.repeat(200)}`);
+    const hashes = await Promise.all(texts.map((text) => textHash(text)));
+    const context = await siteContext();
+    context.drafts = [
+      ...texts.map((_, index) => ({ path: `styles/draft-${index}.css`, baseSha: null, updatedAt: Date.now(), hash: hashes[index] })),
+      { path: "styles/huge.css", baseSha: null, updatedAt: Date.now(), size: 1536 * 1024 },
+      { path: "images/logo.png", baseSha: null, updatedAt: Date.now(), binary: true },
+    ];
+    context.site!.changes = context.drafts.map((draft) => ({ kind: "A" as const, path: draft.path }));
+    const shared = await tab.share(context);
+    assert.equal(shared.status, 200);
+    assert.deepEqual(new Set((await shared.json()).missing), new Set(hashes), "the Worker asks for every text it lacks");
+
+    client = new Client({ name: "drafts-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
+    const early = await call("read_file", { path: "styles/draft-0.css" });
+    assert.equal(early.isError, true);
+    assert.match(JSON.stringify(early), /still sharing/);
+
+    // A text must match its hash; one the context does not name is not kept.
+    assert.equal((await tab.post("/api/agent/drafts", { texts: [{ hash: hashes[1], content: "not it" }] })).status, 400);
+    const stray = await tab.post("/api/agent/drafts", { texts: [{ hash: await textHash("stray"), content: "stray" }] });
+    assert.equal((await stray.json()).stored, 0);
+    for (let at = 0; at < texts.length; at += 50) {
+      const batch = texts.slice(at, at + 50).map((content, index) => ({ hash: hashes[at + index], content }));
+      const response = await tab.post("/api/agent/drafts", { texts: batch });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).stored, 50);
+    }
+    assert.deepEqual((await (await tab.share(context)).json()).missing, [], "nothing is sent twice");
+    for (const [index, text] of texts.entries()) {
+      const file = payload(await call("read_file", { path: `styles/draft-${index}.css` }));
+      assert.equal(file.content, text, `draft ${index}`);
+      assert.equal(file.hash, hashes[index]);
+      assert.equal(file.source, "draft");
+    }
+
+    // Writes carry a whole file, kept apart from the hub and filled in for the tab.
+    const edited = await call("edit_file", { path: "styles/draft-7.css", expectedHash: hashes[7], edits: [{ oldText: "/* 7 */", newText: "/* seven */" }], requestId: "big-1", waitSeconds: 0 });
+    assert.equal(payload(edited).state, "pending");
+    const large = `/* large */\n${"p { margin: 0; }\n".repeat(40_000)}`;
+    assert.ok(large.length > 600 * 1024 && large.length < 1024 * 1024);
+    assert.equal(payload(await call("write_file", { path: "styles/large.css", content: large, requestId: "big-2", waitSeconds: 0 })).state, "pending");
+    const commands = (await tab.hub()).commands;
+    assert.equal(commands.find((command: any) => command.id === "big-1").content, texts[7].replace("/* 7 */", "/* seven */"));
+    assert.equal(commands.find((command: any) => command.id === "big-2").content, large);
+    const tooLarge = await call("write_file", { path: "styles/too-large.css", content: "é".repeat(600_000), waitSeconds: 0 });
+    assert.equal(tooLarge.isError, true);
+    assert.match(JSON.stringify(tooLarge), /up to 1 MB/);
+
+    // A draft past the limit, or a binary one, says which.
+    const huge = await call("read_file", { path: "styles/huge.css" });
+    assert.equal(huge.isError, true);
+    assert.match(JSON.stringify(huge), /styles\/huge\.css's unsaved draft is 1536 KB, larger than the 1 MB agents can read or write/);
+    const binary = await call("read_file", { path: "images/logo.png" });
+    assert.equal(binary.isError, true);
+    assert.match(JSON.stringify(binary), /is a binary file/);
+
+    // Texts the context stops naming are dropped: named again, they are asked for again.
+    const fewer = { ...context, drafts: context.drafts.slice(1) };
+    assert.deepEqual((await (await tab.share(fewer)).json()).missing, []);
+    assert.deepEqual((await (await tab.share(context)).json()).missing, [hashes[0]]);
+  } finally {
+    await client?.close();
+    await worker.dispose();
+  }
+});
