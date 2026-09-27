@@ -50,6 +50,12 @@ export class DraftStore {
   private memory = new Map<string, SavedDraft>();
   private deleted = new Set<string>();
   error: string | null = null;
+  /**
+   * GitHub's text of `path` at the branch's current commit, when this tab
+   * holds it: a draft saved with exactly that text is no change, whatever
+   * blob it began from, and is dropped.
+   */
+  baseline?: (scope: DraftScope, path: string) => string | undefined;
   constructor(
     private storage: Pick<
       Storage,
@@ -107,7 +113,8 @@ export class DraftStore {
       .sort((a, b) => a.path.localeCompare(b.path));
   }
   save(value: SavedDraft) {
-    if (value.baseSha !== null && value.content === value.original && !value.deleted)
+    if (!value.deleted && ((value.baseSha !== null && value.content === value.original) ||
+        (!value.opaque && !value.upload && this.baseline?.(value, value.path) === value.content)))
       return this.remove(value, value.path);
     const key = draftKey(value, value.path);
     this.deleted.delete(key);

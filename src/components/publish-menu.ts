@@ -1,11 +1,40 @@
 import { button, link, node } from "../ui/dom";
 import { mountDropdown } from "./dropdown";
-import { draftStore, type DraftScope, type SavedDraft } from "../drafts";
+import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import type { PublishResult } from "../../shared/types";
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import "./publish-menu.css";
+
+// Paths a save was refused for, by draft key: GitHub changed them (or
+// deleted them, `gone`) since their drafts began. Each is said until its
+// draft is discarded or moves on from the blob it was sent with (kept over
+// GitHub's version, kept as a new file, found equal to it).
+const refused = new Map<string, { path: string; baseSha: string | null; gone: boolean }>();
+function refusedIn(scope: DraftScope) {
+  const store = draftStore();
+  const out: { path: string; gone: boolean }[] = [];
+  for (const [key, entry] of refused) {
+    if (key !== draftKey(scope, entry.path)) continue;
+    const draft = store.get(scope, entry.path);
+    if (!draft || draft.baseSha !== entry.baseSha) refused.delete(key);
+    else out.push(entry);
+  }
+  return out;
+}
+/** What the refused paths still waiting in `scope` need, or nothing. */
+function refusedNotice(scope: DraftScope) {
+  const waiting = refusedIn(scope);
+  const changed = waiting.filter((entry) => !entry.gone).map((entry) => entry.path);
+  const gone = waiting.filter((entry) => entry.gone).map((entry) => entry.path);
+  if (!waiting.length) return "";
+  return [
+    changed.length ? `GitHub changed these files: ${changed.join(", ")}. Refresh and review the latest version before publishing.` : "",
+    gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Save to GitHub.` : "",
+    "Your drafts are kept.",
+  ].filter(Boolean).join(" ");
+}
 
 export function createPublishMenu(options: {
   scope: DraftScope;
@@ -20,6 +49,10 @@ export function createPublishMenu(options: {
   deletedUpstream?: (path: string) => boolean;
   /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
   onSettleDeleted?: (path: string, keep: boolean) => void;
+  /** The branch's head as the tab last saw it, sent so a lagging GitHub read is not taken for it. */
+  head?: () => string | undefined;
+  /** GitHub refused some files as changed or deleted since their drafts began. */
+  onRefused?: () => void;
 }) {
   // Publish commits the selected changes to the branch in one go; hovering it shows them.
   const pendingText = options.saveLabels ? "Saving to GitHub…" : "Publishing to GitHub…";
@@ -77,8 +110,13 @@ export function createPublishMenu(options: {
       list.append(label, changes(change));
     }
     updateTotal();
-    if (resetMessage) message.textContent = "";
+    // A refusal is said until every file it named is settled.
+    const notice = refusedNotice(options.scope);
+    if (notice) message.textContent = notice;
+    else if (resetMessage || refusing) message.textContent = "";
+    refusing = Boolean(notice);
   }
+  let refusing = false;
   // The text a change compares, GitHub's before the draft's; none for a
   // deletion, an upload, a copy or a rename with no other edit.
   function comparison(change: FileChange) {
@@ -143,6 +181,7 @@ export function createPublishMenu(options: {
       return row;
     }
     row.append(showButton(draft.path, isNew ? "" : draft.original, draft.content, isNew));
+    if (options.onDiscardChange) row.append(discardButton("Discard", `Discard the changes to ${change.path}`, () => options.onDiscardChange?.(change)));
     return row;
   }
   function showButton(path: string, before: string, after: string, isNew = false) {
@@ -158,7 +197,8 @@ export function createPublishMenu(options: {
     const discard = button(text, () => {
       run();
       refresh(false);
-      message.textContent = `${label}: done.`;
+      // A refusal still waiting on other files stays said.
+      if (!refusing) message.textContent = `${label}: done.`;
     }, "publish-menu__show-changes publish-menu__discard");
     discard.setAttribute("aria-label", label);
     return discard;
@@ -260,7 +300,8 @@ export function createPublishMenu(options: {
       // Uploaded files become GitHub blobs first; the commit names them.
       await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
       // Gzipped, a commit of many pages stays a small request.
-      const body = await gzip(JSON.stringify({ branch: options.scope.branch, files: publishFiles(chosen) }));
+      const head = options.head?.();
+      const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(head ? { head } : {}), files: publishFiles(chosen) }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
@@ -268,6 +309,15 @@ export function createPublishMenu(options: {
       });
       if (response.status === 401) { options.onExpired(); return; }
       const data = await response.json();
+      if (response.status === 409 && Array.isArray(data.conflicts) && data.conflicts.length) {
+        const gone = new Set<string>(Array.isArray(data.gone) ? data.gone : []);
+        for (const path of data.conflicts as string[]) {
+          const sent = submitted.find((draft) => draft.path === path);
+          if (sent) refused.set(draftKey(options.scope, path), { path, baseSha: sent.baseSha, gone: gone.has(path) });
+        }
+        options.onRefused?.();
+        if (refusedNotice(options.scope)) return;
+      }
       if (!response.ok) throw new Error(data.error ?? "Publishing failed. Your drafts are kept.");
       // Reconcile even if the user navigated away while the request was in flight.
       options.onPublished(data as PublishResult, submitted);

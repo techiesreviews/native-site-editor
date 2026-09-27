@@ -8,16 +8,16 @@ import "./create-dialog.css";
  * focus, so Enter confirms; Escape cancels, and focus returns to where it
  * was.
  */
-export function createConfirmDialog() {
+export function createConfirmDialog(id = "confirm-dialog") {
   const dialog = node("dialog", "create-dialog confirm-dialog");
-  dialog.setAttribute("aria-labelledby", "confirm-dialog-title");
-  dialog.setAttribute("aria-describedby", "confirm-dialog-notes");
+  dialog.setAttribute("aria-labelledby", `${id}-title`);
+  dialog.setAttribute("aria-describedby", `${id}-notes`);
   const form = node("form", "create-dialog__form");
   form.method = "dialog";
   const title = node("h2", "create-dialog__title");
-  title.id = "confirm-dialog-title";
+  title.id = `${id}-title`;
   const notes = node("div", "confirm-dialog__notes");
-  notes.id = "confirm-dialog-notes";
+  notes.id = `${id}-notes`;
   const cancel = button("Cancel", () => dialog.close("cancel"), "button secondary");
   const confirm = node("button", "button primary", "OK");
   confirm.type = "submit";

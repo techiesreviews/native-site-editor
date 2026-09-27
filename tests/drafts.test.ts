@@ -27,3 +27,19 @@ test("discard removes a persisted draft; storage failures keep a recoverable in-
   assert.match(store.error!, /could not be saved/);
   assert.equal(store.get(draft, draft.path)?.content, "draft");
 });
+test("a draft written with GitHub's current text is dropped, whatever blob it began from; a deletion or an opaque file is kept", () => {
+  const store = new DraftStore(storage());
+  store.baseline = (_scope, path) => (path === draft.path ? "on GitHub now" : undefined);
+  store.save(draft);
+  assert.equal(store.list(draft).length, 1);
+  // The base is stale (GitHub moved on), the text is GitHub's new version.
+  store.save({ ...draft, content: "on GitHub now" });
+  assert.equal(store.get(draft, draft.path), undefined);
+  // A new file whose path GitHub has with the same text.
+  store.save({ ...draft, baseSha: null, original: "", content: "on GitHub now" });
+  assert.equal(store.get(draft, draft.path), undefined);
+  store.save({ ...draft, deleted: true, content: "on GitHub now" });
+  assert.equal(store.get(draft, draft.path)?.deleted, true);
+  store.save({ ...draft, baseSha: null, opaque: true, content: "on GitHub now" });
+  assert.equal(store.get(draft, draft.path)?.opaque, true);
+});

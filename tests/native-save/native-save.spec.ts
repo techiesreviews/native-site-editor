@@ -88,8 +88,8 @@ test("the Save panel lists counts only; the button opens a side-by-side comparis
 
   await openSaveMenu(page);
   const panel = page.locator("#publish-files");
-  // Only the counts show under the file, no inline lines.
-  await expect(panel.locator(".publish-menu__changes")).toHaveText("2 added, 1 removed");
+  // Only the counts show under the file, with Discard; no inline lines.
+  await expect(panel.locator(".publish-menu__changes > *")).toHaveText(["2 added, 1 removed", "Discard"]);
   await expect(panel.locator(".publish-menu__changes")).not.toContainText("Compared heading");
   await expect(panel.locator(".publish-menu__diff-line:visible")).toHaveCount(0);
   const opener = showChangesButton(page, indexPath);
@@ -150,7 +150,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   await expect(page.locator("#publish-files strong, #publish-files button.primary")).toHaveCount(0);
   await expect(page.locator("#publish-files .publish-menu__message")).toBeHidden();
   // The change the commit would make is listed before it is made.
-  const changes = page.locator("#publish-files .publish-menu__changes");
+  const changes = page.locator("#publish-files .publish-menu__changes > :first-child");
   await expect(changes).toHaveText("1 added, 1 removed");
   const dialog = await showChanges(page, indexPath);
   await expect(dialog.locator(".publish-diff__code.is-del")).toContainText("A native browser preview");
@@ -185,7 +185,7 @@ test("multi-file save keeps every committed file's content (no revert to stale b
   for (const box of await panel.locator("input[type=checkbox]").all()) await expect(box).toBeChecked();
   const summary = panel.locator(".publish-menu__total-summary");
   await expect(summary).toHaveText("All 2 changes · 2 added, 2 removed");
-  await expect(panel.locator(".publish-menu__changes")).toHaveText(["1 added, 1 removed", "1 added, 1 removed"]);
+  await expect(panel.locator(".publish-menu__changes > :first-child")).toHaveText(["1 added, 1 removed", "1 added, 1 removed"]);
   // Folded, the total hides the list.
   await summary.click();
   await expect(panel.locator(".publish-menu__file")).toHaveCount(2);

@@ -78,6 +78,8 @@ export interface PublishFile {
 }
 export interface PublishRequest {
   branch: string;
+  /** The branch's head as the editor last saw it; see GitHub.head (worker/github.ts). */
+  head?: string;
   files: PublishFile[];
 }
 export interface PublishResult {

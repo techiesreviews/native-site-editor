@@ -132,6 +132,7 @@ test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; 
   // Discarding the new stylesheet takes it out of the tree.
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Discard changes" }).click();
+  await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await openFiles(page);
   await expect(row(page, "styles")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "site.css")).toBeVisible();
@@ -276,7 +277,7 @@ test("a page, a subpage under it and another are made in place as folders of the
   await item(page, "Videos").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
   await expect(menu.getByRole("menuitem", { name: "Add subpage" })).toBeFocused();
   await page.keyboard.press("Enter");
   await title.pressSequentially("My first video");
@@ -346,6 +347,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
   // So does Discard changes on the new page.
   await create("Draft page");
   await page.getByRole("button", { name: "Discard changes" }).click();
+  await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await gone("Draft page");
 
   // A subpage: Undo takes it back, and its parent stays as it was.
@@ -366,5 +368,6 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
   await expect(item(page, "Videos")).not.toHaveAttribute("aria-expanded");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Discard changes" }).click();
+  await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await gone("Videos");
 });

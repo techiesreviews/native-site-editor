@@ -80,6 +80,11 @@ interface Git {
   trees: Map<string, TreeEntry[]>;
   commits: Map<string, { tree: string; parents: string[] }>;
   head: string;
+  // GitHub's read lag after a write, as a test sets it (`/__demo/lag`): the
+  // next `reads` reads of the branch after each ref update name the commit
+  // before it (`stale`).
+  lag?: number;
+  stale?: { sha: string; reads: number };
 }
 
 const encoder = new TextEncoder();
@@ -301,8 +306,19 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       return jsonResponse({ total_count: runs.length, workflow_runs: runs.map((run, index) => ({ id: index + 1, head_sha: url.searchParams.get("head_sha"), html_url: `https://github.com/${DEMO_REPO.full_name}/actions/runs/${index + 1}`, ...run })) });
     }
     if (path === `${repoBase}/branches`) return jsonResponse([{ name: "main" }]);
-    if (path === `${repoBase}/branches/main`)
+    if (path === `${repoBase}/branches/main`) {
+      if (git.stale && git.stale.reads-- > 0) return jsonResponse({ commit: { sha: git.stale.sha } });
       return jsonResponse({ commit: { sha: git.head } });
+    }
+    // Whether `head` is ahead of, behind, or the same as `base`.
+    const compare = new RegExp(`^${repoBase}/compare/([a-f0-9]{40})\\.\\.\\.([a-f0-9]{40})$`).exec(path);
+    if (compare) {
+      const [, base, head] = compare;
+      if (!git.commits.has(base) || !git.commits.has(head)) return jsonResponse({ message: "Not Found" }, 404);
+      const reaches = (from: string, to: string): boolean => from === to || (git.commits.get(from)?.parents ?? []).some((parent) => reaches(parent, to));
+      const status = base === head ? "identical" : reaches(head, base) ? "ahead" : reaches(base, head) ? "behind" : "diverged";
+      return jsonResponse({ status });
+    }
     if (path.startsWith(`${repoBase}/git/commits/`) && method === "GET") {
       const sha = path.slice(`${repoBase}/git/commits/`.length);
       const commit = git.commits.get(sha);
@@ -366,6 +382,7 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       const next = git.commits.get(String(body.sha));
       if (!next || body.force || !next.parents.includes(git.head))
         return jsonResponse({ message: "Reference update failed" }, 409);
+      if (git.lag) git.stale = { sha: git.head, reads: git.lag };
       git.head = body.sha;
       return jsonResponse({ ref: "refs/heads/main", object: { sha: body.sha } });
     }
@@ -527,6 +544,16 @@ function workerMiddleware(): Connect.NextHandleFunction {
         res.statusCode = 204;
         return res.end();
       }
+      if (path === "/__demo/lag") {
+        // GitHub's reads lag this many reads behind each save from now on.
+        sessions.get(id)!.git!.lag = Math.max(0, Number(url.searchParams.get("reads") ?? "0") || 0);
+        res.statusCode = 204;
+        return res.end();
+      }
+      if (path === "/__demo/head") {
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ commit: sessions.get(id)!.git!.head }));
+      }
       if (path === "/__demo/file") {
         // The bytes of a file on the demo branch, as committed.
         const bytes = fileAt(sessions.get(id)!.git, url.searchParams.get("path") ?? "");
@@ -548,10 +575,13 @@ function workerMiddleware(): Connect.NextHandleFunction {
       if (path === "/__demo/external-edit") {
         // Simulate an external commit that advances the branch, so the next save
         // of that file with a now-stale baseSha conflicts.
-        const { path: filePath, content } = JSON.parse(bodyBuffer.toString() || "{}");
+        // `delete: true` removes the file instead.
+        const { path: filePath, content, delete: remove } = JSON.parse(bodyBuffer.toString() || "{}");
         const git = sessions.get(id)!.git!;
         const tree = writeTree(git, git.commits.get(git.head)!.tree, [
-          { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
+          remove
+            ? { segments: String(filePath).split("/"), mode: "100644", sha: null }
+            : { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
         ]);
         const commit = commitSha(tree + ":external:" + Date.now());
         git.commits.set(commit, { tree, parents: [git.head] });

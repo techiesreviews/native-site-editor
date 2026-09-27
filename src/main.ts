@@ -31,7 +31,7 @@ import { createPagePicker, type PagePickerItem } from "./components/page-picker"
 import type { UrlPlan } from "./components/url-change";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, movedRoute, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
-import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, pruneUnchanged, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
@@ -216,6 +216,9 @@ function mountWorkspace() {
   element("explorer").append(createDialog.root);
   confirmDialog = createConfirmDialog();
   element("explorer").append(confirmDialog.root);
+  // Discard changes in the top bar asks outside the explorer, which may be closed.
+  discardDialog = createConfirmDialog("discard-dialog");
+  app.append(discardDialog.root);
   pagePicker = createPagePicker();
   element("explorer").append(pagePicker.root);
   const newAtRoot = element<HTMLButtonElement>("new-at-root");
@@ -245,6 +248,8 @@ function mountWorkspace() {
     create: createNativeNew,
     announce: (text) => { element("status").textContent = text; },
     retitle: retitleNativePage,
+    changed: (file) => Boolean(treeState().changes.get(file)),
+    discard: (file) => void discardOneFile(file),
     duplicate: (file) => void duplicateNativePage(file),
     remove: (target) => void removeNativePagesTarget(target),
     createPage: (route) => void createNativeFolderPage(route),
@@ -3263,6 +3268,7 @@ function openCreate(folder: string, opener: HTMLElement) {
 // and Move back on a rename take the whole operation back.
 let fileActions: ReturnType<typeof createFileRowActions> | undefined;
 let confirmDialog: ReturnType<typeof createConfirmDialog> | undefined;
+let discardDialog: ReturnType<typeof createConfirmDialog> | undefined;
 let pagePicker: ReturnType<typeof createPagePicker> | undefined;
 
 function announce(text: string) {
@@ -3298,6 +3304,7 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
   if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
   const change = treeState().changes.get(target.path);
   if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => undoFileChanges({ moveBack: [target.path] }) });
+  if (change && !target.folder) items.push({ label: "Discard changes", run: () => void discardOneFile(target.path) });
   items.push(
     { label: "Delete", shortcut: "Delete", run: () => void deleteFileTarget(target) },
     { label: "Copy path", run: () => void copyFilePath(target.path) },
@@ -3619,33 +3626,124 @@ function restoreFileTarget(target: FileRowTarget) {
   requestAnimationFrame(() => fileRow(target.path)?.focus());
 }
 
-// A change's Restore (a deletion) or Move back (a rename) in the Save panel.
+// A change's Restore (a deletion), Move back (a rename) or Discard (an edit, a new file) in the Save panel.
 function discardFileChange(change: FileChange) {
   if (change.kind === "A" && change.drafts[0]?.upload) discardUpload(change.path);
   else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
   else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
+  else if (discardDrafts([change.path])) announce(`Discarded the changes to ${change.path}.`);
+}
+
+/**
+ * Drops the drafts of `paths`, each with the other half of its rename, or
+ * every draft of the branch: the files are GitHub's again. The open file
+ * and the style pane close when among them, and the open file opens again
+ * as GitHub has it (a new page's parent page, a renamed file at its old
+ * path). Returns how many drafts went.
+ */
+function discardDrafts(paths?: string[]): number {
+  const scope = draftScope();
+  if (!scope) return 0;
+  const store = draftStore();
+  const all = store.list(scope);
+  const chosen = new Set(paths ?? all.map((draft) => draft.path));
+  for (const draft of all) {
+    if (!chosen.has(draft.path)) continue;
+    if (draft.movedFrom && store.get(scope, draft.movedFrom)?.movedTo === draft.path) chosen.add(draft.movedFrom);
+    if (draft.movedTo && store.get(scope, draft.movedTo)?.movedFrom === draft.path) chosen.add(draft.movedTo);
+  }
+  const openDraft = currentPath && chosen.has(currentPath) ? store.get(scope, currentPath) : undefined;
+  const styled = Boolean(secondaryPath && chosen.has(secondaryPath));
+  const opened = releaseFiles(chosen);
+  let count = 0;
+  for (const path of chosen) {
+    if (!store.get(scope, path)) continue;
+    // The model kept for the file goes with its draft.
+    if (!editorModule?.dropDraft(scope, path)) store.remove(scope, path);
+    deletedUpstream.delete(path);
+    count++;
+  }
+  // Undo would replay edits into files that are GitHub's again.
+  editorModule?.clearHistory();
+  afterFileChanges();
+  if (nativeModeActive()) updateNativePreviewSources();
+  if (opened) {
+    const back = openDraft?.movedFrom && chosen.has(openDraft.movedFrom) ? openDraft.movedFrom
+      : openDraft?.baseSha === null ? nativeFallbackPage(opened) : opened;
+    void openAfter(back);
+  } else if (styled && currentPath && nativeModeActive()) {
+    // The open page stays; its stylesheet opens again as GitHub has it.
+    if (nativeComponentTagForPath(currentPath)) void openComponentLinkedStyle(currentPath);
+    else void openDefaultLinkedStyle(currentPath);
+  }
+  return count;
+}
+
+// Discard changes on one file (its row menu in Pages & files).
+async function discardOneFile(path: string) {
+  const change = treeState().changes.get(path);
+  if (!change) return;
+  const asked = await confirmDialog?.ask({
+    title: `Discard the changes to ${change.from ? `${change.from} → ${path}` : path}?`,
+    notes: [change.kind === "A" ? "It is not on GitHub yet, so this removes it." : "It goes back to GitHub's version. This cannot be undone."],
+    action: "Discard",
+  });
+  if (!asked) return;
+  discardDrafts([path]);
+  announce(`Discarded the changes to ${path}.`);
+}
+
+// Discard changes in the top bar: every draft of the branch, after a question naming them.
+async function discardAllChanges() {
+  const scope = draftScope();
+  if (!scope || !discardDialog) return;
+  const changes = listChanges(draftStore().list(scope));
+  if (!changes.length) return;
+  const n = changes.length;
+  const names = changes.map((change) => (change.from ? `${change.from} → ${change.path}` : change.path));
+  const shown = names.length > 12 ? `${names.slice(0, 10).join(", ")} and ${names.length - 10} more` : names.join(", ");
+  const words = `${n} unsaved ${n === 1 ? "change" : "changes"}`;
+  const asked = await discardDialog.ask({
+    title: `Discard ${words}?`,
+    notes: [shown, `Every file goes back to GitHub's version on ${scope.branch}, including changes agents made. This cannot be undone.`],
+    action: "Discard all",
+  });
+  if (!asked || draftScope()?.branch !== scope.branch) return;
+  discardDrafts();
+  announce(`Discarded ${words}.`);
 }
 
 // Drafts of files GitHub deleted since they began, found when a snapshot
 // loads (src/file-changes.ts): a deletion is dropped, an edit waits in Save
 // to GitHub and the code editor for Discard draft or Keep as new file.
+// Drafts that are GitHub's version now (a merge, a save elsewhere, an agent
+// writing the same text) are no change and go too, compared by blob SHA.
 async function findDeletedUpstream(epoch: number) {
   deletedUpstream = new Set();
   const scope = draftScope();
   if (!scope) return;
-  const drafts = draftStore().list(scope).filter((draft) => draft.baseSha !== null);
+  const all = draftStore().list(scope);
+  const drafts = all.filter((draft) => draft.baseSha !== null);
   const missing = new Set<string>();
+  const entries = new Map<string, TreeEntry | undefined>();
   try {
-    for (const draft of drafts) {
+    // New files are looked for only when the whole tree is at hand.
+    for (const draft of snapshot?.tree ? all : drafts) {
       const entry = await findEntry(draft.path);
       if (epoch !== generation) return;
-      if (!entry) missing.add(draft.path);
+      entries.set(draft.path, entry);
+      if (!entry && draft.baseSha !== null) missing.add(draft.path);
     }
   } catch {
     // Unknown: a save reports it instead.
     return;
   }
   deletedUpstream = new Set(settleDeletedUpstream(draftStore(), scope, drafts, missing));
+  const left = draftStore().list(scope).filter((draft) => entries.has(draft.path) && !deletedUpstream.has(draft.path));
+  const dropped = await pruneUnchanged(draftStore(), scope, left, (path) => entries.get(path)).catch(() => []);
+  if (epoch !== generation || !dropped.length) return;
+  for (const path of dropped) editorModule?.forgetDraftModel(scope, path);
+  editorModule?.refreshDrafts();
 }
 
 // Discard draft (`keep` false) or Keep as new file, for an edit of a file
@@ -4156,7 +4254,8 @@ async function mountSource(
       adoptNativeBaseSources(scope, result, submitted);
       // Saved uploads are GitHub's now; this browser lets their bytes go.
       void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
-      void refreshPublishedSnapshot(scope.repo, scope.branch);
+      seeHead(result.commit);
+      void refreshPublishedSnapshot(scope.repo, scope.branch, result.commit);
       if (nativeEngaged && !result.unchanged)
         siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
           () => currentRepo?.id === scope.repoId && (snapshot?.branch ?? branchSelect.value) === scope.branch && info.user?.login === scope.account);
@@ -4202,8 +4301,9 @@ async function mountSource(
       updateCurrentPageLabel();
     },
     onHistory: openHistory,
-    movedFrom: baseSha === null ? draftStore().get(scope, path)?.movedFrom : undefined,
-    onMoveBack: () => undoFileChanges({ moveBack: [path] }),
+    onDiscardAll: () => void discardAllChanges(),
+    publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? trustedHead() : undefined),
+    onRefused: () => void checkBranchHead(true),
     onDiscardChange: discardFileChange,
     deletedUpstream: (path) => deletedUpstream.has(path),
     onSettleDeleted: settleDeletedDraft,
@@ -4561,10 +4661,12 @@ async function restoreFile(
   }
 }
 
-async function refreshPublishedSnapshot(repo: string, branch: string) {
+// After a save: the branch as the save left it. `commit` is the save's own
+// commit, so a GitHub read lagging behind it still gives it (worker/github.ts).
+async function refreshPublishedSnapshot(repo: string, branch: string, commit: string) {
   const epoch = generation;
   try {
-    const result = await api<Snapshot>("snapshot", { repo, branch });
+    const result = await api<Snapshot>("snapshot", { repo, branch, commit });
     if (
       epoch !== generation ||
       currentRepo?.full_name !== repo ||
@@ -4572,6 +4674,7 @@ async function refreshPublishedSnapshot(repo: string, branch: string) {
     )
       return;
     snapshot = result;
+    seeHead(result.commit);
     await findDeletedUpstream(epoch);
     if (epoch !== generation) return;
     updateAgentContext();
@@ -4584,6 +4687,40 @@ async function refreshPublishedSnapshot(repo: string, branch: string) {
   }
 }
 
+// The branch head as this tab last learned it (a snapshot, a save) and when:
+// trusted over GitHub's answer for a while, as GitHub's reads can lag its
+// writes; after that a branch reset elsewhere is believed.
+let headSeen: { commit: string; at: number } | undefined;
+const headTrust = 5 * 60_000;
+function seeHead(commit: string) {
+  headSeen = { commit, at: Date.now() };
+}
+const trustedHead = () => (headSeen && Date.now() - headSeen.at < headTrust ? headSeen.commit : undefined);
+// Whether GitHub moved the branch on (a pull request merged, a save in
+// another tab): checked when the tab is shown or focused again, at most
+// every 15 seconds, and after a save was refused. A new head loads as
+// Refresh does, the open file opening again.
+let headCheckedAt = 0;
+async function checkBranchHead(force = false) {
+  if (!currentRepo || !snapshot || document.visibilityState !== "visible") return;
+  if (!force && Date.now() - headCheckedAt < 15_000) return;
+  headCheckedAt = Date.now();
+  const epoch = generation, seen = snapshot, repo = currentRepo;
+  try {
+    const { commit } = await api<{ commit: string }>("head", {
+      repo: repo.full_name, branch: seen.branch,
+      ...(trustedHead() ? { commit: trustedHead()! } : {}),
+    });
+    if (epoch !== generation || snapshot !== seen || commit === seen.commit) return;
+    seeHead(commit);
+    await loadSnapshot();
+  } catch {
+    // Checked again on the next focus.
+  }
+}
+document.addEventListener("visibilitychange", () => void checkBranchHead());
+window.addEventListener("focus", () => void checkBranchHead());
+
 async function loadSnapshot(
   resumePath?: string,
   prefetched?: Promise<Snapshot>,
@@ -4592,6 +4729,8 @@ async function loadSnapshot(
   const reopen =
     resumePath ??
     (snapshot?.branch === branchSelect.value ? currentPath : undefined);
+  // The head this tab saw on the branch: a lagging read never steps back from it.
+  const known = snapshot && snapshot.branch === branchSelect.value ? trustedHead() : undefined;
   const epoch = ++generation;
   fileGeneration++;
   clearError();
@@ -4616,9 +4755,11 @@ async function loadSnapshot(
       api<Snapshot>("snapshot", {
         repo: repo.full_name,
         branch,
+        ...(known ? { commit: known } : {}),
       }));
     if (epoch !== generation) return;
     snapshot = result;
+    seeHead(result.commit);
     await findDeletedUpstream(epoch);
     if (epoch !== generation) return;
     updateAgentContext();
@@ -4955,6 +5096,14 @@ async function disconnect() {
     errorMessage(error);
   }
 }
+
+// A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
+draftStore().baseline = (scope, path) => {
+  const current = draftScope();
+  return nativeEngaged && current && current.repoId === scope.repoId && current.branch === scope.branch && current.account === scope.account
+    ? nativeBaseSources.get(path)
+    : undefined;
+};
 
 async function start() {
   try {

@@ -10,7 +10,7 @@ import { createPublishMenu } from "./publish-menu";
 import { textHash, type AgentCommand } from "../../shared/agent";
 import type { EditorContext } from "../../shared/types";
 import type { PublishResult } from "../../shared/types";
-import type { FileChange } from "../file-changes";
+import { listChanges, type FileChange } from "../file-changes";
 import { button, node } from "../ui/dom";
 
 export interface SourceFile {
@@ -35,13 +35,14 @@ export interface SourceFile {
   /** Opens an unmounted file before routed visual history changes its model. */
   ensureHistoryTarget?: (path: string) => Promise<boolean>;
   /**
-   * Asked before Discard changes resets a file GitHub has: what else the
-   * discard takes with it, said in the confirmation, and what to do after.
+   * Discard changes in the toolbar: every draft of the branch goes (the
+   * caller asks first). Without it, the button discards this file's draft.
    */
-  discardPlan?: () => { note: string; after: () => void } | undefined;
-  /** A renamed or moved file's old path: Discard changes moves it back there (`onMoveBack`). */
-  movedFrom?: string;
-  onMoveBack?: () => void;
+  onDiscardAll?: () => void;
+  /** The branch's head as the tab last saw it, sent with a save. */
+  publishHead?: () => string | undefined;
+  /** A save was refused for files GitHub changed or deleted meanwhile. */
+  onRefused?: () => void;
   /** Restores a deletion or moves a renamed file back, from the Save panel. */
   onDiscardChange?: (change: FileChange) => void;
   /** Whether a draft is an edit of a file GitHub deleted since it began (this file's too). */
@@ -311,6 +312,11 @@ export function changedFiles() {
   return [...drafts.values()]
     .filter((d) => d.baseSha === null || d.model.getValue() !== d.original)
     .map((d) => ({ path: d.path, created: d.baseSha === null, scopeKey: d.scope ? `${d.scope.repoId}:${d.scope.branch}` : "" }));
+}
+/** Forgets every Undo and Redo step: the drafts they changed are gone (Discard changes). */
+export function clearHistory() {
+  visualHistory.clear();
+  for (const editor of mounted.values()) editor.refresh();
 }
 export function clearDrafts() {
   for (const draft of drafts.values()) draft.model.dispose();
@@ -616,20 +622,11 @@ export function mountCodeEditor(
   const discard = button(
     "Discard changes",
     () => {
-      // A renamed file goes back to its old path, its edits kept there.
-      if (current.baseSha === null && file.movedFrom && file.onMoveBack) {
-        if (confirm(`Move this file back to ${file.movedFrom}? Its edits are kept there.`)) file.onMoveBack();
+      if (file.onDiscardAll) {
+        file.onDiscardAll();
         return;
       }
-      const plan = current.baseSha === null ? undefined : file.discardPlan?.();
-      if (
-        !confirm(
-          current.baseSha === null
-            ? "Discard this new file?"
-            : `Discard this file’s draft changes? You can undo this in the editor.${plan ? ` ${plan.note}` : ""}`,
-        )
-      )
-        return;
+      if (!confirm(current.baseSha === null ? "Discard this new file?" : "Discard this file’s draft changes? You can undo this in the editor.")) return;
       if (discardNew()) return;
       if (conflict) {
         current.original = file.source;
@@ -644,10 +641,14 @@ export function mountCodeEditor(
         () => null,
       );
       current.model.pushStackElement();
-      plan?.after();
     },
     "text-button",
   );
+  if (file.onDiscardAll) discard.title = "Discard every unsaved change on this branch";
+  // With Discard all, the button waits for any draft of the branch, not only this file's.
+  const refreshDiscard = (changed: boolean) => {
+    discard.disabled = !!file.readOnly || (file.onDiscardAll && file.scope ? listChanges(store.list(file.scope)).length === 0 : !changed);
+  };
   const publisher =
     file.scope && !file.readOnly
       ? createPublishMenu({
@@ -657,6 +658,8 @@ export function mountCodeEditor(
           onDiscardChange: file.onDiscardChange,
           deletedUpstream: file.deletedUpstream,
           onSettleDeleted: file.onSettleDeleted,
+          head: file.publishHead,
+          onRefused: file.onRefused,
           onExpired: () => file.onSessionExpired?.(),
           onPublished: (result, submitted) => {
             reconcilePublished(result, submitted);
@@ -670,9 +673,14 @@ export function mountCodeEditor(
         })
       : undefined;
   toolbar.append(undo, redo, review, discard);
+  // A draft written outside this editor: the Save menu and Discard changes follow.
+  const refreshOutside = () => {
+    publisher?.refresh();
+    refreshDiscard(current.baseSha === null || current.model.getValue() !== current.original);
+  };
   if (publisher) {
     toolbar.append(publisher.root);
-    publishers.add(publisher.refresh);
+    publishers.add(refreshOutside);
   }
   const notice = node("div", "code-editor__notice");
   notice.setAttribute("role", "status");
@@ -726,6 +734,14 @@ export function mountCodeEditor(
   const workspace = host.closest(".workspace");
   workspace?.classList.add("workspace--code");
   function update(changes?: { start: number; end: number; text: string }[]) {
+    // Back to GitHub's version as it is now: no change, whatever blob the
+    // draft began from (a stale one, or none for a path GitHub has since).
+    if (!file.readOnly && typeof file.baseSha === "string" && current.baseSha !== file.baseSha && current.model.getValue() === file.source) {
+      current.original = file.source;
+      current.baseSha = file.baseSha;
+      conflict = false;
+      reviewingLatest = false;
+    }
     const changed =
       current.baseSha === null || current.model.getValue() !== current.original;
     if (file.scope && current.baseSha !== undefined && !file.readOnly) {
@@ -750,7 +766,7 @@ export function mountCodeEditor(
     const message = file.readOnly ? "Read only" : store.error;
     notice.hidden = !message;
     notice.textContent = message ?? "";
-    discard.disabled = !changed || !!file.readOnly;
+    refreshDiscard(changed);
     undo.disabled = !!file.readOnly || !canRunVisualHistory(session, "undo", current.model);
     redo.disabled = !!file.readOnly || !canRunVisualHistory(session, "redo", current.model);
     reportContext(changes);
@@ -840,7 +856,7 @@ export function mountCodeEditor(
     markers.dispose();
     file.onContextChange?.(null);
     publisher?.destroy();
-    if (publisher) publishers.delete(publisher.refresh);
+    publishers.delete(refreshOutside);
     subscription.dispose();
     document.removeEventListener("keydown", historyShortcut);
     destroyView();

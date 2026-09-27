@@ -227,3 +227,30 @@ test("empty repositories, expired access and throttling have actionable errors",
     );
   }
 });
+
+test("a branch head is read fresh; a commit the tab already saw ahead of it is the head, one behind it is not", async () => {
+  const named = "1".repeat(40), known = "2".repeat(40);
+  const asked: { path: string; cache?: string }[] = [];
+  let status = "ahead";
+  const github = new GitHub("secret", async (input, init) => {
+    const url = new URL(String(input));
+    asked.push({ path: url.pathname, cache: init?.cache });
+    if (url.pathname.includes("/branches/")) return reply({ commit: { sha: named } });
+    if (url.pathname.includes("/compare/")) return reply({ status });
+    if (url.pathname.includes("/git/commits/")) return reply({ tree: { sha: "3".repeat(40) } });
+    return reply({ tree: [], truncated: false });
+  });
+  // GitHub still names the commit before a save: the save's commit is the head.
+  assert.deepEqual(await github.head(repo, "main", known), { sha: known });
+  assert.equal(asked[0].cache, "no-store");
+  assert.ok(asked[1].path.endsWith(`/compare/${named}...${known}`));
+  assert.equal((await github.snapshot(repo, "main", known)).commit, known);
+  // A merge moved the branch past it: GitHub's head.
+  status = "behind";
+  assert.equal((await github.head(repo, "main", known)).sha, named);
+  // Nothing known, or the same: no comparison.
+  asked.length = 0;
+  assert.equal((await github.head(repo, "main")).sha, named);
+  assert.equal((await github.head(repo, "main", named)).sha, named);
+  assert.equal(asked.filter((call) => call.path.includes("/compare/")).length, 0);
+});
