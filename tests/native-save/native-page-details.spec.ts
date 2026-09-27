@@ -2,6 +2,7 @@ import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // Page details live in the page's <head>: the Page block's Title and
 // Description, and the Pages tab's Rename, write its <title> and
@@ -47,12 +48,7 @@ async function open(page: Page, baseURL: string | undefined, repo: number, file 
 }
 
 // The browser draft of `path`, parsed.
-async function draft(page: Page, path: string) {
-  return page.evaluate((path) => {
-    const key = Object.keys(localStorage).find((key) => key.startsWith("astro-site-editor:draft:v1:") && JSON.parse(key.slice("astro-site-editor:draft:v1:".length))[3] === path);
-    return key ? JSON.parse(localStorage.getItem(key)!) : undefined;
-  }, path);
-}
+const draft = storedDraft;
 
 // A file on the fake GitHub branch, read through the worker's API.
 async function branchFile(page: Page, repo: string, path: string): Promise<string | undefined> {

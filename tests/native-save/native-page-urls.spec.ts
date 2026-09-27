@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 import { publishButton, showPublish } from "./publish";
 
 // A folder page (`x/index.html`) can have subpages, which are in its folder;
@@ -55,12 +56,7 @@ async function branchFile(page: Page, repo: string, path: string): Promise<strin
 }
 
 // The browser draft of `path`, if any.
-async function draft(page: Page, path: string) {
-  return page.evaluate((path) => {
-    const key = Object.keys(localStorage).find((key) => key.startsWith("astro-site-editor:draft:v1:") && JSON.parse(key.slice("astro-site-editor:draft:v1:".length))[3] === path);
-    return key ? JSON.parse(localStorage.getItem(key)!) : undefined;
-  }, path);
-}
+const draft = storedDraft;
 
 async function saveAll(page: Page) {
   await showPublish(page);

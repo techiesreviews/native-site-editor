@@ -2,6 +2,7 @@ import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // Deleting, renaming, moving and duplicating files as publishable drafts
 // (src/file-changes.ts, the row actions in components/file-row-actions.ts),
@@ -75,12 +76,7 @@ async function branchFile(page: Page, repo: string, path: string): Promise<strin
 }
 
 // The browser draft of `path`, parsed.
-async function draft(page: Page, path: string) {
-  return page.evaluate((path) => {
-    const key = Object.keys(localStorage).find((key) => key.startsWith("astro-site-editor:draft:v1:") && JSON.parse(key.slice("astro-site-editor:draft:v1:".length))[3] === path);
-    return key ? JSON.parse(localStorage.getItem(key)!) : undefined;
-  }, path);
-}
+const draft = storedDraft;
 
 async function saveAll(page: Page) {
   await showPublish(page);

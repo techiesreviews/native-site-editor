@@ -89,7 +89,7 @@ test("an upload is an A change saved as its blob, its bytes kept apart; discardi
   assert.equal(draft.opaque, true);
   assert.deepEqual(draft.upload, { size: png.length, type: "image/png" });
   assert.equal(draft.content, "");
-  // Bytes stay out of localStorage.
+  // Bytes stay out of the draft record.
   const stored = new Uint8Array(await (await bytes.get(uploadKey(scope, sha)))!.arrayBuffer());
   assert.deepEqual(stored, png);
 

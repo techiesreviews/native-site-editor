@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // An agent works on the site through the MCP site tools (worker/mcp.ts)
@@ -31,12 +32,7 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
 
-async function draft(page: Page, path: string) {
-  return page.evaluate((path) => {
-    const key = Object.keys(localStorage).find((key) => key.startsWith("astro-site-editor:draft:v1:") && JSON.parse(key.slice("astro-site-editor:draft:v1:".length))[3] === path);
-    return key ? JSON.parse(localStorage.getItem(key)!) : undefined;
-  }, path);
-}
+const draft = storedDraft;
 
 // Connects an agent with the prompt "Connect with MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {

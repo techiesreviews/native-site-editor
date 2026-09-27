@@ -5107,11 +5107,18 @@ draftStore().baseline = (scope, path) => {
 
 async function start() {
   try {
-    info = await api<SessionInfo>("session");
-    if (info.user) {
+    const session = await api<SessionInfo>("session");
+    if (session.user) {
       // The editor bundle is large; start it downloading before any
       // repository data arrives so opening the first file never waits for it.
       void loadEditorModule().catch(() => {});
+      // Drafts are read synchronously from here on: they load before
+      // anything can read them (src/drafts.ts).
+      await draftStore().load(session.user.login);
+      draftStore().onError = (message) => errorMessage(new Error(message));
+    }
+    info = session;
+    if (info.user) {
       resumeWorkspaceLink();
       mountWorkspace();
       agentMenu = createAgentMenu({

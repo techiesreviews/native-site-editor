@@ -4,8 +4,8 @@
 // marked `upload`, whose content is not text: `sourceSha` is the git blob
 // SHA of its bytes and `opaque` says the text is not held, so Save sends it
 // as that blob (src/file-changes.ts `publishFiles`). The bytes themselves
-// are too large for the drafts' localStorage (about 5 MB for everything),
-// so they live in IndexedDB, keyed by the draft scope and the SHA; a moved
+// stay out of the draft record, in an IndexedDB database of their own,
+// keyed by the draft scope and the SHA; a moved
 // or copied upload keeps its SHA and so its bytes. Before a save, each
 // upload's bytes go to `/api/blob` (worker/blobs.ts), which makes them a
 // GitHub blob; the commit then names the blob. Bytes no draft refers to any

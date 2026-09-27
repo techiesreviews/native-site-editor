@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { publishButton, showPublish } from "./publish";
+import { storedDrafts } from "./drafts";
 
 // Discard changes in the top bar drops every draft of the branch (after a
 // question naming them); a draft that is GitHub's version again goes on its
@@ -36,10 +37,7 @@ const message = (page: Page) => page.locator("#publish-files .publish-menu__mess
 const revision = (page: Page) => page.locator("#revision");
 
 async function drafts(page: Page): Promise<string[]> {
-  return page.evaluate(() => Object.keys(localStorage)
-    .filter((key) => key.startsWith("astro-site-editor:draft:v1:"))
-    .map((key) => JSON.parse(key.slice("astro-site-editor:draft:v1:".length))[3] as string)
-    .sort());
+  return (await storedDrafts(page)).map((draft) => draft.path);
 }
 async function head(page: Page, baseURL: string | undefined) {
   return ((await (await page.request.get(`${baseURL}/__demo/head`)).json()) as { commit: string }).commit;

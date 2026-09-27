@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { publishButton, showPublish } from "./publish";
+import { legacyDraftKeys, storedDrafts } from "./drafts";
 
 // Drafts of files GitHub deleted since they began (src/file-changes.ts
 // settleDeletedUpstream), over `native-conventions` (id 531): a browser
@@ -84,8 +85,8 @@ test("in Save to GitHub, a draft of a deleted file says so and is discarded or k
   await expect(page.locator("#content .view-lines")).toContainText("Kept from an old draft.");
   await expect(page.locator("#content .code-editor__conflict")).toBeHidden();
   await expect(saveTrigger(page)).toBeDisabled();
-  const drafts = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("astro-site-editor:draft:v1:")).length);
-  expect(drafts).toBe(0);
+  expect(await storedDrafts(page)).toEqual([]);
+  expect(await legacyDraftKeys(page)).toEqual([]);
   await open(page, baseURL);
   await expect(frame(page).locator("h1")).toHaveText("Found where they are", { timeout: 30_000 });
 });
