@@ -21,7 +21,7 @@ export class HttpError extends Error {
 const segment = encodeURIComponent;
 const apiRoot = "https://api.github.com";
 const maxPages = 50;
-const maxFileBytes = 128 * 1024;
+const maxFileBytes = 1024 * 1024;
 const maxAssetBytes = 2 * 1024 * 1024;
 const batchConcurrency = 8;
 
@@ -285,9 +285,9 @@ export class GitHub {
       size: number;
       encoding: string;
       content: string;
-    }>(`${this.base(repo)}/git/blobs/${sha}`, 256 * 1024);
+    }>(`${this.base(repo)}/git/blobs/${sha}`, 1536 * 1024);
     if (data.size > maxFileBytes)
-      throw new HttpError(413, "File preview is limited to 128 KB.");
+      throw new HttpError(413, "Text files open up to 1 MB.");
     if (data.encoding !== "base64")
       throw new HttpError(415, "This file cannot be displayed as text.");
     const bytes = Uint8Array.from(

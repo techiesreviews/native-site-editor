@@ -204,8 +204,13 @@ test("file reader rejects binary and oversized responses", async () => {
     () => binary.file(repo, sha),
     (error: HttpError) => error.status === 415,
   );
+  const text = "a".repeat(600_000);
+  const large = new GitHub("secret", async () =>
+    reply({ content: btoa(text), encoding: "base64", size: text.length }),
+  );
+  assert.equal(await large.file(repo, sha), text, "text files up to 1 MB are read");
   const huge = new GitHub("secret", async () =>
-    reply({ content: "a".repeat(300_000), encoding: "base64", size: 225_000 }),
+    reply({ content: "", encoding: "base64", size: 1024 * 1024 + 1 }),
   );
   await assert.rejects(
     () => huge.file(repo, sha),

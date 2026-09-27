@@ -594,7 +594,7 @@ async function openSecondary(css: string) {
     const draft = draftStore().get(scope, css);
     const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
     const entry = created ? undefined : await findEntry(css);
-    if (!created && (!entry || (entry.size ?? 0) > 128 * 1024)) throw new Error(`Could not open ${css}.`);
+    if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
     const [source, editor] = await Promise.all([
       entry ? readFile(scope.repo, entry.sha) : "",
       loadEditorModule(),
@@ -3426,7 +3426,7 @@ async function targetFiles(target: FileRowTarget, withText: boolean): Promise<Mo
   for (const path of state.drafted)
     if (!known.has(path) && (target.folder ? path.startsWith(`${target.path}/`) : path === target.path)) out.push({ path });
   if (!withText) return out;
-  const wanted = live.filter((entry) => !draftStore().get(scope, entry.path) && (entry.size ?? 0) <= 128 * 1024 && !BINARY_FILE.test(entry.path));
+  const wanted = live.filter((entry) => !draftStore().get(scope, entry.path) && (entry.size ?? 0) <= 1024 * 1024 && !BINARY_FILE.test(entry.path));
   const texts = new Map<string, string>();
   for (const entry of wanted) {
     const loaded = nativeBaseSources.get(entry.path);
@@ -4174,12 +4174,12 @@ async function openEntry(
     status("Submodule selected.");
     return;
   }
-  if ((entry.size ?? 0) > 128 * 1024) {
+  if ((entry.size ?? 0) > 1024 * 1024) {
     content.replaceChildren(
       node(
         "p",
         "empty-message",
-        "This file is larger than the 128 KB text preview limit.",
+        "This file is larger than the 1 MB the editor opens as text.",
       ),
     );
     status("Large file selected.");
@@ -4766,7 +4766,7 @@ async function loadSnapshot(
     updatePreview();
     // Start reading the file to reopen now, alongside the native site's files.
     const reopenEntry = reopen ? entryAt(reopen) : undefined;
-    if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 128 * 1024)
+    if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 1024 * 1024)
       void readFile(repo.full_name, reopenEntry.sha).catch(() => {});
     const isNative = await activateNativeSite(repo, result, epoch);
     if (epoch !== generation) return;

@@ -158,7 +158,8 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<SharedCo
     repository: input.repository,
     branch: input.branch,
     commit: input.commit,
-    file: input.file,
+    // The open file is read by path like any other, so its text is not sent twice.
+    file: input.file && { ...input.file, original: "", content: "" },
     drafts: sharedDrafts,
   };
   const native = input.native;
