@@ -186,7 +186,7 @@ export async function handle(
           {
             error: message,
             ...(error instanceof HttpError && error.conflicts
-              ? { conflicts: error.conflicts }
+              ? { conflicts: error.conflicts, gone: error.gone ?? [] }
               : {}),
           },
           status,
@@ -690,6 +690,7 @@ async function route(
       ![
         "/api/branches",
         "/api/snapshot",
+        "/api/head",
         "/api/tree",
         "/api/file",
         "/api/files",
@@ -705,10 +706,15 @@ async function route(
       readAuthorizationMaxAge,
     );
     if (path === "/api/branches") return json(await github.branches(repo));
+    // `commit`: the head the tab already saw, so a lagging read is not a step back.
     if (path === "/api/snapshot")
       return json(
-        await github.snapshot(repo, url.searchParams.get("branch") ?? ""),
+        await github.snapshot(repo, url.searchParams.get("branch") ?? "", url.searchParams.get("commit") ?? undefined),
       );
+    if (path === "/api/head")
+      return json({
+        commit: (await github.head(repo, url.searchParams.get("branch") ?? "", url.searchParams.get("commit") ?? undefined)).sha,
+      });
     if (path === "/api/history")
       return json(
         await history(github, repo, {

@@ -39,6 +39,7 @@ export function validatePublish(value: unknown): PublishRequest {
     typeof data.branch !== "string" ||
     !data.branch ||
     data.branch.length > 255 ||
+    (data.head !== undefined && !validSha(data.head)) ||
     !Array.isArray(data.files) ||
     data.files.length < 1 ||
     data.files.length > MAX_PUBLISH_FILES
@@ -107,10 +108,8 @@ export async function publish(
 ): Promise<PublishResult> {
   const data = validatePublish(input);
   const base = github.base(repo);
-  const ref = await github.get<{ commit: { sha: string } }>(
-    `${base}/branches/${encodeURIComponent(data.branch)}`,
-  );
-  const head = ref.commit.sha;
+  // The head the editor saw (its last save, say) is trusted over a lagging read.
+  const head = (await github.head(repo, data.branch, data.head)).sha;
   const commit = await github.get<{ tree: { sha: string } }>(
     `${base}/git/commits/${head}`,
   );
@@ -189,6 +188,7 @@ export async function publish(
         "Your drafts are kept.",
       ].filter(Boolean).join(" "),
       [...conflicts, ...gone],
+      gone,
     );
   let result = head;
   if (changes.length) {

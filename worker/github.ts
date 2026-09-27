@@ -11,6 +11,8 @@ export class HttpError extends Error {
     public status: number,
     message: string,
     public conflicts?: string[],
+    /** Of `conflicts`, the paths GitHub deleted (the rest it changed). */
+    public gone?: string[],
   ) {
     super(message);
   }
@@ -83,19 +85,21 @@ export class GitHub {
     private fetcher: typeof fetch = fetch,
   ) {}
 
-  async get<T>(path: string, limit?: number): Promise<T> {
-    return this.request<T>(path, "GET", undefined, limit);
+  async get<T>(path: string, limit?: number, fresh = false): Promise<T> {
+    return this.request<T>(path, "GET", undefined, limit, fresh);
   }
 
   async write<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
     return this.request<T>(path, method, body);
   }
 
-  private async request<T>(path: string, method: string, body?: unknown, limit?: number): Promise<T> {
+  private async request<T>(path: string, method: string, body?: unknown, limit?: number, fresh = false): Promise<T> {
     // Native Workers fetch rejects a GitHub instance as its `this` receiver.
     const fetcher = this.fetcher;
     const response = await fetcher(`${apiRoot}${path}`, {
       method,
+      // A branch's head is never taken from a cache between here and GitHub.
+      ...(fresh ? { cache: "no-store" as const } : {}),
       body: body === undefined ? undefined : JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
@@ -413,18 +417,34 @@ export class GitHub {
       .sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  async snapshot(repo: Repository, branch: string): Promise<Snapshot> {
+  /**
+   * The branch's head commit (and its tree, when GitHub says). GitHub's reads
+   * lag behind its writes for a moment: right after a save or a merge the
+   * branch can still name the commit before. `known`, a commit the editor
+   * already saw on this branch, is the head when it is ahead of the one named.
+   */
+  async head(repo: Repository, branch: string, known?: string): Promise<{ sha: string; tree?: string }> {
     if (!branch || branch.length > 255)
       throw new HttpError(400, "Choose a branch.");
     const ref = await this.get<{
       commit: { sha: string; commit?: { tree?: { sha?: string } } };
-    }>(`${this.base(repo)}/branches/${segment(branch)}`);
+    }>(`${this.base(repo)}/branches/${segment(branch)}`, undefined, true);
+    const named = { sha: ref.commit.sha, tree: ref.commit.commit?.tree?.sha };
+    if (!known || known === named.sha || !/^[a-f0-9]{40}$/.test(known)) return named;
+    const compare = await this.get<{ status?: string }>(
+      `${this.base(repo)}/compare/${named.sha}...${known}?per_page=1`,
+    ).catch(() => undefined);
+    return compare?.status === "ahead" ? { sha: known } : named;
+  }
+
+  async snapshot(repo: Repository, branch: string, known?: string): Promise<Snapshot> {
+    const ref = await this.head(repo, branch, known);
     // The branch listing already carries the commit's tree; only look the
     // commit up when a minimal response leaves it out.
-    let treeSha = ref.commit.commit?.tree?.sha;
+    let treeSha = ref.tree;
     if (!treeSha || !/^[a-f0-9]{40}$/.test(treeSha)) {
       const commit = await this.get<{ tree: { sha: string } }>(
-        `${this.base(repo)}/git/commits/${ref.commit.sha}`,
+        `${this.base(repo)}/git/commits/${ref.sha}`,
       );
       treeSha = commit.tree.sha;
     }
@@ -432,7 +452,7 @@ export class GitHub {
     if (!tree)
       return {
         ...(await this.directory(repo, treeSha)),
-        commit: ref.commit.sha,
+        commit: ref.sha,
         branch,
       };
     const entries = tree
@@ -444,7 +464,7 @@ export class GitHub {
       );
     return {
       ...(await this.directory(repo, treeSha, entries)),
-      commit: ref.commit.sha,
+      commit: ref.sha,
       branch,
       tree,
     };

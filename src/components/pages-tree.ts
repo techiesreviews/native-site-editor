@@ -59,6 +59,9 @@ export function createPagesTree(options: {
   retitleBlocked?: () => string | undefined;
   /** Makes a copy of a page. */
   duplicate?: (file: string) => void;
+  /** Whether a page's file has unsaved changes, which `discard` drops (the caller confirms). */
+  changed?: (file: string) => boolean;
+  discard?: (file: string) => void;
   /** Deletes a page (the caller confirms, and asks about its subpages). */
   remove?: (target: NativePagesTarget) => void;
   /** Gives a URL with no page its own page. */
@@ -308,6 +311,7 @@ export function createPagesTree(options: {
       ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),
       ...(!home && options.moveTo ? [{ label: "Move to…", run: () => options.moveTo!(target) }] : []),
       ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file!) }] : []),
+      ...(options.discard && options.changed?.(page.file) ? [{ label: "Discard changes", run: () => options.discard!(page.file!) }] : []),
       ...(!home && options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
     ];
   }

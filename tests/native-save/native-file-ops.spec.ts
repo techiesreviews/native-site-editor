@@ -312,7 +312,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   // Duplicate, from the row's menu: a titled copy beside it.
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Fern & Kettle café" });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
   await menu.getByRole("menuitem", { name: "Duplicate" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle-copy/index.html");
   await expect(status(page)).toHaveText("Duplicated Fern & Kettle café as Fern & Kettle café (copy) at /work/fern-and-kettle-copy/.");

@@ -25,6 +25,7 @@ function fixture(
     mode?: string;
     deleted?: boolean;
     existing?: string;
+    compare?: string;
   } = {},
 ) {
   const calls: { path: string; method: string; body?: any }[] = [];
@@ -40,6 +41,8 @@ function fixture(
     }
     if (path.includes("/branches/"))
       return Response.json({ commit: { sha: head } });
+    if (path.includes("/compare/"))
+      return Response.json({ status: options.compare ?? "behind" });
     if (path.includes("/git/commits/"))
       return Response.json({ tree: { sha: tree } });
     if (path.endsWith(tree))
@@ -112,6 +115,25 @@ test("overlapping edits, deleted files and symlinks fail before any GitHub write
     assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
   }
 });
+test("the head the editor saw is the parent when GitHub's read of the branch lags behind it", async () => {
+  const saved = "9".repeat(40);
+  const { github, calls } = fixture({ compare: "ahead" });
+  await publish(github, repo, { branch: "main", head: saved, files });
+  assert.ok(calls.some((call) => call.path.endsWith(`/compare/${head}...${saved}`)));
+  assert.ok(calls.some((call) => call.path.endsWith(`/git/commits/${saved}`)));
+  assert.deepEqual(calls.find((call) => call.method === "POST" && call.path.endsWith("/git/commits"))?.body.parents, [saved]);
+  // Behind GitHub's head (a merge since): GitHub's head.
+  const merged = fixture({ compare: "behind" });
+  await publish(merged.github, repo, { branch: "main", head: saved, files });
+  assert.deepEqual(merged.calls.find((call) => call.method === "POST" && call.path.endsWith("/git/commits"))?.body.parents, [head]);
+  assert.throws(() => validatePublish({ branch: "main", head: "HEAD", files }), (error: HttpError) => error.status === 400);
+});
+test("a draft whose text is GitHub's new version is no conflict", async () => {
+  const { github, calls } = fixture({ existing: await blobSha(files[0].content) });
+  const result = await publish(github, repo, { branch: "main", files });
+  assert.equal(result.unchanged, true);
+  assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+});
 test("an edit of a file GitHub deleted is refused as deleted, not changed", async () => {
   const { github } = fixture({ deleted: true });
   await assert.rejects(
@@ -119,6 +141,7 @@ test("an edit of a file GitHub deleted is refused as deleted, not changed", asyn
     (error: HttpError) =>
       error.status === 409 &&
       error.conflicts?.[0] === files[0].path &&
+      error.gone?.[0] === files[0].path &&
       error.message.includes(`GitHub deleted these files since your drafts began: ${files[0].path}.`) &&
       error.message.includes("Discard those drafts or keep them as new files") &&
       !error.message.includes("GitHub changed these files"),

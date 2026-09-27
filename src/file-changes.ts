@@ -90,6 +90,46 @@ export function settleDeletedUpstream(store: DraftAccess, scope: DraftScope, dra
   return gone;
 }
 
+/** The git blob SHA of text as UTF-8, as GitHub names a file with it. */
+export async function textBlobSha(text: string): Promise<string> {
+  const body = new TextEncoder().encode(text);
+  const header = new TextEncoder().encode(`blob ${body.length}\0`);
+  const all = new Uint8Array(header.length + body.length);
+  all.set(header);
+  all.set(body, header.length);
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-1", all)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Drafts that are no change against the branch as it is now, dropped: a
+ * file whose draft is GitHub's blob at its path (whatever blob it began
+ * from, a new file GitHub now has too), a deletion of a file GitHub no
+ * longer has. `entry` is each path's file on the branch (undefined: none),
+ * compared by blob SHA, so nothing is read. Returns the paths dropped.
+ */
+export async function pruneUnchanged(
+  store: DraftAccess, scope: DraftScope, drafts: SavedDraft[],
+  entry: (path: string) => { sha: string; mode?: string } | undefined,
+  shaOf: (text: string) => Promise<string> = textBlobSha,
+): Promise<string[]> {
+  const dropped: string[] = [];
+  for (const draft of drafts) {
+    const file = entry(draft.path);
+    let same: boolean;
+    if (draft.deleted) same = !file;
+    else if (!file || (draft.mode && file.mode !== draft.mode)) same = false;
+    else if (draft.baseSha === null && savedAsBlob(draft)) same = draft.sourceSha === file.sha;
+    else same = !draft.opaque && (await shaOf(draft.content)) === file.sha;
+    if (!same) continue;
+    const latest = store.get(scope, draft.path);
+    // Changed while the SHAs were worked out: left for the next check.
+    if (!latest || latest.content !== draft.content || Boolean(latest.deleted) !== Boolean(draft.deleted)) continue;
+    store.remove(scope, draft.path);
+    dropped.push(draft.path);
+  }
+  return dropped;
+}
+
 /** An edit of a file GitHub deleted, as a new file: saving recreates the file with the draft's text. */
 export function keepAsNewFile(store: DraftAccess, scope: DraftScope, path: string, now = Date.now()): boolean {
   const draft = store.get(scope, path);

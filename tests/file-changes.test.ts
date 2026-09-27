@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DraftStore, type SavedDraft } from "../src/drafts.ts";
-import { deleteFile, duplicateFile, keepAsNewFile, listChanges, moveBack, moveFile, publishFiles, restoreFile, settleDeletedUpstream } from "../src/file-changes.ts";
+import { deleteFile, duplicateFile, keepAsNewFile, listChanges, moveBack, moveFile, pruneUnchanged, publishFiles, restoreFile, settleDeletedUpstream, textBlobSha } from "../src/file-changes.ts";
 import { copyPath, filesLinkingTo, linkNote, protectedPathProblem, renameSelection } from "../src/native-files.ts";
 
 function memory() {
@@ -164,4 +164,24 @@ test("an edit of a file GitHub deleted kept as a new file is saved by creating i
   // Only an edit with a base can be kept so.
   assert.equal(keepAsNewFile(store, scope, "notes.md"), false);
   assert.equal(keepAsNewFile(store, scope, "absent.md"), false);
+});
+
+test("drafts that are GitHub's version now are dropped by blob SHA: a stale edit, a new file GitHub has, a deletion of a file gone", async () => {
+  assert.equal(await textBlobSha("hello\n"), "ce013625030ba8dba906f756967f9e9ca394464a");
+  const store = new DraftStore(memory());
+  const merged = await textBlobSha("<p>merged</p>");
+  store.save(edit("stale.html", "<p>old</p>", "<p>merged</p>"));
+  store.save(edit("mine.html", "<p>old</p>", "<p>mine</p>"));
+  store.save({ ...edit("new.css", "", "a{}"), baseSha: null });
+  store.save({ ...edit("other.css", "", "b{}"), baseSha: null });
+  deleteFile(store, scope, { path: "gone.txt", sha: sha("a"), text: "x" });
+  deleteFile(store, scope, { path: "kept.txt", sha: sha("a"), text: "x" });
+  store.save({ ...edit("logo.png", "", ""), baseSha: null, sourceSha: sha("f"), opaque: true, upload: { size: 3, type: "image/png" } });
+  const branch: Record<string, string> = {
+    "stale.html": merged, "mine.html": merged, "new.css": await textBlobSha("a{}"), "other.css": await textBlobSha("c{}"),
+    "kept.txt": sha("a"), "logo.png": sha("f"),
+  };
+  const dropped = await pruneUnchanged(store, scope, store.list(scope), (path) => (branch[path] ? { sha: branch[path] } : undefined));
+  assert.deepEqual(dropped.sort(), ["gone.txt", "logo.png", "new.css", "stale.html"]);
+  assert.deepEqual(kinds(store), ["D kept.txt", "M mine.html", "A other.css"]);
 });
