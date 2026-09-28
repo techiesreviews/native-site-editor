@@ -48,7 +48,10 @@ export async function startWorker() {
     external: ["cloudflare:workers"],
     target: "es2022",
   });
-  const github = { allowed: true, writes: 0, others: [] as (typeof repo)[] };
+  // `requests`: every GitHub API path asked, in order. `limited`: answer
+  // everything but sign-in as GitHub's secondary rate limit does (a 403
+  // whose message alone says so).
+  const github = { allowed: true, writes: 0, others: [] as (typeof repo)[], requests: [] as string[], limited: false };
   const worker = new Miniflare(
     convertV4MiniflareOptions({
       modules: true,
@@ -61,6 +64,12 @@ export async function startWorker() {
         if (path === "/login/oauth/access_token")
           return Response.json({ access_token: "github-private-token", expires_in: 28800 });
         if (request.method !== "GET") github.writes++;
+        github.requests.push(path);
+        if (github.limited && path !== "/user")
+          return Response.json(
+            { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." },
+            { status: 403 },
+          );
         if (path === "/user") return Response.json({ login: "lex", avatar_url: "" });
         if (path === "/user/installations")
           return Response.json({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });

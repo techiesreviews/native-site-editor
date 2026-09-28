@@ -1,11 +1,14 @@
 // Repository files as the connected editor tab sees them, for the MCP site
 // tools: GitHub at the revision the tab shows, overlaid with the tab's
 // browser drafts (new, changed, renamed and deleted files).
-import { AGENT_TEXT_LIMIT, textHash } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, TEXT_PATH, textHash } from "../shared/agent";
 import type { EditorContext, Repository, TreeEntry } from "../shared/types";
 import { HttpError, type GitHub } from "./github";
 
 type Draft = EditorContext["drafts"][number];
+
+/** Blobs read from GitHub at a time by an export (most come from the cache). */
+const exportConcurrency = 4;
 
 export interface SiteFile {
   path: string;
@@ -76,11 +79,85 @@ export class SiteFiles {
     return { path, source: "github", content, hash: await textHash(content), baseSha: entry.sha };
   }
 
+  /**
+   * Every file under `prefix` as `read` gives it, in one pass: text files
+   * with their content and hash (drafts applied), binary files by path, blob
+   * and size only. Text is included up to `budget` characters in all; the
+   * files past it are listed in `omitted`. GitHub is asked only for blobs
+   * not yet cached, a few at a time.
+   */
+  async export(prefix = "", budget = 4 * 1024 * 1024): Promise<SiteExport> {
+    const entries = new Map((await this.entries()).map((entry) => [entry.path, entry]));
+    const out: SiteExport = { files: [], binaries: [], unreadable: [], omitted: [] };
+    const texts: { path: string; draft?: "A" | "M" | "R" }[] = [];
+    for (const item of await this.paths()) {
+      if (!item.path.startsWith(prefix)) continue;
+      const draft = this.draft(item.path);
+      const entry = entries.get(item.path);
+      if (draft ? draft.binary : entry?.type !== "blob" || !TEXT_PATH.test(item.path))
+        out.binaries.push({
+          path: item.path,
+          sha: draft ? null : (entry?.sha ?? null),
+          ...(draft ? (draft.size !== undefined ? { size: draft.size } : {}) : entry?.size !== undefined ? { size: entry.size } : {}),
+          ...(item.draft ? { draft: item.draft } : {}),
+        });
+      else texts.push(item);
+    }
+    let used = 0,
+      next = 0;
+    const read: (SiteFile & { draft?: "A" | "M" | "R" })[] = [];
+    await Promise.all(
+      Array.from({ length: Math.min(exportConcurrency, texts.length) }, async () => {
+        while (next < texts.length) {
+          const item = texts[next++];
+          const draft = this.draft(item.path);
+          const size = draft ? draft.size : entries.get(item.path)?.size;
+          if (!draft && size !== undefined && size > AGENT_TEXT_LIMIT) {
+            out.unreadable.push({ path: item.path, reason: `Larger than the ${AGENT_TEXT_LIMIT / 1024 / 1024} MB agents can read.` });
+            continue;
+          }
+          if (size !== undefined && used + size > budget) {
+            out.omitted.push(item.path);
+            continue;
+          }
+          try {
+            const file = await this.read(item.path);
+            if (!file) continue;
+            if (used + file.content.length > budget) {
+              out.omitted.push(item.path);
+              continue;
+            }
+            used += file.content.length;
+            read.push(item.draft ? { ...file, draft: item.draft } : file);
+          } catch (error) {
+            // GitHub limiting requests ends the export; one unreadable file does not.
+            if (!(error instanceof HttpError) || error.status === 429 || error.status >= 500) throw error;
+            out.unreadable.push({ path: item.path, reason: error.message });
+          }
+        }
+      }),
+    );
+    const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    out.files = read.sort(byPath);
+    out.omitted.sort();
+    out.unreadable.sort(byPath);
+    return out;
+  }
+
   /** Whether `path` is a folder (something is inside it). */
   async isFolder(path: string) {
     const prefix = `${path}/`;
     return (await this.paths()).some((item) => item.path.startsWith(prefix));
   }
+}
+
+export interface SiteExport {
+  files: (SiteFile & { draft?: "A" | "M" | "R" })[];
+  /** Files that are not text: by blob (null for an unsaved one) and size. */
+  binaries: { path: string; sha: string | null; size?: number; draft?: "A" | "M" | "R" }[];
+  unreadable: { path: string; reason: string }[];
+  /** Text files past the export's size budget. */
+  omitted: string[];
 }
 
 /** Why agents cannot read a draft: binary, too large, or its text not here yet. */

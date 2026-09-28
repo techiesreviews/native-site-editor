@@ -259,3 +259,63 @@ test("a branch head is read fresh; a commit the tab already saw ahead of it is t
   assert.equal((await github.head(repo, "main", named)).sha, named);
   assert.equal(asked.filter((call) => call.path.includes("/compare/")).length, 0);
 });
+
+test("GitHub's rate limits, the burst limit that only says so in its message included, read as a wait with drafts kept", async () => {
+  const limits: [string, Response, RegExp][] = [
+    ["secondary, message only", reply({ message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." }, 403), /a few minutes/],
+    ["secondary, retry-after", new Response("{}", { status: 403, headers: { "retry-after": "120" } }), /about 2 minutes/],
+    ["hourly budget spent", new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 30) } }), /a minute/],
+    ["429", reply({}, 429), /a few minutes/],
+  ];
+  for (const [name, response, wait] of limits) {
+    const github = new GitHub("secret", async () => response);
+    await assert.rejects(
+      () => github.file(repo, sha),
+      (error: HttpError) => {
+        assert.equal(error.status, 429, name);
+        assert.match(error.message, /^GitHub is limiting requests from your account for now\. Try again in /, name);
+        assert.match(error.message, wait, name);
+        assert.match(error.message, /your drafts are kept/, name);
+        return true;
+      },
+    );
+  }
+  const denied = new GitHub("secret", async () => reply({ message: "Resource not accessible by integration" }, 403));
+  await assert.rejects(() => denied.file(repo, sha), (error: HttpError) => error.status === 403);
+  const offline = new GitHub("secret", async () => {
+    throw new TypeError("fetch failed");
+  });
+  await assert.rejects(() => offline.file(repo, sha), (error: HttpError) => error.status === 502);
+});
+
+test("blobs and trees are read from GitHub once, per repository, and failures are not kept", async () => {
+  const asked: string[] = [];
+  let fail = true;
+  const fetcher = async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    asked.push(path);
+    if (path.includes("/git/blobs/")) {
+      if (fail) return reply({}, 502);
+      return reply({ content: btoa("hello"), encoding: "base64", size: 5 });
+    }
+    if (path.includes("/git/commits/")) return reply({ tree: { sha: "b".repeat(40) } });
+    return reply({ truncated: false, tree: [{ path: "index.html", mode: "100644", type: "blob", sha, size: 5 }] });
+  };
+  const github = new GitHub("secret", fetcher);
+  await assert.rejects(() => github.file(repo, sha), (error: HttpError) => error.status === 502);
+  fail = false;
+  assert.equal(await github.file(repo, sha), "hello");
+  // Another request's GitHub instance, even another token, shares what was read.
+  assert.equal(await new GitHub("other", fetcher).file(repo, sha), "hello");
+  assert.deepEqual(await github.files(repo, [sha]), { [sha]: "hello" });
+  assert.equal((await github.raw(repo, sha)).size, 5);
+  assert.equal(asked.filter((path) => path.includes("/git/blobs/")).length, 2, "the failure, then one read");
+  // Another repository with the same blob is asked separately.
+  await github.file({ ...repo, id: 2, name: "other", full_name: "lex/other" }, sha);
+  assert.equal(asked.filter((path) => path.includes("/git/blobs/")).length, 3);
+
+  const commit = "c".repeat(40);
+  assert.equal((await github.commitTree(repo, commit)).length, 1);
+  assert.equal((await github.commitTree(repo, commit)).length, 1);
+  assert.equal(asked.filter((path) => /\/git\/(commits|trees)\//.test(path)).length, 2, "the commit and its tree, once");
+});

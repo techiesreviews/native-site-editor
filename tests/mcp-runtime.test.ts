@@ -54,7 +54,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "create_page", "delete_file", "edit_file", "get_command_status", "get_page", "get_site",
+      "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_site",
       "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "set_page_details", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
@@ -286,6 +286,76 @@ test("every draft up to 1 MB is readable and writable however many there are; a 
     const fewer = { ...context, drafts: context.drafts.slice(1) };
     assert.deepEqual((await (await tab.share(fewer)).json()).missing, []);
     assert.deepEqual((await (await tab.share(context)).json()).missing, [hashes[0]]);
+  } finally {
+    await client?.close();
+    await worker.dispose();
+  }
+});
+
+test("export_site reads the whole site in one call with drafts and hashes, blobs are read from GitHub once, and a rate limit reads as one", async () => {
+  const { worker, github } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker);
+    const tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const context = await siteContext();
+    context.drafts.push({ path: "images/logo.png", baseSha: null, updatedAt: Date.now(), binary: true, size: 2048 });
+    assert.equal((await tab.share(context)).status, 200);
+    client = new Client({ name: "export-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
+    const objectReads = () => github.requests.filter((path) => /\/git\/(blobs|trees|commits)\//.test(path));
+
+    const site = payload(await call("export_site"));
+    assert.equal(site.commit, context.commit);
+    const about = context.drafts.find((draft) => draft.path === "about/index.html")!;
+    const fresh = context.drafts.find((draft) => draft.path === "new/index.html")!;
+    const expected = { ...files, "about/index.html": about.content!, "new/index.html": fresh.content! };
+    assert.deepEqual(site.files.map((file: any) => file.path), Object.keys(expected).sort());
+    for (const file of site.files) {
+      assert.equal(file.content, expected[file.path], file.path);
+      assert.equal(file.hash, await textHash(file.content), file.path);
+    }
+    assert.equal(site.files.find((file: any) => file.path === "about/index.html").draft, "M");
+    assert.equal(site.files.find((file: any) => file.path === "new/index.html").draft, "A");
+    assert.deepEqual(site.binaries, [{ path: "images/logo.png", sha: null, size: 2048, draft: "A" }]);
+    const blobs = objectReads().filter((path) => path.includes("/git/blobs/"));
+    assert.equal(blobs.length, Object.keys(files).length - 1, "one read per saved file the drafts do not replace");
+    assert.equal(new Set(blobs).size, blobs.length, "no blob is read twice");
+
+    // Blobs and trees never change: nothing is read from GitHub again.
+    const before = objectReads().length;
+    assert.deepEqual(payload(await call("export_site", { folder: "components/" })).files.map((file: any) => file.path), [
+      "components/components.js",
+      "components/feature-block/feature-block.html",
+      "components/site-header/site-header.html",
+    ]);
+    const home = payload(await call("read_file", { path: "index.html" }));
+    payload(await call("read_file", { path: "index.html" }));
+    assert.equal(objectReads().length, before, "read again from the cache");
+
+    // Its hashes are the ones edits need.
+    const exported = site.files.find((file: any) => file.path === "index.html");
+    assert.equal(exported.hash, home.hash);
+    const edited = await call("edit_file", { path: "index.html", expectedHash: exported.hash, edits: [{ oldText: "Welcome", newText: "Hello" }], waitSeconds: 0 });
+    assert.equal(payload(edited).state, "pending");
+
+    // GitHub limiting the account is said plainly, never a bare 500.
+    github.limited = true;
+    const limited = await worker.dispatchFetch(origin + "/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json() as any).error, /GitHub is limiting requests .* your drafts are kept/);
+    const editorRead = await worker.dispatchFetch(`${origin}/api/file?repo=${repo.full_name}&sha=${"f".repeat(40)}`, { headers: { Cookie: cookie } });
+    assert.equal(editorRead.status, 429);
+    assert.match((await editorRead.json() as any).error, /GitHub is limiting requests/);
   } finally {
     await client?.close();
     await worker.dispose();

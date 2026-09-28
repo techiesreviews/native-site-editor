@@ -4,11 +4,9 @@
 // site's own address from `.editor/config.json` for "View live site".
 import { zipFiles } from "./zip";
 import { nativeSiteSettings } from "../shared/native-project";
+import { TEXT_PATH } from "../shared/agent";
 
 export type FileContent = string | Uint8Array;
-
-/** Files read as text (a batch per request); everything else goes as bytes. */
-const TEXT = /\.(?:html?|css|m?js|json|md|txt|xml|svg|webmanifest)$|(?:^|\/)_(?:redirects|headers)$/i;
 
 export interface SiteFiles {
   /** The repository's full name, for the download's file name. */
@@ -42,7 +40,7 @@ export async function collectSiteFiles(site: SiteFiles): Promise<Record<string, 
     if (held !== undefined) { files[path] = held; continue; }
     const sha = await site.blob(path);
     if (!sha) continue;
-    (TEXT.test(path) ? texts : binaries).push({ path, sha });
+    (TEXT_PATH.test(path) ? texts : binaries).push({ path, sha });
   }
   if (texts.length) {
     const read = await site.readTexts(texts.map((item) => item.sha));

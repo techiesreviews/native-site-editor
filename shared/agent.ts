@@ -76,6 +76,8 @@ export interface AgentCommandArgs {
 /** The most text one file's draft holds for agents to read or write, in UTF-8 bytes. */
 export const AGENT_TEXT_LIMIT = 1024 * 1024;
 export const textBytes = (text: string) => new TextEncoder().encode(text).length;
+/** Files a site keeps as text (pages, styles, scripts, data, SVG, host rules); the rest are read as bytes. */
+export const TEXT_PATH = /\.(?:html?|css|m?js|json|md|txt|xml|svg|webmanifest)$|(?:^|\/)_(?:redirects|headers)$/i;
 
 export async function textHash(content: string) {
   return [

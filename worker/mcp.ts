@@ -326,6 +326,33 @@ export function createSiteServer(connection: Connection, env: Env) {
     },
   );
   server.registerTool(
+    "export_site",
+    {
+      description:
+        "Read the whole site (or one folder) in one call, as the editor has it: every text file (pages, components, stylesheets, scripts, SVG, config) with the user's unsaved drafts applied, each with the content hash edit_file and write_file need; binary files (images, fonts) by path, blob SHA and size only. Use it instead of many read_file calls for audits and broad changes. Text past about 4 MB in all is listed in omitted; export those folders separately.",
+      inputSchema: z.object({
+        folder: z.string().max(1024).optional().describe('Only files under this folder, such as "components".'),
+      }),
+      annotations: readOnly,
+    },
+    async ({ folder }) => {
+      const { context, files } = await current();
+      const prefix = folder ? `${folder.replace(/^\/+|\/+$/g, "")}/` : "";
+      const site = await files.export(prefix === "/" ? "" : prefix);
+      return text({
+        repository: context.repository.fullName,
+        branch: context.branch,
+        commit: context.commit,
+        files: site.files,
+        binaries: site.binaries,
+        ...(site.unreadable.length ? { unreadable: site.unreadable } : {}),
+        ...(site.omitted.length
+          ? { omitted: site.omitted, note: "Too much text for one answer: export the omitted files' folders, or read_file them." }
+          : {}),
+      });
+    },
+  );
+  server.registerTool(
     "get_page",
     {
       description:

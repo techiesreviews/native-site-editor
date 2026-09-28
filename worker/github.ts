@@ -5,6 +5,7 @@ import type {
   TreeEntry,
 } from "../shared/types";
 import { MAX_BATCH_FILES } from "../shared/types";
+import { ObjectCache } from "./blob-cache";
 
 export class HttpError extends Error {
   constructor(
@@ -79,11 +80,47 @@ export async function boundedJson(
   }
 }
 
+interface GitBlob {
+  size: number;
+  encoding: string;
+  content: string;
+}
+
+/**
+ * GitHub's answer when it is limiting this account's requests: the hourly
+ * budget spent (`x-ratelimit-remaining: 0`), or a secondary (burst) limit,
+ * which comes as a 403 or 429 with `retry-after` or only a message saying so.
+ */
+async function rateLimit(response: Response): Promise<HttpError | undefined> {
+  if (response.status !== 403 && response.status !== 429) return undefined;
+  let limited =
+    response.status === 429 ||
+    response.headers.get("x-ratelimit-remaining") === "0" ||
+    response.headers.has("retry-after");
+  if (!limited) {
+    const body = await response.text().catch(() => "");
+    limited = /rate limit/i.test(body.slice(0, 2000));
+  }
+  if (!limited) return undefined;
+  const now = Math.floor(Date.now() / 1000);
+  const retry = Number(response.headers.get("retry-after"));
+  const reset = Number(response.headers.get("x-ratelimit-reset"));
+  const seconds = retry > 0 ? retry : reset > now ? reset - now : 0;
+  const wait = seconds > 90 ? `about ${Math.ceil(seconds / 60)} minutes` : seconds > 0 ? "a minute" : "a few minutes";
+  return new HttpError(
+    429,
+    `GitHub is limiting requests from your account for now. Try again in ${wait}; your drafts are kept.`,
+  );
+}
+
 export class GitHub {
+  private objects: ObjectCache;
   constructor(
     private token: string,
     private fetcher: typeof fetch = fetch,
-  ) {}
+  ) {
+    this.objects = new ObjectCache(fetcher);
+  }
 
   async get<T>(path: string, limit?: number, fresh = false): Promise<T> {
     return this.request<T>(path, "GET", undefined, limit, fresh);
@@ -108,21 +145,14 @@ export class GitHub {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "astro-site-editor",
       },
+    }).catch(() => {
+      throw new HttpError(502, "GitHub could not be reached. Try again.");
     });
     if (!response.ok) {
       if (response.status === 401)
         throw new HttpError(401, "Your GitHub session expired. Connect again.");
-      if (
-        response.status === 429 ||
-        (response.status === 403 &&
-          (response.headers.get("x-ratelimit-remaining") === "0" ||
-            response.headers.has("retry-after")))
-      ) {
-        throw new HttpError(
-          429,
-          "GitHub is limiting requests. Wait a little, then refresh.",
-        );
-      }
+      const limited = await rateLimit(response);
+      if (limited) throw limited;
       if (method !== "GET" && [409, 422].includes(response.status))
         throw new HttpError(409, "GitHub rejected the update. The branch may have changed or require a pull request. Refresh and review before retrying; your drafts are kept.");
       if (method !== "GET" && response.status === 403)
@@ -281,11 +311,7 @@ export class GitHub {
   async file(repo: Repository, sha: string): Promise<string> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid file revision.");
-    const data = await this.get<{
-      size: number;
-      encoding: string;
-      content: string;
-    }>(`${this.base(repo)}/git/blobs/${sha}`, 1536 * 1024);
+    const data = await this.blob(repo, sha, 1536 * 1024);
     if (data.size > maxFileBytes)
       throw new HttpError(413, "Text files open up to 1 MB.");
     if (data.encoding !== "base64")
@@ -309,16 +335,20 @@ export class GitHub {
   async raw(repo: Repository, sha: string): Promise<{ content: string; size: number }> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid file revision.");
-    const data = await this.get<{
-      size: number;
-      encoding: string;
-      content: string;
-    }>(`${this.base(repo)}/git/blobs/${sha}`, maxAssetBytes * 2);
+    const data = await this.blob(repo, sha, maxAssetBytes * 2);
     if (data.size > maxAssetBytes)
       throw new HttpError(413, "Images in the preview are limited to 2 MB.");
     if (data.encoding !== "base64")
       throw new HttpError(415, "This file cannot be read.");
     return { content: data.content.replace(/\s/g, ""), size: data.size };
+  }
+
+  /** A blob as GitHub returns it; blobs never change, so each is read from GitHub once. */
+  private blob(repo: Repository, sha: string, limit: number): Promise<GitBlob> {
+    return this.objects.through(`${repo.id}/blob/${sha}`, async () => {
+      const data = await this.get<GitBlob>(`${this.base(repo)}/git/blobs/${sha}`, limit);
+      return { size: data.size, encoding: data.encoding, content: data.content };
+    });
   }
 
   /** Reads several blobs concurrently; the first failure rejects the batch. */
@@ -373,10 +403,10 @@ export class GitHub {
   async commitTree(repo: Repository, commit: string): Promise<TreeEntry[]> {
     if (!/^[a-f0-9]{40}$/.test(commit))
       throw new HttpError(400, "Invalid revision. Refresh the repository.");
-    const data = await this.get<{ tree: { sha: string } }>(
-      `${this.base(repo)}/git/commits/${commit}`,
+    const treeSha = await this.objects.through(`${repo.id}/commit-tree/${commit}`, async () =>
+      (await this.get<{ tree: { sha: string } }>(`${this.base(repo)}/git/commits/${commit}`)).tree.sha,
     );
-    const tree = await this.recursiveTree(repo, data.tree.sha);
+    const tree = await this.recursiveTree(repo, treeSha);
     if (!tree)
       throw new HttpError(
         413,
@@ -397,9 +427,17 @@ export class GitHub {
   ): Promise<TreeEntry[] | undefined> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid revision. Refresh the repository.");
-    const data = await this.get<{ tree: TreeEntry[]; truncated: boolean }>(
-      `${this.base(repo)}/git/trees/${sha}?recursive=1`,
-    );
+    // A tree never changes, so its listing (or that it has none) is kept.
+    const listed = await this.objects.through(`${repo.id}/tree/${sha}`, async () => {
+      const data = await this.get<{ tree: TreeEntry[]; truncated: boolean }>(
+        `${this.base(repo)}/git/trees/${sha}?recursive=1`,
+      );
+      return this.completeTree(data) ?? null;
+    });
+    return listed ?? undefined;
+  }
+
+  private completeTree(data: { tree: TreeEntry[]; truncated: boolean }): TreeEntry[] | undefined {
     if (data.truncated) return undefined;
     // Git has no empty directories, so a complete recursive listing has at
     // least one descendant for every folder it names.
