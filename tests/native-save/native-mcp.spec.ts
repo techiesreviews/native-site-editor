@@ -164,6 +164,52 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
   }
 });
 
+test("an agent measures elements as the preview renders them: box, computed styles, matching rules and text contrast", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const inspect = async (args: Record<string, unknown>) => {
+    const response = await client.callTool({ name: "inspect_preview", arguments: args });
+    return { isError: Boolean(response.isError), body: result(response) };
+  };
+  try {
+    // By selector: the heading and the lead, inked on the page's background.
+    const bySelector = await inspect({ selector: ".hero h1, .hero .lead" });
+    expect(bySelector.isError, JSON.stringify(bySelector.body)).toBe(false);
+    expect(bySelector.body.state).toBe("applied");
+    const report = bySelector.body.result;
+    expect(report.route).toBe("/");
+    expect(report.matched).toBe(2);
+    expect(report.viewport.width).toBeGreaterThan(200);
+    const [heading, lead] = report.elements;
+    expect(heading).toMatchObject({ file: indexPath, tag: "h1", text: "A native browser preview", visible: true });
+    expect(heading.contrast).toMatchObject({ ratio: 14.77, text: "#20231f", background: "#f6f7f3", largeText: true, AA: true, AAA: true });
+    expect(heading.styles["margin"]).toBe("0px 0px 12px");
+    expect(heading.rules).toEqual(expect.arrayContaining([expect.objectContaining({ file: "styles/site.css", selector: ".hero h1" })]));
+    expect(lead.contrast).toMatchObject({ ratio: 5.57, text: "#5c665a", largeText: false, AA: true, AAA: false });
+    expect(lead.styles["font-size"]).toBe("18px");
+    const box = await frame(page).locator(".hero h1").boundingBox();
+    expect(heading.box.height).toBeCloseTo(box!.height, 0);
+
+    // By the id get_page gives, on another page, which the editor then shows.
+    const about = await client.callTool({ name: "get_page", arguments: { page: "/about/", source: false } });
+    const section = result(about).sections[0];
+    const byId = await inspect({ page: "/about/", element: section.id });
+    expect(byId.isError, JSON.stringify(byId.body)).toBe(false);
+    expect(byId.body.result.elements[0]).toMatchObject({ file: "about/index.html", element: section.id, tag: section.tag });
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+
+    // Nothing to measure is said plainly.
+    const none = await inspect({ selector: ".no-such-thing" });
+    expect(none.isError).toBe(true);
+    expect(none.body.message).toContain("Nothing on the page shown matches");
+    const bad = await inspect({ selector: "h1[" });
+    expect(bad.isError).toBe(true);
+    expect(bad.body.message).toContain("Not a CSS selector");
+  } finally {
+    await client.close();
+  }
+});
+
 test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agent used", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);

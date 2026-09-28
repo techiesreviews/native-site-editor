@@ -5,7 +5,7 @@
 // with Undo. main.ts supplies the editor's state and actions.
 import { expandStyleImports } from "../shared/css-imports";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { AGENT_TEXT_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
@@ -273,6 +273,8 @@ export interface AgentSiteActions {
   /** The Files tab's rename or move, with its confirmation answered. */
   moveFile(path: string, to: string, keepOldUrl?: boolean): Promise<string | undefined>;
   deleteFile(path: string): Promise<string | undefined>;
+  /** The preview's inspection of the page `path` shows (see native-preview.ts `inspect`). */
+  inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
 }
@@ -302,6 +304,31 @@ export function agentAnswers<D extends {
 }
 
 class Conflict extends Error {}
+
+interface InspectionReport {
+  error?: string;
+  route?: string;
+  matched?: number;
+  elements?: Record<string, unknown>[];
+  note?: string;
+}
+
+/** The report as JSON within INSPECTION_LIMIT: matching rules go first, then elements from the end. */
+function fitReport(report: InspectionReport) {
+  let json = JSON.stringify(report);
+  if (json.length <= INSPECTION_LIMIT) return json;
+  const fitted = {
+    ...report,
+    elements: (report.elements ?? []).map(({ rules: _rules, ...rest }) => rest),
+    note: "Matching rules left out to fit. Inspect fewer elements to see them.",
+  };
+  json = JSON.stringify(fitted);
+  while (json.length > INSPECTION_LIMIT && fitted.elements.length > 1) {
+    fitted.elements.pop();
+    json = JSON.stringify(fitted);
+  }
+  return json;
+}
 
 async function expectHash(actions: AgentSiteActions, path: string, expected: string | null | undefined) {
   const text = await actions.text(path);
@@ -421,6 +448,24 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "open_page":
       if (!(await actions.open(path))) throw new Error(`${path} could not be opened.`);
       return { message: `Opened ${path}.` };
+    case "inspect_preview": {
+      const node = args.element !== undefined ? parseOutlineId(args.element) : undefined;
+      if (args.element !== undefined && !node) throw new Conflict(`${args.element} is not an element id.`);
+      if (!(await actions.open(path))) throw new Conflict(`${path} could not be shown in the preview.`);
+      const report = (await actions.inspect({
+        path,
+        ...(node ? { node } : {}),
+        ...(args.selector ? { selector: args.selector } : {}),
+        ...(args.limit ? { limit: args.limit } : {}),
+      })) as InspectionReport;
+      if (!report || typeof report !== "object") throw new Error("The preview could not be inspected.");
+      if (report.error) throw new Conflict(report.error);
+      const shown = report.elements?.length ?? 0;
+      return {
+        message: `Inspected ${shown} of ${report.matched ?? shown} element${report.matched === 1 ? "" : "s"} on ${report.route ?? path}.`,
+        result: { report: fitReport(report) },
+      };
+    }
   }
   throw new Error("This editor cannot apply that change. Reload it.");
 }

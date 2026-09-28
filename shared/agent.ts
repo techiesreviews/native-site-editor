@@ -20,7 +20,8 @@ export type AgentOperation =
   | "remove_section"
   | "move_file"
   | "delete_file"
-  | "open_page";
+  | "open_page"
+  | "inspect_preview";
 
 export interface AgentCommand {
   id: string;
@@ -47,7 +48,7 @@ export interface AgentCommand {
   claimedBy?: string;
   state: "pending" | "applied" | "conflict" | "failed";
   message?: string;
-  /** What the browser reports back (the new page's file and URL, a file's new hash). */
+  /** What the browser reports back (the new page's file and URL, a file's new hash; inspect_preview's `report`, as JSON). */
   result?: Record<string, string | number | boolean | null>;
   createdAt: number;
 }
@@ -71,7 +72,14 @@ export interface AgentCommandArgs {
   /** move_file */
   to?: string;
   keepOldUrl?: boolean;
+  /** inspect_preview: the element by outline id, or a CSS selector, and how many to report. */
+  element?: string;
+  selector?: string;
+  limit?: number;
 }
+
+/** The most an inspect_preview report may be, as JSON. */
+export const INSPECTION_LIMIT = 24 * 1024;
 
 /** The most text one file's draft holds for agents to read or write, in UTF-8 bytes. */
 export const AGENT_TEXT_LIMIT = 1024 * 1024;

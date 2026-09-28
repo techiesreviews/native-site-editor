@@ -254,6 +254,16 @@ export function createSiteServer(connection: Connection, env: Env) {
     }
     return status(result);
   }
+  // An inspection's report arrives as JSON; the agent gets it as an object.
+  function resultOf(command: AgentCommand) {
+    const report = command.result?.report;
+    if (command.operation !== "inspect_preview" || typeof report !== "string") return command.result;
+    try {
+      return JSON.parse(report);
+    } catch {
+      return command.result;
+    }
+  }
   function status(command: AgentCommand) {
     const body = {
       requestId: command.id,
@@ -262,7 +272,7 @@ export function createSiteServer(connection: Connection, env: Env) {
         command.state === "pending"
           ? "Queued. The editor tab applies it when it next checks (every 2 seconds while visible). Check get_command_status; pending is not applied."
           : command.message || null,
-      ...(command.result ? { result: command.result } : {}),
+      ...(command.result ? { result: resultOf(command) } : {}),
     };
     return command.state === "conflict" || command.state === "failed"
       ? { isError: true, content: [{ type: "text" as const, text: JSON.stringify(body) }] }
@@ -598,6 +608,41 @@ export function createSiteServer(connection: Connection, env: Env) {
       const problem = writablePathProblem(path);
       if (problem) return failure(problem);
       return queue("open_page", context, { path, requestId, waitSeconds: waitSeconds ?? 5 });
+    },
+  );
+
+  server.registerTool(
+    "inspect_preview",
+    {
+      description:
+        "Measure elements as the user's editor preview renders them (the page is shown there first): each one's box, computed styles (colors, fonts, spacing, layout), the CSS rules that match it with their files, and its text's contrast ratio against the background behind it (with WCAG AA/AAA). Choose the element by its id from get_page (element), by a CSS selector (selector; matches inside components too), or give neither for the element the user selected in the preview. The preview is as wide as the user's editor pane (viewport in the result), not a phone or a full desktop window.",
+      inputSchema: z.object({
+        page: pageRef.optional().describe('The page: its URL ("/about/") or file. Default: the page the editor shows.'),
+        element: z.string().max(300).optional().describe('An element id from get_page, such as "1.0.2".'),
+        selector: z.string().max(500).optional().describe('A CSS selector, such as "main h2" or ".hero a".'),
+        limit: z.number().int().min(1).max(20).optional().describe("How many matching elements to report (default 5)."),
+        requestId,
+        waitSeconds,
+      }),
+      annotations: readOnly,
+    },
+    async ({ page: ref, element, selector, limit, requestId, waitSeconds }) => {
+      if (element !== undefined && selector !== undefined) return failure("Give element or selector, not both.");
+      if (element !== undefined && !parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
+      const { context } = await current();
+      const route = ref ?? context.site?.openRoute;
+      if (!route) return failure("The editor shows no page now. Give page.");
+      const page = findPage(context, route);
+      return queue("inspect_preview", context, {
+        path: page.file!,
+        args: {
+          ...(element !== undefined ? { element } : {}),
+          ...(selector !== undefined ? { selector } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        },
+        requestId,
+        waitSeconds: waitSeconds ?? 15,
+      });
     },
   );
 

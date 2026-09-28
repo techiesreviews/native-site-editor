@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { applyReplacements, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
 test("applyReplacements needs each old text exactly once, or all", () => {
@@ -55,7 +55,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_site",
-      "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "set_page_details", "write_file",
+      "inspect_preview", "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "set_page_details", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
 
@@ -363,6 +363,51 @@ test("export_site reads the whole site in one call with drafts and hashes, blobs
     const editorRead = await worker.dispatchFetch(`${origin}/api/file?repo=${repo.full_name}&sha=${"f".repeat(40)}`, { headers: { Cookie: cookie } });
     assert.equal(editorRead.status, 429);
     assert.match((await editorRead.json() as any).error, /GitHub is limiting requests/);
+  } finally {
+    await client?.close();
+    await worker.dispose();
+  }
+});
+
+test("inspect_preview asks the tab to measure the page it shows and hands its report to the agent as an object", async () => {
+  const { worker } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker);
+    const tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    assert.equal((await tab.share(await siteContext())).status, 200);
+    client = new Client({ name: "inspect-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
+
+    assert.equal((await call("inspect_preview", { element: "1.0", selector: "h1", waitSeconds: 0 })).isError, true);
+    assert.equal((await call("inspect_preview", { element: "not an id", waitSeconds: 0 })).isError, true);
+
+    // The page the editor shows, by default; the tab's report comes back parsed.
+    const queued = payload(await call("inspect_preview", { selector: "main h1", limit: 2, requestId: "look-1", waitSeconds: 0 }));
+    assert.equal(queued.state, "pending");
+    const command = (await tab.hub()).commands.find((item: any) => item.id === "look-1");
+    assert.equal(command.operation, "inspect_preview");
+    assert.equal(command.path, "index.html");
+    assert.deepEqual(command.args, { selector: "main h1", limit: 2 });
+    const report = { route: "/", matched: 1, elements: [{ tag: "h1", contrast: { ratio: 14.77, AA: true } }], pad: "x".repeat(INSPECTION_LIMIT - 200) };
+    await tab.claim("look-1", command.grantId);
+    assert.equal((await tab.ack("look-1", command.grantId, "applied", { message: "Inspected 1 of 1 element on /.", result: { report: JSON.stringify(report) } })).status, 200);
+    const done = payload(await call("get_command_status", { requestId: "look-1" }));
+    assert.equal(done.state, "applied");
+    assert.deepEqual(done.result, report);
+
+    // Another page by URL; a report past the limit is not kept.
+    payload(await call("inspect_preview", { page: "/about/", requestId: "look-2", waitSeconds: 0 }));
+    const second = (await tab.hub()).commands.find((item: any) => item.id === "look-2");
+    assert.equal(second.path, "about/index.html");
+    await tab.claim("look-2", second.grantId);
+    await tab.ack("look-2", second.grantId, "applied", { result: { report: JSON.stringify({ pad: "x".repeat(2 * INSPECTION_LIMIT) }) } });
+    assert.equal(payload(await call("get_command_status", { requestId: "look-2" })).result, undefined);
   } finally {
     await client?.close();
     await worker.dispose();

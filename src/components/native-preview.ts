@@ -315,6 +315,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let selectText: { start: number; end: number } | undefined;
   // The id a followed link's fragment names, scrolled to after the next render.
   let scrollHash: string | undefined;
+  // Agents' inspections waiting for the runtime's answer, by request id.
+  const inspections = new Map<number, (report: unknown) => void>();
+  let inspectionId = 0;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -433,6 +436,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type !== "ready" && data.context !== context) {
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
+      return;
+    }
+    if (data.type === "inspect-result") {
+      const answer = data as { id?: number; report?: unknown };
+      inspections.get(Number(answer.id))?.(answer.report);
       return;
     }
     if (data.type === "ready") {
@@ -653,6 +661,26 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectNode(request: NativeNodeRequest) {
       if (!mounted) return;
       frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request }, "*");
+    },
+    /**
+     * Elements of the page shown as rendered (box, computed styles, matching
+     * rules, text contrast), for an agent: one by index path, those matching
+     * a selector, or the selection. Measured after any pending render.
+     */
+    async inspect(request: { path?: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown> {
+      if (!mounted || !site || !ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
+      // A scheduled render is posted on the next frame, before this request.
+      if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
+      const id = ++inspectionId;
+      try {
+        return await new Promise((resolve, reject) => {
+          inspections.set(id, resolve);
+          setTimeout(() => reject(new Error("The preview did not answer. Keep the editor tab visible and try again.")), 8000);
+          frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "inspect", id, request }, "*");
+        });
+      } finally {
+        inspections.delete(id);
+      }
     },
     /** Select this element once the next update (the one carrying an edit) has rendered. */
     selectAfterUpdate(request: NativeNodeRequest | undefined) {

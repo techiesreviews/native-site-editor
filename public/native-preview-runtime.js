@@ -1762,6 +1762,181 @@
     else emit("section-drag", { phase: "cancel" });
   }
 
+  // ---- Inspection for agents (inspect_preview): elements as rendered ----
+  // An element's box, the computed values that decide how it looks, the
+  // rules that match it (by file) and its text's measured contrast against
+  // what is painted behind it.
+  var INSPECT_PROPERTIES = [
+    "display", "position", "box-sizing", "width", "height", "max-width", "margin", "padding", "border", "border-radius",
+    "color", "background-color", "background-image", "opacity", "visibility", "overflow", "z-index",
+    "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform",
+    "text-decoration-line", "gap", "flex-direction", "justify-content", "align-items", "grid-template-columns"
+  ];
+  var INSPECT_MAX_ELEMENTS = 20;
+  var INSPECT_MAX_RULES = 12;
+  var colorProbe = null;
+  // Any CSS color as sRGB 0–255 and alpha 0–1, drawn on a canvas, so oklch(),
+  // color-mix() and named colors read alike.
+  function rgba(color) {
+    if (!colorProbe) {
+      var canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      colorProbe = canvas.getContext("2d", { willReadFrequently: true });
+    }
+    colorProbe.clearRect(0, 0, 1, 1);
+    colorProbe.fillStyle = "rgba(0, 0, 0, 0)";
+    colorProbe.fillStyle = color;
+    colorProbe.fillRect(0, 0, 1, 1);
+    var d = colorProbe.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2], d[3] / 255];
+  }
+  function over(top, below) {
+    var a = top[3];
+    return [0, 1, 2].map(function (i) { return Math.round(top[i] * a + below[i] * (1 - a)); });
+  }
+  function hex(c) {
+    return "#" + [c[0], c[1], c[2]].map(function (v) { return (v | 0).toString(16).padStart(2, "0"); }).join("");
+  }
+  function luminance(c) {
+    var lin = c.slice(0, 3).map(function (v) {
+      v /= 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  }
+  // The element that paints behind this one: its slot, parent or shadow host.
+  function visualParent(el) {
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    return root instanceof ShadowRoot ? root.host : null;
+  }
+  // The solid color behind the element's text: every background color up to
+  // the first opaque one, over the frame's white canvas. A background image
+  // on the way makes the measurement approximate.
+  function backdrop(el) {
+    var layers = [], image = false;
+    for (var at = el; at; at = visualParent(at)) {
+      var style = getComputedStyle(at);
+      if (style.backgroundImage && style.backgroundImage !== "none") image = true;
+      var color = rgba(style.backgroundColor);
+      if (color[3] > 0) layers.push(color);
+      if (color[3] >= 1) break;
+    }
+    var out = [255, 255, 255];
+    for (var i = layers.length - 1; i >= 0; i--) out = over(layers[i], out);
+    return { color: out, image: image };
+  }
+  function contrastOf(el, style) {
+    var behind = backdrop(el);
+    var fg = rgba(style.color);
+    var text = over(fg, behind.color);
+    var a = luminance(text), b = luminance(behind.color);
+    var ratio = Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+    var size = parseFloat(style.fontSize) || 16;
+    var large = size >= 24 || (size >= 18.66 && (parseInt(style.fontWeight, 10) || 400) >= 700);
+    var out = {
+      ratio: ratio, text: hex(text), background: hex(behind.color), largeText: large,
+      AA: ratio >= (large ? 3 : 4.5), AAA: ratio >= (large ? 4.5 : 7)
+    };
+    if (behind.image) out.note = "A background image is behind the text; measured against the background color only.";
+    return out;
+  }
+  function round(n) { return Math.round(n * 10) / 10; }
+  function inspectElement(el) {
+    var style = getComputedStyle(el);
+    var styles = {};
+    INSPECT_PROPERTIES.forEach(function (name) {
+      var value = style.getPropertyValue(name);
+      if (value) styles[name] = value;
+    });
+    var r = el.getBoundingClientRect();
+    var out = {
+      file: ownerPath(el),
+      tag: el.localName,
+      box: { x: round(r.left + window.scrollX), y: round(r.top + window.scrollY), width: round(r.width), height: round(r.height) },
+      visible: r.width > 0 && r.height > 0 && style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0,
+      styles: styles
+    };
+    var node = elementIndexPath(el);
+    if (node) out.element = node.join(".");
+    var root = el.getRootNode && el.getRootNode();
+    if (root instanceof ShadowRoot && root.host) out.component = root.host.localName;
+    var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (text) {
+      out.text = text.slice(0, 160);
+      out.contrast = contrastOf(el, style);
+    }
+    out.rules = matchingRules(el, false).rules.slice(-INSPECT_MAX_RULES).map(function (rule) {
+      var seen = {}, parts = [];
+      rule.declarations.forEach(function (item) {
+        var name = item.shorthand || item.property;
+        if (seen[name]) return;
+        seen[name] = true;
+        parts.push(name + ": " + item.value + (item.important ? " !important" : ""));
+      });
+      var entry = { file: rule.path || null, selector: rule.selector, declarations: parts.join("; ").slice(0, 400) };
+      if (rule.layerName) entry.layer = rule.layerName;
+      if (rule.conditions && rule.conditions.length) entry.conditions = rule.conditions.join(" ");
+      return entry;
+    });
+    return out;
+  }
+  // Every element of the page in document order, into component shadow trees.
+  function eachRendered(root, visit) {
+    for (var el = root.firstElementChild; el; el = el.nextElementSibling) {
+      if (injectedStyle(el)) continue;
+      visit(el);
+      if (el.shadowRoot && instances.has(el)) eachRendered(el.shadowRoot, visit);
+      eachRendered(el, visit);
+    }
+  }
+  function inspect(request) {
+    if (!state || !pageEl) return { error: "The preview has not rendered yet." };
+    var targets = [];
+    if (Array.isArray(request.node)) {
+      var el = resolveNodePath({ path: request.path, node: request.node });
+      if (!el) return { error: "No element " + request.node.join(".") + " on the page shown. get_page lists them." };
+      targets = [el];
+    } else if (request.selector) {
+      try {
+        pageEl.matches(request.selector);
+      } catch (e) {
+        return { error: "Not a CSS selector: " + request.selector };
+      }
+      eachRendered(pageEl, function (el) { if (el.matches(request.selector)) targets.push(el); });
+      if (!targets.length) return { error: "Nothing on the page shown matches " + request.selector + "." };
+    } else {
+      if (!selected || !selected.isConnected) return { error: "Nothing is selected in the preview. Give a selector or an element." };
+      targets = [selected];
+    }
+    var limit = Math.min(Math.max(1, Number(request.limit) || 5), INSPECT_MAX_ELEMENTS);
+    return {
+      route: state.route,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      matched: targets.length,
+      elements: targets.slice(0, limit).map(inspectElement)
+    };
+  }
+  // Measured once web fonts have loaded and layout has settled.
+  function inspectWhenSettled(msg) {
+    var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    var timeout = new Promise(function (resolve) { setTimeout(resolve, 1500); });
+    Promise.race([fonts, timeout]).then(function () {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          var report;
+          try {
+            report = inspect(msg.request || {});
+          } catch (e) {
+            report = { error: "The preview could not be inspected: " + (e && e.message || e) };
+          }
+          emit("inspect-result", { id: msg.id, report: report });
+        });
+      });
+    });
+  }
+
   window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
   window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });
   document.addEventListener("submit", function (e) { e.preventDefault(); });
@@ -1788,6 +1963,10 @@
       var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
       emitSelection(wanted, "click");
+      return;
+    }
+    if (msg.type === "inspect") {
+      inspectWhenSettled(msg);
       return;
     }
     if (msg.type !== "update") return;

@@ -4471,6 +4471,10 @@ const agentSiteActions: AgentSiteActions = {
       const target = agentFileTarget(path);
       return target ? deleteFileTarget(target) : `${path} does not exist.`;
     }),
+  inspect(request) {
+    if (!nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
+    return nativePreview.inspect(request);
+  },
   legacy: applyAgentCommand,
 };
 function applyAgentSiteCommand(command: AgentCommand) {

@@ -1,4 +1,5 @@
 import { requestJson } from "./http";
+import { INSPECTION_LIMIT } from "../shared/agent";
 import {
   authenticateAgent,
   createGrant,
@@ -477,7 +478,8 @@ async function route(
       return json({ id: command.id, state: command.state });
     }
     if (path === "/api/agent/ack" && request.method === "POST") {
-      const data = await requestJson(request, 8192);
+      // Room for an inspect_preview report (JSON inside JSON).
+      const data = await requestJson(request, 2 * INSPECTION_LIMIT + 8192);
       const command = await operateHub(env, sessionId, {
         type: "ack",
         id: data?.id,
