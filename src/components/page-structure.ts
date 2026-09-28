@@ -6,8 +6,10 @@ import "./page-structure.css";
 // The page structure sidebar: the rendered page's own elements as a tree,
 // fed by the runtime's index paths after each render. A row selects its
 // element in the preview (and brings it to the middle of the frame); a
-// preview selection marks its row. Rows with children fold; the folded
-// state is kept per element while the same page stays on show. Above the
+// preview selection marks its row (unfolding the rows above it). Rows with
+// children fold; everything inside `<main>` starts folded, so a page opens
+// as its list of sections. The folded state is kept per element while the
+// same page stays on show. Above the
 // tree, a Page block holds the page's title and description from its
 // `<head>`; they apply as typed. A section row can be dragged with the
 // pointer onto another gap among its siblings (7 px of movement starts the
@@ -151,7 +153,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let structure: NativeStructure | undefined;
   let rendered = "";
   let selected: string | undefined;
-  const folded = new Set<string>();
+  // Rows folded or unfolded by hand; any other row inside <main> is folded.
+  const foldState = new Map<string, boolean>();
+  const inMain = new Set<string>();
+  const isFolded = (id: string) => foldState.get(id) ?? inMain.has(id);
   const rows = new Map<string, HTMLElement>();
   // The row to focus once the next render shows a section that just moved.
   let focusAfterRender: string | undefined;
@@ -268,8 +273,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     showDrop(current);
   }
 
-  function row(item: NativeStructureItem, level: number): HTMLElement[] {
+  function row(item: NativeStructureItem, level: number, insideMain = false): HTMLElement[] {
     const id = key(item.node);
+    if (insideMain) inMain.add(id);
     const el = node("div", "page-structure__row");
     el.setAttribute("role", "treeitem");
     el.setAttribute("aria-level", String(level));
@@ -295,7 +301,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         return;
       }
       if (event.target === toggle && item.children.length) {
-        fold(item, el, !folded.has(id));
+        fold(item, el, !isFolded(id));
         return;
       }
       choose(item);
@@ -303,21 +309,33 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.addEventListener("keydown", (event) => onKey(event, item, el));
     rows.set(id, el);
     if (!item.children.length) return [el];
-    el.setAttribute("aria-expanded", String(!folded.has(id)));
+    el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
     group.setAttribute("role", "group");
-    group.hidden = folded.has(id);
-    group.append(...item.children.flatMap((child) => row(child, level + 1)));
+    group.hidden = isFolded(id);
+    const childInMain = insideMain || item.tag === "main";
+    group.append(...item.children.flatMap((child) => row(child, level + 1, childInMain)));
     return [el, group];
   }
 
   function fold(item: NativeStructureItem, el: HTMLElement, closed: boolean) {
     const id = key(item.node);
-    if (closed) folded.add(id);
-    else folded.delete(id);
+    foldState.set(id, closed);
     el.setAttribute("aria-expanded", String(!closed));
     const group = el.nextElementSibling;
     if (group instanceof HTMLElement && group.getAttribute("role") === "group") group.hidden = closed;
+  }
+
+  // Unfold the rows above a row so it shows.
+  function reveal(el: HTMLElement) {
+    for (let group = el.parentElement?.closest<HTMLElement>("[role='group']"); group; group = group.parentElement?.closest<HTMLElement>("[role='group']")) {
+      const parent = group.previousElementSibling;
+      if (group.hidden && parent instanceof HTMLElement && parent.dataset.node !== undefined) {
+        foldState.set(parent.dataset.node, false);
+        parent.setAttribute("aria-expanded", "true");
+        group.hidden = false;
+      }
+    }
   }
 
   function choose(item: NativeStructureItem) {
@@ -361,11 +379,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       case "End": focusRow(list[list.length - 1]); break;
       case "ArrowRight":
         if (!item.children.length) return;
-        if (folded.has(key(item.node))) fold(item, el, false);
+        if (isFolded(key(item.node))) fold(item, el, false);
         else focusRow(list[at + 1]);
         break;
       case "ArrowLeft":
-        if (item.children.length && !folded.has(key(item.node))) fold(item, el, true);
+        if (item.children.length && !isFolded(key(item.node))) fold(item, el, true);
         else focusRow(rows.get(key(item.node.slice(0, -1))));
         break;
       case "Enter":
@@ -400,6 +418,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // The rows are about to be replaced: a drag in progress has nothing to land on.
     finishDrag(false);
     rows.clear();
+    inMain.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
     focusAfterRender = undefined;
     if (!structure || !structure.path) {
@@ -428,7 +447,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     update(next: NativeStructure | undefined) {
       const path = next?.path ?? "";
       if (path !== structure?.path) {
-        folded.clear();
+        foldState.clear();
         selected = undefined;
       }
       structure = next;
@@ -442,6 +461,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const id = target && structure && target.path === structure.path ? key(target.node) : undefined;
       if (id === selected) return;
       const current = setSelected(id);
+      if (current) reveal(current);
       current?.scrollIntoView({ block: "nearest" });
     },
     /** The page changed under the fields: show its title and description again. */

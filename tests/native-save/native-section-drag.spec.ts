@@ -76,6 +76,7 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
   // Dropping below the last sibling's subtree (its last child row) puts it at the end.
+  await row(page, "Section Scroll to verify").locator(".page-structure__toggle").click();
   const last = await centre(page, tree(page).getByRole("treeitem", { name: /^Paragraph Paragraph five/ }));
   const from2 = await centre(page, row(page, "Section"));
   await page.mouse.move(from2.x, from2.y);
@@ -91,6 +92,7 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
 });
 
 test("6 px is a click, 7 px is a drag; Escape, a same-position release and a drop outside the siblings change nothing", async ({ page }) => {
+  await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
   const cards = row(page, "Section");
   const from = await centre(page, cards);
   // 6 px: no drag; the release still selects the row.

@@ -17,6 +17,7 @@ test.beforeEach(async ({ page, baseURL }) => {
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", { name, exact: typeof name === "string" });
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
+const unfold = (page: Page, name: string) => row(page, name).locator(".page-structure__toggle").click();
 const select = (page: Page, selector: string) =>
   page.frameLocator(".native-preview-frame").locator(selector).evaluate((el) => (el as HTMLElement).click());
 
@@ -27,12 +28,19 @@ test("the sidebar lists the page's elements and marks the one selected in the pr
   // Sections are named by their first heading; one without a heading by its kind alone.
   const sections = tree(page).locator("[role='treeitem'][aria-level='2']");
   await expect(sections).toHaveText(["Section A native browser preview", "Section", "Section Scroll to verify"]);
+  // Everything inside <main> starts folded, so the page reads as its sections.
+  for (const section of await sections.all()) await expect(section).toHaveAttribute("aria-expanded", "false");
+  await expect(row(page, "Project card Reusable cards")).toHaveCount(0);
+  await unfold(page, "Section");
   // A component instance is named by the heading in its shadow root, with the page's slotted text.
   await expect(row(page, "Project card Reusable cards")).toBeVisible();
   await expect(row(page, "Project card Reusable cards").locator("+ [role='group'] [role='treeitem']")).toHaveText(["Text Reusable cards", /^Paragraph/]);
+  await unfold(page, "Section A native browser preview");
   await expect(row(page, /^Image/)).toHaveAttribute("aria-level", "3");
 
+  // A preview selection inside a folded row unfolds the rows above it.
   await select(page, ".hero h1");
+  await expect(row(page, "Section A native browser preview")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "Heading A native browser preview")).toHaveAttribute("aria-selected", "true");
   await expect(tree(page).locator("[aria-selected='true']")).toHaveCount(1);
   await select(page, "section.filler p:nth-of-type(2)");
@@ -56,8 +64,10 @@ test("a row selects its element in the preview, brings it into view and opens it
     const box = (await filler.boundingBox())!;
     return box.y < frameBox.y + frameBox.height && box.y + box.height > frameBox.y;
   }).toBe(true);
-  // Arrow keys walk the visible rows; Enter selects.
+  // Arrow keys walk the visible rows (Right unfolds); Enter selects.
   await expect(row(page, "Section Scroll to verify")).toBeFocused();
+  await expect(row(page, "Section Scroll to verify")).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowDown");
   await expect(row(page, "Heading Scroll to verify")).toBeFocused();
   await page.keyboard.press("Enter");
@@ -71,9 +81,9 @@ test("a row selects its element in the preview, brings it into view and opens it
   await expect(row(page, "Heading Scroll to verify")).toBeHidden();
   await page.keyboard.press("ArrowRight");
   await expect(row(page, "Heading Scroll to verify")).toBeVisible();
-  // The chevron folds without selecting.
-  await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
-  await expect(row(page, "Section A native browser preview")).toHaveAttribute("aria-expanded", "false");
+  // The chevron unfolds without selecting.
+  await unfold(page, "Section A native browser preview");
+  await expect(row(page, "Section A native browser preview")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "Section A native browser preview")).toHaveAttribute("aria-selected", "false");
 });
 
@@ -90,10 +100,11 @@ test("the tree follows the preview route and structural edits", async ({ page })
 
   // Ctrl/⌘+click follows the link in the preview; the open file stays.
   await frame.locator("site-header a", { hasText: "About" }).click({ modifiers: ["ControlOrMeta"] });
-  await expect(row(page, "Heading About this project")).toBeVisible();
+  await expect(row(page, "Section About this project")).toBeVisible();
   await expect(row(page, "Section Scroll to verify")).toHaveCount(0);
   await expect(tree(page).locator("[aria-selected='true']")).toHaveCount(0);
   // A row on the About page opens that file and selects there.
+  await unfold(page, "Section About this project");
   await row(page, "Heading About this project").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
@@ -115,6 +126,7 @@ test("a section component names itself, not <main>; formatting inside a line of 
   const top = tree(page).locator("[role='treeitem'][aria-level='1']");
   await expect(top).toHaveText(["Site header", "Main", "Site footer"]);
   // The paragraph is summed up by all its text, bold and link included, with no rows inside.
+  await unfold(page, "Section Scroll to verify");
   const paragraph = row(page, /^Paragraph This section adds enough height/);
   await expect(paragraph).toBeVisible();
   await expect(paragraph).not.toHaveAttribute("aria-expanded", /.*/);

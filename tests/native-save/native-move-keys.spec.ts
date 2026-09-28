@@ -134,6 +134,7 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
   // A heading's row: no move; the arrow walks the rows as it always does.
+  await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
   await row(page, "Heading A native browser preview").click();
   await status(page).evaluate((el) => { el.textContent = ""; });
   await page.keyboard.press("Alt+ArrowDown");

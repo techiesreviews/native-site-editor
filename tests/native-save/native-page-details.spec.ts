@@ -156,15 +156,15 @@ test("the fields follow the preview's page and keep what was typed on each page"
   await page.keyboard.press("Enter");
   await expect(title(page)).not.toBeFocused();
   await follow(page, "About");
-  await expect(tree(page).getByRole("treeitem", { name: "Heading About this project" })).toBeVisible();
+  await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
   await expect(title(page)).toHaveValue("About this project");
   await title(page).fill("About");
   await description(page).fill("Who made this");
   await follow(page, "Home");
-  await expect(tree(page).getByRole("treeitem", { name: "Heading A native browser preview" })).toBeVisible();
+  await expect(tree(page).getByRole("treeitem", { name: "Section A native browser preview" })).toBeVisible();
   await expect(title(page)).toHaveValue("Home");
   await follow(page, "About");
-  await expect(tree(page).getByRole("treeitem", { name: "Heading About this project" })).toBeVisible();
+  await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
   await expect(title(page)).toHaveValue("About");
   await expect(description(page)).toHaveValue("Who made this");
   await openSaveMenu(page);
