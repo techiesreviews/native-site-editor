@@ -132,7 +132,8 @@ test("Discard changes asks, then drops every draft, the agent's too: edits, a ne
 
     expect(await drafts(page)).toEqual([]);
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
-    await expect(page.locator("#content .view-lines")).toContainText("A native browser preview");
+    await expect(page.locator("#content .view-lines")).toContainText("<site-header");
+    await expect(page.locator("#content .view-lines")).not.toContainText("Edited by an agent");
     await expect(discardAll(page)).toBeDisabled();
     await expect(publishButton(page)).toBeDisabled();
     await expect(message(page)).toHaveText("");

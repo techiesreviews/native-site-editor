@@ -83,7 +83,7 @@ test("the Save panel lists counts only; the button opens a side-by-side comparis
   // Two separate edits, far apart, so the unchanged run between them collapses.
   const edited = indexSource.replace("A native browser preview", "Compared heading").replace("</main>", "  <p>Added at the end</p>\n</main>");
   expect(edited).not.toBe(indexSource);
-  await pasteSource(page, "A native browser preview", edited);
+  await pasteSource(page, "<site-header", edited);
   await expect(frame.getByRole("heading", { name: "Compared heading" })).toBeVisible();
 
   await openSaveMenu(page);
@@ -141,7 +141,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Saved to GitHub heading"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Saved to GitHub heading"));
   await expect(frame.getByRole("heading", { name: "Saved to GitHub heading" })).toBeVisible();
 
   // The native save menu commits to GitHub; the Change status shows in the top bar (native-change-status.spec.ts).
@@ -171,7 +171,7 @@ test("multi-file save keeps every committed file's content (no revert to stale b
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
   // Draft one page and one stylesheet, then commit both together.
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Multi save heading"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Multi save heading"));
   await openFile(page, cssPath, "--accent");
   await pasteSource(page, "--accent", cssSource.replace("--muted: #5c665a;", "--muted: rgb(190, 20, 40);"));
 
@@ -212,7 +212,7 @@ test("a post-save edit becomes a fresh draft and re-enables saving", async ({ pa
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "First save"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "First save"));
   await openSaveMenu(page);
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
@@ -233,7 +233,7 @@ test("a conflicting save keeps the draft and the preview", async ({ page, baseUR
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "My conflicting draft"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "My conflicting draft"));
   await expect(frame.getByRole("heading", { name: "My conflicting draft" })).toBeVisible();
 
   // An external commit advances index.html on the branch, so our baseSha is stale.
@@ -255,7 +255,7 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/slow?ms=1500`);
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "In-flight base"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "In-flight base"));
   await openSaveMenu(page);
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saving to GitHub", { timeout: 5_000 });
@@ -287,7 +287,7 @@ test("preview route, iframe and scroll persist through save completion", async (
     return { id: (window as unknown as { __id: string }).__id, scroll: (document.scrollingElement as Element).scrollTop };
   });
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Reload survivor"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Reload survivor"));
   // The preview stays on About (route preserved) and never reloaded (same window, scroll kept).
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   const after = await win.evaluate(() => ({
@@ -337,13 +337,13 @@ test("switching files during a slow save still adopts the saved native baseline"
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/slow?ms=1000`);
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Saved while switching"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Saved while switching"));
   await openSaveMenu(page);
   const publish = page.waitForResponse((response) =>
     response.url().includes("/api/publish") && response.request().method() === "POST",
   );
   await saveSubmit(page).click();
-  await openFile(page, "about/index.html", "About this project");
+  await openFile(page, "about/index.html", "<site-header");
   const response = await publish;
   expect(response.ok()).toBeTruthy();
 
@@ -354,7 +354,7 @@ test("switching files during a slow save still adopts the saved native baseline"
 
 test("unsaved local drafts recover after reload", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Recovered local draft"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Recovered local draft"));
   await expect(frame.getByRole("heading", { name: "Recovered local draft" })).toBeVisible();
 
   await page.reload();
@@ -365,7 +365,7 @@ test("unsaved local drafts recover after reload", async ({ page }) => {
 
 test("Undo and Redo keep native preview and save state in sync", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Undo Redo heading"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Undo Redo heading"));
   await expect(frame.getByRole("heading", { name: "Undo Redo heading" })).toBeVisible();
 
   await focusEditor(page);

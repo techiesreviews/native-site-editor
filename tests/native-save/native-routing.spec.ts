@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { publishButton, showPublish } from "./publish";
+import { storedDraft } from "./drafts";
 
 // The repository is the site (shared/native-routes.ts) over
 // `fixtures/native-routing`, served as the `native-routing` repository (id
@@ -72,7 +73,8 @@ test("opening a nested page file shows its route, and titling it writes its <tit
   await expect(heading(page)).toHaveText("Work");
   await title(page).fill("Our work");
   await expect(page.locator("#status")).toHaveText("Title updated");
-  await expect(page.locator("#content .view-lines")).toContainText("<title>Our work</title>");
+  // The <head> is collapsed in the code editor: the draft holds the title.
+  await expect.poll(async () => (await storedDraft(page, "work/index.html"))?.content).toContain("<title>Our work</title>");
 
   // The only change is the page.
   await showPublish(page);

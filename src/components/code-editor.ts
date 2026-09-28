@@ -361,6 +361,30 @@ function languageFor(path: string) {
   );
 }
 
+// Start lines (0-based) of the multi-line <head>, <section> and component
+// elements, collapsed when a page first opens in the code editor.
+export function defaultFoldLines(source: string) {
+  // Comments, scripts and styles blanked to their newlines: offsets stay put.
+  const text = source.replace(/<!--[\s\S]*?-->|<(script|style)\b[\s\S]*?<\/\1\s*>/gi, (match) => match.replace(/[^\n]/g, " "));
+  const lineAt = (offset: number) => text.slice(0, offset).split("\n").length - 1;
+  const open: { name: string; line: number }[] = [];
+  const lines: number[] = [];
+  for (const match of text.matchAll(/<(\/?)(head|section|[a-z][a-z0-9]*-[a-z0-9-]*)(?=[\s/>])[^>]*>/gi)) {
+    const name = match[2].toLowerCase();
+    if (!match[1]) {
+      if (!match[0].endsWith("/>")) open.push({ name, line: lineAt(match.index) });
+      continue;
+    }
+    let at = open.length - 1;
+    while (at >= 0 && open[at].name !== name) at--;
+    if (at < 0) continue;
+    const { line } = open[at];
+    open.length = at;
+    if (lineAt(match.index) > line && !lines.includes(line)) lines.push(line);
+  }
+  return lines.sort((a, b) => a - b);
+}
+
 export function mountCodeEditor(
   host: HTMLElement,
   file: SourceFile,
@@ -798,7 +822,12 @@ export function mountCodeEditor(
       });
       view = editor;
       editor.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
-      editor.restoreViewState(current.view);
+      if (current.view) editor.restoreViewState(current.view);
+      else if (current.model.getLanguageId() === "html") {
+        const lines = defaultFoldLines(current.model.getValue());
+        if (lines.length)
+          void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });
+      }
       destroyView = () => {
         current.view = editor.saveViewState();
         editor.dispose();

@@ -100,7 +100,7 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
   });
   expect(before.scroll).toBe(120);
 
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Edited in place"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Edited in place"));
   await expect(frame.getByRole("heading", { name: "Edited in place" })).toBeVisible();
 
   const after = await win.evaluate(() => ({
@@ -133,7 +133,7 @@ test("sections without data-key keep their nodes when moved, inserted around or 
   const stamps = () => win.evaluate(() =>
     [...document.querySelectorAll("section.probe")].map((el) => (el as HTMLElement & { stamp?: string }).stamp ?? "new"));
 
-  await pasteSource(page, "A native browser preview", page1("A", "B", "C"));
+  await pasteSource(page, "<site-header", page1("A", "B", "C"));
   await expect(frame.locator("section.probe")).toHaveCount(3);
   await stamp();
   // B moved to the top, a new section before C: A, B and C are the same nodes.
@@ -154,7 +154,7 @@ test("editing while the preview is on About does not snap it back Home", async (
   await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   // A source edit to the still-open index.html must not change the preview route.
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Edited home while on about"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Edited home while on about"));
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   await expect(frame.getByRole("heading", { name: "Edited home while on about" })).toHaveCount(0);
 });
@@ -188,7 +188,7 @@ test("nested shared-component template edits reach every instance", async ({ pag
 test("Undo and Redo drive the preview, and saved drafts survive reload", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
-  await pasteSource(page, "A native browser preview", indexSource.replace("A native browser preview", "Draft heading"));
+  await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Draft heading"));
   await expect(frame.getByRole("heading", { name: "Draft heading" })).toBeVisible();
 
   await focusEditor(page);
