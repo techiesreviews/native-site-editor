@@ -174,6 +174,10 @@ export async function handle(
     response = await route(request, env, url, fetcher);
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
+    // Unexpected errors reach the user as a plain "Something went wrong":
+    // their cause goes to the Worker's logs.
+    if (!(error instanceof HttpError))
+      console.error(`${request.method} ${url.pathname} failed:`, error instanceof Error ? error.stack ?? error.message : error);
     const message =
       error instanceof HttpError
         ? error.message

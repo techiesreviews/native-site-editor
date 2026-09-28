@@ -15,6 +15,8 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-17",
   "workers_dev": false,
+  // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
+  "observability": { "enabled": true },
   "routes": [{ "pattern": "editor.techies.tools", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
