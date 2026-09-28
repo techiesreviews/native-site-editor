@@ -71,8 +71,8 @@ async function config(env: Env) {
   return configuredApp(env);
 }
 // Editor read endpoints accept a selected-repository listing up to this old,
-// so the burst of reads after sign-in shares one membership check. Writes and
-// agent requests always recheck.
+// so the burst of reads after sign-in shares one membership check. Writes
+// always recheck; agents reuse a listing as long (worker/agent-context.ts).
 const readAuthorizationMaxAge = 60_000;
 function json(body: unknown, status = 200) {
   return Response.json(body, { status });

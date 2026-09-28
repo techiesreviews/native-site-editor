@@ -377,6 +377,8 @@ export function connectionContext(
     : undefined;
 }
 
+const agentAuthorizationMaxAge = 60_000;
+
 export async function authenticateAgent(
   request: Request,
   env: Env,
@@ -404,12 +406,20 @@ export async function authenticateAgent(
     session.login !== grant.login
   )
     throw new HttpError(401, "The editor session ended. Reconnect the agent.");
-  // The connection follows the repository the editor tab shows, rechecked
-  // against the GitHub App installation on every request.
+  // The connection follows the repository the editor tab shows, checked
+  // against the GitHub App installation with a listing at most
+  // `agentAuthorizationMaxAge` old, so a burst of tool calls costs GitHub one
+  // listing, not two requests each. Revoking the agent or signing out still
+  // takes effect at once; removing the repository from the installation, within
+  // that time.
   const github = new GitHub(session.token, fetcher);
   const shown = (await getHub(env, grant.sessionId))?.context?.repository;
   const target = shown ?? { id: grant.repoId, fullName: grant.repo };
-  const repo = await github.authorizeRepository(session.login, target.fullName);
+  const repo = await github.authorizeRepository(
+    session.login,
+    target.fullName,
+    agentAuthorizationMaxAge,
+  );
   if (repo.id !== target.id)
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
   return { grant, github, repo, id };

@@ -162,6 +162,22 @@ test("selected repositories are rechecked by default and shared briefly on reque
   });
   await assert.rejects(() => later.authorizeRepository("lex", repo.full_name, 60_000), (error: HttpError) => error.status === 403);
   assert.ok(recovered >= 1, "a failed listing is not remembered");
+  const added = { ...repo, id: 2, name: "added", full_name: "lex/added" };
+  const selected = [repo];
+  let lookups = 0;
+  const growing = new GitHub("token-d", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") {
+      lookups++;
+      return reply({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
+    }
+    return reply({ repositories: selected });
+  });
+  await growing.authorizeRepository("lex", repo.full_name, 60_000);
+  selected.push(added);
+  assert.equal((await growing.authorizeRepository("lex", added.full_name, 60_000)).id, 2, "a repository missing from a reused listing is looked up again");
+  assert.equal(lookups, 2);
+  await assert.rejects(() => growing.authorizeRepository("lex", "lex/never", 60_000), (error: HttpError) => error.status === 403);
 });
 
 test("batched file reads run concurrently and validate every revision", async () => {

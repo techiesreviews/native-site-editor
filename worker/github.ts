@@ -267,10 +267,14 @@ export class GitHub {
       throw new HttpError(400, "Choose a repository.");
     // Recheck installation membership for every request, including public
     // repos and cached SHAs, unless the caller accepts a listing up to
-    // `maxAge` old (the editor's own read endpoints do; agents never do).
-    const repo = (await this.repositories(login, maxAge)).find(
-      (repo) => repo.full_name === fullName,
-    );
+    // `maxAge` old (the editor's read endpoints and agents do). A repository
+    // missing from a reused listing is looked up again, so one just added to
+    // the installation works at once; one removed stops within `maxAge`.
+    const find = async (age: number) =>
+      (await this.repositories(login, age)).find(
+        (repo) => repo.full_name === fullName,
+      );
+    const repo = (await find(maxAge)) ?? (maxAge > 0 ? await find(0) : undefined);
     if (!repo)
       throw new HttpError(
         403,

@@ -182,15 +182,19 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     github.others.push(otherRepo);
     await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
     assert.equal(payload(await call("get_site")).repository, "lex/other");
-    github.others.length = 0;
-    await assert.rejects(() => call("get_site"));
     await tab.share(context);
     assert.equal(payload(await call("get_site")).repository, "lex/starter");
     assert.equal(github.writes, 0, "MCP must not write to GitHub");
 
-    // Installation removed, revoked, logged out: the connection stops working.
+    // Tool calls reuse the installation listing for a minute instead of
+    // asking GitHub twice each; one removed from the installation stops
+    // working within that minute (tests/github.test.ts). Revoked and logged
+    // out stop at once.
+    const listings = github.requests.filter((path) => path === "/user/installations").length;
     github.allowed = false;
-    await assert.rejects(() => client!.listTools());
+    await client!.listTools();
+    await call("get_site");
+    assert.equal(github.requests.filter((path) => path === "/user/installations").length, listings, "tool calls reuse a recent listing");
     github.allowed = true;
     assert.equal((await tab.post("/api/agent/revoke", { id })).status, 200);
     assert.deepEqual((await tab.hub()).grants, []);
@@ -351,8 +355,11 @@ test("export_site reads the whole site in one call with drafts and hashes, blobs
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
     });
-    assert.equal(limited.status, 429);
-    assert.match((await limited.json() as any).error, /GitHub is limiting requests .* your drafts are kept/);
+    assert.equal(limited.status, 200, "a recent installation listing is reused");
+    await tab.share({ ...context, commit: "b".repeat(40) });
+    const unread = await call("export_site");
+    assert.equal(unread.isError, true);
+    assert.match(JSON.stringify(unread), /GitHub is limiting requests .* your drafts are kept/);
     const editorRead = await worker.dispatchFetch(`${origin}/api/file?repo=${repo.full_name}&sha=${"f".repeat(40)}`, { headers: { Cookie: cookie } });
     assert.equal(editorRead.status, 429);
     assert.match((await editorRead.json() as any).error, /GitHub is limiting requests/);
