@@ -328,8 +328,8 @@ test("export_site reads the whole site in one call with drafts and hashes, blobs
     assert.equal(site.files.find((file: any) => file.path === "new/index.html").draft, "A");
     assert.deepEqual(site.binaries, [{ path: "images/logo.png", sha: null, size: 2048, draft: "A" }]);
     const blobs = objectReads().filter((path) => path.includes("/git/blobs/"));
-    assert.equal(blobs.length, Object.keys(files).length - 1, "one read per saved file the drafts do not replace");
-    assert.equal(new Set(blobs).size, blobs.length, "no blob is read twice");
+    assert.equal(github.requests.filter((path) => path === "/graphql").length, 1, "saved texts are read in one batched query");
+    assert.equal(blobs.length, 1, "only the blob the batch gave truncated is read on its own");
 
     // Blobs and trees never change: nothing is read from GitHub again.
     const before = objectReads().length;

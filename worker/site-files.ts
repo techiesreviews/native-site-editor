@@ -9,6 +9,12 @@ type Draft = EditorContext["drafts"][number];
 
 /** Blobs read from GitHub at a time by an export (most come from the cache). */
 const exportConcurrency = 4;
+/**
+ * Saved files an export reads one request each, when the batched read did
+ * not give their text; the rest are listed as omitted, so one call stays
+ * within the Worker's subrequests.
+ */
+const exportSingleReads = 16;
 
 export interface SiteFile {
   path: string;
@@ -83,8 +89,8 @@ export class SiteFiles {
    * Every file under `prefix` as `read` gives it, in one pass: text files
    * with their content and hash (drafts applied), binary files by path, blob
    * and size only. Text is included up to `budget` characters in all; the
-   * files past it are listed in `omitted`. GitHub is asked only for blobs
-   * not yet cached, a few at a time.
+   * files past it are listed in `omitted`. Saved texts are read from GitHub in
+   * a few batched queries, and only the ones those do not give one by one.
    */
   async export(prefix = "", budget = 4 * 1024 * 1024): Promise<SiteExport> {
     const entries = new Map((await this.entries()).map((entry) => [entry.path, entry]));
@@ -103,8 +109,20 @@ export class SiteFiles {
         });
       else texts.push(item);
     }
+    // Saved texts that fit are read from GitHub in a few batched queries first.
+    let planned = 0;
+    const wanted: string[] = [];
+    for (const item of texts) {
+      const entry = entries.get(item.path);
+      if (this.draft(item.path) || !entry || entry.size === undefined || entry.size > AGENT_TEXT_LIMIT) continue;
+      if (planned + entry.size > budget) break;
+      planned += entry.size;
+      wanted.push(entry.sha);
+    }
+    await this.github.prefetchTexts(this.repo, wanted);
     let used = 0,
-      next = 0;
+      next = 0,
+      singles = 0;
     const read: (SiteFile & { draft?: "A" | "M" | "R" })[] = [];
     await Promise.all(
       Array.from({ length: Math.min(exportConcurrency, texts.length) }, async () => {
@@ -117,6 +135,11 @@ export class SiteFiles {
             continue;
           }
           if (size !== undefined && used + size > budget) {
+            out.omitted.push(item.path);
+            continue;
+          }
+          const entry = entries.get(item.path);
+          if (!draft && entry && !this.github.hasText(this.repo, entry.sha) && ++singles > exportSingleReads) {
             out.omitted.push(item.path);
             continue;
           }

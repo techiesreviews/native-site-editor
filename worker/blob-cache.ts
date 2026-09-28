@@ -59,6 +59,16 @@ export class ObjectCache {
     }
   }
 
+  /** The value of `key` in this isolate's memory only (no subrequest). */
+  held(key: string): string | undefined {
+    return this.memory.entries.get(key);
+  }
+
+  /** Keeps `value` in this isolate's memory only (no subrequest). */
+  hold(key: string, value: string) {
+    if (value.length <= maxValueBytes) this.remember(key, value);
+  }
+
   async put(key: string, value: string): Promise<void> {
     if (value.length > maxValueBytes) return;
     this.remember(key, value);

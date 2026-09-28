@@ -63,8 +63,21 @@ export async function startWorker() {
         const path = new URL(request.url).pathname;
         if (path === "/login/oauth/access_token")
           return Response.json({ access_token: "github-private-token", expires_in: 28800 });
-        if (request.method !== "GET") github.writes++;
         github.requests.push(path);
+        if (path === "/graphql" && !github.limited) {
+          // Batched blob texts; styles/tokens.css comes back truncated, as a
+          // large blob does, to be read on its own.
+          const { query } = (await request.json()) as { query: string };
+          const repository: Record<string, unknown> = {};
+          for (const [, alias, oid] of query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)) {
+            const file = Object.keys(shas).find((key) => shas[key] === oid);
+            repository[alias] = file
+              ? { text: files[file], isBinary: false, isTruncated: file === "styles/tokens.css", byteSize: new TextEncoder().encode(files[file]).length }
+              : null;
+          }
+          return Response.json({ data: { repository } });
+        }
+        if (request.method !== "GET") github.writes++;
         if (github.limited && path !== "/user")
           return Response.json(
             { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." },

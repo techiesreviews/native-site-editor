@@ -335,3 +335,43 @@ test("blobs and trees are read from GitHub once, per repository, and failures ar
   assert.equal((await github.commitTree(repo, commit)).length, 1);
   assert.equal(asked.filter((path) => /\/git\/(commits|trees)\//.test(path)).length, 2, "the commit and its tree, once");
 });
+
+test("blob texts are read in batched GraphQL queries, and a blob they do not give whole is read on its own", async () => {
+  const sha = (n: number) => n.toString(16).padStart(40, "0");
+  const texts: Record<string, { text: string | null; isBinary?: boolean; isTruncated?: boolean; byteSize?: number }> = {};
+  for (let n = 1; n <= 150; n++) texts[sha(n)] = { text: `file ${n}` };
+  texts[sha(1)] = { text: "﻿bom stripped", byteSize: 99 };
+  texts[sha(2)] = { text: "cut", isTruncated: true };
+  texts[sha(3)] = { text: null, isBinary: true };
+  texts[sha(4)] = { text: "bad � bytes" };
+  const queries: number[] = [];
+  const blobs: string[] = [];
+  const github = new GitHub("secret", async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/graphql") {
+      const { query, variables } = JSON.parse(String(init!.body));
+      assert.deepEqual(variables, { owner: "lex", name: "starter" });
+      const repository: Record<string, unknown> = {};
+      const asked = [...query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)];
+      queries.push(asked.length);
+      for (const [, alias, oid] of asked) {
+        const blob = texts[oid];
+        repository[alias] = { isBinary: false, isTruncated: false, byteSize: new TextEncoder().encode(blob.text ?? "").length, ...blob };
+      }
+      return reply({ data: { repository } });
+    }
+    blobs.push(path.split("/").pop()!);
+    return reply({ size: 4, encoding: "base64", content: btoa("rest") });
+  });
+  await github.prefetchTexts(repo, Object.keys(texts));
+  assert.deepEqual(queries, [100, 50], "100 blobs per query");
+  assert.equal(await github.file(repo, sha(5)), "file 5");
+  assert.equal(await github.file(repo, sha(150)), "file 150");
+  for (const n of [1, 2, 4]) assert.equal(await github.file(repo, sha(n)), "rest", `blob ${n} is read on its own`);
+  assert.deepEqual(blobs, [sha(1), sha(2), sha(4)]);
+  await github.prefetchTexts(repo, [sha(5), sha(6)]);
+  assert.deepEqual(queries, [100, 50], "texts already held are not asked again");
+
+  const limited = new GitHub("secret", async () => reply({ errors: [{ type: "RATE_LIMITED", message: "API rate limit exceeded" }] }));
+  await assert.rejects(() => limited.prefetchTexts(repo, [sha(7)]), (error: HttpError) => error.status === 429 && /GitHub is limiting requests/.test(error.message));
+});

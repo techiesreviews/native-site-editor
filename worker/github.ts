@@ -80,6 +80,9 @@ export async function boundedJson(
   }
 }
 
+/** A blob's text read by `prefetchTexts`, kept in memory only. */
+const textKey = (repo: Repository, sha: string) => `${repo.id}/text/${sha}`;
+
 interface GitBlob {
   size: number;
   encoding: string;
@@ -91,6 +94,17 @@ interface GitBlob {
  * budget spent (`x-ratelimit-remaining: 0`), or a secondary (burst) limit,
  * which comes as a 403 or 429 with `retry-after` or only a message saying so.
  */
+function limitedError(seconds = 0) {
+  const wait = seconds > 90 ? `about ${Math.ceil(seconds / 60)} minutes` : seconds > 0 ? "a minute" : "a few minutes";
+  return new HttpError(
+    429,
+    `GitHub is limiting requests from your account for now. Try again in ${wait}; your drafts are kept.`,
+  );
+}
+
+/** Blobs asked in one GraphQL query by `prefetchTexts`. */
+const textsPerQuery = 100;
+
 async function rateLimit(response: Response): Promise<HttpError | undefined> {
   if (response.status !== 403 && response.status !== 429) return undefined;
   let limited =
@@ -105,12 +119,7 @@ async function rateLimit(response: Response): Promise<HttpError | undefined> {
   const now = Math.floor(Date.now() / 1000);
   const retry = Number(response.headers.get("retry-after"));
   const reset = Number(response.headers.get("x-ratelimit-reset"));
-  const seconds = retry > 0 ? retry : reset > now ? reset - now : 0;
-  const wait = seconds > 90 ? `about ${Math.ceil(seconds / 60)} minutes` : seconds > 0 ? "a minute" : "a few minutes";
-  return new HttpError(
-    429,
-    `GitHub is limiting requests from your account for now. Try again in ${wait}; your drafts are kept.`,
-  );
+  return limitedError(retry > 0 ? retry : reset > now ? reset - now : 0);
 }
 
 export class GitHub {
@@ -145,7 +154,9 @@ export class GitHub {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "astro-site-editor",
       },
-    }).catch(() => {
+    }).catch((error) => {
+      // The path only; the token is in the headers and never logged.
+      console.error(`GitHub ${path.split("?")[0]} unreachable:`, error instanceof Error ? error.message : error);
       throw new HttpError(502, "GitHub could not be reached. Try again.");
     });
     if (!response.ok) {
@@ -315,6 +326,8 @@ export class GitHub {
   async file(repo: Repository, sha: string): Promise<string> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid file revision.");
+    const prefetched = this.objects.held(textKey(repo, sha));
+    if (prefetched !== undefined) return prefetched;
     const data = await this.blob(repo, sha, 1536 * 1024);
     if (data.size > maxFileBytes)
       throw new HttpError(413, "Text files open up to 1 MB.");
@@ -353,6 +366,62 @@ export class GitHub {
       const data = await this.get<GitBlob>(`${this.base(repo)}/git/blobs/${sha}`, limit);
       return { size: data.size, encoding: data.encoding, content: data.content };
     });
+  }
+
+  /** Whether `file(repo, sha)` has the text in this isolate's memory. */
+  hasText(repo: Repository, sha: string) {
+    return this.objects.held(textKey(repo, sha)) !== undefined;
+  }
+
+  /**
+   * Reads the text of many blobs in a few GraphQL queries (100 blobs each)
+   * instead of one REST request per blob, so a whole-site read stays within
+   * GitHub's limits and the Worker's subrequests. The texts are kept in this
+   * isolate's memory for `file()`; a blob GraphQL does not give whole, as the
+   * UTF-8 text of its exact bytes, is left for `file()` to read as usual.
+   */
+  async prefetchTexts(repo: Repository, shas: string[]): Promise<void> {
+    const wanted = [...new Set(shas)].filter(
+      (sha) => /^[a-f0-9]{40}$/.test(sha) && !this.hasText(repo, sha),
+    );
+    const encoder = new TextEncoder();
+    for (let start = 0; start < wanted.length; start += textsPerQuery) {
+      const chunk = wanted.slice(start, start + textsPerQuery);
+      const fields = chunk
+        .map((sha, index) => `f${index}: object(oid: "${sha}") { ... on Blob { text isBinary isTruncated byteSize } }`)
+        .join("\n");
+      const result = await this.request<{
+        data?: { repository?: Record<string, { text?: string | null; isBinary?: boolean; isTruncated?: boolean; byteSize?: number } | null> | null };
+        errors?: { type?: string }[];
+      }>(
+        "/graphql",
+        "POST",
+        {
+          query: `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${fields}\n} }`,
+          variables: { owner: repo.owner.login, name: repo.name },
+        },
+        16 * 1024 * 1024,
+      );
+      if (result.errors?.some((error) => error.type === "RATE_LIMITED")) throw limitedError();
+      const found = result.data?.repository;
+      if (!found) return;
+      chunk.forEach((sha, index) => {
+        const blob = found[`f${index}`];
+        const text = blob?.text;
+        if (
+          typeof text !== "string" ||
+          blob!.isBinary ||
+          blob!.isTruncated ||
+          blob!.byteSize === undefined ||
+          blob!.byteSize > maxFileBytes ||
+          text.includes("\0") ||
+          text.includes("\uFFFD") ||
+          encoder.encode(text).length !== blob!.byteSize
+        )
+          return;
+        this.objects.hold(textKey(repo, sha), text);
+      });
+    }
   }
 
   /** Reads several blobs concurrently; the first failure rejects the batch. */

@@ -347,7 +347,7 @@ export function createSiteServer(connection: Connection, env: Env) {
         binaries: site.binaries,
         ...(site.unreadable.length ? { unreadable: site.unreadable } : {}),
         ...(site.omitted.length
-          ? { omitted: site.omitted, note: "Too much text for one answer: export the omitted files' folders, or read_file them." }
+          ? { omitted: site.omitted, note: "Not read in this call (too much text for one answer): export the omitted files' folders, or read_file them." }
           : {}),
       });
     },
