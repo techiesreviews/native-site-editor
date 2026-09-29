@@ -1693,26 +1693,28 @@ async function loadNativeStyleFiles() {
   if (loaded && live()) updateNativePreviewSources();
 }
 
-// Images the pages, components and stylesheets refer to, read once per path
-// as data URLs so the sandboxed frame can show them; a path that is not in
-// the branch (or not an image) is remembered as missing and left as written.
+// Images and fonts the pages, components and stylesheets refer to, read once
+// per path as data URLs so the sandboxed frame can show them; a path that is
+// not in the branch (or not an image or font) is remembered as missing and
+// left as written.
 const nativeAssets = new Map<string, string>();
 const nativeMissingAssets = new Set<string>();
 const nativeAssetRequests = new Map<string, number>();
 let nativeAssetRequestId = 0;
-const IMAGE_TYPES: Record<string, string> = {
+const ASSET_TYPES: Record<string, string> = {
   svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
   webp: "image/webp", avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
+  woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf",
 };
-const imageType = (path: string) => IMAGE_TYPES[path.split(".").pop()?.toLowerCase() ?? ""];
-// The repository images `sources` name: `<img src>` in pages (resolved
-// against the page's path) and components (against the root, as a root
-// path), and `url()`s in stylesheets (against the stylesheet's path).
-function referencedImages(sources: Record<string, string>) {
+const assetType = (path: string) => ASSET_TYPES[path.split(".").pop()?.toLowerCase() ?? ""];
+// The repository images and fonts `sources` name: `<img src>` in pages
+// (resolved against the page's path) and components (against the root, as a
+// root path), and `url()`s in stylesheets (against the stylesheet's path).
+function referencedAssets(sources: Record<string, string>) {
   const out = new Set<string>();
   const add = (from: string, url: string) => {
     const path = resolveImportPath(from, url);
-    if (path && imageType(path)) out.add(path);
+    if (path && assetType(path)) out.add(path);
   };
   for (const [file, source] of Object.entries(sources)) {
     if (file.endsWith(".css")) {
@@ -1725,12 +1727,22 @@ function referencedImages(sources: Record<string, string>) {
   }
   return out;
 }
-async function loadNativeAssets() {
-  if (!nativeSite || !currentRepo || !snapshot) return;
+// The sources of what the page `file` shows: the page, every component and
+// component stylesheet, and the stylesheets it links with their imports.
+function nativePageShownSources(site: NativeSite, file: string) {
+  const sources = nativeSources(site);
+  const linked = nativePageStylesheets(sources[file] ?? "", file);
+  const shown = new Set([file, ...Object.values(site.components), ...nativeComponentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path]).imported]);
+  return Object.fromEntries(Object.entries(sources).filter(([path]) => shown.has(path)));
+}
+// Reads the assets `sources` name that are not read yet; `onProgress` runs
+// as each arrives.
+async function loadNativeAssets(sources = nativeSite ? nativeSources() : {}, onProgress = updateNativePreviewSources) {
+  if (!currentRepo || !snapshot) return;
   const repo = currentRepo.full_name;
   const request = nativeSourcesRequest;
   const epoch = generation;
-  const wanted = [...referencedImages(nativeSources())].filter((path) =>
+  const wanted = [...referencedAssets(sources)].filter((path) =>
     !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
   if (!wanted.length) return;
   const assetRequest = ++nativeAssetRequestId;
@@ -1757,12 +1769,13 @@ async function loadNativeAssets() {
   };
   try {
     await loadNativeAssetRequests({
-      requests: wanted.map((path) => ({ path, type: imageType(path)! })),
+      requests: wanted.map((path) => ({ path, type: assetType(path)! })),
+      concurrency: 8,
       live,
       load,
       onLoaded: (path, dataUrl) => nativeAssets.set(path, dataUrl),
       onMissing: (path) => nativeMissingAssets.add(path),
-      onProgress: updateNativePreviewSources,
+      onProgress,
     });
   } finally {
     wanted.forEach((path) => {
@@ -2048,6 +2061,14 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
       // Reported by the preview as a missing stylesheet.
     }
     if (!live()) return true;
+    // The images and fonts the page shows render with it too, so it does
+    // not show with empty image boxes and fallback fonts first; one still
+    // loading after a moment renders when it arrives.
+    await Promise.race([
+      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewSources(); }).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 4000)),
+    ]);
+    if (!live()) return true;
   } catch (error) {
     if (!live()) return true;
     nativePreview?.activate(site);
@@ -2064,6 +2085,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   nativePreview?.update({
     sources: nativeSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
+    assets: Object.fromEntries(nativeAssets),
     route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(site),
   });
   updateAgentContext();
