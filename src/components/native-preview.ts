@@ -14,6 +14,7 @@ import { startTags } from "../native-source-location";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
 import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
+import { watchEditorTheme } from "../theme";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -280,6 +281,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // its place in the frame; the runtime answers with `section-drag` messages.
   const toRuntime = (type: string, at?: { x: number; y: number }) =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type, ...at }, "*");
+  // The runtime draws its hover and selection boxes in the editor's color.
+  let previewFocus = "";
+  const postTheme = () =>
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus }, "*");
   const editBar = createEditBar(pane, frame, {
     start: (at) => toRuntime("drag-start", at),
     move: (at) => toRuntime("drag-move", at),
@@ -308,6 +313,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let mounted = false;
   let rafHandle = 0;
   let messageId = 0;
+  const stopTheme = watchEditorTheme(({ colors }) => {
+    previewFocus = colors["preview-focus"];
+    if (ready) postTheme();
+  });
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
@@ -445,6 +454,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "ready") {
       ready = true;
+      postTheme();
       schedule();
       return;
     }
@@ -753,6 +763,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();
+      stopTheme();
       insertControls.destroy();
       pane.remove();
       host.classList.remove("has-preview");

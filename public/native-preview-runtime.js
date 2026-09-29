@@ -8,6 +8,7 @@
   var selected = null;
   var hoverBox = null;
   var selectBox = null;
+  var boxColor = "#2f6d3a";
   var renderDepth = 0;
   var MAX_DEPTH = 40;
   var hadError = false;
@@ -502,13 +503,21 @@
       el.style.pointerEvents = "none";
       el.style.zIndex = "2147483647";
       el.style.boxSizing = "border-box";
-      el.style.border = name === "selected" ? "2px solid #2f6d3a" : "1px solid #2f6d3a";
-      el.style.background = name === "selected" ? "rgba(47, 109, 58, 0.10)" : "rgba(47, 109, 58, 0.04)";
       document.documentElement.appendChild(el);
       return el;
     }
     hoverBox = make("hover");
     selectBox = make("selected");
+    paintBoxes();
+  }
+
+  // The editor sends its focus color; boxes are drawn in it.
+  function paintBoxes() {
+    if (!hoverBox) return;
+    selectBox.style.border = "2px solid " + boxColor;
+    selectBox.style.background = "color-mix(in srgb, " + boxColor + " 10%, transparent)";
+    hoverBox.style.border = "1px solid " + boxColor;
+    hoverBox.style.background = "color-mix(in srgb, " + boxColor + " 4%, transparent)";
   }
 
   function drawBox(box, target) {
@@ -1946,6 +1955,11 @@
     if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
       dragMessage(msg);
+      return;
+    }
+    if (msg.type === "theme") {
+      if (typeof msg.focus === "string" && msg.focus) boxColor = msg.focus;
+      paintBoxes();
       return;
     }
     if (msg.type === "clear-selection") {
