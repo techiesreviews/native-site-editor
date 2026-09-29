@@ -27,9 +27,11 @@
   // component order the editor's rule ranking assumes still holds.
   var sharedSheets = [];
   var componentSheets = {};
-  // Optional template parts (see applyEmptyRules) stay out of layout.
+  // Optional template parts (see applyEmptyRules) stay out of layout. Text
+  // being edited (see startEditing) shows the selection box, not the
+  // browser's focus ring.
   var runtimeSheet = new CSSStyleSheet();
-  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}");
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}");
   // Each constructed sheet's source: `{ path, wrappers, importer, kind }`. A
   // shared sheet expanded from an `@import` carries the imported file's path,
   // the chain of import wrappers (outermost first; each may have `layer`,
@@ -367,14 +369,14 @@
   }
 
   // The sheets a root adopts: every shared sheet, then (for a component's
-  // shadow root) that component's own sheet.
+  // shadow root) that component's own sheet, then the runtime's own rules.
   function sheetsFor(root) {
     var out = sharedSheets.map(function (entry) { return entry.sheet; });
     if (root !== document && root.host) {
       var scoped = componentSheetFor(root.host.localName);
       if (scoped) out.push(scoped);
-      out.push(runtimeSheet);
     }
+    out.push(runtimeSheet);
     return out;
   }
 
