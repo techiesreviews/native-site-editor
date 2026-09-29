@@ -31,6 +31,14 @@ const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
+
+// Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
+async function expandRow(page: Page, name: string) {
+  const treeRow = item(page, name);
+  await treeRow.focus();
+  if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
+  await expect(treeRow).toHaveAttribute("aria-expanded", "true");
+}
 const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
@@ -360,6 +368,7 @@ test("components are deleted and renamed like any folder, saved in one commit; t
 test("the Pages tab renames a title in place, duplicates a page, and deletes a page with its subpages", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
   // Rename: the title, typed in the row, goes into the page's <title>.
   await item(page, "Fern & Kettle").focus();
   await page.keyboard.press("F2");

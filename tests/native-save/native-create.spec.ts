@@ -61,6 +61,14 @@ async function openPages(page: Page) {
 
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const editRow = (page: Page) => explorer(page).locator(".pages-edit");
+
+// Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
+async function expandRow(page: Page, name: string) {
+  const treeRow = item(page, name);
+  await treeRow.focus();
+  if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
+  await expect(treeRow).toHaveAttribute("aria-expanded", "true");
+}
 const pageTitle = (page: Page) => page.getByRole("group", { name: "Page" }).getByLabel("Title");
 
 // Opens the folders along `path` in the tree.
@@ -197,11 +205,14 @@ test("a native site opens the explorer on Pages: the site by URL, each page with
   await expect(explorer(page).getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "false");
   await expect(explorer(page).getByRole("tabpanel")).toHaveCount(1);
   const tree = explorer(page).getByRole("tree", { name: "PAGES" });
-  await expect(tree.getByRole("treeitem")).toHaveCount(4);
+  // Rows start collapsed, so only the two top-level rows show until Work is opened.
+  await expect(tree.getByRole("treeitem")).toHaveCount(2);
   await expect(item(page, "Home")).toHaveAttribute("aria-selected", "true");
   await expect(item(page, "Home")).toHaveAttribute("aria-level", "1");
-  await expect(item(page, "Work")).toHaveAttribute("aria-expanded", "true");
+  await expect(item(page, "Work")).toHaveAttribute("aria-expanded", "false");
   await expect(item(page, "Work").locator(".pages-url").first()).toHaveText("/work/");
+  await expandRow(page, "Work");
+  await expect(tree.getByRole("treeitem")).toHaveCount(4);
   await expect(item(page, "Fern & Kettle")).toHaveAttribute("aria-level", "2");
   await expect(item(page, "Fern & Kettle").locator(".pages-url")).toHaveText("/work/fern-and-kettle/");
   await expect(explorer(page).getByRole("button", { name: "Add subpage to Work" })).toHaveCount(1);

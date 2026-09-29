@@ -24,6 +24,14 @@ const explorer = (page: Page) => page.locator("#explorer");
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const block = (page: Page) => page.getByRole("group", { name: "Page" });
 
+// Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
+async function expandRow(page: Page, name: string) {
+  const row = item(page, name);
+  await row.focus();
+  if ((await row.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
+  await expect(row).toHaveAttribute("aria-expanded", "true");
+}
+
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {
   await page.goto(`${baseURL}/${hash(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
@@ -90,7 +98,9 @@ test("the Pages tab labels pages by their titles, and a new page is a folder of 
   await open(page, baseURL);
   await openPages(page);
   await expect(item(page, "Home")).toHaveAttribute("aria-selected", "true");
-  await expect(item(page, "Notes")).toHaveAttribute("aria-expanded", "true");
+  // Notes does not lead to the open page (Home), so it starts collapsed.
+  await expect(item(page, "Notes")).toHaveAttribute("aria-expanded", "false");
+  await expandRow(page, "Notes");
   await expect(item(page, "The first note").locator(".pages-url")).toHaveText("/notes/first-note/");
 
   // Notes is a folder with no page of its own.
@@ -170,6 +180,7 @@ test("moved, renamed and deleted files are found where they are now", async ({ p
 test("the Pages tab's Rename is enabled, and Duplicate titles the copy in its head", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openPages(page);
+  await expandRow(page, "Notes");
   const note = item(page, "The first note");
   await note.focus();
   await page.keyboard.press("Shift+F10");

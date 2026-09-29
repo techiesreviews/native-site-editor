@@ -89,7 +89,8 @@ export function createPagesTree(options: {
   tree.setAttribute("aria-labelledby", "pages-heading");
   root.append(heading, tree);
 
-  // Rows' open state by route, kept across renders; unset is the default.
+  // Rows' open state by route, kept across renders; unset is the default:
+  // collapsed, except the rows leading to the open page.
   const expanded = new Map<string, boolean>();
   let model: NativeSiteTree | undefined;
   let current: string | undefined;
@@ -274,8 +275,8 @@ export function createPagesTree(options: {
     active = row.dataset.key;
   }
 
-  const isOpen = (page: NativePageNode, level: number) =>
-    expanded.get(page.route) ?? (level === 1 || Boolean(current && isFolderRoute(page.route) && current.startsWith(page.route.slice(1))));
+  const isOpen = (page: NativePageNode) =>
+    expanded.get(page.route) ?? Boolean(current && isFolderRoute(page.route) && current.startsWith(page.route.slice(1)));
 
   function pageAt(route: string): NativePageNode | undefined {
     if (!model) return undefined;
@@ -518,7 +519,7 @@ export function createPagesTree(options: {
     item.setAttribute("aria-selected", String(selected));
     item.setAttribute("aria-label", page.label);
     const hasChildren = page.children.length > 0;
-    const open = hasChildren && isOpen(page, level);
+    const open = hasChildren && isOpen(page);
     if (hasChildren) item.setAttribute("aria-expanded", String(open));
     const count = nativeSubpageCount(page);
     item.setAttribute("aria-description", [

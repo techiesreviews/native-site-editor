@@ -30,6 +30,14 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
+
+// Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
+async function expandRow(page: Page, name: string) {
+  const treeRow = item(page, name);
+  await treeRow.focus();
+  if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
+  await expect(treeRow).toHaveAttribute("aria-expanded", "true");
+}
 const block = (page: Page) => page.getByRole("group", { name: "Page" });
 const saveTrigger = publishButton;
 
@@ -70,6 +78,7 @@ async function saveAll(page: Page) {
 test("a single-file page has no subpages; a folder page's subpage is a folder in its folder, and deleting it leaves nothing to save", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
   // /work/notes.html is one file: no Add subpage.
   await expect(explorer(page).getByRole("button", { name: "Add subpage to Notes" })).toHaveCount(0);
   await item(page, "Notes").focus();
@@ -165,6 +174,7 @@ test("the Page block's URL changes a page's URL: links in pages and the header n
 test("changing the URL of a page with subpages in the Pages tab moves its folder and the links to everything in it", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
 
   // Escape cancels a URL being changed.
   await item(page, "Notes").hover();
@@ -192,6 +202,8 @@ test("changing the URL of a page with subpages in the Pages tab moves its folder
   await page.keyboard.press("Enter");
   await expect(status(page)).toHaveText("URL changed to /projects/ — 3 links updated in 2 files; /work/ redirects there.");
   await expect(item(page, "Work").locator(".pages-url").first()).toHaveText("/projects/");
+  // The moved row starts collapsed again under its new route; open it to see its subpages.
+  await expandRow(page, "Work");
   await expect(item(page, "Fern & Kettle").locator(".pages-url")).toHaveText("/projects/fern-and-kettle/");
   await expect(item(page, "Notes").locator(".pages-url")).toHaveText("/projects/notes.html");
   expect((await draft(page, redirectsPath)).content).toBe("/work/ /projects/ 301\n/work/fern-and-kettle/ /projects/fern-and-kettle/ 301\n/work/notes.html /projects/notes.html 301\n");
@@ -218,6 +230,7 @@ test("changing the URL of a page with subpages in the Pages tab moves its folder
 test("Move to… from the keyboard puts a page under another; the confirmation says the new URL and offers the redirect", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
   await item(page, "Notes").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Notes" });
@@ -268,6 +281,7 @@ test("Move to… from the keyboard puts a page under another; the confirmation s
 test("dragging a page onto another makes it a subpage; onto the line between rows it moves to that level", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
   const fern = item(page, "Fern & Kettle").locator(".pages-row");
 
   // Onto itself: nothing happens.
@@ -299,6 +313,7 @@ test("dragging a page onto another makes it a subpage; onto the line between row
 test("deleting a page with subpages can keep them: the folder is then a row with no page, whose Create page brings it back", async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
+  await expandRow(page, "Work");
   await item(page, "Work").focus();
   await page.keyboard.press("Delete");
   const dialog = page.getByRole("dialog", { name: "Delete Work?" });
