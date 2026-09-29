@@ -857,6 +857,7 @@ export function mountCodeEditor(
       view = editor.getModifiedEditor();
       view.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
       destroyView = () => {
+        editor.setModel(null);
         editor.dispose();
         original.dispose();
       };

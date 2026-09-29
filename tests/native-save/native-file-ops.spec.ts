@@ -75,6 +75,13 @@ async function branchFile(page: Page, repo: string, path: string): Promise<strin
   return file.content;
 }
 
+async function branchSha(page: Page, repo: string, path: string): Promise<string> {
+  const snapshot = await (await page.request.get(`/api/snapshot?${new URLSearchParams({ repo, branch: "main" })}`)).json();
+  const entry = (snapshot.tree as { path: string; sha: string }[]).find((item) => item.path === path);
+  expect(entry, `${path} exists on ${repo}`).toBeTruthy();
+  return entry!.sha;
+}
+
 // The browser draft of `path`, parsed.
 const draft = storedDraft;
 
@@ -280,6 +287,44 @@ test("after a save refreshes the snapshot, another rename rebuilds the link inde
   await expect(dialog).toContainText("Its URL changes from /work/journal.html to /work/log.html.");
   await dialog.getByRole("button", { name: "Rename" }).click();
   await expect(status(page)).toContainText("Renamed work/journal.html to work/log.html");
+});
+
+test("renaming waits for the background link index and updates non-page html links", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  await page.request.post(`${baseURL}/__demo/external-edit`, {
+    data: { path: "_partials/extra.html", content: '<a href="/about/">About from an indexed partial</a>\n' },
+  });
+  const partialSha = await branchSha(page, starterRepo, "_partials/extra.html");
+  let unblock!: () => void;
+  const released = new Promise<void>((resolve) => { unblock = resolve; });
+  const blocked = new Promise<void>((resolve) => {
+    void page.route("**/api/files?**", async (route) => {
+      const shas = new URL(route.request().url()).searchParams.get("shas")?.split(",") ?? [];
+      if (shas.includes(partialSha)) {
+        resolve();
+        await released;
+      }
+      await route.continue();
+    });
+  });
+  await page.reload();
+  await open(page, baseURL, 501);
+  await openFiles(page);
+  await row(page, "about").focus();
+  await page.keyboard.press("F2");
+  await explorer(page).getByRole("textbox", { name: "New name for about" }).fill("story");
+  await page.keyboard.press("Enter");
+  await blocked;
+  await expect(page.getByRole("dialog", { name: "Rename about to story?" })).toHaveCount(0);
+  expect(await draft(page, "_partials/extra.html")).toBeUndefined();
+  unblock();
+  const dialog = page.getByRole("dialog", { name: "Rename about to story?" });
+  await expect(dialog).toContainText("Its URL changes from /about/ to /story/.");
+  await expect(dialog).toContainText("Updates 3 links in 3 files.");
+  await dialog.getByRole("button", { name: "Rename" }).click();
+  await expect(status(page)).toContainText("Renamed the folder about to story");
+  expect((await draft(page, "_partials/extra.html")).content).toContain('href="/story/"');
+  await page.unroute("**/api/files?**");
 });
 
 test("components are deleted and renamed like any folder, saved in one commit; the home page is kept", async ({ page, baseURL }) => {

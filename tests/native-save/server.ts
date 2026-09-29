@@ -35,6 +35,7 @@ import { join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import { createServer, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
+import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 
@@ -448,6 +449,16 @@ function env(): Env {
           if (url.pathname === "/agent-operation") return hubOperation(storage, await request.json(), async () => undefined);
           if (url.pathname === "/agent-drafts") return storeDrafts(storage, await request.json());
           if (url.pathname === "/agent-draft") return readDraft(storage, url.searchParams.get("hash") ?? "");
+          if (url.pathname === REGISTRATION_ROUTE) {
+            if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+            const { ipHash } = (await request.json()) as { ipHash: unknown };
+            if (!isBudgetKey(ipHash)) return new Response(null, { status: 400 });
+            return Response.json(await admitRegistration({
+              get: storage.get,
+              put: async (key, value) => storage.put({ [key]: value }),
+              delete: async (key) => { await storage.delete([key]); return true; },
+            }, ipHash, Date.now()));
+          }
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
             sessions.set(id, { value, git: slot?.git ?? (value.kind === "user" ? cloneGit(initialGit) : undefined) });
