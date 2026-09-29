@@ -2016,7 +2016,15 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     const files = nativeFiles(scope);
     const currentFile = currentPath && nativeSitePaths(site).includes(currentPath) ? currentPath : site.routes[nativeDefaultRoute(site)];
     const primary = new Set([currentFile, ...nativePageStylesheets(nativeEffectiveSource(currentFile, scope) ?? "", currentFile), ...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : [])]);
-    const wanted = new Set([...nativeSitePaths(site), ...primary]);
+    // Each component's own stylesheet renders with the first update too, so
+    // the page never shows before its components are styled.
+    const componentCss = new Map<string, string>();
+    for (const [tag, template] of Object.entries(site.components)) {
+      const path = nativeComponentCssPath(template);
+      if (files.includes(path)) componentCss.set(path, tag);
+      else nativeMissingComponentStyles.add(tag);
+    }
+    const wanted = new Set([...nativeSitePaths(site), ...primary, ...componentCss.keys()]);
     const sources: { path: string; sha: string }[] = [];
     for (const path of wanted) {
       if (drafted.has(path)) continue;
@@ -2028,6 +2036,9 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
     if (!live()) return true;
     for (const source of sources) nativeBaseSources.set(source.path, contents[source.sha]);
+    for (const [path, tag] of componentCss)
+      if (drafted.has(path) || nativeBaseSources.has(path)) nativeComponentStyles.set(tag, path);
+      else nativeMissingComponentStyles.add(tag);
     // The stylesheets the pages link, and the files those import, render
     // with the first update; one that cannot be read is reported by the
     // preview, not here.
