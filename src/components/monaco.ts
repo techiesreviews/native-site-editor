@@ -96,8 +96,6 @@ watchEditorTheme(({ dark, colors }) => {
       "editorGutter.background": color("surface"),
       "editorLineNumber.foreground": color("muted"),
       "editor.selectionBackground": color("selected"),
-      "editorBracketMatch.background": color("selected"),
-      "editorBracketMatch.border": color("focus"),
       "editorOverviewRuler.findMatchForeground": color("focus"),
       "focusBorder": color("focus"),
       "editorWidget.background": color("surface-raised"),
