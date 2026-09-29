@@ -494,7 +494,7 @@ export class GitHub {
    * descend into folders (a fake or proxy ignoring `recursive`), in which case
    * the caller falls back to the top-level directory.
    */
-  private async recursiveTree(
+  async recursiveTree(
     repo: Repository,
     sha: string,
   ): Promise<TreeEntry[] | undefined> {

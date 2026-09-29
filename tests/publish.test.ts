@@ -334,3 +334,40 @@ test("a gzipped JSON request is unpacked, and the limit holds for what it unpack
     (error: HttpError) => error.status === 400,
   );
 });
+test("a commit touching hundreds of folders reads the tree once, so it stays within the Worker's subrequests", async () => {
+  const folders = Array.from({ length: 300 }, (_, index) => `src/pages/p${index}`);
+  const listing = [
+    { path: "src", type: "tree", sha: "e".repeat(40), mode: "040000" },
+    { path: "src/pages", type: "tree", sha: "e".repeat(40), mode: "040000" },
+    { path: "agent.txt", type: "blob", sha: "f".repeat(40), mode: "100644" },
+    ...folders.flatMap((folder) => [
+      { path: folder, type: "tree", sha: "e".repeat(40), mode: "040000" },
+      { path: `${folder}/index.html`, type: "blob", sha: baseSha, mode: "100644" },
+    ]),
+  ];
+  const calls: { path: string; method: string; search: string }[] = [];
+  const github = new GitHub("private-token", async (input, init) => {
+    const url = new URL(String(input)), method = init?.method ?? "GET";
+    calls.push({ path: url.pathname, method, search: url.search });
+    if (method === "PATCH") return Response.json({});
+    if (method !== "GET") return Response.json({ sha: url.pathname.endsWith("/trees") ? tree : next });
+    if (url.pathname.includes("/branches/")) return Response.json({ commit: { sha: head } });
+    if (url.pathname.includes("/git/commits/")) return Response.json({ tree: { sha: tree } });
+    if (url.searchParams.get("recursive") === "1") return Response.json({ tree: listing, truncated: false });
+    throw new Error(`unexpected read of ${url.pathname}`);
+  });
+  const result = await publish(github, repo, {
+    branch: "main",
+    files: [
+      ...folders.map((folder) => ({ path: `${folder}/index.html`, baseSha, content: `<h1>${folder}</h1>` })),
+      { path: "src/pages/new/index.html", baseSha: null, content: "<h1>New</h1>" },
+    ],
+  });
+  assert.equal(calls.filter((call) => call.method === "GET" && call.path.includes("/git/trees/")).length, 1);
+  assert.equal(result.files.length, 301);
+  assert.ok(calls.length < 20);
+  await assert.rejects(
+    () => publish(github, repo, { branch: "main", files: [{ path: "agent.txt/x.html", baseSha: null, content: "x" }] }),
+    (error: HttpError) => error.status === 409 && /agent\.txt\. Its parent is not a directory/.test(error.message),
+  );
+});

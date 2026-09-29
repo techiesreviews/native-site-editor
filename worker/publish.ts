@@ -122,8 +122,24 @@ export async function publish(
     }
     return entries;
   };
+  // The whole tree in one listing, when GitHub gives it completely: a commit
+  // touching many folders then stays within the Worker's subrequests.
+  const whole = await github.recursiveTree(repo, commit.tree.sha);
+  const listed = whole && new Map(whole.map((entry) => [entry.path, entry]));
   async function lookup(path: string) {
     const parts = path.split("/");
+    if (listed) {
+      for (let index = 1; index < parts.length; index++) {
+        const parent = listed.get(parts.slice(0, index).join("/"));
+        if (!parent) return undefined;
+        if (parent.type !== "tree")
+          throw new HttpError(
+            409,
+            `Cannot create a file beneath ${parts.slice(0, index).join("/")}. Its parent is not a directory.`,
+          );
+      }
+      return listed.get(path);
+    }
     let sha = commit.tree.sha;
     for (let index = 0; index < parts.length; index++) {
       const entry = (await readTree(sha)).find(
