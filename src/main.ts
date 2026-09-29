@@ -49,17 +49,17 @@ import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { loadNativeAssetRequests } from "./native-assets";
+import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import type {
   EditorContext,
   Directory,
-  FilesResult,
   PublishResult,
   Repository,
   SessionInfo,
   Snapshot,
   TreeEntry,
 } from "../shared/types";
-import { MAX_BATCH_FILES } from "../shared/types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
@@ -556,26 +556,12 @@ function closeSecondary() {
 }
 // With the whole commit listed in the snapshot, any path resolves without a
 // request; otherwise directories are walked one `/api/tree` call at a time.
+const repositoryIndex = new RepositoryIndex();
 function entryAt(path: string): TreeEntry | undefined {
-  return snapshot?.tree?.find((entry) => entry.path === path);
+  return currentRepo && snapshot ? repositoryIndex.entry(currentRepo, snapshot, path) : undefined;
 }
 function findEntry(path: string) {
-  if (snapshot?.tree) {
-    const entry = entryAt(path);
-    return Promise.resolve(entry?.type === "blob" ? entry : undefined);
-  }
-  let entries = snapshot?.entries ?? [];
-  const parts = path.split("/");
-  return (async () => {
-    for (let index = 0; index < parts.length; index++) {
-      const entry = entries.find((entry) => entry.path === parts[index]);
-      if (!entry) return undefined;
-      if (index === parts.length - 1) return entry.type === "blob" ? entry : undefined;
-      if (entry.type !== "tree" || !currentRepo) return undefined;
-      entries = (await api<Directory>("tree", { repo: currentRepo.full_name, sha: entry.sha })).entries;
-    }
-    return undefined;
-  })();
+  return currentRepo && snapshot ? repositoryIndex.find(api, currentRepo, snapshot, path) : Promise.resolve(undefined);
 }
 // Opens `css` in the secondary pane (or keeps it if already there), then resolves.
 async function openSecondary(css: string) {
@@ -1481,6 +1467,8 @@ const nativeStyleFiles = new Set<string>();
 const nativeMissingStyleFiles = new Set<string>();
 const nativeStyleFileRequests = new Set<string>();
 let nativeSourcesRequest = 0;
+let nativeTextIndexing: Promise<boolean> | undefined;
+let nativeTextIndexScope = "";
 // Every file on the branch; pages are routed by where they are
 // (shared/native-routes.ts) and components found by convention
 // (shared/native-project.ts), so this list, with new files drafted in the
@@ -1710,7 +1698,8 @@ async function loadNativeStyleFiles() {
 // the branch (or not an image) is remembered as missing and left as written.
 const nativeAssets = new Map<string, string>();
 const nativeMissingAssets = new Set<string>();
-const nativeAssetRequests = new Set<string>();
+const nativeAssetRequests = new Map<string, number>();
+let nativeAssetRequestId = 0;
 const IMAGE_TYPES: Record<string, string> = {
   svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
   webp: "image/webp", avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
@@ -1744,37 +1733,42 @@ async function loadNativeAssets() {
   const wanted = [...referencedImages(nativeSources())].filter((path) =>
     !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
   if (!wanted.length) return;
-  wanted.forEach((path) => nativeAssetRequests.add(path));
-  let loaded = false;
+  const assetRequest = ++nativeAssetRequestId;
+  wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
   const scope = draftScope();
-  try {
-    for (const path of wanted) {
-      // A drafted image: an upload's bytes from this browser, a moved or
-      // copied one's blob; a deleted one is missing.
-      const draft = scope ? draftStore().get(scope, path) : undefined;
-      if (draft) nativeDraftAssets.add(path);
-      if (draft?.upload && scope) {
-        const url = await uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
-        if (epoch !== generation || request !== nativeSourcesRequest) return;
-        if (url) { nativeAssets.set(path, url); loaded = true; } else nativeMissingAssets.add(path);
-        continue;
-      }
-      const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
-      if (epoch !== generation || request !== nativeSourcesRequest) return;
-      if (!entry) { nativeMissingAssets.add(path); continue; }
-      try {
-        const blob = await api<{ content: string }>("raw", { repo, sha: entry.sha });
-        if (epoch !== generation || request !== nativeSourcesRequest) return;
-        nativeAssets.set(path, `data:${imageType(path)};base64,${blob.content}`);
-        loaded = true;
-      } catch {
-        nativeMissingAssets.add(path);
-      }
+  const live = () => epoch === generation && request === nativeSourcesRequest;
+  const load = async (path: string) => {
+    // A drafted image: an upload's bytes from this browser, a moved or
+    // copied one's blob; a deleted one is missing.
+    const draft = scope ? draftStore().get(scope, path) : undefined;
+    if (draft) nativeDraftAssets.add(path);
+    if (draft?.upload && scope) {
+      const url = await uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
+      return url?.replace(/^data:[^;]+;base64,/, "");
     }
+    const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
+    if (!live() || !entry) return undefined;
+    try {
+      const blob = await api<{ content: string }>("raw", { repo, sha: entry.sha });
+      return blob.content;
+    } catch {
+      return undefined;
+    }
+  };
+  try {
+    await loadNativeAssetRequests({
+      requests: wanted.map((path) => ({ path, type: imageType(path)! })),
+      live,
+      load,
+      onLoaded: (path, dataUrl) => nativeAssets.set(path, dataUrl),
+      onMissing: (path) => nativeMissingAssets.add(path),
+      onProgress: updateNativePreviewSources,
+    });
   } finally {
-    wanted.forEach((path) => nativeAssetRequests.delete(path));
+    wanted.forEach((path) => {
+      if (nativeAssetRequests.get(path) === assetRequest) nativeAssetRequests.delete(path);
+    });
   }
-  if (loaded && epoch === generation && request === nativeSourcesRequest) updateNativePreviewSources();
 }
 // Paths whose image came from a draft (or that a draft now covers) are read
 // again after files change, so an upload, move or discard shows at once.
@@ -1880,8 +1874,10 @@ function deactivateNative() {
   nativeStyleFiles.clear();
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
+  nativeTextIndexing = undefined;
   nativeAssets.clear();
   nativeMissingAssets.clear();
+  nativeAssetRequests.clear();
   nativeBodyStyles = undefined;
   nativeSourcesRequest++;
   nativePreview?.deactivate();
@@ -1930,13 +1926,7 @@ async function loadNativeComponentStyles(tags: string[]) {
 // Every file on the branch, from the snapshot's recursive tree when it has
 // one, else from one recursive listing per top-level folder.
 async function listRepositoryFiles(repo: Repository, result: Snapshot): Promise<string[]> {
-  if (result.tree) return result.tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
-  const out = result.entries.filter((entry) => entry.type === "blob").map((entry) => entry.path);
-  for (const folder of result.entries.filter((entry) => entry.type === "tree" && entry.path !== "node_modules")) {
-    const listed = await api<Directory>("tree", { repo: repo.full_name, sha: folder.sha, recursive: "1" });
-    out.push(...listed.entries.filter((entry) => entry.type === "blob").map((entry) => `${folder.path}/${entry.path}`));
-  }
-  return out;
+  return repositoryIndex.listRepositoryFiles(api, repo, result);
 }
 
 // The site as edited, for Download site and the site's address: every file
@@ -2016,14 +2006,17 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   nativeStyleFileRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
+  nativeAssetRequests.clear();
   try {
-    // Every page, template and stylesheet, read in one round trip: links to
-    // a page are then found (and updated) everywhere when its URL changes.
+    // Required page, component and config sources render first; the rest of
+    // the repository's html/css link index follows in the background.
     // A file drafted as new has no blob; its draft is its source.
     const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : []);
     // The site settings too, for new pages' addresses and the agent context.
     const files = nativeFiles(scope);
-    const wanted = new Set([...nativeSitePaths(site), ...files.filter(isNativeTextFile).slice(0, 2000), ...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : [])]);
+    const currentFile = currentPath && nativeSitePaths(site).includes(currentPath) ? currentPath : site.routes[nativeDefaultRoute(site)];
+    const primary = new Set([currentFile, ...nativePageStylesheets(nativeEffectiveSource(currentFile, scope) ?? "", currentFile), ...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : [])]);
+    const wanted = new Set([...nativeSitePaths(site), ...primary]);
     const sources: { path: string; sha: string }[] = [];
     for (const path of wanted) {
       if (drafted.has(path)) continue;
@@ -2064,7 +2057,63 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   });
   updateAgentContext();
   void loadNativeAssets();
+  startNativeTextIndex(repo, site, scope, epoch, request);
   return true;
+}
+
+function nativeTextIndexScopeKey() {
+  return currentRepo && snapshot && nativeSite ? `${currentRepo.full_name}\n${snapshot.branch}\n${snapshot.commit}\n${nativeSourcesRequest}` : "";
+}
+
+function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, epoch: number, request: number) {
+  nativeTextIndexScope = nativeTextIndexScopeKey();
+  const commit = snapshot?.commit;
+  const live = () => epoch === generation && request === nativeSourcesRequest && currentRepo?.full_name === repo.full_name && snapshot?.commit === commit && nativeSite === site;
+  nativeTextIndexing = indexNativeTextFiles(repo, site, scope, live).catch((error) => {
+    if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
+    return false;
+  });
+}
+
+async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, live: () => boolean) {
+  const files = nativeFiles(scope).filter(isNativeTextFile).slice(0, 2000);
+  const wanted = files.filter((path) => !nativeBaseSources.has(path) && !(scope && draftStore().get(scope, path)?.baseSha === null));
+  const sources: { path: string; sha: string }[] = [];
+  for (const path of wanted) {
+    const draft = scope ? draftStore().get(scope, path) : undefined;
+    if (draft?.baseSha === null || draft?.deleted) continue;
+    const entry = draft?.deleted ? undefined : await findEntry(path);
+    if (!live() || nativeSite !== site) return false;
+    if (entry) sources.push({ path, sha: entry.sha });
+  }
+  const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
+  if (!live() || nativeSite !== site) return false;
+  let loaded = false;
+  for (const source of sources) {
+    if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path)) continue;
+    nativeBaseSources.set(source.path, contents[source.sha]);
+    loaded = true;
+  }
+  if (loaded) updateNativePreviewSources();
+  return true;
+}
+
+async function ensureNativeTextIndex() {
+  const before = nativeTextIndexScopeKey();
+  if (nativeTextIndexing && nativeTextIndexScope !== before) {
+    if (!currentRepo || !snapshot || !nativeSite) return "The repository changed meanwhile. Try again.";
+    startNativeTextIndex(currentRepo, nativeSite, draftScope(), generation, nativeSourcesRequest);
+  }
+  let ready = nativeTextIndexing ? await nativeTextIndexing : true;
+  if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
+  if (!ready && currentRepo && nativeSite) {
+    const repo = currentRepo, site = nativeSite, scope = draftScope(), epoch = generation, request = nativeSourcesRequest;
+    nativeTextIndexing = undefined;
+    startNativeTextIndex(repo, site, scope, epoch, request);
+    ready = await nativeTextIndexing!;
+    if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
+  }
+  return ready ? undefined : "The site's links could not be fully read. Refresh the repository and try again.";
 }
 
 
@@ -2215,49 +2264,13 @@ async function postApi<T>(
 // re-activating a native project all resolve from memory.
 const fileContents = new Map<string, Promise<string>>();
 const fileContentsLimit = 400;
-function rememberFile(key: string, content: Promise<string>) {
-  if (fileContents.size >= fileContentsLimit)
-    fileContents.delete(fileContents.keys().next().value!);
-  fileContents.set(key, content);
-  content.catch(() => {
-    if (fileContents.get(key) === content) fileContents.delete(key);
-  });
-  return content;
-}
 function readFile(repo: string, sha: string): Promise<string> {
-  const key = `${repo}\n${sha}`;
-  return (
-    fileContents.get(key) ??
-    rememberFile(
-      key,
-      api<{ content: string }>("file", { repo, sha }).then((file) => file.content),
-    )
-  );
+  return readFileText(api, fileContents, fileContentsLimit, repo, sha);
 }
 // Reads many blobs in one request; anything already cached or in flight is
 // reused rather than fetched twice.
 async function readFiles(repo: string, shas: string[]): Promise<Record<string, string>> {
-  const missing = [...new Set(shas)].filter((sha) => !fileContents.has(`${repo}\n${sha}`));
-  for (let start = 0; start < missing.length; start += MAX_BATCH_FILES) {
-    const chunk = missing.slice(start, start + MAX_BATCH_FILES);
-    const batch = api<FilesResult>("files", { repo, shas: chunk.join(",") });
-    void batch.catch(() => {});
-    for (const sha of chunk)
-      rememberFile(
-        `${repo}\n${sha}`,
-        batch.then((result) => {
-          if (typeof result.files[sha] !== "string") throw new Error("Could not read this file.");
-          return result.files[sha];
-        }),
-      );
-  }
-  const result: Record<string, string> = {};
-  await Promise.all(
-    [...new Set(shas)].map(async (sha) => {
-      result[sha] = await readFile(repo, sha);
-    }),
-  );
-  return result;
+  return readFileTexts(api, fileContents, fileContentsLimit, repo, shas);
 }
 
 function options(
@@ -2298,6 +2311,7 @@ function renderLogin(
   repositories = [];
   currentRepo = undefined;
   snapshot = undefined;
+  repositoryIndex.clear();
   app.className = "login-page";
   app.innerHTML = `
     <main class="login-card" aria-labelledby="login-title">
@@ -2727,6 +2741,8 @@ async function duplicateNativePage(file: string) {
 async function removeNativePagesTarget(target: NativePagesTarget) {
   const site = nativeSite;
   if (!target.file || !site || !confirmDialog) return;
+  const indexed = await ensureNativeTextIndex();
+  if (indexed) { errorMessage(new Error(indexed)); return; }
   const files = nativeFiles();
   const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
   const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== target.file);
@@ -2886,6 +2902,8 @@ async function readNativeRedirects(): Promise<string | undefined> {
 // redirects away from the new ones). The open page stays open where it
 // went. Undo right after takes it all back.
 async function changeNativeUrl(file: string, value: string, keep: boolean): Promise<string | undefined> {
+  const indexed = await ensureNativeTextIndex();
+  if (indexed) return indexed;
   const planned = planNativeUrlChange(file, value);
   if (!planned.ok) return planned.error === UNCHANGED_URL ? undefined : planned.error;
   const change = planned.value;
@@ -2951,6 +2969,8 @@ function nativeDropProblem(source: NativePagesTarget, parent: string): string | 
 // the old URL working: Move to… and a drop in the Pages tab.
 async function confirmNativeMove(source: NativePagesTarget, parent: string) {
   if (!source.file || !confirmDialog) return;
+  const indexed = await ensureNativeTextIndex();
+  if (indexed) { announce(indexed); errorMessage(new Error(indexed)); return; }
   const to = movedRoute(parent, source.route);
   const planned = planNativeUrlChange(source.file, to);
   if (!planned.ok) { announce(planned.error); errorMessage(new Error(planned.error)); return; }
@@ -3779,6 +3799,8 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
   const problem = moveProblem(source, to, operation);
   if (problem) return problem;
   if (to === source.path) return undefined;
+  const indexed = await ensureNativeTextIndex();
+  if (indexed) return indexed;
   const epoch = generation;
   let found: MovableFile[];
   try {
@@ -3943,6 +3965,8 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   if (target.gone) return `${target.path} is deleted already.`;
   const guarded = protectedProblem(target, "delete");
   if (guarded) { errorMessage(new Error(guarded)); announce(guarded); return guarded; }
+  const indexed = await ensureNativeTextIndex();
+  if (indexed) { errorMessage(new Error(indexed)); return indexed; }
   const epoch = generation;
   let found: MovableFile[];
   try {
@@ -4678,6 +4702,7 @@ async function refreshPublishedSnapshot(repo: string, branch: string, commit: st
     )
       return;
     snapshot = result;
+    repositoryIndex.seed(currentRepo, result);
     seeHead(result.commit);
     await findDeletedUpstream(epoch);
     if (epoch !== generation) return;
@@ -4685,6 +4710,7 @@ async function refreshPublishedSnapshot(repo: string, branch: string, commit: st
     element("revision").textContent = result.commit.slice(0, 7);
     element("revision").title = result.commit;
     renderFileTree();
+    if (nativeEngaged && nativeSite) startNativeTextIndex(currentRepo, nativeSite, draftScope(), generation, nativeSourcesRequest);
     status("Selected files saved to GitHub.");
   } catch (error) {
     if (epoch === generation) errorMessage(error);
@@ -4739,6 +4765,7 @@ async function loadSnapshot(
   fileGeneration++;
   clearError();
   snapshot = undefined;
+  repositoryIndex.clear();
   deletedUpstream = new Set();
   siteActions?.revalidate();
   openFolders.clear();
@@ -4763,6 +4790,7 @@ async function loadSnapshot(
       }));
     if (epoch !== generation) return;
     snapshot = result;
+    repositoryIndex.seed(repo, result);
     seeHead(result.commit);
     await findDeletedUpstream(epoch);
     if (epoch !== generation) return;
@@ -4820,6 +4848,7 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   );
   repositoryMenu?.setRepository(currentRepo);
   snapshot = undefined;
+  repositoryIndex.clear();
   setCurrentPage();
   branchSelect.disabled = true;
   refreshButton.disabled = true;
@@ -4916,6 +4945,7 @@ async function loadRepositories(prefetched?: Repository[]) {
   repositoryMenu?.setRepository();
   setCurrentPage();
   snapshot = undefined;
+  repositoryIndex.clear();
   repositorySelect.disabled = true;
   branchSelect.disabled = true;
   refreshButton.disabled = true;

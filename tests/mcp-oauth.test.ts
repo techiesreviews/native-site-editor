@@ -8,7 +8,8 @@ import {
   type OAuthClientProvider,
 } from "@modelcontextprotocol/client";
 import { editorTab, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
-import { redirectUriProblem } from "../worker/oauth.ts";
+import { handleOAuth, redirectUriProblem } from "../worker/oauth.ts";
+import { REGISTRATION_ROUTE } from "../worker/oauth-registration.ts";
 
 const callback = "https://client.example/oauth/callback";
 
@@ -69,6 +70,130 @@ test("redirect URIs are HTTPS or loopback HTTP", () => {
   assert.ok(redirectUriProblem("http://evil.example/cb"));
   assert.ok(redirectUriProblem("https://client.example/cb#fragment"));
   assert.ok(redirectUriProblem("javascript:alert(1)"));
+});
+
+// A fake SESSIONS namespace that answers the budget route with a fixed
+// decision and records every client PUT, so we can prove a denied or
+// unavailable limiter writes no client Durable Object at all.
+function registerWith(budget: "allow" | "deny" | "unavailable") {
+  const clientPuts: string[] = [];
+  const env = {
+    SESSIONS: {
+      idFromName: (name: string) => name,
+      get: (id: string) => ({
+        fetch: async (request: Request) => {
+          if (new URL(request.url).pathname === REGISTRATION_ROUTE) {
+            if (budget === "unavailable") return new Response(null, { status: 500 });
+            return Response.json({ allowed: budget === "allow", retryAfter: 60 });
+          }
+          if (request.method === "PUT" && id.startsWith("oauth-client:")) {
+            clientPuts.push(id);
+            return new Response(null, { status: 204 });
+          }
+          return new Response(null, { status: 404 });
+        },
+      }),
+    },
+  } as any;
+  const deps = {
+    session: async () => null,
+    html: (body: string) => new Response(body, { headers: { "Content-Type": "text/html" } }),
+    fetcher: fetch,
+  } as any;
+  const request = new Request(`${origin}/auth/mcp/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" },
+    body: JSON.stringify({ redirect_uris: ["https://client.example/cb"] }),
+  });
+  return { promise: handleOAuth(request, env, new URL(request.url), deps), clientPuts };
+}
+
+test("a denied limiter writes no client record and returns 429", async () => {
+  const { promise, clientPuts } = registerWith("deny");
+  const response = await promise;
+  assert.equal(response.status, 429);
+  assert.deepEqual(clientPuts, [], "no client Durable Object is written");
+});
+
+test("an unavailable limiter fails closed: no client record, 503", async () => {
+  const { promise, clientPuts } = registerWith("unavailable");
+  const response = await promise;
+  assert.equal(response.status, 503);
+  assert.deepEqual(clientPuts, [], "no client Durable Object is written");
+});
+
+test("an allowed limiter writes exactly one client record (control)", async () => {
+  const { promise, clientPuts } = registerWith("allow");
+  const response = await promise;
+  assert.equal(response.status, 201);
+  assert.equal(clientPuts.length, 1);
+});
+
+const gzip = (text: string) =>
+  new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+
+const oauthDeps = {
+  session: async () => null,
+  html: (body: string) => new Response(body, { headers: { "Content-Type": "text/html" } }),
+  fetcher: fetch,
+} as any;
+
+test("the token endpoint bounds a streamed over-limit form through handleOAuth and cancels it early", async () => {
+  let pulled = 0;
+  const chunk = new Uint8Array(1024).fill(0x61); // 'a'
+  const body = new ReadableStream({
+    pull(controller) {
+      pulled++;
+      if (pulled > 100_000) controller.close();
+      else controller.enqueue(chunk);
+    },
+  });
+  const request = new Request(`${origin}/auth/mcp/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    duplex: "half",
+  } as RequestInit);
+  const response = await handleOAuth(request, {} as any, new URL(request.url), oauthDeps);
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error, "invalid_request");
+  assert.ok(pulled < 10_000, `the over-limit body is cancelled early, not read in full (pulled ${pulled})`);
+});
+
+test("the token endpoint bounds a gzipped over-limit form", async () => {
+  const { worker } = await startWorker();
+  try {
+    const response = await worker.dispatchFetch(`${origin}/auth/mcp/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "Content-Encoding": "gzip" },
+      body: await gzip("grant_type=authorization_code&code=" + "a".repeat(20_000)),
+    });
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).error, "invalid_request");
+  } finally {
+    await worker.dispose();
+  }
+});
+
+test("the consent endpoint bounds a gzipped over-limit form with an error page, not the generic handler", async () => {
+  const { worker } = await startWorker();
+  try {
+    const response = await worker.dispatchFetch(`${origin}/auth/mcp/authorize`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Encoding": "gzip",
+      },
+      body: await gzip("request=" + "a".repeat(8_000)),
+      redirect: "manual",
+    });
+    assert.equal(response.status, 413);
+    assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(await response.text(), /too large/);
+  } finally {
+    await worker.dispose();
+  }
 });
 
 test("an MCP client connects by OAuth: discovery, registration, sign-in and consent, PKCE token exchange, then the site tools", async () => {

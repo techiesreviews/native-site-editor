@@ -18,7 +18,8 @@
 import { createGrant } from "./agent-context";
 import type { Env, StoredSession } from "./app";
 import { GitHub, HttpError } from "./github";
-import { requestJson } from "./http";
+import { requestJson, requestText } from "./http";
+import { NO_IP_BUCKET, REGISTRATION_BUDGET, REGISTRATION_ROUTE } from "./oauth-registration";
 import { escapeHtml } from "./owner-setup";
 
 export const OAUTH_SCOPE = "site";
@@ -215,6 +216,33 @@ async function register(request: Request, env: Env) {
   const name = typeof body.client_name === "string" && body.client_name.trim()
     ? body.client_name.trim().replace(/[\u0000-\u001f]/g, "").slice(0, 100)
     : "MCP client";
+  // Rate-limit accepted registrations before creating any client record, so a
+  // flood cannot fill storage with 180-day client Durable Objects. The IP comes
+  // only from Cloudflare's trusted CF-Connecting-IP, hashed before storage;
+  // X-Forwarded-For is ignored, and a missing header shares one fallback bucket.
+  const ip = request.headers.get("CF-Connecting-IP");
+  const ipHash = ip ? hex(await sha256(ip)) : NO_IP_BUCKET;
+  let admit: { allowed: boolean; retryAfter: number };
+  try {
+    const response = await env.SESSIONS.get(env.SESSIONS.idFromName(REGISTRATION_BUDGET)).fetch(
+      new Request(`https://session.internal${REGISTRATION_ROUTE}`, { method: "POST", body: JSON.stringify({ ipHash }) }),
+    );
+    if (!response.ok) throw new Error("registration budget unavailable");
+    admit = (await response.json()) as { allowed: boolean; retryAfter: number };
+  } catch {
+    // Fail closed: if the limiter cannot be consulted, register nothing.
+    return json(
+      { error: "temporarily_unavailable", error_description: "Registration is temporarily unavailable. Try again shortly." },
+      503,
+      { "Retry-After": "60" },
+    );
+  }
+  if (!admit.allowed)
+    return json(
+      { error: "too_many_requests", error_description: "Too many client registrations. Try again later." },
+      429,
+      { "Retry-After": String(admit.retryAfter) },
+    );
   const client: OAuthClient = {
     kind: "oauth-client",
     clientId: `mcp_${randomHex(16)}`,
@@ -333,8 +361,13 @@ async function consent(request: Request, env: Env, url: URL, deps: OAuthDeps) {
     return errorPage(deps, "Request refused", "This request did not come from the editor's consent page.", 403);
   if (!request.headers.get("Content-Type")?.startsWith("application/x-www-form-urlencoded"))
     return errorPage(deps, "Request refused", "Send the consent form.", 415);
-  const text = await request.text();
-  if (text.length > 4096) return errorPage(deps, "Request refused", "The form is too large.", 413);
+  let text: string;
+  try {
+    text = await requestText(request, 4096);
+  } catch (error) {
+    const status = error instanceof HttpError ? error.status : 400;
+    return errorPage(deps, "Request refused", error instanceof HttpError ? error.message : "The form is invalid.", status);
+  }
   const form = new URLSearchParams(text);
   const nonce = form.get("request") ?? "";
   const user = await deps.session(request);
@@ -372,8 +405,13 @@ async function token(request: Request, env: Env) {
   const type = request.headers.get("Content-Type") ?? "";
   let form: URLSearchParams;
   if (type.startsWith("application/x-www-form-urlencoded")) {
-    const text = await request.text();
-    if (text.length > 8192) return oauthError("invalid_request", "The request is too large.");
+    let text: string;
+    try {
+      text = await requestText(request, 8192);
+    } catch (error) {
+      const status = error instanceof HttpError ? error.status : 400;
+      return oauthError("invalid_request", error instanceof HttpError ? error.message : "The request is invalid.", status === 413 || status === 415 ? status : 400);
+    }
     form = new URLSearchParams(text);
   } else if (type.startsWith("application/json")) {
     const body = await requestJson(request, 8192).catch(() => undefined);

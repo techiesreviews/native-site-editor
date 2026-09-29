@@ -1,60 +1,50 @@
-# Astro Site Editor
+# Native Site Editor
 
-Language for a visual editor that works with existing Astro projects and external coding agents.
+Language for a visual editor of native websites and their external coding-agent workflows.
 
 ## Language
 
-**User Editor**:
-The visual editing experience for site owners and end users to edit content and build pages from existing components and their available variants.
+**Native site**:
+A website made of HTML, CSS, browser JavaScript, and assets that a static host can serve without a build.
 
-**Developer access**:
-A deliberate entry from the visual editor into Astro and CSS source editing, outside the ordinary User Editor interface.
+**Page**:
+A complete HTML document at its own address within a site.
 
-**Prepared component**:
-An ordinary Astro component whose editable fields and available variants have been defined by a developer or agent for the User Editor.
+**Component**:
+A reusable custom element with a shared template and optional styles, used by one or more pages or components.
 
 **Slot**:
-A designated place in a component where users can add and arrange components through the User Editor.
+A place in a component where a page supplies content, with optional fallback content from the component.
 
-**Atom**:
-A small component based on a simple HTML element, such as a button, text, or heading. In the current User Editor model, structural containers such as sections and articles are not atoms.
-_Avoid_: Small component (when a more precise term is needed)
+**Section**:
+A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
 **Edit bar**:
-The contextual editing controls anchored to the current canvas selection.
+The contextual editing controls anchored to the selected element in the preview.
 
-**Content collection**:
-A group of entries of the same content type, such as blog posts. An entry's content can appear in both a listing card and its own page.
-
-**Live agent collaboration**:
-People and agents editing the same page in a shared live session, with participants seeing each other's changes as they happen.
-
-**External agent workflow**:
-An agent working directly on the site's repository through a coding harness, with changes reconciled with the editor's work.
-
-**Editor configuration directory**:
-An obvious editor-owned directory at the project root containing all editor-specific configuration. It can be removed when the owner wants to continue using Astro without the editor.
-
-**Live branch**:
-The branch whose changes are intended to publish to the live website.
-
-**Experiment branch**:
-A separate branch for trying changes without publishing them to the live website.
+**Source editor**:
+The code panes for editing a site's files directly, alongside the visual preview.
 
 **Editing preview**:
-The website view inside the editor, intended to faithfully represent how the current edits will look on the published site.
+The view of the current page and its unsaved changes inside the editor. It renders supported HTML, CSS, and components without running the site's own scripts.
 
-**Preview branch**:
-The editor-owned branch `editor/<branch>` that receives applied edits made on the live branch. It is built and previewed like any branch, may be rewritten by the editor, and is not a base for external work.
+**Draft**:
+An unsaved file change in the editor, belonging to one account, repository, and branch.
 
-**Apply**:
-Completing one visual edit. On the live branch it is committed to the preview branch after the quiet period; on an experiment branch it is committed to that branch directly.
-
-**Quiet period**:
-The 10–20 second pause without further edits after which the editor commits the accumulated edits as one commit.
+**Save to GitHub**:
+Saving selected draft changes together as one commit on the selected branch, with overlapping upstream changes requiring review.
 
 **Publish**:
-Fast-forwarding the live branch to the preview branch's commit. It fails, rather than forcing, when the live branch has moved.
+Making a saved version of the site available at its public address through the site's host.
 
 **Change status**:
-Saved (committed), Building (workflow running), Live (deployed revision matches) or Failed, shown for the current change.
+The state of a saved change: Saved, Building, Live, or Failed, according to the available deployment information.
+
+**Site settings**:
+The site's name and public address used by the editor when creating and updating page details.
+
+**Agent connection**:
+An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the repository shown by the sharing editor tab; the user reviews and saves changes.
+
+**External agent workflow**:
+An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.

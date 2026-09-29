@@ -261,6 +261,27 @@ test("renaming a single-file page changes its URL, updates its links and keeps i
     expect(await draft(page, path), path).toBeUndefined();
 });
 
+test("after a save refreshes the snapshot, another rename rebuilds the link index gate", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530, "work/notes.html");
+  await expand(page, "work");
+  await row(page, "notes.html").focus();
+  await page.keyboard.press("F2");
+  await page.keyboard.type("journal");
+  await page.keyboard.press("Enter");
+  await page.getByRole("dialog", { name: "Rename work/notes.html to work/journal.html?" }).getByRole("button", { name: "Rename" }).click();
+  await saveAll(page);
+  await expect(status(page)).toContainText("Selected files saved to GitHub", { timeout: 30_000 });
+  await openFiles(page);
+  await row(page, "journal.html").focus();
+  await page.keyboard.press("F2");
+  await explorer(page).getByRole("textbox", { name: "New name for work/journal.html" }).fill("log.html");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Rename work/journal.html to work/log.html?" });
+  await expect(dialog).toContainText("Its URL changes from /work/journal.html to /work/log.html.");
+  await dialog.getByRole("button", { name: "Rename" }).click();
+  await expect(status(page)).toContainText("Renamed work/journal.html to work/log.html");
+});
+
 test("components are deleted and renamed like any folder, saved in one commit; the home page is kept", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
   await expand(page, "components");

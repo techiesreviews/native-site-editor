@@ -2,6 +2,7 @@ import type { AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
+import { admitRegistration, isBudgetKey, pruneRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import type { GitHubAppConfig } from "./owner-setup";
 
 export class SessionStore extends DurableObject {
@@ -21,6 +22,16 @@ export class SessionStore extends DurableObject {
     }
     if (url.pathname === "/agent-draft")
       return readDraft(storage, url.searchParams.get("hash") ?? "");
+    // Anonymous OAuth client registration budgets, on a fixed-name instance
+    // (worker/oauth-registration.ts). One transaction keeps counts exact.
+    if (url.pathname === REGISTRATION_ROUTE) {
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+      const { ipHash } = (await request.json()) as { ipHash: unknown };
+      if (!isBudgetKey(ipHash)) return new Response(null, { status: 400 });
+      return this.ctx.blockConcurrencyWhile(async () =>
+        Response.json(await admitRegistration(storage, ipHash, Date.now(), (at) => storage.setAlarm(at))),
+      );
+    }
     if (request.method === "PUT") {
       if (url.pathname === "/config") {
         return this.ctx.blockConcurrencyWhile(async () => {
@@ -57,6 +68,7 @@ export class SessionStore extends DurableObject {
   }
   async alarm() {
     await clearHub(this.ctx.storage);
+    await pruneRegistration(this.ctx.storage, Date.now(), (at) => this.ctx.storage.setAlarm(at));
   }
 }
 
