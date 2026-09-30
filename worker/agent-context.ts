@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { GitHub, HttpError } from "./github";
-import { AGENT_TEXT_LIMIT, textBytes, textHash, type AgentCommand } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, REQUEST_HTML_LIMIT, textBytes, textHash, type AgentCommand } from "../shared/agent";
 import type { EditorContext } from "../shared/types";
 import type { Env, StoredSession } from "./app";
+import type { requestSummary } from "./agent-requests";
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -20,6 +21,22 @@ const path = z
 const route = z.string().max(1024).regex(/^\/(?:[\w.-]+\/)*(?:[\w.-]+\.html)?$/);
 const outlineId = z.string().max(320).regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/);
 const short = (max: number) => z.string().max(max);
+/** An element as the tab describes it (shared/agent.ts `AgentElement`). */
+export const elementSchema = z.object({
+  file: path,
+  route: route.optional(),
+  id: outlineId,
+  tag: short(100),
+  text: short(1000),
+  selector: short(2000).optional(),
+  host: z.object({ tag: short(100), selector: short(2000) }).optional(),
+  html: short(REQUEST_HTML_LIMIT + 16).optional(),
+  htmlClipped: z.boolean().optional(),
+  lines: z.object({ start: position, end: position }).optional(),
+  component: z
+    .object({ tag: short(100), in: z.enum(["instance", "slot", "template"]), slot: short(100).optional() })
+    .optional(),
+});
 const schema = z.object({
   repository: z.object({
     id: z.number().int().positive(),
@@ -87,9 +104,7 @@ const schema = z.object({
     .object({
       openFile: path.nullable(),
       openRoute: route.nullable(),
-      selection: z
-        .object({ file: path, id: outlineId, tag: short(100), text: short(200) })
-        .nullable(),
+      selection: elementSchema.nullable(),
       components: z
         .array(
           z.object({
@@ -194,6 +209,8 @@ export interface AgentHub {
   /** The tab that reported the context; only it applies commands. */
   tabId?: string;
   commands?: AgentCommand[];
+  /** The requests to agents, when read with them (worker/agent-store.ts `hubView`). */
+  requests?: ReturnType<typeof requestSummary>[];
 }
 
 function durable(env: Env, name: string) {
@@ -299,14 +316,15 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
 
 /**
  * The session's hub: with the context the tab shared (unless `context` is
- * false), and with `texts` each pending change's text, for the tab.
+ * false), with `texts` each pending change's text, for the tab, and with
+ * `requests` the requests to agents.
  */
 export async function getHub(
   env: Env,
   sessionId: string,
-  options: { context?: boolean; texts?: boolean } = {},
+  options: { context?: boolean; texts?: boolean; requests?: boolean } = {},
 ): Promise<AgentHub | undefined> {
-  const query = `${options.context === false ? "context=0&" : ""}${options.texts ? "texts=1" : ""}`;
+  const query = `${options.context === false ? "context=0&" : ""}${options.texts ? "texts=1&" : ""}${options.requests ? "requests=1" : ""}`;
   const response = await durable(env, `agent-hub:${sessionId}`).fetch(
     new Request(`https://session.internal/?${query}`),
   );

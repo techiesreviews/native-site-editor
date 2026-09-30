@@ -252,3 +252,35 @@
 .edit-bar__popover.is-uploading {
   cursor: progress;
 }
+/* Ask agent: a message box under the bar. */
+.edit-bar__ask[aria-expanded="true"] {
+  background: var(--edit-bar-active);
+  color: var(--edit-bar-on-active);
+}
+.edit-bar__popover--prompt {
+  max-height: none;
+}
+.edit-bar__prompt-input {
+  width: 280px;
+  min-height: 60px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.edit-bar__prompt-hint,
+.edit-bar__prompt-error {
+  margin: 2px;
+  font-size: 11px;
+}
+.edit-bar__prompt-hint {
+  color: var(--muted);
+}
+.edit-bar__prompt-error {
+  color: var(--warning-fg);
+  font-weight: 620;
+}
+.edit-bar__prompt-error[hidden] {
+  display: none;
+}
+.edit-bar__popover.is-sending {
+  cursor: progress;
+}

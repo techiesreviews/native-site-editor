@@ -426,3 +426,87 @@ test("an optional slot's fallback hides once the page removes what filled it", a
     await client.close();
   }
 });
+
+test("Ask agent: a request about an element in the preview reaches the agent with its context, and its reply shows on the element's pin", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  const heading = frame(page).locator(".hero h1");
+  // Without an agent there is no one to ask.
+  await heading.click();
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Ask agent" })).toHaveCount(0);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  const pins = page.locator(".agent-pin");
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    // The agent sees the selection whole.
+    await heading.click();
+    await expect.poll(async () => (await call("get_selection")).element?.selector).toBe("h1");
+    const selected = (await call("get_selection")).element;
+    expect(selected).toMatchObject({ file: indexPath, route: "/", id: "1.0.0", tag: "h1", lines: { start: 17, end: 17 } });
+    expect(selected.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
+
+    // Escape cancels; Shift+Enter is a new line and Enter sends.
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    const box = page.getByRole("textbox", { name: "Ask agent" });
+    await expect(box).toBeFocused();
+    await box.fill("Never mind");
+    await page.keyboard.press("Escape");
+    await expect(box).toHaveCount(0);
+    await expect(bar.getByRole("button", { name: "Ask agent" })).toBeFocused();
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Make this heading friendlier");
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("Keep it short");
+    await page.keyboard.press("Enter");
+    await expect(box).toHaveCount(0);
+    await expect(pins).toHaveCount(1);
+    await expect(pins.first()).toHaveText("1");
+    await expect(pins.first()).toHaveAttribute("data-state", "open");
+
+    // A second one, about a card's slotted text, before the agent looks.
+    await frame(page).locator("project-card").nth(1).locator('p[slot="body"]').click();
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Is this sentence true?");
+    await page.keyboard.press("Enter");
+    await expect(pins).toHaveCount(2);
+
+    // The agent gets both, with where they are and what they are.
+    const { requests } = await call("wait_for_requests", { waitSeconds: 10 });
+    expect(requests.map((item: { text: string }) => item.text)).toEqual(["Make this heading friendlier\nKeep it short", "Is this sentence true?"]);
+    const [first, second] = requests;
+    expect(first.element).toMatchObject({ file: indexPath, route: "/", id: "1.0.0", tag: "h1", selector: "h1", lines: { start: 17, end: 17 } });
+    expect(first.element.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
+    expect(second.element).toMatchObject({ file: indexPath, tag: "p", component: { tag: "project-card", in: "slot", slot: "body" } });
+    expect(second.element.text).toContain("header and footer are custom elements");
+    await expect(page.locator('.agent-pin[data-state="seen"]')).toHaveCount(2);
+
+    // It edits the heading, and says so; the pin shows it.
+    const home = await call("read_file", { path: indexPath });
+    const edited = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Hello there" }], requestId: "friendlier" });
+    expect(edited.state).toBe("applied");
+    await expect(heading).toHaveText("Hello there");
+    await call("reply_to_request", { request: first.id, status: "done", message: "Changed the heading to Hello there.", requestIds: ["friendlier"] });
+    await call("reply_to_request", { request: second.id, status: "answered", message: "Yes: both are components." });
+    const done = page.locator('.agent-pin[data-state="done"]');
+    await expect(done).toHaveCount(1);
+    await expect(page.locator('.agent-pin[data-state="answered"]')).toHaveCount(1);
+    await done.click();
+    const card = page.getByRole("dialog", { name: "Request 1" });
+    await expect(card).toContainText("Make this heading friendlier");
+    await expect(card).toContainText("Changed the heading to Hello there.");
+    await card.getByRole("button", { name: "Clear" }).click();
+    await expect(pins).toHaveCount(1);
+    await expect.poll(async () => (await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length).toBe(0);
+    // The pins are the editor's: nothing of them is in the page's draft.
+    expect((await draft(page, indexPath)).content).not.toContain("agent-pin");
+  } finally {
+    await client.close();
+  }
+});

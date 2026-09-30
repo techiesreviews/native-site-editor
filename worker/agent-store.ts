@@ -2,12 +2,15 @@
 // browser tests' fake server runs the same code): the hub under "session",
 // the context the tab last shared under "context", and draft texts by
 // content hash under "draft:<hash>" (UTF-8 bytes), listed with their sizes
-// under "drafts". A hub operation rewrites only the small hub, and each
-// draft is limited on its own (AGENT_TEXT_LIMIT), not by how many there are.
-import { AGENT_TEXT_LIMIT, textHash } from "../shared/agent";
+// under "drafts", and the user's requests to agents under "requests"
+// (worker/agent-requests.ts). A hub operation rewrites only the small hub,
+// and each draft is limited on its own (AGENT_TEXT_LIMIT), not by how many
+// there are.
+import { AGENT_TEXT_LIMIT, textHash, type AgentRequest } from "../shared/agent";
 import type { EditorContext } from "../shared/types";
 import type { AgentHub } from "./agent-context";
 import { agentOperation, newHub } from "./agent-operations";
+import { isRequestAction, requestOperation, requestSummary } from "./agent-requests";
 import { HttpError } from "./github";
 
 /** The Durable Object storage calls the hub makes. */
@@ -59,7 +62,7 @@ async function collect(storage: HubStorage, hub: AgentHub, context: EditorContex
 /** Removes the hub and all it stored (the session ended, or the hub expired). */
 export async function clearHub(storage: HubStorage) {
   const index = (await storage.get<Index>("drafts")) ?? {};
-  const keys = ["session", "context", "drafts", ...Object.keys(index).map(draftKey)];
+  const keys = ["session", "context", "drafts", "requests", ...Object.keys(index).map(draftKey)];
   for (let at = 0; at < keys.length; at += BATCH) await storage.delete(keys.slice(at, at + BATCH));
 }
 
@@ -79,6 +82,12 @@ export async function hubOperation(storage: HubStorage, action: any, setAlarm: (
   const type = action?.type;
   const inline = hub.context !== undefined;
   try {
+    // Requests are a list of their own; the hub stays as it is.
+    if (isRequestAction(type)) {
+      const { list, changed, result } = requestOperation((await storage.get<AgentRequest[]>("requests")) ?? [], action);
+      if (changed) await storage.put({ requests: list });
+      return Response.json(result);
+    }
     // Only these read the context; the rest leave it stored as it is.
     if (type === "queue" || type === "pause") hub.context = await storedContext(storage, hub);
     let text: { hash: string; bytes: Uint8Array } | undefined;
@@ -153,11 +162,14 @@ export async function readDraft(storage: HubStorage, hash: string) {
 }
 
 /**
- * The hub as read: with its context (unless `context=0`), and with
- * `texts=1` each pending change's text filled in, for the tab to apply.
+ * The hub as read: with its context (unless `context=0`), with `texts=1`
+ * each pending change's text filled in, for the tab to apply, and with
+ * `requests=1` the requests to agents, without their elements' source.
  */
 export async function hubView(storage: HubStorage, hub: AgentHub, url: URL): Promise<AgentHub> {
   const view: AgentHub = { ...hub };
+  if (url.searchParams.get("requests") === "1")
+    view.requests = ((await storage.get<AgentRequest[]>("requests")) ?? []).map(requestSummary);
   if (url.searchParams.get("context") === "0") delete view.context;
   else view.context = await storedContext(storage, hub);
   if (url.searchParams.get("texts") === "1" && hub.commands) {

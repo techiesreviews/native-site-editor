@@ -1,0 +1,176 @@
+/* Pins on the elements of requests to agents, over the native preview
+   frame, under the edit bar. Open requests are outlined, one an agent has
+   taken is filled in the action colour, done is green with a check, an
+   answer is a speech mark; a pin whose element is gone is dashed. */
+.agent-pins {
+  position: absolute;
+  z-index: 25;
+  overflow: hidden;
+  pointer-events: none;
+}
+.agent-pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  min-width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 2px solid var(--primary);
+  border-radius: 11px 11px 11px 3px;
+  padding: 0 5px;
+  background: var(--surface-raised);
+  color: var(--primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 6px var(--semantic-shadow);
+}
+.agent-pin[hidden] {
+  display: none;
+}
+.agent-pin[data-state="seen"] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.agent-pin[data-state="done"] {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: #fff;
+}
+.agent-pin[data-state="done"]::after {
+  content: " ✓";
+  white-space: pre;
+}
+.agent-pin[data-state="answered"] {
+  border-color: var(--success-fg);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.agent-pin[data-state="answered"]::after {
+  content: " …";
+  white-space: pre;
+}
+.agent-pin.is-detached {
+  border-style: dashed;
+  opacity: 0.75;
+}
+.agent-pin:hover,
+.agent-pin[aria-expanded="true"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.agent-pin:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Requests on other pages, or whose element is not on the page shown. */
+.agent-pins__tray {
+  position: absolute;
+  z-index: 26;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--surface-toolbar);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  transform: translate(-100%, -100%);
+  box-shadow: var(--shadow);
+}
+.agent-pins__tray[hidden] {
+  display: none;
+}
+.agent-pins__tray:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* A request opened from its pin or the tray. */
+.agent-pin-card {
+  position: absolute;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 300px;
+  max-width: calc(100% - 16px);
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+.agent-pin-card[hidden] {
+  display: none;
+}
+.agent-pin-card__request + .agent-pin-card__request {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.agent-pin-card p {
+  margin: 0 0 6px;
+}
+.agent-pin-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.agent-pin-card__number {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--primary);
+  border-radius: 9px;
+  padding: 0 4px;
+  color: var(--primary);
+  font-weight: 700;
+}
+.agent-pin-card__number--seen {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.agent-pin-card__number--done {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: #fff;
+}
+.agent-pin-card__number--answered {
+  border-color: var(--success-fg);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.agent-pin-card__where {
+  margin-left: auto;
+  font-family: var(--font-mono, monospace);
+  font-weight: 400;
+}
+.agent-pin-card__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-pin-card__reply {
+  border-left: 3px solid var(--color-success);
+  padding-left: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-pin-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

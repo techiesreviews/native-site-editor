@@ -11,8 +11,8 @@ import {
   type WorkspaceLocation,
 } from "./workspace-state";
 import { createAgentMenu } from "./components/agent-menu";
-import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
-import type { AgentCommand } from "../shared/agent";
+import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
+import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
@@ -293,6 +293,7 @@ function mountWorkspace() {
       const outcome = gap && lastNativeSelection ? moveNativeSectionTo(lastNativeSelection, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
     },
+    onDismissRequest: (id) => void agentMenu?.dismiss(id),
   });
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag))),
@@ -1214,6 +1215,30 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
     });
   }
+  // Ask agent: a request about this element for a connected agent, pinned on it.
+  const menu = agentMenu;
+  if (node && menu?.connected() && nativeSite) {
+    const site = nativeSite;
+    controls.push({
+      kind: "prompt",
+      label: "Ask agent",
+      title: "Ask the connected agent to do something with this element",
+      placeholder: `What should the agent do with this ${kind.toLowerCase()}?`,
+      hint: "Enter sends · Shift+Enter for a new line · Esc cancels",
+      maxLength: REQUEST_TEXT_LIMIT,
+      onSend: async (text) => {
+        const about = agentElement({ ...selection, route: preview.route() }, site, nativeSources()[path]);
+        if (!about) return "This element cannot be pointed out to an agent.";
+        try {
+          await menu.ask(text, about);
+        } catch (error) {
+          return (error as Error).message;
+        }
+        announce("Sent to the agent");
+        return undefined;
+      },
+    });
+  }
   const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
   preview.showEditBar(model, rect);
 }
@@ -1413,6 +1438,8 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 async function selectNativeSource(selection: NativePreviewSelection) {
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
+  // Agents see the selection (get_selection).
+  if (reveal) updateAgentContext();
   pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
   if (!selection.path) nativePreview?.hideEditBar();
   if (!reveal) {
@@ -4454,7 +4481,7 @@ async function agentContext(): Promise<SharedContext | undefined> {
       source: (path) => nativeEffectiveSource(path, scope),
       exists: (path) => pathNow(path) === "file",
       openFile: currentPath,
-      selection: lastNativeSelection,
+      selection: lastNativeSelection && { ...lastNativeSelection, route: nativePreview?.route() },
     },
   });
 }
@@ -5193,6 +5220,9 @@ async function start() {
         repository: agentRepository,
         context: agentContext,
         onCommand: applyAgentSiteCommand,
+        // Ask agent shows in the edit bar while an agent is connected.
+        onConnection: () => { if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
+        onRequests: (requests) => nativePreview?.setRequests(requests),
       });
       element("agent-menu").append(agentMenu.root);
       await loadRepositories(info.repositories ?? undefined);

@@ -5,13 +5,13 @@
 // with Undo. main.ts supplies the editor's state and actions.
 import { expandStyleImports } from "../shared/css-imports";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
-import { locateNativeElementRange, parseMarked } from "./native-source-location";
+import { locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 
@@ -89,6 +89,80 @@ function describeSection(el: Element, node: number[], sectionTags: ReadonlySet<s
 // Outlines are recomputed only for pages whose source changed.
 const outlineCache = new Map<string, { source: string; tags: string; outline: AgentPageOutline }>();
 
+// ---- Elements, as agents are shown them ----
+
+/** An element of the preview: the selection, or the one Ask agent is about. */
+export interface ElementInput {
+  path: string;
+  node?: number[];
+  tag: string;
+  text: string;
+  /** The page the preview shows. */
+  route?: string;
+  selector?: string;
+  host?: { tag: string; selector: string };
+}
+
+const lineAt = (source: string, offset: number) => {
+  let line = 1;
+  for (let at = source.indexOf("\n"); at >= 0 && at < offset; at = source.indexOf("\n", at + 1)) line++;
+  return line;
+};
+
+/**
+ * The element as an agent is told it (get_selection, a request): where it
+ * is (file, page, id, selector), its source and lines in the file (clipped
+ * at REQUEST_HTML_LIMIT), the component it belongs to, and its text.
+ * `source` is the file's text as edited.
+ */
+export function agentElement(input: ElementInput, site: NativeSite, source: string | undefined): AgentElement | undefined {
+  if (!input.node?.length) return undefined;
+  const pageRoute = Object.entries(site.routes).find(([, file]) => file === input.path)?.[0];
+  const route = input.route && (!pageRoute || site.routes[input.route] === input.path) ? input.route : pageRoute ?? input.route;
+  const element: AgentElement = {
+    file: input.path,
+    ...(route ? { route } : {}),
+    id: outlineId(input.node),
+    tag: input.tag.slice(0, 100),
+    text: clip(input.text, 1000),
+    ...(input.selector ? { selector: input.selector.slice(0, 2000) } : {}),
+    ...(input.host ? { host: input.host } : {}),
+  };
+  if (source === undefined) return element;
+  const range = locateNativeElementRange(source, input.node);
+  const start = range?.start ?? locateNativeElement(source, input.node)?.start;
+  const end = range?.end ?? locateNativeElement(source, input.node)?.end;
+  if (start !== undefined && end !== undefined) {
+    const html = source.slice(start, end);
+    element.html = html.length > REQUEST_HTML_LIMIT ? html.slice(0, REQUEST_HTML_LIMIT) : html;
+    if (html.length > REQUEST_HTML_LIMIT) element.htmlClipped = true;
+    element.lines = { start: lineAt(source, start), end: lineAt(source, Math.max(start, end - 1)) };
+  }
+  // The elements from the file's root down to this one.
+  const { root } = parseMarked(source);
+  const chain: Element[] = [];
+  let parent: ParentNode = root;
+  for (const index of input.node) {
+    const child: Element | undefined = parent.children[index];
+    if (!child) break;
+    chain.push(child);
+    parent = child;
+  }
+  const template = Object.entries(site.components).find(([, file]) => file === input.path)?.[0];
+  if (template) {
+    const slot = [...chain].reverse().find((el) => el.localName === "slot");
+    element.component = { tag: template, in: "template", ...(slot ? { slot: slot.getAttribute("name") ?? "" } : {}) };
+  } else if (chain.length) {
+    const self = chain[chain.length - 1];
+    if (Object.hasOwn(site.components, self.localName)) element.component = { tag: self.localName, in: "instance" };
+    else {
+      const at = chain.map((el) => Object.hasOwn(site.components, el.localName)).lastIndexOf(true);
+      if (at >= 0) element.component = { tag: chain[at].localName, in: "slot", slot: chain[at + 1]?.getAttribute("slot") ?? "" };
+    }
+  }
+  return element;
+}
+
 // ---- The context ----
 
 export interface AgentSiteInput {
@@ -108,7 +182,7 @@ export interface AgentSiteInput {
     source(path: string): string | undefined;
     exists(path: string): boolean;
     openFile?: string;
-    selection?: { path: string; node?: number[]; tag: string; text: string };
+    selection?: ElementInput;
   };
 }
 
@@ -218,9 +292,7 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<SharedCo
   context.site = {
     openFile: native.openFile ?? null,
     openRoute: openRoute ?? null,
-    selection: selection?.node?.length
-      ? { file: selection.path, id: outlineId(selection.node), tag: selection.tag.slice(0, 100), text: clip(selection.text, 200) }
-      : null,
+    selection: (selection && agentElement(selection, site, native.source(selection.path))) ?? null,
     components,
     stylesheets: linkedStylesheets(site, native.source),
     settings: native.exists(NATIVE_CONFIG_PATH) ? { file: NATIVE_CONFIG_PATH, ...clipSettings(nativeSiteSettings(native.source(NATIVE_CONFIG_PATH))) } : null,

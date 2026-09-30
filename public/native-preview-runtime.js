@@ -545,6 +545,7 @@
     drawBox(hoverBox, hovered);
     drawBox(selectBox, selected);
     scheduleRect();
+    schedulePins();
   }
 
   // Places a section can be inserted: every gap between the children of a
@@ -779,6 +780,99 @@
       if (key === lastRect) return;
       lastRect = key;
       emit("selection-rect", { rect: rect });
+    });
+  }
+
+  // A CSS selector that matches `el` alone among the elements of its root
+  // (the page, or the component instance's shadow root): its id when that is
+  // unique, else tag names with :nth-of-type from it upwards until one is.
+  function uniqueSelector(el) {
+    var root = el.getRootNode();
+    var scope = root instanceof ShadowRoot ? root : pageEl;
+    function unique(selector) {
+      try { return scope.querySelectorAll(selector).length === 1; } catch (_) { return false; }
+    }
+    var parts = [];
+    for (var current = el; current instanceof Element && current !== pageEl; current = current.parentElement) {
+      if (current.id && unique("#" + CSS.escape(current.id))) {
+        parts.unshift("#" + CSS.escape(current.id));
+        break;
+      }
+      var part = current.localName;
+      var siblings = current.parentNode ? current.parentNode.children : [];
+      var same = 0, index = 0;
+      for (var i = 0; i < siblings.length; i++) {
+        if (siblings[i].localName !== current.localName) continue;
+        same++;
+        if (siblings[i] === current) index = same;
+      }
+      if (same > 1) part += ":nth-of-type(" + index + ")";
+      parts.unshift(part);
+      if (unique(parts.join(" > "))) break;
+    }
+    return parts.join(" > ");
+  }
+
+  // Where an element sits for an agent: its selector, and for one inside a
+  // component's template the instance it renders in.
+  function elementLocator(el) {
+    var out = { selector: uniqueSelector(el) };
+    var root = el.getRootNode();
+    if (root instanceof ShadowRoot && root.host) out.host = { tag: root.host.localName, selector: uniqueSelector(root.host) };
+    return out;
+  }
+
+  // Pins: the editor's markers on the elements of requests to agents
+  // (src/components/agent-pins.ts). Each is found by its element-child path
+  // in its file, else by its selector, in the instance `host` names for a
+  // component's template; the editor draws them over the frame from the
+  // frame-viewport rectangles sent here (null: not on the page shown).
+  var pins = [];
+  var pinFrame = 0;
+  var lastPins = "";
+  function walkNodePath(root, node) {
+    var el = root;
+    for (var i = 0; i < node.length; i++) {
+      var wanted = node[i];
+      var child = el.firstElementChild;
+      var seen = 0;
+      while (child && (injectedStyle(child) || seen++ < wanted)) child = child.nextElementSibling;
+      if (!child) return null;
+      el = child;
+    }
+    return el instanceof Element && el !== root ? el : null;
+  }
+  function locatePin(pin) {
+    if (!state || !pageEl || pin.route !== state.route) return null;
+    var root = null;
+    if (pin.host && pin.host.tag) {
+      var host = null;
+      eachRendered(pageEl, function (el) {
+        if (!host && el.localName === pin.host.tag && el.shadowRoot && safeMatches(el, pin.host.selector)) host = el;
+      });
+      root = host && host.shadowRoot;
+    } else if (state.pagePaths[state.route] === pin.path) root = pageEl;
+    if (!root) return null;
+    var el = Array.isArray(pin.node) ? walkNodePath(root, pin.node) : null;
+    if (el && pin.tag && el.localName !== pin.tag) el = null;
+    if (!el && pin.selector) {
+      try { el = root.querySelector(pin.selector); } catch (_) { el = null; }
+    }
+    return el;
+  }
+  function schedulePins() {
+    if (pinFrame || !pins.length && !lastPins) return;
+    pinFrame = requestAnimationFrame(function () {
+      pinFrame = 0;
+      var rects = pins.map(function (pin) {
+        var el = locatePin(pin);
+        var rect = el && el.isConnected ? rectOf(el) : null;
+        return { id: pin.id, rect: rect && (rect.width || rect.height) ? rect : null };
+      });
+      var key = JSON.stringify(rects);
+      if (key === lastPins) return;
+      lastPins = key;
+      emit("pin-rects", { rects: rects });
     });
   }
 
@@ -1294,6 +1388,9 @@
     var node = elementIndexPath(el);
     if (node) payload.node = node;
     if (link !== undefined) payload.link = link;
+    var locator = elementLocator(el);
+    payload.selector = locator.selector;
+    if (locator.host) payload.host = locator.host;
     payload.rect = rectOf(el);
     lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
@@ -1985,12 +2082,18 @@
       inspectWhenSettled(msg);
       return;
     }
+    if (msg.type === "pins") {
+      pins = Array.isArray(msg.pins) ? msg.pins.slice(0, 200) : [];
+      lastPins = "";
+      schedulePins();
+      return;
+    }
     if (msg.type !== "update") return;
     apply(msg.payload || {});
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");
   // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); }).observe(pageEl);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); }).observe(pageEl);
   parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
 })();

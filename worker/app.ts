@@ -14,6 +14,7 @@ import {
   type AgentHub,
 } from "./agent-context";
 import { handleMcp } from "./mcp";
+import { requestIdPattern, requestSummary, validateAsk } from "./agent-requests";
 import {
   handleOAuth,
   isOAuthPath,
@@ -427,7 +428,7 @@ async function route(
     // The session's connections, the tab sharing its context, and the
     // changes waiting for it (src/components/agent-menu.ts polls this).
     if (path === "/api/agent/hub" && request.method === "GET") {
-      const hub = await getHub(env, sessionId, { context: false, texts: true });
+      const hub = await getHub(env, sessionId, { context: false, texts: true, requests: true });
       return json({
         grants: hub?.grants ?? [],
         tabId: hub?.tabId ?? null,
@@ -435,7 +436,20 @@ async function route(
         commands: (hub?.commands ?? []).filter(
           (command) => command.state === "pending",
         ),
+        // The requests to agents the user has not dismissed, for the pins.
+        requests: (hub?.requests ?? []).filter((item) => item.state !== "dismissed"),
       });
+    }
+    // Ask agent in the edit bar: a request about an element, for agents'
+    // wait_for_requests (worker/agent-requests.ts).
+    if (path === "/api/agent/ask" && request.method === "POST") {
+      const data = await requestJson(request, 64 * 1024);
+      return json(requestSummary(await operateHub(env, sessionId, { type: "ask", request: validateAsk(data) })));
+    }
+    if (path === "/api/agent/dismiss" && request.method === "POST") {
+      const data = await requestJson(request, 4096);
+      if (!requestIdPattern.test(String(data?.id ?? ""))) throw new HttpError(400, "Invalid request.");
+      return json(await operateHub(env, sessionId, { type: "dismiss", id: data.id }));
     }
     if (path === "/api/agent/revoke" && request.method === "POST") {
       const data = await requestJson(request, 4096);

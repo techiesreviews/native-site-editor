@@ -1,6 +1,7 @@
 import { button, node } from "../ui/dom";
-import { textBytes, type AgentCommand } from "../../shared/agent";
+import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
 import type { SharedContext } from "../agent-site";
+import type { PinRequest } from "./agent-pins";
 import { gzip } from "./publish-menu";
 import "./agent-menu.css";
 
@@ -19,6 +20,10 @@ import "./agent-menu.css";
 // "applied" sees it. The context lists the drafts by hash; their texts go
 // apart, only those the Worker says it lacks. Of several tabs, the one that reported last (a
 // visible one) applies the changes.
+//
+// Ask agent in the edit bar sends a request about an element to the hub
+// (`ask`); agents fetch it with wait_for_requests and answer it. Each poll
+// brings the requests back with their state and reply, for the pins.
 
 export interface AgentCommandOutcome {
   message?: string;
@@ -38,6 +43,7 @@ interface HubState {
   tabId: string | null;
   updatedAt: number | null;
   commands: AgentCommand[];
+  requests?: (PinRequest & { repoId: number })[];
 }
 
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
@@ -51,6 +57,10 @@ export function createAgentMenu(options: {
   /** The context to share and its drafts' texts, built when it is sent. */
   context: () => Promise<SharedContext | undefined>;
   onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
+  /** Whether an agent is connected changed. */
+  onConnection?: (connected: boolean) => void;
+  /** The open repository's requests to agents, each time they may have changed. */
+  onRequests?: (requests: PinRequest[]) => void;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
@@ -104,8 +114,25 @@ export function createAgentMenu(options: {
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
   }
+  let lastState = "";
+  let lastRequests = "";
+  // The open repository's requests, told only when they changed.
+  function tellRequests() {
+    const repo = options.repository();
+    const requests = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id) : [];
+    const key = JSON.stringify(requests);
+    if (key === lastRequests) return;
+    lastRequests = key;
+    options.onRequests?.(requests);
+  }
   function paint() {
     const current = state();
+    if (current !== lastState) {
+      const was = lastState;
+      lastState = current;
+      if (was === "connected" || current === "connected") options.onConnection?.(current === "connected");
+    }
+    tellRequests();
     if (notice && notice.state !== current) notice = undefined;
     root.dataset.state = current;
     action.disabled = changing || current === "closed";
@@ -331,6 +358,31 @@ export function createAgentMenu(options: {
   void poll(true);
   return {
     root,
+    /** Whether an agent is connected now. */
+    connected() {
+      return state() === "connected";
+    },
+    /** Ask agent: a request about an element, for agents to fetch. */
+    async ask(text: string, element: AgentElement) {
+      const repo = options.repository();
+      if (!repo) throw new Error("Open a site first.");
+      const request = await api("ask", { repository: repo, text, element });
+      hub.requests = [...(hub.requests ?? []), request];
+      tellRequests();
+      // Agents waiting pick it up at once; the tab sees their progress as it polls.
+      void poll(true);
+      return request as PinRequest;
+    },
+    /** Dismiss (or clear) a request from its pin. */
+    async dismiss(id: string) {
+      hub.requests = (hub.requests ?? []).filter((item) => item.id !== id);
+      tellRequests();
+      try {
+        await api("dismiss", { id });
+      } catch (error) {
+        say((error as Error).message);
+      }
+    },
     /** Something the context holds changed: it is sent again shortly. */
     changed() {
       revision++;

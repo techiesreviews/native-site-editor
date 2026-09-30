@@ -1,3 +1,5 @@
+import type { AgentElement } from "./agent";
+
 export interface Repository {
   id: number;
   name: string;
@@ -197,8 +199,8 @@ export interface AgentSiteContext {
   /** The file open in the editor and the page the preview shows. */
   openFile: string | null;
   openRoute: string | null;
-  /** The element selected in the preview. */
-  selection: { file: string; id: string; tag: string; text: string } | null;
+  /** The element selected in the preview (get_selection gives all of it). */
+  selection: AgentElement | null;
   components: { tag: string; file: string; css?: string; section: boolean; slots: string[] }[];
   /** The stylesheets the pages' heads link, in order, each with the files it `@import`s (in cascade order). */
   stylesheets: { file: string; imports: string[] }[];

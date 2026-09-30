@@ -9,6 +9,7 @@ import {
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
+import { createAgentPins, type PinRequest } from "./agent-pins";
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
@@ -106,6 +107,10 @@ export interface NativePreviewSelection {
   link?: string;
   // Frame-viewport rectangle of the selected element.
   rect?: SelectionRect;
+  // A selector unique among the rendered page's elements (for one in a
+  // component's template, among its instance's, with the instance's own as `host`).
+  selector?: string;
+  host?: { tag: string; selector: string };
 }
 
 // A text selection inside the selected element: offsets into its DOM text
@@ -172,6 +177,8 @@ interface NativePreviewHandlers {
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
+  // A request to agents dismissed from its pin.
+  onDismissRequest?: (id: string) => void;
 }
 
 // A list of element-child indexes from the runtime.
@@ -295,6 +302,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     choices: () => handlers.insertChoices?.() ?? [],
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
   });
+  // The runtime finds each pin's element and reports where it is (`pin-rects`).
+  let pinRequests: PinRequest[] = [];
+  const pins = createAgentPins(pane, frame, {
+    locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
+    onDismiss: (id) => handlers.onDismissRequest?.(id),
+    onShowPage: (target) => void followRoute(target),
+  });
 
   let site: NativeSite | undefined;
   let sources: Record<string, string> = {};
@@ -361,6 +375,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
       Object.keys(assets).join("|"),
     ].join("\n");
+    pins.update(pinRequests, route);
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
   }
@@ -443,6 +458,17 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
       return;
     }
+    // Pins' places describe the DOM too, but each report is whole and
+    // sent only when it changed, so none is dropped.
+    if (data.type === "pin-rects") {
+      const raw = (data as { rects?: unknown }).rects;
+      if (!Array.isArray(raw)) return;
+      pins.rects(raw.slice(0, 200).flatMap((item) =>
+        item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
+          ? [{ id: (item as { id: string }).id, rect: readRect((item as { rect?: unknown }).rect) ?? null }]
+          : []));
+      return;
+    }
     if (data.type !== "ready" && data.context !== context) {
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
       return;
@@ -455,6 +481,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "ready") {
       ready = true;
       postTheme();
+      pins.reset();
       schedule();
       return;
     }
@@ -536,6 +563,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         node?: unknown;
         link?: unknown;
         rect?: unknown;
+        selector?: unknown;
+        host?: unknown;
       };
       const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
@@ -561,6 +590,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           : undefined,
         link: typeof raw.link === "string" ? raw.link : undefined,
         rect: readRect(raw.rect),
+        selector: typeof raw.selector === "string" ? raw.selector.slice(0, 2000) : undefined,
+        host: readHost(raw.host),
       });
       return;
     }
@@ -584,6 +615,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const keys = ["top", "left", "width", "height", "bottom", "right"] as const;
     if (!keys.every((key) => typeof rect[key] === "number" && Number.isFinite(rect[key]))) return undefined;
     return Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
+  }
+  function readHost(raw: unknown) {
+    if (!raw || typeof raw !== "object") return undefined;
+    const { tag, selector } = raw as Record<string, unknown>;
+    return typeof tag === "string" && typeof selector === "string" ? { tag: tag.slice(0, 100), selector: selector.slice(0, 2000) } : undefined;
   }
   function readTextSelection(raw: unknown): NativeTextSelection | undefined {
     if (!raw || typeof raw !== "object") return undefined;
@@ -712,6 +748,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     refresh() {
       schedule();
     },
+    /** The page the preview shows (a component shown alone has its own pseudo-route). */
+    route() {
+      return route;
+    },
+    /** The requests to agents to pin on their elements (src/components/agent-pins.ts). */
+    setRequests(requests: PinRequest[]) {
+      pinRequests = requests;
+      pins.update(pinRequests, route);
+    },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {
       editBar.show(model, rect);
@@ -763,6 +808,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();
+      pins.destroy();
       stopTheme();
       insertControls.destroy();
       pane.remove();

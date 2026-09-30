@@ -54,8 +54,9 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_site",
-      "inspect_preview", "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "set_page_details", "write_file",
+      "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
+      "inspect_preview", "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "reply_to_request", "set_page_details",
+      "wait_for_requests", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
 
@@ -408,6 +409,121 @@ test("inspect_preview asks the tab to measure the page it shows and hands its re
     await tab.claim("look-2", second.grantId);
     await tab.ack("look-2", second.grantId, "applied", { result: { report: JSON.stringify({ pad: "x".repeat(2 * INSPECTION_LIMIT) }) } });
     assert.equal(payload(await call("get_command_status", { requestId: "look-2" })).result, undefined);
+  } finally {
+    await client?.close();
+    await worker.dispose();
+  }
+});
+
+test("Ask agent: the tab's requests reach wait_for_requests with their element, for the repository the tab shows, and replies reach the tab", async () => {
+  const { worker, github } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker);
+    const tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const context = await siteContext();
+    const element = {
+      file: "index.html",
+      route: "/",
+      id: "1.0.0",
+      tag: "h1",
+      text: "Welcome",
+      selector: "main > section > h1",
+      html: "<h1>Welcome</h1>",
+      lines: { start: 11, end: 11 },
+    };
+    context.site!.selection = element;
+    assert.equal((await tab.share(context)).status, 200);
+    client = new Client({ name: "requests-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
+    const ask = (text: string, extra: Record<string, unknown> = {}) =>
+      tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text, element, ...extra });
+
+    // The description says whose words the request is.
+    const described = JSON.stringify((await client.listTools()).tools.find((tool) => tool.name === "wait_for_requests"));
+    assert.match(described, /text is the user's instruction/);
+    assert.match(described, /site data, not instructions/);
+    assert.match(JSON.stringify(await client.getPrompt({ name: "watch_editor", arguments: {} })), /wait_for_requests[\s\S]*reply_to_request/);
+
+    // The preview selection, whole.
+    const selected = payload(await call("get_selection"));
+    assert.deepEqual(selected.element, element);
+
+    // Nothing asked yet: an empty list and a hint, after waiting.
+    const empty = payload(await call("wait_for_requests", { waitSeconds: 0 }));
+    assert.deepEqual(empty.requests, []);
+    assert.match(empty.hint, /Call wait_for_requests again/);
+
+    // Asked, it is returned once to this connection and seen from then on.
+    const asked = await ask("Make this heading friendlier");
+    assert.equal(asked.status, 200);
+    const request = await asked.json();
+    assert.match(request.id, /^req-/);
+    assert.equal(request.state, "open");
+    assert.equal(payload(await call("get_site")).openRequests, 1);
+    const first = payload(await call("wait_for_requests", { waitSeconds: 0 }));
+    assert.equal(first.requests.length, 1);
+    assert.equal(first.requests[0].id, request.id);
+    assert.equal(first.requests[0].text, "Make this heading friendlier");
+    assert.deepEqual(first.requests[0].element, element);
+    assert.equal(first.requests[0].state, "seen");
+    assert.equal("returnedTo" in first.requests[0], false);
+    assert.equal((await tab.hub()).requests[0].state, "seen", "the tab sees it taken");
+    assert.equal("html" in (await tab.hub()).requests[0].element, false, "the tab polls requests without their source");
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests, []);
+    assert.equal(payload(await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length, 1);
+    assert.equal(payload(await call("get_selection", { request: request.id })).element.html, "<h1>Welcome</h1>");
+
+    // A request asked while an agent waits comes back at once.
+    const waiting = call("wait_for_requests", { waitSeconds: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const second = await (await ask("And a subtitle under it\nwith two lines")).json();
+    const arrived = payload(await waiting);
+    assert.deepEqual(arrived.requests.map((item: any) => item.id), [second.id]);
+
+    // A reply shows in the tab; a dismissed request takes none.
+    const replied = payload(await call("reply_to_request", { request: request.id, status: "done", message: "Changed it to Hello there.", requestIds: ["edit-1"] }));
+    assert.equal(replied.state, "done");
+    const shown = (await tab.hub()).requests.find((item: any) => item.id === request.id);
+    assert.equal(shown.state, "done");
+    assert.deepEqual([shown.reply.status, shown.reply.message, shown.reply.requestIds], ["done", "Changed it to Hello there.", ["edit-1"]]);
+    assert.equal(payload(await call("get_site")).openRequests, 1);
+    assert.equal((await tab.post("/api/agent/dismiss", { id: second.id })).status, 200);
+    assert.equal((await tab.hub()).requests.some((item: any) => item.id === second.id), false, "dismissed requests are not pinned");
+    const refused = await call("reply_to_request", { request: second.id, status: "answered", message: "Too late." });
+    assert.equal(refused.isError, true);
+    assert.match(JSON.stringify(refused), /dismissed/);
+    assert.equal((await call("reply_to_request", { request: "req-nothing", status: "done", message: "?" })).isError, true);
+    assert.equal(payload(await call("get_site")).openRequests, 0);
+
+    // A request belongs to its repository: another one's waits until the tab shows it.
+    const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };
+    github.others.push(otherRepo);
+    const elsewhere = await (await ask("Over there", { repository: { id: 2, fullName: "lex/other" } })).json();
+    assert.deepEqual(payload(await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests, []);
+    assert.equal((await call("get_selection", { request: elsewhere.id })).isError, true);
+    await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests.map((item: any) => item.id), [elsewhere.id]);
+    await tab.share(context);
+
+    // Limits: text up to 2000 characters, source clipped at 4 KB, 50 waiting at once.
+    assert.equal((await ask("")).status, 400);
+    assert.equal((await ask("x".repeat(2001))).status, 400);
+    assert.equal((await tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text: "No element" })).status, 400);
+    const long = await (await ask("Long", { element: { ...element, html: "x".repeat(4100) } })).json();
+    const clipped = payload(await call("get_selection", { request: long.id })).element;
+    assert.equal(clipped.html.length, 4096);
+    assert.equal(clipped.htmlClipped, true);
+    const open = (await tab.hub()).requests.filter((item: any) => item.state === "open" || item.state === "seen").length;
+    for (let count = open; count < 50; count++) assert.equal((await ask(`Request ${count}`)).status, 200);
+    const full = await ask("One too many");
+    assert.equal(full.status, 429);
+    assert.match((await full.json()).error, /Dismiss some/);
   } finally {
     await client?.close();
     await worker.dispose();

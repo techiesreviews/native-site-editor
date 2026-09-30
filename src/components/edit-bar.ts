@@ -74,6 +74,19 @@ export type EditBarControl =
       extras?: AddressExtra[];
       onInput: (value: string) => void;
       onClose?: () => void;
+    }
+  | {
+      // A button opening a box to write a message about the selection (Ask
+      // agent): Enter sends it, Shift+Enter starts a new line, Escape
+      // cancels. `onSend` resolves to an error to show in the box, or to
+      // nothing once sent, and the box closes.
+      kind: "prompt";
+      label: string;
+      title?: string;
+      placeholder?: string;
+      hint?: string;
+      maxLength?: number;
+      onSend: (text: string) => Promise<string | undefined>;
     };
 
 export type AddressExtra =
@@ -81,6 +94,7 @@ export type AddressExtra =
   | { kind: "text"; label: string; value: string; placeholder?: string; onInput: (value: string) => void };
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
+type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 
 export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip";
 
@@ -162,6 +176,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   let popoverButton: HTMLButtonElement | undefined;
   // The open address field, kept across re-renders while its control persists.
   let openAddress: { label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
+  // The open message box, kept across re-renders with what is typed in it.
+  let openPrompt: { label: string; control: PromptControl } | undefined;
 
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
@@ -174,7 +190,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const trigger = popoverButton;
     const address = openAddress;
     openAddress = undefined;
+    openPrompt = undefined;
     popover.hidden = true;
+    popover.classList.remove("edit-bar__popover--prompt");
     popover.replaceChildren();
     popoverButton = undefined;
     trigger?.setAttribute("aria-expanded", "false");
@@ -567,6 +585,57 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     void uploadInto(address, [...event.dataTransfer.files]);
   });
 
+  function openPromptBox(item: HTMLButtonElement, control: PromptControl) {
+    const label = node("label", "edit-bar__field-label", control.label);
+    const input = document.createElement("textarea");
+    input.className = "edit-bar__field-input edit-bar__prompt-input";
+    input.rows = 3;
+    input.placeholder = control.placeholder ?? "";
+    if (control.maxLength) input.maxLength = control.maxLength;
+    label.append(input);
+    const error = node("p", "edit-bar__prompt-error");
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+    const prompt = { label: control.label, control };
+    let sending = false;
+    const send = async () => {
+      const text = input.value.trim();
+      if (!text || sending) return;
+      sending = true;
+      input.readOnly = true;
+      popover.classList.add("is-sending");
+      let problem: string | undefined;
+      try {
+        problem = await prompt.control.onSend(text);
+      } catch (caught) {
+        problem = (caught as Error).message || "It could not be sent.";
+      } finally {
+        sending = false;
+        input.readOnly = false;
+        popover.classList.remove("is-sending");
+      }
+      if (openPrompt !== prompt) return;
+      if (problem) {
+        error.textContent = problem;
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      closePopover(true);
+    };
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      void send();
+    });
+    const content: HTMLElement[] = [label, error];
+    if (control.hint) content.push(node("p", "edit-bar__prompt-hint", control.hint));
+    openPopover(item, content, "dialog");
+    popover.classList.add("edit-bar__popover--prompt");
+    openPrompt = prompt;
+    input.focus();
+  }
+
   function addressButton(control: AddressControl) {
     const item = button(control.icon ? "" : control.warning ?? control.label, () => {
       if (popoverButton === item) { closePopover(true); return; }
@@ -591,7 +660,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // (the source re-renders after each keystroke); its handlers move over.
     const kept = openAddress && model.controls.find((control): control is AddressControl =>
       control.kind === "address" && control.label === openAddress?.label);
+    // An open message box stays open the same way, with its text.
+    const keptPrompt = openPrompt && model.controls.find((control): control is PromptControl =>
+      control.kind === "prompt" && control.label === openPrompt?.label);
     if (kept && openAddress) openAddress.control = kept;
+    else if (keptPrompt && openPrompt) openPrompt.control = keptPrompt;
     else closePopover(false);
     onFormat = model.onFormat;
     onMove = model.onMove;
@@ -637,6 +710,16 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
           opening = { item, control };
         }
         bar.append(item);
+      } else if (control.kind === "prompt") {
+        const item = button(control.label, () => {
+          if (popoverButton === item) { closePopover(true); return; }
+          openPromptBox(item, control);
+        }, "edit-bar__button edit-bar__ask");
+        if (control.title) item.title = control.title;
+        item.setAttribute("aria-haspopup", "dialog");
+        item.setAttribute("aria-expanded", String(keptPrompt === control));
+        if (keptPrompt === control) popoverButton = item;
+        bar.append(item);
       } else {
         const select = document.createElement("select");
         select.className = "edit-bar__select";
@@ -651,7 +734,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       }
     }
     bar.dataset.model = "1";
-    if (kept && popoverButton) placePopover(popoverButton);
+    if ((kept || keptPrompt) && popoverButton) placePopover(popoverButton);
     return opening;
   }
 

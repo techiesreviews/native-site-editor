@@ -46,5 +46,11 @@ The site's name and public address used by the editor when creating and updating
 **Agent connection**:
 An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the repository shown by the sharing editor tab; the user reviews and saves changes.
 
+**Agent request**:
+Something the user asks connected agents to do about an element of the preview, sent from the edit bar with the element's context. Agents fetch it, carry it out as drafts, and reply; the user dismisses it.
+
+**Pin**:
+The numbered marker on the element of an agent request in the preview, showing whether it waits, is being worked on, or was done or answered. An editor overlay, never part of the page.
+
 **External agent workflow**:
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.

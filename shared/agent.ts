@@ -132,3 +132,61 @@ export function parseOutlineId(id: string): number[] | undefined {
 }
 
 export type AgentContext = EditorContext;
+
+// ---- Agent requests ----
+
+/**
+ * An element of the site as an agent is shown it: the one selected in the
+ * preview, or the one a request is about. `id` is its element-child path in
+ * `file` (a page's `<body>`, or a component's template); `selector` is unique
+ * among the rendered page's elements, or, for an element in a component's
+ * template, among the instance's (`host` is then the instance's own).
+ */
+export interface AgentElement {
+  file: string;
+  /** The page the preview showed it on. */
+  route?: string;
+  id: string;
+  tag: string;
+  text: string;
+  selector?: string;
+  host?: { tag: string; selector: string };
+  /** Its source in `file`, clipped to REQUEST_HTML_LIMIT (`htmlClipped`). */
+  html?: string;
+  htmlClipped?: boolean;
+  /** The source lines it spans in `file`, from 1. */
+  lines?: { start: number; end: number };
+  /**
+   * The component it belongs to: the instance itself, content a page slots
+   * into one (`slot`, "" for the default slot), or part of its template
+   * (`slot` when it is a slot's fallback).
+   */
+  component?: { tag: string; in: "instance" | "slot" | "template"; slot?: string };
+}
+
+export type AgentRequestState = "open" | "seen" | "done" | "answered" | "dismissed";
+
+/**
+ * Something the user asked agents to do about an element, from the edit
+ * bar's Ask agent. The hub keeps them per session (worker/agent-requests.ts):
+ * open until an agent fetches it (seen), then done or answered by its reply,
+ * or dismissed by the user.
+ */
+export interface AgentRequest {
+  id: string;
+  text: string;
+  createdAt: number;
+  repoId: number;
+  repository: string;
+  state: AgentRequestState;
+  element: AgentElement;
+  seenAt?: number;
+  /** The connections wait_for_requests returned it to. */
+  returnedTo?: string[];
+  reply?: { status: "done" | "answered"; message: string; at: number; requestIds?: string[] };
+}
+
+/** The most text a request holds, the source of its element, and how many wait at once. */
+export const REQUEST_TEXT_LIMIT = 2000;
+export const REQUEST_HTML_LIMIT = 4096;
+export const OPEN_REQUESTS_LIMIT = 50;
