@@ -264,7 +264,10 @@ export function createRepositoryMenu(options: {
       node("span", "repository-menu__repo-name", repo.name),
       node("span", "repository-menu__repo-owner", `${repo.owner.login}${repo.private ? " · private" : ""}${on ? ` · ⑂ ${on}` : ""}`),
     );
-    open.append(initial(repo.name), text);
+    const tile = initial(repo.name);
+    // The row carries the tile's hue too, for the remove × drawn over it.
+    item.style.setProperty("--initial-hue", tile.style.getPropertyValue("--initial-hue"));
+    open.append(tile, text);
     if (selected) {
       const more = node("span", "repository-menu__more");
       setIcon(more, "caret-right", 12);
@@ -285,7 +288,8 @@ export function createRepositoryMenu(options: {
       render();
       list.querySelector<HTMLElement>(".repository-menu__confirm a")?.focus();
     });
-    // Remove comes first, left of the repository, apart from its branches' ›.
+    // Remove comes first and, on hover or focus, covers the repository's
+    // letter tile, apart from its branches' ›.
     item.append(remove, open);
     if (confirming === repo.id) {
       const confirm = node("div", "repository-menu__confirm");

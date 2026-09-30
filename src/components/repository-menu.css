@@ -227,13 +227,17 @@
   white-space: nowrap;
 }
 
+/* Fixed line heights keep the row 46px tall, so the remove × (below) sits
+   exactly on the 28px tile. */
 .repository-menu__repo-name {
   font-size: var(--type-base);
   font-weight: 600;
+  line-height: 18px;
 }
 
 .repository-menu__repo-owner {
   font-size: var(--type-small);
+  line-height: 16px;
   color: var(--muted);
 }
 
@@ -242,17 +246,20 @@
 }
 
 
+/* Remove: a × in the tile's own colour, over the tile's letter. */
 .repository-menu__remove {
+  position: absolute;
+  z-index: 1;
+  top: 9px;
+  left: 8px;
   display: inline-grid;
   place-items: center;
-  flex: none;
-  width: var(--size-icon);
-  height: var(--size-icon);
-  margin: 0 4px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
+  background: oklch(from var(--primary) 0.58 0.12 var(--initial-hue, h));
+  color: white;
   opacity: 0;
   cursor: pointer;
 }
@@ -264,8 +271,7 @@
 }
 
 .repository-menu__remove:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: oklch(from var(--primary) 0.48 0.12 var(--initial-hue, h));
 }
 
 @media (hover: none) {
