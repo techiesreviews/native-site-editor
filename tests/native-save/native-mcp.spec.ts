@@ -543,3 +543,109 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     await client.close();
   }
 });
+
+// A colour as the browser renders it, in sRGB (computed styles may be oklch()).
+async function rgb(page: Page, selector: string, property: string) {
+  return page.evaluate(([selector, property]) => {
+    const value = getComputedStyle(document.querySelector(selector)!).getPropertyValue(property);
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+    return { r, g, b };
+  }, [selector, property]);
+}
+const orange = ({ r, g, b }: { r: number; g: number; b: number }) => r > 180 && r >= g && g > b && r - b > 30;
+const grey = ({ r, g, b }: { r: number; g: number; b: number }) => Math.max(r, g, b) - Math.min(r, g, b) < 14;
+
+test("Ask agent: an agent's question turns its pin orange, the user answers it on the card, and the agent gets the answer with the thread", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  const heading = frame(page).locator(".hero h1");
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  const pin = page.locator(".agent-pin");
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    await heading.click();
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Make this heading friendlier");
+    await page.keyboard.press("Enter");
+    await expect(pin).toHaveAttribute("data-state", "open");
+    const [asked] = (await call("wait_for_requests", { waitSeconds: 10 })).requests;
+    await expect(pin).toHaveAttribute("data-state", "seen");
+
+    // The agent asks: the pin turns orange with a "?", and the project
+    // selector counts the question.
+    await call("reply_to_request", { request: asked.id, status: "question", message: "Warmer, or shorter?" });
+    await expect(pin).toHaveAttribute("data-state", "question");
+    await expect(pin.locator(".agent-pin__status")).toHaveText("?");
+    expect(orange(await rgb(page, ".agent-pin", "background-color"))).toBe(true);
+    expect(orange(await rgb(page, ".agent-pin", "border-top-color"))).toBe(true);
+    await expect(page.locator(".repository-menu__questions")).toHaveText("1");
+    await expect(page.locator(".repository-menu__trigger")).toHaveAttribute("aria-label", /an agent asks you a question/);
+
+    // Its card is the conversation, the question in orange, with the answer
+    // box focused.
+    await pin.click();
+    const card = page.getByRole("dialog", { name: "Request 1" });
+    await expect(card.locator(".agent-pin-card__state")).toHaveText("Question");
+    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "Agent"]);
+    await expect(card.locator(".agent-pin-card__bubble")).toHaveText(["Make this heading friendlier", "Warmer, or shorter?"]);
+    expect(orange(await rgb(page, ".agent-pin-card__message.is-question .agent-pin-card__bubble", "border-top-color"))).toBe(true);
+    const answer = card.getByRole("textbox", { name: "Answer the agent" });
+    await expect(answer).toBeFocused();
+    await expect(answer).toHaveAttribute("placeholder", "Answer…");
+    // Escape closes the card, keeping what was typed.
+    await page.keyboard.type("Warmer");
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveCount(0);
+    await expect(pin).toBeFocused();
+    await pin.click();
+    await expect(answer).toBeFocused();
+    await expect(answer).toHaveValue("Warmer");
+    const before = (await answer.boundingBox())!.height;
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("and keep it short");
+    await expect.poll(async () => (await answer.boundingBox())!.height).toBeGreaterThan(before);
+    await page.keyboard.press("Enter");
+
+    // Sent: the card closes, and the request waits for agents again.
+    await expect(card).toHaveCount(0);
+    await expect(pin).toHaveAttribute("data-state", "open");
+    await expect(page.locator(".repository-menu__questions")).toBeHidden();
+    const [again] = (await call("wait_for_requests", { waitSeconds: 10 })).requests;
+    expect(again.id).toBe(asked.id);
+    expect(again.thread.map((item: { from: string; text: string }) => [item.from, item.text])).toEqual([
+      ["user", "Make this heading friendlier"],
+      ["agent", "Warmer, or shorter?"],
+      ["user", "Warmer\nand keep it short"],
+    ]);
+    await expect(pin).toHaveAttribute("data-state", "seen");
+    await expect(pin.locator(".agent-pin__spinner")).toHaveCount(1);
+
+    // Done: the pin and its card turn grey.
+    const home = await call("read_file", { path: indexPath });
+    await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Hello there" }], requestId: "warmer" });
+    await call("reply_to_request", { request: asked.id, status: "done", message: "Changed it to Hello there.", requestIds: ["warmer"] });
+    await expect(pin).toHaveAttribute("data-state", "done");
+    await expect(pin.locator(".agent-pin__status")).toHaveText("✓");
+    expect(grey(await rgb(page, ".agent-pin", "background-color"))).toBe(true);
+    expect(grey(await rgb(page, ".agent-pin", "border-top-color"))).toBe(true);
+    await pin.click();
+    await expect(card).toHaveAttribute("data-state", "done");
+    await expect(card.locator(".agent-pin-card__state")).toHaveText("Done");
+    expect(grey(await rgb(page, ".agent-pin-card", "background-color"))).toBe(true);
+    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "Agent", "You", "Agent"]);
+    await expect(card.getByRole("textbox")).toHaveCount(0);
+    await card.getByRole("button", { name: "Clear" }).click();
+    await expect(pin).toHaveCount(0);
+  } finally {
+    await client.close();
+  }
+});

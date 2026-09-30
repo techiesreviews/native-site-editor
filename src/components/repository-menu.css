@@ -66,6 +66,31 @@
   display: contents;
 }
 
+/* Agents' questions waiting for the user: an orange count on the tile's corner. */
+.repository-menu__trigger {
+  position: relative;
+}
+.repository-menu__questions {
+  position: absolute;
+  top: 3px;
+  left: 30px;
+  min-width: 16px;
+  height: 16px;
+  border: 2px solid var(--surface-toolbar);
+  border-radius: 999px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  background: var(--agent-question-strong, oklch(66% 0.18 48));
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+}
+.repository-menu__questions[hidden] {
+  display: none;
+}
+
 .repository-menu__trigger .repository-menu__initial {
   width: 32px;
   height: 32px;

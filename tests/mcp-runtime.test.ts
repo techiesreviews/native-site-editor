@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { INSPECTION_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
+import { requestOperation } from "../worker/agent-requests.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
 test("applyReplacements needs each old text exactly once, or all", () => {
@@ -13,6 +14,25 @@ test("applyReplacements needs each old text exactly once, or all", () => {
     applyReplacements("one two", [{ oldText: "one", newText: "1" }, { oldText: "1 two", newText: "done" }]),
     { ok: true, text: "done" },
   );
+});
+
+test("a request kept from before threads reads as one, and its answer starts the thread from its text and reply", () => {
+  const legacy: any = {
+    id: "req-old",
+    text: "Fix this",
+    createdAt: 1,
+    repoId: 1,
+    repository: "lex/site",
+    state: "question",
+    element: { file: "index.html", id: "1", tag: "h1", text: "Hi" },
+    returnedTo: ["grant-1"],
+    reply: { status: "question", message: "Which way?", at: 2 },
+  };
+  const { list, result } = requestOperation([legacy], { type: "answer", id: "req-old", text: "The short way" }) as any;
+  assert.equal(result.state, "open");
+  assert.equal(result.returnedTo, undefined);
+  assert.deepEqual(list[0].thread.map((item: any) => [item.from, item.text]), [["user", "Fix this"], ["agent", "Which way?"], ["user", "The short way"]]);
+  assert.equal(requestOperation(list, { type: "take-requests", grantId: "grant-1", repoId: 1 }).result.requests.length, 1);
 });
 
 test("MCP site tools read the site, queue guarded changes for the editor tab, report them, and revoke access in Workers", async () => {
@@ -500,6 +520,68 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     assert.match(JSON.stringify(refused), /dismissed/);
     assert.equal((await call("reply_to_request", { request: "req-nothing", status: "done", message: "?" })).isError, true);
     assert.equal(payload(await call("get_site")).openRequests, 0);
+
+    // A question waits for the user, who answers it from the pin: the
+    // request waits for agents again and comes back, thread and all.
+    const described2 = JSON.stringify((await client.listTools()).tools.find((tool) => tool.name === "reply_to_request"));
+    assert.match(described2, /question when you need the user's input/);
+    assert.match(JSON.stringify(await client.getPrompt({ name: "watch_editor", arguments: {} })), /question when you need my input/);
+    const answer = (id: string, text: string) => tab.post("/api/agent/answer", { id, text });
+    const asking = await (await ask("Make it bolder")).json();
+    assert.deepEqual(asking.thread.map((item: any) => [item.from, item.text]), [["user", "Make it bolder"]]);
+    assert.equal((await answer(asking.id, "Hurry")).status, 409, "only a reply takes an answer");
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests.map((item: any) => item.id), [asking.id]);
+    const questioned = payload(await call("reply_to_request", { request: asking.id, status: "question", message: "Bold, or larger too?" }));
+    assert.equal(questioned.state, "question");
+    assert.match(questioned.message, /returns the request again/);
+    let pinned = (await tab.hub()).requests.find((item: any) => item.id === asking.id);
+    assert.equal(pinned.state, "question");
+    assert.deepEqual(pinned.thread.map((item: any) => [item.from, item.status ?? null, item.text]), [
+      ["user", null, "Make it bolder"],
+      ["agent", "question", "Bold, or larger too?"],
+    ]);
+    assert.equal(payload(await call("get_site")).openRequests, 0, "a question waits for the user, not an agent");
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests, []);
+    // The answer, checked like a request's text.
+    assert.equal((await answer(asking.id, "")).status, 400);
+    assert.equal((await answer(asking.id, "x".repeat(2001))).status, 400);
+    assert.equal((await answer("nope", "Larger too")).status, 400);
+    assert.equal((await answer("req-nothing", "Larger too")).status, 404);
+    const reopened = await answer(asking.id, "Larger too, please");
+    assert.equal(reopened.status, 200);
+    const answered = await reopened.json();
+    assert.equal(answered.state, "open");
+    assert.equal(answered.reply, undefined);
+    assert.equal("html" in answered.element, false);
+    assert.equal(payload(await call("get_site")).openRequests, 1);
+    // Returned again to the connection that had it, with the question and the answer.
+    const again = payload(await call("wait_for_requests", { waitSeconds: 0 })).requests;
+    assert.deepEqual(again.map((item: any) => item.id), [asking.id]);
+    assert.equal(again[0].state, "seen");
+    assert.deepEqual(again[0].thread.map((item: any) => [item.from, item.text]), [
+      ["user", "Make it bolder"],
+      ["agent", "Bold, or larger too?"],
+      ["user", "Larger too, please"],
+    ]);
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests, [], "once per answer");
+    assert.equal(payload(await call("get_selection", { request: asking.id })).thread.length, 3);
+    // The next round: replied to again.
+    assert.equal(payload(await call("reply_to_request", { request: asking.id, status: "done", message: "Made it bold and larger.", requestIds: ["bold-1"] })).state, "done");
+    pinned = (await tab.hub()).requests.find((item: any) => item.id === asking.id);
+    assert.deepEqual([pinned.state, pinned.reply.status, pinned.thread.length, pinned.thread[3].requestIds], ["done", "done", 4, ["bold-1"]]);
+    // The thread keeps the request's text and the latest messages, within its limits.
+    for (let round = 0; round < 12; round++) {
+      assert.equal((await answer(asking.id, `Answer ${round} ${"y".repeat(1500)}`)).status, 200);
+      await call("wait_for_requests", { waitSeconds: 0 });
+      await call("reply_to_request", { request: asking.id, status: "question", message: `Question ${round}?` });
+    }
+    const kept = payload(await call("get_selection", { request: asking.id })).thread;
+    assert.ok(kept.length <= THREAD_LIMIT);
+    assert.equal(kept[0].text, "Make it bolder");
+    assert.equal(kept.at(-1).text, "Question 11?");
+    assert.ok(kept.reduce((size: number, item: any) => size + item.text.length, 0) <= THREAD_TEXT_LIMIT);
+    assert.equal((await tab.post("/api/agent/dismiss", { id: asking.id })).status, 200);
+    assert.equal((await answer(asking.id, "Wait")).status, 409, "a dismissed request takes no answer");
 
     // A request belongs to its repository: another one's waits until the tab shows it.
     const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };

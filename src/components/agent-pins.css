@@ -2,11 +2,38 @@
    frame, under the edit bar. A pin stands above its element's top-left
    corner, where Ask agent's note stood, its small bottom-left corner the
    tail pointing at the element (flipped under the element's top edge when
-   `.is-below`). Every pin is a light blue so its number reads over any
-   page, in light and dark themes alike. Open requests have the action colour's
-   border, one an agent has taken a small spinner, done is green with a
-   check, an answer green with a speech mark; a pin whose element is gone
-   is dashed. Hovering or focusing a pin shows the request's first line. */
+   `.is-below`). Every pin is light so its number reads over any page, in
+   light and dark themes alike. Open requests are light blue with the action
+   colour's border, one an agent has taken a small spinner; an agent's
+   question is orange with a "?", for the user to answer; done (a check)
+   and answered (a speech mark) are grey, so they recede. A pin whose
+   element is gone is dashed. Hovering or focusing a pin shows the
+   request's first line. */
+:root {
+  /* A question for the user: orange, on pins light in both themes. */
+  --agent-question-strong: oklch(66% 0.18 48);
+  --agent-question-pin: oklch(94.5% 0.05 62);
+  --agent-question-ink: oklch(46% 0.14 45);
+  /* Finished: a neutral grey with a trace of the editor's hue. */
+  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
+  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
+  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  /* The card's: theme-aware. */
+  --agent-question-surface: oklch(96% 0.04 62);
+  --agent-question-text: oklch(42% 0.13 45);
+  --agent-done-surface: oklch(from var(--color-primary) 92.5% 0.005 h);
+  --agent-done-bubble: oklch(from var(--color-primary) 84% 0.008 h);
+  --agent-done-bubble-ink: oklch(from var(--color-primary) 27% 0.015 h);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --agent-question-surface: oklch(31% 0.06 50);
+    --agent-question-text: oklch(88% 0.08 62);
+    --agent-done-surface: oklch(from var(--color-primary) 29% 0.006 h);
+    --agent-done-bubble: oklch(from var(--color-primary) 40% 0.01 h);
+    --agent-done-bubble-ink: oklch(from var(--color-primary) 92% 0.008 h);
+  }
+}
 .agent-pins {
   position: absolute;
   z-index: 25;
@@ -58,10 +85,16 @@
   border-radius: 50%;
   animation: agent-pin-spin 0.8s steps(4) infinite;
 }
+.agent-pin[data-state="question"] {
+  border-color: var(--agent-question-strong);
+  background: var(--agent-question-pin);
+  color: var(--agent-question-ink);
+}
 .agent-pin[data-state="done"],
 .agent-pin[data-state="answered"] {
-  border-color: var(--color-success);
-  color: #2c5a25;
+  border-color: var(--agent-done-line);
+  background: var(--agent-done-pin);
+  color: var(--agent-done-ink);
 }
 /* The request's first line, folded away until hover or focus. */
 .agent-pin__text {
@@ -100,7 +133,7 @@
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-/* A new pin, and one just done or answered, pops once. */
+/* A new pin, and one just done, answered or asking, pops once. */
 .agent-pin.is-popping {
   animation: agent-pin-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -172,10 +205,14 @@
   }
 }
 
-/* Requests on other pages, or whose element is not on the page shown. */
+/* Requests on other pages, or whose element is not on the page shown, and
+   questions out of view: led by an orange count of the questions. */
 .agent-pins__tray {
   position: absolute;
   z-index: 26;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -185,8 +222,22 @@
   font: inherit;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
   transform: translate(-100%, -100%);
   box-shadow: var(--shadow);
+}
+.agent-pins__tray.has-questions {
+  border-color: var(--agent-question-strong);
+  padding-left: 5px;
+}
+.agent-pins__tray-questions {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: var(--agent-question-strong);
+  color: white;
+}
+.agent-pins__tray-questions::before {
+  content: "? ";
 }
 .agent-pins__tray[hidden] {
   display: none;
@@ -196,7 +247,11 @@
   outline-offset: 2px;
 }
 
-/* A request opened from its pin or the tray. */
+/* A request opened from its pin or the tray: a small conversation, the
+   user's messages in the action colour like Ask agent's note (its tail
+   bottom-left), the agents' on the surface (tail bottom-right), the one
+   asking the user in orange with the answer box under it. Done and
+   answered requests are grey. */
 .agent-pin-card {
   position: absolute;
   z-index: 31;
@@ -205,7 +260,7 @@
   gap: 10px;
   width: 300px;
   max-width: calc(100% - 16px);
-  max-height: 360px;
+  max-height: 380px;
   overflow: auto;
   padding: 10px;
   border-radius: 8px;
@@ -217,12 +272,28 @@
 .agent-pin-card[hidden] {
   display: none;
 }
+.agent-pin-card[data-state="done"],
+.agent-pin-card[data-state="answered"] {
+  background: var(--agent-done-surface);
+}
+.agent-pin-card__request {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .agent-pin-card__request + .agent-pin-card__request {
   padding-top: 10px;
   border-top: 1px solid var(--line);
 }
+/* In the tray, a finished request is grey on its own. */
+.agent-pin-card:not([data-state]) .agent-pin-card__request:is([data-state="done"], [data-state="answered"]) {
+  margin: 0 -4px;
+  border-radius: 6px;
+  padding: 6px 4px;
+  background: var(--agent-done-surface);
+}
 .agent-pin-card p {
-  margin: 0 0 6px;
+  margin: 0;
 }
 .agent-pin-card__head {
   display: flex;
@@ -230,22 +301,140 @@
   gap: 6px;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 600;
 }
 .agent-pin-card__where {
-  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, monospace);
-  font-weight: 400;
 }
-.agent-pin-card__text {
+.agent-pin-card__state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  margin-left: auto;
+  font-weight: 600;
+}
+.agent-pin-card__state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+[data-state="question"] > .agent-pin-card__head .agent-pin-card__state {
+  color: var(--agent-question-text);
+}
+[data-state="question"] > .agent-pin-card__head .agent-pin-card__state::before {
+  background: var(--agent-question-strong);
+}
+:is([data-state="done"], [data-state="answered"]) > .agent-pin-card__head .agent-pin-card__state::before {
+  background: var(--agent-done-line);
+}
+.agent-pin-card__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-pin-card__message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.agent-pin-card__message[data-from="agent"] {
+  align-items: flex-end;
+}
+.agent-pin-card__from {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.agent-pin-card__bubble {
+  max-width: 88%;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 8px 2px;
+  padding: 4px 8px 5px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: 12px/15px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.agent-pin-card__reply {
-  border-left: 3px solid var(--color-success);
-  padding-left: 8px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+[data-from="agent"] > .agent-pin-card__bubble {
+  border-color: var(--line);
+  border-radius: 8px 8px 2px 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+.agent-pin-card__message.is-question > .agent-pin-card__bubble {
+  border-color: var(--agent-question-strong);
+  background: var(--agent-question-surface);
+  color: var(--agent-question-text);
+}
+.agent-pin-card__message.is-question > .agent-pin-card__from {
+  color: var(--agent-question-text);
+}
+:is([data-state="done"], [data-state="answered"]) [data-from="user"] > .agent-pin-card__bubble {
+  background: var(--agent-done-bubble);
+  color: var(--agent-done-bubble-ink);
+}
+:is([data-state="done"], [data-state="answered"]) [data-from="agent"] > .agent-pin-card__bubble {
+  border-color: var(--agent-done-bubble);
+  background: transparent;
+}
+/* The answer to a question: the user's next message, as it is typed. */
+.agent-pin-card__answer {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.agent-pin-card__answer-input {
+  display: block;
+  width: 100%;
+  max-height: 84px;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1.5px solid var(--primary);
+  border-radius: 8px 8px 8px 2px;
+  padding: 4px 8px 5px;
+  background: var(--surface-input);
+  color: var(--text);
+  font: 12px/15px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  resize: none;
+  overflow-y: auto;
+}
+@supports (field-sizing: content) {
+  .agent-pin-card__answer-input {
+    field-sizing: content;
+    min-height: 26px;
+  }
+}
+.agent-pin-card__answer-input::placeholder {
+  color: var(--muted);
+}
+.agent-pin-card__answer-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.agent-pin-card__answer.is-sending {
+  cursor: progress;
+}
+.agent-pin-card__answer.is-sending .agent-pin-card__answer-input {
+  opacity: 0.6;
+}
+.agent-pin-card__error {
+  font-size: 11px;
+  font-weight: 620;
+}
+.agent-pin-card__error::before {
+  content: "⚠ ";
+}
+.agent-pin-card__error[hidden] {
+  display: none;
 }
 .agent-pin-card__actions {
   display: flex;

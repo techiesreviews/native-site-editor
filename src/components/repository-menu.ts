@@ -26,10 +26,14 @@ export function createRepositoryMenu(options: {
   const name = node("span", "repository-menu__name");
   const caret = node("span", "repository-menu__caret", "⌄");
   caret.setAttribute("aria-hidden", "true");
+  // Agents' questions waiting for the user (on their pins), counted on the tile.
+  const questions = node("span", "repository-menu__questions");
+  questions.setAttribute("aria-hidden", "true");
+  questions.hidden = true;
   const identity = node("span", "repository-menu__identity");
   const repository = node("span", "repository-menu__repository");
   identity.append(repository, name);
-  trigger.append(badge, identity, caret);
+  trigger.append(badge, questions, identity, caret);
   trigger.setAttribute("aria-controls", "repository-actions");
   trigger.setAttribute("aria-expanded", "false");
   const panel = node("div", "repository-menu__popover");
@@ -232,11 +236,20 @@ export function createRepositoryMenu(options: {
     name.textContent = repo?.name ?? "Choose a project";
     badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "·"));
     trigger.title = repo?.full_name ?? "Repository actions";
-    trigger.setAttribute(
-      "aria-label",
-      `${name.textContent} — repository actions`,
-    );
+    label();
     render();
+  }
+  function label() {
+    const count = Number(questions.textContent) || 0;
+    const asking = questions.hidden ? "" : ` — ${count === 1 ? "an agent asks you a question" : `agents ask you ${count} questions`}`;
+    trigger.setAttribute("aria-label", `${name.textContent} — repository actions${asking}`);
+  }
+  /** How many agents' questions wait for the user's answer on their pins. */
+  function setQuestions(count: number) {
+    questions.hidden = count < 1;
+    questions.textContent = count > 0 ? String(count) : "";
+    questions.title = count === 1 ? "An agent asks you a question: answer it on its orange pin" : `Agents ask you ${count} questions: answer them on their orange pins`;
+    label();
   }
   /** The repositories to list, or none with a message while loading or after a failure. */
   function setRepositories(next: Repository[], message?: string) {
@@ -252,6 +265,7 @@ export function createRepositoryMenu(options: {
     root,
     setRepository,
     setRepositories,
+    setQuestions,
     close: dropdown.close,
     destroy() {
       controller.abort();

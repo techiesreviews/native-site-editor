@@ -164,13 +164,29 @@ export interface AgentElement {
   component?: { tag: string; in: "instance" | "slot" | "template"; slot?: string };
 }
 
-export type AgentRequestState = "open" | "seen" | "done" | "answered" | "dismissed";
+export type AgentRequestState = "open" | "seen" | "done" | "answered" | "question" | "dismissed";
+
+/** How an agent replied: done (it changed the site), answered (nothing more is needed), or question (it needs the user's answer). */
+export type AgentReplyStatus = "done" | "answered" | "question";
+
+/** One message of a request's conversation: the user's words, or an agent's reply. */
+export interface AgentRequestMessage {
+  from: "user" | "agent";
+  text: string;
+  at: number;
+  /** An agent's: how it replied, and the edits it made for it. */
+  status?: AgentReplyStatus;
+  requestIds?: string[];
+}
 
 /**
  * Something the user asked agents to do about an element, from the edit
  * bar's Ask agent. The hub keeps them per session (worker/agent-requests.ts):
- * open until an agent fetches it (seen), then done or answered by its reply,
- * or dismissed by the user.
+ * open until an agent fetches it (seen), then done, answered or question by
+ * its reply, or dismissed by the user. The user answers a question, which
+ * opens it again for agents. `thread` is the conversation, `text` its first
+ * message and `reply` the agent's latest (requests kept from before threads
+ * have only those two).
  */
 export interface AgentRequest {
   id: string;
@@ -181,12 +197,27 @@ export interface AgentRequest {
   state: AgentRequestState;
   element: AgentElement;
   seenAt?: number;
-  /** The connections wait_for_requests returned it to. */
+  /** The connections wait_for_requests returned it to (since the user last answered). */
   returnedTo?: string[];
-  reply?: { status: "done" | "answered"; message: string; at: number; requestIds?: string[] };
+  reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[] };
+  thread?: AgentRequestMessage[];
 }
 
-/** The most text a request holds, the source of its element, and how many wait at once. */
+/**
+ * The most text a request (and each answer) holds, the source of its
+ * element, how many wait at once, and the messages and text its thread keeps.
+ */
 export const REQUEST_TEXT_LIMIT = 2000;
 export const REQUEST_HTML_LIMIT = 4096;
 export const OPEN_REQUESTS_LIMIT = 50;
+export const THREAD_LIMIT = 20;
+export const THREAD_TEXT_LIMIT = 8000;
+
+/** A request's conversation: its thread, or one made of its text and reply. */
+export function requestThread(request: Pick<AgentRequest, "text" | "createdAt" | "reply" | "thread">): AgentRequestMessage[] {
+  if (request.thread?.length) return request.thread;
+  const thread: AgentRequestMessage[] = [{ from: "user", text: request.text, at: request.createdAt }];
+  const reply = request.reply;
+  if (reply) thread.push({ from: "agent", text: reply.message, at: reply.at, status: reply.status, ...(reply.requestIds ? { requestIds: reply.requestIds } : {}) });
+  return thread;
+}

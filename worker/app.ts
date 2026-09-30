@@ -14,7 +14,7 @@ import {
   type AgentHub,
 } from "./agent-context";
 import { handleMcp } from "./mcp";
-import { requestIdPattern, requestSummary, validateAsk } from "./agent-requests";
+import { requestIdPattern, requestSummary, validateAnswer, validateAsk } from "./agent-requests";
 import {
   handleOAuth,
   isOAuthPath,
@@ -445,6 +445,11 @@ async function route(
     if (path === "/api/agent/ask" && request.method === "POST") {
       const data = await requestJson(request, 64 * 1024);
       return json(requestSummary(await operateHub(env, sessionId, { type: "ask", request: validateAsk(data) })));
+    }
+    // The user's answer to an agent's reply, from the request's card.
+    if (path === "/api/agent/answer" && request.method === "POST") {
+      const data = await requestJson(request, 16 * 1024);
+      return json(requestSummary(await operateHub(env, sessionId, { type: "answer", ...validateAnswer(data) })));
     }
     if (path === "/api/agent/dismiss" && request.method === "POST") {
       const data = await requestJson(request, 4096);

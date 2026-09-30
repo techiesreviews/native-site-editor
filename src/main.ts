@@ -294,6 +294,10 @@ function mountWorkspace() {
       if (!outcome) element("status").textContent = "Section drag cancelled";
     },
     onDismissRequest: (id) => void agentMenu?.dismiss(id),
+    onAnswerRequest: async (id, text) => {
+      if (!agentMenu) throw new Error("No agent is connected.");
+      await agentMenu.answer(id, text);
+    },
   });
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag))),
@@ -5221,6 +5225,7 @@ async function start() {
         // Ask agent shows in the edit bar while an agent is connected.
         onConnection: () => { if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
         onRequests: (requests) => nativePreview?.setRequests(requests),
+        onQuestions: (count) => repositoryMenu?.setQuestions(count),
       });
       element("agent-menu").append(agentMenu.root);
       await loadRepositories(info.repositories ?? undefined);

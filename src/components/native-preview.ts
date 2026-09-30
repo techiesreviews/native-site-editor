@@ -177,8 +177,9 @@ interface NativePreviewHandlers {
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
-  // A request to agents dismissed from its pin.
+  // A request to agents dismissed from its pin, and the user's answer to an agent's question.
   onDismissRequest?: (id: string) => void;
+  onAnswerRequest?: (id: string, text: string) => Promise<void>;
 }
 
 // A list of element-child indexes from the runtime.
@@ -308,7 +309,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const pins = createAgentPins(pane, frame, {
     locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
     onDismiss: (id) => handlers.onDismissRequest?.(id),
+    onAnswer: async (id, text) => {
+      if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
+      await handlers.onAnswerRequest(id, text);
+    },
     onShowPage: (target) => void followRoute(target),
+    onShowElement: (id) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "show-pin", id }, "*"),
     onLayout: () => editBar.refit(),
   });
 

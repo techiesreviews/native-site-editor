@@ -3,15 +3,21 @@
 // keeps them under "requests" (worker/agent-store.ts), apart from the hub
 // itself; agents fetch them with wait_for_requests and answer them with
 // reply_to_request (worker/mcp.ts), and the tab shows each one as a pin on
-// its element until the user dismisses it. A request belongs to the
-// repository it was asked in: a connection sees only the ones of the
-// repository the tab shows.
+// its element until the user dismisses it. An agent's question the user
+// answers from the pin: the answer joins the request's thread and the
+// request waits for agents again, returned once more to every connection.
+// A request belongs to the repository it was asked in: a connection sees
+// only the ones of the repository the tab shows.
 import { z } from "zod";
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_HTML_LIMIT,
   REQUEST_TEXT_LIMIT,
+  THREAD_LIMIT,
+  THREAD_TEXT_LIMIT,
+  requestThread,
   type AgentRequest,
+  type AgentRequestMessage,
 } from "../shared/agent";
 import { elementSchema } from "./agent-context";
 import { HttpError } from "./github";
@@ -35,30 +41,58 @@ export function validateAsk(value: unknown): AgentRequest {
     throw new HttpError(400, `A request needs text (up to ${REQUEST_TEXT_LIMIT} characters) and the element it is about.`);
   const { repository, text, element } = result.data;
   const html = element.html && element.html.length > REQUEST_HTML_LIMIT ? element.html.slice(0, REQUEST_HTML_LIMIT) : element.html;
+  const createdAt = Date.now();
   return {
     id: `req-${crypto.randomUUID()}`,
     text,
-    createdAt: Date.now(),
+    createdAt,
     repoId: repository.id,
     repository: repository.fullName,
     state: "open",
     element: { ...element, ...(html !== undefined ? { html } : {}), ...(html !== element.html ? { htmlClipped: true } : {}) },
+    thread: [{ from: "user", text, at: createdAt }],
   };
+}
+
+const answerSchema = z.object({
+  id: z.string().regex(requestIdPattern),
+  text: z.string().trim().min(1).max(REQUEST_TEXT_LIMIT),
+});
+
+/** The user's answer to an agent, from a request's card, checked. */
+export function validateAnswer(value: unknown) {
+  const result = answerSchema.safeParse(value);
+  if (!result.success) throw new HttpError(400, `An answer needs the request and text (up to ${REQUEST_TEXT_LIMIT} characters).`);
+  return result.data;
+}
+
+// A message added to a request's thread, which keeps its first message (what
+// was asked) and the latest ones, within THREAD_LIMIT and THREAD_TEXT_LIMIT.
+function addMessage(request: AgentRequest, message: AgentRequestMessage) {
+  const [first, ...rest] = [...requestThread(request), message];
+  const kept: AgentRequestMessage[] = [];
+  let size = first.text.length;
+  for (let at = rest.length - 1; at >= 0 && kept.length < THREAD_LIMIT - 1; at--) {
+    size += rest[at].text.length;
+    if (size > THREAD_TEXT_LIMIT && kept.length) break;
+    kept.unshift(rest[at]);
+  }
+  request.thread = [first, ...kept];
 }
 
 const waiting = (request: AgentRequest) => request.state === "open" || request.state === "seen";
 
-/** A request as the tab polls it: without its element's source. */
+/** A request as the tab polls it: without its element's source, with its thread. */
 export function requestSummary(request: AgentRequest) {
   const { html: _html, htmlClipped: _clipped, lines: _lines, ...element } = request.element;
   const { returnedTo: _returned, ...rest } = request;
-  return { ...rest, element };
+  return { ...rest, element, thread: requestThread(request) };
 }
 
-/** A request as an agent reads it. */
+/** A request as an agent reads it: with its whole thread, the user's answers included. */
 export function requestForAgent(request: AgentRequest) {
   const { returnedTo: _returned, repoId: _repoId, ...rest } = request;
-  return rest;
+  return { ...rest, thread: requestThread(request) };
 }
 
 /**
@@ -103,16 +137,34 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
   if (type === "reply") {
     if (!request || request.repoId !== action.repoId) throw new HttpError(404, "No such request in the site the editor shows.");
     if (request.state === "dismissed") throw new HttpError(409, "The user dismissed this request.");
-    if (action.status !== "done" && action.status !== "answered") throw new HttpError(400, "Reply with done or answered.");
+    if (action.status !== "done" && action.status !== "answered" && action.status !== "question")
+      throw new HttpError(400, "Reply with done, answered or question.");
+    const now = Date.now();
     request.state = action.status;
-    request.seenAt ??= Date.now();
+    request.seenAt ??= now;
     const requestIds = Array.isArray(action.requestIds) ? action.requestIds.filter((id: unknown) => typeof id === "string").slice(0, 20) : [];
     request.reply = {
       status: action.status,
       message: String(action.message ?? "").slice(0, REQUEST_TEXT_LIMIT),
-      at: Date.now(),
+      at: now,
       ...(requestIds.length ? { requestIds } : {}),
     };
+    addMessage(request, { from: "agent", text: request.reply.message, at: now, status: action.status, ...(requestIds.length ? { requestIds } : {}) });
+    return { list, changed: true, result: request };
+  }
+  if (type === "answer") {
+    // The user's answer to a reply: the request waits for agents again, and
+    // every connection gets it once more, thread and all.
+    if (!request) throw new HttpError(404, "No such request.");
+    if (request.state === "dismissed") throw new HttpError(409, "This request was dismissed.");
+    if (!request.reply) throw new HttpError(409, "No agent has replied to this request yet.");
+    if (!waiting(request) && list.filter(waiting).length >= OPEN_REQUESTS_LIMIT)
+      throw new HttpError(429, `${OPEN_REQUESTS_LIMIT} requests are waiting for an agent already. Dismiss some first.`);
+    addMessage(request, { from: "user", text: String(action.text ?? "").slice(0, REQUEST_TEXT_LIMIT), at: Date.now() });
+    request.state = "open";
+    delete request.reply;
+    delete request.seenAt;
+    delete request.returnedTo;
     return { list, changed: true, result: request };
   }
   if (type === "dismiss") {
@@ -124,4 +176,4 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
 }
 
 export const isRequestAction = (type: unknown) =>
-  type === "ask" || type === "take-requests" || type === "request" || type === "reply" || type === "dismiss";
+  type === "ask" || type === "take-requests" || type === "request" || type === "reply" || type === "answer" || type === "dismiss";

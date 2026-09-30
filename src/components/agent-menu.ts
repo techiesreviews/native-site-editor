@@ -23,7 +23,8 @@ import "./agent-menu.css";
 //
 // Ask agent in the edit bar sends a request about an element to the hub
 // (`ask`); agents fetch it with wait_for_requests and answer it. Each poll
-// brings the requests back with their state and reply, for the pins.
+// brings the requests back with their state and thread, for the pins; the
+// user answers an agent's question from its pin (`answer`).
 
 export interface AgentCommandOutcome {
   message?: string;
@@ -61,6 +62,8 @@ export function createAgentMenu(options: {
   onConnection?: (connected: boolean) => void;
   /** The open repository's requests to agents, each time they may have changed. */
   onRequests?: (requests: PinRequest[]) => void;
+  /** How many of them are agents' questions waiting for the user, when it changed. */
+  onQuestions?: (count: number) => void;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
@@ -116,6 +119,7 @@ export function createAgentMenu(options: {
   }
   let lastState = "";
   let lastRequests = "";
+  let lastQuestions = 0;
   // The open repository's requests, told only when they changed.
   function tellRequests() {
     const repo = options.repository();
@@ -124,6 +128,11 @@ export function createAgentMenu(options: {
     if (key === lastRequests) return;
     lastRequests = key;
     options.onRequests?.(requests);
+    const questions = requests.filter((item) => item.state === "question").length;
+    if (questions === lastQuestions) return;
+    lastQuestions = questions;
+    options.onQuestions?.(questions);
+    paint();
   }
   function paint() {
     const current = state();
@@ -146,7 +155,11 @@ export function createAgentMenu(options: {
           ? "Copy the prompt again"
           : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = current !== "waiting";
-    const text = current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent." : "";
+    const text =
+      current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent."
+        : current === "connected" && lastQuestions
+          ? `${lastQuestions === 1 ? "An agent asks you a question" : `Agents ask you ${lastQuestions} questions`}: answer on the orange pin${lastQuestions === 1 ? "" : "s"}.`
+          : "";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
   }
@@ -372,6 +385,13 @@ export function createAgentMenu(options: {
       // Agents waiting pick it up at once; the tab sees their progress as it polls.
       void poll(true);
       return request as PinRequest;
+    },
+    /** Answer an agent's question from its pin: the request waits for agents again. */
+    async answer(id: string, text: string) {
+      const request = await api("answer", { id, text });
+      hub.requests = (hub.requests ?? []).map((item) => (item.id === id ? request : item));
+      tellRequests();
+      void poll(true);
     },
     /** Dismiss (or clear) a request from its pin. */
     async dismiss(id: string) {

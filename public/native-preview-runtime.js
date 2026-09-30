@@ -2088,6 +2088,14 @@
       schedulePins();
       return;
     }
+    // A pin's element scrolled out of view, brought to the middle of the frame.
+    if (msg.type === "show-pin") {
+      var shownPin = pins.find(function (pin) { return pin && pin.id === msg.id; });
+      var target = shownPin && locatePin(shownPin);
+      var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (target && target.scrollIntoView) target.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+      return;
+    }
     if (msg.type !== "update") return;
     apply(msg.payload || {});
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
