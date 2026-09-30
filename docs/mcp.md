@@ -35,7 +35,7 @@ A connection lasts as long as the editor session it was made in (up to eight hou
 ### Token: any MCP client with a header
 
 1. Open the site in the editor and open the **project selector** (the repository name at the top left).
-2. Choose **Connect with MCP**. The editor makes a token for this editor session and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex).
+2. Choose **Connect with MCP**. The editor makes a token for this editor session and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex), then to call `get_site` and watch for Ask agent requests as the `watch_editor` prompt describes.
 3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**; its tooltip names the agent (from MCP `initialize`).
 
 The token is a password for your editor session's sites and drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.

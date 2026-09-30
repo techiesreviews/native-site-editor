@@ -420,5 +420,7 @@ Add it to your MCP servers as "native-site-editor":
 
 If you cannot change your own MCP settings, tell me exactly what to do. Once connected, call get_site to see what I have open. Your changes appear in my editor as unsaved drafts that I review and save.
 
+Then watch for my requests, as the server's watch_editor prompt describes: I select an element in the editor's preview and choose Ask agent. Call wait_for_requests, make each change it returns, answer with reply_to_request, and call wait_for_requests again, until I tell you to stop.
+
 The token works like a password: keep it out of files, commits and chats other than this one. It stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
 }
