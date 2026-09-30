@@ -39,7 +39,6 @@
   outline-offset: -2px;
 }
 .commit-history__location,
-.commit-history__notice,
 .commit-history__message {
   padding: 0 8px;
   font-size: var(--type-small);
@@ -50,11 +49,6 @@
 }
 .commit-history__message:empty {
   display: none;
-}
-.commit-history__navigation {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
 }
 .commit-history__list {
   display: grid;

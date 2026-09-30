@@ -45,7 +45,6 @@ export function createCommitHistory(options: {
   path: string;
   isCurrent(): boolean;
   hasDraft(): boolean;
-  onDrafts(): void;
   onRestored(result: RestoreResult): Promise<void>;
   onExpired(): void;
   /** Show this commit's version (`latest`: the file's current one, to go back). */
@@ -61,10 +60,6 @@ export function createCommitHistory(options: {
   reload.title = "Refresh history";
   header.append(node("h2", "changes-window__title", "History"), reload);
   const location = node("p", "commit-history__location", `${options.path} · ${options.branch}`);
-  const navigation = node("nav", "commit-history__navigation");
-  navigation.setAttribute("aria-label", "History views");
-  navigation.append(button("Draft changes", options.onDrafts, "text-button"));
-  const notice = node("p", "muted commit-history__notice");
   const list = node("ul", "commit-history__list");
   const message = node("p", "muted commit-history__message");
   message.setAttribute("role", "status");
@@ -72,7 +67,7 @@ export function createCommitHistory(options: {
   more.hidden = true;
   const confirmation = node("div", "commit-history__confirmation");
   confirmation.hidden = true;
-  root.append(header, location, navigation, notice, list, more, confirmation, message);
+  root.append(header, location, list, more, confirmation, message);
   const menu = createRowMenu(root);
 
   let head: string | undefined;
@@ -90,7 +85,6 @@ export function createCommitHistory(options: {
 
   function refresh() {
     if (!active()) return;
-    notice.textContent = options.hasDraft() ? blocked : "Restore an earlier version of this file. Each restore creates a new commit.";
     reload.disabled = loading || restoring;
     more.disabled = loading || restoring;
   }

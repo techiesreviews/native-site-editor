@@ -358,7 +358,6 @@ function openHistory(force = false) {
   commitHistory = createCommitHistory({
     repo: scope.repo, branch: scope.branch, path, isCurrent,
     hasDraft: () => Boolean(draftStore().get(scope, path)),
-    onDrafts: openDraftChanges,
     onExpired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
     onRestored: async (result) => {
       if (!isCurrent()) return;
@@ -483,60 +482,6 @@ async function restoreVersion(view: VersionView) {
   }
 }
 
-// Keep draft review reachable beside the durable GitHub file history.
-function openDraftChanges() {
-  commitHistory?.destroy();
-  const panel = element("changes");
-  const anchor = document.getElementById("history-button");
-  if (!anchor || !info.user || !currentRepo || !snapshot) return;
-  const scope = {
-    account: info.user.login,
-    repoId: currentRepo.id,
-    repo: currentRepo.full_name,
-    branch: snapshot.branch,
-  };
-  panel.replaceChildren(
-    node("h2", "changes-window__title", `Draft changes on ${scope.branch}`),
-    button("Commit history", () => openHistory(true), "text-button"),
-  );
-  const changes = listChanges(draftStore().list(scope));
-  const openFiles = new Set((editorModule?.changedFiles() ?? []).map((f) => f.path));
-  if (!changes.length && !openFiles.size)
-    panel.append(node("p", "muted changes-window__empty", "No changes yet. Edit a file to start a draft."));
-  const byPath = new Map(changes.map((change) => [change.path, change]));
-  const paths = [...new Set([...byPath.keys(), ...openFiles])].sort();
-  if (paths.length) {
-    panel.append(node("p", "files-heading", "CHANGED FILES"));
-    for (const path of paths) {
-      const change = byPath.get(path);
-      const label = change?.kind === "D" ? `${path} (deleted)` : change?.kind === "R" ? `${change.from} → ${path}` : path;
-      panel.append(
-        button(
-          label,
-          () => {
-            panel.hidePopover();
-            void showCodeChanges(path);
-          },
-          "file-row",
-        ),
-      );
-    }
-  }
-  if (currentPath && editorModule?.isReviewing(currentPath)) {
-    const path = currentPath;
-    panel.append(
-      button(
-        "Back to editing",
-        () => {
-          panel.hidePopover();
-          editorModule?.setReviewMode(path, false);
-        },
-        "button secondary changes-window__back",
-      ),
-    );
-  }
-  positionHistory(panel, anchor);
-}
 async function showCodeChanges(path: string) {
   if (currentPath !== path) {
     const epoch = generation;
