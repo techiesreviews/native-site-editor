@@ -79,7 +79,8 @@ interface Git {
   // Bytes: text files and uploaded binary files alike.
   blobs: Map<string, Buffer>;
   trees: Map<string, TreeEntry[]>;
-  commits: Map<string, { tree: string; parents: string[] }>;
+  // A commit's message and date show in the file history (`/commits`).
+  commits: Map<string, { tree: string; parents: string[]; message?: string; date?: string }>;
   head: string;
   // GitHub's read lag after a write, as a test sets it (`/__demo/lag`): the
   // next `reads` reads of the branch after each ref update name the commit
@@ -158,7 +159,7 @@ function buildInitialGit(fixture = fixtureRoot): Git {
   const git: Git = { blobs: new Map(), trees: new Map(), commits: new Map(), head: "" };
   const root = buildTree(git, fixture, "");
   const commit = commitSha(root.sha);
-  git.commits.set(commit, { tree: root.sha, parents: [] });
+  git.commits.set(commit, { tree: root.sha, parents: [], message: "Start the site", date: "2026-09-01T09:00:00Z" });
   git.head = commit;
   return git;
 }
@@ -188,7 +189,7 @@ function cloneGit(source: Git): Git {
   return {
     blobs: new Map(source.blobs),
     trees: new Map([...source.trees].map(([k, v]) => [k, v.map((e) => ({ ...e }))])),
-    commits: new Map([...source.commits].map(([key, value]) => [key, { tree: value.tree, parents: [...value.parents] }])),
+    commits: new Map([...source.commits].map(([key, value]) => [key, { ...value, parents: [...value.parents] }])),
     head: source.head,
   };
 }
@@ -326,6 +327,37 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       const status = base === head ? "identical" : reaches(head, base) ? "ahead" : reaches(base, head) ? "behind" : "diverged";
       return jsonResponse({ status });
     }
+    // A file's history: the commits from `sha` back that changed `path`.
+    if (path === `${repoBase}/commits` && method === "GET") {
+      const filePath = (url.searchParams.get("path") ?? "").split("/");
+      const perPage = Number(url.searchParams.get("per_page") ?? 30);
+      const page = Number(url.searchParams.get("page") ?? 1);
+      const blobAt = (sha: string) => {
+        let entries = git.trees.get(git.commits.get(sha)?.tree ?? "");
+        for (const [index, segment] of filePath.entries()) {
+          const entry = entries?.find((candidate) => candidate.path === segment);
+          if (!entry) return undefined;
+          if (index === filePath.length - 1) return entry.sha;
+          entries = git.trees.get(entry.sha);
+        }
+      };
+      const touched: string[] = [];
+      for (let sha = url.searchParams.get("sha") ?? git.head; git.commits.has(sha); sha = git.commits.get(sha)!.parents[0] ?? "") {
+        const parent = git.commits.get(sha)!.parents[0];
+        const here = blobAt(sha);
+        if (here !== (parent ? blobAt(parent) : undefined)) touched.push(sha);
+      }
+      return jsonResponse(touched.slice((page - 1) * perPage, page * perPage).map((sha) => {
+        const commit = git.commits.get(sha)!;
+        const date = commit.date ?? "2026-09-01T09:00:00Z";
+        return {
+          sha,
+          html_url: `https://github.com${repoBase.slice("/repos".length)}/commit/${sha}`,
+          author: { login: DEMO_LOGIN },
+          commit: { message: commit.message || "Update files", author: { name: DEMO_LOGIN, date } },
+        };
+      }));
+    }
     if (path.startsWith(`${repoBase}/git/commits/`) && method === "GET") {
       const sha = path.slice(`${repoBase}/git/commits/`.length);
       const commit = git.commits.get(sha);
@@ -382,7 +414,7 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
     if (path === `${repoBase}/git/commits` && method === "POST") {
       const parents = Array.isArray(body.parents) ? body.parents.map(String) : [];
       const sha = commitSha(body.tree + ":" + parents.join(",") + ":" + Date.now());
-      git.commits.set(sha, { tree: body.tree, parents });
+      git.commits.set(sha, { tree: body.tree, parents, message: String(body.message ?? ""), date: new Date().toISOString() });
       return jsonResponse({ sha });
     }
     if (path === `${repoBase}/git/refs/heads/main` && method === "PATCH") {
@@ -626,7 +658,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
             : { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
         ]);
         const commit = commitSha(tree + ":external:" + Date.now());
-        git.commits.set(commit, { tree, parents: [git.head] });
+        git.commits.set(commit, { tree, parents: [git.head], message: `Edit ${filePath} on GitHub`, date: new Date().toISOString() });
         git.head = commit;
         res.statusCode = 204;
         return res.end();

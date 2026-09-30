@@ -98,6 +98,8 @@ export interface HistoryCommit {
   sha: string;
   message: string;
   author: string;
+  /** The author's GitHub avatar, when the commit is linked to an account. */
+  avatar?: string;
   date: string;
   url: string;
 }

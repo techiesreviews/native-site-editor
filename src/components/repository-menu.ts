@@ -365,7 +365,7 @@ export function createRepositoryMenu(options: {
   };
 }
 
-function initial(text: string) {
+export function initial(text: string) {
   const result = node("span", "repository-menu__initial", (text.match(/[a-z0-9]/i)?.[0] ?? "·").toUpperCase());
   // A stable hue per name tells repositories apart at a glance.
   let hash = 0;
@@ -375,7 +375,7 @@ function initial(text: string) {
   return result;
 }
 
-function avatar(login: string, url: string) {
+export function avatar(login: string, url: string) {
   const image = node("img", "repository-menu__avatar");
   image.alt = "";
   image.width = 24;

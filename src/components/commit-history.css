@@ -6,6 +6,38 @@
 .commit-history h3 {
   margin: 0;
 }
+/* The heading with Refresh beside it, as Repositories has. */
+.commit-history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 4px;
+}
+.commit-history__refresh,
+.commit-history__more {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--size-icon);
+  height: var(--size-icon);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.commit-history__refresh:hover:not(:disabled),
+.commit-history__more:hover,
+.commit-history__more[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
+.commit-history__refresh:focus-visible,
+.commit-history__more:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .commit-history__location,
 .commit-history__notice,
 .commit-history__message {
@@ -27,16 +59,24 @@
 .commit-history__list {
   display: grid;
   gap: 2px;
-  margin: 4px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-/* A commit: a row like the menus', the file's current version tinted. */
+/* Today, Yesterday, a date: commits grouped by day. */
+.commit-history__day {
+  margin-top: 8px;
+  padding: 6px 8px 2px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  color: var(--muted);
+}
+/* A commit: a row like the menus', the file's current version tinted. Its
+   time leads, then the message and who made it; ⋯ shows on hover. */
 .commit-history__item {
   display: grid;
-  justify-items: start;
   gap: 2px;
-  padding: 6px 8px;
+  padding: 6px 4px 8px 8px;
   border-radius: var(--radius);
 }
 .commit-history__item:hover {
@@ -45,39 +85,65 @@
 .commit-history__item.is-current {
   background: var(--current);
 }
-.commit-history__subject {
-  font-size: var(--type-base);
+.commit-history__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--size-icon);
+}
+.commit-history__time {
   font-weight: 600;
+}
+.commit-history__ago {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.commit-history__badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--link);
+  font-size: var(--type-badge);
+  font-weight: 600;
+  line-height: 18px;
+}
+.commit-history__more {
+  margin-left: auto;
+  opacity: 0;
+}
+.commit-history__item:hover .commit-history__more,
+.commit-history__item:focus-within .commit-history__more,
+.commit-history__more[aria-expanded="true"] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .commit-history__more {
+    opacity: 1;
+  }
+}
+.commit-history__subject {
+  padding-right: 4px;
   overflow-wrap: anywhere;
 }
-.commit-history__meta,
+.commit-history__author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.commit-history__author .repository-menu__avatar,
+.commit-history__author .repository-menu__initial {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: var(--type-badge);
+}
 .commit-history__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-}
-.commit-history__meta {
-  font-size: var(--type-small);
-}
-/* Restore this version: a small link under the commit. */
-.commit-history__item .text-button {
-  min-height: var(--size-icon);
-  padding: 0;
-  color: var(--link);
-  font-size: var(--type-small);
-  font-weight: 600;
-}
-.commit-history__item .text-button:hover:not(:disabled) {
-  background: none;
-  text-decoration: underline;
-}
-.commit-history__item .text-button:disabled {
-  color: var(--muted);
-  opacity: 1;
-}
-.commit-history__item .text-button:focus-visible {
-  outline-offset: 2px;
+  gap: 8px;
 }
 .commit-history > .button {
   margin: 4px 8px 2px;

@@ -1,8 +1,41 @@
 import type { HistoryCommit, HistoryPage, RestoreResult } from "../../shared/types";
-import { button, link, node } from "../ui/dom";
+import { button, node } from "../ui/dom";
+import { setIcon } from "../icons";
+import { avatar, initial } from "./repository-menu";
+import { createRowMenu } from "./row-menu";
 import "./commit-history.css";
 
-/** File history owns loading, pagination and the explicit restore confirmation. */
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
+const units: [Intl.RelativeTimeFormatUnit, number][] = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+
+/** "2 hr. ago", "just now": how long ago a commit was, for a glance. */
+function ago(date: Date) {
+  const seconds = (date.getTime() - Date.now()) / 1000;
+  for (const [unit, size] of units)
+    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
+  return "just now";
+}
+
+/** The day a commit is grouped under: Today, Yesterday, or its date. */
+function day(date: Date) {
+  const start = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((start(new Date()) - start(date)) / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    weekday: days < 7 ? "long" : undefined,
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+  });
+}
+
+/**
+ * A file's history, as the version histories of Linear, Notion or Fibery
+ * show it: commits grouped by day, each with its time, message and author,
+ * the file's current version marked. A commit's ⋯ holds Restore, View on
+ * GitHub and Copy commit link; Restore asks first and creates a new commit.
+ */
 export function createCommitHistory(options: {
   repo: string;
   branch: string;
@@ -14,12 +47,16 @@ export function createCommitHistory(options: {
   onExpired(): void;
 }) {
   const root = node("section", "commit-history");
-  const heading = node("h2", "changes-window__title", "History");
+  const header = node("div", "commit-history__header");
+  const reload = button("", () => void load(1), "commit-history__refresh");
+  setIcon(reload, "arrows-clockwise");
+  reload.setAttribute("aria-label", "Refresh history");
+  reload.title = "Refresh history";
+  header.append(node("h2", "changes-window__title", "History"), reload);
   const location = node("p", "commit-history__location", `${options.path} · ${options.branch}`);
   const navigation = node("nav", "commit-history__navigation");
   navigation.setAttribute("aria-label", "History views");
-  const reload = button("Refresh history", () => void load(1), "text-button");
-  navigation.append(button("Draft changes", options.onDrafts, "text-button"), reload);
+  navigation.append(button("Draft changes", options.onDrafts, "text-button"));
   const notice = node("p", "muted commit-history__notice");
   const list = node("ul", "commit-history__list");
   const message = node("p", "muted commit-history__message");
@@ -28,7 +65,8 @@ export function createCommitHistory(options: {
   more.hidden = true;
   const confirmation = node("div", "commit-history__confirmation");
   confirmation.hidden = true;
-  root.append(heading, location, navigation, notice, list, more, confirmation, message);
+  root.append(header, location, navigation, notice, list, more, confirmation, message);
+  const menu = createRowMenu(root);
 
   let head: string | undefined;
   let currentFileCommit: string | undefined;
@@ -37,17 +75,14 @@ export function createCommitHistory(options: {
   let restoring = false;
   let disposed = false;
   let request = 0;
-  const restoreButtons = new Map<HTMLButtonElement, HistoryCommit>();
+  let lastDay = "";
   const seen = new Set<string>();
   const active = () => !disposed && options.isCurrent();
   const blocked = "Publish or discard this file’s draft before restoring. Other files’ drafts are kept.";
 
   function refresh() {
     if (!active()) return;
-    const dirty = options.hasDraft();
-    notice.textContent = dirty ? blocked : "Restore an earlier version of this file. Each restore creates a new commit.";
-    for (const [control, commit] of restoreButtons)
-      control.disabled = dirty || loading || restoring || commit.sha === currentFileCommit;
+    notice.textContent = options.hasDraft() ? blocked : "Restore an earlier version of this file. Each restore creates a new commit.";
     reload.disabled = loading || restoring;
     more.disabled = loading || restoring;
   }
@@ -60,9 +95,15 @@ export function createCommitHistory(options: {
     }
     return data as T;
   }
-  function showConfirmation(commit: HistoryCommit) {
-    if (!active() || loading || restoring) return;
-    if (options.hasDraft()) { refresh(); return; }
+  /** Why a commit cannot be restored now, if it cannot. */
+  function unavailable(commit: HistoryCommit) {
+    if (commit.sha === currentFileCommit) return "This is the file’s current version.";
+    if (options.hasDraft()) return blocked;
+    if (loading || restoring) return "Wait for the history to finish loading.";
+    return undefined;
+  }
+  function showConfirmation(commit: HistoryCommit, opener: HTMLElement) {
+    if (!active() || unavailable(commit)) { refresh(); return; }
     confirmation.replaceChildren(
       node("h3", "", "Restore this file?"),
       node("p", "", `Restore ${options.path} on ${options.branch} to ${commit.sha.slice(0, 7)} (${commit.message}). This creates a new commit. Other files stay unchanged.`),
@@ -72,7 +113,7 @@ export function createCommitHistory(options: {
       confirmation.hidden = true;
       list.hidden = false;
       more.hidden = nextPage === null;
-      restoreButtons.forEach((value, control) => { if (value.sha === commit.sha) control.focus(); });
+      if (opener.isConnected) opener.focus();
     }, "button secondary");
     const actions = node("div", "commit-history__actions");
     actions.append(confirm, cancel);
@@ -103,15 +144,63 @@ export function createCommitHistory(options: {
       if (active()) { confirm.disabled = cancel.disabled = false; refresh(); }
     }
   }
+  function openMenu(commit: HistoryCommit, opener: HTMLButtonElement) {
+    if (menu.isOpen() && menu.opener === opener) { menu.close(true); return; }
+    menu.open(opener, [
+      { label: "Restore this version…", run: () => showConfirmation(commit, opener), disabled: unavailable(commit) },
+      { label: "View on GitHub", run: () => void window.open(commit.url, "_blank", "noopener,noreferrer") },
+      {
+        label: "Copy commit link",
+        run: () => {
+          void navigator.clipboard.writeText(commit.url).then(
+            () => { if (active()) message.textContent = "Commit link copied."; },
+            () => { if (active()) message.textContent = "The link could not be copied."; },
+          );
+        },
+      },
+    ]);
+  }
+  function row(commit: HistoryCommit) {
+    const date = new Date(commit.date);
+    const known = !Number.isNaN(date.getTime());
+    const group = known ? day(date) : "Unknown date";
+    if (group !== lastDay) {
+      lastDay = group;
+      list.append(node("li", "commit-history__day", group));
+    }
+    const item = node("li", "commit-history__item");
+    const current = commit.sha === currentFileCommit;
+    item.classList.toggle("is-current", current);
+    const line = node("div", "commit-history__line");
+    const time = node("time", "commit-history__time", known ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "—");
+    if (known) {
+      time.dateTime = date.toISOString();
+      time.title = date.toLocaleString();
+    }
+    line.append(time);
+    if (known) line.append(node("span", "commit-history__ago", ago(date)));
+    if (current) line.append(node("span", "commit-history__badge", "Current"));
+    const actions = button("", () => openMenu(commit, actions), "commit-history__more");
+    setIcon(actions, "dots-three");
+    actions.setAttribute("aria-label", `Actions for ${commit.message || commit.sha.slice(0, 7)}`);
+    actions.setAttribute("aria-haspopup", "menu");
+    actions.setAttribute("aria-expanded", "false");
+    line.append(actions);
+    const author = node("div", "commit-history__author");
+    author.append(commit.avatar ? avatar(commit.author, commit.avatar) : initial(commit.author), node("span", "", commit.author));
+    item.append(line, node("p", "commit-history__subject", commit.message || "Untitled commit"), author);
+    return item;
+  }
   async function load(page: number) {
     if (!active() || loading || restoring) return;
     const id = ++request;
     loading = true;
+    menu.close(false);
     confirmation.hidden = true;
     list.hidden = false;
     message.textContent = "Loading commits…";
     if (page === 1) {
-      list.replaceChildren(); seen.clear(); restoreButtons.clear();
+      list.replaceChildren(); seen.clear(); lastDay = "";
       head = undefined; currentFileCommit = undefined; nextPage = null; more.hidden = true;
     }
     refresh();
@@ -125,21 +214,7 @@ export function createCommitHistory(options: {
       for (const commit of data.commits) {
         if (seen.has(commit.sha)) continue;
         seen.add(commit.sha);
-        const item = node("li", "commit-history__item");
-        item.classList.toggle("is-current", commit.sha === currentFileCommit);
-        item.append(node("strong", "commit-history__subject", commit.message || "Untitled commit"));
-        const meta = node("div", "muted commit-history__meta");
-        const date = new Date(commit.date);
-        const time = node("time", "", Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString());
-        if (!Number.isNaN(date.getTime())) time.dateTime = date.toISOString();
-        const commitLink = link(commit.sha.slice(0, 7), `https://github.com/${options.repo}/commit/${commit.sha}`, "text-link");
-        commitLink.target = "_blank"; commitLink.rel = "noopener noreferrer";
-        meta.append(node("span", "", commit.author), time, commitLink);
-        const action = button("Restore this version", () => showConfirmation(commit), "text-button");
-        if (commit.sha === currentFileCommit) action.textContent = "Current version";
-        restoreButtons.set(action, commit);
-        item.append(meta, action);
-        list.append(item);
+        list.append(row(commit));
       }
       nextPage = data.nextPage;
       more.hidden = nextPage === null;
@@ -152,5 +227,5 @@ export function createCommitHistory(options: {
   }
   root.addEventListener("focusin", refresh);
   void load(1);
-  return { root, refresh, destroy() { disposed = true; request++; } };
+  return { root, refresh, destroy() { disposed = true; request++; menu.close(false); } };
 }

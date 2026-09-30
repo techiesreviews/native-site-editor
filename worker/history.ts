@@ -85,7 +85,7 @@ export async function history(
     {
       sha: string;
       html_url: string;
-      author: { login?: string } | null;
+      author: { login?: string; avatar_url?: string } | null;
       commit: {
         message: string;
         author: { name: string; date: string } | null;
@@ -105,6 +105,9 @@ export async function history(
         row.commit.author?.name ??
         row.commit.committer?.name ??
         "Unknown",
+      ...(row.author?.avatar_url?.startsWith("https://")
+        ? { avatar: row.author.avatar_url }
+        : {}),
       date: row.commit.author?.date ?? row.commit.committer?.date ?? "",
       url: row.html_url,
     })),
