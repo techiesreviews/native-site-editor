@@ -4,7 +4,7 @@ Implemented and deployed 2026-09-17. Live GitHub authorization remains unverifie
 
 ## Delivered
 
-- Cloudflare Worker and static browser UI at https://astro.techies.tools (custom domain since 2026-09-18; the workers.dev address is disabled).
+- Cloudflare Worker and static browser UI at https://astro.techies.tools (custom domain since 2026-09-18; the workers.dev address is disabled). The editor moved to https://editor.techies.tools on 2026-09-24; since 2026-09-30 astro.techies.tools serves a separate project, Astro Live Builder.
 - GitHub App user authorization with one-use, browser-bound OAuth state, expiring server-side sessions, and same-origin logout.
 - Selected public/private personal repositories, paginated branches, lazy directory loading, read-only text previews, and Astro detection without executing project code.
 - Commit-pinned browsing and explicit refresh for incoming external-agent changes.

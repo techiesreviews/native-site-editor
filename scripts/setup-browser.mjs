@@ -12,7 +12,7 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   console.error(
-    "The inherited browser setup helper is disabled for this Native Site Editor Pages slice. Configure the GitHub App and Cloudflare Pages/Session Worker manually from docs/NATIVE-PROJECT.md; this script still targets the older Workers onboarding flow.",
+    "This older terminal helper is disabled. Set up the GitHub App in the browser at <editor>/auth/setup instead; see docs/setup.md.",
   );
   process.exit(1);
 }

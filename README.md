@@ -20,15 +20,15 @@ The address bar tracks the selected repository ID, branch and file, for example 
 
 **Connect with MCP** in the project selector copies a prompt that connects Claude, Codex or another MCP client to the open site; **Disconnect MCP** revokes it. Agents can update the active draft or create a new unpublished file; the browser applies changes with conflict checks and undo. Publishing remains in the editor. See [MCP setup and tools](docs/mcp.md).
 
-GitHub sign-in is configured on the reference deployment; your own installation registers its own GitHub App during setup. A private test repository is ready at [techiesreviews/astro-editor-starter](https://github.com/techiesreviews/astro-editor-starter).
+GitHub sign-in is configured on the reference deployment; your own installation registers its own GitHub App in the browser during setup. The private starter site is [techiesreviews/native-site-editor-starter](https://github.com/techiesreviews/native-site-editor-starter).
 
 ```sh
 npm ci
-npm run setup
-npm run dev
+npm run build:ui
+npx wrangler dev --config wrangler.sessions.jsonc
 ```
 
-Open http://127.0.0.1:8787. The app runs without credentials but needs GitHub App registration for a live connection. See [setup and deployment](docs/setup.md) for the guided setup, Cloudflare deployment, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
+Open http://127.0.0.1:8787. The app runs without credentials but needs a GitHub App for a live connection. See [setup and deployment](docs/setup.md) for owner setup, Cloudflare deployment, local credentials, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
 
 ## Hosting
 

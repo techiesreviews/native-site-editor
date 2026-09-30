@@ -3,13 +3,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSetupServer, manifest } from "../scripts/setup-browser.mjs";
 
-const editorOrigin = "https://astro.techies.tools";
+const editorOrigin = "https://editor.techies.tools";
 
 test("manifest contains hosted sign-in and Contents write and Metadata read permissions", () => {
   const value = manifest("http://127.0.0.1:8790", { editorOrigin });
   assert.equal(value.redirect_url, "http://127.0.0.1:8790/callback");
   assert.ok(
-    value.callback_urls.includes("https://astro.techies.tools/auth/callback"),
+    value.callback_urls.includes("https://editor.techies.tools/auth/callback"),
   );
   assert.deepEqual(value.default_permissions, {
     contents: "write",
