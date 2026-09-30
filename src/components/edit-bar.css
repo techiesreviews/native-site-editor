@@ -223,12 +223,30 @@
 .edit-bar__warning::before {
   content: "⚠ ";
 }
-/* The grip that drags a whole section: grab cursor, and no browser panning
-   or text selection from a touch or press on it. */
+/* The grip that drags a whole section: the section's name with small dots
+   before it, a grab cursor, and no browser panning or text selection from a
+   touch or press on it. */
 .edit-bar__grip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px 4px 2px;
   cursor: grab;
   touch-action: none;
   user-select: none;
+}
+.edit-bar__grip .edit-bar__kind {
+  padding: 0 6px 0 0;
+}
+.edit-bar__grip-dots {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+.edit-bar__grip:hover .edit-bar__grip-dots,
+.edit-bar__grip:focus-visible .edit-bar__grip-dots {
+  opacity: 1;
 }
 .edit-bar.is-dragging .edit-bar__grip {
   cursor: grabbing;

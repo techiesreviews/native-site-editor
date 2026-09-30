@@ -182,7 +182,7 @@ async function pressGrip(page: Page) {
 test("the grip in the edit bar drags a selected section onto the target gap, one undo step", async ({ page }) => {
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  // The grip comes first after the kind label, named and titled.
+  // The grip is the kind label itself, named and titled.
   await expect(bar(page).locator(":scope > button").first()).toHaveAccessibleName("Drag to move");
   await expect(grip(page)).toHaveAttribute("title", "Drag to move");
   const hero = (await frame(page).locator("section.hero").boundingBox())!;

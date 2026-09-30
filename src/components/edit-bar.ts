@@ -146,7 +146,7 @@ export interface EditBarModel {
   onFormat?: (format: "strong" | "em" | "link") => void;
   // Alt+Up and Alt+Down with focus in the bar; set only for a movable section.
   onMove?: (direction: "up" | "down") => void;
-  // A whole section: the bar starts with a grip that drags it in the page.
+  // A whole section: the bar's name is a grip that drags it in the page.
   draggable?: boolean;
 }
 
@@ -294,8 +294,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // place in the frame goes to the runtime at each move. The grip element
   // lasts across renders, and a render asked for during a drag waits for its
   // end, so the capture is never lost to a re-render.
-  const grip = button("", () => undefined, "edit-bar__button edit-bar__button--icon edit-bar__grip");
-  grip.append(icon("grip"));
+  // It is the bar's name with small dots before it, so the section is
+  // picked up by its name, with no separate handle.
+  const grip = button("", () => undefined, "edit-bar__button edit-bar__grip");
+  const gripDots = icon("grip");
+  gripDots.classList.add("edit-bar__grip-dots");
+  const gripName = node("span", "edit-bar__kind");
+  grip.append(gripDots, gripName);
   grip.setAttribute("aria-label", "Drag to move");
   grip.title = "Drag to move";
   let press: { pointerId: number; x: number; y: number; dragging: boolean } | undefined;
@@ -782,8 +787,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     else closeNote(false);
     onFormat = model.onFormat;
     onMove = model.onMove;
-    bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
-    if (model.draggable && drag) bar.append(grip);
+    if (model.draggable && drag) {
+      gripName.textContent = model.kind;
+      bar.replaceChildren(grip);
+    } else bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
     for (const control of model.controls) {
       if (control.kind === "button") {
         const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
