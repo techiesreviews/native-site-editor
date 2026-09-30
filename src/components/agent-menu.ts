@@ -196,25 +196,16 @@ export function createAgentMenu(options: {
           : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = current !== "waiting";
     const text =
-      current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent."
-        : current === "connected" && lastQuestions
-          ? `${lastQuestions === 1 ? "An agent asks you a question" : `Agents ask you ${lastQuestions} questions`}: answer on the orange pin${lastQuestions === 1 ? "" : "s"}.`
-          : "";
+      current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent." : "";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
   }
-  // The flyout: who is connected, then the questions waiting for the user
-  // (each shows its pin), or what the agents have otherwise.
+  // The flyout: the questions waiting for the user (each shows its pin),
+  // or what the agents have otherwise.
   function drawWaiting() {
-    const heading = node("div", "flyout__heading agent-menu__agents");
-    heading.setAttribute("role", "none");
-    heading.append(node("span", "", `${agentNames() || "An agent"} connected`));
     const questions = requests.filter((request) => request.state === "question");
-    const parts: Node[] = [heading];
+    const parts: Node[] = [];
     if (questions.length) {
-      const title = node("p", "agent-menu__waiting-title", questions.length === 1 ? "Waiting on your answer" : `Waiting on ${questions.length} answers`);
-      title.setAttribute("role", "none");
-      parts.push(title);
       for (const request of questions) {
         const number = requests.indexOf(request) + 1;
         const question = request.reply?.message.trim() || request.text;

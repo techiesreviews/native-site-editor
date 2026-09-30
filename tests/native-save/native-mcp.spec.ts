@@ -630,7 +630,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(disconnect.locator(".agent-menu__count")).toBeHidden();
     await disconnect.hover();
     await expect(waiting).toBeVisible();
-    await expect(waiting.locator(".agent-menu__agents")).toHaveText("playwright-agent connected");
+    await expect(waiting.locator(".agent-menu__agents")).toHaveCount(0);
     await expect(waiting.locator(".flyout__note")).toHaveText("1 request: agent working");
     await page.keyboard.press("Escape");
     await expect(waiting).toBeHidden();
@@ -642,7 +642,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(pin.locator(".agent-pin__status")).toHaveText("?");
     await expect(pin.locator(".agent-pin__question")).toHaveText("Warmer, or shorter?");
     await expect(pin.locator(".agent-pin__question")).toBeVisible();
-    expect(await pin.locator(".agent-pin__question").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await pin.locator(".agent-pin__question").evaluate((element) => element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight)).toBe(true);
     await expect(pin).toHaveAttribute("aria-label", "Request 1: Question, Warmer, or shorter?");
     expect(orange(await rgb(page, ".agent-pin", "background-color"))).toBe(true);
     expect(orange(await rgb(page, ".agent-pin", "border-top-color"))).toBe(true);
@@ -656,7 +656,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(page.locator(".agent-menu")).toHaveClass(/is-asking/);
     await disconnect.hover();
     await expect(waiting).toBeVisible();
-    await expect(waiting.locator(".agent-menu__agents")).toHaveText("playwright-agent connected");
+    await expect(waiting.locator(".agent-menu__agents")).toHaveCount(0);
     const entry = waiting.getByRole("menuitem");
     await expect(entry).toHaveCount(1);
     await expect(entry.locator(".agent-menu__question-number")).toHaveText("1");

@@ -216,7 +216,6 @@ export function createRepositoryMenu(options: {
       item.dataset.key = name;
       item.disabled = branch.disabled;
       item.append(node("span", "repository-menu__branch-name", name));
-      if (checked) item.append(node("span", "repository-menu__check", "✓"));
       item.addEventListener("click", () => chooseBranch(name));
       return item;
     }));
@@ -262,7 +261,6 @@ export function createRepositoryMenu(options: {
     );
     open.append(initial(repo.name), text);
     if (selected) {
-      open.append(node("span", "repository-menu__check", "✓"));
       const more = node("span", "repository-menu__more", "›");
       more.setAttribute("aria-hidden", "true");
       open.append(more);
@@ -280,7 +278,8 @@ export function createRepositoryMenu(options: {
       render();
       list.querySelector<HTMLElement>(".repository-menu__confirm a")?.focus();
     });
-    item.append(open, remove);
+    // Remove comes first, left of the repository, apart from its branches' ›.
+    item.append(remove, open);
     if (confirming === repo.id) {
       const confirm = node("div", "repository-menu__confirm");
       confirm.append(

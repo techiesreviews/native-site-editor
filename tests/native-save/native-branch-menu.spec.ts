@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // The open repository's row in the project selector names its branch, and
-// a flyout out of the row lists the branches (the current one checked) with
+// a flyout out of the row lists the branches (the current one marked for assistive tech) with
 // Refresh from GitHub: hovering the row opens it, as ArrowRight, Enter or a
 // click does with the focus in it; Esc and ArrowLeft go back to the row.
 // Choosing a branch switches the workspace to it. The fake GitHub's second
@@ -48,7 +48,7 @@ test("hovering the open repository's row lists its branches beside the menu, and
   await repoRow(page).hover();
   await expect(flyout(page)).toBeVisible();
   await expect(repoRow(page)).toHaveAttribute("aria-expanded", "true");
-  await expect(flyout(page).getByRole("menuitemradio")).toHaveText(["main✓", "feature"]);
+  await expect(flyout(page).getByRole("menuitemradio")).toHaveText(["main", "feature"]);
   await expect(branchItem(page, "main")).toHaveAttribute("aria-checked", "true");
   await expect(branchItem(page, "feature")).toHaveAttribute("aria-checked", "false");
   await expect(flyout(page).getByRole("menuitem", { name: "Refresh from GitHub" })).toBeEnabled();
