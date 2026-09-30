@@ -7,8 +7,9 @@
    colour's border, one an agent has taken a small spinner; an agent's
    question is orange with a "?", for the user to answer; done (a check)
    and answered (a speech mark) are grey, so they recede. A pin whose
-   element is gone is dashed. Hovering or focusing a pin shows the
-   request's first line. */
+   element is gone is dashed. Focusing a pin from the keyboard shows the
+   request's first line, and so does hovering one while another's card is
+   held open (hovering opens the pin's card). */
 :root {
   /* A question for the user: orange, on pins light in both themes. */
   --agent-question-strong: oklch(66% 0.18 48);
@@ -96,7 +97,8 @@
   background: var(--agent-done-pin);
   color: var(--agent-done-ink);
 }
-/* The request's first line, folded away until hover or focus. */
+/* The request's first line, folded away until a keyboard focus (or a hover
+   while another's card is held open). */
 .agent-pin__text {
   max-width: 0;
   overflow: hidden;
@@ -114,8 +116,9 @@
 .agent-pin[aria-expanded="true"] {
   z-index: 2;
 }
-.agent-pin:hover .agent-pin__text,
-.agent-pin:focus-visible .agent-pin__text {
+/* Hovering a pin opens its card instead, unless another's is held open. */
+.agent-pin:focus-visible:not([aria-expanded="true"]) .agent-pin__text,
+.agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"]) .agent-pin__text {
   max-width: 240px;
   margin-left: 6px;
   opacity: 1;
@@ -251,7 +254,7 @@
    user's messages in the action colour like Ask agent's note (its tail
    bottom-left), the agents' on the surface (tail bottom-right), the one
    asking the user in orange with the answer box under it. Done and
-   answered requests are grey. */
+   answered requests are grey. It fades in, beside the request's element. */
 .agent-pin-card {
   position: absolute;
   z-index: 31;
@@ -268,6 +271,17 @@
   color: var(--text);
   font-size: 12px;
   box-shadow: var(--shadow);
+  transition: opacity 120ms ease-out;
+}
+@starting-style {
+  .agent-pin-card {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-pin-card {
+    transition: none;
+  }
 }
 .agent-pin-card[hidden] {
   display: none;

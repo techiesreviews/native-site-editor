@@ -525,15 +525,44 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     await expect(page.locator('.agent-pin[data-state="answered"]')).toHaveCount(1);
     await expect(done.locator(".agent-pin__status")).toHaveText("✓");
     await expect(page.locator(".agent-pin-outline:not(.is-done)")).toHaveCount(0);
-    // Hovering a pin unfolds the request's first line.
-    await expect(done.locator(".agent-pin__text")).toBeHidden();
-    await done.hover();
-    await expect(done.locator(".agent-pin__text")).toBeVisible();
-    await expect(done.locator(".agent-pin__text")).toHaveText("Make this heading friendlier");
-    await done.click();
+    // Hovering a pin opens its card for a look, beside its element and
+    // without taking the focus; the pointer moving away closes it.
     const card = page.getByRole("dialog", { name: "Request 1" });
+    const intersects = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    await done.hover();
+    await expect(card).toBeVisible();
     await expect(card).toContainText("Make this heading friendlier");
     await expect(card).toContainText("Changed the heading to Hello there.");
+    await expect(done.locator(".agent-pin__text")).toBeHidden();
+    expect(await card.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+    // The heading spans the page: its card goes below it.
+    await expect(card).toHaveAttribute("data-side", "below");
+    expect(intersects((await card.boundingBox())!, (await heading.boundingBox())!)).toBe(false);
+    await page.mouse.move(5, 500);
+    await expect(card).toBeHidden();
+    // The card's text has room beside it: its card goes to its right.
+    const other = page.locator('.agent-pin[data-state="answered"]');
+    const otherCard = page.getByRole("dialog", { name: "Request 2" });
+    await other.hover();
+    await expect(otherCard).toBeVisible();
+    await expect(otherCard).toHaveAttribute("data-side", "right");
+    const text = frame(page).locator("project-card").nth(1).locator('p[slot="body"]');
+    expect(intersects((await otherCard.boundingBox())!, (await text.boundingBox())!)).toBe(false);
+    // Moving on to another pin switches to its card.
+    await done.hover();
+    await expect(card).toBeVisible();
+    await expect(otherCard).toBeHidden();
+    // A click holds it open, the pointer gone; hovering another pin then
+    // unfolds its first line.
+    await done.click();
+    await expect(card.getByRole("button", { name: "Clear" })).toBeFocused();
+    await other.hover();
+    await expect(other.locator(".agent-pin__text")).toHaveText("Is this sentence true?");
+    await expect(other.locator(".agent-pin__text")).toBeVisible();
+    await page.mouse.move(5, 500);
+    await page.waitForTimeout(900);
+    await expect(card).toBeVisible();
     await card.getByRole("button", { name: "Clear" }).click();
     await expect(pins).toHaveCount(1);
     await expect.poll(async () => (await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length).toBe(0);
@@ -590,15 +619,23 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(page.locator(".repository-menu__questions")).toHaveText("1");
     await expect(page.locator(".repository-menu__trigger")).toHaveAttribute("aria-label", /an agent asks you a question/);
 
-    // Its card is the conversation, the question in orange, with the answer
-    // box focused.
-    await pin.click();
+    // Its card is the conversation, the question in orange. Hovered, the
+    // answer box waits unfocused; a click holds it open, the box focused.
     const card = page.getByRole("dialog", { name: "Request 1" });
+    const answer = card.getByRole("textbox", { name: "Answer the agent" });
+    await pin.hover();
+    await expect(answer).toBeVisible();
+    await expect(answer).not.toBeFocused();
+    await page.mouse.move(5, 500);
+    await expect(card).toBeHidden();
+    await pin.click();
+    await page.mouse.move(5, 500);
+    await page.waitForTimeout(900);
+    await expect(card).toBeVisible();
     await expect(card.locator(".agent-pin-card__state")).toHaveText("Question");
     await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "Agent"]);
     await expect(card.locator(".agent-pin-card__bubble")).toHaveText(["Make this heading friendlier", "Warmer, or shorter?"]);
     expect(orange(await rgb(page, ".agent-pin-card__message.is-question .agent-pin-card__bubble", "border-top-color"))).toBe(true);
-    const answer = card.getByRole("textbox", { name: "Answer the agent" });
     await expect(answer).toBeFocused();
     await expect(answer).toHaveAttribute("placeholder", "Answer…");
     // Escape closes the card, keeping what was typed.
@@ -606,7 +643,8 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await page.keyboard.press("Escape");
     await expect(card).toHaveCount(0);
     await expect(pin).toBeFocused();
-    await pin.click();
+    // Enter on the pin opens it again, as a click does.
+    await page.keyboard.press("Enter");
     await expect(answer).toBeFocused();
     await expect(answer).toHaveValue("Warmer");
     const before = (await answer.boundingBox())!.height;
