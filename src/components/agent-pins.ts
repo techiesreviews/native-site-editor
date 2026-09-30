@@ -13,6 +13,14 @@ import "./agent-pins.css";
 // marked detached, and requests on other pages (or never found) are listed
 // in a tray in the corner. A pin opens the request: its text, the agent's
 // reply, and Dismiss (Clear once answered).
+//
+// A pin stands where Ask agent's note stood: above its element's top-left
+// corner, its small bottom-left corner pointing at the element (hanging
+// under the element's top edge when the frame has no room above it), and
+// the pins of one element line up left to right. A new pin pops in, and
+// again when the agent is done; while an agent works on a request its
+// element has a marching outline, drawn solid as it finishes. Hovering or
+// focusing a pin shows the request's first line.
 
 /** A request as the tab polls it: its element without the source. */
 export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply"> & {
@@ -36,6 +44,8 @@ interface PinHandlers {
   onDismiss(id: string): void;
   /** Show the page a request is on. */
   onShowPage(route: string): void;
+  /** The pins moved or changed (the edit bar keeps clear of the selection's). */
+  onLayout?(): void;
 }
 
 const stateLabels: Record<string, string> = {
@@ -44,6 +54,40 @@ const stateLabels: Record<string, string> = {
   done: "Done",
   answered: "Answered",
 };
+
+/** Space between an element's top edge and the notes on it. */
+export const NOTE_GAP = 4;
+/** A pin's height, and Ask agent's note's on one line. */
+export const PIN_HEIGHT = 22;
+// Between two pins of one element.
+const STACK_GAP = 3;
+// A request's pin pops in when it shows up this soon after it was asked.
+const FRESH = 5000;
+// The pop, and the finished outline's fade (agent-pins.css).
+const POP_MS = 600;
+const FADE_MS = 900;
+
+/**
+ * Where the notes on an element start, in frame coordinates: its left edge
+ * kept inside the frame, and its top edge, which the notes stand above or,
+ * with no room at the top of the frame, hang under (`below`).
+ */
+export function noteAnchor(rect: SelectionRect, frame: { width: number; height: number }) {
+  const edge = Math.max(0, Math.min(rect.top, frame.height));
+  return {
+    x: Math.max(4, Math.min(rect.left, frame.width - 4 - PIN_HEIGHT)),
+    edge,
+    below: edge - NOTE_GAP - PIN_HEIGHT < 4,
+  };
+}
+/** The top of a note `height` tall at `anchor`. */
+export function noteTop(anchor: ReturnType<typeof noteAnchor>, height: number) {
+  return anchor.below ? anchor.edge + NOTE_GAP : anchor.edge - NOTE_GAP - height;
+}
+const sameRect = (a: SelectionRect, b: SelectionRect) =>
+  Math.abs(a.top - b.top) < 1 && Math.abs(a.left - b.left) < 1 && Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
+
+const SVG = "http://www.w3.org/2000/svg";
 
 export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers: PinHandlers) {
   const layer = node("div", "agent-pins");
@@ -63,6 +107,13 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   const rects = new Map<string, SelectionRect | null>();
   const lastRects = new Map<string, SelectionRect>();
   const pins = new Map<string, HTMLButtonElement>();
+  // The outlines of the elements agents work on, or just finished.
+  const outlines = new Map<string, SVGSVGElement>();
+  // Each request's state as last told, and those whose pin pops (or whose
+  // outline finishes) when next shown: new ones, and ones just done.
+  const states = new Map<string, string>();
+  const pops = new Set<string>();
+  const finishing = new Set<string>();
   let openId: string | undefined;
   let openFromTray = false;
   let sent = "";
@@ -76,12 +127,91 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   // On the page shown and found now, or found here before.
   const placed = (request: PinRequest) =>
     request.element.route === route ? rects.get(request.id) ?? lastRects.get(request.id) : undefined;
+  // A pin's width without the request's line, which grows on hover.
+  const restingWidth = (pin: HTMLElement) =>
+    pin.offsetWidth - (pin.querySelector<HTMLElement>(".agent-pin__text")?.offsetWidth ?? 0);
+
+  function makePin(id: string) {
+    const pin = button("", () => toggle(id), "agent-pin");
+    pin.setAttribute("aria-haspopup", "dialog");
+    const status = node("span", "agent-pin__status");
+    const text = node("span", "agent-pin__text");
+    status.setAttribute("aria-hidden", "true");
+    text.setAttribute("aria-hidden", "true");
+    pin.append(node("span", "agent-pin__number"), status, text);
+    return pin;
+  }
+  // Number, state mark and first line, each set only when it changed so a
+  // spinning mark keeps turning across polls.
+  function paintPin(pin: HTMLButtonElement, request: PinRequest, number: number) {
+    const [numberSpan, status, text] = pin.children as HTMLCollectionOf<HTMLElement>;
+    if (numberSpan.textContent !== String(number)) numberSpan.textContent = String(number);
+    if (pin.dataset.state !== request.state) {
+      pin.dataset.state = request.state;
+      status.replaceChildren(
+        request.state === "seen" ? node("span", "agent-pin__spinner")
+          : document.createTextNode(request.state === "done" ? "✓" : request.state === "answered" ? "…" : ""),
+      );
+    }
+    const line = request.text.split("\n")[0].trim();
+    if (text.textContent !== line) text.textContent = line;
+  }
+  function pop(pin: HTMLElement) {
+    pin.classList.remove("is-popping");
+    void pin.offsetWidth;
+    pin.classList.add("is-popping");
+    setTimeout(() => pin.classList.remove("is-popping"), POP_MS);
+  }
+
+  // The outline on an element an agent works on: marching while it does,
+  // solid for a moment once it is done, then gone.
+  function outline(id: string, rect: SelectionRect | undefined, working: boolean) {
+    let box = outlines.get(id);
+    const done = finishing.has(id) && rect;
+    if (done) {
+      finishing.delete(id);
+      box ??= makeOutline(id);
+      box.classList.add("is-done");
+      const fading = box;
+      setTimeout(() => {
+        fading.remove();
+        if (outlines.get(id) === fading) outlines.delete(id);
+      }, FADE_MS);
+    }
+    if (!rect || !working && !box?.classList.contains("is-done")) {
+      box?.remove();
+      outlines.delete(id);
+      return;
+    }
+    box ??= makeOutline(id);
+    Object.assign(box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    box.setAttribute("width", String(rect.width));
+    box.setAttribute("height", String(rect.height));
+    const shape = box.firstElementChild!;
+    shape.setAttribute("width", String(Math.max(0, rect.width - 1.5)));
+    shape.setAttribute("height", String(Math.max(0, rect.height - 1.5)));
+  }
+  function makeOutline(id: string) {
+    const box = document.createElementNS(SVG, "svg");
+    box.classList.add("agent-pin-outline");
+    box.setAttribute("aria-hidden", "true");
+    const shape = document.createElementNS(SVG, "rect");
+    shape.setAttribute("x", "0.75");
+    shape.setAttribute("y", "0.75");
+    shape.setAttribute("rx", "2");
+    box.append(shape);
+    layer.prepend(box);
+    outlines.set(id, box);
+    return box;
+  }
 
   function layout() {
     const { frameRect, left, top } = geometry();
     Object.assign(layer.style, { left: `${left}px`, top: `${top}px`, width: `${frameRect.width}px`, height: `${frameRect.height}px` });
     const elsewhere: PinRequest[] = [];
     const seen = new Set<string>();
+    // The pins of one element line up from its anchor, oldest first.
+    const rows: { rect: SelectionRect; offset: number }[] = [];
     for (const request of requests) {
       const rect = placed(request);
       if (!rect) {
@@ -91,31 +221,37 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       seen.add(request.id);
       let pin = pins.get(request.id);
       if (!pin) {
-        pin = button("", () => toggle(request.id), "agent-pin");
-        pin.setAttribute("aria-haspopup", "dialog");
+        pin = makePin(request.id);
         pins.set(request.id, pin);
         layer.append(pin);
       }
       const number = numberOf(request.id);
-      pin.textContent = String(number);
-      pin.dataset.state = request.state;
+      paintPin(pin, request, number);
       pin.dataset.request = request.id;
       const detached = !rects.get(request.id);
       pin.classList.toggle("is-detached", detached);
       pin.setAttribute("aria-label", `Request ${number}: ${stateLabels[request.state] ?? request.state}${detached ? ", its element is gone" : ""}`);
-      pin.title = request.text;
       pin.setAttribute("aria-expanded", String(openId === request.id && !openFromTray));
-      // On the element's top right corner, kept inside the frame.
-      const x = Math.max(12, Math.min(rect.right, frameRect.width - 12));
-      const y = Math.max(12, Math.min(rect.top, frameRect.height - 12));
       pin.hidden = rect.bottom < 0 || rect.top > frameRect.height;
-      pin.style.left = `${x}px`;
-      pin.style.top = `${y}px`;
+      const anchor = noteAnchor(rect, frameRect);
+      let row = rows.find((item) => sameRect(item.rect, rect));
+      if (!row) rows.push(row = { rect, offset: 0 });
+      pin.classList.toggle("is-below", anchor.below);
+      pin.style.left = `${anchor.x + row.offset}px`;
+      pin.style.top = `${noteTop(anchor, PIN_HEIGHT)}px`;
+      if (!pin.hidden) row.offset += restingWidth(pin) + STACK_GAP;
+      if (!pin.hidden && pops.delete(request.id)) pop(pin);
+      outline(request.id, detached || pin.hidden ? undefined : rect, request.state === "seen");
     }
     for (const [id, pin] of pins)
       if (!seen.has(id)) {
         pin.remove();
         pins.delete(id);
+      }
+    for (const [id, box] of outlines)
+      if (!seen.has(id)) {
+        box.remove();
+        outlines.delete(id);
       }
     tray.hidden = !elsewhere.length;
     tray.textContent = `${elsewhere.length} request${elsewhere.length === 1 ? "" : "s"} elsewhere`;
@@ -129,6 +265,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       if (!request || !pin || pin.hidden) close(false);
       else renderCard(request);
     }
+    handlers.onLayout?.();
   }
 
   function close(restoreFocus: boolean) {
@@ -265,6 +402,20 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     /** The requests to show, oldest first, and the page the preview shows. */
     update(next: PinRequest[], shown: string) {
       requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
+      for (const request of requests) {
+        const was = states.get(request.id);
+        const finished = was !== undefined && was !== request.state && (request.state === "done" || request.state === "answered");
+        // Just asked (not one found on opening the editor), or just finished.
+        if (was === undefined ? Date.now() - request.createdAt < FRESH : finished) pops.add(request.id);
+        if (finished && request.state === "done") finishing.add(request.id);
+        states.set(request.id, request.state);
+      }
+      for (const id of states.keys())
+        if (!requests.some((item) => item.id === id)) {
+          states.delete(id);
+          pops.delete(id);
+          finishing.delete(id);
+        }
       if (shown !== route) {
         route = shown;
         rects.clear();
@@ -281,6 +432,18 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
         if (rect) lastRects.set(id, rect);
       }
       layout();
+    },
+    /**
+     * The pins on the element at `rect` (the selection): how far from its
+     * anchor the next one goes (0: none there), and the number it will have.
+     */
+    row(rect: SelectionRect) {
+      let offset = 0;
+      for (const [id, pin] of pins) {
+        const live = rects.get(id);
+        if (live && !pin.hidden && sameRect(live, rect)) offset += restingWidth(pin) + STACK_GAP;
+      }
+      return { offset, next: requests.length + 1 };
     },
     /** The frame loaded again: it is told the pins afresh. */
     reset() {

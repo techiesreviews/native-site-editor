@@ -292,12 +292,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let previewFocus = "";
   const postTheme = () =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus }, "*");
+  // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
   const editBar = createEditBar(pane, frame, {
     start: (at) => toRuntime("drag-start", at),
     move: (at) => toRuntime("drag-move", at),
     end: (at) => toRuntime("drag-end", at),
     cancel: () => toRuntime("drag-cancel"),
-  });
+  }, (rect) => pins.row(rect));
   const insertControls = createInsertControls(pane, frame, {
     choices: () => handlers.insertChoices?.() ?? [],
     onInsert: (point, choice) => handlers.onInsert?.(point, choice),
@@ -308,6 +309,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
     onDismiss: (id) => handlers.onDismissRequest?.(id),
     onShowPage: (target) => void followRoute(target),
+    onLayout: () => editBar.refit(),
   });
 
   let site: NativeSite | undefined;

@@ -1,4 +1,5 @@
 import { node, button } from "../ui/dom";
+import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pins";
 import "./edit-bar.css";
 
 // The edit bar: contextual controls anchored to the element selected in the
@@ -76,15 +77,15 @@ export type EditBarControl =
       onClose?: () => void;
     }
   | {
-      // A button opening a box to write a message about the selection (Ask
-      // agent): Enter sends it, Shift+Enter starts a new line, Escape
-      // cancels. `onSend` resolves to an error to show in the box, or to
-      // nothing once sent, and the box closes.
+      // A button opening a note to write a message about the selection (Ask
+      // agent), over the selected element where its pin will stand: Enter
+      // sends it, Shift+Enter starts a new line, Escape cancels. `onSend`
+      // resolves to an error to show in the note, or to nothing once sent,
+      // and the note closes into its pin.
       kind: "prompt";
       label: string;
       title?: string;
       placeholder?: string;
-      hint?: string;
       maxLength?: number;
       onSend: (text: string) => Promise<string | undefined>;
     };
@@ -96,10 +97,10 @@ export type AddressExtra =
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 
-export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip";
+export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip" | "ask";
 
-// Stroke paths on a 16 px grid.
-const iconPaths: Record<IconName, string> = {
+// Stroke paths on a 16 px grid; a `fill` one is a solid shape instead.
+const iconPaths: Record<IconName, string | { fill: string }> = {
   link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8",
   // The link's two halves apart, with a spark at each break.
   unlink: "M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8M2.5 5.5h2M5.5 2.5v2M13.5 10.5h-2M10.5 13.5v-2",
@@ -109,6 +110,8 @@ const iconPaths: Record<IconName, string> = {
   remove: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4",
   // Six dots in two columns, each a tiny closed arc.
   grip: [4, 8, 12].map((y) => [6, 10].map((x) => `M${x} ${y - 0.5}a.5.5 0 110 1a.5.5 0 110-1`).join("")).join(""),
+  // The four-pointed star of the editor's mark (✦).
+  ask: { fill: "M8 1.5C8.6 5.2 10.8 7.4 14.5 8C10.8 8.6 8.6 10.8 8 14.5C7.4 10.8 5.2 8.6 1.5 8C5.2 7.4 7.4 5.2 8 1.5Z" },
 };
 
 function icon(name: IconName) {
@@ -119,12 +122,18 @@ function icon(name: IconName) {
   svg.setAttribute("aria-hidden", "true");
   svg.classList.add("edit-bar__icon");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", iconPaths[name]);
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.6");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
+  const shape = iconPaths[name];
+  if (typeof shape === "string") {
+    path.setAttribute("d", shape);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.6");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+  } else {
+    path.setAttribute("d", shape.fill);
+    path.setAttribute("fill", "currentColor");
+  }
   svg.append(path);
   return svg;
 }
@@ -156,10 +165,35 @@ export interface EditBarDrag {
   cancel: () => void;
 }
 
+/**
+ * The pins on the element at a rectangle (src/components/agent-pins.ts):
+ * how far from the element's anchor the next one goes (0: none there), and
+ * the number it will have.
+ */
+export type PinRow = (rect: SelectionRect) => { offset: number; next: number };
+
 // Movement before a press on the grip becomes a drag.
 const DRAG_THRESHOLD = 7;
+// A sent note shrinking into its pin (edit-bar.css `edit-bar-note-sent`).
+const NOTE_SENT_MS = 180;
+// Six lines of the note's 14 px, where a browser without `field-sizing`
+// sizes it here.
+const NOTE_MAX_HEIGHT = 84;
+const noteSizesItself = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag) {
+interface Note {
+  label: string;
+  control: PromptControl;
+  // The Ask agent button, replaced at each render.
+  trigger: HTMLButtonElement;
+  element: HTMLElement;
+  number: HTMLElement;
+  input: HTMLTextAreaElement;
+  error: HTMLElement;
+}
+
+export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow) {
   const bar = node("div", "edit-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Edit bar");
@@ -176,8 +210,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   let popoverButton: HTMLButtonElement | undefined;
   // The open address field, kept across re-renders while its control persists.
   let openAddress: { label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
-  // The open message box, kept across re-renders with what is typed in it.
-  let openPrompt: { label: string; control: PromptControl } | undefined;
+  // Ask agent's note, kept across re-renders with what is typed in it, and
+  // a sent one shrinking away, which the bar keeps clear of until it is gone.
+  let note: Note | undefined;
+  let leaving: HTMLElement | undefined;
 
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
@@ -190,9 +226,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const trigger = popoverButton;
     const address = openAddress;
     openAddress = undefined;
-    openPrompt = undefined;
     popover.hidden = true;
-    popover.classList.remove("edit-bar__popover--prompt");
     popover.replaceChildren();
     popoverButton = undefined;
     trigger?.setAttribute("aria-expanded", "false");
@@ -387,6 +421,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const frameRect = frame.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
     const visible = rect.bottom > 0 && rect.top < frameRect.height && rect.right > 0 && rect.left < frameRect.width;
+    if (note) note.element.hidden = !visible;
     if (!visible) {
       bar.hidden = true;
       return;
@@ -400,8 +435,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
     const gap = 8;
-    const above = frameTop + rect.top - height - gap;
-    const below = frameTop + rect.bottom + gap;
+    // Clear of the selection and of the notes on it (its pins, Ask agent's note).
+    const row = placeNote(rect, frameRect, frameLeft, frameTop);
+    const above = frameTop + Math.min(rect.top, row?.top ?? rect.top) - height - gap;
+    const below = frameTop + Math.max(rect.bottom, row?.bottom ?? rect.bottom) + gap;
     let top = above;
     let side = "above";
     if (above < frameTop + 4) {
@@ -416,6 +453,26 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   resize.observe(frame);
   resize.observe(pane);
   resize.observe(bar);
+
+  // The note after the selection's pins, where the next pin will stand,
+  // and that row's extent in frame coordinates.
+  function placeNote(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number) {
+    const slot = pinRow?.(at);
+    const anchor = noteAnchor(at, frameRect);
+    if (note) {
+      const { element } = note;
+      note.number.textContent = slot ? `${slot.next}.` : "";
+      element.classList.toggle("is-below", anchor.below);
+      element.style.maxWidth = `${Math.max(120, frameRect.width - 8)}px`;
+      const x = Math.max(4, Math.min(anchor.x + (slot?.offset ?? 0), frameRect.width - element.offsetWidth - 4));
+      element.style.left = `${frameLeft + x}px`;
+      element.style.top = `${frameTop + Math.max(2, noteTop(anchor, element.offsetHeight))}px`;
+    }
+    const height = Math.max((note?.element ?? leaving)?.offsetHeight ?? 0, slot?.offset ? PIN_HEIGHT : 0);
+    if (!height) return undefined;
+    const top = noteTop(anchor, height);
+    return { top, bottom: top + height };
+  }
 
   // The address field's suggestion list: pages matching the typed text, all
   // of them while the field still holds the value it opened with; the one
@@ -585,55 +642,111 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     void uploadInto(address, [...event.dataTransfer.files]);
   });
 
-  function openPromptBox(item: HTMLButtonElement, control: PromptControl) {
-    const label = node("label", "edit-bar__field-label", control.label);
+  // Ask agent's note: one line that grows with what is typed (edit-bar.css),
+  // the number its request will have before it.
+  function openNote(trigger: HTMLButtonElement, control: PromptControl) {
+    closePopover(false);
+    closeNote(false);
+    const element = node("div", "edit-bar__note");
+    element.setAttribute("role", "dialog");
+    element.setAttribute("aria-label", control.label);
+    const number = node("span", "edit-bar__note-number");
+    number.setAttribute("aria-hidden", "true");
     const input = document.createElement("textarea");
-    input.className = "edit-bar__field-input edit-bar__prompt-input";
-    input.rows = 3;
+    input.className = "edit-bar__note-input";
+    input.rows = 1;
+    input.setAttribute("aria-label", control.label);
     input.placeholder = control.placeholder ?? "";
     if (control.maxLength) input.maxLength = control.maxLength;
-    label.append(input);
-    const error = node("p", "edit-bar__prompt-error");
+    const line = node("div", "edit-bar__note-line");
+    line.append(number, input);
+    const error = node("p", "edit-bar__note-error");
     error.setAttribute("role", "alert");
     error.hidden = true;
-    const prompt = { label: control.label, control };
-    let sending = false;
-    const send = async () => {
-      const text = input.value.trim();
-      if (!text || sending) return;
-      sending = true;
-      input.readOnly = true;
-      popover.classList.add("is-sending");
-      let problem: string | undefined;
-      try {
-        problem = await prompt.control.onSend(text);
-      } catch (caught) {
-        problem = (caught as Error).message || "It could not be sent.";
-      } finally {
-        sending = false;
-        input.readOnly = false;
-        popover.classList.remove("is-sending");
-      }
-      if (openPrompt !== prompt) return;
-      if (problem) {
-        error.textContent = problem;
-        error.hidden = false;
-        input.focus();
+    element.append(line, error);
+    pane.append(element);
+    const current: Note = { label: control.label, control, trigger, element, number, input, error };
+    note = current;
+    trigger.setAttribute("aria-expanded", "true");
+    input.addEventListener("input", () => fitNote(current));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeNote(true);
         return;
       }
-      closePopover(true);
-    };
-    input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
       event.preventDefault();
-      void send();
+      void sendNote(current);
     });
-    const content: HTMLElement[] = [label, error];
-    if (control.hint) content.push(node("p", "edit-bar__prompt-hint", control.hint));
-    openPopover(item, content, "dialog");
-    popover.classList.add("edit-bar__popover--prompt");
-    openPrompt = prompt;
+    // An empty note closes as the focus leaves it; one with words in it
+    // waits for Enter or Escape (and follows a newly selected element).
+    element.addEventListener("focusout", (event) => {
+      const to = event.relatedTarget as Node | null;
+      if (to && (element.contains(to) || current.trigger.contains(to))) return;
+      queueMicrotask(() => {
+        if (note === current && !element.contains(document.activeElement) && !input.value.trim()) closeNote(false);
+      });
+    });
+    resize.observe(element);
+    fitNote(current);
+    position();
     input.focus();
+  }
+  function fitNote(current: Note) {
+    if (noteSizesItself) return;
+    current.input.style.height = "auto";
+    current.input.style.height = `${Math.min(current.input.scrollHeight, NOTE_MAX_HEIGHT)}px`;
+  }
+  async function sendNote(current: Note) {
+    const text = current.input.value.trim();
+    if (!text || current.input.readOnly) return;
+    current.input.readOnly = true;
+    current.element.classList.add("is-sending");
+    let problem: string | undefined;
+    try {
+      problem = await current.control.onSend(text);
+    } catch (caught) {
+      problem = (caught as Error).message || "It could not be sent.";
+    } finally {
+      current.input.readOnly = false;
+      current.element.classList.remove("is-sending");
+    }
+    if (note !== current) return;
+    if (problem) {
+      current.error.textContent = problem;
+      current.error.hidden = false;
+      current.input.focus();
+      return;
+    }
+    closeNote(true, true);
+  }
+  // A sent note shrinks into the spot its pin takes as the pin pops in.
+  function closeNote(restoreFocus: boolean, sent = false) {
+    const current = note;
+    if (!current) return;
+    note = undefined;
+    current.trigger.setAttribute("aria-expanded", "false");
+    resize.unobserve(current.element);
+    if (restoreFocus) current.trigger.focus();
+    const { element } = current;
+    if (sent && !reducedMotion()) {
+      leaving?.remove();
+      leaving = element;
+      element.inert = true;
+      element.setAttribute("aria-hidden", "true");
+      element.classList.add("is-sent");
+      setTimeout(() => {
+        element.remove();
+        if (leaving !== element) return;
+        leaving = undefined;
+        position();
+      }, NOTE_SENT_MS);
+    } else {
+      element.remove();
+    }
+    position();
   }
 
   function addressButton(control: AddressControl) {
@@ -660,12 +773,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // (the source re-renders after each keystroke); its handlers move over.
     const kept = openAddress && model.controls.find((control): control is AddressControl =>
       control.kind === "address" && control.label === openAddress?.label);
-    // An open message box stays open the same way, with its text.
-    const keptPrompt = openPrompt && model.controls.find((control): control is PromptControl =>
-      control.kind === "prompt" && control.label === openPrompt?.label);
+    // Ask agent's note stays open the same way, with its text.
+    const keptPrompt = note && model.controls.find((control): control is PromptControl =>
+      control.kind === "prompt" && control.label === note?.label);
     if (kept && openAddress) openAddress.control = kept;
-    else if (keptPrompt && openPrompt) openPrompt.control = keptPrompt;
     else closePopover(false);
+    if (keptPrompt && note) note.control = keptPrompt;
+    else closeNote(false);
     onFormat = model.onFormat;
     onMove = model.onMove;
     bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
@@ -711,14 +825,16 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         }
         bar.append(item);
       } else if (control.kind === "prompt") {
-        const item = button(control.label, () => {
-          if (popoverButton === item) { closePopover(true); return; }
-          openPromptBox(item, control);
-        }, "edit-bar__button edit-bar__ask");
-        if (control.title) item.title = control.title;
+        const item = button("", () => {
+          if (note?.trigger === item) { closeNote(true); return; }
+          openNote(item, control);
+        }, "edit-bar__button edit-bar__button--icon edit-bar__ask");
+        item.append(icon("ask"));
+        item.setAttribute("aria-label", control.label);
+        item.title = control.title ?? control.label;
         item.setAttribute("aria-haspopup", "dialog");
         item.setAttribute("aria-expanded", String(keptPrompt === control));
-        if (keptPrompt === control) popoverButton = item;
+        if (keptPrompt === control && note) note.trigger = item;
         bar.append(item);
       } else {
         const select = document.createElement("select");
@@ -734,7 +850,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       }
     }
     bar.dataset.model = "1";
-    if ((kept || keptPrompt) && popoverButton) placePopover(popoverButton);
+    if (kept && popoverButton) placePopover(popoverButton);
     return opening;
   }
 
@@ -771,6 +887,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       if (pending) pending.at = at;
       position();
     },
+    /** The pins moved or changed: the bar and Ask agent's note keep to them. */
+    refit() {
+      position();
+    },
     /** The runtime ended the drag (dropped, or cancelled on its side): the grip lets go. */
     dragEnded() {
       stopDrag();
@@ -779,6 +899,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       cancelDrag();
       pending = undefined;
       closePopover(false);
+      closeNote(false);
       rect = undefined;
       delete bar.dataset.model;
       bar.hidden = true;
@@ -789,6 +910,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       window.removeEventListener("keydown", onDragKey, true);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
+      closeNote(false);
+      leaving?.remove();
       popover.remove();
       bar.remove();
     },

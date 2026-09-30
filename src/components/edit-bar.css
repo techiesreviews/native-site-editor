@@ -252,35 +252,128 @@
 .edit-bar__popover.is-uploading {
   cursor: progress;
 }
-/* Ask agent: a message box under the bar. */
+/* Ask agent: the star button, and the note it opens over the selected
+   element's top-left corner, where the request's pin will stand (under
+   the element's top edge when the frame has no room above, `.is-below`).
+   The note is in the action colour, its small bottom-left corner the tail
+   pointing at the element; it grows with its text, from one line and
+   about 180 px up to six lines and 320 px. It comes in rising 2 px, and
+   once sent shrinks into its spot as the pin pops in. */
 .edit-bar__ask[aria-expanded="true"] {
   background: var(--edit-bar-active);
   color: var(--edit-bar-on-active);
 }
-.edit-bar__popover--prompt {
-  max-height: none;
+.edit-bar__note {
+  position: absolute;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-sizing: border-box;
+  border-radius: 8px 8px 8px 2px;
+  padding: 3.5px 8px 4.5px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: 12px/14px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  box-shadow: 0 2px 8px var(--semantic-shadow);
+  transform-origin: left bottom;
+  animation: edit-bar-note-in 140ms ease-out;
 }
-.edit-bar__prompt-input {
-  width: 280px;
-  min-height: 60px;
-  resize: vertical;
-  line-height: 1.4;
+.edit-bar__note.is-below {
+  border-radius: 2px 8px 8px 8px;
+  transform-origin: left top;
 }
-.edit-bar__prompt-hint,
-.edit-bar__prompt-error {
-  margin: 2px;
-  font-size: 11px;
-}
-.edit-bar__prompt-hint {
-  color: var(--muted);
-}
-.edit-bar__prompt-error {
-  color: var(--warning-fg);
-  font-weight: 620;
-}
-.edit-bar__prompt-error[hidden] {
+.edit-bar__note[hidden] {
   display: none;
 }
-.edit-bar__popover.is-sending {
+/* Focused: a soft halo in its own colour (it waits unfocused with words in it). */
+.edit-bar__note:focus-within {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 2px 8px var(--semantic-shadow);
+}
+.edit-bar__note-line {
+  display: flex;
+  align-items: flex-start;
+}
+.edit-bar__note-number {
+  flex: none;
+  white-space: pre;
+  font-weight: 700;
+}
+.edit-bar__note-number:not(:empty)::after {
+  content: " ";
+}
+.edit-bar__note-input {
+  display: block;
+  width: 240px;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 84px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  caret-color: currentColor;
+  font: inherit;
+  resize: none;
+  overflow-y: auto;
+}
+@supports (field-sizing: content) {
+  .edit-bar__note-input {
+    field-sizing: content;
+    width: auto;
+    min-width: 150px;
+    max-width: min(290px, 100%);
+  }
+}
+.edit-bar__note-input::placeholder {
+  color: inherit;
+  opacity: 0.65;
+}
+.edit-bar__note-input:focus,
+.edit-bar__note-input:focus-visible {
+  outline: none;
+}
+.edit-bar__note-error {
+  max-width: 290px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 14px;
+}
+.edit-bar__note-error::before {
+  content: "⚠ ";
+}
+.edit-bar__note-error[hidden] {
+  display: none;
+}
+.edit-bar__note.is-sending {
   cursor: progress;
+}
+.edit-bar__note.is-sending .edit-bar__note-input {
+  opacity: 0.6;
+}
+.edit-bar__note.is-sent {
+  pointer-events: none;
+  animation: edit-bar-note-sent 180ms ease-in forwards;
+}
+@keyframes edit-bar-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+@keyframes edit-bar-note-sent {
+  to {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .edit-bar__note,
+  .edit-bar__note.is-sent {
+    animation: none;
+  }
 }

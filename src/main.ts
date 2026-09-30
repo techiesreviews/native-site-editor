@@ -1222,9 +1222,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     controls.push({
       kind: "prompt",
       label: "Ask agent",
-      title: "Ask the connected agent to do something with this element",
-      placeholder: `What should the agent do with this ${kind.toLowerCase()}?`,
-      hint: "Enter sends · Shift+Enter for a new line · Esc cancels",
+      placeholder: "Ask the agent…",
       maxLength: REQUEST_TEXT_LIMIT,
       onSend: async (text) => {
         const about = agentElement({ ...selection, route: preview.route() }, site, nativeSources()[path]);

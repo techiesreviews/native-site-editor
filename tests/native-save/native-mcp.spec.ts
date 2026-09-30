@@ -452,23 +452,46 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     expect(selected).toMatchObject({ file: indexPath, route: "/", id: "1.0.0", tag: "h1", lines: { start: 17, end: 17 } });
     expect(selected.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
 
-    // Escape cancels; Shift+Enter is a new line and Enter sends.
-    await bar.getByRole("button", { name: "Ask agent" }).click();
-    const box = page.getByRole("textbox", { name: "Ask agent" });
+    // The button is the editor's star, named by its label.
+    const ask = bar.getByRole("button", { name: "Ask agent" });
+    await expect(ask).toHaveText("");
+    await expect(ask).toHaveAttribute("title", "Ask agent");
+    await expect(ask.locator("svg path")).toHaveAttribute("fill", "currentColor");
+
+    // A note over the heading's top-left corner, numbered as its pin will
+    // be, with no hint text. Escape cancels; Shift+Enter is a new line and
+    // Enter sends.
+    await ask.click();
+    const note = page.getByRole("dialog", { name: "Ask agent" });
+    const box = note.getByRole("textbox", { name: "Ask agent" });
     await expect(box).toBeFocused();
+    await expect(box).toHaveAttribute("placeholder", "Ask the agent…");
+    await expect(note).toHaveText("1.");
+    const noteBox = (await note.boundingBox())!;
+    const headingBox = (await heading.boundingBox())!;
+    expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(headingBox.y);
+    expect(Math.abs(noteBox.x - headingBox.x)).toBeLessThan(2);
     await box.fill("Never mind");
     await page.keyboard.press("Escape");
     await expect(box).toHaveCount(0);
-    await expect(bar.getByRole("button", { name: "Ask agent" })).toBeFocused();
-    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await expect(ask).toBeFocused();
+    await ask.click();
     await page.keyboard.type("Make this heading friendlier");
     await page.keyboard.press("Shift+Enter");
     await page.keyboard.type("Keep it short");
     await page.keyboard.press("Enter");
-    await expect(box).toHaveCount(0);
+    // The note closes into its pin, on the same spot; the heading stays
+    // selected, so another request can follow at once.
+    await expect(note).toHaveCount(0);
     await expect(pins).toHaveCount(1);
-    await expect(pins.first()).toHaveText("1");
+    await expect(pins.first().locator(".agent-pin__number")).toHaveText("1");
     await expect(pins.first()).toHaveAttribute("data-state", "open");
+    const pinBox = (await pins.first().boundingBox())!;
+    expect(Math.abs(pinBox.x - noteBox.x)).toBeLessThan(2);
+    expect(Math.abs(pinBox.y + pinBox.height - (noteBox.y + noteBox.height))).toBeLessThan(2);
+    await expect(bar).toBeVisible();
+    await expect(bar.locator(".edit-bar__kind")).toHaveText("Heading");
+    await expect(ask).toBeFocused();
 
     // A second one, about a card's slotted text, before the agent looks.
     await frame(page).locator("project-card").nth(1).locator('p[slot="body"]').click();
@@ -485,7 +508,10 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     expect(first.element.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
     expect(second.element).toMatchObject({ file: indexPath, tag: "p", component: { tag: "project-card", in: "slot", slot: "body" } });
     expect(second.element.text).toContain("header and footer are custom elements");
+    // Taken: each pin spins and its element has a marching outline.
     await expect(page.locator('.agent-pin[data-state="seen"]')).toHaveCount(2);
+    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__spinner')).toHaveCount(2);
+    await expect(page.locator(".agent-pin-outline")).toHaveCount(2);
 
     // It edits the heading, and says so; the pin shows it.
     const home = await call("read_file", { path: indexPath });
@@ -497,6 +523,13 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     const done = page.locator('.agent-pin[data-state="done"]');
     await expect(done).toHaveCount(1);
     await expect(page.locator('.agent-pin[data-state="answered"]')).toHaveCount(1);
+    await expect(done.locator(".agent-pin__status")).toHaveText("✓");
+    await expect(page.locator(".agent-pin-outline:not(.is-done)")).toHaveCount(0);
+    // Hovering a pin unfolds the request's first line.
+    await expect(done.locator(".agent-pin__text")).toBeHidden();
+    await done.hover();
+    await expect(done.locator(".agent-pin__text")).toBeVisible();
+    await expect(done.locator(".agent-pin__text")).toHaveText("Make this heading friendlier");
     await done.click();
     const card = page.getByRole("dialog", { name: "Request 1" });
     await expect(card).toContainText("Make this heading friendlier");
