@@ -1,4 +1,4 @@
-import type { HistoryCommit, HistoryPage, RestoreResult } from "../../shared/types";
+import type { CommitFile, CommitFiles, HistoryCommit, HistoryPage, RestoreResult } from "../../shared/types";
 import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { avatar, initial } from "./repository-menu";
@@ -38,11 +38,19 @@ function day(date: Date) {
  * to latest and Restore); the version on show is tinted. A commit's ⋯
  * holds Restore, View on GitHub and Copy commit link; Restore asks first
  * and creates a new commit.
+ *
+ * The Whole site tab lists every commit on the branch instead, as GitBook
+ * and Replit do: choosing one unfolds the files it changed, and choosing
+ * a file opens it as it was then (`onOpenFile`).
  */
 export function createCommitHistory(options: {
   repo: string;
   branch: string;
-  path: string;
+  /** The open file, for This file; none for the site's history. */
+  path?: string;
+  scope: "file" | "site";
+  onScope(scope: "file" | "site"): void;
+  onOpenFile(path: string, commit: HistoryCommit, head: string): void;
   isCurrent(): boolean;
   hasDraft(): boolean;
   onRestored(result: RestoreResult): Promise<void>;
@@ -59,7 +67,18 @@ export function createCommitHistory(options: {
   reload.setAttribute("aria-label", "Refresh history");
   reload.title = "Refresh history";
   header.append(node("h2", "changes-window__title", "History"), reload);
-  const location = node("p", "commit-history__location", `${options.path} · ${options.branch}`);
+  const site = options.scope === "site";
+  const scopes = node("div", "commit-history__scopes");
+  scopes.setAttribute("role", "tablist");
+  scopes.setAttribute("aria-label", "History of");
+  for (const [scope, label] of [["file", "This file"], ["site", "Whole site"]] as const) {
+    const tab = button(label, () => { if (scope !== options.scope) options.onScope(scope); }, "commit-history__scope");
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(scope === options.scope));
+    tab.disabled = scope === "file" && !options.path;
+    scopes.append(tab);
+  }
+  const location = node("p", "commit-history__location", `${site ? options.repo.split("/").pop() : options.path} · ${options.branch}`);
   const list = node("ul", "commit-history__list");
   const message = node("p", "muted commit-history__message");
   message.setAttribute("role", "status");
@@ -67,7 +86,7 @@ export function createCommitHistory(options: {
   more.hidden = true;
   const confirmation = node("div", "commit-history__confirmation");
   confirmation.hidden = true;
-  root.append(header, location, list, more, confirmation, message);
+  root.append(header, scopes, location, list, more, confirmation, message);
   const menu = createRowMenu(root);
 
   let head: string | undefined;
@@ -108,7 +127,7 @@ export function createCommitHistory(options: {
     if (!active() || unavailable(commit)) { refresh(); return; }
     confirmation.replaceChildren(
       node("h3", "", "Restore this file?"),
-      node("p", "", `Restore ${options.path} on ${options.branch} to ${commit.sha.slice(0, 7)} (${commit.message}). This creates a new commit. Other files stay unchanged.`),
+      node("p", "", `Restore ${options.path ?? ""} on ${options.branch} to ${commit.sha.slice(0, 7)} (${commit.message}). This creates a new commit. Other files stay unchanged.`),
     );
     const confirm = button("Restore file", () => void restore(commit, confirm, cancel), "button primary");
     const cancel = button("Cancel", () => {
@@ -149,7 +168,7 @@ export function createCommitHistory(options: {
   function openMenu(commit: HistoryCommit, opener: HTMLButtonElement) {
     if (menu.isOpen() && menu.opener === opener) { menu.close(true); return; }
     menu.open(opener, [
-      { label: "Restore this version…", run: () => showConfirmation(commit, opener), disabled: unavailable(commit) },
+      ...(site ? [] : [{ label: "Restore this version…", run: () => showConfirmation(commit, opener), disabled: unavailable(commit) }]),
       { label: "View on GitHub", run: () => void window.open(commit.url, "_blank", "noopener,noreferrer") },
       {
         label: "Copy commit link",
@@ -163,7 +182,7 @@ export function createCommitHistory(options: {
     ]);
   }
   /** Tints the version on show: the one viewed, else the current one. */
-  function mark(sha = options.viewing() ?? currentFileCommit) {
+  function mark(sha = site ? undefined : options.viewing() ?? currentFileCommit) {
     for (const [key, item] of rows) {
       item.classList.toggle("is-shown", key === sha);
       const view = item.querySelector(".commit-history__view");
@@ -182,13 +201,22 @@ export function createCommitHistory(options: {
     const item = node("li", "commit-history__item");
     const current = commit.sha === currentFileCommit;
     item.classList.toggle("is-current", current);
+    const files = node("ul", "commit-history__files");
+    files.hidden = true;
     const view = button("", () => {
       if (!active() || !head) return;
+      if (site) { void unfold(commit, view, files); return; }
       options.onView(commit, head, current);
       mark(current ? currentFileCommit : commit.sha);
     }, "commit-history__view");
-    view.title = current ? "Show the current version" : "Show this version in the preview";
+    view.title = site ? "Show the files this commit changed" : current ? "Show the current version" : "Show this version in the preview";
     const line = node("span", "commit-history__line");
+    if (site) {
+      view.setAttribute("aria-expanded", "false");
+      const twisty = node("span", "commit-history__twisty");
+      setIcon(twisty, "caret-right", 12);
+      line.append(twisty);
+    }
     const time = node("time", "commit-history__time", known ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "—");
     if (known) {
       time.dateTime = date.toISOString();
@@ -196,7 +224,7 @@ export function createCommitHistory(options: {
     }
     line.append(time);
     if (known) line.append(node("span", "commit-history__ago", ago(date)));
-    if (current) line.append(node("span", "commit-history__badge", "Current"));
+    if (current) line.append(node("span", "commit-history__badge", site ? "Latest" : "Current"));
     const actions = button("", () => openMenu(commit, actions), "commit-history__more");
     setIcon(actions, "dots-three");
     actions.setAttribute("aria-label", `Actions for ${commit.message || commit.sha.slice(0, 7)}`);
@@ -206,7 +234,41 @@ export function createCommitHistory(options: {
     author.append(commit.avatar ? avatar(commit.author, commit.avatar) : initial(commit.author), node("span", "", commit.author));
     view.append(line, node("span", "commit-history__subject", commit.message || "Untitled commit"), author);
     item.append(view, actions);
+    if (site) item.append(files);
     rows.set(commit.sha, item);
+    return item;
+  }
+  /** A site commit's changed files, read once, under it; each opens that file as it was then. */
+  async function unfold(commit: HistoryCommit, view: HTMLButtonElement, files: HTMLUListElement) {
+    const open = view.getAttribute("aria-expanded") !== "true";
+    view.setAttribute("aria-expanded", String(open));
+    setIcon(view.querySelector(".commit-history__twisty")!, open ? "caret-down" : "caret-right", 12);
+    files.hidden = !open;
+    if (!open || files.dataset.loaded) return;
+    files.dataset.loaded = "1";
+    files.replaceChildren(node("li", "commit-history__files-note", "Loading files…"));
+    try {
+      const data = await read<CommitFiles>(`/api/commit?${new URLSearchParams({ repo: options.repo, sha: commit.sha })}`);
+      if (!active()) return;
+      files.replaceChildren(...data.files.map((file) => fileRow(file, commit)));
+      if (!data.files.length) files.append(node("li", "commit-history__files-note", "No files changed."));
+      if (data.truncated) files.append(node("li", "commit-history__files-note", "GitHub lists the first 300 files."));
+    } catch (error) {
+      delete files.dataset.loaded;
+      if (active()) files.replaceChildren(node("li", "commit-history__files-note", error instanceof Error ? error.message : "The files could not be loaded."));
+    }
+  }
+  function fileRow(file: CommitFile, commit: HistoryCommit) {
+    const item = node("li");
+    const open = button("", () => { if (active() && head) options.onOpenFile(file.path, commit, head); }, "commit-history__file");
+    const kind = node("span", `file-status is-${file.kind}`, file.kind);
+    kind.setAttribute("aria-label", { A: "Added", M: "Modified", D: "Deleted", R: "Renamed" }[file.kind]);
+    open.append(kind, node("span", "commit-history__file-path", file.from ? `${file.from} → ${file.path}` : file.path));
+    if (file.kind === "D") {
+      open.disabled = true;
+      open.title = "Deleted in this commit";
+    } else open.title = `Open ${file.path} as it was then`;
+    item.append(open);
     return item;
   }
   async function load(page: number) {
@@ -223,7 +285,8 @@ export function createCommitHistory(options: {
     }
     refresh();
     try {
-      const query = new URLSearchParams({ repo: options.repo, branch: options.branch, path: options.path, page: String(page) });
+      const query = new URLSearchParams({ repo: options.repo, branch: options.branch, page: String(page) });
+      if (!site && options.path) query.set("path", options.path);
       if (head) query.set("head", head);
       const data = await read<HistoryPage>(`/api/history?${query}`);
       if (!active() || id !== request) return;
@@ -237,7 +300,7 @@ export function createCommitHistory(options: {
       mark();
       nextPage = data.nextPage;
       more.hidden = nextPage === null;
-      message.textContent = seen.size ? "" : "No commits found for this file.";
+      message.textContent = seen.size ? "" : site ? "No commits found on this branch." : "No commits found for this file.";
     } catch (error) {
       if (active() && id === request) message.textContent = error instanceof Error ? error.message : "History could not be loaded. Try again.";
     } finally {

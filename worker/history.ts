@@ -1,4 +1,6 @@
 import type {
+  CommitFile,
+  CommitFiles,
   FileRevision,
   HistoryPage,
   Repository,
@@ -56,7 +58,11 @@ export async function history(
   input: { branch?: unknown; path?: unknown; head?: unknown; page?: unknown },
 ): Promise<HistoryPage> {
   if (!validBranch(input.branch)) throw new HttpError(400, "Choose a branch.");
-  const path = requirePath(input.path);
+  // Without a path, the site's history: every commit on the branch.
+  const path =
+    input.path === undefined || input.path === ""
+      ? undefined
+      : requirePath(input.path);
   const page = input.page === undefined ? 1 : Number(input.page);
   if (!Number.isInteger(page) || page < 1 || page > maxPage)
     throw new HttpError(400, `History pages must be between 1 and ${maxPage}.`);
@@ -78,10 +84,10 @@ export async function history(
     throw new HttpError(502, "GitHub returned an invalid revision.");
   const query = new URLSearchParams({
     sha: head,
-    path,
     per_page: String(pageSize),
     page: String(page),
   });
+  if (path) query.set("path", path);
   const rows = await github.get<
     {
       sha: string;
@@ -146,6 +152,38 @@ async function fileAt(
     if (entry.type !== "tree") return undefined;
     treeSha = entry.sha;
   }
+}
+
+const commitFileKinds: Record<string, CommitFile["kind"]> = {
+  added: "A",
+  copied: "A",
+  modified: "M",
+  changed: "M",
+  removed: "D",
+  renamed: "R",
+};
+
+/** The files a commit changed, for the site's history. */
+export async function commitFiles(
+  github: GitHub,
+  repo: Repository,
+  input: { sha?: unknown },
+): Promise<CommitFiles> {
+  if (!validSha(input.sha))
+    throw new HttpError(400, "Choose a valid commit.");
+  const data = await github.get<{
+    files?: { filename: string; status: string; previous_filename?: string }[];
+  }>(`${github.base(repo)}/commits/${input.sha}`, 4 * 1024 * 1024);
+  const files = (data.files ?? []).flatMap((file): CommitFile[] => {
+    const kind = commitFileKinds[file.status];
+    if (!kind || !validPath(file.filename)) return [];
+    return [
+      kind === "R" && validPath(file.previous_filename)
+        ? { path: file.filename, kind, from: file.previous_filename }
+        : { path: file.filename, kind },
+    ];
+  });
+  return { files, truncated: (data.files?.length ?? 0) >= 300 };
 }
 
 /** A file's text at a commit of the repository, to show that version. */

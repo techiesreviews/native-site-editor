@@ -341,11 +341,13 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
           entries = git.trees.get(entry.sha);
         }
       };
+      // Without a path, every commit (the site's history).
+      const all = !url.searchParams.get("path");
       const touched: string[] = [];
       for (let sha = url.searchParams.get("sha") ?? git.head; git.commits.has(sha); sha = git.commits.get(sha)!.parents[0] ?? "") {
         const parent = git.commits.get(sha)!.parents[0];
-        const here = blobAt(sha);
-        if (here !== (parent ? blobAt(parent) : undefined)) touched.push(sha);
+        const here = all ? undefined : blobAt(sha);
+        if (all || here !== (parent ? blobAt(parent) : undefined)) touched.push(sha);
       }
       return jsonResponse(touched.slice((page - 1) * perPage, page * perPage).map((sha) => {
         const commit = git.commits.get(sha)!;
@@ -357,6 +359,27 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
           commit: { message: commit.message || "Update files", author: { name: DEMO_LOGIN, date } },
         };
       }));
+    }
+    // A commit's changed files, against its first parent.
+    const single = new RegExp(`^${repoBase}/commits/([a-f0-9]{40})$`).exec(path);
+    if (single && method === "GET") {
+      const commit = git.commits.get(single[1]);
+      if (!commit) return jsonResponse({ message: "Not Found" }, 404);
+      const flatten = (tree: string | undefined, prefix = "", out = new Map<string, string>()) => {
+        for (const entry of git.trees.get(tree ?? "") ?? []) {
+          if (entry.type === "tree") flatten(entry.sha, `${prefix}${entry.path}/`, out);
+          else out.set(prefix + entry.path, entry.sha);
+        }
+        return out;
+      };
+      const after = flatten(commit.tree);
+      const before = flatten(commit.parents[0] ? git.commits.get(commit.parents[0])?.tree : undefined);
+      const files = [
+        ...[...after].filter(([file, sha]) => before.get(file) !== sha)
+          .map(([file]) => ({ filename: file, status: before.has(file) ? "modified" : "added" })),
+        ...[...before.keys()].filter((file) => !after.has(file)).map((file) => ({ filename: file, status: "removed" })),
+      ];
+      return jsonResponse({ sha: single[1], files });
     }
     if (path.startsWith(`${repoBase}/git/commits/`) && method === "GET") {
       const sha = path.slice(`${repoBase}/git/commits/`.length);

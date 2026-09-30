@@ -23,7 +23,7 @@ import {
 } from "./oauth";
 import { MAX_PUBLISH_REQUEST_BYTES, publish } from "./publish";
 import { requestBytes, uploadBlob } from "./blobs";
-import { fileAtRevision, history, restore } from "./history";
+import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
 import { GitHub, HttpError } from "./github";
 import {
@@ -725,6 +725,7 @@ async function route(
         "/api/raw",
         "/api/history",
         "/api/file-at",
+        "/api/commit",
         "/api/change-status",
       ].includes(path)
     )
@@ -753,6 +754,8 @@ async function route(
           page: url.searchParams.get("page") ?? undefined,
         }),
       );
+    if (path === "/api/commit")
+      return json(await commitFiles(github, repo, { sha: url.searchParams.get("sha") ?? undefined }));
     if (path === "/api/file-at")
       return json(
         await fileAtRevision(github, repo, {

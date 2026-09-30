@@ -106,3 +106,37 @@ test("Restore this version in the bar asks, then restores the version on show in
   await expect(heading(page)).toHaveText("A native browser preview");
   await expect(page.locator(".code-editor__diff-labels")).toHaveCount(0);
 });
+
+test("Whole site lists every commit; a commit unfolds its files, and a file opens as it was then", async ({ page, baseURL }) => {
+  const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/site.css", content: `${css}\n/* edited */\n` } });
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+
+  await page.locator("#history-button").click();
+  await panel(page).getByRole("tab", { name: "Whole site" }).click();
+  await expect(panel(page).getByRole("tab", { name: "Whole site" })).toHaveAttribute("aria-selected", "true");
+  await expect(items(page)).toHaveCount(3);
+  await expect(items(page).locator(".commit-history__subject")).toHaveText(["Edit styles/site.css on GitHub", "Edit index.html on GitHub", "Start the site"]);
+  await expect(items(page).nth(0).locator(".commit-history__badge")).toHaveText("Latest");
+
+  // A commit's files: git's letter and the path.
+  const edit = items(page).nth(1);
+  await edit.locator(".commit-history__view").click();
+  await expect(edit.locator(".commit-history__view")).toHaveAttribute("aria-expanded", "true");
+  await expect(edit.locator(".commit-history__file")).toHaveText(["Mindex.html"]);
+
+  // From the first commit, the home page opens as it was then.
+  const first = items(page).nth(2);
+  await first.locator(".commit-history__view").click();
+  await first.locator(".commit-history__file", { has: page.locator(".commit-history__file-path", { hasText: /^index\.html$/ }) }).click();
+  const bar = page.getByRole("region", { name: "Earlier version" });
+  await expect(bar).toContainText("Start the site");
+  await expect(heading(page)).toHaveText("A native browser preview");
+
+  // From the latest commit, the stylesheet opens as it is.
+  await items(page).nth(0).locator(".commit-history__view").click();
+  await items(page).nth(0).locator(".commit-history__file", { hasText: "styles/site.css" }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  await expect(bar).toBeHidden();
+});

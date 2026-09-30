@@ -38,6 +38,37 @@
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
+/* This file | Whole site, as Pages | Files are tabbed. */
+.commit-history__scopes {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--control-line);
+}
+.commit-history__scope {
+  min-height: var(--size-compact);
+  margin-bottom: -1px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.commit-history__scope:hover:not(:disabled) {
+  color: var(--text);
+}
+.commit-history__scope[aria-selected="true"] {
+  border-bottom-color: var(--primary);
+  color: var(--text);
+}
+.commit-history__scope:focus-visible {
+  border-radius: var(--radius) var(--radius) 0 0;
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .commit-history__location,
 .commit-history__message {
   padding: 0 8px;
@@ -182,4 +213,65 @@
 }
 .commit-history [hidden] {
   display: none;
+}
+
+/* A site commit's caret, and the files it changed under it. */
+.commit-history__twisty {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  margin-right: -4px;
+  color: var(--muted);
+}
+.commit-history__files {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 4px 6px 24px;
+  list-style: none;
+}
+.commit-history__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--size-compact);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--type-small);
+  text-align: left;
+  cursor: pointer;
+}
+.commit-history__file:hover:not(:disabled) {
+  background: var(--hover);
+}
+.commit-history__file:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.commit-history__file:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.commit-history__file .file-status {
+  margin-left: 0;
+}
+.commit-history__file-path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commit-history__file:disabled .commit-history__file-path {
+  text-decoration: line-through;
+}
+.commit-history__files-note {
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: var(--type-small);
 }

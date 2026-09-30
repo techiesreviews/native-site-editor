@@ -108,6 +108,18 @@ export interface HistoryPage {
   commits: HistoryCommit[];
   nextPage: number | null;
 }
+/** A file a commit changed, as git marks it: added, modified, deleted, renamed. */
+export interface CommitFile {
+  path: string;
+  kind: "A" | "M" | "D" | "R";
+  /** A renamed file's earlier path. */
+  from?: string;
+}
+export interface CommitFiles {
+  files: CommitFile[];
+  /** GitHub lists up to 300 files of a commit. */
+  truncated: boolean;
+}
 /** A file's text as it was at a commit, for History's view of a version. */
 export interface FileRevision {
   sha: string;

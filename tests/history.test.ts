@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GitHub, HttpError } from "../worker/github.ts";
-import { fileAtRevision, history, restore } from "../worker/history.ts";
+import { commitFiles, fileAtRevision, history, restore } from "../worker/history.ts";
 import { handle, type Env } from "../worker/app.ts";
 import type { Repository } from "../shared/types.ts";
 
@@ -389,4 +389,40 @@ test("a file's text at a commit is read through that commit's tree", async () =>
   assert.deepEqual(await fileAtRevision(github, repo, { commit: target, path: "src/index.astro" }), { sha: blob, content: "<h1/>" });
   await assert.rejects(fileAtRevision(github, repo, { commit: target, path: "src/missing.astro" }), (error: unknown) => error instanceof HttpError && error.status === 404);
   await assert.rejects(fileAtRevision(github, repo, { commit: "nope", path: "src/index.astro" }), (error: unknown) => error instanceof HttpError && error.status === 400);
+});
+
+test("without a path, history lists every commit on the branch", async () => {
+  const asked: URL[] = [];
+  const github = new GitHub("token", async (input) => {
+    const url = new URL(String(input));
+    asked.push(url);
+    if (url.pathname.includes("/branches/")) return Response.json({ commit: { sha: head } });
+    return Response.json([{ sha: head, html_url: "https://github.com/lex/starter/commit/x", author: { login: "lex", avatar_url: "https://avatars.githubusercontent.com/u/1" }, commit: { message: "Site change\n\nbody", author: { name: "Lex", date: "2026-09-30T10:00:00Z" } } }]);
+  });
+  const result = await history(github, repo, { branch: "main" });
+  assert.equal(asked.at(-1)?.searchParams.has("path"), false);
+  assert.deepEqual(result.commits, [{ sha: head, message: "Site change", author: "lex", avatar: "https://avatars.githubusercontent.com/u/1", date: "2026-09-30T10:00:00Z", url: "https://github.com/lex/starter/commit/x" }]);
+});
+
+test("a commit's files come back with git's letters, a rename with its earlier path", async () => {
+  const github = new GitHub("token", async (input) => {
+    assert.ok(new URL(String(input)).pathname.endsWith(`/commits/${target}`));
+    return Response.json({ files: [
+      { filename: "index.html", status: "modified" },
+      { filename: "about/index.html", status: "added" },
+      { filename: "old.html", status: "removed" },
+      { filename: "styles/new.css", status: "renamed", previous_filename: "styles/old.css" },
+      { filename: "../escape", status: "added" },
+    ] });
+  });
+  assert.deepEqual(await commitFiles(github, repo, { sha: target }), {
+    files: [
+      { path: "index.html", kind: "M" },
+      { path: "about/index.html", kind: "A" },
+      { path: "old.html", kind: "D" },
+      { path: "styles/new.css", kind: "R", from: "styles/old.css" },
+    ],
+    truncated: false,
+  });
+  await assert.rejects(commitFiles(github, repo, { sha: "nope" }), (error: unknown) => error instanceof HttpError && error.status === 400);
 });

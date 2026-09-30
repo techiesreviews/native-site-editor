@@ -344,31 +344,51 @@ window.addEventListener("resize", () => {
   const anchor = document.getElementById("history-button");
   if (panel?.matches(":popover-open") && anchor) positionHistory(panel, anchor);
 });
+// History shows the open file's commits, or the whole site's (the tab
+// chosen last).
+let historyScope: "file" | "site" = "file";
 function openHistory(force = false) {
   const panel = element("changes");
   const anchor = document.getElementById("history-button");
-  if (!anchor || !info.user || !currentRepo || !snapshot || !currentPath) return;
+  if (!anchor || !info.user || !currentRepo || !snapshot) return;
   if (!force && panel.matches(":popover-open")) { panel.hidePopover(); return; }
   commitHistory?.destroy();
   const epoch = generation;
   const path = currentPath;
+  const site = historyScope === "site" || !path;
   const scope = { account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch };
   const isCurrent = () => generation === epoch && info.user?.login === scope.account &&
-    currentRepo?.id === scope.repoId && snapshot?.branch === scope.branch && currentPath === path;
+    currentRepo?.id === scope.repoId && snapshot?.branch === scope.branch && (site || currentPath === path);
   commitHistory = createCommitHistory({
     repo: scope.repo, branch: scope.branch, path, isCurrent,
-    hasDraft: () => Boolean(draftStore().get(scope, path)),
+    scope: site ? "site" : "file",
+    onScope: (next) => { historyScope = next; openHistory(true); },
+    onOpenFile: (file, commit, head) => void openFileVersion(file, commit, head),
+    hasDraft: () => Boolean(path && draftStore().get(scope, path)),
     onExpired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
     onRestored: async (result) => {
-      if (!isCurrent()) return;
+      if (!isCurrent() || !path) return;
       endVersionView(false);
       await afterRestore(path, result);
     },
     onView: (commit, head, latest) => (latest ? endVersionView() : void viewVersion(commit, head)),
-    viewing: () => (versionView?.path === path && versionView.key === versionKey() ? versionView.commit.sha : undefined),
+    viewing: () => {
+      const view = versionView;
+      return view && view.path === path && view.key === versionKey() ? view.commit.sha : undefined;
+    },
   });
   panel.replaceChildren(commitHistory.root);
   positionHistory(panel, anchor);
+}
+
+// A file from the site's history: it opens, showing its version from that
+// commit unless that is the branch's latest.
+async function openFileVersion(path: string, commit: HistoryCommit, head: string) {
+  const epoch = generation;
+  if (currentPath !== path) await restoreFile(path, epoch, { keepExplorer: false });
+  if (epoch !== generation || currentPath !== path) return;
+  if (commit.sha === head) endVersionView();
+  else await viewVersion(commit, head);
 }
 
 async function afterRestore(path: string, result: RestoreResult) {
