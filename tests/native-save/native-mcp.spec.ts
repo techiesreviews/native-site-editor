@@ -623,6 +623,17 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(pin).toHaveAttribute("data-state", "open");
     const [asked] = (await call("wait_for_requests", { waitSeconds: 10 })).requests;
     await expect(pin).toHaveAttribute("data-state", "seen");
+    // Hovering Disconnect MCP says what the agent has: nothing asks the user yet.
+    const disconnect = page.getByRole("button", { name: "Disconnect MCP", exact: true });
+    const waiting = page.getByRole("menu", { name: "What agents wait on" });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(disconnect.locator(".agent-menu__count")).toBeHidden();
+    await disconnect.hover();
+    await expect(waiting).toBeVisible();
+    await expect(waiting.locator(".agent-menu__agents")).toHaveText("playwright-agent connected");
+    await expect(waiting.locator(".flyout__note")).toHaveText("1 request: agent working");
+    await page.keyboard.press("Escape");
+    await expect(waiting).toBeHidden();
 
     // The agent asks: the pin turns orange with a "?" and the question in
     // it, and the project selector counts the question.
@@ -637,6 +648,25 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     expect(orange(await rgb(page, ".agent-pin", "border-top-color"))).toBe(true);
     await expect(page.locator(".repository-menu__questions")).toHaveText("1");
     await expect(page.locator(".repository-menu__trigger")).toHaveAttribute("aria-label", /an agent asks you a question/);
+    await expect(page.locator(".repository-menu__trigger")).toHaveAttribute("title", /an agent asks you a question/);
+    // Disconnect MCP counts it too, and hovering it lists the question with
+    // its element and page; choosing it opens the pin's card, the answer box focused.
+    await page.locator(".repository-menu__trigger").click();
+    await expect(disconnect.locator(".agent-menu__count")).toHaveText("1");
+    await expect(page.locator(".agent-menu")).toHaveClass(/is-asking/);
+    await disconnect.hover();
+    await expect(waiting).toBeVisible();
+    await expect(waiting.locator(".agent-menu__agents")).toHaveText("playwright-agent connected");
+    const entry = waiting.getByRole("menuitem");
+    await expect(entry).toHaveCount(1);
+    await expect(entry.locator(".agent-menu__question-number")).toHaveText("1");
+    await expect(entry.locator(".agent-menu__question-line")).toHaveText("Warmer, or shorter?");
+    await expect(entry.locator(".agent-menu__question-where")).toHaveText("<h1> · /");
+    await entry.click();
+    await expect(page.locator("#repository-actions")).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Request 1" }).getByRole("textbox", { name: "Answer the agent" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Request 1" })).toHaveCount(0);
     // The next note on the heading goes after the pin, question and all.
     await heading.click();
     await bar.getByRole("button", { name: "Ask agent" }).click();

@@ -765,6 +765,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pinRequests = requests;
       pins.update(pinRequests, route);
     },
+    /** Show a request's pin and hold its card open (src/components/agent-pins.ts `show`). */
+    showRequest(id: string) {
+      pins.show(id);
+    },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {
       editBar.show(model, rect);

@@ -166,6 +166,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   const drafts = new Map<string, string>();
   const problems = new Map<string, string>();
   let pending: string | undefined;
+  // The pending request whose element was asked to scroll into view.
+  let scrolledTo: string | undefined;
 
   function geometry() {
     const frameRect = frame.getBoundingClientRect();
@@ -333,6 +335,10 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       const id = pending;
       pending = undefined;
       requestAnimationFrame(() => { if (openId !== id || !held) open(id, true); });
+    } else if (pending && shown && rects.get(pending) && scrolledTo !== pending) {
+      // Found on the page shown, out of view: brought into view first.
+      scrolledTo = pending;
+      handlers.onShowElement(pending);
     }
   }
   // "2 requests elsewhere", led by the questions waiting for the user.
@@ -464,13 +470,14 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       actions.append(button("Show page", () => {
         close(false);
         pending = request.id;
+        scrolledTo = undefined;
         handlers.onShowPage(target);
       }, "text-button"));
     } else if (inTray && rects.get(request.id)) {
       // A question on this page, scrolled out of view.
       actions.append(button("Show", () => {
         close(false);
-        pending = request.id;
+        pending = scrolledTo = request.id;
         handlers.onShowElement(request.id);
       }, "text-button"));
     }
@@ -689,6 +696,27 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
         if (live && !pin.hidden && sameRect(live, rect)) offset += restingWidth(pin) + STACK_GAP;
       }
       return { offset, next: requests.length + 1 };
+    },
+    /**
+     * Show a request (from the project selector's list of what agents wait
+     * on): its page, then its element scrolled into view, and its card held
+     * open with the focus in it (the answer box of a question). A request
+     * whose element is not on its page opens the tray.
+     */
+    show(id: string) {
+      const request = requests.find((item) => item.id === id);
+      if (!request) return;
+      close(false);
+      const pin = pins.get(id);
+      if (request.element.route && request.element.route !== route) {
+        pending = id;
+        scrolledTo = undefined;
+        handlers.onShowPage(request.element.route);
+      } else if (pin && !pin.hidden) open(id, true);
+      else if (rects.get(id)) {
+        pending = scrolledTo = id;
+        handlers.onShowElement(id);
+      } else if (!tray.hidden) toggleTray();
     },
     /** The frame loaded again: it is told the pins afresh. */
     reset() {

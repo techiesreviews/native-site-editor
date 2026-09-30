@@ -286,8 +286,30 @@
   color: var(--muted);
 }
 
-.repository-menu__branch .branch-row {
-  margin: 4px 10px 8px;
+/* The open repository's row opens its branches (flyout.ts). */
+.repository-menu__more {
+  flex: none;
+  margin-left: -2px;
+  padding-right: 2px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.repository-menu__repo[aria-expanded="true"] .repository-menu__more {
+  color: var(--text);
+}
+
+.repository-menu__branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-menu__branch-item[aria-checked="true"] {
+  font-weight: 600;
 }
 
 .repository-menu__action {

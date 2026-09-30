@@ -5226,6 +5226,11 @@ async function start() {
         onConnection: () => { if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
         onRequests: (requests) => nativePreview?.setRequests(requests),
         onQuestions: (count) => repositoryMenu?.setQuestions(count),
+        // A question in the selector's list: its pin, card open, answer box focused.
+        onShowRequest: (id) => {
+          repositoryMenu?.close();
+          nativePreview?.showRequest(id);
+        },
       });
       element("agent-menu").append(agentMenu.root);
       await loadRepositories(info.repositories ?? undefined);

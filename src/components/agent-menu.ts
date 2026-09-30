@@ -2,6 +2,7 @@ import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
+import { mountFlyout } from "./flyout";
 import { gzip } from "./publish-menu";
 import "./agent-menu.css";
 
@@ -25,6 +26,13 @@ import "./agent-menu.css";
 // (`ask`); agents fetch it with wait_for_requests and answer it. Each poll
 // brings the requests back with their state and thread, for the pins; the
 // user answers an agent's question from its pin (`answer`).
+//
+// While an agent is connected, Disconnect MCP counts the questions agents
+// ask the user, as the project selector's tile does, and hovering or
+// focusing it opens a flyout (components/flyout.ts) of what the agents wait
+// on: the connected agents, then each question with its element and page,
+// which shows its pin with the answer box (`onShowRequest`), or how many
+// requests agents have when none asks.
 
 export interface AgentCommandOutcome {
   message?: string;
@@ -64,6 +72,8 @@ export function createAgentMenu(options: {
   onRequests?: (requests: PinRequest[]) => void;
   /** How many of them are agents' questions waiting for the user, when it changed. */
   onQuestions?: (count: number) => void;
+  /** Show a request's pin with its card open (closing the menus). */
+  onShowRequest?: (id: string) => void;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
@@ -85,14 +95,32 @@ export function createAgentMenu(options: {
   // connection, then offers "Disconnect MCP", which revokes the
   // repository's connections (OAuth ones included).
   const root = node("div", "agent-menu");
-  const action = button("Connect with MCP", () => void act(), "text-button agent-menu__action");
+  const action = button("", () => void act(), "text-button agent-menu__action");
+  const actionLabel = node("span", "agent-menu__label", "Connect with MCP");
+  // The questions waiting for the user, as on the project selector's tile.
+  const count = node("span", "agent-menu__count");
+  count.setAttribute("aria-hidden", "true");
+  count.hidden = true;
+  action.append(actionLabel, count);
   const hint = node("p", "agent-menu__hint");
   hint.setAttribute("role", "status");
   const again = button("Copy again", () => void copyPrompt(), "text-button agent-menu__link");
   const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
   const links = node("span", "agent-menu__links");
   links.append(again, cancel);
-  root.append(action, hint, links);
+  // What the connected agents wait on, beside Disconnect MCP.
+  const waitingOn = node("div", "agent-menu__waiting");
+  waitingOn.id = "agent-waiting";
+  waitingOn.setAttribute("role", "menu");
+  root.append(action, hint, links, waitingOn);
+  const flyout = mountFlyout({
+    panel: waitingOn,
+    label: "What agents wait on",
+    render: drawWaiting,
+    enabled: () => state() === "connected",
+    openOnFocus: true,
+  });
+  flyout.attach(action);
   /** A message that replaces the state's own hint until the state changes. */
   let notice: { text: string; state: string } | undefined;
 
@@ -120,34 +148,46 @@ export function createAgentMenu(options: {
   let lastState = "";
   let lastRequests = "";
   let lastQuestions = 0;
+  // The open repository's requests, oldest first as their pins are numbered.
+  let requests: PinRequest[] = [];
   // The open repository's requests, told only when they changed.
   function tellRequests() {
     const repo = options.repository();
-    const requests = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id) : [];
-    const key = JSON.stringify(requests);
+    const next = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id) : [];
+    const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;
-    options.onRequests?.(requests);
+    requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
+    options.onRequests?.(next);
+    flyout.refresh();
     const questions = requests.filter((item) => item.state === "question").length;
     if (questions === lastQuestions) return;
     lastQuestions = questions;
     options.onQuestions?.(questions);
     paint();
   }
+  // The connected agents' names, as MCP `initialize` gave them.
+  const agentNames = () => [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
   function paint() {
     const current = state();
     if (current !== lastState) {
       const was = lastState;
       lastState = current;
       if (was === "connected" || current === "connected") options.onConnection?.(current === "connected");
+      if (current === "connected") flyout.refresh();
+      else flyout.close();
     }
     tellRequests();
     if (notice && notice.state !== current) notice = undefined;
     root.dataset.state = current;
     action.disabled = changing || current === "closed";
-    action.textContent =
+    actionLabel.textContent =
       current === "connected" ? "Disconnect MCP" : current === "waiting" ? "Waiting for connection…" : "Connect with MCP";
-    const names = [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
+    const asked = current === "connected" ? lastQuestions : 0;
+    root.classList.toggle("is-asking", asked > 0);
+    count.hidden = !asked;
+    count.textContent = asked ? String(asked) : "";
+    const names = agentNames();
     action.title =
       current === "connected"
         ? `${names} connected. Choose to revoke its access.`
@@ -162,6 +202,47 @@ export function createAgentMenu(options: {
           : "";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
+  }
+  // The flyout: who is connected, then the questions waiting for the user
+  // (each shows its pin), or what the agents have otherwise.
+  function drawWaiting() {
+    const heading = node("div", "flyout__heading agent-menu__agents");
+    heading.setAttribute("role", "none");
+    heading.append(node("span", "", `${agentNames() || "An agent"} connected`));
+    const questions = requests.filter((request) => request.state === "question");
+    const parts: Node[] = [heading];
+    if (questions.length) {
+      const title = node("p", "agent-menu__waiting-title", questions.length === 1 ? "Waiting on your answer" : `Waiting on ${questions.length} answers`);
+      title.setAttribute("role", "none");
+      parts.push(title);
+      for (const request of questions) {
+        const number = requests.indexOf(request) + 1;
+        const question = request.reply?.message.trim() || request.text;
+        const item = node("button", "flyout__item agent-menu__question");
+        item.type = "button";
+        item.setAttribute("role", "menuitem");
+        item.dataset.key = request.id;
+        const where = request.element.route ?? request.element.file;
+        const text = node("span", "agent-menu__question-text");
+        text.append(
+          node("span", "agent-menu__question-line", clip(question, 60)),
+          node("span", "agent-menu__question-where", `<${request.element.tag}> · ${where}`),
+        );
+        item.append(node("span", "agent-menu__question-number", String(number)), text);
+        item.setAttribute("aria-label", `Request ${number}: ${question}, on <${request.element.tag}> of ${where}`);
+        item.title = "Show it and answer";
+        item.addEventListener("click", () => options.onShowRequest?.(request.id));
+        parts.push(item);
+      }
+    } else {
+      const working = requests.filter((request) => request.state === "seen").length;
+      const open = requests.filter((request) => request.state === "open").length;
+      const busy = working + open;
+      // "2 requests: agent working", "3 requests: 1 agent working, 2 waiting for an agent".
+      const doing = !open ? "agent working" : !working ? "waiting for an agent" : `${working} agent working, ${open} waiting for an agent`;
+      parts.push(node("p", "flyout__note", busy ? `${busy} request${busy === 1 ? "" : "s"}: ${doing}` : "Nothing waiting"));
+    }
+    waitingOn.replaceChildren(...parts);
   }
   function say(text: string) {
     const shown = (notice = { text, state: state() });
@@ -412,6 +493,7 @@ export function createAgentMenu(options: {
     },
     destroy() {
       disposed = true;
+      flyout.destroy();
       clearInterval(interval);
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", wake);
@@ -420,6 +502,12 @@ export function createAgentMenu(options: {
       token = tokenId = undefined;
     },
   };
+}
+
+// A line of at most `limit` characters, with … when cut.
+function clip(text: string, limit: number) {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
 
 /** What to paste into an agent so it connects itself (or says how). */

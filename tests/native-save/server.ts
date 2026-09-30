@@ -86,6 +86,8 @@ interface Git {
   // before it (`stale`).
   lag?: number;
   stale?: { sha: string; reads: number };
+  // Branches besides main, as a test makes them (`/__demo/branch`): name → head.
+  branches?: Map<string, string>;
 }
 
 const encoder = new TextEncoder();
@@ -306,7 +308,11 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       const runs = actions.mode === "runs" ? actions.runs ?? [] : [];
       return jsonResponse({ total_count: runs.length, workflow_runs: runs.map((run, index) => ({ id: index + 1, head_sha: url.searchParams.get("head_sha"), html_url: `https://github.com/${DEMO_REPO.full_name}/actions/runs/${index + 1}`, ...run })) });
     }
-    if (path === `${repoBase}/branches`) return jsonResponse([{ name: "main" }]);
+    if (path === `${repoBase}/branches`)
+      return jsonResponse([{ name: "main" }, ...[...(git.branches?.keys() ?? [])].map((name) => ({ name }))]);
+    const other = new RegExp(`^${repoBase}/branches/(.+)$`).exec(path);
+    const otherHead = other ? git.branches?.get(decodeURIComponent(other[1])) : undefined;
+    if (otherHead) return jsonResponse({ commit: { sha: otherHead } });
     if (path === `${repoBase}/branches/main`) {
       if (git.stale && git.stale.reads-- > 0) return jsonResponse({ commit: { sha: git.stale.sha } });
       return jsonResponse({ commit: { sha: git.head } });
@@ -588,6 +594,23 @@ function workerMiddleware(): Connect.NextHandleFunction {
         }
         const next = JSON.parse(bodyBuffer.toString() || "{}") as FakeActions;
         sessionActions.set(id, { ...next, asked: sessionActions.get(id)?.asked ?? [] });
+        res.statusCode = 204;
+        return res.end();
+      }
+      if (path === "/__demo/branch") {
+        // A branch of the demo repository from main's head, with one file
+        // changed on it when `path` and `content` are given.
+        const { name, path: filePath, content } = JSON.parse(bodyBuffer.toString() || "{}");
+        const git = sessions.get(id)!.git!;
+        let head = git.head;
+        if (filePath) {
+          const tree = writeTree(git, git.commits.get(head)!.tree, [
+            { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
+          ]);
+          head = commitSha(tree + ":branch:" + name);
+          git.commits.set(head, { tree, parents: [git.head] });
+        }
+        (git.branches ??= new Map()).set(String(name), head);
         res.statusCode = 204;
         return res.end();
       }

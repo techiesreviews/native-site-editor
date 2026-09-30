@@ -52,7 +52,7 @@ Working:
 Simulated in tests/demo:
 
 - `tests/native-save/server.ts` uses the real Worker handler and publish flow, but fakes sessions and the GitHub REST boundary with per-browser in-memory Git models. It rejects non-fast-forward ref updates.
-- Test-only controls `/__demo/slow` and `/__demo/external-edit` are per-session and disabled in public demo mode.
+- Test-only controls `/__demo/slow`, `/__demo/external-edit` and `/__demo/branch` (a second branch of the demo repository, for `tests/native-save/native-branch-menu.spec.ts`) are per-session and disabled in public demo mode.
 - Remote demo is simulated, not real GitHub auth or durable writes.
 
 Missing or limited:

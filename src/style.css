@@ -311,12 +311,6 @@ select {
   border-radius: 50%;
   background: var(--line);
 }
-.field-label {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  margin: 0 0 7px;
-}
 select {
   width: 100%;
   background: var(--surface);
@@ -326,16 +320,6 @@ select {
   padding: 0 10px;
   font-size: 12px;
   text-overflow: ellipsis;
-}
-.branch-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  margin-top: 16px;
-}
-.branch-row > div {
-  flex: 1;
-  min-width: 0;
 }
 .icon-button {
   height: 37px;
@@ -695,9 +679,6 @@ dd {
   }
   .sidebar-heading {
     margin-bottom: 13px;
-  }
-  .branch-row {
-    margin-top: 10px;
   }
   .files-heading {
     margin-top: 20px;
