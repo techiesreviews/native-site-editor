@@ -1,3 +1,6 @@
 GITHUB_CLIENT_ID=""
 GITHUB_CLIENT_SECRET=""
 GITHUB_APP_SLUG=""
+# Optional: run owner setup (/auth/setup) locally instead of on the deployed address.
+# EDITOR_ORIGIN="http://127.0.0.1:8787"
+# OWNER_SETUP_TOKEN=""

@@ -29,7 +29,8 @@ import {
   configuredApp,
   convertManifest,
   githubAppManifest,
-  canonicalOrigin,
+  editorOrigin,
+  aliasOrigins,
   hasOwnerSetup,
   isOwnerSetupState,
   ownerSetupHtml,
@@ -66,6 +67,8 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
   OWNER_SETUP_TOKEN?: string;
+  EDITOR_ORIGIN?: string;
+  EDITOR_ALIASES?: string;
 }
 
 async function config(env: Env) {
@@ -290,8 +293,8 @@ async function route(
     throw new HttpError(405, "Method not allowed.");
 
   if (path.startsWith("/auth/setup")) {
-    if (url.origin !== canonicalOrigin)
-      throw new HttpError(403, "Owner setup uses the canonical editor origin.");
+    if (url.origin !== editorOrigin(env, url.origin))
+      throw new HttpError(403, "Owner setup uses the editor's own address (EDITOR_ORIGIN).");
     if (!hasOwnerSetup(env) && path !== "/auth/setup.js")
       throw new HttpError(404, "Owner setup is not enabled.");
     if (path === "/auth/setup.js")
@@ -343,8 +346,8 @@ async function route(
       }
     }
     if (path === "/auth/setup")
-      return html(ownerSetupHtml(url.origin, { state: setupState, installUrl }));
-    if (path === "/auth/setup/manifest") return json(githubAppManifest(url.origin));
+      return html(ownerSetupHtml(url.origin, { state: setupState, installUrl, aliases: aliasOrigins(env) }));
+    if (path === "/auth/setup/manifest") return json(githubAppManifest(url.origin, aliasOrigins(env)));
     if (path === "/auth/setup/callback") {
       if (app) return redirect("/auth/setup");
       if (!setupId || setupId !== url.searchParams.get("state"))

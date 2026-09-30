@@ -8,7 +8,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "npm run build:ui && wrangler pages dev dist",
+    "dev": "npm run build:ui && wrangler dev --config wrangler.sessions.jsonc --port 8787 --local-upstream 127.0.0.1:8787",
+    "dev:pages": "npm run build:ui && wrangler pages dev dist",
     "dev:ui": "vite --host 127.0.0.1",
     "build:ui": "vite build",
     "build:functions": "wrangler pages functions build --outdir .scratch/pages-functions",

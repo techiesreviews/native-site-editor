@@ -18,6 +18,13 @@
   // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
   "observability": { "enabled": true },
   "routes": [{ "pattern": "editor.techies.tools", "custom_domain": true }],
+  // The editor's own address (owner setup and GitHub's return address), and
+  // other addresses serving the same editor, which get sign-in callbacks.
+  // Self-hosting: set EDITOR_ORIGIN to your address and drop EDITOR_ALIASES.
+  "vars": {
+    "EDITOR_ORIGIN": "https://editor.techies.tools",
+    "EDITOR_ALIASES": "https://native-site-editor.pages.dev",
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

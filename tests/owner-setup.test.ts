@@ -13,6 +13,8 @@ function environment() {
   const config = new Map<string, unknown>();
   const env: Env = {
     OWNER_SETUP_TOKEN: ownerToken,
+    EDITOR_ORIGIN: origin,
+    EDITOR_ALIASES: "https://native-site-editor.pages.dev",
     ASSETS: { fetch: async () => new Response("UI") },
     SESSIONS: {
       idFromName: (name) => name,
@@ -51,7 +53,7 @@ function environment() {
 }
 
 test("manifest registers the private hosted App with exact permissions and callbacks", () => {
-  const manifest = githubAppManifest(origin);
+  const manifest = githubAppManifest(origin, ["https://native-site-editor.pages.dev"]);
   assert.equal(manifest.name, "native-site-editor-techies");
   assert.equal(manifest.public, false);
   assert.equal(manifest.url, origin);
@@ -100,6 +102,17 @@ test("owner setup requires canonical origin, fragment unlock token, and same-ori
   assert.equal(unlock.status, 200);
   assert.match(unlock.headers.get("set-cookie")!, /HttpOnly; SameSite=Lax/);
   assert.match(await unlock.text(), /"state":"[a-f0-9]{64}"/);
+});
+
+test("without EDITOR_ORIGIN, owner setup runs at the address the request came to", async () => {
+  const { env } = environment();
+  delete env.EDITOR_ORIGIN;
+  delete env.EDITOR_ALIASES;
+  const other = "https://editor.example.com";
+  assert.equal((await handle(new Request(`${other}/auth/setup`), env)).status, 200);
+  const manifest = await (await handle(new Request(`${other}/auth/setup/manifest`), env)).json();
+  assert.equal(manifest.redirect_url, `${other}/auth/setup/callback`);
+  assert.deepEqual(manifest.callback_urls, [`${other}/auth/callback`]);
 });
 
 test("setup callback consumes state once, persists credentials, and redacts secrets from browser responses", async () => {

@@ -24,8 +24,7 @@ GitHub sign-in is configured on the reference deployment; your own installation 
 
 ```sh
 npm ci
-npm run build:ui
-npx wrangler dev --config wrangler.sessions.jsonc
+npm run dev
 ```
 
 Open http://127.0.0.1:8787. The app runs without credentials but needs a GitHub App for a live connection. See [setup and deployment](docs/setup.md) for owner setup, Cloudflare deployment, local credentials, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).

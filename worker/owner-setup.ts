@@ -2,11 +2,22 @@ import { requestJson } from "./http";
 import { HttpError, boundedJson } from "./github";
 import type { Env, StoredValue } from "./app";
 
-export const canonicalOrigin = "https://editor.techies.tools";
-const callbackOrigins = [
-  canonicalOrigin,
-  "https://native-site-editor.pages.dev",
-];
+// The editor's own address: owner setup runs only there, and GitHub sends
+// people back to it. EDITOR_ORIGIN (a var in wrangler.sessions.jsonc) sets
+// it; without it, the address a request came to is used, which suits an
+// editor served at one address.
+export function editorOrigin(env: Env, requestOrigin: string) {
+  return env.EDITOR_ORIGIN ? new URL(env.EDITOR_ORIGIN).origin : requestOrigin;
+}
+
+// Other addresses serving the same editor (EDITOR_ALIASES, separated by
+// spaces) get sign-in callbacks too, but not owner setup.
+export function aliasOrigins(env: Env) {
+  return (env.EDITOR_ALIASES ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((value) => new URL(value).origin);
+}
 const configId = "native-site-editor/config";
 
 export interface GitHubAppConfig {
@@ -28,14 +39,14 @@ export function hasOwnerSetup(env: Env) {
   return validOwnerToken(env.OWNER_SETUP_TOKEN);
 }
 
-export function githubAppManifest(origin = canonicalOrigin) {
+export function githubAppManifest(origin: string, aliases: string[] = []) {
   return {
     name: "native-site-editor-techies",
     url: origin,
     public: false,
     hook_attributes: { active: false, url: `${origin}/auth/setup/webhook` },
     redirect_url: `${origin}/auth/setup/callback`,
-    callback_urls: callbackOrigins.map((value) => `${value}/auth/callback`),
+    callback_urls: [origin, ...aliases].map((value) => `${value}/auth/callback`),
     setup_url: origin,
     request_oauth_on_install: false,
     default_permissions: {
@@ -82,13 +93,11 @@ export async function writeConfiguredApp(env: Env, value: GitHubAppConfig) {
 
 export function ownerSetupHtml(
   origin: string,
-  options: { state?: string; installUrl?: string } = {},
+  options: { state?: string; installUrl?: string; aliases?: string[] } = {},
 ) {
-  const manifest = githubAppManifest(origin);
+  const manifest = githubAppManifest(origin, options.aliases);
   const ready = Boolean(options.state) && !options.installUrl;
   const done = Boolean(options.installUrl);
-  const dashboard =
-    "https://dash.cloudflare.com/b9b9a2b4c908c9d03abe92a52c2d0f43/pages/view/native-site-editor/domains";
   return `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -117,8 +126,6 @@ button,a.button{display:inline-flex;align-items:center;gap:8px;border:0;border-r
     <p>GitHub App saved. Install it on the starter repository, then return to the editor and sign in.</p>
     <p><a id="install" class="button" href="${options.installUrl ? escapeHtml(options.installUrl) : "#"}">Choose repositories</a></p>
     <p><a class="button" href="/auth/login">Sign in</a></p>
-    <p class="muted">If editor.techies.tools is still pending, open Cloudflare Pages, choose native-site-editor, Custom domains, then confirm the CNAME.</p>
-    <p><a href="${dashboard}" rel="noreferrer">Open Cloudflare custom domains</a></p>
   </section>
 </main>
 <script src="/auth/setup.js"></script>`;

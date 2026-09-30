@@ -4,11 +4,17 @@
   // serving https://editor.techies.tools with static assets; deploy that with
   // `npm run deploy`. This project still binds to that Worker's SessionStore
   // Durable Object by `script_name`, so both addresses share one session store.
-  // Deploy here with `npm run deploy:pages` only if the fallback must be updated.
+  // Deploy here with `npm run deploy:pages` only if the fallback must be updated;
+  // `npm run dev:pages` runs it locally.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "native-site-editor",
   "compatibility_date": "2026-09-17",
   "pages_build_output_dir": "dist",
+  // Same addresses as the Worker, so owner setup stays on editor.techies.tools.
+  "vars": {
+    "EDITOR_ORIGIN": "https://editor.techies.tools",
+    "EDITOR_ALIASES": "https://native-site-editor.pages.dev",
+  },
   "durable_objects": {
     "bindings": [
       {
