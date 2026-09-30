@@ -11,7 +11,7 @@
 .commit-history__notice,
 .commit-history__message,
 .commit-history__confirmation p {
-  font-size: 12px;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
 .commit-history__navigation,
@@ -35,18 +35,18 @@
   justify-items: start;
   gap: 8px;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .commit-history__subject {
-  font-size: 13px;
+  font-size: var(--type-base);
   overflow-wrap: anywhere;
 }
 .commit-history__meta {
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 .commit-history__confirmation h3 {
-  font-size: 14px;
+  font-size: var(--type-base);
 }
 .commit-history [hidden] {
   display: none;

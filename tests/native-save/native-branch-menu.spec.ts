@@ -42,7 +42,7 @@ test("hovering the open repository's row lists its branches beside the menu, and
   // The row names the branch, and says it opens more.
   await expect(repoRow(page).locator(".repository-menu__repo-owner")).toHaveText("native-demo-user · private · ⑂ main");
   await expect(repoRow(page)).toHaveAttribute("aria-haspopup", "menu");
-  await expect(repoRow(page).locator(".repository-menu__more")).toHaveText("›");
+  await expect(repoRow(page).locator(".repository-menu__more svg")).toBeVisible();
   await expect(flyout(page)).toBeHidden();
 
   await repoRow(page).hover();

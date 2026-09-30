@@ -19,6 +19,8 @@
   --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
   --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
   --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  /* A request's first line, on the always-light pin. */
+  --agent-pin-text: oklch(from var(--color-primary) 25% 0.01 h);
   /* The card's: theme-aware. */
   --agent-question-surface: oklch(96% 0.04 62);
   --agent-question-text: oklch(42% 0.13 45);
@@ -56,12 +58,12 @@
   background: var(--color-primary-lighter);
   color: var(--primary);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 700;
   line-height: 1;
   pointer-events: auto;
   transform-origin: left bottom;
-  box-shadow: 0 2px 6px var(--semantic-shadow);
+  box-shadow: var(--shadow-small);
 }
 .agent-pin.is-below {
   border-radius: 2px 8px 8px 8px;
@@ -119,8 +121,8 @@
   line-height: 16px;
   text-overflow: ellipsis;
   opacity: 0;
-  color: #2b2b2b;
-  font-weight: 500;
+  color: var(--agent-pin-text);
+  font-weight: 400;
   transition:
     max-width 160ms ease-out,
     margin-left 160ms ease-out,
@@ -142,13 +144,15 @@
   border-style: dashed;
   opacity: 0.75;
 }
+/* Hovered or open: the pin's own border colour round it, apart from the
+   keyboard's focus ring. */
 .agent-pin:hover,
 .agent-pin[aria-expanded="true"] {
-  outline: 2px solid var(--focus);
+  outline: 2px solid color-mix(in oklch, currentColor 35%, transparent);
   outline-offset: 1px;
 }
 .agent-pin:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 /* A new pin, and one just done, answered or asking, pops once. */
@@ -163,7 +167,7 @@
   overflow: visible;
 }
 .agent-pin-outline rect {
-  fill: color-mix(in srgb, var(--primary) 5%, transparent);
+  fill: color-mix(in oklch, var(--primary) 5%, transparent);
   stroke: var(--primary);
   stroke-width: 1.5px;
   stroke-dasharray: 3px 1.5px;
@@ -175,7 +179,7 @@
 .agent-pin-outline.is-done rect {
   stroke: var(--color-success);
   stroke-dasharray: none;
-  fill: color-mix(in srgb, var(--color-success) 5%, transparent);
+  fill: color-mix(in oklch, var(--color-success) 5%, transparent);
   animation: none;
 }
 @keyframes agent-pin-spin {
@@ -231,14 +235,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: var(--size-compact);
   margin: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--control-line);
   border-radius: 999px;
-  padding: 5px 10px;
-  background: var(--surface-toolbar);
+  padding: 0 10px;
+  background: var(--panel-surface);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 600;
   white-space: nowrap;
   transform: translate(-100%, -100%);
@@ -267,8 +272,11 @@
 .agent-pins__tray[hidden] {
   display: none;
 }
+.agent-pins__tray:hover {
+  background: linear-gradient(var(--hover) 0 0), var(--panel-surface);
+}
 .agent-pins__tray:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -288,11 +296,11 @@
   max-width: calc(100% - 16px);
   max-height: 380px;
   overflow: auto;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--surface-toolbar);
+  padding: var(--panel-padding-roomy);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-base);
   box-shadow: var(--shadow);
   transition: opacity 120ms ease-out;
 }
@@ -325,7 +333,7 @@
 /* In the tray, a finished request is grey on its own. */
 .agent-pin-card:not([data-state]) .agent-pin-card__request:is([data-state="done"], [data-state="answered"]) {
   margin: 0 -4px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px 4px;
   background: var(--agent-done-surface);
 }
@@ -337,13 +345,13 @@
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 .agent-pin-card__where {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 .agent-pin-card__state {
   display: flex;
@@ -386,7 +394,7 @@
 .agent-pin-card__from {
   padding: 0 2px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: var(--type-small);
   font-weight: 600;
 }
 .agent-pin-card__bubble {
@@ -397,7 +405,7 @@
   padding: 4px 8px 5px;
   background: var(--primary);
   color: var(--on-primary);
-  font: 12px/15px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font: var(--type-small)/15px var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -440,7 +448,7 @@
   padding: 4px 8px 5px;
   background: var(--surface-input);
   color: var(--text);
-  font: 12px/15px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font: var(--type-small)/15px var(--font-mono);
   resize: none;
   overflow-y: auto;
 }
@@ -455,7 +463,7 @@
 }
 .agent-pin-card__answer-input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent);
 }
 .agent-pin-card__answer.is-sending {
   cursor: progress;
@@ -464,8 +472,8 @@
   opacity: 0.6;
 }
 .agent-pin-card__error {
-  font-size: 11px;
-  font-weight: 620;
+  font-size: var(--type-small);
+  font-weight: 600;
 }
 .agent-pin-card__error::before {
   content: "";

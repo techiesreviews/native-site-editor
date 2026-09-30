@@ -10,9 +10,9 @@
   max-width: min(38vw, 360px);
   padding: 7px 10px 7px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: transparent;
-  font-size: 15px;
+  font-size: var(--type-title);
   font-weight: 600;
 }
 
@@ -33,7 +33,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--type-small);
   font-weight: 400;
   color: var(--muted);
 }
@@ -44,7 +44,7 @@
 
 .repository-menu__trigger:hover,
 .repository-menu__trigger[aria-expanded="true"] {
-  background: var(--background);
+  background: var(--hover);
 }
 
 /* A letter tile per repository, with a hue from its name. */
@@ -54,7 +54,7 @@
   flex: none;
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: oklch(from var(--primary) 0.58 0.12 var(--initial-hue, h));
   color: white;
   font-size: 13px;
@@ -74,17 +74,17 @@
   position: absolute;
   top: 3px;
   left: 30px;
-  min-width: 16px;
-  height: 16px;
-  border: 2px solid var(--surface-toolbar);
+  min-width: 18px;
+  height: 18px;
+  border: 2px solid var(--surface);
   border-radius: 999px;
   padding: 0 3px;
   box-sizing: border-box;
   background: var(--agent-question-strong, oklch(66% 0.18 48));
   color: white;
-  font-size: 9px;
+  font-size: var(--type-badge);
   font-weight: 700;
-  line-height: 12px;
+  line-height: 14px;
   text-align: center;
 }
 .repository-menu__questions[hidden] {
@@ -98,13 +98,7 @@
 }
 
 .repository-menu__popover {
-  --menu-hover: color-mix(in oklch, var(--text) 9%, transparent);
-  --menu-line: color-mix(in oklch, var(--text) 13%, transparent);
-  /* What is open (repository, branch, account): a subtle tint of the
-     editor's action colour, apart from the grey of a hover. */
-  --menu-selected: color-mix(in oklch, var(--primary) 16%, transparent);
   width: min(340px, calc(100vw - 32px));
-  padding: 6px;
 }
 
 .repository-menu__popover [hidden] {
@@ -124,8 +118,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 6px;
-  font-size: 11px;
+  padding: 6px 8px;
+  font-size: var(--type-small);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -134,15 +128,21 @@
 
 .repository-menu__search {
   display: block;
-  width: calc(100% - 12px);
-  margin: 2px 6px 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--menu-line);
-  border-radius: 6px;
+  width: 100%;
+  height: var(--size-control);
+  margin: 2px 0 6px;
+  padding: 0 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
   background: var(--surface-input);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--type-base);
+}
+
+.repository-menu__search:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
 }
 
 .repository-menu__search[hidden],
@@ -151,6 +151,9 @@
 }
 
 .repository-menu__repos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   max-height: min(320px, 45dvh);
   overflow: auto;
   margin: 0;
@@ -163,16 +166,34 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 .repository-menu__item:hover,
 .repository-menu__item:focus-within {
-  background: var(--menu-hover);
+  background: var(--hover);
+}
+
+/* As in Pages and Files, the ring goes round the whole row. */
+.repository-menu__item:has(> .repository-menu__repo:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.repository-menu__repo:focus-visible {
+  outline: none;
+}
+
+.repository-menu__remove:focus-visible,
+.repository-menu__action:focus-visible,
+.repository-menu__account:focus-visible,
+.repository-menu__heading-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .repository-menu__item:has([aria-current="true"]) {
-  background: var(--menu-selected);
+  background: var(--current);
 }
 
 .repository-menu__repo {
@@ -181,9 +202,9 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -207,12 +228,12 @@
 }
 
 .repository-menu__repo-name {
-  font-size: 13px;
+  font-size: var(--type-base);
   font-weight: 600;
 }
 
 .repository-menu__repo-owner {
-  font-size: 11px;
+  font-size: var(--type-small);
   color: var(--muted);
 }
 
@@ -222,16 +243,16 @@
 
 
 .repository-menu__remove {
+  display: inline-grid;
+  place-items: center;
   flex: none;
-  width: 28px;
-  height: 28px;
-  margin-left: 4px;
+  width: var(--size-icon);
+  height: var(--size-icon);
+  margin: 0 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
   opacity: 0;
   cursor: pointer;
 }
@@ -243,7 +264,7 @@
 }
 
 .repository-menu__remove:hover {
-  background: var(--menu-hover);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -257,30 +278,27 @@
   flex-basis: 100%;
   margin: 0 8px 8px;
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 
 .repository-menu__confirm p {
   margin: 0 0 10px;
-  font-size: 12px;
+  font-size: var(--type-small);
   line-height: 1.5;
   color: var(--muted);
 }
 
 .repository-menu__confirm .button {
-  display: inline-block;
+  display: inline-flex;
   margin-right: 8px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
   text-decoration: none;
 }
 
 .repository-menu__empty {
   margin: 0;
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: 6px 8px;
+  font-size: var(--type-small);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -288,11 +306,8 @@
 /* The open repository's row opens its branches (flyout.ts). */
 .repository-menu__more {
   flex: none;
-  margin-left: -2px;
   padding-right: 2px;
   color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
 }
 
 .repository-menu__repo[aria-expanded="true"] .repository-menu__more {
@@ -308,8 +323,7 @@
 }
 
 .repository-menu__branch-item[aria-checked="true"] {
-  /* The flyout is outside the menu's panel, so it mixes its own. */
-  background: color-mix(in oklch, var(--primary) 16%, transparent);
+  background: var(--current);
   font-weight: 600;
 }
 
@@ -318,37 +332,39 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 10px;
+  min-height: var(--size-control);
+  padding: 4px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--type-base);
   text-align: left;
   text-decoration: none;
 }
 
 .repository-menu__action:hover,
 .repository-menu__action:focus-visible {
-  background: var(--menu-hover);
+  background: var(--hover);
 }
 
 
 .repository-menu__heading-button {
-  width: 24px;
-  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-icon);
+  height: var(--size-icon);
   margin: -4px -4px -4px 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
-.repository-menu__heading-button:hover {
-  background: var(--menu-hover);
+.repository-menu__heading-button:hover,
+.repository-menu__heading-button:focus-visible {
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -366,13 +382,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
-  font-size: 13px;
+  min-height: var(--size-control);
+  padding: 4px 8px;
+  font-size: var(--type-base);
 }
 
 .repository-menu__account[aria-current="true"] {
-  border-radius: 6px;
-  background: var(--menu-selected);
+  border-radius: var(--radius);
+  background: var(--current);
   font-weight: 600;
 }
 
@@ -380,7 +397,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: var(--type-badge);
 }
 
 .repository-menu__avatar {
@@ -391,7 +408,7 @@
 
 .repository-menu__hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--type-small);
   color: var(--muted);
   opacity: 0;
 }

@@ -558,7 +558,7 @@ export function createPagesTree(options: {
     } else row.append(node("span", "pages-url", page.route));
     if (isFolderRoute(page.route)) {
       const add = node("button", "pages-add");
-      setIcon(add, "plus", 14);
+      setIcon(add, "plus");
       add.type = "button";
       add.tabIndex = -1;
       add.setAttribute("aria-label", page.special === "home" ? "Add a page at the top level" : `Add subpage to ${page.label}`);

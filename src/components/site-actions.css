@@ -1,11 +1,10 @@
-/* Change status in the top bar: a dot, the state and one link. The failure
-   red is the success token turned to red hue, as the comparison dialog does. */
+/* Change status in the top bar: a dot, the state and one link. */
 .change-status {
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--type-small);
   color: var(--muted);
 }
 .change-status[hidden] { display: none; }
@@ -18,8 +17,8 @@
 }
 .change-status[data-state="building"] .change-status__dot { background: var(--color-warning); }
 .change-status[data-state="live"] .change-status__dot { background: var(--color-success); }
-.change-status[data-state="failed"] .change-status__dot { background: oklch(from var(--color-success) l c 25); }
-.change-status[data-state="failed"] .change-status__label { color: oklch(from var(--success-fg) l c 25); font-weight: 600; }
+.change-status[data-state="failed"] .change-status__dot { background: var(--danger); }
+.change-status[data-state="failed"] .change-status__label { color: var(--danger-fg); font-weight: 600; }
 .change-status[data-state="live"] .change-status__label { color: var(--success-fg); font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) {
   .change-status[data-state="building"] .change-status__dot { animation: change-status-pulse 1.2s ease-in-out infinite alternate; }

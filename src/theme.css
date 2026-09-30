@@ -23,7 +23,6 @@
   --semantic-surface-raised: var(--color-primary-light);
   --semantic-surface-input: var(--color-primary-lightest);
   --semantic-surface-toolbar: oklch(from var(--color-primary-lighter) 92% c h);
-  --semantic-hover: oklch(from var(--color-primary-light) 91% c h);
   --semantic-selected: var(--color-primary-light);
   --semantic-text: var(--color-primary-darkest);
   --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
@@ -48,12 +47,10 @@
   --surface-raised: var(--semantic-surface-raised);
   --surface-input: var(--semantic-surface-input);
   --surface-toolbar: var(--semantic-surface-toolbar);
-  --hover: var(--semantic-hover);
   --selected: var(--semantic-selected);
   --text: var(--semantic-text);
   --line: var(--semantic-border);
   --muted: var(--semantic-text-muted);
-  --green: var(--semantic-link);
   --primary: var(--semantic-action);
   --primary-hover: var(--semantic-action-hover);
   --on-primary: var(--semantic-on-action);
@@ -64,6 +61,56 @@
   --success-bg: var(--semantic-success-surface);
   --success-fg: var(--semantic-success-text);
   --shadow: 0 12px 32px var(--semantic-shadow);
+  /* A pin, a note or a round button over the preview. */
+  --shadow-small: 0 2px 6px var(--semantic-shadow);
+  --link: var(--semantic-link);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --danger: oklch(from var(--color-success) l c 25);
+
+  /* One look for every row, list and button in the chrome: a grey hover;
+     what is open, current or chosen in a list in a subtle tint of the
+     action colour (and 600 weight); a pressed toggle (Bold, History, an
+     open address) solid. --selected stays opaque for Monaco and the code
+     highlights. Keyboard focus is the hover with the ring. */
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --pressed: var(--primary);
+  --on-pressed: var(--on-primary);
+  /* An input's or a bordered button's edge, visible on every surface. */
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+
+  /* Type. WCAG sets no minimum size (it asks for 4.5:1 contrast and text
+     that zooms to 200%); words stay at 12px or more for legibility, and
+     11px is only for a letter or a number in a badge. */
+  --type-badge: 11px;
+  /* Hints, meta, URLs, section headings. */
+  --type-small: 12px;
+  /* Rows, menu items, buttons, inputs. */
+  --type-base: 13px;
+  /* Panel and dialog titles. */
+  --type-title: 15px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Corners: a badge, a control or row, a floating panel, a dialog. */
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --radius-dialog: 12px;
+
+  /* Heights: an icon button (WCAG 2.2's 24px target), an input or button
+     inside a row, a row or a field or button in a panel. */
+  --size-icon: 24px;
+  --size-compact: 28px;
+  --size-control: 32px;
+
+  /* Floating panels: menus, flyouts, the edit bar and its popovers, the
+     insert picker and a request's card. Menus keep 6px round their rows,
+     panels with a title or text 12px. */
+  --panel-surface: var(--surface-raised);
+  --panel-padding: 6px;
+  --panel-padding-roomy: 12px;
 }
 
 /* App overrides for the legacy utility foundation, without changing the
@@ -76,7 +123,7 @@
 .button:disabled:hover {
   background: var(--primary);
   cursor: default;
-  opacity: 0.45;
+  opacity: 0.5;
 }
 .secondary {
   background: var(--surface);
@@ -94,7 +141,6 @@
     --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
     --semantic-surface-input: oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h);
     --semantic-surface-toolbar: oklch(from var(--color-primary-darker) l min(c, 0.025) h);
-    --semantic-hover: oklch(from var(--color-primary-darker) 30% min(c, 0.04) h);
     --semantic-selected: oklch(from var(--color-primary-darker) 35% min(c, 0.05) h);
     --semantic-text: var(--color-primary-lighter);
     --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
@@ -106,5 +152,10 @@
     --semantic-warning-text: oklch(from var(--color-warning) 87% 0.08 h);
     --semantic-success-surface: oklch(from var(--color-success) 28% 0.03 h);
     --semantic-success-text: oklch(from var(--color-success) 87% 0.08 h);
+  }
+  /* The action colour is too dark for a pressed toggle on dark panels. */
+  :root {
+    --pressed: var(--color-primary-light);
+    --on-pressed: var(--color-primary-darkest);
   }
 }

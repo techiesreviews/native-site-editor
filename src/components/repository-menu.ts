@@ -266,7 +266,8 @@ export function createRepositoryMenu(options: {
     );
     open.append(initial(repo.name), text);
     if (selected) {
-      const more = node("span", "repository-menu__more", "›");
+      const more = node("span", "repository-menu__more");
+      setIcon(more, "caret-right", 12);
       more.setAttribute("aria-hidden", "true");
       open.append(more);
       open.title = on ? `On ${on}: choose another branch, or refresh` : "Branches";

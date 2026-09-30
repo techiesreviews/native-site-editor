@@ -1,19 +1,18 @@
 /* A submenu beside a dropdown (flyout.ts places it). */
 .flyout {
-  --menu-hover: color-mix(in oklch, var(--text) 9%, transparent);
   position: fixed;
   inset: auto;
   width: 240px;
   max-height: calc(100dvh - 16px);
   overflow: auto;
   margin: 0;
-  padding: 6px;
+  padding: var(--panel-padding);
   border: 0;
-  border-radius: 8px;
-  background: var(--surface-raised);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
   color: var(--text);
   box-shadow: var(--shadow);
-  font-size: 13px;
+  font-size: var(--type-base);
 }
 
 .flyout [hidden] {
@@ -26,8 +25,8 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 24px;
-  padding: 4px 4px 4px 10px;
-  font-size: 11px;
+  padding: 4px 4px 4px 8px;
+  font-size: var(--type-small);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -35,6 +34,9 @@
 }
 
 .flyout__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -46,9 +48,10 @@
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 7px 10px;
+  min-height: var(--size-control);
+  padding: 4px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -58,8 +61,13 @@
 
 .flyout__item:hover:not(:disabled),
 .flyout__item:focus-visible {
-  background: var(--menu-hover);
-  outline: none;
+  background: var(--hover);
+}
+
+.flyout__item:focus-visible,
+.flyout__icon-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .flyout__item:disabled {
@@ -69,33 +77,33 @@
 
 .flyout__icon-button {
   flex: none;
-  width: 24px;
-  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-icon);
+  height: var(--size-icon);
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
 .flyout__icon-button:hover:not(:disabled),
 .flyout__icon-button:focus-visible {
-  background: var(--menu-hover);
+  background: var(--hover);
   color: var(--text);
 }
 
 .flyout__icon-button:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: default;
 }
 
 .flyout__note {
   margin: 0;
-  padding: 7px 10px;
-  font-size: 12px;
+  padding: 6px 8px;
+  font-size: var(--type-small);
   line-height: 1.5;
   color: var(--muted);
 }

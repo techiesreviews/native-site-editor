@@ -1,19 +1,7 @@
 /* Contextual edit bar over the native preview, anchored to the selection.
-   Active states (pressed format, open address, current item) use a solid
-   action colour with its own text colour, readable on the toolbar in both
-   schemes; the app's --selected is too close to the dark toolbar. */
-.edit-bar,
-.edit-bar__popover {
-  --edit-bar-active: var(--primary);
-  --edit-bar-on-active: var(--on-primary);
-}
-@media (prefers-color-scheme: dark) {
-  .edit-bar,
-  .edit-bar__popover {
-    --edit-bar-active: var(--color-primary-light);
-    --edit-bar-on-active: var(--color-primary-darkest);
-  }
-}
+   A pressed toggle (Bold, Italic, an open address, Ask agent) is solid
+   (--pressed); the current item or chosen option in its menus is the
+   tint every list uses (--current). */
 .edit-bar {
   position: absolute;
   z-index: 30;
@@ -23,10 +11,10 @@
   gap: 2px;
   width: max-content;
   padding: 4px;
-  border-radius: 8px;
-  background: var(--surface-toolbar);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-base);
   box-shadow: var(--shadow);
 }
 .edit-bar[hidden] {
@@ -34,20 +22,19 @@
 }
 .edit-bar__kind {
   padding: 4px 8px 4px 6px;
-  font-size: 11px;
-  font-weight: 620;
+  font-size: var(--type-small);
+  font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
 }
 .edit-bar__button {
+  min-height: var(--size-compact);
   border: 0;
-  border-radius: 6px;
-  padding: 6px 8px;
+  border-radius: var(--radius);
+  padding: 0 8px;
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 11px;
-  font-weight: 550;
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -55,26 +42,25 @@
   background: var(--hover);
 }
 .edit-bar__button:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   background: transparent;
 }
 .edit-bar__select {
   field-sizing: content;
   width: auto;
   min-width: 0;
-  height: auto;
+  height: var(--size-compact);
   margin: 0;
   border: 0;
-  border-radius: 6px;
-  padding: 6px;
+  border-radius: var(--radius);
+  padding: 0 6px;
   background: var(--surface);
   color: inherit;
   font: inherit;
-  font-size: 12px;
 }
 .edit-bar__button:focus-visible,
 .edit-bar__select:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 .edit-bar__format {
@@ -87,8 +73,8 @@
   font-weight: 400;
 }
 .edit-bar__format[aria-pressed="true"] {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
+  background: var(--pressed);
+  color: var(--on-pressed);
 }
 
 /* Menu or field opened from a bar button, under it. */
@@ -102,20 +88,21 @@
   max-width: 320px;
   max-height: 320px;
   overflow: auto;
-  padding: 6px;
-  border-radius: 8px;
-  background: var(--surface-toolbar);
+  padding: var(--panel-padding);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--type-base);
   box-shadow: var(--shadow);
 }
 .edit-bar__popover[hidden] {
   display: none;
 }
 .edit-bar__menu-item {
+  min-height: var(--size-control);
   border: 0;
-  border-radius: 6px;
-  padding: 6px 8px;
+  border-radius: var(--radius);
+  padding: 4px 8px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -126,39 +113,37 @@
 .edit-bar__menu-item:focus-visible {
   background: var(--hover);
 }
-.edit-bar__option[aria-selected="true"]:hover,
-.edit-bar__option[aria-selected="true"]:focus-visible {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
-  filter: brightness(1.1);
-}
 .edit-bar__menu-item:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   background: transparent;
 }
-.edit-bar__menu-item[aria-current="true"] {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
+.edit-bar__menu-item[aria-current="true"],
+.edit-bar__option[aria-selected="true"] {
+  background: var(--current);
+  font-weight: 600;
 }
-.edit-bar__menu-item:focus-visible,
+.edit-bar__menu-item:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .edit-bar__field-input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: -1px;
 }
 .edit-bar__address,
 .edit-bar__button--icon {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 7px;
+  padding: 0 7px;
 }
 .edit-bar__icon {
   display: block;
   flex: none;
 }
 .edit-bar__address[aria-expanded="true"] {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
+  background: var(--pressed);
+  color: var(--on-pressed);
 }
 .edit-bar__options {
   display: flex;
@@ -173,26 +158,22 @@
   align-items: center;
   gap: 6px;
   padding: 6px 2px 2px;
-  font-weight: 620;
+  font-weight: 600;
 }
 .edit-bar__check input {
   margin: 0;
-  accent-color: var(--edit-bar-active);
+  accent-color: var(--primary);
 }
 .edit-bar__options[hidden] {
   display: none;
 }
-.edit-bar__option[aria-selected="true"] {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
-}
 .edit-bar__option:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 .edit-bar__field--warning {
   color: var(--warning-fg);
-  font-weight: 620;
+  font-weight: 600;
 }
 .edit-bar__field--warning:not(.edit-bar__address--icon)::before {
   content: "";
@@ -209,15 +190,16 @@
   flex-direction: column;
   gap: 4px;
   padding: 2px;
-  font-weight: 620;
+  font-weight: 600;
 }
 .edit-bar__field-input {
   width: 260px;
   max-width: 100%;
+  height: var(--size-control);
   margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 0 8px;
   background: var(--surface-input);
   color: inherit;
   font: inherit;
@@ -225,7 +207,7 @@
 }
 .edit-bar__warning {
   color: var(--warning-fg);
-  font-weight: 620;
+  font-weight: 600;
 }
 .edit-bar__warning::before {
   content: "";
@@ -275,7 +257,7 @@
 }
 .edit-bar__upload-hint {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-small);
 }
 .edit-bar__popover.is-drop-target {
   outline: 2px dashed var(--focus);
@@ -292,8 +274,8 @@
    about 180 px up to six lines and 320 px. It comes in rising 2 px, and
    once sent shrinks into its spot as the pin pops in. */
 .edit-bar__ask[aria-expanded="true"] {
-  background: var(--edit-bar-active);
-  color: var(--edit-bar-on-active);
+  background: var(--pressed);
+  color: var(--on-pressed);
 }
 .edit-bar__note {
   position: absolute;
@@ -306,8 +288,8 @@
   padding: 3.5px 8px 4.5px;
   background: var(--primary);
   color: var(--on-primary);
-  font: 12px/14px var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
-  box-shadow: 0 2px 8px var(--semantic-shadow);
+  font: var(--type-small)/14px var(--font-mono);
+  box-shadow: var(--shadow-small);
   transform-origin: left bottom;
   animation: edit-bar-note-in 140ms ease-out;
 }
@@ -321,8 +303,8 @@
 /* Focused: a soft halo in its own colour (it waits unfocused with words in it). */
 .edit-bar__note:focus-within {
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent),
-    0 2px 8px var(--semantic-shadow);
+    0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent),
+    var(--shadow-small);
 }
 .edit-bar__note-line {
   display: flex;
@@ -371,8 +353,8 @@
 .edit-bar__note-error {
   max-width: 290px;
   margin: 0;
-  font-size: 11px;
-  font-weight: 620;
+  font-size: var(--type-small);
+  font-weight: 600;
   line-height: 14px;
 }
 .edit-bar__note-error::before {

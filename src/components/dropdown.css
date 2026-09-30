@@ -2,10 +2,10 @@
   position: fixed;
   inset: 64px auto auto 20px;
   margin: 0;
-  padding: 6px;
+  padding: var(--panel-padding);
   border: 0;
-  border-radius: 8px;
-  background: var(--surface-raised);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
   color: var(--text);
   box-shadow: var(--shadow);
   max-height: calc(100dvh - 90px);

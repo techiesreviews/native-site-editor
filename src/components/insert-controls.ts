@@ -82,7 +82,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
         row = node("div", "insert-point");
         row.append(node("span", "insert-point__line"));
         const plus = button("", () => toggle(key), "insert-point__plus");
-        plus.append(icon("plus", 14));
+        plus.append(icon("plus"));
         // Moving from the preview onto a plus keeps the pair shown.
         plus.addEventListener("pointerenter", () => {
           pointerOnPlus = true;

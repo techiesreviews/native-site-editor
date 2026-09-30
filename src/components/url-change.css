@@ -1,27 +1,27 @@
 /* A page's URL, editable (the Page block, the Pages tab). */
 .url-change { display: flex; flex-direction: column; gap: 4px; margin: 0; }
 .url-change[hidden] { display: none; }
-.url-change__field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.url-change__field { display: flex; flex-direction: column; gap: 4px; font-size: var(--type-small); color: var(--muted); }
 .url-change__input {
   width: 100%;
   box-sizing: border-box;
-  height: 30px;
+  height: var(--size-control);
   padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
   background: var(--surface-input);
   color: var(--text);
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
 }
-.url-change__input:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; }
+.url-change__input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
 .url-change__input[aria-invalid="true"] { border-color: var(--warning-fg); }
 .url-change__input[readonly] { background: transparent; border-style: dashed; }
 .url-change__details { display: flex; flex-direction: column; gap: 4px; }
 .url-change__details[hidden], .url-change__keep[hidden] { display: none; }
-.url-change__message { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.url-change__message { margin: 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 .url-change__message:empty { display: none; }
 .url-change__message.is-error { color: var(--warning-fg); }
-.url-change__keep { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text); cursor: pointer; }
+.url-change__keep { display: flex; align-items: center; gap: 6px; font-size: var(--type-small); color: var(--text); cursor: pointer; }
 .url-change__actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.url-change__hint { margin-right: auto; font-size: 10px; color: var(--muted); }
+.url-change__hint { margin-right: auto; font-size: var(--type-small); color: var(--muted); }

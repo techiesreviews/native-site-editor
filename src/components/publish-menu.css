@@ -1,29 +1,29 @@
-.publish-menu__panel { width: min(380px, calc(100vw - 32px)); padding: 18px; }
+.publish-menu__panel { width: min(380px, calc(100vw - 32px)); padding: var(--panel-padding-roomy); }
 .publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 10px 0; max-height: 40dvh; overflow: auto; }
-.publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: 12px; overflow-wrap: anywhere; }
-.publish-menu__file input { accent-color: var(--green); }
+.publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: var(--type-base); overflow-wrap: anywhere; }
+.publish-menu__file input { accent-color: var(--primary); }
 .publish-menu__changes { margin: -6px 0 2px 24px; }
-.publish-menu__show-changes { padding: 2px 6px; margin-left: -6px; border: 0; border-radius: 4px; background: none; color: var(--green); font: inherit; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.publish-menu__show-changes { min-height: var(--size-icon); padding: 0 6px; margin-left: -6px; border: 0; border-radius: var(--radius); background: none; color: var(--link); font: inherit; font-size: var(--type-small); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .publish-menu__show-changes:hover { background: var(--hover); }
-.publish-menu__show-changes:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.publish-menu__message { margin-bottom: 0; font-size: 12px; line-height: 1.6; }
+.publish-menu__show-changes:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.publish-menu__message { margin-bottom: 0; font-size: var(--type-small); line-height: 1.6; }
 .publish-menu__message:empty { display: none; }
 @supports (position-area: bottom) { .publish-menu__panel { position-area: bottom span-left; justify-self: end; } }
-.code-editor__conflict { padding: 10px 20px; background: var(--warning-bg); color: var(--warning-fg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
+.code-editor__conflict { padding: 10px 20px; background: var(--warning-bg); color: var(--warning-fg); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: var(--type-base); }
 .code-editor__conflict[hidden] { display: none; }
 
-/* Comparison dialog. Removed lines take the success tokens turned to red, so
-   they follow the light and dark scheme like the added ones. */
+/* Comparison dialog. Removed lines take the danger tokens (the success
+   ones turned to red), so they follow the scheme like the added ones. */
 .publish-diff {
   --diff-add-bg: var(--success-bg);
   --diff-add-fg: var(--success-fg);
-  --diff-del-bg: oklch(from var(--success-bg) l c 25);
-  --diff-del-fg: oklch(from var(--success-fg) l c 25);
+  --diff-del-bg: var(--danger-bg);
+  --diff-del-fg: var(--danger-fg);
   width: min(1200px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-dialog);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow);
@@ -31,10 +31,10 @@
 .publish-diff[open] { display: flex; flex-direction: column; }
 .publish-diff::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.45); }
 .publish-diff__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface-toolbar); }
-.publish-diff__title { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.publish-diff__body { overflow: auto; min-height: 0; flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; }
+.publish-diff__title { margin: 0; font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+.publish-diff__body { overflow: auto; min-height: 0; flex: 1; font-family: var(--font-mono); font-size: var(--type-small); line-height: 1.5; }
 .publish-diff__split { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.publish-diff__split th { position: sticky; top: 0; z-index: 1; padding: 6px 10px; text-align: left; font: 600 12px/1.4 system-ui, sans-serif; background: var(--surface-subtle); border-bottom: 1px solid var(--line); }
+.publish-diff__split th { position: sticky; top: 0; z-index: 1; padding: 6px 10px; text-align: left; font: 600 var(--type-small)/1.4 system-ui, sans-serif; background: var(--surface-subtle); border-bottom: 1px solid var(--line); }
 .publish-diff__split th + th { border-left: 1px solid var(--line); }
 .publish-diff__col-num { width: 6ch; }
 .publish-diff__num { padding: 0 8px; text-align: right; vertical-align: top; color: var(--muted); user-select: none; }
@@ -58,16 +58,16 @@
   .publish-diff__unified { display: block; }
 }
 /* A change's kind, as in git: A added, M modified, R renamed, D deleted. */
-.publish-menu__status { flex-shrink: 0; min-width: 14px; padding: 0 4px; border-radius: 4px; font: 600 10px/16px ui-monospace, monospace; text-align: center; }
+.publish-menu__status { flex-shrink: 0; min-width: 16px; padding: 0 4px; border-radius: var(--radius-small); font: 600 var(--type-badge)/16px var(--font-mono); text-align: center; }
 .publish-menu__status.is-A, .publish-menu__status.is-R { background: var(--success-bg); color: var(--success-fg); }
-.publish-menu__status.is-M { background: var(--selected); color: var(--green); }
+.publish-menu__status.is-M { background: var(--current); color: var(--link); }
 .publish-menu__status.is-D { background: var(--warning-bg); color: var(--warning-fg); }
 .publish-menu__changes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.publish-menu__note { font-size: 11px; color: var(--muted); }
+.publish-menu__note { font-size: var(--type-small); color: var(--muted); }
 /* The count of waiting changes on the trigger. */
-.publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: 11px; font-weight: 600; }
+.publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: var(--type-badge); font-weight: 600; }
 .publish-menu__count:empty { display: none; }
 /* The grand total, unfolding to the changes, each with its counts. */
-.publish-menu__total { font-size: 12px; }
+.publish-menu__total { font-size: var(--type-base); }
 .publish-menu__total-summary { font-weight: 600; cursor: pointer; }
-.publish-menu__total-summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.publish-menu__total-summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
