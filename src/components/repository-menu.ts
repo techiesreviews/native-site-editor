@@ -128,7 +128,6 @@ export function createRepositoryMenu(options: {
     row.append(avatar(account.login, account.avatar_url), node("span", "repository-menu__account-name", account.login));
     if (account.current) {
       row.setAttribute("aria-current", "true");
-      row.append(node("span", "repository-menu__check", "✓"));
     } else {
       row.title = `Switch to ${account.login}`;
       row.append(node("span", "repository-menu__hint", "Switch"));

@@ -100,6 +100,9 @@
 .repository-menu__popover {
   --menu-hover: color-mix(in oklch, var(--text) 9%, transparent);
   --menu-line: color-mix(in oklch, var(--text) 13%, transparent);
+  /* What is open (repository, branch, account): a subtle tint of the
+     editor's action colour, apart from the grey of a hover. */
+  --menu-selected: color-mix(in oklch, var(--primary) 16%, transparent);
   width: min(340px, calc(100vw - 32px));
   padding: 6px;
 }
@@ -164,9 +167,12 @@
 }
 
 .repository-menu__item:hover,
-.repository-menu__item:focus-within,
-.repository-menu__item:has([aria-current="true"]) {
+.repository-menu__item:focus-within {
   background: var(--menu-hover);
+}
+
+.repository-menu__item:has([aria-current="true"]) {
+  background: var(--menu-selected);
 }
 
 .repository-menu__repo {
@@ -214,13 +220,6 @@
   color: var(--text);
 }
 
-.repository-menu__check {
-  flex: none;
-  margin-left: auto;
-  padding-right: 4px;
-  color: var(--green);
-  font-weight: 700;
-}
 
 .repository-menu__remove {
   flex: none;
@@ -309,6 +308,8 @@
 }
 
 .repository-menu__branch-item[aria-checked="true"] {
+  /* The flyout is outside the menu's panel, so it mixes its own. */
+  background: color-mix(in oklch, var(--primary) 16%, transparent);
   font-weight: 600;
 }
 
@@ -370,6 +371,8 @@
 }
 
 .repository-menu__account[aria-current="true"] {
+  border-radius: 6px;
+  background: var(--menu-selected);
   font-weight: 600;
 }
 
