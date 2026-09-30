@@ -1,52 +1,104 @@
 .commit-history {
   display: grid;
-  gap: 12px;
+  gap: 4px;
 }
-.commit-history .changes-window__title,
 .commit-history p,
 .commit-history h3 {
   margin: 0;
 }
 .commit-history__location,
 .commit-history__notice,
-.commit-history__message,
-.commit-history__confirmation p {
+.commit-history__message {
+  padding: 0 8px;
   font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
-.commit-history__navigation,
-.commit-history__actions,
-.commit-history__meta {
+.commit-history__location {
+  color: var(--muted);
+}
+.commit-history__message:empty {
+  display: none;
+}
+.commit-history__navigation {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
+  gap: 2px;
 }
 .commit-history__list {
   display: grid;
-  gap: 8px;
-  margin: 0;
+  gap: 2px;
+  margin: 4px 0 0;
   padding: 0;
   list-style: none;
 }
-.commit-history__item,
+/* A commit: a row like the menus', the file's current version tinted. */
+.commit-history__item {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+}
+.commit-history__item:hover {
+  background: var(--hover);
+}
+.commit-history__item.is-current {
+  background: var(--current);
+}
+.commit-history__subject {
+  font-size: var(--type-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.commit-history__meta,
+.commit-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.commit-history__meta {
+  font-size: var(--type-small);
+}
+/* Restore this version: a small link under the commit. */
+.commit-history__item .text-button {
+  min-height: var(--size-icon);
+  padding: 0;
+  color: var(--link);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.commit-history__item .text-button:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+.commit-history__item .text-button:disabled {
+  color: var(--muted);
+  opacity: 1;
+}
+.commit-history__item .text-button:focus-visible {
+  outline-offset: 2px;
+}
+.commit-history > .button {
+  margin: 4px 8px 2px;
+  justify-self: start;
+}
 .commit-history__confirmation {
   display: grid;
   justify-items: start;
   gap: 8px;
-  padding: 12px;
+  margin-top: 4px;
+  padding: 10px;
   border-radius: var(--radius);
   background: var(--surface);
 }
-.commit-history__subject {
-  font-size: var(--type-base);
-  overflow-wrap: anywhere;
-}
-.commit-history__meta {
-  font-size: var(--type-small);
-}
 .commit-history__confirmation h3 {
   font-size: var(--type-base);
+}
+.commit-history__confirmation p {
+  font-size: var(--type-small);
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .commit-history [hidden] {
   display: none;

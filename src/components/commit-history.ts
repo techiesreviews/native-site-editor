@@ -126,6 +126,7 @@ export function createCommitHistory(options: {
         if (seen.has(commit.sha)) continue;
         seen.add(commit.sha);
         const item = node("li", "commit-history__item");
+        item.classList.toggle("is-current", commit.sha === currentFileCommit);
         item.append(node("strong", "commit-history__subject", commit.message || "Untitled commit"));
         const meta = node("div", "muted commit-history__meta");
         const date = new Date(commit.date);

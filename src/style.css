@@ -158,20 +158,50 @@ select {
   width: min(420px, calc(100vw - 32px));
   max-height: 70vh;
   overflow: auto;
-  padding: var(--panel-padding-roomy);
+  padding: var(--panel-padding);
   border: 0;
   border-radius: var(--radius-panel);
   background: var(--panel-surface);
   color: inherit;
   box-shadow: var(--shadow);
 }
+/* History and Draft changes read as the repository menu does: a section
+   heading, quiet actions, rows that hover grey and a tinted current one. */
 .changes-window__title {
-  font-size: var(--type-title);
+  margin: 0;
+  padding: 6px 8px;
+  font-size: var(--type-small);
   font-weight: 600;
-  margin: 0 0 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .changes-window .files-heading {
-  margin: 14px 0 6px;
+  margin: 8px 0 0;
+  padding: 6px 8px;
+}
+.changes-window .file-row + .file-row {
+  margin-top: 2px;
+}
+.changes-window .file-row:hover {
+  background: var(--hover);
+}
+.changes-window .file-row:focus-visible {
+  background: var(--hover);
+  outline-offset: -2px;
+}
+.changes-window .text-button {
+  min-height: var(--size-compact);
+  padding: 0 8px;
+  border-radius: var(--radius);
+  color: var(--text);
+}
+.changes-window .text-button:hover:not(:disabled) {
+  background: var(--hover);
+  text-decoration: none;
+}
+.changes-window .text-button:focus-visible {
+  outline-offset: -2px;
 }
 .changes-window__list {
   list-style: none;
@@ -185,11 +215,12 @@ select {
   color: var(--muted);
 }
 .changes-window__back {
-  margin-top: 14px;
+  margin: 8px 8px 2px;
 }
 .changes-window__empty {
   margin: 0;
-  font-size: var(--type-base);
+  padding: 6px 8px;
+  font-size: var(--type-small);
 }
 .topbar-actions {
   display: flex;
