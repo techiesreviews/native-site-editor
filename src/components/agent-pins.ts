@@ -305,7 +305,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     const body = node("div", "agent-pin-card__request");
     body.dataset.state = request.state;
     const head = node("p", "agent-pin-card__head");
-    head.append(node("span", `agent-pin-card__number agent-pin-card__number--${request.state}`, String(numberOf(request.id))), node("span", "agent-pin-card__state", stateLabels[request.state] ?? request.state));
+    head.append(node("span", "agent-pin-card__state", stateLabels[request.state] ?? request.state));
     const where = request.element.route && request.element.route !== route ? ` on ${request.element.route}` : "";
     head.append(node("span", "agent-pin-card__where", `<${request.element.tag}>${where}`));
     body.append(head, node("p", "agent-pin-card__text", request.text));

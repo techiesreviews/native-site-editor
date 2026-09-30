@@ -2,8 +2,8 @@
    frame, under the edit bar. A pin stands above its element's top-left
    corner, where Ask agent's note stood, its small bottom-left corner the
    tail pointing at the element (flipped under the element's top edge when
-   `.is-below`). Every pin is white so its number reads over any page, in
-   light and dark themes alike. Open requests have the action colour's
+   `.is-below`). Every pin is a light blue so its number reads over any
+   page, in light and dark themes alike. Open requests have the action colour's
    border, one an agent has taken a small spinner, done is green with a
    check, an answer green with a speech mark; a pin whose element is gone
    is dashed. Hovering or focusing a pin shows the request's first line. */
@@ -25,7 +25,7 @@
   border: 2px solid var(--primary);
   border-radius: 8px 8px 8px 2px;
   padding: 0 6px;
-  background: #fff;
+  background: var(--color-primary-lighter);
   color: var(--primary);
   font: inherit;
   font-size: 11px;
@@ -231,26 +231,6 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
-}
-.agent-pin-card__number {
-  display: grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--primary);
-  border-radius: 9px;
-  padding: 0 4px;
-  background: #fff;
-  color: var(--primary);
-  font-weight: 700;
-}
-.agent-pin-card__number--seen {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent);
-}
-.agent-pin-card__number--done,
-.agent-pin-card__number--answered {
-  border-color: var(--color-success);
-  color: #2c5a25;
 }
 .agent-pin-card__where {
   margin-left: auto;
