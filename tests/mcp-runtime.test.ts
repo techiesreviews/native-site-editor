@@ -531,6 +531,15 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     assert.deepEqual(asking.thread.map((item: any) => [item.from, item.text]), [["user", "Make it bolder"]]);
     assert.equal((await answer(asking.id, "Hurry")).status, 409, "only a reply takes an answer");
     assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests.map((item: any) => item.id), [asking.id]);
+    // A question shows in the pin: a few words, at most 60 characters (a
+    // reply up to 200), refused past that with how to shorten it.
+    assert.match(described2, /question shows in the pin itself, so ask it in a few words \(at most 60 characters\)/);
+    assert.match(JSON.stringify(await client.getPrompt({ name: "watch_editor", arguments: {} })), /at most 60 characters/);
+    const wordy = await call("reply_to_request", { request: asking.id, status: "question", message: `Should the heading only be bold, or ${"much ".repeat(5)}larger too?` });
+    assert.equal(wordy.isError, true);
+    assert.match(JSON.stringify(wordy), /at most 60 characters \(this one has \d+\)\. Shorten it/);
+    assert.equal((await call("reply_to_request", { request: asking.id, status: "done", message: "x".repeat(201) })).isError, true);
+    assert.equal((await tab.hub()).requests.find((item: any) => item.id === asking.id).state, "seen", "refused replies change nothing");
     const questioned = payload(await call("reply_to_request", { request: asking.id, status: "question", message: "Bold, or larger too?" }));
     assert.equal(questioned.state, "question");
     assert.match(questioned.message, /returns the request again/);

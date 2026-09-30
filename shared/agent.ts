@@ -212,6 +212,12 @@ export const REQUEST_HTML_LIMIT = 4096;
 export const OPEN_REQUESTS_LIMIT = 50;
 export const THREAD_LIMIT = 20;
 export const THREAD_TEXT_LIMIT = 8000;
+/**
+ * The most an agent's reply to a request holds, and its question, which the
+ * request's pin shows whole on one line.
+ */
+export const REPLY_TEXT_LIMIT = 200;
+export const QUESTION_TEXT_LIMIT = 60;
 
 /** A request's conversation: its thread, or one made of its text and reply. */
 export function requestThread(request: Pick<AgentRequest, "text" | "createdAt" | "reply" | "thread">): AgentRequestMessage[] {

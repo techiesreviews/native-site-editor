@@ -316,8 +316,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     onShowPage: (target) => void followRoute(target),
     onShowElement: (id) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "show-pin", id }, "*"),
     onLayout: () => editBar.refit(),
-    // A request's card keeps clear of the edit bar where it can.
-    avoid: () => editBar.element.hidden ? [] : [editBar.element.getBoundingClientRect()],
   });
 
   let site: NativeSite | undefined;

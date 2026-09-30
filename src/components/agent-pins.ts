@@ -17,15 +17,17 @@ import "./agent-pins.css";
 // after a moment so passing over pins shows nothing, and it closes once the
 // pointer has left both pin and card; clicking the pin (or Enter on it)
 // holds the card open, with the focus in it, until Esc, a click elsewhere
-// or the pin again. The card stands beside the request's element, not over
-// it: to its right, else its left, below or above.
+// or the pin again. The card opens right above its pin, left edges aligned,
+// so it stays with the pin and clear of the element under it; below the pin
+// when the frame has no room above.
 //
-// An agent's question needs the user: its pin turns orange with a "?", and
-// its card has a box for the answer, focused as a held card opens (typing in
-// one looked at holds it), which sends the answer and opens the request for
-// agents again. A question scrolled out of view is listed in the tray too,
-// which counts the questions it holds. Done and answered requests turn grey,
-// pin and card, so they recede.
+// An agent's question needs the user: its pin turns orange with a "?" and
+// the question itself (agents keep it to a few words), read without opening
+// anything, and its card has a box for the answer, focused as a held card
+// opens (typing in one looked at holds it), which sends the answer and
+// opens the request for agents again. A question scrolled out of view is
+// listed in the tray too, which counts the questions it holds. Done and
+// answered requests turn grey, pin and card, so they recede.
 //
 // A pin stands where Ask agent's note stood: above its element's top-left
 // corner, its small bottom-left corner pointing at the element (hanging
@@ -33,8 +35,9 @@ import "./agent-pins.css";
 // the pins of one element line up left to right. A new pin pops in, and
 // again when the agent is done, answers or asks; while an agent works on a request its
 // element has a marching outline, drawn solid as it finishes. Focusing a pin
-// from the keyboard shows the request's first line, and so does hovering one
-// while another's card is held open.
+// from the keyboard shows the request's first line (a question's shows the
+// question instead), and so does hovering one while another's card is held
+// open.
 
 /** A request as the tab polls it: its element without the source. */
 export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread"> & {
@@ -64,8 +67,6 @@ interface PinHandlers {
   onShowElement(id: string): void;
   /** The pins moved or changed (the edit bar keeps clear of the selection's). */
   onLayout?(): void;
-  /** What a card keeps clear of if it can, in client coordinates (the edit bar). */
-  avoid?(): DOMRect[];
 }
 
 const stateLabels: Record<string, string> = {
@@ -78,6 +79,8 @@ const stateLabels: Record<string, string> = {
 const marks: Record<string, string> = { done: "✓", answered: "…", question: "?" };
 // An agent's reply the user may see pop on the pin.
 const replied = (state: string) => state === "done" || state === "answered" || state === "question";
+// The question an agent asks the user, shown in its pin ("" when none).
+const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
 
 /** Space between an element's top edge and the notes on it. */
 export const NOTE_GAP = 4;
@@ -93,11 +96,11 @@ const FADE_MS = 900;
 // The answer box grows with its text up to five lines (agent-pins.css).
 const ANSWER_MAX_HEIGHT = 84;
 // A hovered pin's card opens after this; one looked at closes this long after
-// the pointer left pin and card (longer when it left a pin towards its card).
+// the pointer left pin and card.
 const HOVER_OPEN = 120;
 const HOVER_CLOSE = 200;
-// Between an element and its card, and the card and the frame's edges.
-const CARD_GAP = 12;
+// Between a pin and its card, and the card and the frame's edges.
+const CARD_GAP = 6;
 const CARD_MARGIN = 8;
 const sizesItself = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
 
@@ -173,7 +176,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   // On the page shown and found now, or found here before.
   const placed = (request: PinRequest) =>
     request.element.route === route ? rects.get(request.id) ?? lastRects.get(request.id) : undefined;
-  // A pin's width without the request's line, which grows on hover.
+  // A pin's width without the request's line, which grows on focus (a
+  // question it shows counts).
   const restingWidth = (pin: HTMLElement) =>
     pin.offsetWidth - (pin.querySelector<HTMLElement>(".agent-pin__text")?.offsetWidth ?? 0);
 
@@ -182,18 +186,21 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     pin.setAttribute("aria-haspopup", "dialog");
     // A touch has no hover: its tap is the click.
     pin.addEventListener("pointerenter", (event) => { if (event.pointerType !== "touch") hover(id); });
-    pin.addEventListener("pointerleave", (event) => { if (event.pointerType !== "touch") leave(event, pin); });
+    pin.addEventListener("pointerleave", (event) => { if (event.pointerType !== "touch") leave(); });
     const status = node("span", "agent-pin__status");
+    const question = node("span", "agent-pin__question");
     const text = node("span", "agent-pin__text");
     status.setAttribute("aria-hidden", "true");
+    question.setAttribute("aria-hidden", "true");
     text.setAttribute("aria-hidden", "true");
-    pin.append(node("span", "agent-pin__number"), status, text);
+    pin.append(node("span", "agent-pin__number"), status, question, text);
     return pin;
   }
-  // Number, state mark and first line, each set only when it changed so a
-  // spinning mark keeps turning across polls.
+  // Number, state mark, the agent's question while it asks, and the first
+  // line, each set only when it changed so a spinning mark keeps turning
+  // across polls.
   function paintPin(pin: HTMLButtonElement, request: PinRequest, number: number) {
-    const [numberSpan, status, text] = pin.children as HTMLCollectionOf<HTMLElement>;
+    const [numberSpan, status, question, text] = pin.children as HTMLCollectionOf<HTMLElement>;
     if (numberSpan.textContent !== String(number)) numberSpan.textContent = String(number);
     if (pin.dataset.state !== request.state) {
       pin.dataset.state = request.state;
@@ -201,6 +208,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
         request.state === "seen" ? node("span", "agent-pin__spinner") : document.createTextNode(marks[request.state] ?? ""),
       );
     }
+    const asked = asking(request);
+    if (question.textContent !== asked) question.textContent = asked;
     const line = request.text.split("\n")[0].trim();
     if (text.textContent !== line) text.textContent = line;
   }
@@ -279,7 +288,11 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       pin.dataset.request = request.id;
       const detached = !rects.get(request.id);
       pin.classList.toggle("is-detached", detached);
-      pin.setAttribute("aria-label", `Request ${number}: ${stateLabels[request.state] ?? request.state}${detached ? ", its element is gone" : ""}`);
+      const asked = asking(request);
+      pin.setAttribute(
+        "aria-label",
+        `Request ${number}: ${stateLabels[request.state] ?? request.state}${asked ? `, ${asked}` : ""}${detached ? ", its element is gone" : ""}`,
+      );
       pin.setAttribute("aria-expanded", String(openId === request.id && !openFromTray));
       pin.hidden = rect.bottom < 0 || rect.top > frameRect.height;
       const anchor = noteAnchor(rect, frameRect);
@@ -306,7 +319,6 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     paintTray(listed);
     tray.style.left = `${left + frameRect.width - 12}px`;
     tray.style.top = `${top + frameRect.height - 12}px`;
-    // The edit bar keeps to the pins first, so the card can keep clear of it.
     handlers.onLayout?.();
     layer.classList.toggle("is-holding", Boolean(openId && held));
     if (openFromTray && openId) renderTray(listed);
@@ -389,24 +401,13 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     opening = setTimeout(() => open(id, false), HOVER_OPEN);
   }
   // The pointer left a pin or the card: the card looked at closes unless it
-  // comes back to either. Leaving a pin towards its card, which may stand
-  // across its element, it has longer, the further the card.
-  function leave(event: PointerEvent, from: HTMLElement) {
+  // comes back to either (the card stands next to its pin, so a moment
+  // covers the way between them).
+  function leave() {
     clearTimeout(opening);
     if (!openId || held) return;
-    let wait = HOVER_CLOSE;
-    if (from !== card) {
-      const at = from.getBoundingClientRect();
-      const to = card.getBoundingClientRect();
-      const x = at.left + at.width / 2;
-      const y = at.top + at.height / 2;
-      const towards = (event.clientX - x) * (to.left + to.width / 2 - x) + (event.clientY - y) * (to.top + to.height / 2 - y) > 0;
-      const dx = Math.max(to.left - event.clientX, 0, event.clientX - to.right);
-      const dy = Math.max(to.top - event.clientY, 0, event.clientY - to.bottom);
-      if (towards) wait += Math.min(500, Math.hypot(dx, dy));
-    }
     clearTimeout(closing);
-    closing = setTimeout(() => close(false), wait);
+    closing = setTimeout(() => close(false), HOVER_CLOSE);
   }
   // A question's answer box, else the card's first button.
   function focusCard() {
@@ -553,7 +554,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     card.dataset.state = request.state;
     draw(JSON.stringify([request, route, problems.get(request.id)]), () => [requestBody(request, false)]);
     card.hidden = false;
-    beside(placed(request)!, pin);
+    atPin(pin);
   }
   function renderTray(listed: PinRequest[]) {
     if (!listed.length) {
@@ -566,55 +567,19 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     card.hidden = false;
     place(tray);
   }
-  // A request's card beside its element (`rect`, frame coordinates), so the
-  // change is seen next to it: to its right, top edges aligned, else to its
-  // left, below or above it (a wide element leaves only these), the first
-  // side where the card fits in the frame clear of the element and its pins,
-  // and of the edit bar if one can be. With none, the card goes where it
-  // covers the least of them, pushed to the frame's far edge.
-  function beside(rect: SelectionRect, pin: HTMLElement) {
+  // A request's card right above its pin, left edges aligned: the pin
+  // stands above its element, so the card does not cover it. Below the pin
+  // when the frame has no room above, and inside the frame's width.
+  function atPin(pin: HTMLElement) {
     const { frameRect, left, top } = geometry();
     const width = card.offsetWidth;
     const height = card.offsetHeight;
-    // The element and its pins, as much of them as the frame shows.
-    const box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-    for (const other of pins.values()) {
-      const at = other.dataset.request && rects.get(other.dataset.request);
-      if (other !== pin && !(at && sameRect(at, rect)) || other.hidden) continue;
-      box.left = Math.min(box.left, other.offsetLeft);
-      box.top = Math.min(box.top, other.offsetTop);
-      box.right = Math.max(box.right, other.offsetLeft + restingWidth(other));
-      box.bottom = Math.max(box.bottom, other.offsetTop + other.offsetHeight);
-    }
-    const shown = {
-      left: Math.max(box.left, 0),
-      top: Math.max(box.top, 0),
-      right: Math.min(box.right, frameRect.width),
-      bottom: Math.min(box.bottom, frameRect.height),
-    };
-    const avoid = (handlers.avoid?.() ?? []).map((item) => ({
-      left: item.left - frameRect.left,
-      top: item.top - frameRect.top,
-      right: item.right - frameRect.left,
-      bottom: item.bottom - frameRect.top,
-    }));
-    const x = (at: number) => Math.max(CARD_MARGIN, Math.min(at, frameRect.width - CARD_MARGIN - width));
-    const y = (at: number) => Math.max(CARD_MARGIN, Math.min(at, frameRect.height - CARD_MARGIN - height));
-    const covers = (spot: { x: number; y: number }, what: typeof box) =>
-      Math.max(0, Math.min(spot.x + width, what.right) - Math.max(spot.x, what.left)) *
-      Math.max(0, Math.min(spot.y + height, what.bottom) - Math.max(spot.y, what.top));
-    const spots = [
-      { side: "right", x: x(box.right + CARD_GAP), y: y(rect.top) },
-      { side: "left", x: x(box.left - CARD_GAP - width), y: y(rect.top) },
-      { side: "below", x: x(rect.left), y: y(box.bottom + CARD_GAP) },
-      { side: "above", x: x(rect.left), y: y(box.top - CARD_GAP - height) },
-    ].map((spot) => ({ ...spot, covers: covers(spot, shown), bar: avoid.some((item) => covers(spot, item) > 0) }));
-    const spot = spots.find((item) => !item.covers && !item.bar)
-      ?? spots.find((item) => !item.covers)
-      ?? spots.reduce((best, item) => item.covers < best.covers ? item : best);
-    card.dataset.side = spot.side;
-    card.style.left = `${left + spot.x}px`;
-    card.style.top = `${top + spot.y}px`;
+    const x = Math.max(CARD_MARGIN, Math.min(pin.offsetLeft, frameRect.width - CARD_MARGIN - width));
+    const above = pin.offsetTop - CARD_GAP - height;
+    const fits = above >= CARD_MARGIN;
+    card.dataset.side = fits ? "above" : "below";
+    card.style.left = `${left + x}px`;
+    card.style.top = `${top + (fits ? above : pin.offsetTop + pin.offsetHeight + CARD_GAP)}px`;
   }
   // The tray's card: under its anchor (above when it does not fit, as in the
   // tray's corner), inside the frame's width.
@@ -642,7 +607,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   // Pointing at the card keeps the one looked at open; clicking or typing in
   // it holds it.
   card.addEventListener("pointerenter", () => clearTimeout(closing));
-  card.addEventListener("pointerleave", (event) => { if (event.pointerType !== "touch") leave(event, card); });
+  card.addEventListener("pointerleave", (event) => { if (event.pointerType !== "touch") leave(); });
   card.addEventListener("pointerdown", hold);
   card.addEventListener("focusin", hold);
   function onPointerDown(event: PointerEvent) {
@@ -654,7 +619,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   const resize = new ResizeObserver(() => layout());
   resize.observe(frame);
   resize.observe(pane);
-  // A card growing (an answer being typed) may need another side.
+  // A card growing (an answer being typed) may need the other side of its pin.
   resize.observe(card);
 
   function locate() {

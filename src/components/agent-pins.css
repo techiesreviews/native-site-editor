@@ -5,11 +5,11 @@
    `.is-below`). Every pin is light so its number reads over any page, in
    light and dark themes alike. Open requests are light blue with the action
    colour's border, one an agent has taken a small spinner; an agent's
-   question is orange with a "?", for the user to answer; done (a check)
-   and answered (a speech mark) are grey, so they recede. A pin whose
-   element is gone is dashed. Focusing a pin from the keyboard shows the
-   request's first line, and so does hovering one while another's card is
-   held open (hovering opens the pin's card). */
+   question is orange with a "?" and the question on one line, for the
+   user to answer; done (a check) and answered (a speech mark) are grey, so
+   they recede. A pin whose element is gone is dashed. Focusing a pin from
+   the keyboard shows the request's first line, and so does hovering one
+   while another's card is held open (hovering opens the pin's card). */
 :root {
   /* A question for the user: orange, on pins light in both themes. */
   --agent-question-strong: oklch(66% 0.18 48);
@@ -97,8 +97,20 @@
   background: var(--agent-done-pin);
   color: var(--agent-done-ink);
 }
+/* An agent's question, always shown: a few words, cut short if ever
+   longer. */
+.agent-pin__question {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.agent-pin__question:not(:empty) {
+  margin-left: 6px;
+}
 /* The request's first line, folded away until a keyboard focus (or a hover
-   while another's card is held open). */
+   while another's card is held open); a question's pin keeps to the
+   question. */
 .agent-pin__text {
   max-width: 0;
   overflow: hidden;
@@ -117,8 +129,8 @@
   z-index: 2;
 }
 /* Hovering a pin opens its card instead, unless another's is held open. */
-.agent-pin:focus-visible:not([aria-expanded="true"]) .agent-pin__text,
-.agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"]) .agent-pin__text {
+.agent-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text,
+.agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text {
   max-width: 240px;
   margin-left: 6px;
   opacity: 1;
@@ -254,7 +266,8 @@
    user's messages in the action colour like Ask agent's note (its tail
    bottom-left), the agents' on the surface (tail bottom-right), the one
    asking the user in orange with the answer box under it. Done and
-   answered requests are grey. It fades in, beside the request's element. */
+   answered requests are grey. It fades in right above its pin (below it
+   with no room above). */
 .agent-pin-card {
   position: absolute;
   z-index: 31;
