@@ -65,9 +65,11 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   await page.reload();
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await openProjectMenu(page);
-  const menuLink = page.locator("#repository-actions").getByRole("link", { name: "View live site ↗" });
+  const menuLink = page.locator("#repository-actions .site-actions__live");
   await expect(menuLink).toHaveAttribute("href", "https://larkspur.example/");
   await expect(menuLink).toHaveAttribute("target", "_blank");
+  // The menu hides View live site and Download site for now.
+  await expect(menuLink).toBeHidden();
   await page.keyboard.press("Escape");
 
   // Workflows exist but GitHub has not queued a run for the commit yet.
@@ -131,8 +133,8 @@ test("a repository with no workflows just shows Saved, and no View live site wit
   const asked = (await (await page.request.get(`${baseURL}/__demo/actions`)).json()).asked as string[];
   expect(asked.length).toBe(1);
   await openProjectMenu(page);
-  await expect(page.locator("#repository-actions").getByRole("button", { name: "Download site" })).toBeVisible();
-  await expect(page.locator("#repository-actions").getByRole("link", { name: /View live site/ })).toHaveCount(0);
+  await expect(page.locator("#repository-actions .site-actions__download")).toBeHidden();
+  await expect(page.locator("#repository-actions .site-actions__live")).toBeHidden();
 });
 
 test("Download site zips the repository's files as edited, unsaved drafts included", async ({ page }) => {
@@ -148,7 +150,8 @@ test("Download site zips the repository's files as edited, unsaved drafts includ
 
   await openProjectMenu(page);
   const downloadPromise = page.waitForEvent("download");
-  await page.locator("#repository-actions").getByRole("button", { name: "Download site" }).click();
+  // Hidden from the menu for now, so pressed directly.
+  await page.locator("#repository-actions .site-actions__download").evaluate((el) => (el as HTMLElement).click());
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("native-demo-site.zip");
   const path = await download.path();

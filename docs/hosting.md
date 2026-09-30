@@ -8,7 +8,7 @@ Serve the repository root at the root of a domain (root links do not work from a
 
 - **Cloudflare Pages, Netlify, Vercel**: connect the repository; no build command (or none/`exit 0`); output directory `/` (the repository root).
 - **Cloudflare Workers static assets**: `wrangler deploy` with `assets.directory` set to `.`; list repository-only files (`README.md`, `AGENTS.md`, `.editor/`, `.github/`, `wrangler.jsonc`) in `.assetsignore`.
-- **Any other host or FTP**: upload the files as they are. **Download site** in the editor's project menu zips them, unsaved drafts included.
+- **Any other host or FTP**: upload the files as they are. **Download site** zips them, unsaved drafts included (hidden from the editor's project menu for now; clone the repository instead).
 - **Locally**: any static server at the repository root, such as `python3 -m http.server`.
 
 A root `404.html` is the page hosts show for an address the site does not have (Cloudflare, Netlify and Vercel pick it up by name).

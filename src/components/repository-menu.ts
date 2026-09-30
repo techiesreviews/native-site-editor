@@ -106,7 +106,9 @@ export function createRepositoryMenu(options: {
   });
 
   const actionClass = "text-button repository-menu__action";
-  // "View live site" and "Download site" (components/site-actions.ts).
+  // "View live site" and "Download site" (components/site-actions.ts),
+  // hidden from the menu for now; the Change status keeps View live site.
+  const showSiteActions = false;
   const siteSlot = node("div", "repository-menu__site");
   siteSlot.id = "site-actions";
   const actions = node("div", "repository-menu__section repository-menu__actions");
@@ -308,7 +310,7 @@ export function createRepositoryMenu(options: {
 
   function setRepository(repo?: Repository) {
     currentId = repo?.id;
-    actions.hidden = !repo;
+    actions.hidden = !repo || !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
     badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "·"));
