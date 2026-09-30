@@ -33,8 +33,11 @@ function day(date: Date) {
 /**
  * A file's history, as the version histories of Linear, Notion or Fibery
  * show it: commits grouped by day, each with its time, message and author,
- * the file's current version marked. A commit's ⋯ holds Restore, View on
- * GitHub and Copy commit link; Restore asks first and creates a new commit.
+ * the file's current version marked. Choosing a commit shows that version
+ * (`onView`: the preview and the code pane show it, and a bar offers Back
+ * to latest and Restore); the version on show is tinted. A commit's ⋯
+ * holds Restore, View on GitHub and Copy commit link; Restore asks first
+ * and creates a new commit.
  */
 export function createCommitHistory(options: {
   repo: string;
@@ -45,6 +48,10 @@ export function createCommitHistory(options: {
   onDrafts(): void;
   onRestored(result: RestoreResult): Promise<void>;
   onExpired(): void;
+  /** Show this commit's version (`latest`: the file's current one, to go back). */
+  onView(commit: HistoryCommit, head: string, latest: boolean): void;
+  /** The commit whose version is on show, if not the current one. */
+  viewing(): string | undefined;
 }) {
   const root = node("section", "commit-history");
   const header = node("div", "commit-history__header");
@@ -77,6 +84,7 @@ export function createCommitHistory(options: {
   let request = 0;
   let lastDay = "";
   const seen = new Set<string>();
+  const rows = new Map<string, HTMLLIElement>();
   const active = () => !disposed && options.isCurrent();
   const blocked = "Publish or discard this file’s draft before restoring. Other files’ drafts are kept.";
 
@@ -160,6 +168,15 @@ export function createCommitHistory(options: {
       },
     ]);
   }
+  /** Tints the version on show: the one viewed, else the current one. */
+  function mark(sha = options.viewing() ?? currentFileCommit) {
+    for (const [key, item] of rows) {
+      item.classList.toggle("is-shown", key === sha);
+      const view = item.querySelector(".commit-history__view");
+      if (key === sha) view?.setAttribute("aria-current", "true");
+      else view?.removeAttribute("aria-current");
+    }
+  }
   function row(commit: HistoryCommit) {
     const date = new Date(commit.date);
     const known = !Number.isNaN(date.getTime());
@@ -171,7 +188,13 @@ export function createCommitHistory(options: {
     const item = node("li", "commit-history__item");
     const current = commit.sha === currentFileCommit;
     item.classList.toggle("is-current", current);
-    const line = node("div", "commit-history__line");
+    const view = button("", () => {
+      if (!active() || !head) return;
+      options.onView(commit, head, current);
+      mark(current ? currentFileCommit : commit.sha);
+    }, "commit-history__view");
+    view.title = current ? "Show the current version" : "Show this version in the preview";
+    const line = node("span", "commit-history__line");
     const time = node("time", "commit-history__time", known ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "—");
     if (known) {
       time.dateTime = date.toISOString();
@@ -185,10 +208,11 @@ export function createCommitHistory(options: {
     actions.setAttribute("aria-label", `Actions for ${commit.message || commit.sha.slice(0, 7)}`);
     actions.setAttribute("aria-haspopup", "menu");
     actions.setAttribute("aria-expanded", "false");
-    line.append(actions);
-    const author = node("div", "commit-history__author");
+    const author = node("span", "commit-history__author");
     author.append(commit.avatar ? avatar(commit.author, commit.avatar) : initial(commit.author), node("span", "", commit.author));
-    item.append(line, node("p", "commit-history__subject", commit.message || "Untitled commit"), author);
+    view.append(line, node("span", "commit-history__subject", commit.message || "Untitled commit"), author);
+    item.append(view, actions);
+    rows.set(commit.sha, item);
     return item;
   }
   async function load(page: number) {
@@ -200,7 +224,7 @@ export function createCommitHistory(options: {
     list.hidden = false;
     message.textContent = "Loading commits…";
     if (page === 1) {
-      list.replaceChildren(); seen.clear(); lastDay = "";
+      list.replaceChildren(); seen.clear(); rows.clear(); lastDay = "";
       head = undefined; currentFileCommit = undefined; nextPage = null; more.hidden = true;
     }
     refresh();
@@ -216,6 +240,7 @@ export function createCommitHistory(options: {
         seen.add(commit.sha);
         list.append(row(commit));
       }
+      mark();
       nextPage = data.nextPage;
       more.hidden = nextPage === null;
       message.textContent = seen.size ? "" : "No commits found for this file.";
@@ -227,5 +252,11 @@ export function createCommitHistory(options: {
   }
   root.addEventListener("focusin", refresh);
   void load(1);
-  return { root, refresh, destroy() { disposed = true; request++; menu.close(false); } };
+  return {
+    root,
+    refresh,
+    /** The version on show changed outside the list (Back to latest, another file). */
+    mark: () => mark(),
+    destroy() { disposed = true; request++; menu.close(false); },
+  };
 }

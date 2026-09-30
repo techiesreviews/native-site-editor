@@ -75,7 +75,10 @@ type RangeApi = {
   markElement(tag: { start: number; end: number } | undefined, reveal: boolean): void;
   review(on: boolean): void;
   reviewing(): boolean;
+  compare(version: VersionCompare | undefined): void;
 };
+/** An earlier version of the file, shown beside the current one (History). */
+export type VersionCompare = { content: string; label: string };
 type MountedEditor = {
   apply(command: AgentCommand): Promise<void>;
   discardNew(): boolean;
@@ -305,6 +308,11 @@ export function isMounted(path: string) {
 export function setReviewMode(path: string, on: boolean) {
   mounted.get(path)?.range.review(on);
 }
+// Shows an earlier version of a mounted file beside the current one, both
+// read only; `undefined` goes back to editing.
+export function compareVersion(path: string, version: VersionCompare | undefined) {
+  mounted.get(path)?.range.compare(version);
+}
 export function isReviewing(path: string) {
   return mounted.get(path)?.range.reviewing() ?? false;
 }
@@ -506,6 +514,10 @@ export function mountCodeEditor(
     review(on: boolean) {
       if ((mode === "review") !== on) render(on ? "review" : "edit");
     },
+    compare(next: VersionCompare | undefined) {
+      version = next;
+      if (next || mode === "version") render(next ? "version" : "edit");
+    },
     reviewing: () => mode === "review",
     reveal(start: number, end: number) {
       const model = current.model;
@@ -593,7 +605,8 @@ export function mountCodeEditor(
     refresh: () => update(),
   };
   mounted.set(file.path, registration);
-  let mode: "edit" | "review" = "edit";
+  let mode: "edit" | "review" | "version" = "edit";
+  let version: VersionCompare | undefined;
   let destroyView = () => {};
   const root = node("section", "code-editor");
   root.setAttribute("aria-label", "Source editor");
@@ -799,7 +812,7 @@ export function mountCodeEditor(
   function render(next: typeof mode) {
     destroyView();
     mode = next;
-    review.setAttribute("aria-pressed", String(mode === "review"));
+    review.setAttribute("aria-pressed", String(mode !== "edit"));
     body.replaceChildren();
     const canvas = node("div", "code-editor__canvas");
     body.append(canvas);
@@ -832,6 +845,32 @@ export function mountCodeEditor(
       destroyView = () => {
         current.view = editor.saveViewState();
         editor.dispose();
+      };
+    } else if (mode === "version" && version) {
+      const labels = node("div", "code-editor__diff-labels");
+      labels.append(node("span", "", `${version.label} · read only`), node("span", "", "Current version · read only"));
+      body.prepend(labels);
+      const original = monaco.editor.createModel(version.content, current.model.getLanguageId());
+      const editor = monaco.editor.createDiffEditor(canvas, {
+        ...options,
+        readOnly: true,
+        renderSideBySide: true,
+        originalEditable: false,
+      });
+      editor.setModel({ original, modified: current.model });
+      view = editor.getModifiedEditor();
+      // Opens on the first difference.
+      const shown = editor.onDidUpdateDiff(() => {
+        const first = editor.getLineChanges()?.[0];
+        if (!first) return;
+        shown.dispose();
+        editor.getModifiedEditor().revealLineInCenter(Math.max(1, first.modifiedStartLineNumber || first.modifiedEndLineNumber));
+      });
+      destroyView = () => {
+        shown.dispose();
+        editor.setModel(null);
+        editor.dispose();
+        original.dispose();
       };
     } else {
       const labels = node("div", "code-editor__diff-labels");

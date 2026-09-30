@@ -66,3 +66,43 @@ test("Restore this version… from a commit's menu asks, then restores the file 
   await expect(items(page).nth(0).locator(".commit-history__subject")).toHaveText(/^Restore index\.html from [a-f0-9]{7}/);
   await expect(items(page).nth(0).locator(".commit-history__badge")).toHaveText("Current");
 });
+
+test("choosing a commit shows that version in the preview and beside the current one, until Back to latest", async ({ page }) => {
+  await page.locator("#history-button").click();
+  await expect(items(page)).toHaveCount(2);
+  await items(page).nth(1).locator(".commit-history__view").click();
+  const bar = page.getByRole("region", { name: "Earlier version" });
+  await expect(bar).toContainText("Viewing");
+  await expect(bar).toContainText("Start the site");
+  await expect(heading(page)).toHaveText("A native browser preview");
+  await expect(items(page).nth(1)).toHaveClass(/is-shown/);
+  await expect(items(page).nth(0)).not.toHaveClass(/is-shown/);
+  await expect(page.locator(".code-editor__diff-labels")).toContainText("read only");
+  await expect(page.locator(".code-editor__diff-labels")).toContainText("Current version · read only");
+
+  // Nothing on the earlier version can be selected for editing.
+  await page.keyboard.press("Escape");
+  await heading(page).click();
+  await expect(page.locator(".edit-bar")).toBeHidden();
+
+  await bar.getByRole("button", { name: "Back to latest" }).click();
+  await expect(bar).toBeHidden();
+  await expect(heading(page)).toHaveText("Edited on GitHub");
+  await expect(page.locator(".code-editor__diff-labels")).toHaveCount(0);
+  await heading(page).click();
+  await expect(page.locator(".edit-bar")).toBeVisible();
+});
+
+test("Restore this version in the bar asks, then restores the version on show in a new commit", async ({ page }) => {
+  await page.locator("#history-button").click();
+  await items(page).nth(1).locator(".commit-history__view").click();
+  const bar = page.getByRole("region", { name: "Earlier version" });
+  await bar.getByRole("button", { name: "Restore this version" }).click();
+  const dialog = page.getByRole("dialog", { name: "Restore this version?" });
+  await expect(dialog).toContainText("This creates a new commit.");
+  await dialog.getByRole("button", { name: "Restore version" }).click();
+  await expect(page.locator("#status")).toContainText("Restored index.html in a new commit", { timeout: 30_000 });
+  await expect(bar).toBeHidden();
+  await expect(heading(page)).toHaveText("A native browser preview");
+  await expect(page.locator(".code-editor__diff-labels")).toHaveCount(0);
+});

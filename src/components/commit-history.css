@@ -71,19 +71,38 @@
   font-weight: 600;
   color: var(--muted);
 }
-/* A commit: a row like the menus', the file's current version tinted. Its
-   time leads, then the message and who made it; ⋯ shows on hover. */
+/* A commit: a row like the menus', the version on show tinted (the one
+   viewed, else the current one). Its time leads, then the message and who
+   made it; the row shows that version, and ⋯ (on hover) holds the rest. */
 .commit-history__item {
-  display: grid;
-  gap: 2px;
-  padding: 6px 4px 8px 8px;
+  position: relative;
   border-radius: var(--radius);
 }
 .commit-history__item:hover {
   background: var(--hover);
 }
-.commit-history__item.is-current {
+.commit-history__item.is-shown {
   background: var(--current);
+}
+.commit-history__item:has(> .commit-history__view:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.commit-history__view {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 36px 8px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.commit-history__view:focus-visible {
+  outline: none;
 }
 .commit-history__line {
   display: flex;
@@ -108,7 +127,9 @@
   line-height: 18px;
 }
 .commit-history__more {
-  margin-left: auto;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   opacity: 0;
 }
 .commit-history__item:hover .commit-history__more,
@@ -122,7 +143,6 @@
   }
 }
 .commit-history__subject {
-  padding-right: 4px;
   overflow-wrap: anywhere;
 }
 .commit-history__author {

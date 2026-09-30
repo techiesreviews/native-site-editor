@@ -55,7 +55,10 @@ import { iconMarkup, setIcon } from "./icons";
 import type {
   EditorContext,
   Directory,
+  FileRevision,
+  HistoryCommit,
   PublishResult,
+  RestoreResult,
   Repository,
   SessionInfo,
   Snapshot,
@@ -359,14 +362,125 @@ function openHistory(force = false) {
     onExpired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
     onRestored: async (result) => {
       if (!isCurrent()) return;
-      panel.hidePopover();
-      commitHistory?.destroy();
-      if (!result.unchanged) await loadSnapshot(path);
-      status(result.unchanged ? "This file already matches that version." : `Restored ${path} in a new commit. Other files are unchanged.`);
+      endVersionView(false);
+      await afterRestore(path, result);
     },
+    onView: (commit, head, latest) => (latest ? endVersionView() : void viewVersion(commit, head)),
+    viewing: () => (versionView?.path === path && versionView.key === versionKey() ? versionView.commit.sha : undefined),
   });
   panel.replaceChildren(commitHistory.root);
   positionHistory(panel, anchor);
+}
+
+async function afterRestore(path: string, result: RestoreResult) {
+  const panel = element("changes");
+  if (panel.matches(":popover-open")) panel.hidePopover();
+  commitHistory?.destroy();
+  commitHistory = undefined;
+  if (!result.unchanged) await loadSnapshot(path);
+  status(result.unchanged ? "This file already matches that version." : `Restored ${path} in a new commit. Other files are unchanged.`);
+}
+
+// An earlier version of the open file on show, chosen in History: the
+// preview renders it (nothing on it can be selected), the code pane shows
+// it beside the current one, and a bar over the preview offers Back to
+// latest and Restore. It ends there, on a restore, on another file or
+// repository, or once the file's current source changes.
+type VersionView = { key: string; path: string; commit: HistoryCommit; head: string; content: string; latest: string | undefined };
+let versionView: VersionView | undefined;
+let versionRequest = 0;
+let versionDialog: ReturnType<typeof createConfirmDialog> | undefined;
+const versionKey = () => `${generation}:${currentRepo?.id}:${snapshot?.branch}`;
+const versionLabel = (commit: HistoryCommit) => {
+  const date = new Date(commit.date);
+  return Number.isNaN(date.getTime())
+    ? commit.sha.slice(0, 7)
+    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
+
+async function viewVersion(commit: HistoryCommit, head: string) {
+  const path = currentPath;
+  if (!path || !currentRepo) return;
+  const request = ++versionRequest;
+  const key = versionKey();
+  try {
+    const revision = await api<FileRevision>("file-at", { repo: currentRepo.full_name, commit: commit.sha, path });
+    if (request !== versionRequest || key !== versionKey() || currentPath !== path) return;
+    nativePreview?.setViewing(undefined);
+    versionView = { key, path, commit, head, content: revision.content, latest: nativeEffectiveSource(path) };
+    nativePreview?.setViewing(versionBar(versionView));
+    editorModule?.compareVersion(path, { content: revision.content, label: versionLabel(commit) });
+    updateNativePreviewSources();
+    commitHistory?.mark();
+  } catch (error) {
+    if (request === versionRequest) status(error instanceof Error ? error.message : "That version could not be loaded. Try again.");
+  }
+}
+
+function endVersionView(refresh = true) {
+  versionRequest++;
+  const view = versionView;
+  if (!view) return;
+  versionView = undefined;
+  nativePreview?.setViewing(undefined);
+  editorModule?.compareVersion(view.path, undefined);
+  commitHistory?.mark();
+  if (refresh) updateNativePreviewSources();
+}
+
+// The version on show ends once it no longer belongs to what is open.
+function checkVersionView() {
+  const view = versionView;
+  if (view && (view.key !== versionKey() || currentPath !== view.path || nativeEffectiveSource(view.path) !== view.latest))
+    endVersionView(false);
+}
+
+function versionBar(view: VersionView) {
+  const bar = node("div", "version-bar");
+  bar.setAttribute("role", "region");
+  bar.setAttribute("aria-label", "Earlier version");
+  const text = node("p", "version-bar__text");
+  text.append(node("strong", "", `Viewing ${versionLabel(view.commit)}`), node("span", "version-bar__message", view.commit.message));
+  text.title = `${view.commit.message} (${view.commit.sha.slice(0, 7)})`;
+  bar.append(
+    text,
+    button("Back to latest", () => endVersionView(), "button secondary"),
+    button("Restore this version", () => void restoreVersion(view), "button primary"),
+  );
+  return bar;
+}
+
+async function restoreVersion(view: VersionView) {
+  const scope = draftScope();
+  if (!currentRepo || !snapshot || versionView !== view) return;
+  if (scope && draftStore().get(scope, view.path)) {
+    status("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
+    return;
+  }
+  if (!versionDialog) {
+    versionDialog = createConfirmDialog("version-dialog");
+    document.body.append(versionDialog.root);
+  }
+  const confirmed = await versionDialog.ask({
+    title: "Restore this version?",
+    notes: [
+      `${view.path} on ${snapshot.branch} goes back to how it was on ${versionLabel(view.commit)} (${view.commit.message}).`,
+      "This creates a new commit. Other files stay unchanged.",
+    ],
+    action: "Restore version",
+  });
+  if (!confirmed || versionView !== view || !currentRepo || !snapshot) return;
+  status("Restoring file…");
+  try {
+    const result = await postApi<RestoreResult>("restore", { repo: currentRepo.full_name }, {
+      branch: snapshot.branch, path: view.path, target: view.commit.sha, expectedHead: view.head,
+    });
+    if (versionView !== view) return;
+    endVersionView(false);
+    await afterRestore(view.path, result);
+  } catch (error) {
+    if (versionView === view) status(error instanceof Error ? error.message : "Restore failed. Your files are unchanged.");
+  }
 }
 
 // Keep draft review reachable beside the durable GitHub file history.
@@ -1651,10 +1765,19 @@ function nativePageStyles() {
 
 // A page selection: the preview follows the newly opened page's route. Opening
 // a non-page file (CSS, component) leaves the preview's current route untouched.
+// The preview's sources: the effective ones, with History's earlier version
+// of the open file in its place while one is on show.
+function nativePreviewSources() {
+  checkVersionView();
+  const sources = nativeSources();
+  if (versionView) sources[versionView.path] = versionView.content;
+  return sources;
+}
+
 function updateNativePreview() {
   if (!nativeSite || !nativePreview) return;
   nativePreview.update({
-    sources: nativeSources(),
+    sources: nativePreviewSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     route: nativeRouteForPath(currentPath),
     component: currentPath ? nativeComponentTagForPath(currentPath) : undefined,
@@ -1665,7 +1788,7 @@ function updateNativePreview() {
 // the preview is on About (with a different file open) does not snap it Home.
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
-  nativePreview.update({ sources: nativeSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets) });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets) });
   void loadNativeAssets();
   void loadNativeStyleFiles();
 }
@@ -2187,6 +2310,7 @@ function updatePreview() {
 }
 
 function setCurrentPage(path?: string) {
+  if (versionView && versionView.path !== path) endVersionView(false);
   currentPath = path;
   closeEditor();
   updateAgentContext();

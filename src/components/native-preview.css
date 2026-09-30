@@ -95,3 +95,37 @@ main.has-preview .code-editor {
 }
 .native-preview-warning__fix:hover { background: var(--hover); }
 .native-preview-warning__fix:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+/* History shows an earlier version: a bar over the page names it and offers
+   Back to latest and Restore; the page's editing overlays stay away, as
+   nothing on it can be edited. They set their own display when shown, so
+   this has to win. */
+.version-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--control-line);
+  background: var(--panel-surface);
+  color: var(--text);
+  font-size: var(--type-base);
+}
+/* Its buttons follow the words, clear of History's popover on the right. */
+.version-bar__text {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.version-bar__message {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+.native-preview-pane.is-viewing :is(.edit-bar, .edit-bar__popover, .edit-bar__note, .insert-layer, .insert-picker, .agent-pins, .agent-pins__tray, .agent-pin-card) {
+  display: none !important;
+}

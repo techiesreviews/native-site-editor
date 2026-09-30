@@ -1,4 +1,5 @@
 import type {
+  FileRevision,
   HistoryPage,
   Repository,
   RestoreRequest,
@@ -145,6 +146,24 @@ async function fileAt(
     if (entry.type !== "tree") return undefined;
     treeSha = entry.sha;
   }
+}
+
+/** A file's text at a commit of the repository, to show that version. */
+export async function fileAtRevision(
+  github: GitHub,
+  repo: Repository,
+  input: { commit?: unknown; path?: unknown },
+): Promise<FileRevision> {
+  if (!validSha(input.commit))
+    throw new HttpError(400, "Choose a valid file revision.");
+  const path = requirePath(input.path);
+  const commit = await github.get<{ tree: { sha: string } }>(
+    `${github.base(repo)}/git/commits/${input.commit}`,
+  );
+  const entry = await fileAt(github, repo, commit.tree.sha, path);
+  if (!entry || entry.type !== "blob")
+    throw new HttpError(404, "This file does not exist at that revision.");
+  return { sha: entry.sha, content: await github.file(repo, entry.sha) };
 }
 
 export async function restore(

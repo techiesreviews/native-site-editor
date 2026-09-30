@@ -108,6 +108,11 @@ export interface HistoryPage {
   commits: HistoryCommit[];
   nextPage: number | null;
 }
+/** A file's text as it was at a commit, for History's view of a version. */
+export interface FileRevision {
+  sha: string;
+  content: string;
+}
 export interface RestoreRequest {
   branch: string;
   path: string;

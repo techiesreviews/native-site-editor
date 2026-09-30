@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GitHub, HttpError } from "../worker/github.ts";
-import { history, restore } from "../worker/history.ts";
+import { fileAtRevision, history, restore } from "../worker/history.ts";
 import { handle, type Env } from "../worker/app.ts";
 import type { Repository } from "../shared/types.ts";
 
@@ -371,4 +371,22 @@ test("restore surfaces a concurrent ref race without forcing", async () => {
     sha: created,
     force: false,
   });
+});
+
+test("a file's text at a commit is read through that commit's tree", async () => {
+  const blob = "9".repeat(40);
+  const github = new GitHub("token", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith(`/git/commits/${target}`)) return Response.json({ tree: { sha: targetTree } });
+    if (path.endsWith(`/git/trees/${targetTree}`))
+      return Response.json({ tree: [{ path: "src", type: "tree", mode: "040000", sha: "2".repeat(40) }], truncated: false });
+    if (path.endsWith(`/git/trees/${"2".repeat(40)}`))
+      return Response.json({ tree: [{ path: "index.astro", type: "blob", mode: "100644", sha: blob }], truncated: false });
+    if (path.endsWith(`/git/blobs/${blob}`))
+      return Response.json({ sha: blob, size: 5, encoding: "base64", content: btoa("<h1/>") });
+    return Response.json({ message: "Not Found" }, { status: 404 });
+  });
+  assert.deepEqual(await fileAtRevision(github, repo, { commit: target, path: "src/index.astro" }), { sha: blob, content: "<h1/>" });
+  await assert.rejects(fileAtRevision(github, repo, { commit: target, path: "src/missing.astro" }), (error: unknown) => error instanceof HttpError && error.status === 404);
+  await assert.rejects(fileAtRevision(github, repo, { commit: "nope", path: "src/index.astro" }), (error: unknown) => error instanceof HttpError && error.status === 400);
 });

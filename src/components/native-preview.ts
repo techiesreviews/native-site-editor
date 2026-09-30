@@ -319,6 +319,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   let site: NativeSite | undefined;
+  // The bar over the page while History shows an earlier version.
+  let viewing: HTMLElement | undefined;
   let sources: Record<string, string> = {};
   let componentStyles: Record<string, string> = {};
   let assets: Record<string, string> = {};
@@ -560,6 +562,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (rect) editBar.move(rect);
       return;
     }
+    // An earlier version on show (History): nothing on it can be selected or edited.
+    if (data.type === "select" && viewing) {
+      if ((data as { reason?: unknown }).reason === "click") postClearSelection();
+      return;
+    }
     if (data.type === "select" && site) {
       const raw = data as unknown as {
         path?: unknown;
@@ -768,6 +775,22 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** Show a request's pin and hold its card open (src/components/agent-pins.ts `show`). */
     showRequest(id: string) {
       pins.show(id);
+    },
+    /**
+     * History shows an earlier version: its bar goes over the page, and the
+     * page can be scrolled and followed but not selected or edited.
+     * `undefined` goes back to the latest.
+     */
+    setViewing(bar: HTMLElement | undefined) {
+      viewing?.remove();
+      viewing = bar;
+      pane.classList.toggle("is-viewing", Boolean(bar));
+      if (bar) {
+        pane.insertBefore(bar, frameHost);
+        editBar.hide();
+        insertControls.clear();
+        postClearSelection();
+      }
     },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {
