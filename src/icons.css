@@ -1,0 +1,27 @@
+/* Phosphor icons (icons.ts). An icon alone in a control is centred in it;
+   one beside words sits on their line. */
+.icon {
+  display: block;
+  flex: none;
+  margin-inline: auto;
+}
+.icon--after,
+.icon--before {
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+.icon--after {
+  margin-inline: 0.3em 0;
+}
+.icon--before {
+  margin-inline: 0 0.3em;
+}
+
+/* Icons a stylesheet draws as a ::before: the rule sets `mask-image` to one
+   of these and uses the shape below. */
+:root {
+  --icon-warning: url("@phosphor-icons/core/regular/warning.svg");
+  --icon-question: url("@phosphor-icons/core/regular/question.svg");
+  --icon-caret-right: url("@phosphor-icons/core/regular/caret-right.svg");
+  --icon-caret-down: url("@phosphor-icons/core/regular/caret-down.svg");
+}

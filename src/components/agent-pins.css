@@ -255,7 +255,14 @@
   color: white;
 }
 .agent-pins__tray-questions::before {
-  content: "? ";
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.2em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: var(--icon-question) center / contain no-repeat;
 }
 .agent-pins__tray[hidden] {
   display: none;
@@ -461,7 +468,14 @@
   font-weight: 620;
 }
 .agent-pin-card__error::before {
-  content: "⚠ ";
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: var(--icon-warning) center / contain no-repeat;
 }
 .agent-pin-card__error[hidden] {
   display: none;

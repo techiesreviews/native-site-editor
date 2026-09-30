@@ -1,3 +1,5 @@
+import { icon } from "../icons";
+
 // Shared behaviour of the three splitters (sidebar width, code height, code
 // pane width): each is also its panel's toggle. A press released within
 // `clickSlop` px of where it went down is a click and toggles; anything
@@ -9,8 +11,7 @@ export function createGrip(): HTMLSpanElement {
   const grip = document.createElement("span");
   grip.className = "resize-grip";
   grip.setAttribute("aria-hidden", "true");
-  grip.innerHTML =
-    '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  grip.append(icon("caret-left", 12));
   return grip;
 }
 

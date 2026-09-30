@@ -2,6 +2,7 @@ import "./repository-menu.css";
 import { mountDropdown } from "./dropdown";
 import { mountFlyout } from "./flyout";
 import { button, link, node } from "../ui/dom";
+import { setIcon } from "../icons";
 import type { Repository, SessionInfo } from "../../shared/types";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
@@ -30,7 +31,8 @@ export function createRepositoryMenu(options: {
   const badge = node("span", "repository-menu__badge");
   badge.setAttribute("aria-hidden", "true");
   const name = node("span", "repository-menu__name");
-  const caret = node("span", "repository-menu__caret", "⌄");
+  const caret = node("span", "repository-menu__caret");
+  setIcon(caret, "caret-down", 12);
   caret.setAttribute("aria-hidden", "true");
   // Agents' questions waiting for the user (on their pins), counted on the tile.
   const questions = node("span", "repository-menu__questions");
@@ -53,7 +55,8 @@ export function createRepositoryMenu(options: {
   const heading = node("div", "repository-menu__heading");
   const title = node("span", "", "Repositories");
   title.id = "repository-menu-title";
-  const reload = button("↻", options.onReload, "repository-menu__heading-button");
+  const reload = button("", options.onReload, "repository-menu__heading-button");
+  setIcon(reload, "arrows-clockwise");
   reload.title = "Reload repositories";
   reload.setAttribute("aria-label", "Reload repositories");
   heading.append(title, reload);
@@ -86,7 +89,8 @@ export function createRepositoryMenu(options: {
   branchesHeading.setAttribute("role", "none");
   const branchesTitle = node("span", "", "Branches");
   branchesTitle.setAttribute("aria-hidden", "true");
-  const refresh = node("button", "flyout__icon-button", "↻");
+  const refresh = node("button", "flyout__icon-button");
+  setIcon(refresh, "arrows-clockwise");
   refresh.type = "button";
   refresh.id = "refresh";
   refresh.title = "Refresh from GitHub";
@@ -269,7 +273,8 @@ export function createRepositoryMenu(options: {
     }
     // The open repository's row opens its branches instead.
     open.addEventListener("click", () => (selected ? branchFlyout.open(true) : choose(repo)));
-    const remove = node("button", "repository-menu__remove", "×");
+    const remove = node("button", "repository-menu__remove");
+    setIcon(remove, "x");
     remove.type = "button";
     remove.title = `Remove ${repo.name} from the editor`;
     remove.setAttribute("aria-label", `Remove ${repo.name}`);

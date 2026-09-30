@@ -51,6 +51,7 @@ import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/nativ
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
+import { iconMarkup, setIcon } from "./icons";
 import type {
   EditorContext,
   Directory,
@@ -126,7 +127,7 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
-      <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> <span aria-hidden="true">⌄</span></button>
+      <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
         <div id="change-status"></div>
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
@@ -141,7 +142,7 @@ function mountWorkspace() {
       </div>
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+</button></span></div>
+        <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
         <nav id="files" aria-label="Repository files"></nav>
       </div>
     </div>
@@ -4098,17 +4099,8 @@ function renderEntries(
     if (gone === "moved") continue;
     const item = node("li");
     const row = button("", () => {}, "file-row");
-    const icon = node(
-      "span",
-      `file-icon ${directory ? "folder" : ""}`,
-      directory
-        ? "▸"
-        : entry.type === "commit"
-          ? "↗"
-          : entry.mode === "120000"
-            ? "↪"
-            : "◇",
-    );
+    const icon = node("span", `file-icon ${directory ? "folder" : ""}`);
+    setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 14);
     icon.setAttribute("aria-hidden", "true");
     row.append(icon, node("span", "filename", entry.path));
     // A new file, or a folder only new files are in, is not on GitHub yet;
@@ -4133,7 +4125,7 @@ function renderEntries(
       if (!childList.children.length)
         childList.append(node("li", "muted empty-folder", "Empty folder"));
       item.append(childList);
-      icon.textContent = "▾";
+      setIcon(icon, "folder-open", 14);
       row.setAttribute("aria-expanded", "true");
       openFolders.add(path);
     };
@@ -4156,7 +4148,7 @@ function renderEntries(
       if (directory) {
         if (childList) {
           childList.hidden = !childList.hidden;
-          icon.textContent = childList.hidden ? "▸" : "▾";
+          setIcon(icon, childList.hidden ? "folder" : "folder-open", 14);
           row.setAttribute("aria-expanded", String(!childList.hidden));
           if (childList.hidden) openFolders.delete(path);
           else openFolders.add(path);
@@ -4203,7 +4195,8 @@ function renderEntries(
       line.append(restore);
     }
     if (directory && !gone) {
-      const add = node("button", "file-add", "+");
+      const add = node("button", "file-add");
+      setIcon(add, "plus");
       add.type = "button";
       add.setAttribute("aria-label", `New in ${path}`);
       add.title = `New file or folder in ${path}`;

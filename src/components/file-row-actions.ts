@@ -1,4 +1,5 @@
 import { node } from "../ui/dom";
+import { setIcon } from "../icons";
 import { renameSelection } from "../native-files";
 import { dragHasFiles } from "../uploads";
 import { createRowMenu, type MenuItem } from "./row-menu";
@@ -62,7 +63,8 @@ export function createFileRowActions(options: {
   /** Makes the tree's row `row` (in its line `line`) act on `target`. */
   function attach(row: HTMLButtonElement, line: HTMLElement, target: FileRowTarget) {
     (row as HTMLButtonElement & { fileTarget?: FileRowTarget }).fileTarget = target;
-    const more = node("button", "file-more", "⋯");
+    const more = node("button", "file-more");
+    setIcon(more, "dots-three");
     more.type = "button";
     more.tabIndex = -1;
     more.setAttribute("aria-label", `Actions for ${target.path}`);

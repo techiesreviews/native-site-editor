@@ -1,4 +1,5 @@
 import { button, node } from "../ui/dom";
+import { setIcon, type IconName } from "../icons";
 import { nativeSubpageCount, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import type { Checked } from "../native-create";
 import { parentRoute } from "../native-page-moves";
@@ -125,10 +126,8 @@ export function createPagesTree(options: {
     const under = parent === "/" ? undefined : pageAt(parent);
     input.setAttribute("aria-label", under ? `New subpage of ${under.label}, title` : "New page title");
     input.setAttribute("aria-describedby", "pages-edit-url pages-edit-message");
-    const icon = node("span", "pages-icon", "◻");
-    icon.setAttribute("aria-hidden", "true");
     const line = node("div", "pages-edit__line");
-    line.append(icon, input);
+    line.append(pageIcon("file"), input);
     const url = node("div", "pages-edit__url");
     url.id = "pages-edit-url";
     const prefix = parent;
@@ -531,7 +530,8 @@ export function createPagesTree(options: {
     const row = node("div", `pages-row${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
     row.style.setProperty("--level", String(level));
     row.title = page.file ?? `${page.route.slice(1)} has pages but no page of its own`;
-    const twisty = node("span", "pages-twisty", hasChildren ? (open ? "▾" : "▸") : "");
+    const twisty = node("span", "pages-twisty");
+    if (hasChildren) setIcon(twisty, open ? "caret-down" : "caret-right", 12);
     twisty.setAttribute("aria-hidden", "true");
     if (hasChildren)
       twisty.addEventListener("click", (event) => {
@@ -540,7 +540,7 @@ export function createPagesTree(options: {
         item.focus();
         setOpen(item, page.route, item.getAttribute("aria-expanded") !== "true");
       });
-    row.append(twisty, icon(page.special === "home" ? "⌂" : page.file ? "◻" : "▢"), label(page.label));
+    row.append(twisty, pageIcon(page.special === "home" ? "house" : page.file ? "file" : "file-dashed"), label(page.label));
     if (!page.file) row.append(node("span", "pages-note", "(no page)"));
     if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
     if (page.file && page.special !== "home" && options.changeUrl) {
@@ -557,7 +557,8 @@ export function createPagesTree(options: {
       row.append(url);
     } else row.append(node("span", "pages-url", page.route));
     if (isFolderRoute(page.route)) {
-      const add = node("button", "pages-add", "+");
+      const add = node("button", "pages-add");
+      setIcon(add, "plus", 14);
       add.type = "button";
       add.tabIndex = -1;
       add.setAttribute("aria-label", page.special === "home" ? "Add a page at the top level" : `Add subpage to ${page.label}`);
@@ -606,7 +607,8 @@ export function createPagesTree(options: {
     return event.target instanceof Element && !event.target.closest(".pages-editing, .pages-rename, .pages-url-change") && event.target.closest("[role='treeitem']") === item;
   }
   function moreButton(label: string) {
-    const more = node("button", "pages-more", "⋯");
+    const more = node("button", "pages-more");
+    setIcon(more, "dots-three", 16);
     more.type = "button";
     more.tabIndex = -1;
     more.setAttribute("aria-label", label);
@@ -615,8 +617,9 @@ export function createPagesTree(options: {
     more.title = "Add subpage, rename, change URL, move, duplicate or delete";
     return more;
   }
-  function icon(text: string) {
-    const element = node("span", "pages-icon", text);
+  function pageIcon(name: IconName) {
+    const element = node("span", "pages-icon");
+    setIcon(element, name, 14);
     element.setAttribute("aria-hidden", "true");
     return element;
   }
@@ -631,7 +634,7 @@ export function createPagesTree(options: {
     expanded.set(route, open);
     if (item.hasAttribute("aria-expanded") || group.children.length) item.setAttribute("aria-expanded", String(open));
     const twisty = item.querySelector(":scope > .pages-row > .pages-twisty");
-    if (twisty && group.querySelector("[role='treeitem']")) twisty.textContent = open ? "▾" : "▸";
+    if (twisty && group.querySelector("[role='treeitem']")) setIcon(twisty, open ? "caret-down" : "caret-right", 12);
   }
 
   // A page opens; a URL with no page opens or closes.

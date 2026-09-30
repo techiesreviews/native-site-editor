@@ -195,7 +195,14 @@
   font-weight: 620;
 }
 .edit-bar__field--warning:not(.edit-bar__address--icon)::before {
-  content: "⚠ ";
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: var(--icon-warning) center / contain no-repeat;
 }
 .edit-bar__field-label {
   display: flex;
@@ -221,7 +228,14 @@
   font-weight: 620;
 }
 .edit-bar__warning::before {
-  content: "⚠ ";
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: var(--icon-warning) center / contain no-repeat;
 }
 /* The grip that drags a whole section: the section's name with small dots
    before it, a grab cursor, and no browser panning or text selection from a
@@ -239,8 +253,8 @@
   padding: 0 6px 0 0;
 }
 .edit-bar__grip-dots {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   color: var(--muted);
   opacity: 0.7;
 }
@@ -362,7 +376,14 @@
   line-height: 14px;
 }
 .edit-bar__note-error::before {
-  content: "⚠ ";
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: var(--icon-warning) center / contain no-repeat;
 }
 .edit-bar__note-error[hidden] {
   display: none;

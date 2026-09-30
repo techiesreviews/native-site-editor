@@ -28,6 +28,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260917.1",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@phosphor-icons/core": "^2.1.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.3",
     "esbuild": "0.28.2",

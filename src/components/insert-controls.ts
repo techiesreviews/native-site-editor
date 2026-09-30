@@ -1,4 +1,5 @@
 import { node, button } from "../ui/dom";
+import { icon } from "../icons";
 import "./insert-controls.css";
 
 // Plus buttons between page sections and the picker they open. The preview
@@ -37,23 +38,6 @@ interface InsertHandlers {
 }
 
 const keyOf = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
-
-// A plus drawn as two bars, so it sits in the exact centre of its circle
-// whatever the font's glyph metrics.
-function plusIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 12 12");
-  svg.setAttribute("width", "12");
-  svg.setAttribute("height", "12");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", "M6 1v10M1 6h10");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.75");
-  path.setAttribute("stroke-linecap", "round");
-  svg.append(path);
-  return svg;
-}
 
 export function createInsertControls(pane: HTMLElement, frame: HTMLElement, handlers: InsertHandlers) {
   const layer = node("div", "insert-layer");
@@ -98,7 +82,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
         row = node("div", "insert-point");
         row.append(node("span", "insert-point__line"));
         const plus = button("", () => toggle(key), "insert-point__plus");
-        plus.append(plusIcon());
+        plus.append(icon("plus", 14));
         // Moving from the preview onto a plus keeps the pair shown.
         plus.addEventListener("pointerenter", () => {
           pointerOnPlus = true;

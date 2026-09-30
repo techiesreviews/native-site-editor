@@ -1,3 +1,5 @@
+import { icon } from "../icons";
+
 export function node<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className = "",
@@ -9,8 +11,11 @@ export function node<K extends keyof HTMLElementTagNameMap>(
   return result;
 }
 
+// A link whose text ends in " ↗" leaves the editor: the arrow is drawn as an icon.
 export function link(text: string, href: string, className = "button primary") {
-  const result = node("a", className, text);
+  const external = text.endsWith(" ↗");
+  const result = node("a", className, external ? text.slice(0, -2) : text);
+  if (external) result.append(icon("arrow-up-right", 12, "icon--after"));
   result.href = href;
   return result;
 }

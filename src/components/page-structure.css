@@ -130,10 +130,14 @@
   font-size: 9px;
 }
 .page-structure__row[aria-expanded] .page-structure__toggle::before {
-  content: "▾";
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  mask: var(--icon-caret-down) center / contain no-repeat;
 }
 .page-structure__row[aria-expanded="false"] .page-structure__toggle::before {
-  content: "▸";
+  mask-image: var(--icon-caret-right);
 }
 .page-structure__row[aria-expanded] .page-structure__toggle:hover {
   color: var(--text);

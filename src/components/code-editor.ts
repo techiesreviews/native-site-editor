@@ -12,6 +12,7 @@ import type { EditorContext } from "../../shared/types";
 import type { PublishResult } from "../../shared/types";
 import { listChanges, type FileChange } from "../file-changes";
 import { button, node } from "../ui/dom";
+import { icon } from "../icons";
 
 export interface SourceFile {
   key: string;
@@ -598,11 +599,11 @@ export function mountCodeEditor(
   root.setAttribute("aria-label", "Source editor");
   const toolbar = node("div", "code-editor__toolbar");
   const undo = button("", () => void runVisualHistory("undo", file.path), "icon-button code-editor__undo");
-  undo.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 8.5h7a5 5 0 0 1 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  undo.append(icon("undo"));
   undo.setAttribute("aria-label", "Undo");
   undo.title = "Undo";
   const redo = button("", () => void runVisualHistory("redo", file.path), "icon-button code-editor__redo");
-  redo.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 8.5H9a5 5 0 0 0-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  redo.append(icon("redo"));
   redo.setAttribute("aria-label", "Redo");
   redo.title = "Redo";
   for (const control of [undo, redo])
@@ -626,7 +627,7 @@ export function mountCodeEditor(
     () => (file.onHistory ? file.onHistory() : render(mode === "review" ? "edit" : "review")),
     "icon-button code-editor__history",
   );
-  review.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 3a7 7 0 1 1-6.3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 6.5V10l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  review.append(icon("clock-counter-clockwise"));
   review.setAttribute("aria-label", file.onHistory ? "History" : "Changes");
   review.title = file.onHistory ? "Commit history for this file" : "Changes on this branch";
   review.id = "history-button";

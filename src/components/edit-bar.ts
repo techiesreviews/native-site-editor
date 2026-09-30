@@ -1,4 +1,5 @@
 import { node, button } from "../ui/dom";
+import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pins";
 import "./edit-bar.css";
 
@@ -99,43 +100,20 @@ type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 
 export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip" | "ask";
 
-// Stroke paths on a 16 px grid; a `fill` one is a solid shape instead.
-const iconPaths: Record<IconName, string | { fill: string }> = {
-  link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8",
-  // The link's two halves apart, with a spark at each break.
-  unlink: "M7 4.5l1.2-1.2a2.5 2.5 0 013.5 3.5L10.5 8M9 11.5l-1.2 1.2a2.5 2.5 0 01-3.5-3.5L5.5 8M2.5 5.5h2M5.5 2.5v2M13.5 10.5h-2M10.5 13.5v-2",
-  up: "M8 13V3M3.5 7.5L8 3l4.5 4.5",
-  down: "M8 3v10M3.5 8.5L8 13l4.5-4.5",
-  duplicate: "M6 6h7v7H6zM10 6V3H3v7h3",
-  remove: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.8 7v4M9.2 7v4",
-  // Six dots in two columns, each a tiny closed arc.
-  grip: [4, 8, 12].map((y) => [6, 10].map((x) => `M${x} ${y - 0.5}a.5.5 0 110 1a.5.5 0 110-1`).join("")).join(""),
-  // The four-pointed star of the editor's mark (✦).
-  ask: { fill: "M8 1.5C8.6 5.2 10.8 7.4 14.5 8C10.8 8.6 8.6 10.8 8 14.5C7.4 10.8 5.2 8.6 1.5 8C5.2 7.4 7.4 5.2 8 1.5Z" },
+// The edit bar's icons by what they do, drawn from the editor's icon set.
+const iconNames: Record<IconName, PhosphorName> = {
+  link: "link",
+  unlink: "link-break",
+  up: "arrow-up",
+  down: "arrow-down",
+  duplicate: "copy",
+  remove: "trash",
+  grip: "dots-six-vertical",
+  ask: "sparkle",
 };
 
 function icon(name: IconName) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("aria-hidden", "true");
-  svg.classList.add("edit-bar__icon");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  const shape = iconPaths[name];
-  if (typeof shape === "string") {
-    path.setAttribute("d", shape);
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke", "currentColor");
-    path.setAttribute("stroke-width", "1.6");
-    path.setAttribute("stroke-linecap", "round");
-    path.setAttribute("stroke-linejoin", "round");
-  } else {
-    path.setAttribute("d", shape.fill);
-    path.setAttribute("fill", "currentColor");
-  }
-  svg.append(path);
-  return svg;
+  return phosphorIcon(iconNames[name], 16, "edit-bar__icon");
 }
 
 export interface EditBarModel {

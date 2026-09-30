@@ -452,11 +452,11 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     expect(selected).toMatchObject({ file: indexPath, route: "/", id: "1.0.0", tag: "h1", lines: { start: 17, end: 17 } });
     expect(selected.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
 
-    // The button is the editor's star, named by its label.
+    // The button is a sparkle icon, named by its label.
     const ask = bar.getByRole("button", { name: "Ask agent" });
     await expect(ask).toHaveText("");
     await expect(ask).toHaveAttribute("title", "Ask agent");
-    await expect(ask.locator("svg path")).toHaveAttribute("fill", "currentColor");
+    await expect(ask.locator("svg.icon")).toBeVisible();
 
     // A note over the heading's top-left corner, numbered as its pin will
     // be, with no hint text. Escape cancels; Shift+Enter is a new line and
