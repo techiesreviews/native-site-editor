@@ -279,7 +279,7 @@ export class GitHub {
       });
     } catch (error) {
       if (!(error instanceof HttpError)) throw error;
-      // GitHub answers 422 for a name already taken on the account.
+      // GitHub answers 422 for a name already taken on the account; request() reports it as 409.
       if (error.status === 409)
         throw new HttpError(409, `GitHub did not accept the name ${input.name}. You may already have a repository with that name; choose another.`);
       if (error.status === 403 || error.status === 404)
