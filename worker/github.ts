@@ -620,7 +620,14 @@ export class GitHub {
   }
 
   async snapshot(repo: Repository, branch: string, known?: string): Promise<Snapshot> {
-    const ref = await this.head(repo, branch, known);
+    const ref = await this.head(repo, branch, known).catch(async (error) => {
+      // A repository with no commits has no branch to name: it opens empty
+      // at EMPTY_COMMIT, so drafts can be written before the first save.
+      if (error instanceof HttpError && error.status === 404 && !(await this.branches(repo)).length)
+        return undefined;
+      throw error;
+    });
+    if (!ref) return { entries: [], tree: [], commit: EMPTY_COMMIT, branch, empty: true };
     // The branch listing already carries the commit's tree; only look the
     // commit up when a minimal response leaves it out.
     let treeSha = ref.tree;

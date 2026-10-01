@@ -58,7 +58,11 @@ export function untar(archive: Uint8Array): { path: string; bytes: Uint8Array }[
   while (offset + 512 <= archive.length) {
     const header = archive.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
-    const size = parseInt(field(header, 124, 12).trim() || "0", 8);
+    const sizeField = field(header, 124, 12).trim() || "0";
+    const size = /^[0-7]+$/.test(sizeField) ? parseInt(sizeField, 8) : NaN;
+    // Every entry must fit in the archive, so a bad header cannot loop or truncate.
+    if (!Number.isSafeInteger(size) || offset + 512 + size > archive.length)
+      throw new HttpError(502, "The starter site could not be unpacked. Try again.");
     const type = String.fromCharCode(header[156] || 48);
     const prefix = field(header, 345, 155);
     const name = longName ?? (prefix ? `${prefix}/${field(header, 0, 100)}` : field(header, 0, 100));
