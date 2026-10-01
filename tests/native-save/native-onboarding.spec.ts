@@ -183,7 +183,19 @@ test("Build it with an agent copies a prompt that connects an agent and starts w
   expect(prompt).toContain("/mcp");
   expect(prompt).toContain("MCP");
   expect(prompt).toContain("pottery studio in Bristol");
-  expect(prompt).toContain("blank-repo");
+  // The repository is open, so the prompt names it and does not ask the agent to create one.
+  expect(prompt).toContain(`${owner}/blank-repo`);
+  expect(prompt).not.toContain("gh repo create");
+  expect(prompt).not.toMatch(/Create the repository/i);
+});
+
+test("History of an empty repository with drafts says No commits yet", async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none", add: [{ name: "blank-repo", kind: "empty" }] });
+  await openRepository(page, baseURL, "blank-repo");
+  await startSiteWith(page, "Blank page");
+  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
+  await page.locator("#history-button").click();
+  await expect(page.locator("#changes")).toContainText("No commits yet");
 });
 
 test("a normal native repository opens straight into the preview", async ({ page, baseURL }) => {
