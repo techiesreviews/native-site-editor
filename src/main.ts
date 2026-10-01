@@ -2526,6 +2526,11 @@ function renderLogin(
     // (the editor, GitHub's install page for an account without the App, or
     // the Setup wizard for a first site), so there is no choice to make here.
     action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
+  } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
+    // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
+    // thing left to do, so go there.
+    location.replace(info.ownerSetupUrl);
+    action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -2543,7 +2548,7 @@ function renderLogin(
       node(
         "p",
         "",
-        "Use the private setup link to register the editor's GitHub App. Without that link, this setup page stays locked.",
+        "Is this your editor? In its GitHub repository, set OWNER_GITHUB in wrangler.jsonc to your GitHub username and commit. Cloudflare deploys it again within a minute or two; then reload this page. (An editor with an OWNER_SETUP_TOKEN uses its private setup link instead.)",
       ),
     );
     if (info?.ownerSetupUrl)

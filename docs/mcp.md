@@ -107,7 +107,7 @@ When the editor tab shows a repository but it has nothing to render—it is empt
 
 ## Routing
 
-`/.well-known/*` must reach the Worker: `run_worker_first` in `wrangler.sessions.jsonc` and `public/_routes.json` (for the Pages fallback) include it, next to `/api/*`, `/auth/*` and `/mcp`.
+`/.well-known/*` must reach the Worker: `run_worker_first` in `wrangler.jsonc` (and `wrangler.techies.jsonc`) includes it, next to `/api/*`, `/auth/*` and `/mcp`.
 
 ## Validation
 

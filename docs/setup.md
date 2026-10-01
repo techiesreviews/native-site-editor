@@ -1,10 +1,8 @@
 # Set up your own editor
 
-Anyone can run this editor on their own Cloudflare account and GitHub App, on the free plans of both. This is the same procedure used for the reference deployment at https://editor.techies.tools. Only `wrangler.sessions.jsonc` ties the repository to that deployment: its custom domain and its `EDITOR_ORIGIN` and `EDITOR_ALIASES` variables, which you replace with your own address.
+Anyone can run this editor on their own Cloudflare account and GitHub App, on the free plans of both, without a terminal. The reference deployment at https://editor.techies.tools runs the same code.
 
-The editor is a small TypeScript browser app served by one Cloudflare Worker (`wrangler.sessions.jsonc`). A SQLite Durable Object holds short-lived server-side sessions and the GitHub App's credentials; GitHub tokens are never returned to browser JavaScript. The browser receives only an opaque session cookie.
-
-`wrangler.jsonc` is the legacy Cloudflare Pages project behind the reference deployment's `native-site-editor.pages.dev` fallback. A new installation does not need it.
+The editor is a small TypeScript browser app served by one Cloudflare Worker (`wrangler.jsonc`; the reference deployment uses `wrangler.techies.jsonc`). A SQLite Durable Object holds short-lived server-side sessions and the GitHub App's credentials; GitHub tokens are never returned to browser JavaScript. The browser receives only an opaque session cookie.
 
 ## New users
 
@@ -24,22 +22,31 @@ The editor is a small TypeScript browser app served by one Cloudflare Worker (`w
 
 **Build it with an agent:** Both Get started and Start your site offer a prompt to copy for an MCP agent, asking it to create the repository (if needed) and build the site through the editor. Agents use `gh repo create` and the native-site-editor MCP server.
 
-## Self-hosting in six steps
+## Your own editor in a few clicks
 
-Requirements: Node 22.12+, a free Cloudflare account, a GitHub account, and a domain on Cloudflare **or** willingness to use a `workers.dev` address.
+You need a free [Cloudflare account](https://dash.cloudflare.com/sign-up) and a GitHub account.
 
-1. **Clone and install.** `git clone https://github.com/techiesreviews/native-site-editor && cd native-site-editor && npm ci`. (The repository is private for now.)
-2. **Choose the editor's address.** In `wrangler.sessions.jsonc`, either replace the `routes` pattern with your own hostname on a Cloudflare-managed zone (keep `custom_domain: true`), or delete `routes` and set `"workers_dev": true` to get `https://native-site-editor-sessions.<your-subdomain>.workers.dev`. Change `name` if you want a different Worker name. Then, under `vars`, set `EDITOR_ORIGIN` to that address, for example `https://editor.example.com`, and delete `EDITOR_ALIASES`. Owner setup only runs at `EDITOR_ORIGIN`, and it is the address the GitHub App sends people back to. Without `EDITOR_ORIGIN`, the editor uses whatever address a request arrives at, which is fine when it has only one.
-3. **Create an owner setup token.** `npx wrangler login`, then `openssl rand -hex 32` and store the result as a secret: `npx wrangler secret put OWNER_SETUP_TOKEN --config wrangler.sessions.jsonc`. Keep the token; it unlocks setup in step 5.
-4. **Deploy.** `npm run deploy` builds the UI and deploys the Worker. Until a GitHub App is configured, the editor shows that it is not set up yet.
-5. **Register the GitHub App in the browser.** Open `https://<your editor>/auth/setup#<token>`, click **Create GitHub App**, and confirm the name on GitHub. App names are unique across GitHub, so change the suggested `native-site-editor-techies` to your own. The editor stores the App's Client ID, client secret and slug in its Durable Object; GitHub's private key and webhook secret are discarded. Nothing is copied by hand. Afterwards you can remove the token so setup stays closed: `npx wrangler secret delete OWNER_SETUP_TOKEN --config wrangler.sessions.jsonc` (then `/auth/setup` answers "not enabled").
-6. **Install and sign in.** Install the App on the repositories you want to edit, open your editor and connect GitHub. Repositories need nothing added: the editor previews a site's own HTML and CSS in the browser (see [hosting](hosting.md) for publishing the site itself).
+1. **Deploy.** Click [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/techiesreviews/native-site-editor). Cloudflare asks you to connect GitHub (once), copies this repository to your GitHub account, and shows one field to fill: **OWNER_GITHUB**, your GitHub username. Click **Create and deploy**. Cloudflare builds and deploys the Worker and its Durable Object; that takes a minute or two.
+2. **Open your editor** at the address Cloudflare shows (`https://native-site-editor.<your-subdomain>.workers.dev`). It goes to GitHub by itself with your editor's GitHub App filled in: click **Create GitHub App** (change the name if GitHub says it is taken).
+3. **Install it.** GitHub asks where to install the App: choose **All repositories** (or some) and click **Install & Authorize**. You come back signed in, to the Setup wizard that makes your first site.
 
-Costs: Workers Free and Durable Objects (SQLite) on the free tier. No paid Cloudflare features are used, and the editor runs no builds or GitHub Actions.
+That is all: no tokens to copy, no terminal. The App is created on the OWNER_GITHUB account and the editor only accepts an App owned by that account, so nobody else can set up your editor before you do. If you left OWNER_GITHUB empty, the editor says so: set it in `wrangler.jsonc` in your copy of the repository on GitHub and commit; Cloudflare deploys the change by itself.
+
+**Updates are automatic.** Your copy carries the **Update the editor** workflow (`.github/workflows/update-editor.yml`): every Monday it takes the latest editor from this repository, keeps your settings in `wrangler.jsonc` (the Worker name, `vars`, `routes` and `account_id`), commits, and pushes; Cloudflare deploys the push. To update now, open your repository's **Actions** tab, choose the workflow and **Run workflow**. To stop updating, disable it there. Other changes you make to your copy are replaced by the next update, and changes to its workflows are not taken over (GitHub does not let a workflow change workflows). GitHub pauses scheduled workflows in a repository with no activity for 60 days; **Run workflow** starts it again.
+
+**Your own domain.** In Cloudflare, add it under your Worker's **Settings → Domains & Routes**. In your GitHub App's settings (github.com → Settings → Developer settings → GitHub Apps), add `https://<domain>/auth/callback` as a callback URL. Then set `EDITOR_ORIGIN` to `https://<domain>` under `vars` in `wrangler.jsonc` (keep OWNER_GITHUB), so sign-in sends people back there; to keep the `workers.dev` address working too, list it in `EDITOR_ALIASES`.
+
+Costs: Workers Free and Durable Objects (SQLite) on the free tier. No paid Cloudflare features are used, and the editor runs no builds or GitHub Actions for your sites.
+
+### By hand, with a terminal
+
+Node 22.12+ and Wrangler. `git clone https://github.com/techiesreviews/native-site-editor && cd native-site-editor && npm ci`, set `OWNER_GITHUB` (and, for your own domain, `routes` and `EDITOR_ORIGIN`) in `wrangler.jsonc`, then `npx wrangler login` and `npm run deploy`, and continue at step 2. Instead of OWNER_GITHUB, an editor can use a private setup link: store `openssl rand -hex 32` with `npx wrangler secret put OWNER_SETUP_TOKEN` and open `https://<your editor>/auth/setup#<token>`.
 
 ## Owner setup
 
-The setup page at `/auth/setup` needs the full private link, including its `#…` fragment: the bare page stays locked, because it does not grant owner access by itself. The fragment never reaches the server in the address; the page reads it, exchanges it for a short HttpOnly setup cookie and removes it from the address bar. If a locked setup tab is already open, opening the private link in that same tab unlocks it. Setup only runs at `EDITOR_ORIGIN`; other addresses of the same Worker answer 403. Addresses listed in `EDITOR_ALIASES` (separated by spaces) also serve the editor and get sign-in callbacks, but not setup; the reference deployment lists its `native-site-editor.pages.dev` fallback there.
+With **OWNER_GITHUB** set and no App yet, `/auth/setup` is open: opening it creates a ten-minute setup state (an HttpOnly `setup` cookie) and posts the App manifest to GitHub after a moment, and the sign-in screen sends a signed-out visitor there (`ownerSetupOpen` in `/api/session`). The callback converts GitHub's code, then compares the new App's owner with OWNER_GITHUB (case-insensitive): a match is saved and goes straight on to `/auth/install`, which installs the App and signs the owner in in one trip; any other owner is refused, nothing is saved, and the page says which account made the App and where to delete it. OWNER_GITHUB must be a valid GitHub name; anything else leaves setup closed. The App is named `native-site-editor-<owner>` (at most 34 characters).
+
+With **OWNER_SETUP_TOKEN** instead, the setup page at `/auth/setup` needs the full private link, including its `#…` fragment: the bare page stays locked, because it does not grant owner access by itself. The fragment never reaches the server in the address; the page reads it, exchanges it for a short HttpOnly setup cookie and removes it from the address bar. If a locked setup tab is already open, opening the private link in that same tab unlocks it. Setup only runs at `EDITOR_ORIGIN`; other addresses of the same Worker answer 403. Addresses listed in `EDITOR_ALIASES` (separated by spaces) also serve the editor and get sign-in callbacks, but not setup; the reference deployment lists its `native-site-editor.pages.dev` fallback there.
 
 The page uses GitHub's [App manifest registration flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest). The manifest pre-fills the callback URLs, `request_oauth_on_install: true` (installing the App also signs the user in, so no setup URL is given), **Contents: read and write**, **Metadata: read-only** and **Actions: read** (the save status reads a commit's workflow runs). On return, the Worker exchanges GitHub's temporary code server-side (`POST /app-manifests/{code}/conversions`) and stores the credentials once. If that exchange succeeds but saving fails, GitHub's code is already used: the page says the credentials were not saved and does not show the client secret; inspect the App on GitHub before trying again.
 
@@ -49,20 +56,18 @@ Credentials set as Worker secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `
 
 ## Local development
 
-Use Node 22.12 or newer. Register a separate GitHub App for development by hand (below) with the callback `http://127.0.0.1:8787/auth/callback`, copy `.dev.vars.example` to `.dev.vars` and fill in its Client ID, client secret and slug. Never commit that file. Then, from the project root:
+Use Node 22.12 or newer. Register a separate GitHub App for development by hand (below) with the callback `http://127.0.0.1:8787/auth/callback`, copy `dev.vars.example` to `.dev.vars` and fill in its Client ID, client secret and slug. Never commit that file. Then, from the project root:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open **http://127.0.0.1:8787**. This builds the UI and runs the production Worker and its Durable Object locally. `--local-upstream` in the script keeps the Worker seeing `http://127.0.0.1:8787` as its address; without it, Wrangler reports the configured custom domain and GitHub would send sign-in back there. Without credentials, the app still runs and says it is not set up; it does not substitute demo repositories for a real connection.
+Open **http://127.0.0.1:8787**. This builds the UI (the `build` command in `wrangler.jsonc`) and runs the Worker and its Durable Object locally, with `http://127.0.0.1:8787` as its address. Without credentials, the app still runs and says it is not set up; it does not substitute demo repositories for a real connection.
 
-To try owner setup locally instead of registering the App by hand, set `EDITOR_ORIGIN="http://127.0.0.1:8787"` and an `OWNER_SETUP_TOKEN` in `.dev.vars` (see `.dev.vars.example`) and open `http://127.0.0.1:8787/auth/setup#<token>`.
+To try owner setup locally instead of registering the App by hand, set `EDITOR_ORIGIN="http://127.0.0.1:8787"` and an `OWNER_SETUP_TOKEN` in `.dev.vars` (see `dev.vars.example`) and open `http://127.0.0.1:8787/auth/setup#<token>`.
 
 For frontend hot reload, run `npm run dev:ui` in another terminal and open its address; API and authentication requests proxy to the Worker on port 8787. Add that development origin's `/auth/callback` to the GitHub App before using sign-in there; use one origin consistently for the entire login flow.
-
-`npm run dev:pages` runs the legacy Pages project instead, on port 8788; its session binding expects the Worker to be running as well.
 
 ## GitHub App settings
 
@@ -76,7 +81,7 @@ Owner setup fills these in. To register an App by hand, start at [New GitHub App
 - Repository permissions: **Contents: read and write**, **Metadata: read-only**, **Actions: read**, **Administration: read and write**, and, for Publish, **Pages: read and write**, **Workflows: read and write**, **Secrets: read and write**, **Commit statuses: read-only** and **Deployments: read-only**. Contents write enables commits of selected files; Actions read lets the save status show a commit's workflow runs (added 2026-09-25). Administration read and write enables Get started to create a repository for the signed-in user through POST /user/repos with the App's user token; GitHub adds a repository the App creates to the installation even when it is limited to selected repositories, so the new repository opens without another trip to GitHub. Pages write turns on GitHub Pages and sets its custom domain; Workflows write lets Save to GitHub add the deploy workflow (`.github/workflows/*.yml`), which GitHub otherwise refuses for an App; Secrets write stores a Cloudflare or Spacefast key as an encrypted repository secret, and its read lists the secret names (values are never readable); Commit statuses and Deployments read show the live address of other hosts. See [Publishing to a host](publishing-hosts.md). No account permissions are requested.
 - Allow installation on any account for eventual public use. The editor lists repositories owned by the signed-in personal account and by organisations the user belongs to where the App is installed. Installations on another personal account are ignored. For an organisation, the App needs Administration write on that organisation's installation, and the user needs the right to create repositories there, for Get started to create one directly.
 
-Save the **Client ID**, a generated **client secret**, and the **App slug**: into `.dev.vars` for local use (names in `.dev.vars.example`), or as Worker secrets with `npx wrangler secret put <NAME> --config wrangler.sessions.jsonc`. A GitHub App private key is not needed for the user-token flow. Install the App on selected repositories, then use **Connect GitHub** in the editor. After changing repository access, use **Reload**.
+Save the **Client ID**, a generated **client secret**, and the **App slug**: into `.dev.vars` for local use (names in `dev.vars.example`), or as Worker secrets with `npx wrangler secret put <NAME>`. A GitHub App private key is not needed for the user-token flow. Install the App on selected repositories, then use **Connect GitHub** in the editor. After changing repository access, use **Reload**.
 
 See GitHub's [registration documentation](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app) and [user authorization flow](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app).
 
@@ -115,7 +120,7 @@ New Apps registered through owner setup (the manifest in `worker/owner-setup.ts`
 
 ## Sessions and accounts
 
-`.dev.vars` is local only; it is not uploaded by deployment. The `SESSIONS` SQLite Durable Object is provisioned through the Wrangler migration in `wrangler.sessions.jsonc`. Use HTTPS in production for secure host-only session cookies.
+`.dev.vars` is local only; it is not uploaded by deployment. The `SESSIONS` SQLite Durable Object is provisioned through the Wrangler migration in `wrangler.jsonc`. Use HTTPS in production for secure host-only session cookies.
 
 The initial session lasts at most eight hours. Expired or revoked GitHub access asks the user to reconnect; refresh-token storage is deliberately deferred. Signing out deletes that account's editor session, but does not uninstall the GitHub App or revoke its grant. Those controls remain in GitHub settings.
 
@@ -137,7 +142,7 @@ See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration
 
 ```sh
 npm test
-npm run build
+npm run check
 npx playwright install chromium
 npm run test:browser
 npm run test:browser-preview

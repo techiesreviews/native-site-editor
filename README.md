@@ -1,81 +1,50 @@
-> Current architecture, audit and checkpoint: [docs/NATIVE-PROJECT.md](docs/NATIVE-PROJECT.md). The sections below record the project's origin as an Astro editor; the Astro build, preview and intelligence code has since been removed, and the editor now works only with native HTML/CSS sites: pages under `src/pages/`, components and styles by folder, page details in each page's leading comment, and an optional, legacy `.astro-editor/native.json`.
-
 # Native Site Editor
 
-A browser-based editor for plain HTML and CSS websites stored in GitHub, hosted on Cloudflare's free plan. Built in public; MIT licensed. Reference deployment: **https://editor.techies.tools**. Pages, custom-element components and shared stylesheets render live in a sandboxed preview as you type, with no site build; selected files save straight to the branch.
+A visual editor for plain HTML and CSS websites that live in a GitHub repository. Click anything on your page to edit its text, links, images and styles, or work in the code beside it; every change is a normal commit to your repository. Agents like Claude Code and Codex can edit the same site through MCP.
 
-Run your own copy: see [setting up your own editor](docs/setup.md). Everything below documents the reference deployment and the project's direction.
+Your site stays yours: the repository **is** the website. Pages are `.html` files at their own addresses, components are native custom elements, and there is no build step, so any static host serves the repository as it is (GitHub Pages, Cloudflare, Netlify, Vercel, an FTP server). Stop using the editor whenever you like; nothing in your site depends on it.
 
-Discovery started with Lex on 2026-09-17, inspired by UnblockWP and the modern WordPress interface.
+## Use it
 
-## First milestone
+Open **https://editor.techies.tools** and click **Continue with GitHub**. A short wizard installs the editor on your GitHub account and creates your first site from the [starter](https://github.com/techiesreviews/native-site-editor-starter) or a blank page. Nothing to install.
 
-The editor connects a GitHub App, browses selected personal repositories and branches, shows their file trees, and detects Astro dependencies. Monaco provides editing, diff review, undo, discard, and downloads. Draft content and its GitHub baseline persist in this browser across reloads, scoped by account, repository ID, branch, and path. Selected existing files can be published together as one direct GitHub commit. Unrelated remote changes are preserved; overlapping edits stop publication for review. GitHub App Contents write permission is required. See [publishing and recovery](docs/publishing.md). A **Preview** toggle embeds the branch's built site when the repository carries the editor's preview workflow; see [connecting a repository's preview](docs/repository-preview.md) and [preview proof](docs/research/preview-proof.md). Repositories using the unchanged starter preview workflow can render source drafts through a separate GitHub preview branch before Publish; other integrations keep committed previews. The workspace splits into resizable code and preview panes, and their widths persist between visits.
+## Run your own
 
-Inside the preview, clicking an element opens its page or component source and the stylesheet rules that style it, side by side, and shows an **edit bar** anchored to the element: heading level, text size, **B** and **I** (Ctrl/⌘+B, Ctrl/⌘+I) for the selected word or the whole element, and **Follow link** for route links. Those controls edit the HTML source directly and each change is one undo step. Edits to any of those files patch the live preview as you type; Undo and Redo (Ctrl/Cmd+Z, Ctrl+Y) reach across both panes and the bar.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/techiesreviews/native-site-editor)
 
-Refresh restores the last accessible repository, branch and file for the signed-in account, including local drafts. Without saved navigation, a single accessible repository opens automatically on its default branch, and a native site opens on its home page.
+1. Click **Deploy to Cloudflare**, enter your GitHub username, and deploy.
+2. Open your new editor. It takes you to GitHub: click **Create GitHub App**.
+3. Click **Install & Authorize**. You're in.
 
-The address bar tracks the selected repository ID, branch and file, for example `/#repo=123&branch=main&file=src%2Fpages%2Findex.astro`. Bookmark or copy this URL to reopen that file. Explicit links take priority over remembered navigation and survive GitHub sign-in in the same tab. Links grant no access: the signed-in account still needs repository permission. Fragments are not sent with HTTP requests; draft contents and agent credentials never appear in the URL. New unpublished files can only reopen where their browser-local draft exists.
+It runs on the free plans of Cloudflare and GitHub, and your copy updates itself every week. Details, custom domains and the terminal route: [setting up your own editor](docs/setup.md).
 
-**Connect with MCP** in the project selector copies a prompt that connects Claude, Codex or another MCP client to the open site; **Disconnect MCP** revokes it. Agents can update the active draft or create a new unpublished file; the browser applies changes with conflict checks and undo. Publishing remains in the editor. See [MCP setup and tools](docs/mcp.md).
+## What it does
 
-GitHub sign-in is configured on the reference deployment; your own installation registers its own GitHub App in the browser during setup. The private starter site is [techiesreviews/native-site-editor-starter](https://github.com/techiesreviews/native-site-editor-starter).
+- **Visual editing** in a live preview of your real pages: an edit bar for headings, text size, bold, italic and links; insert, move, duplicate and remove sections; page structure in a sidebar.
+- **Code beside it**: the page or component and the CSS rules that style the selected element, in Monaco, updating the preview as you type.
+- **Pages and files**: new pages and subpages, change a page's address (with a redirect), upload images, rename and delete files.
+- **Save to GitHub**: drafts stay in your browser until you save; selected files go to the branch as one commit, with conflict checks against changes made elsewhere. History and restore per file.
+- **Agents**: connect Claude, Codex or any MCP client to the open site. Their changes arrive as drafts you review and save. See [MCP](docs/mcp.md).
+- **Hosting**: any static host serves the repository as it is; see [hosting](docs/hosting.md). Publishing from inside the editor (GitHub Pages, Cloudflare and others) is in progress.
+
+## Develop
+
+Node 22.12 or newer.
 
 ```sh
 npm ci
-npm run dev
+cp dev.vars.example .dev.vars   # a development GitHub App's credentials
+npm run dev                     # http://127.0.0.1:8787
+npm run check                   # types
+npm test                        # unit and API tests
+npm run test:browser            # Playwright, against a fake GitHub
+npm run test:browser-preview
 ```
 
-Open http://127.0.0.1:8787. The app runs without credentials but needs a GitHub App for a live connection. See [setup and deployment](docs/setup.md) for owner setup, Cloudflare deployment, local credentials, tests and limitations. A complete sample site lives in [fixtures/native-starter](fixtures/native-starter).
+The browser app is in `src/`, the Worker (sign-in, GitHub API, MCP, publishing) in `worker/`, code shared by both in `shared/`. [Setup](docs/setup.md) covers the development GitHub App, [project notes](docs/NATIVE-PROJECT.md) the architecture and decisions, [CONTEXT.md](CONTEXT.md) the vocabulary, and [docs/adr](docs/adr) the recorded trade-offs.
 
-## Hosting
+Interface conventions: no decorative separators (no rules, divider lines or panel borders between sections; group with spacing and background), visible focus indicators, text contrast of at least 4.5:1 on every surface in light and dark. Shared utilities are in `src/utilities.css`, design tokens in `src/theme.css`, component styles in `src/components/`, DOM helpers in `src/ui/dom.ts`. None of the editor's styles reach the sites it edits.
 
-The repository is the site: pages are `.html` files at their URLs, and any static host serves the repository as it is, with no build step. Host settings and redirects are in [hosting](docs/hosting.md).
+## License
 
-## Starting context
-
-Lex is questioning the future direction of Phantom Studio after Facebook group updates and of Stacki Builder following his report that its maintainer is joining Webflow. These are user-reported motivations, not independently verified project-status claims.
-
-The attached reference shows a visual canvas, contextual element toolbar, a right-side attributes/style inspector, HTML/CSS/JavaScript panels, and selection breadcrumbs. These are inspiration, not yet an agreed feature list.
-
-Related workflow preferences from the website-rebuild discussion: combine AI-assisted work with hands-on visual refinement, reuse components, and support shared CSS helpers with bounded component overrides.
-
-Persistent design preference: **no decorative separators by default**—no horizontal rules, divider elements, panel borders, or border lines between interface sections. Use spacing and background differences for grouping. Keep keyboard focus indicators and code diagnostics visible. The page-structure sidebar is user-resizable; retain its width preference between visits.
-
-The user-provided utility foundation lives in `src/utilities.css`, imported before the editor styles. Reuse these classes for common layout, content, typography, and buttons; keep component-specific rules in `src/components/` and the shared palette and UI tokens (hover, selection, type scale, sizes, radii) in `src/theme.css`. Shared DOM constructors live in `src/ui/dom.ts`. Repository actions and the file explorer reuse `src/components/dropdown.ts` for anchored, nonmodal dropdowns with hover, touch, keyboard navigation, and light dismissal. The shell and Monaco share semantic color tokens and follow live system light/dark preferences. Canvas, sidebar, toolbar and raised dropdowns have distinct backgrounds; body/muted text contrast is checked against every surface (at least 4.5:1), with focus indicators at least 3:1. The editor's scrolling document pane uses `.workspace-content` to avoid colliding with the general `.content` utility. These styles apply to the editor UI; they are not injected into connected repositories.
-
-## Discovery
-
-Use Matt Pocock’s wayfinder workflow, with grilling and domain-modeling. Record resolved vocabulary in CONTEXT.md and only consequential architectural trade-offs in docs/adr/. Create those files when there is resolved material to record.
-
-Open decisions include supported Astro project shapes, the first visual editing capabilities, preview execution, synchronization with external edits, and deployment granularity.
-
-The first repository-browsing milestone is implemented. Live GitHub authorization still requires App registration and account consent. Source publishing and visual text editing over the committed preview are implemented; deployment of connected sites relies on the per-repository preview workflow described in [connecting a repository's preview](docs/repository-preview.md).
-
-## Wayfinder direction
-
-Confirmed by Lex on 2026-09-17:
-
-- Establish technical feasibility first, then identify an incremental MVP that proves a useful part of the workflow. Adjust expectations if investigations expose limits.
-- Start with Lex's own website-building workflow; build in public and open source, with the intention that others can connect their own GitHub repositories.
-- Connect existing Astro repositories and identify their setup. All editor-specific configuration must live in one obvious editor-owned directory at the repository root, removable when the user wants to continue with Astro alone. The directory name remains undecided.
-- External agents work in the same repository through normal GitHub pull/push workflows, including Lex's devbox running T3 Code. An embedded agent is not required for this workflow. Handling concurrent or incoming changes remains to be investigated.
-- Host the editor on Cloudflare and support publishing sites to Cloudflare. Vercel, GitHub Pages, and a VPS are also desired destinations through GitHub-driven deployment workflows; initial support remains to be scoped.
-- GitHub holds the durable project history. Experiments can live on separate branches; completed edits on the live branch automatically save and start publishing in the first version, without a Publish button. The precise edit-completion trigger remains to be designed, and publishing controls may change later.
-- Prefer publishing only the changed heading when possible; a page update is acceptable. Shared button edits should change the relevant component or CSS and propagate accordingly. The distinction between source edits and deployed output, including rebuild granularity, requires investigation.
-- The first useful milestone is connecting to GitHub and seeing the repository file structure. Visual editing is a later milestone; it remains central to the overall feasibility investigation.
-- Initial GitHub access covers public and private personal repositories, with access granted only to selected repositories. Organization repositories are deferred.
-- The editor must be usable entirely through a hosted website, without requiring local software. A devbox is an optional external editing workflow.
-- Lex requires no recurring cost for the permanent GitHub authentication/repository-browser setup. Keep this milestone compatible with Cloudflare's Free plan and do not enable paid services or upgrades. The local registration helper is one-time setup only. Hosted Astro preview costs remain a separate feasibility decision.
-- Lex does not yet have an Astro project to use as a test case. The intended product offers both creating a new site and opening an existing repository. For the first milestone, create a simple starter repository separately and prove GitHub connection and file browsing before adding integrated site creation.
-- The eventual editing view should faithfully show how the website will look when published. Preview fidelity is a feasibility requirement, not something established by a file-tree milestone.
-
-Wayfinder is the active planning workflow, using grilling and domain-modeling. Its destination is a feasibility verdict and a proposed first useful MVP, rather than a complete implementation specification.
-
-The canonical planning map is [Astro editor feasibility](.scratch/astro-editor-feasibility/map.md).
-
-## References
-
-- [Editor inspiration](docs/references/editor-inspiration.png)
-- [Skills installation](docs/skills-installation.md)
+[MIT](LICENSE). Built in public by [Techies Reviews](https://techies.review).

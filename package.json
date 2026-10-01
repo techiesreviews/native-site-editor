@@ -8,22 +8,15 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "npm run build:ui && wrangler dev --config wrangler.sessions.jsonc --port 8787 --local-upstream 127.0.0.1:8787",
-    "dev:pages": "npm run build:ui && wrangler pages dev dist",
+    "dev": "wrangler dev --port 8787 --local-upstream 127.0.0.1:8787",
     "dev:ui": "vite --host 127.0.0.1",
     "build:ui": "vite build",
-    "build:functions": "wrangler pages functions build --outdir .scratch/pages-functions",
-    "build": "npm run check && npm run build:ui && npm run build:functions",
     "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit",
-    "deploy": "npm run build:ui && wrangler deploy --config wrangler.sessions.jsonc",
-    "deploy:sessions": "wrangler deploy --config wrangler.sessions.jsonc",
-    "deploy:pages": "npm run build:ui && wrangler pages deploy dist --project-name native-site-editor",
+    "deploy": "wrangler deploy",
+    "deploy:techies": "wrangler deploy --config wrangler.techies.jsonc",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test -c playwright.native-save.config.ts",
-    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
-    "setup": "node scripts/setup-browser.mjs",
-    "setup:manual": "bash scripts/setup-github.sh",
-    "setup:browser": "node scripts/setup-browser.mjs"
+    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260917.1",
@@ -51,5 +44,12 @@
       "dompurify": "3.4.15"
     },
     "undici": "7.29.1"
+  },
+  "cloudflare": {
+    "bindings": {
+      "OWNER_GITHUB": {
+        "description": "Your **GitHub username**. The first time you open the editor, it creates its own GitHub App on that account, and only that account can."
+      }
+    }
   }
 }

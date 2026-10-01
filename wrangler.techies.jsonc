@@ -1,15 +1,13 @@
 {
-  // Production Worker for the Native Site Editor at https://editor.techies.tools.
+  // The reference deployment at https://editor.techies.tools. Self-hosting uses
+  // `wrangler.jsonc` (the Deploy to Cloudflare button) instead.
   //
-  // It owns the SQLite-backed SessionStore Durable Object, runs the request
-  // handler in `worker/app.ts` for `/api/*`, `/auth/*`, `/mcp` and the MCP OAuth
-  // metadata under `/.well-known/`, and serves the
-  // built UI from `dist` as static assets (with `public/_headers` applied).
-  //
-  // The name stays `native-site-editor-sessions` because the Pages project
-  // (`wrangler.jsonc`, kept as the `native-site-editor.pages.dev` fallback)
-  // binds to this Worker's Durable Object by `script_name`; renaming it would
-  // break that binding. Deploy with `npm run deploy`.
+  // Same Worker as `wrangler.jsonc`: it owns the SQLite-backed SessionStore
+  // Durable Object, runs `worker/app.ts` for `/api/*`, `/auth/*`, `/mcp` and the
+  // MCP OAuth metadata under `/.well-known/`, and serves the built UI from
+  // `dist` (with `public/_headers` applied). Its name predates the Pages
+  // fallback's retirement and stays, since renaming would lose the Durable
+  // Object's sessions and GitHub App. Deploy with `npm run deploy:techies`.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "native-site-editor-sessions",
   "main": "worker/index.ts",
@@ -17,6 +15,7 @@
   "workers_dev": false,
   // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
   "observability": { "enabled": true },
+  "build": { "command": "npm run build:ui" },
   "routes": [{ "pattern": "editor.techies.tools", "custom_domain": true }],
   // The editor's own address (owner setup and GitHub's return address), and
   // other addresses serving the same editor, which get sign-in callbacks.

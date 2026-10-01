@@ -3,7 +3,7 @@ import { HttpError, boundedJson } from "./github";
 import type { Env, StoredValue } from "./app";
 
 // The editor's own address: owner setup runs only there, and GitHub sends
-// people back to it. EDITOR_ORIGIN (a var in wrangler.sessions.jsonc) sets
+// people back to it. EDITOR_ORIGIN (a var in the Wrangler config) sets
 // it; without it, the address a request came to is used, which suits an
 // editor served at one address.
 export function editorOrigin(env: Env, requestOrigin: string) {
@@ -35,13 +35,27 @@ export function validOwnerToken(token: string | undefined) {
   return typeof token === "string" && /^[a-f0-9]{64}$/.test(token);
 }
 
-export function hasOwnerSetup(env: Env) {
-  return validOwnerToken(env.OWNER_SETUP_TOKEN);
+// OWNER_GITHUB names the GitHub account that owns this editor (set in the
+// Deploy to Cloudflare form). With it, setup needs no private link: anyone may
+// start it, but the App GitHub creates must belong to that account, which only
+// its owner can make happen.
+export function githubName(value: string) {
+  return /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(value);
 }
 
-export function githubAppManifest(origin: string, aliases: string[] = []) {
+export function ownerLogin(env: Env) {
+  const login = env.OWNER_GITHUB?.trim().replace(/^@/, "") ?? "";
+  return githubName(login) ? login : "";
+}
+
+export function hasOwnerSetup(env: Env) {
+  return validOwnerToken(env.OWNER_SETUP_TOKEN) || Boolean(ownerLogin(env));
+}
+
+export function githubAppManifest(origin: string, aliases: string[] = [], owner = "") {
   return {
-    name: "native-site-editor-techies",
+    // GitHub App names are unique across GitHub and at most 34 characters.
+    name: owner ? `native-site-editor-${owner}`.slice(0, 34) : "native-site-editor-techies",
     url: origin,
     public: true,
     hook_attributes: { active: false, url: `${origin}/auth/setup/webhook` },
@@ -104,11 +118,14 @@ export async function writeConfiguredApp(env: Env, value: GitHubAppConfig) {
 
 export function ownerSetupHtml(
   origin: string,
-  options: { state?: string; installUrl?: string; aliases?: string[] } = {},
+  options: { state?: string; installUrl?: string; aliases?: string[]; owner?: string; error?: string } = {},
 ) {
-  const manifest = githubAppManifest(origin, options.aliases);
-  const ready = Boolean(options.state) && !options.installUrl;
+  const manifest = githubAppManifest(origin, options.aliases, options.owner);
+  const ready = Boolean(options.state) && !options.installUrl && !options.error;
   const done = Boolean(options.installUrl);
+  // With OWNER_GITHUB the page goes on to GitHub by itself: the owner has
+  // just deployed and has nothing to decide here.
+  const auto = ready && Boolean(options.owner);
   return `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -122,16 +139,25 @@ button,a.button{display:inline-flex;align-items:center;gap:8px;border:0;border-r
 [hidden]{display:none}
 </style>
 <main>
-  <h1>Owner setup</h1>
-  <p class="muted">Register the editor's GitHub App, install it on the starter repository, then sign in.</p>
-  <section id="locked" class="panel" ${ready || done ? "hidden" : ""}>
+  <h1>${options.owner ? "Connect your editor to GitHub" : "Owner setup"}</h1>
+  <p class="muted">${
+    options.owner
+      ? `GitHub creates this editor's own GitHub App on <strong>@${escapeHtml(options.owner)}</strong>, then asks where to install it. That is the last step.`
+      : "Register the editor's GitHub App, install it on the starter repository, then sign in."
+  }</p>
+  <section id="error" class="panel" ${options.error ? "" : "hidden"}>
+    <p>${escapeHtml(options.error ?? "")}</p>
+    <p><a class="button" href="/auth/setup">Try again</a></p>
+  </section>
+  <section id="locked" class="panel" ${ready || done || options.error ? "hidden" : ""}>
     <p id="locked-message">Open your private setup link to continue. This page alone does not grant owner access.</p>
   </section>
   <section id="ready" class="panel" ${ready ? "" : "hidden"}>
-    <form method="post" action="https://github.com/settings/apps/new${options.state ? `?state=${options.state}` : ""}">
+    <form method="post" action="https://github.com/settings/apps/new${options.state ? `?state=${options.state}` : ""}"${auto ? " data-auto" : ""}>
       <input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}">
       <button>Create GitHub App</button>
     </form>
+    ${auto ? `<p class="muted" id="auto-note">Taking you to GitHub…</p>` : ""}
   </section>
   <section id="done" class="panel" ${done ? "" : "hidden"}>
     <p>GitHub App saved. Install it on the starter repository, then return to the editor and sign in.</p>
@@ -200,6 +226,8 @@ async function status() {
   }
 }
 addEventListener("hashchange", unlockFromLocation);
+const autoForm = ready.querySelector("form[data-auto]");
+if (autoForm && !ready.hidden) setTimeout(() => autoForm.submit(), 1200);
 unlock(setupToken()).then(status);
 })();`;
 }
@@ -207,7 +235,7 @@ unlock(setupToken()).then(status);
 export async function convertManifest(
   code: string,
   fetcher: typeof fetch,
-): Promise<GitHubAppConfig> {
+): Promise<GitHubAppConfig & { owner: string }> {
   if (!code || code.length > 512)
     throw new HttpError(400, "GitHub App registration was not completed.");
   const response = await fetcher(
@@ -227,6 +255,7 @@ export async function convertManifest(
     client_id?: string;
     client_secret?: string;
     slug?: string;
+    owner?: { login?: string };
   };
   if (!data.client_id || !data.client_secret || !data.slug)
     throw new HttpError(502, "GitHub did not return complete App credentials.");
@@ -234,6 +263,7 @@ export async function convertManifest(
     clientId: data.client_id,
     clientSecret: data.client_secret,
     slug: data.slug,
+    owner: data.owner?.login ?? "",
   };
 }
 

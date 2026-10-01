@@ -63,6 +63,8 @@ export interface SessionInfo {
   accounts?: { login: string; avatar_url: string; current: boolean }[];
   installUrl: string | null;
   ownerSetupUrl?: string | null;
+  /** Setup needs no private link (OWNER_GITHUB is set): open it directly. */
+  ownerSetupOpen?: boolean;
   /**
    * Selected repositories, included for signed-in users so the workspace can
    * open without a second round trip. Null when the listing failed; the

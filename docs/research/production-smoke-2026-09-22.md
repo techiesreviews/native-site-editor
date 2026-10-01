@@ -8,7 +8,7 @@ The editor and starter remote heads matched the previous handoff after fetching:
 
 - Editor: `1abe737281d88149ce7fdd3572eb15a30e18c609`.
 - Starter: `e61d26ba76fe354528ddaad66b8816f90fdd091b`.
-- Fresh worktree: `/home/ubulex/Projects/astro-site-editor-smoke`.
+- Fresh worktree: a separate smoke-test worktree.
 - Branch: `fix/visual-editor-production-smoke`, based on `origin/main`.
 
 Both pre-existing dirty worktrees were preserved. During the initial smoke check, no application code was changed. No GitHub publication, history restore commit, integration update, or deployment was performed.

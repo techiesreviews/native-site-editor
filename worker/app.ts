@@ -37,6 +37,8 @@ import {
   aliasOrigins,
   hasOwnerSetup,
   isOwnerSetupState,
+  githubName,
+  ownerLogin,
   ownerSetupHtml,
   ownerSetupJs,
   setupPayload,
@@ -78,6 +80,7 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
   OWNER_SETUP_TOKEN?: string;
+  OWNER_GITHUB?: string;
   EDITOR_ORIGIN?: string;
   EDITOR_ALIASES?: string;
 }
@@ -346,6 +349,7 @@ async function route(
     }
     const app = await config(env);
     const installUrl = app ? "/auth/install" : undefined;
+    const owner = ownerLogin(env);
     const setupId = cookie(request, "setup");
     let setupState = "";
     if (setupId && !app) {
@@ -356,9 +360,27 @@ async function route(
           setupState = setupId;
       }
     }
-    if (path === "/auth/setup")
-      return html(ownerSetupHtml(url.origin, { state: setupState, installUrl, aliases: aliasOrigins(env) }));
-    if (path === "/auth/setup/manifest") return json(githubAppManifest(url.origin, aliasOrigins(env)));
+    if (path === "/auth/setup") {
+      // Only a refusal the callback made is shown, built here from checked
+      // names, so a link cannot put its own words on this page.
+      const refused = url.searchParams.get("refused") ?? "";
+      const refusedSlug = url.searchParams.get("slug") ?? "";
+      const error =
+        owner && githubName(refused) && /^[a-z0-9-]{1,64}$/.test(refusedSlug)
+          ? `GitHub made the App on @${refused}, but this editor belongs to @${owner} (OWNER_GITHUB). Nothing was saved. Sign in to GitHub as @${owner} and try again, and delete the extra App at https://github.com/settings/apps/${refusedSlug}/advanced.`
+          : undefined;
+      // With OWNER_GITHUB there is no private link to unlock: opening the page
+      // starts setup, and the callback checks who owns the App GitHub made.
+      if (owner && !app && !setupState && !error) {
+        const id = randomId();
+        await store(env, id, "PUT", { kind: "owner-setup", expiresAt: Date.now() + 600_000 });
+        const page = html(ownerSetupHtml(url.origin, { state: id, aliases: aliasOrigins(env), owner }));
+        page.headers.append("Set-Cookie", setCookie(url, "setup", id, 600));
+        return page;
+      }
+      return html(ownerSetupHtml(url.origin, { state: setupState, installUrl, aliases: aliasOrigins(env), owner, error }));
+    }
+    if (path === "/auth/setup/manifest") return json(githubAppManifest(url.origin, aliasOrigins(env), owner));
     if (path === "/auth/setup/callback") {
       if (app) return redirect("/auth/setup");
       if (!setupId || setupId !== url.searchParams.get("state"))
@@ -371,12 +393,18 @@ async function route(
         state.expiresAt <= Date.now()
       )
         throw new HttpError(403, "Owner setup expired.");
-      const next = await convertManifest(
+      const { owner: appOwner, ...next } = await convertManifest(
         url.searchParams.get("code") ?? "",
         fetcher,
       );
+      if (owner && appOwner.toLowerCase() !== owner.toLowerCase())
+        return redirect(
+          `/auth/setup?${new URLSearchParams({ refused: appOwner, slug: next.slug })}`,
+          [setCookie(url, "setup", "", 0)],
+        );
       await writeConfiguredApp(env, next);
-      return redirect("/auth/setup", [setCookie(url, "setup", "", 0)]);
+      // Straight on to installing the App, which also signs the owner in.
+      return redirect(owner ? "/auth/install" : "/auth/setup", [setCookie(url, "setup", "", 0)]);
     }
     throw new HttpError(404, "Owner setup endpoint not found.");
   }
@@ -744,6 +772,8 @@ async function route(
         ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
         : null,
       ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
+      // Setup without a private link (OWNER_GITHUB): the UI goes straight there.
+      ownerSetupOpen: !app && Boolean(ownerLogin(env)),
       ...(user ? { repositories, accounts, onboarding } : {}),
     });
   }

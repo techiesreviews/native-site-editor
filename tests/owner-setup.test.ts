@@ -287,3 +287,99 @@ test("docs/native-github-app.json asks for the manifest's permissions", async ()
   for (const key of ["pages", "workflows", "secrets", "statuses", "deployments"])
     assert.equal(url.searchParams.get(key), doc.parameters[key]);
 });
+
+// Deploy to Cloudflare: OWNER_GITHUB replaces the private link.
+function ownerEnvironment(owner = "octo-owner") {
+  const setup = environment();
+  delete setup.env.OWNER_SETUP_TOKEN;
+  delete setup.env.EDITOR_ORIGIN;
+  delete setup.env.EDITOR_ALIASES;
+  setup.env.OWNER_GITHUB = owner;
+  return setup;
+}
+const deployed = "https://native-site-editor.octo.workers.dev";
+
+async function startOwnerSetup(env: Env) {
+  const page = await handle(new Request(`${deployed}/auth/setup`), env);
+  assert.equal(page.status, 200);
+  const cookie = page.headers.get("set-cookie")!.split(";")[0];
+  const body = await page.text();
+  const state = /apps\/new\?state=([a-f0-9]{64})/.exec(body)![1];
+  return { cookie, body, state };
+}
+
+function conversion(owner: string) {
+  return async () =>
+    Response.json({
+      client_id: "Iv1.owned",
+      client_secret: "owned-secret",
+      slug: "native-site-editor-octo-owner",
+      owner: { login: owner },
+    });
+}
+
+test("with OWNER_GITHUB, opening setup starts it and goes on to GitHub by itself", async () => {
+  const { env } = ownerEnvironment();
+  const { body, cookie } = await startOwnerSetup(env);
+  assert.match(cookie, /setup=[a-f0-9]{64}/);
+  assert.match(body, /data-auto/);
+  assert.match(body, /@octo-owner/);
+  assert.ok(body.includes("native-site-editor-octo-owner"));
+  const session = (await (await handle(new Request(`${deployed}/api/session`), env)).json()) as {
+    ownerSetupUrl: string;
+    ownerSetupOpen: boolean;
+  };
+  assert.equal(session.ownerSetupUrl, "/auth/setup");
+  assert.equal(session.ownerSetupOpen, true);
+});
+
+test("with OWNER_GITHUB, the owner's App is saved and setup continues to install", async () => {
+  const { env, config } = ownerEnvironment();
+  const { cookie, state } = await startOwnerSetup(env);
+  const callback = await handle(
+    new Request(`${deployed}/auth/setup/callback?code=fixture&state=${state}`, { headers: { Cookie: cookie } }),
+    env,
+    conversion("Octo-Owner"),
+  );
+  assert.equal(callback.status, 302);
+  assert.equal(callback.headers.get("location"), "/auth/install");
+  assert.deepEqual(config.get("native-site-editor/config"), {
+    clientId: "Iv1.owned",
+    clientSecret: "owned-secret",
+    slug: "native-site-editor-octo-owner",
+  });
+});
+
+test("with OWNER_GITHUB, an App made on another account is refused and nothing is saved", async () => {
+  const { env, config } = ownerEnvironment();
+  const { cookie, state } = await startOwnerSetup(env);
+  const callback = await handle(
+    new Request(`${deployed}/auth/setup/callback?code=fixture&state=${state}`, { headers: { Cookie: cookie } }),
+    env,
+    conversion("intruder"),
+  );
+  assert.equal(callback.status, 302);
+  const location = new URL(callback.headers.get("location")!, deployed);
+  assert.equal(location.pathname, "/auth/setup");
+  assert.equal(location.searchParams.get("refused"), "intruder");
+  assert.equal(config.size, 0);
+  const page = await (await handle(new Request(location), env)).text();
+  assert.ok(!page.includes("data-auto"));
+  assert.match(page, /GitHub made the App on @intruder, but this editor belongs to @octo-owner/);
+  assert.match(page, /settings\/apps\/native-site-editor-octo-owner\/advanced/);
+});
+
+test("the setup page shows no text a link brings along", async () => {
+  const { env } = ownerEnvironment();
+  for (const query of ["error=Go+to+evil.example", "refused=a+b&slug=x", "refused=intruder&slug=%3Cb%3E"]) {
+    const page = await (await handle(new Request(`${deployed}/auth/setup?${query}`), env)).text();
+    assert.ok(!page.includes("evil.example") && !page.includes("GitHub made the App"));
+    assert.match(page, /data-auto/);
+  }
+});
+
+test("an OWNER_GITHUB that is not a GitHub name leaves setup closed", async () => {
+  const { env } = ownerEnvironment("not a name!");
+  assert.equal((await handle(new Request(`${deployed}/auth/setup`), env)).status, 404);
+  assert.equal(githubAppManifest(deployed, [], "a-very-long-github-login-name-here").name.length, 34);
+});

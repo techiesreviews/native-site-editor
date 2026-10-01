@@ -1,27 +1,41 @@
 {
-  // Legacy Cloudflare Pages project (`native-site-editor.pages.dev`), kept only
-  // as a fallback address. Production is the Worker in `wrangler.sessions.jsonc`
-  // serving https://editor.techies.tools with static assets; deploy that with
-  // `npm run deploy`. This project still binds to that Worker's SessionStore
-  // Durable Object by `script_name`, so both addresses share one session store.
-  // Deploy here with `npm run deploy:pages` only if the fallback must be updated;
-  // `npm run dev:pages` runs it locally.
+  // Your own Native Site Editor: one Cloudflare Worker that serves the editor
+  // (built into `dist`), runs `worker/app.ts` for sign-in, the GitHub API and
+  // agents, and keeps sessions and its GitHub App in a SQLite Durable Object.
+  // Free plans of Cloudflare and GitHub are enough.
+  //
+  // The Deploy to Cloudflare button reads this file. Afterwards, your copy of
+  // this repository deploys itself on every push (Workers Builds), and the
+  // weekly "Update the editor" workflow keeps it up to date.
+  //
+  // The reference deployment at editor.techies.tools uses
+  // `wrangler.techies.jsonc` instead.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "native-site-editor",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-09-17",
-  "pages_build_output_dir": "dist",
-  // Same addresses as the Worker, so owner setup stays on editor.techies.tools.
+  // The editor's address is https://native-site-editor.<your-subdomain>.workers.dev.
+  // For your own domain, add it under the Worker's Settings → Domains & Routes
+  // in Cloudflare, then add `<domain>/auth/callback` to your GitHub App's
+  // callback URLs (and EDITOR_ORIGIN below, so setup and sign-in use it).
+  "workers_dev": true,
+  "preview_urls": false,
+  // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
+  "observability": { "enabled": true },
+  // `wrangler deploy` and `wrangler dev` build the editor's UI first.
+  "build": { "command": "npm run build:ui" },
   "vars": {
-    "EDITOR_ORIGIN": "https://editor.techies.tools",
-    "EDITOR_ALIASES": "https://native-site-editor.pages.dev",
+    // Your GitHub username. Opening the editor for the first time then
+    // creates its GitHub App on that account; nobody else can.
+    "OWNER_GITHUB": "",
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*", "/mcp", "/.well-known/*"],
   },
   "durable_objects": {
-    "bindings": [
-      {
-        "name": "SESSIONS",
-        "class_name": "SessionStore",
-        "script_name": "native-site-editor-sessions",
-      },
-    ],
+    "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],
   },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionStore"] }],
 }
