@@ -518,26 +518,16 @@ function clip(text: string, limit: number) {
 }
 
 /**
- * How an agent adds the editor's MCP server as "native-site-editor": with
- * the token's Authorization header, or, without a token, signing in with
- * the editor's own OAuth (a custom connector).
+ * How an agent adds the editor's MCP server as "native-site-editor",
+ * signing in with the editor's own OAuth (a custom connector).
  */
-function addServerSteps(url: string, token?: string) {
-  if (!token)
-    return `Add it to your MCP servers as "native-site-editor" (it signs in with my GitHub account in the browser):
+function addServerSteps(url: string) {
+  return `Add it to your MCP servers as "native-site-editor" (it signs in with my GitHub account in the browser):
 - Claude Code: run
   claude mcp add --transport http native-site-editor ${url}
   then /mcp, choose native-site-editor and Authenticate.
 - claude.ai or Claude Desktop: Settings → Connectors → Add custom connector, URL ${url}, then Connect.
 - Any other MCP client: a streamable HTTP server with that URL and OAuth.`;
-  return `Add it to your MCP servers as "native-site-editor":
-- Claude Code: run
-  claude mcp add --transport http native-site-editor ${url} --header "Authorization: Bearer ${token}"
-- Codex: add to ~/.codex/config.toml, then restart Codex:
-  [mcp_servers.native_site_editor]
-  url = "${url}"
-  http_headers = { Authorization = "Bearer ${token}" }
-- Any other MCP client: an HTTP server with that URL and header.`;
 }
 
 /** The task that builds a site from nothing, about `about` when the user said. */
@@ -567,18 +557,28 @@ ${addServerSteps(url)}
 Your changes appear in my editor as unsaved drafts; I review them and save them to GitHub.`;
 }
 
-/** What to paste into an agent so it connects itself (or says how), then watches for requests or does `task`. */
+/**
+ * What to paste into an agent so it talks to the editor over a temporary,
+ * direct connection (curl, no MCP configuration), then watches for requests
+ * or does `task`. The server is stateless and answers in JSON, so each
+ * JSON-RPC message is one POST.
+ */
 export function connectionPrompt(url: string, token: string, repo: string, task?: string) {
-  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo} (and whichever site I open in the editor after it).
+  const code = (text: string) => `\`${text}\``;
+  const work = task
+    ? `Then: ${task}`
+    : `Then repeatedly call ${code("wait_for_requests")}, make requested changes as unsaved editor drafts, and answer through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input. Follow whichever site I open. Continue until I say stop.`;
+  return `Connect to Native Site Editor for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me edit my site ${repo}.
 
-Server URL: ${url} (streamable HTTP)
-Header: Authorization: Bearer ${token}
+Server: ${code(url)}
 
-${addServerSteps(url, token)}
+Authorization: ${code(`Bearer ${token}`)}
 
-If you cannot change your own MCP settings, tell me exactly what to do. Once connected, call get_site to see what I have open. Your changes appear in my editor as unsaved drafts that I review and save.
+**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
 
-${task ? `Then: ${task}` : `Then watch for my requests, as the server's watch_editor prompt describes: I select an element in the editor's preview and choose Ask agent. Call wait_for_requests, make each change it returns, answer with reply_to_request, and call wait_for_requests again, until I tell you to stop.`}
+Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. The server is stateless, so there is no session id to keep. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}, ${code("prompts/get")} and ${code("resources/read")}. Give curl a timeout of at least 70 seconds: wait_for_requests holds the request open for up to waitSeconds (at most 50).
 
-The token works like a password: keep it out of files, commits and chats other than this one. It stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
+Initialize the MCP connection, call ${code("get_site")}, and read the ${code("watch_editor")} prompt. ${work}
+
+When stopped, terminate pending requests (answer each request you took but did not finish with reply_to_request, status answered, saying you stopped) and discard the temporary connection credentials. The token also stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
 }

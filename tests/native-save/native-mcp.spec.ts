@@ -41,8 +41,8 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server URL: (\S+)/.exec(prompt)![1];
-  const token = /Authorization: Bearer (ase_[a-f0-9]{64})/.exec(prompt)![1];
+  const url = /Server: `(\S+)`/.exec(prompt)![1];
+  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(

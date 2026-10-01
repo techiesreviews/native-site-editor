@@ -73,8 +73,8 @@ test("drafts totalling well over 5 MB are kept and survive a reload", async ({ p
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server URL: (\S+)/.exec(prompt)![1];
-  const token = /Authorization: Bearer (ase_[a-f0-9]{64})/.exec(prompt)![1];
+  const url = /Server: `(\S+)`/.exec(prompt)![1];
+  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   try {
