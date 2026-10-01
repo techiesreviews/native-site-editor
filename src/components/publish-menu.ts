@@ -1,7 +1,7 @@
 import { button, link, node } from "../ui/dom";
 import { mountDropdown } from "./dropdown";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../drafts";
-import type { PublishResult } from "../../shared/types";
+import { EMPTY_COMMIT, type PublishFile, type PublishResult } from "../../shared/types";
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
@@ -296,18 +296,17 @@ export function createPublishMenu(options: {
     pending = true; trigger.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = pendingText;
-    try {
-      // Uploaded files become GitHub blobs first; the commit names them.
-      await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+    // One commit of `files` on top of `base`; resolves to nothing when the
+    // session expired or GitHub changed files (said in the menu).
+    async function post(files: PublishFile[], base: string | undefined): Promise<PublishResult | undefined> {
       // Gzipped, a commit of many pages stays a small request.
-      const head = options.head?.();
-      const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(head ? { head } : {}), files: publishFiles(chosen) }));
+      const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
         body,
       });
-      if (response.status === 401) { options.onExpired(); return; }
+      if (response.status === 401) { options.onExpired(); return undefined; }
       const data = await response.json();
       if (response.status === 409 && Array.isArray(data.conflicts) && data.conflicts.length) {
         const gone = new Set<string>(Array.isArray(data.gone) ? data.gone : []);
@@ -316,9 +315,46 @@ export function createPublishMenu(options: {
           if (sent) refused.set(draftKey(options.scope, path), { path, baseSha: sent.baseSha, gone: gone.has(path) });
         }
         options.onRefused?.();
-        if (refusedNotice(options.scope)) return;
+        if (refusedNotice(options.scope)) return undefined;
       }
       if (!response.ok) throw new Error(data.error ?? "Publishing failed. Your drafts are kept.");
+      return data as PublishResult;
+    }
+    try {
+      const head = options.head?.();
+      const files = publishFiles(chosen);
+      let data: PublishResult | undefined;
+      if (head === EMPTY_COMMIT) {
+        // An empty repository: GitHub makes its first commit from one text
+        // file (worker/publish.ts), the home page when it is chosen; the
+        // rest, uploads included, follow on top of it.
+        const first =
+          files.find((file) => file.path === "index.html" && !file.sha && !file.delete) ??
+          files.find((file) => !file.sha && !file.delete && file.baseSha === null);
+        if (!first) throw new Error("The first save to an empty repository needs a new text file, such as index.html. Select one too.");
+        const started = await post([first], head);
+        if (!started) return;
+        const rest = files.filter((file) => file !== first);
+        // When the rest is not saved, the first commit stands: its file is GitHub's now.
+        const keepFirst = () => options.onPublished(started, chosen.filter((change) => change.path === first.path).flatMap((change) => change.drafts));
+        if (!rest.length) data = started;
+        else {
+          try {
+            await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+            const after = await post(rest, started.commit);
+            if (!after) { keepFirst(); return; }
+            data = { ...after, files: [...started.files, ...after.files], deleted: after.deleted ?? [] };
+          } catch (error) {
+            keepFirst();
+            throw error;
+          }
+        }
+      } else {
+        // Uploaded files become GitHub blobs first; the commit names them.
+        await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+        data = await post(files, head);
+        if (!data) return;
+      }
       // Reconcile even if the user navigated away while the request was in flight.
       options.onPublished(data as PublishResult, submitted);
       if (disposed) return;

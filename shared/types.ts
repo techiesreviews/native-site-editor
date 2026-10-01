@@ -23,9 +23,19 @@ export interface Directory {
   entries: TreeEntry[];
 }
 
+/**
+ * The commit an empty repository (no commits, no branches yet) is shown at:
+ * git's null object name. The editor opens such a repository on its default
+ * branch with no files, so drafts can be written; the first Save to GitHub
+ * creates the branch (worker/publish.ts `startRepository`).
+ */
+export const EMPTY_COMMIT = "0".repeat(40);
+
 export interface Snapshot extends Directory {
   commit: string;
   branch: string;
+  /** The repository has no commits yet: `commit` is EMPTY_COMMIT and there are no entries. */
+  empty?: true;
   /**
    * Every entry in the commit, with full paths, when GitHub returned the
    * recursive tree completely. Absent for very large repositories; callers
@@ -84,6 +94,18 @@ export interface PublishRequest {
   head?: string;
   files: PublishFile[];
 }
+/** A repository the editor made on the signed-in account (`POST /api/repositories`). */
+export interface CreateRepositoryRequest {
+  name: string;
+  private: boolean;
+  description?: string;
+}
+
+/** A file of a starting point: text, or (an image) base64 bytes. */
+export type StarterFile =
+  | { path: string; content: string }
+  | { path: string; base64: string; size: number };
+
 export interface PublishResult {
   commit: string;
   branch: string;

@@ -54,6 +54,8 @@ export function githubAppManifest(origin: string, aliases: string[] = []) {
       metadata: "read",
       // The Change status after a save reads the commit's workflow runs.
       actions: "read",
+      // Get started creates the user's new repository (POST /user/repos).
+      administration: "write",
     },
   };
 }

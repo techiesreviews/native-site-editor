@@ -250,9 +250,13 @@ export function createAgentMenu(options: {
     else if (current === "waiting") await copyPrompt();
     else await start();
   }
-  async function start() {
+  // A task the copied prompt ends with instead of watching for requests
+  // (Start your site's Build it with an agent).
+  let goal: string | undefined;
+  async function start(task?: string) {
     const repo = options.repository();
     if (!repo || changing) return;
+    goal = task;
     changing = true;
     paint();
     try {
@@ -294,7 +298,7 @@ export function createAgentMenu(options: {
     const repo = options.repository();
     if (!token || !repo) return;
     try {
-      await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName));
+      await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
       paint();
     } catch {
       say("Clipboard access was denied. Allow it in your browser, then choose Copy again.");
@@ -443,6 +447,18 @@ export function createAgentMenu(options: {
   void poll(true);
   return {
     root,
+    /**
+     * Makes a token, as Connect with MCP does, and copies the prompt ending
+     * with `task`; while a token waits for its agent, copies it again.
+     * Resolves to whether the prompt was copied.
+     */
+    async connect(task: string) {
+      if (state() === "waiting" && token) {
+        goal = task;
+        await copyPrompt();
+      } else await start(task);
+      return Boolean(token);
+    },
     /** Whether an agent is connected now. */
     connected() {
       return state() === "connected";
@@ -501,25 +517,68 @@ function clip(text: string, limit: number) {
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
 
-/** What to paste into an agent so it connects itself (or says how). */
-export function connectionPrompt(url: string, token: string, repo: string) {
-  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo} (and whichever site I open in the editor after it).
-
-Server URL: ${url} (streamable HTTP)
-Header: Authorization: Bearer ${token}
-
-Add it to your MCP servers as "native-site-editor":
+/**
+ * How an agent adds the editor's MCP server as "native-site-editor": with
+ * the token's Authorization header, or, without a token, signing in with
+ * the editor's own OAuth (a custom connector).
+ */
+function addServerSteps(url: string, token?: string) {
+  if (!token)
+    return `Add it to your MCP servers as "native-site-editor" (it signs in with my GitHub account in the browser):
+- Claude Code: run
+  claude mcp add --transport http native-site-editor ${url}
+  then /mcp, choose native-site-editor and Authenticate.
+- claude.ai or Claude Desktop: Settings → Connectors → Add custom connector, URL ${url}, then Connect.
+- Any other MCP client: a streamable HTTP server with that URL and OAuth.`;
+  return `Add it to your MCP servers as "native-site-editor":
 - Claude Code: run
   claude mcp add --transport http native-site-editor ${url} --header "Authorization: Bearer ${token}"
 - Codex: add to ~/.codex/config.toml, then restart Codex:
   [mcp_servers.native_site_editor]
   url = "${url}"
   http_headers = { Authorization = "Bearer ${token}" }
-- Any other MCP client: an HTTP server with that URL and header.
+- Any other MCP client: an HTTP server with that URL and header.`;
+}
+
+/** The task that builds a site from nothing, about `about` when the user said. */
+export function buildSitePrompt(about?: string) {
+  const subject = about?.trim() ? about.trim().replace(/\s+/g, " ").slice(0, 300) : "<what it is about>";
+  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, then tell me to review the drafts in the editor and Save to GitHub.`;
+}
+
+/**
+ * What to paste into an agent before there is a repository (Get started):
+ * create one (with the GitHub CLI when the agent has it), have the user give
+ * the editor access, connect over MCP with OAuth, and build the site.
+ */
+export function setupPrompt(options: { editor: string; installUrl?: string | null; name: string; private: boolean; about?: string }) {
+  const url = `${options.editor}/mcp`;
+  return `Help me start a website with Native Site Editor (${options.editor}). The site is a GitHub repository whose files are the site: plain HTML, CSS and browser JavaScript, no build.
+
+1. Create the repository ${options.name} on my GitHub account. If you have the GitHub CLI, run
+   gh repo create ${options.name} --${options.private ? "private" : "public"}
+   Otherwise ask me to create it on the editor's Get started screen.
+2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (Get started, Use a repository you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.
+3. Connect to the editor over MCP. Server URL: ${url} (streamable HTTP)
+${addServerSteps(url)}
+   If you cannot change your own MCP settings, tell me exactly what to do.
+4. ${buildSitePrompt(options.about)}
+
+Your changes appear in my editor as unsaved drafts; I review them and save them to GitHub.`;
+}
+
+/** What to paste into an agent so it connects itself (or says how), then watches for requests or does `task`. */
+export function connectionPrompt(url: string, token: string, repo: string, task?: string) {
+  return `Connect to my website editor (Native Site Editor) over MCP, so you can help me edit my site ${repo} (and whichever site I open in the editor after it).
+
+Server URL: ${url} (streamable HTTP)
+Header: Authorization: Bearer ${token}
+
+${addServerSteps(url, token)}
 
 If you cannot change your own MCP settings, tell me exactly what to do. Once connected, call get_site to see what I have open. Your changes appear in my editor as unsaved drafts that I review and save.
 
-Then watch for my requests, as the server's watch_editor prompt describes: I select an element in the editor's preview and choose Ask agent. Call wait_for_requests, make each change it returns, answer with reply_to_request, and call wait_for_requests again, until I tell you to stop.
+${task ? `Then: ${task}` : `Then watch for my requests, as the server's watch_editor prompt describes: I select an element in the editor's preview and choose Ask agent. Call wait_for_requests, make each change it returns, answer with reply_to_request, and call wait_for_requests again, until I tell you to stop.`}
 
 The token works like a password: keep it out of files, commits and chats other than this one. It stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
 }

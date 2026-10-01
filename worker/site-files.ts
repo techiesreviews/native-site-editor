@@ -2,7 +2,7 @@
 // tools: GitHub at the revision the tab shows, overlaid with the tab's
 // browser drafts (new, changed, renamed and deleted files).
 import { AGENT_TEXT_LIMIT, TEXT_PATH, textHash } from "../shared/agent";
-import type { EditorContext, Repository, TreeEntry } from "../shared/types";
+import { EMPTY_COMMIT, type EditorContext, type Repository, type TreeEntry } from "../shared/types";
 import { HttpError, type GitHub } from "./github";
 
 type Draft = EditorContext["drafts"][number];
@@ -37,7 +37,8 @@ export class SiteFiles {
   ) {}
 
   private entries() {
-    return (this.tree ??= this.github.commitTree(this.repo, this.context.commit));
+    // An empty repository has no files on GitHub yet, only the tab's drafts.
+    return (this.tree ??= this.context.commit === EMPTY_COMMIT ? Promise.resolve([]) : this.github.commitTree(this.repo, this.context.commit));
   }
   draft(path: string): Draft | undefined {
     return this.context.drafts.find((draft) => draft.path === path);

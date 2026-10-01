@@ -4,7 +4,9 @@ import type {
   Repository,
   TreeEntry,
 } from "../shared/types";
+import { EMPTY_COMMIT } from "../shared/types";
 import { GitHub, HttpError } from "./github";
+import { base64Bytes } from "./blobs";
 
 const encoder = new TextEncoder();
 const validSha = (value: unknown): value is string =>
@@ -107,6 +109,7 @@ export async function publish(
   input: unknown,
 ): Promise<PublishResult> {
   const data = validatePublish(input);
+  if (data.head === EMPTY_COMMIT) return startRepository(github, repo, data);
   const base = github.base(repo);
   // The head the editor saw (its last save, say) is trusted over a lagging read.
   const head = (await github.head(repo, data.branch, data.head)).sha;
@@ -241,6 +244,43 @@ export async function publish(
     files,
     deleted,
     unchanged: changes.length === 0,
+  };
+}
+
+/**
+ * The first save to an empty repository (the editor showed it at
+ * EMPTY_COMMIT). GitHub's git data API (blobs, trees, commits, refs) refuses
+ * a repository with no commits, but its contents API creates the first
+ * commit, and the branch, from one file. So the first save is one new text
+ * file; the editor sends the rest of its drafts as a second save on top
+ * (src/components/publish-menu.ts).
+ */
+async function startRepository(github: GitHub, repo: Repository, data: PublishRequest): Promise<PublishResult> {
+  const branches = await github.branches(repo);
+  if (branches.length)
+    throw new HttpError(409, "This repository has commits on GitHub now. Refresh to load them; your drafts are kept.");
+  const [file] = data.files;
+  if (data.files.length !== 1 || file.baseSha !== null || file.delete || file.sha !== undefined)
+    throw new HttpError(400, "The first save to an empty repository is one new text file. Refresh and try again.");
+  const created = await github.write<{ content?: { sha?: string }; commit?: { sha?: string } }>(
+    `${github.base(repo)}/contents/${file.path.split("/").map(encodeURIComponent).join("/")}`,
+    "PUT",
+    {
+      message: `Add ${file.path} with Native Site Editor`,
+      content: base64Bytes(encoder.encode(file.content)),
+      // An empty repository's first commit makes its default branch.
+      ...(data.branch !== repo.default_branch ? { branch: data.branch } : {}),
+    },
+  );
+  const commit = created.commit?.sha;
+  if (!commit || !validSha(commit)) throw new HttpError(502, "GitHub did not say which commit it made. Refresh to see it.");
+  return {
+    commit,
+    branch: data.branch,
+    url: `https://github.com/${repo.full_name}/commit/${commit}`,
+    files: [{ path: file.path, sha: created.content?.sha ?? (await blobSha(file.content)) }],
+    deleted: [],
+    unchanged: false,
   };
 }
 

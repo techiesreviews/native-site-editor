@@ -35,6 +35,8 @@ import { NATIVE_NOT_FOUND_ROUTE, nativeLinkTarget } from "../shared/native-route
 import { HttpError } from "./github";
 import { SiteFiles, writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
+import { editorOrigin } from "./owner-setup";
+import { EMPTY_COMMIT } from "../shared/types";
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 type Page = NonNullable<EditorContext["pages"]>[number];
@@ -140,12 +142,24 @@ function openRequests(hub: AgentHub | undefined, repoId: number) {
   return (hub?.requests ?? []).filter((item) => item.repoId === repoId && (item.state === "open" || item.state === "seen")).length;
 }
 
-export function siteSummary(hub: AgentHub | undefined, context: EditorContext | undefined, grantRepo: string) {
+/**
+ * What the user has to do in the editor before agents can work: no tab
+ * shares a site (signed out, no repository chosen yet, or the tab closed).
+ */
+export function notSharingMessage(origin: string) {
+  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. The connection then works on whichever repository the tab shows; call get_site again.`;
+}
+
+/** Why a page tool cannot run before the repository has a home page. */
+const noHomePage =
+  "This repository has no site yet: there is no index.html, so there is no page to work on or copy. Start the site first: write index.html (a full HTML document linking /styles/site.css) and styles/site.css with write_file, as the native-site://conventions resource's \"Starting a site from nothing\" describes, or ask the user to choose Starter site in the editor's Start your site panel. Then call get_site again.";
+
+export function siteSummary(hub: AgentHub | undefined, context: EditorContext | undefined, grantRepo: string, origin = "https://editor.techies.tools") {
   if (!context)
     return {
       repository: grantRepo,
       available: false,
-      note: "The editor tab is not sharing a site right now. Ask the user to open the site in the editor at https://editor.techies.tools and keep the tab open. The connection works on whichever repository the tab shows.",
+      note: notSharingMessage(origin),
     };
   const age = contextAge(hub);
   const site = context.site;
@@ -176,7 +190,11 @@ export function siteSummary(hub: AgentHub | undefined, context: EditorContext | 
           components: site?.components ?? [],
           stylesheets: site?.stylesheets ?? [],
         }
-      : { native: false }),
+      : {
+          native: false,
+          ...(context.commit === EMPTY_COMMIT ? { empty: true } : {}),
+          start: noHomePage,
+        }),
     changes: site?.changes ?? context.drafts.map((draft) => ({ path: draft.path })),
     pending: (hub?.commands ?? []).filter((command) => command.state === "pending").length,
     openRequests: openRequests(hub, context.repository.id),
@@ -184,7 +202,7 @@ export function siteSummary(hub: AgentHub | undefined, context: EditorContext | 
   };
 }
 
-export function createSiteServer(connection: Connection, env: Env) {
+export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools") {
   const { grant } = connection;
   const server = new McpServer(
     { name: "native-site-editor", version: "1.0.0" },
@@ -197,16 +215,12 @@ export function createSiteServer(connection: Connection, env: Env) {
   }
   async function current() {
     const { hub, context } = await state();
-    if (!context)
-      throw new HttpError(
-        409,
-        "The editor tab is not sharing a site right now. Ask the user to open it in the editor and keep the tab open, then try again.",
-      );
+    if (!context) throw new HttpError(409, notSharingMessage(origin));
     return { hub, context, files: new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash)) };
   }
   function findPage(context: EditorContext, ref: string) {
     const pages = context.pages;
-    if (!pages) throw new HttpError(400, "This repository is not a native site.");
+    if (!pages) throw new HttpError(400, noHomePage);
     const page = findPageRef(pages, ref);
     if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
     return page as Page & { file: string };
@@ -301,7 +315,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     },
     async () => {
       const { hub, context } = await state();
-      return text(siteSummary(hub, context, connection.repo.full_name));
+      return text(siteSummary(hub, context, connection.repo.full_name, origin));
     },
   );
   server.registerTool(
@@ -562,7 +576,7 @@ export function createSiteServer(connection: Connection, env: Env) {
     },
     async ({ title, parent, slug, requestId, waitSeconds }) => {
       const { context } = await current();
-      if (!context.pages) return failure("This repository is not a native site.");
+      if (!context.pages) return failure(noHomePage);
       const under = parent ? parent.replace(/^\/?/, "/").replace(/\/?$/, "/") : "/";
       if (under !== "/" && !context.pages.some((page) => page.route === under))
         return failure(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
@@ -890,7 +904,7 @@ export function createSiteServer(connection: Connection, env: Env) {
       const { hub, context } = await state();
       return {
         contents: [
-          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, connection.repo.full_name)) },
+          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin)) },
         ],
       };
     },
@@ -909,7 +923,7 @@ export function createSiteServer(connection: Connection, env: Env) {
             role: "user",
             content: {
               type: "text",
-              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, connection.repo.full_name))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
+              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
             },
           },
         ],
@@ -948,7 +962,8 @@ export async function handleMcp(
   env: Env,
   parsedBody: unknown,
 ) {
-  const handler = createMcpHandler(() => createSiteServer(connection, env), {
+  const origin = editorOrigin(env, new URL(request.url).origin);
+  const handler = createMcpHandler(() => createSiteServer(connection, env, origin), {
     legacy: "stateless",
     responseMode: "json",
     maxSubscriptions: 0,

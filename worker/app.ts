@@ -25,6 +25,7 @@ import { MAX_PUBLISH_REQUEST_BYTES, publish } from "./publish";
 import { requestBytes, uploadBlob } from "./blobs";
 import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
+import { starterFiles } from "./starter";
 import { GitHub, HttpError } from "./github";
 import {
   configuredApp,
@@ -285,6 +286,7 @@ async function route(
       (path === "/api/publish" ||
         path === "/api/blob" ||
         path === "/api/restore" ||
+        path === "/api/repositories" ||
         path === "/auth/setup/unlock" ||
         path === "/api/accounts/switch" ||
         path.startsWith("/api/agent/")) &&
@@ -712,8 +714,27 @@ async function route(
     if (!user)
       throw new HttpError(401, "Connect GitHub to browse your repositories.");
     const github = new GitHub(user.token, fetcher);
+    // Get started: a new, empty repository on the signed-in account.
+    if (path === "/api/repositories" && request.method === "POST") {
+      if (request.headers.get("Origin") !== url.origin)
+        throw new HttpError(403, "Invalid request origin.");
+      const data = await requestJson(request, 4096);
+      return json(
+        await github.createRepository(user.login, {
+          name: typeof data?.name === "string" ? data.name.trim() : "",
+          private: data?.private === true,
+          description: typeof data?.description === "string" ? data.description : undefined,
+        }),
+        201,
+      );
+    }
     if (path === "/api/repositories")
       return json(await github.repositories(user.login));
+    // Start your site: the Starter site's files, named for the site.
+    if (path === "/api/starter") {
+      const name = (url.searchParams.get("name") ?? "").trim().slice(0, 100);
+      return json({ files: await starterFiles(name || "My site", fetcher) });
+    }
     if (
       ![
         "/api/branches",

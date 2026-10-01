@@ -1,10 +1,12 @@
 import type {
+  CreateRepositoryRequest,
   Directory,
   Repository,
   Snapshot,
   TreeEntry,
 } from "../shared/types";
-import { MAX_BATCH_FILES } from "../shared/types";
+import { EMPTY_COMMIT, MAX_BATCH_FILES } from "../shared/types";
+import { repositoryNameProblem } from "../shared/starting-point";
 import { ObjectCache } from "./blob-cache";
 
 export class HttpError extends Error {
@@ -135,7 +137,7 @@ export class GitHub {
     return this.request<T>(path, "GET", undefined, limit, fresh);
   }
 
-  async write<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  async write<T>(path: string, method: "POST" | "PATCH" | "PUT", body: unknown): Promise<T> {
     return this.request<T>(path, method, body);
   }
 
@@ -230,6 +232,70 @@ export class GitHub {
       if (byToken!.get(key)?.repos === repos) byToken!.delete(key);
     });
     return repos;
+  }
+
+  /** The GitHub App's installations on the personal account `login`. */
+  async installations(login: string): Promise<number[]> {
+    const installations = await this.pages<{
+      id: number;
+      account: { type: string; login: string };
+    }>("/user/installations", "installations");
+    return installations
+      .filter(
+        (installation) =>
+          installation.account.type === "User" &&
+          installation.account.login.toLowerCase() === login.toLowerCase(),
+      )
+      .map((installation) => installation.id);
+  }
+
+  /** Forgets the remembered repository listing of `login`, so the next one asks GitHub. */
+  forgetRepositories(login: string) {
+    listings.get(this.fetcher)?.delete(`${login.toLowerCase()}\n${this.token}`);
+  }
+
+  /**
+   * Creates an empty repository (no commits) on the signed-in personal
+   * account. GitHub allows it to a GitHub App's user token when the App
+   * has the Administration (or Repository creation) permission, write, on an
+   * installation on the account; a repository the App creates this way is
+   * added to an installation limited to selected repositories by itself.
+   * Without an installation (404) or that permission (403) the editor sends
+   * the user to GitHub's own New repository page instead.
+   */
+  async createRepository(login: string, input: CreateRepositoryRequest): Promise<Repository> {
+    const problem = repositoryNameProblem(input.name);
+    if (problem) throw new HttpError(400, problem);
+    const installations = await this.installations(login);
+    if (!installations.length)
+      throw new HttpError(404, "The editor is not installed on your GitHub account yet. Create the repository on GitHub, then give the editor access to it.");
+    let created: Repository;
+    try {
+      created = await this.write<Repository>("/user/repos", "POST", {
+        name: input.name,
+        private: input.private,
+        ...(input.description ? { description: input.description.slice(0, 350) } : {}),
+        auto_init: false,
+      });
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      // GitHub answers 422 for a name already taken on the account.
+      if (error.status === 409)
+        throw new HttpError(409, `GitHub did not accept the name ${input.name}. You may already have a repository with that name; choose another.`);
+      if (error.status === 403 || error.status === 404)
+        throw new HttpError(403, "The editor may not create repositories on your account yet. Create it on GitHub, then give the editor access to it.");
+      throw error;
+    }
+    this.forgetRepositories(login);
+    return {
+      id: created.id,
+      name: created.name,
+      full_name: created.full_name,
+      private: created.private,
+      default_branch: created.default_branch || "main",
+      owner: { login: created.owner.login, type: created.owner.type },
+      installation_id: installations[0],
+    };
   }
 
   private async listRepositories(login: string): Promise<Repository[]> {
@@ -537,9 +603,14 @@ export class GitHub {
   async head(repo: Repository, branch: string, known?: string): Promise<{ sha: string; tree?: string }> {
     if (!branch || branch.length > 255)
       throw new HttpError(400, "Choose a branch.");
-    const ref = await this.get<{
-      commit: { sha: string; commit?: { tree?: { sha?: string } } };
-    }>(`${this.base(repo)}/branches/${segment(branch)}`, undefined, true);
+    type Branch = { commit: { sha: string; commit?: { tree?: { sha?: string } } } };
+    const ref = await this.get<Branch>(`${this.base(repo)}/branches/${segment(branch)}`, undefined, true).catch((error): Branch => {
+      // Right after the first save to an empty repository GitHub may not
+      // list its new branch yet; the commit the editor made is the head.
+      if (error instanceof HttpError && error.status === 404 && known && known !== EMPTY_COMMIT && /^[a-f0-9]{40}$/.test(known))
+        return { commit: { sha: known } };
+      throw error;
+    });
     const named = { sha: ref.commit.sha, tree: ref.commit.commit?.tree?.sha };
     if (!known || known === named.sha || !/^[a-f0-9]{40}$/.test(known)) return named;
     const compare = await this.get<{ status?: string }>(

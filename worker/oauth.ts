@@ -340,7 +340,7 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
 <p><strong>${escapeHtml(client.name)}</strong> (returning to <code>${escapeHtml(where.host)}</code>) asks to work on one of your sites as <strong>${escapeHtml(user.login)}</strong>.</p>
 <form method="post" action="/auth/mcp/authorize" class="panel" id="consent">
   <input type="hidden" name="request" value="${nonce}">
-  ${repositories.length ? `<fieldset><legend>Repository</legend>${choices}</fieldset>` : `<p>The editor's GitHub App is not installed on any repository you can use. Install it first, then connect again.</p>`}
+  ${repositories.length ? `<fieldset><legend>Repository</legend>${choices}</fieldset>` : `<p>You have no repository in the editor yet, so there is no site to connect to. <a href="/" target="_blank" rel="noopener">Open the editor</a> and use <strong>Get started</strong> to create a repository (or give the editor access to one you have), then connect again.</p>`}
   <p class="muted">It works on the repository your editor tab shows, starting with the one chosen here. It can read that repository's files and your unsaved changes in the editor, and make changes that appear in your open editor tab as unsaved drafts. It cannot save to GitHub or publish; you review and save. The connection lasts until you sign out of the editor (at most eight hours) or choose Disconnect MCP.</p>
   <p class="actions">
     ${repositories.length ? `<button name="decision" value="allow" class="primary">Allow</button>` : ""}
