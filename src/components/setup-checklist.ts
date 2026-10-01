@@ -33,8 +33,8 @@ const ITEMS: { id: SetupItemId; title: string; text: string; action?: string; op
   { id: "start", title: "Start your site", text: "Add a first page from the Starter site or a blank page.", action: "Choose a start" },
   { id: "save", title: "Save to GitHub", text: "Keep your first version in the repository.", action: "Open Save" },
   { id: "name", title: "Name your site", text: "The name the editor uses for your site and its page details.", action: "Name it" },
-  { id: "online", title: "Put it online", text: "Host the files anywhere, then add the address here.", action: "Show how" },
   { id: "agent", title: "Connect an agent", text: "Let Claude, Codex or another agent work on the site as drafts.", action: "Connect", optional: true },
+  { id: "online", title: "Put it online", text: "Host the files anywhere, then add the address here.", action: "Show how" },
 ];
 
 export interface SetupView {
