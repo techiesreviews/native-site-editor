@@ -571,7 +571,19 @@ export function connectionPrompt(url: string, token: string, repo: string, task?
   const code = (text: string) => `\`${text}\``;
   const work = task
     ? `Then: ${task}`
-    : `Then repeatedly call ${code("wait_for_requests")}, make requested changes as unsaved editor drafts, and answer through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input. Follow whichever site I open. Continue until I say stop.`;
+    : `Then watch for my requests without spending a turn on each empty wait: run this loop as one shell command (in the background if your tools can wake you when it exits), which calls ${code("wait_for_requests")} until a request arrives or something fails, then prints the response:
+
+\`\`\`bash
+while :; do
+  r=$(curl -s --max-time 70 ${url} \\
+    -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\
+    -H "Accept: application/json, text/event-stream" \\
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"wait_for_requests","arguments":{"waitSeconds":50}}}')
+  case "$r" in *"No requests yet"*) ;; *) echo "$r"; break ;; esac
+done
+\`\`\`
+
+Make the requested changes as unsaved editor drafts and answer each through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input; my answer to a question arrives through the loop as well. Then run the loop again. If your shell stops the loop on a timeout, start it again. Follow whichever site I open. Continue until I say stop.`;
   return `Connect to Native Site Editor for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me edit my site ${repo}.
 
 Server: ${code(url)}
