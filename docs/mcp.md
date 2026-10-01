@@ -87,6 +87,12 @@ Resources: `native-site://conventions` (how a native site is laid out, `worker/s
 
 Every change is checked twice: by the Worker against what the tab last reported (hash of the file or page, the section ids of its outline, section components only, one waiting change per file, at most ten waiting), and by the tab against its live state just before applying (the file's hash again, the outline recomputed from the source). Typing in the editor after the agent read a file therefore makes its edit a conflict, never an overwrite.
 
+## Before the site exists
+
+When an agent calls `get_site` and the editor tab is not sharing a site (no tab open, no repository chosen, or the user is not signed in), the response carries `available: false` and a note: the steps the agent should tell the user to take: 1) open the editor and sign in with GitHub (a free GitHub account works); 2) open a repository (choose one in the project menu, or create one on the Get started screen with the editor's Create repository form, or use `gh repo create <name> --public` yourself if you have the GitHub CLI, then give the editor access on GitHub); 3) keep the editor tab open; then call `get_site` again.
+
+When the editor tab shows a repository but it has nothing to render—it is empty (no commits yet) or has no `index.html` at its root—the response carries `empty: true` or `start: "<message>"`. For both cases: write `index.html` and `styles/site.css` as the native-site://conventions' "Starting a site from nothing" describes (a full HTML document with its details in the head, root links, and the stylesheet link), or ask the user to choose **Starter site** on the Start your site screen in the editor, then call `get_site` again. The conventions resource and `edit_site` prompt give examples. The prompt on the Start your site screen suggests: "The prompt connects Claude Code, Codex or another coding agent to this editor tab over MCP and asks it to build the site."
+
 ## Boundaries
 
 - **Scope.** A connection is one signed-in editor session, working on the repository its editor tab shows (before any tab shares, the one it was made in). Every MCP request rechecks the session, and that the GitHub App installation includes that repository against a listing at most a minute old, so a burst of tool calls asks GitHub once. Revoking the connection or signing out takes effect at once; removing the repository from the installation, within that minute. A repository, branch or revision change refuses queued changes made for the old one.

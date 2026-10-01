@@ -6,6 +6,18 @@ The editor is a small TypeScript browser app served by one Cloudflare Worker (`w
 
 `wrangler.jsonc` is the legacy Cloudflare Pages project behind the reference deployment's `native-site-editor.pages.dev` fallback. A new installation does not need it.
 
+## New users
+
+**No GitHub account:** The sign-in page links to GitHub's free account sign-up.
+
+**No repository in the editor yet:** After signing in, the Get started screen offers two paths. Create a site: enter a repository name, choose public or private visibility, and pick a starting point—**Starter site** (a small studio site with pages, components and styles to customize) or **Blank page** (one HTML page and one stylesheet). The editor creates the repository via the GitHub App's POST /user/repos endpoint; it then appears in the list. If the App has no Administration permission or is not installed on the account, the form links to GitHub's New repository page, prefilled with the name and template (for Starter site), and the user completes the creation there, then gives the editor access on GitHub's application settings. Or use an existing repository: open GitHub's application settings, give the editor access to it, and **Reload** in the editor.
+
+**Empty repository or no index.html:** The Start your site screen shows the same starting points—Starter site or Blank page. The choice writes that starting point as drafts you review in the editor, with the option to Save to GitHub. For an empty repository, the first save is two commits: the contents API creates index.html (which GitHub's git API cannot do for an empty repository), then the rest of the files are added via the git API on top.
+
+**Starter site:** Downloaded as a tarball from the public template [techiesreviews/native-site-editor-starter](https://github.com/techiesreviews/native-site-editor-starter) at deployment time. The editor removes the template's own deployment configuration (.github/, wrangler.jsonc, .assetsignore) and resets `.editor/config.json` to the new site's name and no address.
+
+**Build it with an agent:** Both Get started and Start your site offer a prompt to copy for an MCP agent, asking it to create the repository (if needed) and build the site through the editor. Agents use `gh repo create` and the native-site-editor MCP server.
+
 ## Self-hosting in six steps
 
 Requirements: Node 22.12+, a free Cloudflare account, a GitHub account, and a domain on Cloudflare **or** willingness to use a `workers.dev` address.
@@ -55,7 +67,7 @@ Owner setup fills these in. To register an App by hand, start at [New GitHub App
 - Keep expiring user tokens enabled. Leave authorization during installation off: this editor initiates authorization with its own state cookie.
 - Set the installation setup URL to the editor origin; enable redirect on update if desired.
 - Disable webhooks.
-- Repository permissions: **Contents: read and write**, **Metadata: read-only**, **Actions: read**. Contents write enables commits of selected files; Actions read lets the save status show a commit's workflow runs. No Workflows or account permissions are requested.
+- Repository permissions: **Contents: read and write**, **Metadata: read-only**, **Actions: read**, and **Administration: read and write**. Contents write enables commits of selected files; Actions read lets the save status show a commit's workflow runs (added 2026-09-25). Administration read and write enables Get started to create a repository for the signed-in user through POST /user/repos with the App's user token; GitHub adds repositories created this way to an installation limited to selected repositories, so users review which repositories to give the editor. No Workflows or account permissions are requested.
 - Allow installation on any account for eventual public use. The editor lists only repositories owned by the signed-in personal account.
 
 Save the **Client ID**, a generated **client secret**, and the **App slug**: into `.dev.vars` for local use (names in `.dev.vars.example`), or as Worker secrets with `npx wrangler secret put <NAME> --config wrangler.sessions.jsonc`. A GitHub App private key is not needed for the user-token flow. Install the App on selected repositories, then use **Connect GitHub** in the editor. After changing repository access, use **Reload**.
@@ -63,6 +75,17 @@ Save the **Client ID**, a generated **client secret**, and the **App slug**: int
 See GitHub's [registration documentation](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app) and [user authorization flow](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app).
 
 For an existing read-only App, follow the [permission upgrade steps](publishing.md#enable-publishing-on-the-existing-app).
+
+## Enable repository creation on the existing app
+
+An App registered before this change (2026-10-01) did not request Administration permission, so Get started falls back to GitHub's New repository page. To enable direct repository creation:
+
+1. Open the GitHub App's permissions (for the production app, [native-site-editor-techies](https://github.com/settings/apps/native-site-editor-techies/permissions)).
+2. Under **Repository permissions**, add **Administration** with **Read and write** access and save. Keep **Contents** at read and write, **Metadata** read-only, and **Actions** read-only.
+3. Open [installed GitHub Apps](https://github.com/settings/installations), find the app, and each installation owner accepts its updated permissions on the repository access page (Settings → Applications → Installed GitHub Apps → Review request).
+4. Reconnect in the editor: sign out and sign in again, or open a new session. Get started then creates repositories directly.
+
+Until the updated permission is accepted, the editor uses the fallback to GitHub's New repository page.
 
 ## Sessions and accounts
 
@@ -80,7 +103,7 @@ See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration
 
 ## Test repository
 
-`fixtures/native-starter/` is a small native site, test data for the editor: `index.html` and `about/index.html` as full pages, components under `components/`, a shared stylesheet in `styles/` and `.editor/config.json`. For a real site start from `native-site-editor-starter`, whose repository root is the site: copy it into a GitHub repository and install the GitHub App on that repository. There is no build step (see [hosting](hosting.md)).
+`fixtures/native-starter/` is a small native site, test data for the editor: `index.html` and `about/index.html` as full pages, components under `components/`, a shared stylesheet in `styles/` and `.editor/config.json`. For a real site, use Get started to create a repository and choose Starter site, or copy `native-site-editor-starter` into a GitHub repository yourself and install the GitHub App on that repository. There is no build step (see [hosting](hosting.md)).
 
 ## Verification and current limits
 

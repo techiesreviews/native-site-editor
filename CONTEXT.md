@@ -54,3 +54,9 @@ The numbered marker on the element of an agent request in the preview, showing w
 
 **External agent workflow**:
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
+
+**Get started**:
+A screen shown to a signed-in user with no repository in the editor yet. It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor.
+
+**Starting point**:
+The initial content written to an empty repository or one without a home page: either the Starter site (a small studio site downloaded from the public template techiesreviews/native-site-editor-starter, prepared for the new site) or a Blank page (one HTML page at index.html and one stylesheet at styles/site.css in the native conventions). Both are written as drafts when the user chooses them through Get started or Start your site, and saved to GitHub when the user chooses Save.
