@@ -4780,9 +4780,19 @@ function agentFileTarget(path: string): FileRowTarget | undefined {
   const now = pathNow(path);
   return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
 }
+// Waits for a home page's resync, refusing when the user opened another
+// account's, repository's or branch's site meanwhile: the agent's command
+// was checked against the one it started on.
+async function awaitNativeResync() {
+  if (!nativeResyncDone) return;
+  const before = { account: info.user?.login, repoId: currentRepo?.id, branch: snapshot?.branch };
+  await nativeResyncDone;
+  if (before.account !== info.user?.login || before.repoId !== currentRepo?.id || (before.branch && before.branch !== snapshot?.branch))
+    throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
+}
 const agentSiteActions: AgentSiteActions = {
   async text(path) {
-    await nativeResyncDone;
+    await awaitNativeResync();
     const mounted = editorModule?.getMountedSource(path);
     if (mounted !== undefined) return mounted;
     const scope = draftScope();
