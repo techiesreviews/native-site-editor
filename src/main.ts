@@ -27,6 +27,7 @@ import { createCreateDialog, type CreateKind, type CreateRequest } from "./compo
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
+import { EMPTY_COMMIT } from "../shared/types";
 import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
 import { createStartSite } from "./components/start-site";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
@@ -3574,6 +3575,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   commitHistory?.refresh();
   if (nativeSite) refreshNativeRoutes();
   updateAgentContext();
+  if (resyncNativeSite()) return undefined;
   if (creation.folder) {
     // The new folder shows open in the tree, with the dialog's focus returned to it.
     const parts = creation.folder.split("/");
@@ -3824,6 +3826,29 @@ function releaseFiles(paths: Set<string>) {
 }
 
 // After files changed: the drafts' listings, routes, both trees and the agent.
+// The native site switches on or off with the home page: a root index.html
+// written as a draft (by the user, Start your site or an agent) makes the
+// repository a native site, and discarding it, with none on GitHub, makes
+// it a site-less repository again (Start your site). Done by opening the
+// project again, as the drafts are kept. True while that is pending.
+let nativeResyncing = false;
+function resyncNativeSite(): boolean {
+  if (nativeResyncing) return true;
+  const scope = draftScope();
+  if (!scope || !snapshot) return false;
+  const home = draftStore().get(scope, NATIVE_HOME_PAGE);
+  const drafted = Boolean(home && home.baseSha === null && !home.deleted);
+  const committed = snapshot.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob");
+  const wanted = committed || drafted;
+  if (wanted === nativeEngaged) return false;
+  nativeResyncing = true;
+  queueMicrotask(() => {
+    // Nothing is reopened when the home page went away; else the open file is.
+    void loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; });
+  });
+  return true;
+}
+
 function afterFileChanges() {
   forgetDraftedAssets();
   editorModule?.refreshDrafts();
@@ -3838,6 +3863,7 @@ function afterFileChanges() {
   renderFileTree();
   updateAgentContext();
   updateCurrentPageLabel();
+  resyncNativeSite();
 }
 
 // Opens `path` after an operation, or the home page (else the folder summary)
@@ -4003,6 +4029,8 @@ function discardDrafts(paths?: string[]): number {
   // Undo would replay edits into files that are GitHub's again.
   editorModule?.clearHistory();
   afterFileChanges();
+  // The new site's home page was discarded: the project opens again as site-less.
+  if (resyncNativeSite()) return count;
   if (nativeModeActive()) updateNativePreviewSources();
   if (opened) {
     const back = openDraft?.movedFrom && chosen.has(openDraft.movedFrom) ? openDraft.movedFrom
@@ -4635,7 +4663,7 @@ async function mountSource(
     },
     onHistory: openHistory,
     onDiscardAll: () => void discardAllChanges(),
-    publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? trustedHead() : undefined),
+    publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? (snapshot.empty ? EMPTY_COMMIT : trustedHead()) : undefined),
     onRefused: () => void checkBranchHead(true),
     onDiscardChange: discardFileChange,
     deletedUpstream: (path) => deletedUpstream.has(path),
@@ -5119,6 +5147,11 @@ async function loadSnapshot(
     renderFileTree();
     updateExplorerTabs(true);
     showDirectory(result);
+    // Agents see the site as it is now (pages found, or none yet).
+    updateAgentContext();
+    // A repository made on GitHub's own page for a chosen starting point gets it now.
+    const chosenPoint = !isNative ? takeStartingPoint(repo) : undefined;
+    if (chosenPoint) void writeStartingPoint(chosenPoint).then((problem) => { if (problem) errorMessage(new Error(problem)); });
     if (info.user)
       rememberWorkspace(info.user.login, {
         repoId: repo.id,
@@ -5292,6 +5325,25 @@ async function checkNewRepositories() {
   }
 }
 
+// The starting point chosen on Get started when the repository was made on
+// GitHub's own page: kept (localStorage, by account and repository name, as
+// the way back may be a new tab) until that repository opens.
+const startingPointKey = (name: string) => `native-site-editor:starting-point:${info.user?.login.toLowerCase() ?? ""}/${name.toLowerCase()}`;
+function rememberStartingPoint(name: string, point: StartingPoint) {
+  try { localStorage.setItem(startingPointKey(name), point); } catch { /* Not kept: Start your site asks. */ }
+}
+function takeStartingPoint(repo: Repository): StartingPoint | undefined {
+  try {
+    const key = startingPointKey(repo.name);
+    const point = localStorage.getItem(key);
+    if (point === null) return undefined;
+    localStorage.removeItem(key);
+    return point === "starter" || point === "blank" ? point : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Create a site: a new empty repository on the account (the Worker needs
 // the App's Administration permission for it), opened with the chosen
 // starting point written as drafts. When the editor may not create it,
@@ -5310,8 +5362,10 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
     return { ok: false, message: "GitHub could not be reached. Try again." };
   }
   const data = await response.json().catch(() => ({}));
-  if (response.status === 403 || response.status === 404)
+  if (response.status === 403 || response.status === 404) {
+    rememberStartingPoint(choice.name, choice.point);
     return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
+  }
   if (!response.ok) return { ok: false, message: data.error || "The repository could not be created. Try again." };
   const repo = data as Repository;
   waitingForRepositories = false;

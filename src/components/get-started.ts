@@ -2,7 +2,6 @@ import { button, link, node } from "../ui/dom";
 import { icon } from "../icons";
 import {
   DEFAULT_REPOSITORY_NAME,
-  STARTER_TEMPLATE,
   repositoryNameProblem,
   suggestedRepositoryName,
   type StartingPoint,
@@ -34,13 +33,13 @@ export interface CreateChoice {
   point: StartingPoint;
 }
 
-/** GitHub's New repository page, prefilled; from the starter template for the Starter site. */
+/**
+ * GitHub's New repository page, prefilled, for an empty repository: the
+ * starting point is written by the editor when the repository opens (a
+ * template copy would bring the template's own deployment and test address).
+ */
 export function newRepositoryUrl(choice: CreateChoice) {
   const url = new URL("https://github.com/new");
-  if (choice.point === "starter") {
-    url.searchParams.set("template_owner", STARTER_TEMPLATE.owner);
-    url.searchParams.set("template_name", STARTER_TEMPLATE.name);
-  }
   url.searchParams.set("name", choice.name);
   url.searchParams.set("visibility", choice.private ? "private" : "public");
   url.searchParams.set("description", "A website edited with Native Site Editor");
@@ -162,6 +161,10 @@ export function createGetStarted(options: {
         ? node("span", "", `${chosen.name} is on GitHub.`)
         : external(`Create ${chosen.name} on GitHub`, newRepositoryUrl(chosen), "text-link"),
     );
+    if (!created)
+      first.append(
+        node("span", "onboard-card__note", ` Leave it empty: no README, .gitignore or license. The editor adds ${chosen.point === "starter" ? "the Starter site" : "a blank page"} once it opens the repository.`),
+      );
     const second = node("li");
     if (options.installUrl) second.append(external("Give the editor access to it", options.installUrl, "text-link"));
     else second.append(node("span", "", "Give the editor access to it on GitHub."));

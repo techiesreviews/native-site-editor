@@ -1,5 +1,6 @@
 import { publishButton, showPublish } from "./publish";
 import { expect, test, type Page } from "@playwright/test";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // New-user flows in the real editor UI, against the fake GitHub's onboarding
 // controls (see the top of server.ts): sign-in, Get started (creating a
@@ -114,8 +115,10 @@ test("when the editor may not create repositories, GitHub's New repository page 
   const url = new URL((await link.getAttribute("href"))!);
   expect(url.origin + url.pathname).toBe("https://github.com/new");
   expect(url.searchParams.get("name")).toBe("my-site");
-  expect(url.searchParams.get("template_name")).toBeTruthy();
-  expect(url.searchParams.get("template_owner")).toBeTruthy();
+  // An empty repository, never a copy of the template: the editor adds the prepared starter itself.
+  expect(url.searchParams.has("template_name")).toBe(false);
+  expect(url.searchParams.has("template_owner")).toBe(false);
+  await expect(page.locator(".onboard-fallback")).toContainText("Leave it empty");
   // The attempt is recorded as received, but nothing was made: the account still lists no repository.
   expect((await state(page, baseURL)).repositories).toEqual([]);
 });
@@ -204,4 +207,69 @@ test("a normal native repository opens straight into the preview", async ({ page
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(page.getByRole("heading", { name: "Start your site" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Get started" })).toHaveCount(0);
+});
+
+test("a repository made on GitHub's page gets the chosen starting point when it opens", async ({ page, baseURL }) => {
+  await control(page, baseURL, { create: "forbidden" });
+  await openGetStarted(page, baseURL);
+  await page.getByLabel("Repository name").fill("later-site");
+  await page.getByRole("button", { name: "Create repository" }).click();
+  await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
+  // The user makes it empty on GitHub and gives the editor access; it opens with the starter, unasked.
+  await control(page, baseURL, { add: [{ name: "later-site", kind: "empty" }] });
+  // Opened once, without a reload in between: the choice is taken the first time the repository opens.
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "later-site")!.id}&branch=main`);
+  await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
+  const panel = await listChanges(page);
+  await expect(panel).toContainText("index.html");
+  // The template's own deployment is not part of it.
+  await expect(panel).not.toContainText("wrangler.jsonc");
+});
+
+test("the first save of an empty repository works after the tab has been open for hours", async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none", add: [{ name: "blank-repo", kind: "empty" }] });
+  await page.clock.install();
+  await openRepository(page, baseURL, "blank-repo");
+  await expect(page.getByText("Empty repository")).toBeVisible({ timeout: 30_000 });
+  await startSiteWith(page, "Blank page");
+  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
+  await page.clock.fastForward("02:00:00");
+  await listChanges(page);
+  await publishNow(page);
+  expect(await head(page, baseURL, "blank-repo")).toMatch(/^[0-9a-f]{40}$/);
+});
+
+test("a home page an agent writes switches the site on, and discarding all brings Start your site back", async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none", add: [{ name: "agent-repo", kind: "empty" }] });
+  await openRepository(page, baseURL, "agent-repo");
+  await expect(page.getByText("Empty repository")).toBeVisible({ timeout: 30_000 });
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  const prompt = await page.evaluate(() => navigator.clipboard.readText());
+  const url = /Server: `(\S+)`/.exec(prompt)![1];
+  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
+  const client = new Client({ name: "playwright-agent", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press("Escape");
+  const site = async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })) as any).content[0].text);
+  try {
+    expect((await site()).native).toBe(false);
+    const html = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>Agent site</title></head>\n<body><main><h1 data-key="title">Agent made</h1></main></body></html>\n';
+    const written = await client.callTool({ name: "write_file", arguments: { path: "index.html", content: html } });
+    expect(written.isError).toBeFalsy();
+    await expect(frame(page).getByRole("heading", { name: "Agent made" })).toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => (await site()).native, { timeout: 15_000 }).toBe(true);
+    expect((await site()).pages?.length ?? 1).toBeGreaterThan(0);
+
+    // Discard changes on the unsaved site: the repository is site-less again.
+    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Discard all" }).click();
+    await expect(page.getByRole("heading", { name: "Start your site" })).toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => (await site()).native, { timeout: 15_000 }).toBe(false);
+  } finally {
+    await client.close();
+  }
 });
