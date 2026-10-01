@@ -157,12 +157,14 @@ export async function addUpload(options: {
   folder: string;
   file: Blob & { name: string };
   taken: (path: string) => boolean | Promise<boolean>;
+  /** The file's name is its whole path, kept as it is (a starting point's images), not made a name of its own. */
+  exact?: boolean;
   now?: number;
 }): Promise<UploadResult> {
   const { file, scope } = options;
   const problem = uploadProblem(file);
   if (problem) return { ok: false, error: problem };
-  const path = await uploadPath(options.folder, file.name, options.taken);
+  const path = options.exact ? file.name : await uploadPath(options.folder, file.name, options.taken);
   const data = new Uint8Array(await file.arrayBuffer());
   const sha = await gitBlobSha(data);
   const type = file.type || uploadImageType(path) || "application/octet-stream";

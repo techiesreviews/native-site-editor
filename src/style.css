@@ -747,6 +747,15 @@ dd {
   text-align: center;
   margin: 16px 0;
 }
+.login-new {
+  text-align: center;
+  font-size: var(--type-small);
+  color: var(--muted);
+  margin: 14px 0 0;
+}
+.login-new a {
+  color: var(--link);
+}
 .login-footnote {
   text-align: center;
   font-size: var(--type-small);

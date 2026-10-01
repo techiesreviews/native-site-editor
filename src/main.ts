@@ -10,7 +10,7 @@ import {
   rememberWorkspace,
   type WorkspaceLocation,
 } from "./workspace-state";
-import { createAgentMenu } from "./components/agent-menu";
+import { createAgentMenu, setupPrompt } from "./components/agent-menu";
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type SavedDraft } from "./drafts";
@@ -27,12 +27,15 @@ import { createCreateDialog, type CreateKind, type CreateRequest } from "./compo
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
+import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
+import { createStartSite } from "./components/start-site";
+import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker, type PagePickerItem } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, movedRoute, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, pruneUnchanged, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
-import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl } from "./uploads";
+import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
@@ -62,6 +65,7 @@ import type {
   Repository,
   SessionInfo,
   Snapshot,
+  StarterFile,
   TreeEntry,
 } from "../shared/types";
 
@@ -2108,7 +2112,9 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   // The home page first. Without it the project opens as plain files; once
   // it is there, the project is native and every later failure surfaces as
   // a native error rather than silently hiding the preview.
-  if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob")) return false;
+  // A home page written as a draft (Start your site) counts: the site is native before its first save.
+  const draftedHome = scope ? draftStore().get(scope, NATIVE_HOME_PAGE) : undefined;
+  if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") && !(draftedHome && draftedHome.baseSha === null && !draftedHome.deleted)) return false;
   nativeEngaged = true;
   nativeSite = undefined;
   try {
@@ -2471,8 +2477,9 @@ function renderLogin(
       <h1 id="login-title">Sign in to your workspace</h1>
       <p class="login-description">Connect your GitHub account to access your projects.</p>
       <div id="login-action"></div>
+      <p class="login-new">New to GitHub? <a href="https://github.com/signup" target="_blank" rel="noopener noreferrer">Create a free account</a></p>
       <div id="notice" class="login-notice" role="alert" hidden></div>
-      <p class="login-footnote">Your workspace is available after you sign in.</p>
+      <p class="login-footnote">The editor asks GitHub for access to the repositories you choose, and saves your changes to them as commits.</p>
     </main>
   `;
   const action = element("login-action");
@@ -2522,9 +2529,125 @@ function renderLogin(
   }
 }
 
+// Start your site: in place of the preview when the repository has nothing
+// to show, because it is empty or has no index.html at its top.
+let startDialog: ReturnType<typeof createConfirmDialog> | undefined;
+function startSitePanel() {
+  const repo = currentRepo!;
+  return createStartSite({
+    repository: repo.name,
+    empty: Boolean(snapshot?.empty),
+    start: writeStartingPoint,
+    agent: async (about) => {
+      const prompt = setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: repo.name, private: repo.private, about });
+      try {
+        await navigator.clipboard.writeText(prompt);
+        return "Copied. Paste it into Claude Code, Codex or another coding agent.";
+      } catch {
+        return "Clipboard access was denied. Allow it in your browser and copy again.";
+      }
+    },
+  }).root;
+}
+
+// A starting point's files as drafts: the files of `point` (the blank page,
+// or the Starter site the Worker fetches), new files as new drafts, images
+// as uploads, then the project opened again so the preview shows the site.
+// A file that is already there is replaced only when the user says so.
+async function writeStartingPoint(point: StartingPoint): Promise<string | undefined> {
+  const repo = currentRepo;
+  const scope = draftScope();
+  if (!repo || !scope) return "Open a repository first.";
+  const epoch = generation;
+  const siteName = siteNameFromRepository(repo.name);
+  let starting: StarterFile[];
+  try {
+    starting = point === "blank" ? blankSiteFiles(siteName) : (await api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
+  } catch (error) {
+    return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
+  }
+  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  const state = new Map<string, "free" | "taken" | "folder">();
+  try {
+    for (const file of starting) {
+      const now = pathNow(file.path);
+      const found = now === undefined ? await findEntry(file.path) : undefined;
+      state.set(file.path, now === "folder" ? "folder" : now !== undefined || found ? "taken" : "free");
+    }
+  } catch (error) {
+    return error instanceof Error ? error.message : "GitHub could not be asked which files exist.";
+  }
+  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  const taken = starting.filter((file) => state.get(file.path) === "taken");
+  let replace = false;
+  if (taken.length) {
+    if (!startDialog) {
+      startDialog = createConfirmDialog("start-dialog");
+      document.body.append(startDialog.root);
+    }
+    const shown = taken.slice(0, 6).map((file) => file.path).join(", ") + (taken.length > 6 ? ` and ${taken.length - 6} more` : "");
+    const answer = await startDialog.choose({
+      title: taken.length === 1 ? "A file is already there" : `${taken.length} files are already there`,
+      notes: [`${shown} ${taken.length === 1 ? "is" : "are"} in this repository already.`, "Keep yours and add only the rest, or replace them with the starting point's? A replaced text file stays a draft you can discard."],
+      actions: [{ label: "Keep mine", value: "keep" }, { label: "Replace them", value: "replace" }],
+    });
+    if (!answer.value) return "Nothing was added.";
+    replace = answer.value === "replace";
+    if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  }
+  const problems: string[] = [];
+  let added = 0;
+  for (const file of starting) {
+    const here = state.get(file.path);
+    if (here === "folder") { problems.push(`${file.path} is a folder here.`); continue; }
+    if (here === "taken" && !replace) continue;
+    if ("base64" in file) {
+      // Images and other bytes go the way an upload does; one in the way stays.
+      if (here === "taken") continue;
+      const bytes = Uint8Array.from(atob(file.base64), (char) => char.charCodeAt(0));
+      const result = await addUpload({
+        drafts: draftStore(), bytes: uploadBytes(), scope, folder: "", exact: true,
+        file: new File([bytes], file.path, { type: uploadImageType(file.path) }),
+        taken: () => false,
+      });
+      if (result.ok) added++;
+      else problems.push(result.error);
+      continue;
+    }
+    const drafted = draftStore().get(scope, file.path);
+    if (drafted?.upload || drafted?.opaque) continue;
+    let baseSha: string | null = null;
+    let original = "";
+    if (drafted) ({ baseSha, original } = drafted);
+    else if (here === "taken") {
+      try {
+        const entry = await findEntry(file.path);
+        if (entry) { baseSha = entry.sha; original = await readFile(repo.full_name, entry.sha); }
+      } catch {
+        problems.push(`${file.path} could not be read, so it was left as it is.`);
+        continue;
+      }
+    }
+    draftStore().save({ ...scope, version: 1, path: file.path, baseSha, original, content: file.content, updatedAt: Date.now() });
+    added++;
+  }
+  if (epoch !== generation) return undefined;
+  const failure = draftStore().error;
+  if (failure) return failure;
+  // Opened again: the home page is a draft now, so the native preview takes over from this screen.
+  await loadSnapshot();
+  if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Save to GitHub to keep them.`);
+  if (problems.length) errorMessage(new Error(problems.join(" ")));
+  return undefined;
+}
+
 function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
   setCurrentPage();
+  if (!path && !nativeEngaged && currentRepo && snapshot) {
+    content.replaceChildren(startSitePanel());
+    return;
+  }
   const panel = node("section", "directory-summary");
   panel.append(
     node("span", "badge", nativeEngaged ? "✦ Native site" : "Explore this folder"),
@@ -4949,8 +5072,8 @@ async function loadSnapshot(
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
     const open = reopen ?? (isNative ? nativeSite?.routes["/"] : undefined);
-    element("revision").textContent = result.commit.slice(0, 7);
-    element("revision").title = result.commit;
+    element("revision").textContent = result.empty ? "—" : result.commit.slice(0, 7);
+    element("revision").title = result.empty ? "No commits yet" : result.commit;
     renderFileTree();
     updateExplorerTabs(true);
     showDirectory(result);
@@ -4962,6 +5085,10 @@ async function loadSnapshot(
       });
     if (open) await restoreFile(open, epoch);
     if (epoch !== generation) return;
+    if (result.empty) {
+      settleStatus(`${repo.name} is empty. Choose how to start your site.`);
+      return;
+    }
     settleStatus(
       `Up to date with ${branch} · ${result.commit.slice(0, 7)}. Refresh to check for new commits.`,
     );
@@ -5029,15 +5156,14 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     });
     if (epoch !== generation) return;
     if (!branches.length) {
-      options(branchSelect, [{ value: "", label: "No branches yet" }]);
-      content.replaceChildren(
-        node(
-          "p",
-          "empty-message",
-          "This repository is empty. Add your site files on GitHub, then reload repositories.",
-        ),
-      );
-      status("Empty repository.");
+      // An empty repository opens on its default branch with no files, so
+      // drafts work; its first save makes the branch.
+      const branch = currentRepo.default_branch || "main";
+      options(branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
+      branchSelect.value = branch;
+      branchSelect.disabled = false;
+      // The Worker answers for it with an empty snapshot at EMPTY_COMMIT.
+      await loadSnapshot(undefined, branch === requestedBranch ? prefetched : undefined);
       return;
     }
     options(
@@ -5081,7 +5207,73 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   }
 }
 
+// Get started: the screen of an account with no repository in the editor.
+// Coming back to the tab (from GitHub, where access was given or a
+// repository made) lists the repositories again.
+let waitingForRepositories = false;
+let openNewRepository = false;
+function showGetStarted() {
+  const screen = createGetStarted({
+    login: info.user?.login ?? "",
+    installUrl: info.installUrl,
+    editor: location.origin,
+    create: createSite,
+    reload: () => void loadRepositories(),
+  });
+  content.replaceChildren(screen.root);
+  status("Connected. Create a site or choose a repository.");
+  waitingForRepositories = true;
+}
+window.addEventListener("focus", () => void checkNewRepositories());
+document.addEventListener("visibilitychange", () => void checkNewRepositories());
+async function checkNewRepositories() {
+  if (!waitingForRepositories || document.visibilityState !== "visible" || !content.querySelector(".get-started")) return;
+  try {
+    const next = await api<Repository[]>("repositories");
+    if (next.length && waitingForRepositories && content.querySelector(".get-started")) await loadRepositories(next);
+  } catch {
+    // Listed again on the next visit.
+  }
+}
+
+// Create a site: a new empty repository on the account (the Worker needs
+// the App's Administration permission for it), opened with the chosen
+// starting point written as drafts. When the editor may not create it,
+// Get started offers GitHub's own New repository page instead.
+async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/api/repositories", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: choice.name, private: choice.private, description: "A website edited with Native Site Editor" }),
+    });
+  } catch {
+    return { ok: false, message: "GitHub could not be reached. Try again." };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 403 || response.status === 404)
+    return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
+  if (!response.ok) return { ok: false, message: data.error || "The repository could not be created. Try again." };
+  const repo = data as Repository;
+  waitingForRepositories = false;
+  repositories = [...repositories.filter((known) => known.id !== repo.id), repo];
+  repositoryOptions();
+  repositorySelect.disabled = false;
+  repositorySelect.value = String(repo.id);
+  repositoryMenu?.setRepositories(repositories);
+  await chooseRepository();
+  if (currentRepo?.id === repo.id) {
+    const problem = await writeStartingPoint(choice.point);
+    if (problem) errorMessage(new Error(problem));
+  }
+  return { ok: true };
+}
+
 async function loadRepositories(prefetched?: Repository[]) {
+  waitingForRepositories = false;
   const epoch = ++generation;
   fileGeneration++;
   currentRepo = undefined;
@@ -5111,29 +5303,7 @@ async function loadRepositories(prefetched?: Repository[]) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
       ]);
-      const panel = node("section", "welcome");
-      panel.append(
-        node("div", "intro-label", "CONNECTED TO GITHUB"),
-        node("h1", "", "Choose your first\nrepository."),
-        node(
-          "p",
-          "intro",
-          "Give this editor access to selected repositories on your personal account. Then return here and reload.",
-        ),
-      );
-      const actions = node("div", "actions");
-      if (info.installUrl) {
-        const install = link("Choose repositories ↗", info.installUrl);
-        install.target = "_blank";
-        install.rel = "noopener noreferrer";
-        actions.append(install);
-      }
-      actions.append(
-        button("Reload repositories", () => void loadRepositories()),
-      );
-      panel.append(actions);
-      content.replaceChildren(panel);
-      status("Connected. Choose repositories to continue.");
+      showGetStarted();
       return;
     }
     repositoryOptions();
@@ -5154,6 +5324,17 @@ async function loadRepositories(prefetched?: Repository[]) {
         ),
       );
       return;
+    }
+    // Back from giving the editor access: the one repository that is new opens.
+    if (openNewRepository) {
+      openNewRepository = false;
+      const known = new Set((info.repositories ?? []).map((repo) => repo.id));
+      const added = repositories.filter((repo) => !known.has(repo.id));
+      if (added.length === 1 && !linked) {
+        repositorySelect.value = String(added[0].id);
+        await chooseRepository();
+        return;
+      }
     }
     const previous =
       linked ?? (info.user ? readWorkspace(info.user.login) : undefined);
@@ -5315,7 +5496,17 @@ async function start() {
         },
       });
       element("agent-menu").append(agentMenu.root);
-      await loadRepositories(info.repositories ?? undefined);
+      // GitHub sends the user back here after the App was installed or its
+      // repositories changed: list them afresh, and tidy the address.
+      const returned = new URL(location.href);
+      const installed = returned.searchParams.has("installation_id") || returned.searchParams.has("setup_action");
+      if (installed) {
+        returned.searchParams.delete("installation_id");
+        returned.searchParams.delete("setup_action");
+        history.replaceState(null, "", returned);
+        openNewRepository = true;
+      }
+      await loadRepositories(installed ? undefined : info.repositories ?? undefined);
     } else {
       renderLogin();
     }
