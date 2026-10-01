@@ -7,7 +7,7 @@
 }
 .get-started h1,
 .start-site h1 {
-  font-size: 30px;
+  font-size: var(--type-heading);
   margin: 8px 0 12px;
 }
 .get-started .intro,
@@ -120,7 +120,8 @@
 .onboard-fallback {
   padding: 10px 12px;
   border-radius: var(--radius);
-  background: var(--surface);
+  border: 1px solid var(--control-line);
+  background: var(--surface-input);
   font-size: var(--type-base);
 }
 .onboard-fallback[hidden] { display: none; }

@@ -14,6 +14,7 @@ import caretLeft from "@phosphor-icons/core/regular/caret-left.svg?raw";
 import caretRight from "@phosphor-icons/core/regular/caret-right.svg?raw";
 import check from "@phosphor-icons/core/regular/check.svg?raw";
 import clockCounterClockwise from "@phosphor-icons/core/regular/clock-counter-clockwise.svg?raw";
+import confetti from "@phosphor-icons/core/regular/confetti.svg?raw";
 import copy from "@phosphor-icons/core/regular/copy.svg?raw";
 import dotsSixVertical from "@phosphor-icons/core/regular/dots-six-vertical.svg?raw";
 import dotsThree from "@phosphor-icons/core/regular/dots-three.svg?raw";
@@ -45,6 +46,7 @@ const icons = {
   "caret-right": caretRight,
   check,
   "clock-counter-clockwise": clockCounterClockwise,
+  confetti,
   copy,
   "dots-six-vertical": dotsSixVertical,
   "dots-three": dotsThree,

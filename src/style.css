@@ -711,76 +711,52 @@ dd {
   background: var(--background);
 }
 .login-card {
-  width: min(100%, 460px);
-  padding: 34px;
-  background: var(--surface);
+  width: min(100%, 360px);
+  padding: 24px;
+  background: var(--panel-surface);
   border: 0;
   border-radius: var(--radius-dialog);
   box-shadow: var(--shadow);
 }
 .login-brand {
-  margin-bottom: 29px;
+  margin-bottom: 16px;
   justify-content: center;
-  font-size: 14px;
+}
+.login-brand .brand-mark {
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius);
+  font-size: var(--type-title);
 }
 .login-card h1 {
-  font-size: 23px;
-  letter-spacing: -0.035em;
+  font-size: var(--type-title);
+  font-weight: 600;
+  letter-spacing: normal;
   line-height: 1.3;
   text-align: center;
-  margin-bottom: 10px;
-}
-.login-description {
-  color: var(--muted);
-  text-align: center;
-  font-size: var(--type-base);
-  line-height: 1.7;
-  margin: 0 0 26px;
+  margin: 0 0 16px;
 }
 .login-button {
   width: 100%;
-  min-height: 44px;
 }
 .login-state {
   color: var(--muted);
   font-size: var(--type-small);
   text-align: center;
-  margin: 16px 0;
-}
-.login-new {
-  text-align: center;
-  font-size: var(--type-small);
-  color: var(--muted);
-  margin: 14px 0 0;
-}
-.login-new a {
-  color: var(--link);
-}
-.login-footnote {
-  text-align: center;
-  font-size: var(--type-small);
-  color: var(--muted);
-  margin: 18px 0 0;
+  margin: 8px 0;
 }
 /* The same card for loading, signing in by itself and the button: the action
-   keeps its height and what is below stays out of sight until it is known. */
+   keeps its height, so nothing jumps when the answer arrives. */
 .login-action {
-  min-height: 78px;
-}
-.login-more {
-  min-height: 132px;
-}
-.login-card[data-mode="loading"] .login-more,
-.login-card[data-mode="auto"] .login-more {
-  visibility: hidden;
+  min-height: calc(var(--size-control) + 20px);
 }
 .login-busy {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
-  min-height: 44px;
+  min-height: var(--size-control);
 }
 .login-cancel {
   display: block;
@@ -819,35 +795,8 @@ dd {
     border-right-color: var(--primary);
   }
 }
-/* What happens next: the screenshots of GitHub's two pages, under the button. */
-.login-next {
-  margin-top: 18px;
-  font-size: var(--type-small);
-  color: var(--muted);
-}
-.login-next summary {
-  cursor: pointer;
-  color: var(--link);
-  text-align: center;
-}
-.login-next[open] summary {
-  margin-bottom: 12px;
-}
-.login-next__lead {
-  margin: 0 0 12px;
-  font-size: var(--type-base);
-  line-height: 1.6;
-  color: var(--text);
-}
-.login-next .trip__note {
-  color: var(--text);
-}
-.login-card:has(.login-next[open]) {
-  width: min(100%, 720px);
-}
 .login-setup {
-  margin-top: 20px;
-  padding-top: 15px;
+  margin-top: 16px;
   font-size: var(--type-small);
   color: var(--muted);
 }
@@ -861,7 +810,7 @@ dd {
   font-size: var(--type-base);
   padding: 12px;
   border-radius: var(--radius);
-  margin-top: 15px;
+  margin-top: 12px;
 }
 .login-notice[hidden] {
   display: none;
@@ -892,7 +841,7 @@ dd {
 }
 @media (max-width: 650px) {
   .login-card {
-    padding: 27px 24px;
+    padding: 20px;
   }
   .explorer-toggle {
     order: 3;

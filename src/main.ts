@@ -36,7 +36,6 @@ import { clearWizard, connectionFromOnboarding, openingStep, readWizard, writeWi
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
 import { spotlight } from "./components/spotlight";
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
-import { createGithubTrip } from "./components/github-trip";
 import { createSetupChecklist } from "./components/setup-checklist";
 import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
@@ -61,7 +60,7 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
@@ -2499,14 +2498,11 @@ function renderLogin(
     <main class="login-card" aria-labelledby="login-title" data-mode="${mode}">
       <a class="brand login-brand" href="/" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
       <h1 id="login-title">Welcome to Native Site Editor</h1>
-      <p class="login-description">Open your sites, or create your first one.</p>
       <div id="login-action" class="login-action"></div>
       <div id="notice" class="login-notice" role="alert" hidden></div>
-      <div id="login-more" class="login-more"></div>
     </main>
   `;
   const action = element("login-action");
-  const more = element("login-more");
   if (mode === "loading" || mode === "auto") {
     const loading = node("p", "login-state login-busy");
     loading.setAttribute("role", "status");
@@ -2529,22 +2525,6 @@ function renderLogin(
     // (the editor, GitHub's install page for an account without the App, or
     // the Setup wizard for a first site), so there is no choice to make here.
     action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
-    more.append(
-      node("p", "login-footnote", "The editor asks GitHub for access only to the repositories you choose, and saves your changes to them as commits."),
-    );
-    const signup = node("p", "login-new");
-    const create = link("Create a free account", "https://github.com/signup");
-    create.className = "";
-    create.target = "_blank";
-    create.rel = "noopener noreferrer";
-    signup.append("New to GitHub? ", create, " (then confirm the email GitHub sends you).");
-    const next = node("details", "login-next");
-    next.append(
-      node("summary", "", "What happens next?"),
-      node("p", "login-next__lead", "The first time, GitHub shows two pages: authorize the editor (it signs you in), then install it and choose All repositories."),
-      createGithubTrip({ note: "Then you're back here. Next time it's one click." }),
-    );
-    more.append(signup, next);
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -2656,7 +2636,6 @@ function mountSetupChecklist() {
       if (!problem) setupRemember({ named: true });
       return problem;
     },
-    saveUrl: (url) => writeSiteSettings({ url }),
     connect: spotlightAgentConnection,
     dismiss: () => {
       setupAsked = undefined;
@@ -2705,7 +2684,6 @@ function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
     homeUnsaved: drafted && home!.baseSha === null,
     siteName: settings.name,
     defaultName: siteNameFromRepository(repo.name),
-    siteUrl: settings.url,
   };
 }
 
@@ -2737,7 +2715,7 @@ function refreshSetup() {
     }, 4000);
     setupFinishing = { timer, scope: scopeKey };
   }
-  checklist.update({ progress, siteName: state.siteName, siteUrl: state.siteUrl, defaultName: state.defaultName, visible: setupVisible(memory, setupAsked === repo.id), scope: setupScope() });
+  checklist.update({ progress, siteName: state.siteName, defaultName: state.defaultName, visible: setupVisible(memory, setupAsked === repo.id), scope: setupScope() });
 }
 
 // The site's name or address into `.editor/config.json` as a draft (the
@@ -5549,8 +5527,8 @@ async function chooseRepository(resume?: WorkspaceLocation) {
 
 // ---- Setup wizard (src/setup-wizard.ts, components/setup-wizard.ts) ----
 // A full-screen guide over the page for a signed-in account with no
-// repository, in place of Get started: Create your site, Connect an agent
-// (optional), Put it online, Open the editor. Connect GitHub is its first
+// repository, in place of Get started: Connect GitHub, Create your site, then
+// a page that celebrates the new site and opens the editor. Connect GitHub is its first
 // step: done for an account with the App, and a retry for one that came back
 // from GitHub's install page without installing it (the worker sends a new
 // sign-in without the App to that page by itself). Its state is kept in
@@ -5592,6 +5570,7 @@ async function openWizard() {
     loadOwners: () => api<OwnerInstallation[]>("owners"),
     create: createSiteInWizard,
     findRepository: findWizardRepository,
+    loadPreview: wizardPreview,
     agentPrompt: (choice, about) =>
       setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }),
     remember: (change) => void writeWizard(localStorage, change),
@@ -5662,6 +5641,77 @@ async function createSiteInWizard(choice: CreateChoice): Promise<WizardCreateOut
     } else rememberStartingPoint(repository.owner.login, repository.name, choice.point);
   }
   return { ok: true, repo: wizardRepository(repository, Boolean(commit), partial), ...(startingPointError ? { error: startingPointError } : {}) };
+}
+
+/**
+ * The new site's home page as one self-contained document for the wizard's preview, built with the
+ * editor's own helpers: the linked stylesheets with their `@import` chains expanded (`expandStyleImports`)
+ * and the repository images turned into data URLs (`rewriteCssUrls`, `resolveImportPath`, as the editor's
+ * preview does). A page that needs scripts to render (shared components are custom elements) or that
+ * cannot be completed has no preview: the wizard shows its card instead, never a half-styled page.
+ */
+async function wizardPreview(repo: WizardRepo): Promise<string | undefined> {
+  try {
+    const snap = await api<Snapshot>("snapshot", { repo: repo.fullName, branch: repo.defaultBranch });
+    if (!snap.tree) return undefined;
+    const byPath = new Map(snap.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
+    const homeSha = byPath.get("index.html");
+    if (!homeSha) return undefined;
+    const home = (await readFiles(repo.fullName, [homeSha]))[homeSha];
+    if (typeof home !== "string") return undefined;
+    const body = nativePageBody(home);
+    if (/<[a-z][a-z\d]*-[a-z\d-]*[\s/>]/i.test(home.slice(body.start, body.end))) return undefined;
+    // Stylesheets: the linked ones, then every file they import, round by round.
+    const sheets: Record<string, string> = {};
+    const linked = nativePageStylesheets(home, "index.html");
+    for (let round = 0; round < 20; round++) {
+      const known = expandStyleImports(linked.filter((path) => path in sheets), (path) => sheets[path]);
+      const wanted = [...new Set([...linked, ...known.imported])].filter((path) => !(path in sheets) && byPath.has(path));
+      if (!wanted.length) break;
+      const contents = await readFiles(repo.fullName, wanted.map((path) => byPath.get(path)!));
+      for (const path of wanted) sheets[path] = contents[byPath.get(path)!] ?? "";
+    }
+    const expanded = expandStyleImports(linked.filter((path) => path in sheets), (path) => sheets[path]);
+    if (expanded.errors.length || linked.some((path) => !(path in sheets))) return undefined;
+    // Images the page and the sheets name, as data URLs (the frame cannot reach the repository).
+    const imagePath = (from: string, url: string) => {
+      const path = resolveImportPath(from, url);
+      return path && assetType(path) && byPath.has(path) ? path : undefined;
+    };
+    const wanted = new Set<string>();
+    for (const sheet of expanded.sheets)
+      rewriteCssUrls(sheet.source, (url) => {
+        const path = imagePath(sheet.path, url);
+        if (path) wanted.add(path);
+        return undefined;
+      });
+    for (const match of home.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+      const path = imagePath("index.html", match[1]);
+      if (path) wanted.add(path);
+    }
+    const images = new Map<string, string>();
+    for (const path of [...wanted].slice(0, 12)) {
+      const blob = await api<{ content: string }>("raw", { repo: repo.fullName, sha: byPath.get(path)! });
+      images.set(path, `data:${assetType(path)};base64,${blob.content}`);
+    }
+    const css = expanded.sheets
+      .map((sheet) => rewriteCssUrls(sheet.source, (url) => {
+        const path = imagePath(sheet.path, url);
+        return path ? images.get(path) : undefined;
+      }))
+      .join("\n");
+    let html = home.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+    for (const tag of home.match(/<link\b[^>]*>/gi) ?? []) if (/rel\s*=\s*["']?stylesheet/i.test(tag)) html = html.replace(tag, "");
+    html = html.replace(/(<img\b[^>]*?\bsrc\s*=\s*["'])([^"']+)(["'])/gi, (whole, before: string, url: string, after: string) => {
+      const path = imagePath("index.html", url);
+      const data = path ? images.get(path) : undefined;
+      return data ? `${before}${data}${after}` : whole;
+    });
+    const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+    return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `${style}</head>`) : `${style}${html}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function wizardRepository(repository: Repository, committed: boolean, partial = false): WizardRepo {

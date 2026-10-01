@@ -49,33 +49,36 @@ test("damaged or foreign stored state is ignored", () => {
   assert.equal(readWizard(store), undefined);
   store.setItem(WIZARD_KEY, JSON.stringify({ step: "hack", at: Date.now() }));
   assert.equal(readWizard(store), undefined);
-  store.setItem(WIZARD_KEY, JSON.stringify({ step: "online", at: Date.now(), repo: { id: "x" }, point: "evil" }));
+  store.setItem(WIZARD_KEY, JSON.stringify({ step: "open", at: Date.now(), repo: { id: "x" }, point: "evil" }));
   const read = readWizard(store)!;
   assert.equal(read.repo, undefined);
   assert.equal(read.point, undefined);
 });
 
-test("the steps run Connect GitHub, Create your site, Connect an agent, Put it online, Open the editor", () => {
+test("the steps run Connect GitHub, Create your site, Your site is ready", () => {
   assert.deepEqual(
     WIZARD_STEPS.map((step) => step.title),
-    ["Connect GitHub", "Create your site", "Connect an agent", "Put it online", "Open the editor"],
+    ["Connect GitHub", "Create your site", "Your site is ready"],
   );
-  assert.deepEqual(WIZARD_STEPS.filter((step) => step.optional).map((step) => step.id), ["agent"]);
-  assert.equal(stepNumber("agent"), 3);
-  assert.equal(stepNumber("online"), 4);
-  assert.equal(stepAfter("create"), "agent");
-  assert.equal(stepAfter("agent"), "online");
+  assert.equal(stepNumber("open"), 3);
+  assert.equal(stepAfter("create"), "open");
   assert.equal(stepAfter("open"), "open");
   assert.equal(stepBefore("connect"), "connect");
-  assert.equal(stepBefore("online"), "agent");
-  assert.equal(stepBefore("open"), "online");
+  assert.equal(stepBefore("open"), "create");
+});
+
+test("a wizard kept by an older version at its agent or online step opens on the last page", () => {
+  for (const step of ["agent", "online"]) {
+    const store = memoryStore();
+    store.setItem(WIZARD_KEY, JSON.stringify({ step, at: Date.now() }));
+    assert.equal(readWizard(store)!.step, "open");
+  }
 });
 
 test("an account whose App is installed skips Connect GitHub; one without it opens there, with the retry", () => {
   assert.equal(openingStep(undefined, "installed"), "create");
   assert.equal(openingStep({ step: "connect", at: 1 }, "installed"), "create");
-  assert.equal(openingStep({ step: "agent", at: 1 }, "installed"), "agent");
-  assert.equal(openingStep({ step: "online", at: 1 }, "installed"), "online");
+  assert.equal(openingStep({ step: "open", at: 1 }, "installed"), "open");
   assert.equal(openingStep(undefined, "not-installed"), "connect");
   assert.equal(openingStep({ step: "create", at: 1 }, "not-installed"), "connect");
 });

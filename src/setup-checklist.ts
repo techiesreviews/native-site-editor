@@ -2,7 +2,7 @@
 // editor already holds, and what it remembers per account and repository.
 // Pure, so it is tested without a browser (tests/setup-checklist.test.ts).
 
-export type SetupItemId = "start" | "save" | "name" | "online" | "agent";
+export type SetupItemId = "start" | "save" | "name" | "agent";
 
 export interface SetupState {
   /** The repository has a root index.html, committed or drafted. */
@@ -17,22 +17,20 @@ export interface SetupState {
   defaultName: string;
   /** The user confirmed the name in the checklist's own form. */
   nameConfirmed?: boolean;
-  /** The site address in `.editor/config.json`, drafts included. */
-  siteUrl?: string;
   /** An agent is connected, or was for this repository. */
   agent: boolean;
 }
 
 export interface SetupProgress {
   done: Record<SetupItemId, boolean>;
-  /** Items that count toward done: Start, Save, Name and Put it online. */
+  /** Items that count toward done: Start, Save and Name (Connect an agent is optional; putting the site online comes later). */
   required: SetupItemId[];
   doneCount: number;
   total: number;
   complete: boolean;
 }
 
-export const REQUIRED_ITEMS: SetupItemId[] = ["start", "save", "name", "online"];
+export const REQUIRED_ITEMS: SetupItemId[] = ["start", "save", "name"];
 
 export function setupProgress(state: SetupState): SetupProgress {
   const named = Boolean(state.siteName && (state.siteName !== state.defaultName || state.nameConfirmed));
@@ -40,7 +38,6 @@ export function setupProgress(state: SetupState): SetupProgress {
     start: state.homePage,
     save: state.committed && state.homePage && !state.homeUnsaved,
     name: named,
-    online: Boolean(state.siteUrl),
     agent: state.agent,
   };
   const doneCount = REQUIRED_ITEMS.filter((id) => done[id]).length;
@@ -112,27 +109,3 @@ export function withSiteSettings(text: string | undefined, change: { name?: stri
   if (change.url !== undefined) site.url = change.url;
   return { text: `${JSON.stringify({ ...value, site }, null, 2)}\n` };
 }
-
-/** A site address as typed ("my-site.pages.dev" too) as an http(s) address, or why not. */
-export function parseSiteAddress(input: string): { url: string } | { error: string } {
-  const typed = input.trim();
-  const bad = { error: "That does not look like a web address, such as https://my-site.pages.dev." };
-  if (!typed) return { error: "Enter the address of your site." };
-  const text = /^[a-z][a-z\d+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`;
-  try {
-    const parsed = new URL(text);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { error: "The address starts with https://." };
-    if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") return bad;
-    return { url: parsed.href };
-  } catch {
-    return bad;
-  }
-}
-
-/** The hosts the Put it online panel lists (docs/hosting.md). */
-export const HOSTS = [
-  { name: "Cloudflare Pages", how: "Connect the repository, leave the build command empty and set the output folder to /." },
-  { name: "Netlify", how: "Import the repository, leave the build command empty and set the publish folder to /." },
-  { name: "Vercel", how: "Import the repository, choose Other as the framework, leave the build command empty and set the output folder to /." },
-  { name: "Any other host", how: "Upload the repository's files as they are." },
-] as const;

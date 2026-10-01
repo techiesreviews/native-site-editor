@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseSiteAddress,
   readSetupMemory,
   setupProgress,
   setupVisible,
@@ -19,7 +18,7 @@ const memoryStore = () => {
 test("an empty repository has nothing done", () => {
   const progress = setupProgress(fresh);
   assert.equal(progress.doneCount, 0);
-  assert.equal(progress.total, 4);
+  assert.equal(progress.total, 3);
   assert.equal(progress.complete, false);
 });
 
@@ -43,14 +42,17 @@ test("a site named like its repository is not named yet, unless the user confirm
   assert.equal(setupProgress({ ...base, nameConfirmed: true }).done.name, false, "a confirmed name still needs a name");
 });
 
-test("the address ticks Put it online, and the agent never blocks done", () => {
+test("the three required items complete the checklist, and the agent never blocks done", () => {
   const base = { ...fresh, homePage: true, committed: true, siteName: "Larkspur" };
-  const online = setupProgress({ ...base, siteUrl: "https://larkspur.example/" });
-  assert.equal(online.done.online, true);
-  assert.equal(online.complete, true);
-  assert.equal(online.done.agent, false);
-  assert.equal(setupProgress({ ...base, siteUrl: "https://x.example/", agent: true }).done.agent, true);
-  assert.equal(setupProgress({ ...base, agent: true }).complete, false);
+  const all = setupProgress(base);
+  assert.deepEqual(all.required, ["start", "save", "name"]);
+  assert.equal(all.doneCount, 3);
+  assert.equal(all.total, 3);
+  assert.equal(all.complete, true);
+  assert.equal(all.done.agent, false);
+  assert.equal(setupProgress({ ...base, agent: true }).done.agent, true);
+  assert.equal(setupProgress({ ...fresh, agent: true }).complete, false);
+  assert.equal("online" in all.done, false, "no Put it online item until publishing works properly");
 });
 
 test("memory is kept per account and repository, and survives bad storage", () => {
@@ -85,13 +87,6 @@ test("site settings are written into the config, keeping the rest", () => {
   assert.ok("text" in withUrl);
   assert.deepEqual(JSON.parse(withUrl.text), { site: { name: "N", url: "https://n.example/" } });
   for (const broken of ["{nope", "[]", "42"]) assert.ok("error" in withSiteSettings(broken, { name: "X" }), broken);
-});
-
-test("an address typed loosely becomes an http(s) address, or says why not", () => {
-  assert.deepEqual(parseSiteAddress("my-site.pages.dev"), { url: "https://my-site.pages.dev/" });
-  assert.deepEqual(parseSiteAddress("  https://Larkspur.example/path "), { url: "https://larkspur.example/path" });
-  assert.deepEqual(parseSiteAddress("http://localhost:8080"), { url: "http://localhost:8080/" });
-  for (const bad of ["", "   ", "ftp://x.example", "not a url", "nodots"]) assert.ok("error" in parseSiteAddress(bad), bad);
 });
 
 test("a config whose site is not an object, or that is not JSON, is never overwritten", () => {

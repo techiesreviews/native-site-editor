@@ -50,10 +50,13 @@ async function openChecklist(page: Page) {
   await expect(panel(page)).toBeVisible();
 }
 
-test("an empty repository's checklist goes from 1/4 to done as the site is saved, named and put online", async ({ page, baseURL }) => {
+test("an empty repository's checklist goes from 1/3 to 3/3 as the site is saved and named", async ({ page, baseURL }) => {
   await startBlankSite(page, baseURL);
-  await expect(pill(page)).toHaveText("Setup 1/4");
+  await expect(pill(page)).toHaveText("Setup 1/3");
   await openChecklist(page);
+  await expect(page.locator(".setup-item")).toHaveCount(4);
+  await expect(panel(page).locator(".setup-item[data-item]")).toHaveText([/Start your site/, /Save to GitHub/, /Name your site/, /Connect an agent\s*Optional/]);
+  await expect(panel(page).getByText("Put it online")).toHaveCount(0);
   await expect(item(page, "start")).toHaveClass(/is-done/);
   await expect(item(page, "save")).not.toHaveClass(/is-done/);
   await expect(item(page, "agent")).toContainText("Optional");
@@ -64,7 +67,7 @@ test("an empty repository's checklist goes from 1/4 to done as the site is saved
   await expect(page.locator("#publish-files")).toBeVisible();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await expect(pill(page)).toHaveText("Setup 2/4", { timeout: 30_000 });
+  await expect(pill(page)).toHaveText("Setup 2/3", { timeout: 30_000 });
 
   // Name your site: Site name field, saved as a draft, then with Save.
   await openChecklist(page);
@@ -72,29 +75,16 @@ test("an empty repository's checklist goes from 1/4 to done as the site is saved
   await panel(page).getByLabel("Site name").fill("Blank Studio");
   await panel(page).getByRole("button", { name: "Save name" }).click();
   await expect(item(page, "name")).toHaveClass(/is-done/);
-  await expect(pill(page)).toHaveText("Setup 3/4");
+  // Three required items done: the checklist is complete (the optional agent does not count).
+  await expect(panel(page).locator(".setup-panel__complete")).toBeVisible();
+  await expect(page.locator(".setup-checklist")).toHaveAttribute("data-complete", "true");
+  await expect(item(page, "agent")).not.toHaveClass(/is-done/);
   await page.keyboard.press("Escape");
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   const config = JSON.parse(await (await file(page, baseURL, "blank-repo", ".editor/config.json")).text());
   expect(config.site.name).toBe("Blank Studio");
-
-  // Put it online explains hosting and takes the address.
-  await openChecklist(page);
-  await item(page, "online").getByRole("button", { name: /Show how/ }).click();
-  for (const host of ["Cloudflare Pages", "Netlify", "Vercel", "Any other host"]) await expect(item(page, "online")).toContainText(host);
-  await panel(page).getByLabel("Address once it is live").fill("not an address");
-  await panel(page).getByRole("button", { name: "Add the address" }).click();
-  await expect(item(page, "online")).not.toHaveClass(/is-done/);
-  await expect(item(page, "online").locator(".put-online__message")).toContainText("does not look like a web address");
-  await panel(page).getByLabel("Address once it is live").fill("blank-studio.pages.dev");
-  await panel(page).getByRole("button", { name: "Add the address" }).click();
-  await expect(panel(page).locator(".setup-panel__complete")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  const saved = JSON.parse(await (await file(page, baseURL, "blank-repo", ".editor/config.json")).text());
-  expect(saved.site).toEqual({ name: "Blank Studio", url: "https://blank-studio.pages.dev/" });
+  expect(config.site.url).toBeUndefined();
 
   // "Your site is set up" for a moment, then the pill is gone, also after a reload.
   await expect(pill(page)).toBeHidden({ timeout: 15_000 });
@@ -115,7 +105,7 @@ test("dismissing the checklist hides it for the repository and stays hidden afte
   await page.getByRole("button", { name: /repository actions/ }).click();
   await page.getByRole("button", { name: "Set up your site" }).click();
   await expect(panel(page)).toBeVisible();
-  await expect(pill(page)).toHaveText("Setup 1/4");
+  await expect(pill(page)).toHaveText("Setup 1/3");
 });
 
 test("the checklist is keyboard operable and fits a narrow window", async ({ page, baseURL }) => {
@@ -143,29 +133,6 @@ test("an ordinary repository shows no checklist by itself but has it in the proj
   await expect(item(page, "start")).toHaveClass(/is-done/);
   await expect(item(page, "save")).toHaveClass(/is-done/);
   await expect(pill(page)).toBeVisible();
-});
-
-test("the address field starts afresh in another repository", async ({ page, baseURL }) => {
-  await control(page, baseURL, { repositories: "none", add: [{ name: "site-a", kind: "empty" }, { name: "site-b", kind: "empty" }] });
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
-  const id = (name: string) => repos.find((entry) => entry.name === name)!.id;
-  await page.goto(`${baseURL}/#repo=${id("site-a")}&branch=main`);
-  await page.reload();
-  await page.getByRole("button", { name: /^Blank page/ }).click();
-  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
-  await openChecklist(page);
-  await item(page, "online").getByRole("button", { name: /Show how/ }).click();
-  await panel(page).getByLabel("Address once it is live").fill("a.pages.dev");
-  await panel(page).getByRole("button", { name: "Add the address" }).click();
-  await expect(item(page, "online")).toHaveClass(/is-done/);
-  await page.keyboard.press("Escape");
-
-  await page.goto(`${baseURL}/#repo=${id("site-b")}&branch=main`);
-  await page.getByRole("button", { name: /^Blank page/ }).click();
-  await expect(pill(page)).toHaveText("Setup 1/4", { timeout: 30_000 });
-  await openChecklist(page);
-  await item(page, "online").getByRole("button", { name: /Show how/ }).click();
-  await expect(panel(page).getByLabel("Address once it is live")).toHaveValue("");
 });
 
 // Connect an agent: says what an agent is for and spotlights the project menu's

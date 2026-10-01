@@ -1,18 +1,17 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import type { SetupItemId, SetupProgress } from "../setup-checklist";
-import { createPutOnline } from "./put-online";
 import "./dropdown.css";
 import "./onboarding.css";
 import "./setup-checklist.css";
 
-// Set up your site: a small "Setup 2/4" pill in the top bar that opens a
+// Set up your site: a small "Setup 2/3" pill in the top bar that opens a
 // short checklist in a popover under it (not a modal; Escape or a click
 // elsewhere closes it, and it never covers the preview's edit bar or the
 // Publish button's own panel, which replace it when opened). Each item has a
 // title, one line, an action and a done state, ticked from real state by
-// `update` (src/setup-checklist.ts). Name your site and Put it online open
-// their form under the item. The × dismisses the checklist for the
+// `update` (src/setup-checklist.ts). Name your site opens
+// its form under the item. The × dismisses the checklist for the
 // repository; it hides itself after showing "Your site is set up".
 
 export interface SetupActions {
@@ -22,8 +21,6 @@ export interface SetupActions {
   save: () => void;
   /** Writes the site name to the settings as a draft; resolves to a problem. */
   saveName: (name: string) => Promise<string | undefined>;
-  /** Writes the site address to the settings as a draft; resolves to a problem. */
-  saveUrl: (url: string) => Promise<string | undefined>;
   /** Opens the agent menu's connect flow. */
   connect: () => void;
   dismiss: () => void;
@@ -34,14 +31,12 @@ const ITEMS: { id: SetupItemId; title: string; text: string; action?: string; op
   { id: "save", title: "Save to GitHub", text: "Keep your first version in the repository.", action: "Open Save" },
   { id: "name", title: "Name your site", text: "The name the editor uses for your site and its page details.", action: "Name it" },
   { id: "agent", title: "Connect an agent", text: "Let Claude, Codex or another agent work on the site as drafts.", action: "Connect", optional: true },
-  { id: "online", title: "Put it online", text: "Host the files anywhere, then add the address here.", action: "Show how" },
 ];
 
 export interface SetupView {
   progress: SetupProgress;
-  /** The site name and address the settings have now, for the forms. */
+  /** The site name the settings have now, for the form. */
   siteName?: string;
-  siteUrl?: string;
   /** The site's default name, offered when it has none. */
   defaultName: string;
   visible: boolean;
@@ -133,14 +128,8 @@ export function createSetupChecklist(actions: SetupActions) {
   nameDetail.hidden = true;
   nameDetail.append(nameForm, nameMessage);
 
-  // Put it online.
-  const online = createPutOnline({ save: actions.saveUrl });
-  const onlineDetail = node("div", "setup-detail");
-  onlineDetail.hidden = true;
-  onlineDetail.append(online.root);
-
-  const details: Partial<Record<SetupItemId, HTMLElement>> = { name: nameDetail, online: onlineDetail };
-  const focusOf: Partial<Record<SetupItemId, () => void>> = { name: () => nameInput.focus(), online: () => online.focus() };
+  const details: Partial<Record<SetupItemId, HTMLElement>> = { name: nameDetail };
+  const focusOf: Partial<Record<SetupItemId, () => void>> = { name: () => nameInput.focus() };
 
   function toggleDetail(id: SetupItemId) {
     const detail = details[id];
@@ -215,7 +204,7 @@ export function createSetupChecklist(actions: SetupActions) {
   // The menu item that asks for the checklist on any repository.
   let onRequest: () => void = () => {};
   const menuItem = button("Set up your site", () => onRequest(), "text-button repository-menu__action setup-menu-item");
-  menuItem.title = "Show the checklist for getting this site started, saved, named and online";
+  menuItem.title = "Show the checklist for getting this site started, saved and named";
 
   function update(view: SetupView) {
     const { progress } = view;
@@ -246,7 +235,6 @@ export function createSetupChecklist(actions: SetupActions) {
       nameMessage.textContent = "";
       nameMessage.classList.remove("is-error");
     } else if (document.activeElement !== nameInput && !nameDirty) nameInput.value = view.siteName ?? view.defaultName;
-    online.setUrl(view.siteUrl, view.scope);
   }
 
   return {

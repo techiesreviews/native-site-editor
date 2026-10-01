@@ -91,6 +91,8 @@
   --type-base: 13px;
   /* Panel and dialog titles. */
   --type-title: 15px;
+  /* A page's own heading: the wizard's last page, Get started. */
+  --type-heading: 20px;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Corners: a badge, a control or row, a floating panel, a dialog. */

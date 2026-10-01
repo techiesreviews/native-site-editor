@@ -90,37 +90,16 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(page.getByRole("button", { name: "Create your site" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveCount(0);
   await expect(page.locator(".login-card").getByRole("button")).toHaveCount(0);
-  await expect(page.getByText(/asks GitHub for access only to the repositories you choose/)).toBeVisible();
-  const signup = page.getByRole("link", { name: "Create a free account" });
-  await expect(signup).toHaveAttribute("href", "https://github.com/signup");
-  await expect(signup).toHaveAttribute("target", "_blank");
-  await expect(signup).toHaveAttribute("rel", /noopener/);
-  await expect(page.getByText(/then confirm the email GitHub sends you/)).toBeVisible();
-});
-
-test("What happens next? shows GitHub's two pages with real screenshots that open larger and close with Escape", async ({ page, baseURL }) => {
-  await signedOutSession(page);
-  await page.goto(`${baseURL}/`);
-  const screenshot = page.getByRole("img", { name: /install page for Native Site Editor/ });
-  await expect(screenshot, "folded away until asked for").toBeHidden();
-  await page.getByText("What happens next?").click();
-  await expect(page.getByText(/authorize the editor \(it signs you in\), then install it/)).toBeVisible();
-  await expect(page.getByText("If GitHub asks you to sign in")).toBeVisible();
-  await expect(page.getByText("Next time it's one click.")).toBeVisible();
-  const signin = page.getByRole("img", { name: /GitHub's sign-in page/ });
-  await expect(signin).toBeVisible();
-  await expect(screenshot).toBeVisible();
-  for (const image of [signin, screenshot]) expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(300);
-  await screenshot.click();
-  const box = page.locator("dialog.lightbox");
-  await expect(box).toBeVisible();
-  await expect(box.getByRole("img", { name: /install page for Native Site Editor/ })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(box).toHaveCount(0);
-  // The Close button and a click on the backdrop close it too.
-  await signin.click();
-  await box.getByRole("button", { name: "Close" }).click();
-  await expect(box).toHaveCount(0);
+  // The card is the heading and the button, nothing else: no subtitle, no notes, no sign-up line, no disclosure.
+  await expect(page.getByText("Open your sites, or create your first one.")).toHaveCount(0);
+  await expect(page.getByText(/asks GitHub for access only to the repositories you choose/)).toHaveCount(0);
+  await expect(page.getByText(/New to GitHub\?/)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Create a free account" })).toHaveCount(0);
+  await expect(page.getByText("What happens next?")).toHaveCount(0);
+  await expect(page.locator(".login-card details")).toHaveCount(0);
+  await expect(page.locator(".login-card img")).toHaveCount(0);
+  await expect(page.locator(".login-card p")).toHaveCount(0);
+  await expect(page.locator(".login-card a")).toHaveCount(2);
 });
 
 test("a valid session skips the sign-in screen: the editor opens with no button", async ({ page, baseURL }) => {

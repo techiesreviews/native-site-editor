@@ -3,14 +3,14 @@
 // storage-agnostic, so it is tested without a browser (tests/setup-wizard.test.ts).
 import type { StartingPoint } from "../shared/starting-point";
 
-export type WizardStepId = "connect" | "create" | "agent" | "online" | "open";
+export type WizardStepId = "connect" | "create" | "open";
 
-export const WIZARD_STEPS: { id: WizardStepId; title: string; optional?: boolean }[] = [
+// Connecting an agent is in the Set up your site checklist, in the editor;
+// putting the site online comes later, when publishing works properly.
+export const WIZARD_STEPS: { id: WizardStepId; title: string }[] = [
   { id: "connect", title: "Connect GitHub" },
   { id: "create", title: "Create your site" },
-  { id: "agent", title: "Connect an agent", optional: true },
-  { id: "online", title: "Put it online" },
-  { id: "open", title: "Open the editor" },
+  { id: "open", title: "Your site is ready" },
 ];
 
 /** The repository the wizard made, as far as the later steps need it. */
@@ -49,7 +49,10 @@ const stepIds = new Set<string>(WIZARD_STEPS.map((step) => step.id));
 export function readWizard(store: Store, now = Date.now()): WizardMemory | undefined {
   try {
     const value = JSON.parse(store.getItem(WIZARD_KEY) ?? "null");
-    if (!value || typeof value !== "object" || !stepIds.has(value.step) || typeof value.at !== "number") return undefined;
+    if (!value || typeof value !== "object" || typeof value.at !== "number") return undefined;
+    // Steps an older version had (connect an agent, put it online) are the last page now.
+    if (value.step === "agent" || value.step === "online") value.step = "open";
+    if (!stepIds.has(value.step)) return undefined;
     if (now - value.at > WIZARD_LIFETIME_MS || value.at > now + 60_000) return undefined;
     const out: WizardMemory = { step: value.step, at: value.at };
     if (typeof value.name === "string") out.name = value.name.slice(0, 100);
