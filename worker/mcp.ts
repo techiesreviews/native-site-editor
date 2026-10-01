@@ -147,7 +147,7 @@ function openRequests(hub: AgentHub | undefined, repoId: number) {
  * shares a site (signed out, no repository chosen yet, or the tab closed).
  */
 export function notSharingMessage(origin: string) {
-  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. The connection then works on whichever repository the tab shows; call get_site again.`;
+  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. The connection then works on whichever repository the tab shows; call get_site again.`;
 }
 
 /** Why a page tool cannot run before the repository has a home page. */

@@ -2489,7 +2489,7 @@ function renderLogin(
       <h1 id="login-title">Sign in to your workspace</h1>
       <p class="login-description">Connect your GitHub account to access your projects.</p>
       <div id="login-action"></div>
-      <p class="login-new">New to GitHub? <a href="https://github.com/signup" target="_blank" rel="noopener noreferrer">Create a free account</a></p>
+      <p class="login-new">New to GitHub? <a href="https://github.com/signup" target="_blank" rel="noopener noreferrer">Create a free account</a>, confirm the email GitHub sends you, then come back and continue.</p>
       <div id="notice" class="login-notice" role="alert" hidden></div>
       <p class="login-footnote">The editor asks GitHub for access to the repositories you choose, and saves your changes to them as commits.</p>
     </main>
