@@ -68,7 +68,8 @@ test("manifest registers the private hosted App with exact permissions and callb
     actions: "read",
     administration: "write",
   });
-  assert.equal(manifest.request_oauth_on_install, false);
+  assert.equal(manifest.request_oauth_on_install, true);
+  assert.equal((manifest as { setup_url?: string }).setup_url, undefined);
   assert.deepEqual(manifest.hook_attributes, {
     active: false,
     url: `${origin}/auth/setup/webhook`,

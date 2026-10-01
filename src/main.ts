@@ -30,6 +30,9 @@ import { createConfirmDialog } from "./components/confirm-dialog";
 import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
 import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
 import { createStartSite } from "./components/start-site";
+import { createSetupWizard, createWizardLanding, type WizardCreateOutcome } from "./components/setup-wizard";
+import { clearWizard, openingStep, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
+import { announceConnected } from "./wizard-tabs";
 import { createSetupChecklist } from "./components/setup-checklist";
 import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
@@ -2487,7 +2490,7 @@ function renderLogin(
     <main class="login-card" aria-labelledby="login-title">
       <a class="brand login-brand" href="/" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
       <h1 id="login-title">Sign in to your workspace</h1>
-      <p class="login-description">Connect your GitHub account to access your projects.</p>
+      <p class="login-description">Create your first site, or connect your GitHub account to open your projects.</p>
       <div id="login-action"></div>
       <p class="login-new">New to GitHub? <a href="https://github.com/signup" target="_blank" rel="noopener noreferrer">Create a free account</a>, confirm the email GitHub sends you, then come back and continue.</p>
       <div id="notice" class="login-notice" role="alert" hidden></div>
@@ -2508,12 +2511,10 @@ function renderLogin(
       ),
     );
   } else if (info?.configured) {
+    // New here: the Setup wizard. Back again: sign in.
     action.append(
-      link(
-        "Continue with GitHub",
-        "/auth/login",
-        "button primary login-button",
-      ),
+      button("Create your site", () => void openWizard(), "button primary login-button"),
+      link("Sign in with GitHub", "/auth/login", "button secondary login-button login-signin"),
     );
   } else {
     const disabled = button(
@@ -2709,7 +2710,7 @@ async function writeSiteSettings(change: { name?: string; url?: string }): Promi
 // or the Starter site the Worker fetches), new files as new drafts, images
 // as uploads, then the project opened again so the preview shows the site.
 // A file that is already there is replaced only when the user says so.
-async function writeStartingPoint(point: StartingPoint): Promise<string | undefined> {
+async function writeStartingPoint(point: StartingPoint, partial?: { committed: string[]; repoId: number }): Promise<string | undefined> {
   const repo = currentRepo;
   const scope = draftScope();
   if (!repo || !scope) return "Open a repository first.";
@@ -2726,6 +2727,8 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
     return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
   }
   if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  // Finishing a starting point that stopped part way: the files already committed stay as they are, and nothing else is overwritten.
+  if (partial) starting = starting.filter((file) => !partial.committed.includes(file.path));
   const state = new Map<string, "free" | "taken" | "folder">();
   // A file cannot go under a path that is a file: the folder it needs is taken by one.
   const blockedBy = new Map<string, string>();
@@ -2757,7 +2760,7 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
   if (!bound()) return "The repository changed meanwhile. Try again.";
   const taken = starting.filter((file) => state.get(file.path) === "taken");
   let replace = false;
-  if (taken.length) {
+  if (taken.length && !partial) {
     if (!startDialog) {
       startDialog = createConfirmDialog("start-dialog");
       document.body.append(startDialog.root);
@@ -2825,6 +2828,11 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
   const failure = draftStore().error;
   if (failure) return failure;
   startSetupChecklist(repo.id);
+  // Finished: the recovery record and its banner go before the reload below, which would offer them again.
+  if (partial) {
+    forgetPartialStart(partial.repoId);
+    removeFinishStarter();
+  }
   // Opened again: the home page is a draft now, so the native preview takes over from this screen.
   await loadSnapshot();
   if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Save to GitHub to keep them.`);
@@ -5261,6 +5269,7 @@ async function loadSnapshot(
   prefetched?: Promise<Snapshot>,
 ) {
   if (!currentRepo || !branchSelect.value) return;
+  removeFinishStarter();
   const reopen =
     resumePath ??
     (snapshot?.branch === branchSelect.value ? currentPath : undefined);
@@ -5322,6 +5331,9 @@ async function loadSnapshot(
     const remembered = !isNative ? takeStartingPoint(repo) : undefined;
     const chosenPoint = result.empty ? remembered : undefined;
     if (chosenPoint) void writeStartingPoint(chosenPoint).then((problem) => { if (problem) errorMessage(new Error(problem)); });
+    // A starting point that stopped part way is offered to be finished.
+    const partialStart = result.empty ? undefined : readPartialStart(repo.id);
+    if (partialStart) offerFinishStarter(repo, partialStart);
     if (info.user)
       rememberWorkspace(info.user.login, {
         repoId: repo.id,
@@ -5452,6 +5464,229 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   }
 }
 
+// ---- Setup wizard (src/setup-wizard.ts, components/setup-wizard.ts) ----
+// A full-screen guide over the page: for a signed-out visitor from the
+// sign-in screen's Create your site, and for a signed-in account with no
+// repository in place of Get started. Its state is kept in localStorage so it
+// survives the trip to GitHub, which opens in another tab.
+let wizard: ReturnType<typeof createSetupWizard> | undefined;
+let wizardLanding: ReturnType<typeof createWizardLanding> | undefined;
+/** The wizard was left in this page load: Get started shows instead. */
+let wizardDismissed = false;
+/** The repository the wizard made, for the editor to open at the end. */
+let wizardCreated: Repository | undefined;
+
+/** What this browser's GitHub connection is: signed out, signed in without the App, or with it installed. */
+async function wizardConnection(): Promise<Connection> {
+  try {
+    const response = await fetch("/api/owners", { credentials: "same-origin", cache: "no-store" });
+    if (response.status === 401) return "signed-out";
+    if (!response.ok) return "not-installed";
+    const owners = (await response.json()) as OwnerInstallation[];
+    return owners.length ? "installed" : "not-installed";
+  } catch {
+    return "signed-out";
+  }
+}
+
+async function openWizard() {
+  if (wizard || wizardLanding) return;
+  wizardDismissed = false;
+  const memory = readWizard(localStorage);
+  const connection: Connection = info.user ? await wizardConnection() : "signed-out";
+  if (wizard || wizardLanding) return;
+  // GitHub sent this tab back while another one still waits for it: that one carries on.
+  if (info.user && memory?.waiting) {
+    if (await announceConnected()) {
+      wizardLanding = createWizardLanding({
+        login: info.user.login,
+        onContinue: () => {
+          wizardLanding?.root.remove();
+          wizardLanding = undefined;
+          writeWizard(localStorage, { waiting: false });
+          void openWizard();
+        },
+      });
+      document.body.append(wizardLanding.root);
+      wizardLanding.focus();
+      return;
+    }
+    writeWizard(localStorage, { waiting: false });
+  }
+  const step = openingStep(memory, connection);
+  const kept = writeWizard(localStorage, { step });
+  wizard = createSetupWizard({
+    login: info.user?.login ?? null,
+    connected: connection === "installed",
+    step,
+    memory: { ...kept, ...(memory?.waiting && connection !== "installed" ? { waiting: true } : {}) },
+    connectUrl: "/auth/install",
+    connection: wizardConnection,
+    loadOwners: () => api<OwnerInstallation[]>("owners"),
+    create: createSiteInWizard,
+    findRepository: findWizardRepository,
+    agentPrompt: (choice, about) =>
+      setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about }),
+    remember: (change) => void writeWizard(localStorage, change),
+    signedIn: () => location.reload(),
+    finish: (repo) => void finishWizard(repo),
+    exit: closeWizard,
+  });
+  document.body.append(wizard.root);
+  wizard.focus();
+}
+
+function removeWizard() {
+  wizard?.destroy();
+  wizard = undefined;
+  wizardLanding?.root.remove();
+  wizardLanding = undefined;
+}
+
+/** Leaves the wizard: Get started for a signed-in account, the sign-in screen otherwise. */
+function closeWizard() {
+  removeWizard();
+  clearWizard(localStorage);
+  wizardDismissed = true;
+  if (info.user && !repositories.length) showGetStarted();
+}
+
+/** Create site: the repository, with its starting point already committed (POST /api/repositories). */
+async function createSiteInWizard(choice: CreateChoice): Promise<WizardCreateOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/api/repositories", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: choice.name,
+        ...(choice.owner ? { owner: choice.owner } : {}),
+        private: choice.private,
+        description: "A website edited with Native Site Editor",
+        startingPoint: choice.point,
+        siteName: siteNameFromRepository(choice.name),
+      }),
+    });
+  } catch {
+    return { ok: false, message: "GitHub could not be reached. Try again." };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 403 || response.status === 404) {
+    rememberStartingPoint(choice.owner, choice.name, choice.point);
+    return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
+  }
+  if (response.status === 409) {
+    // The name exists. When it is a repository this account can reach (a retry after making it by hand, say), it is the one wanted.
+    const existing = await findWizardRepository(choice).catch(() => undefined);
+    if (existing) return { ok: true, repo: existing };
+  }
+  if (!response.ok) return { ok: false, message: data.error || "The site could not be created. Try again." };
+  const { commit, startingPointError, committed, ...plain } = data as Repository & { commit?: unknown; startingPointError?: string; committed?: string[]; missing?: string[] };
+  const repository = plain as Repository & { missing?: undefined };
+  delete (repository as { missing?: unknown }).missing;
+  wizardCreated = repository;
+  repositories = [...repositories.filter((known) => known.id !== repository.id), repository];
+  rememberRepositories(repositories);
+  let partial = false;
+  if (startingPointError) {
+    if (Array.isArray(committed) && committed.length) {
+      // Some files are committed already: the editor offers to add the missing ones when the repository opens.
+      partial = true;
+      rememberPartialStart(repository.id, choice.point, committed);
+    } else rememberStartingPoint(repository.owner.login, repository.name, choice.point);
+  }
+  return { ok: true, repo: wizardRepository(repository, Boolean(commit), partial), ...(startingPointError ? { error: startingPointError } : {}) };
+}
+
+function wizardRepository(repository: Repository, committed: boolean, partial = false): WizardRepo {
+  return {
+    id: repository.id,
+    name: repository.name,
+    fullName: repository.full_name,
+    private: repository.private,
+    defaultBranch: repository.default_branch || "main",
+    owner: repository.owner.login,
+    committed,
+    ...(partial ? { partial: true } : {}),
+  };
+}
+
+/** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
+async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
+  const owner = (choice.owner ?? info.user?.login ?? "").toLowerCase();
+  const list = await api<Repository[]>("repositories");
+  const repository = list.find((candidate) => candidate.owner.login.toLowerCase() === owner && candidate.name.toLowerCase() === choice.name.toLowerCase());
+  if (!repository) return undefined;
+  wizardCreated = repository;
+  repositories = [...repositories.filter((known) => known.id !== repository.id), repository];
+  rememberRepositories(repositories);
+  // Empty, it gets the starting point when it opens; one with files keeps them.
+  rememberStartingPoint(repository.owner.login, repository.name, choice.point);
+  return wizardRepository(repository, false);
+}
+
+// A starting point that stopped part way (the first file is committed, the rest is not): which files are in, kept
+// (localStorage, by account and repository id) until the user finishes adding it or leaves it.
+const partialStartKey = (repoId: number) => `native-site-editor:partial-start:${info.user?.login.toLowerCase() ?? ""}/${repoId}`;
+function rememberPartialStart(repoId: number, point: StartingPoint, committed: string[]) {
+  try { localStorage.setItem(partialStartKey(repoId), JSON.stringify({ point, committed })); } catch { /* Not kept. */ }
+}
+function readPartialStart(repoId: number): { point: StartingPoint; committed: string[] } | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem(partialStartKey(repoId)) ?? "null");
+    if (!value || (value.point !== "starter" && value.point !== "blank") || !Array.isArray(value.committed) || !value.committed.every((path: unknown) => typeof path === "string")) return undefined;
+    return { point: value.point, committed: value.committed };
+  } catch {
+    return undefined;
+  }
+}
+function forgetPartialStart(repoId: number) {
+  try { localStorage.removeItem(partialStartKey(repoId)); } catch { /* Nothing kept. */ }
+}
+
+/** Says the starting point stopped part way and offers to add the files that are missing, as drafts that overwrite nothing. */
+const removeFinishStarter = () => document.getElementById("finish-starter")?.remove();
+function offerFinishStarter(repo: Repository, partial: { point: StartingPoint; committed: string[] }) {
+  // Its own banner: an error notice replaces the shared one (a missing stylesheet is one here).
+  removeFinishStarter();
+  // The banner belongs to this repository, branch and load: it goes when any of them changes, and refuses if it was left behind.
+  const branch = snapshot?.branch;
+  const epoch = generation;
+  const banner = node("div", "notice");
+  banner.id = "finish-starter";
+  banner.setAttribute("role", "status");
+  const what = partial.point === "starter" ? "Starter site" : "blank page";
+  const finish = button(`Finish adding the ${what}`, async () => {
+    if (generation !== epoch || currentRepo?.id !== repo.id || snapshot?.branch !== branch) {
+      banner.remove();
+      return;
+    }
+    finish.disabled = true;
+    // writeStartingPoint forgets the recovery record and removes this banner once the drafts are written.
+    const problem = await writeStartingPoint(partial.point, { ...partial, repoId: repo.id });
+    if (problem) {
+      finish.disabled = false;
+      errorMessage(new Error(problem));
+    }
+  }, "text-link");
+  banner.append(node("span", "", `Adding the ${what} to ${repo.name} stopped part way, so some of its files are missing. `), finish);
+  app.insertBefore(banner, document.querySelector(".workspace"));
+}
+
+/** The last step: the editor opens on the new repository, and the Setup checklist takes over. */
+async function finishWizard(repo: WizardRepo) {
+  removeWizard();
+  clearWizard(localStorage);
+  wizardDismissed = true;
+  startSetupChecklist(repo.id);
+  history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
+  // GitHub may not list a repository it has just made yet: the one made here is added.
+  const listed = await api<Repository[]>("repositories").catch(() => repositories);
+  await loadRepositories(wizardCreated && !listed.some((known) => known.id === wizardCreated!.id) ? [...listed, wizardCreated] : listed);
+}
+
 // Get started: the screen of an account with no repository in the editor.
 // Coming back to the tab (from GitHub, where access was given or a
 // repository made) lists the repositories again.
@@ -5555,6 +5790,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
 }
 
 async function loadRepositories(prefetched?: Repository[]) {
+  removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
   fileGeneration++;
@@ -5589,9 +5825,18 @@ async function loadRepositories(prefetched?: Repository[]) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
       ]);
-      showGetStarted();
+      if (wizardDismissed) showGetStarted();
+      else {
+        // A new user: the Setup wizard, full screen, in place of Get started.
+        content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
+        void openWizard();
+      }
       return;
     }
+    // A wizard that made a site and was interrupted: the checklist still follows it.
+    const unfinished = readWizard(localStorage)?.repo;
+    if (unfinished && repositories.some((repo) => repo.id === unfinished.id)) startSetupChecklist(unfinished.id);
+    if (!wizard) clearWizard(localStorage);
     repositoryOptions();
     repositorySelect.disabled = false;
     const linked = readWorkspaceUrl();
@@ -5753,6 +5998,15 @@ draftStore().baseline = (scope, path) => {
 async function start() {
   try {
     const session = await api<SessionInfo>("session");
+    // Back from installing the App while "Request user authorization during
+    // installation" is off: GitHub returns to the setup URL (this page) with an
+    // installation_id, which is never trusted. Sign in now; the authorization
+    // usually needs no click and completes the sign-in.
+    const returnedFromInstall = new URL(location.href);
+    if (!session.user && session.configured && (returnedFromInstall.searchParams.has("installation_id") || returnedFromInstall.searchParams.has("setup_action"))) {
+      location.replace("/auth/login");
+      return;
+    }
     if (session.user) {
       // The editor bundle is large; start it downloading before any
       // repository data arrives so opening the first file never waits for it.
@@ -5795,6 +6049,8 @@ async function start() {
       await loadRepositories(installed ? undefined : info.repositories ?? undefined);
     } else {
       renderLogin();
+      // Signed out in the middle of the wizard (it went to GitHub and came back): carry on, unless GitHub's answer was an error.
+      if (readWizard(localStorage) && !new URL(location.href).searchParams.has("error")) void openWizard();
     }
     const error = new URL(location.href).searchParams.get("error");
     if (error) {

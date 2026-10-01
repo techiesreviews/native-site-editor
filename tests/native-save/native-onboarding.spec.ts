@@ -36,6 +36,8 @@ async function openGetStarted(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
+  // The Setup wizard replaces Get started for an account with no repository; leaving it shows Get started.
+  await page.getByRole("button", { name: "Leave setup" }).click({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible({ timeout: 30_000 });
 }
 
@@ -63,10 +65,15 @@ async function publishNow(page: Page) {
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 }
 
-test("the sign-in screen offers GitHub and a free account in a new tab", async ({ page, baseURL }) => {
+test("the sign-in screen offers Create your site, GitHub sign-in and a free account in a new tab", async ({ page, baseURL }) => {
   await page.route("**/api/session", (route) => route.fulfill({ json: { configured: true, user: null } }));
   await page.goto(`${baseURL}/`);
-  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveAttribute("href", "/auth/login");
+  await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveAttribute("href", "/auth/login");
+  // New users start the Setup wizard from the same screen.
+  await page.getByRole("button", { name: "Create your site" }).click();
+  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toBeVisible();
+  await page.getByRole("button", { name: "Leave setup" }).click();
+  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toHaveCount(0);
   const signup = page.getByRole("link", { name: "Create a free account" });
   await expect(signup).toHaveAttribute("href", "https://github.com/signup");
   await expect(signup).toHaveAttribute("target", "_blank");

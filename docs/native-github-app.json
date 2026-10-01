@@ -3,7 +3,7 @@
   "source": "https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters",
   "owner_account": "personal",
   "registration_base_url": "https://github.com/settings/apps/new",
-  "registration_url": "https://github.com/settings/apps/new?name=native-site-editor-techies&description=Browser-native%20site%20editor%20for%20selected%20techiesreviews%20repositories&url=https%3A%2F%2Feditor.techies.tools&callback_urls%5B%5D=https%3A%2F%2Feditor.techies.tools%2Fauth%2Fcallback&callback_urls%5B%5D=https%3A%2F%2Fnative-site-editor.pages.dev%2Fauth%2Fcallback&request_oauth_on_install=false&public=false&webhook_active=false&contents=write&metadata=read&actions=read&administration=write",
+  "registration_url": "https://github.com/settings/apps/new?name=native-site-editor-techies&description=Browser-native%20site%20editor%20for%20selected%20techiesreviews%20repositories&url=https%3A%2F%2Feditor.techies.tools&callback_urls%5B%5D=https%3A%2F%2Feditor.techies.tools%2Fauth%2Fcallback&callback_urls%5B%5D=https%3A%2F%2Fnative-site-editor.pages.dev%2Fauth%2Fcallback&request_oauth_on_install=true&public=false&webhook_active=false&contents=write&metadata=read&actions=read&administration=write",
   "parameters": {
     "name": "native-site-editor-techies",
     "description": "Browser-native site editor for selected techiesreviews repositories",
@@ -12,7 +12,7 @@
       "https://editor.techies.tools/auth/callback",
       "https://native-site-editor.pages.dev/auth/callback"
     ],
-    "request_oauth_on_install": false,
+    "request_oauth_on_install": true,
     "public": false,
     "webhook_active": false,
     "contents": "write",
@@ -24,7 +24,7 @@
     "GitHub App is private.",
     "Webhooks are inactive.",
     "Repository permissions are Contents: Read and write, Metadata: Read-only, Actions: Read-only (for the Change status after a save) and Administration: Read and write (so Get started can create the user's repository).",
-    "Request user authorization during installation is off because the current callback requires the OAuth state cookie.",
+    "Request user authorization (OAuth) during installation is on: installing the App also signs the user in, through /auth/install and /auth/callback (the setup URL is then ignored by GitHub).",
     "Install on Only select repositories: techiesreviews/native-site-editor-starter."
   ]
 }

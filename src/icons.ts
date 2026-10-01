@@ -27,6 +27,7 @@ import linkBreak from "@phosphor-icons/core/regular/link-break.svg?raw";
 import linkSimple from "@phosphor-icons/core/regular/link-simple.svg?raw";
 import packageIcon from "@phosphor-icons/core/regular/package.svg?raw";
 import plus from "@phosphor-icons/core/regular/plus.svg?raw";
+import play from "@phosphor-icons/core/regular/play.svg?raw";
 import sparkle from "@phosphor-icons/core/regular/sparkle.svg?raw";
 import listChecks from "@phosphor-icons/core/regular/list-checks.svg?raw";
 import trash from "@phosphor-icons/core/regular/trash.svg?raw";
@@ -57,6 +58,7 @@ const icons = {
   "link-simple": linkSimple,
   "list-checks": listChecks,
   package: packageIcon,
+  play,
   plus,
   redo,
   sparkle,

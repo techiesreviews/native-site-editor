@@ -42,6 +42,8 @@ async function openGetStarted(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { org: true, repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
+  // The Setup wizard replaces Get started for an account with no repository; leaving it shows Get started.
+  await page.getByRole("button", { name: "Leave setup" }).click({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible({ timeout: 30_000 });
 }
 

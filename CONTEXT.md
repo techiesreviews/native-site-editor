@@ -56,7 +56,10 @@ The numbered marker on the element of an agent request in the preview, showing w
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 
 **Get started**:
-A screen shown to a signed-in user with no repository in the editor yet. It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor.
+A screen shown to a signed-in user with no repository in the editor yet who left the Setup wizard (or reaches it from the wizard's fallback). It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor.
+
+**Setup wizard**:
+A full-screen guide for a new user, in four numbered steps: Connect GitHub (one trip to GitHub installs the App and signs in), Create your site (the repository, with the chosen starting point committed as its first commit), Put it online, and Open the editor. It replaces Get started for an account with no repository, and starts from the sign-in screen's Create your site; the Setup checklist takes over once the editor opens.
 
 **Setup checklist**:
 A small checklist (the "Setup 2/4" pill in the top bar) that guides a new site after its starting point: Start your site, Save to GitHub, Name your site, Put it online, and an optional Connect an agent. Each item is ticked from the repository's state. It shows by itself for a repository that went through Get started or Start your site, until dismissed or done, and for any repository from the project menu's Set up your site.

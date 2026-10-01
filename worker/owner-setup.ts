@@ -47,8 +47,9 @@ export function githubAppManifest(origin: string, aliases: string[] = []) {
     hook_attributes: { active: false, url: `${origin}/auth/setup/webhook` },
     redirect_url: `${origin}/auth/setup/callback`,
     callback_urls: [origin, ...aliases].map((value) => `${value}/auth/callback`),
-    setup_url: origin,
-    request_oauth_on_install: false,
+    // One trip to GitHub for a new user: installing the App also signs in
+    // (GitHub then ignores a setup URL, so none is given). /auth/install.
+    request_oauth_on_install: true,
     default_permissions: {
       contents: "write",
       metadata: "read",

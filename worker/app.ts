@@ -26,6 +26,7 @@ import { requestBytes, uploadBlob } from "./blobs";
 import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
 import { starterFiles } from "./starter";
+import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError } from "./github";
 import {
   configuredApp,
@@ -56,7 +57,12 @@ interface OAuthState {
   /** An MCP authorization to continue after signing in (`/auth/mcp/authorize?...`). */
   returnTo?: string;
 }
-export type StoredSession = Session | OAuthState | AgentGrant | AgentHub | OAuthRecord;
+/** Set by /auth/install and used once by /auth/callback when GitHub does not send the state back. */
+interface InstallPending {
+  kind: "install";
+  expiresAt: number;
+}
+export type StoredSession = Session | OAuthState | InstallPending | AgentGrant | AgentHub | OAuthRecord;
 export type StoredValue = StoredSession | OwnerSetupState;
 
 export interface Env {
@@ -188,9 +194,10 @@ export async function handle(
       error instanceof HttpError
         ? error.message
         : "Something went wrong. Please try again.";
-    response = ["/auth/login", "/auth/callback"].includes(url.pathname)
+    response = ["/auth/login", "/auth/install", "/auth/callback"].includes(url.pathname)
       ? redirect(`/?error=${encodeURIComponent(message)}`, [
           setCookie(url, "oauth", "", 0),
+          setCookie(url, "install", "", 0),
         ])
       : json(
           {
@@ -329,15 +336,12 @@ async function route(
       const app = await config(env);
       return json({
         configured: Boolean(app),
-        installUrl: app
-          ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
-          : null,
+        // Owner setup installs through /auth/install, so the sign-in that follows has a state.
+        installUrl: app ? "/auth/install" : null,
       });
     }
     const app = await config(env);
-    const installUrl = app
-      ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
-      : undefined;
+    const installUrl = app ? "/auth/install" : undefined;
     const setupId = cookie(request, "setup");
     let setupState = "";
     if (setupId && !app) {
@@ -544,19 +548,69 @@ async function route(
     if (url.searchParams.has("add")) target.searchParams.set("prompt", "select_account");
     return redirect(target.href, [setCookie(url, "oauth", id, 600)]);
   }
-  if (path === "/auth/callback") {
-    const expected = cookie(request, "oauth");
-    if (!expected || expected !== url.searchParams.get("state"))
+  // One trip to GitHub for a new user: the App's installation page, which
+  // (with "Request user authorization during installation" on) signs the user
+  // in on the way back. The state goes in the install URL in case GitHub
+  // passes it back; an "install pending" cookie covers the case it does not.
+  if (path === "/auth/install") {
+    const app = await config(env);
+    if (!app)
       throw new HttpError(
-        400,
-        "GitHub sign-in expired or could not be verified. Connect again.",
+        503,
+        "GitHub connection is not configured. Use the owner setup link for this editor.",
       );
-    const stateResponse = await store(env, expected, "POST", undefined, true);
-    if (!stateResponse.ok)
-      throw new HttpError(400, "GitHub sign-in expired. Connect again.");
-    const state = (await stateResponse.json()) as StoredSession;
-    if (state.kind !== "oauth" || state.expiresAt <= Date.now())
-      throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+    const state = randomId();
+    const nonce = randomId();
+    await store(env, state, "PUT", { kind: "oauth", expiresAt: Date.now() + 600_000 });
+    await store(env, nonce, "PUT", { kind: "install", expiresAt: Date.now() + 600_000 });
+    const target = new URL(`https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`);
+    target.searchParams.set("state", state);
+    return redirect(target.href, [setCookie(url, "oauth", state, 600), setCookie(url, "install", nonce, 600)]);
+  }
+  if (path === "/auth/callback") {
+    // A code is only ever exchanged with a state that is the one this browser
+    // holds (as for /auth/login), so a code cannot be planted on a browser by
+    // sending it here. GitHub may not send the state back after an install
+    // (with "Request user authorization during installation" on). A hit
+    // without it, from a browser that visited /auth/install a moment ago (an
+    // unused, unexpired install pending cookie), is not signed in: its code is
+    // discarded and the browser goes to /auth/login, a fresh flow with its own
+    // state, which GitHub completes without a prompt for a user who just
+    // authorized. Anything else is refused. Which case happened is logged,
+    // never the code or a token.
+    const returnedState = url.searchParams.get("state");
+    const oauthCookie = cookie(request, "oauth");
+    const installCookie = cookie(request, "install");
+    const seen = `installation_id=${url.searchParams.has("installation_id")}`;
+    let state: StoredSession;
+    if (returnedState !== null && returnedState !== "") {
+      if (!oauthCookie || oauthCookie !== returnedState) {
+        console.log(`auth callback refused: state does not match the browser (${seen})`);
+        throw new HttpError(400, "GitHub sign-in expired or could not be verified. Connect again.");
+      }
+      const stateResponse = await store(env, oauthCookie, "POST", undefined, true);
+      if (!stateResponse.ok) throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+      state = (await stateResponse.json()) as StoredSession;
+      if (state.kind !== "oauth" || state.expiresAt <= Date.now())
+        throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+      // An install started this sign-in: its pending cookie is spent too.
+      if (installCookie) await store(env, installCookie, "DELETE");
+    } else {
+      if (!installCookie) {
+        console.log(`auth callback refused: no state and no install pending cookie (${seen})`);
+        throw new HttpError(400, "GitHub sign-in expired or could not be verified. Connect again.");
+      }
+      const pendingResponse = await store(env, installCookie, "POST", undefined, true);
+      const pending = pendingResponse.ok ? ((await pendingResponse.json()) as StoredSession) : undefined;
+      if (!pending || pending.kind !== "install" || pending.expiresAt <= Date.now()) {
+        console.log(`auth callback refused: install pending cookie expired or already used (${seen})`);
+        throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+      }
+      if (oauthCookie) await store(env, oauthCookie, "DELETE");
+      console.log(`auth callback: stateless install return, code discarded, fresh login (${seen})`);
+      return redirect("/auth/login", [setCookie(url, "oauth", "", 0), setCookie(url, "install", "", 0)]);
+    }
+    console.log(`auth callback accepted: via=state (${seen})`);
     const code = url.searchParams.get("code");
     const app = await config(env);
     if (!code || code.length > 512 || !app)
@@ -617,10 +671,11 @@ async function route(
         await store(env, other, "DELETE");
       else kept.push(other);
     }
-    return redirect(state.returnTo ?? "/", [
+    return redirect(state.kind === "oauth" ? state.returnTo ?? "/" : "/", [
       setCookie(url, "session", id, duration),
       setCookie(url, "accounts", [id, ...kept].join("."), accountsLifetime),
       setCookie(url, "oauth", "", 0),
+      setCookie(url, "install", "", 0),
     ]);
   }
   if (path === "/api/session") {
@@ -719,15 +774,43 @@ async function route(
       if (request.headers.get("Origin") !== url.origin)
         throw new HttpError(403, "Invalid request origin.");
       const data = await requestJson(request, 4096);
-      return json(
-        await github.createRepository(user.login, {
-          name: typeof data?.name === "string" ? data.name.trim() : "",
-          owner: typeof data?.owner === "string" && data.owner ? data.owner.slice(0, 100) : undefined,
-          private: data?.private === true,
-          description: typeof data?.description === "string" ? data.description : undefined,
-        }),
-        201,
-      );
+      const point = data?.startingPoint === "starter" || data?.startingPoint === "blank" ? data.startingPoint : undefined;
+      if (data?.startingPoint !== undefined && !point) throw new HttpError(400, "Choose the Starter site or a blank page.");
+      const repository = await github.createRepository(user.login, {
+        name: typeof data?.name === "string" ? data.name.trim() : "",
+        owner: typeof data?.owner === "string" && data.owner ? data.owner.slice(0, 100) : undefined,
+        private: data?.private === true,
+        description: typeof data?.description === "string" ? data.description : undefined,
+      });
+      if (!point) return json(repository, 201);
+      // Create site: the repository is made and the starting point is its
+      // first commit. If committing fails the repository still exists, and
+      // the editor falls back to Start your site (drafts) for it.
+      let built: string[] = [];
+      try {
+        const files = await startingPointFiles(point, startingSiteName(data?.siteName, repository.name), fetcher);
+        built = files.map((file) => file.path);
+        const commit = await commitStartingPoint(
+          github,
+          repository,
+          files,
+          `Start the site from ${point === "starter" ? "the Starter site" : "a blank page"} with Native Site Editor`,
+        );
+        return json({ ...repository, commit }, 201);
+      } catch (error) {
+        console.error(`starting point for a new repository failed:`, error instanceof Error ? error.message : error);
+        return json(
+          {
+            ...repository,
+            // What GitHub has already got, so the editor can finish the rest without overwriting it.
+            committed: error instanceof StartingPointError ? error.committed : [],
+            missing: error instanceof StartingPointError ? error.missing : built,
+            startingPointError:
+              error instanceof HttpError ? error.message : "The starting point could not be added. The editor will start the site from the repository instead.",
+          },
+          201,
+        );
+      }
     }
     if (path === "/api/repositories")
       return json(await github.repositories(user.login));

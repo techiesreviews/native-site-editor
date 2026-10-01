@@ -60,12 +60,36 @@
 //                                     and no branches (branches -> [], branch -> 404, commits and
 //                                     trees -> 409 "Git Repository is empty."); "no-site" has
 //                                     commits but no root index.html (fixtures/no-site, a README)
+//     { installOauth: true | false }  the App setting "Request user authorization (OAuth) during
+//                                     installation": true (default) sends the install page on to
+//                                     /auth/callback with a code; false sends it to the setup URL
+//                                     (/?installation_id=1&setup_action=install), after which the
+//                                     editor goes to /auth/login
+//     { failTree: true | false }      POST git/trees answers 422 (while true), so a first commit
+//                                     stops after its first file
+//     { installState: "echo" | "drop" }
+//                                     whether that callback carries the `state` of the install URL
+//                                     back ("echo", default) or not ("drop": the install pending
+//                                     cookie decides)
 //   GET  /__demo/onboarding   -> { repositories: names listed, created: [{ name, private,
 //                                  description? }] as POST /user/repos received them,
 //                                  orgCreated: the same for POST /orgs/demo-org/repos,
-//                                  starterFetches: n, heads: { [repo]: commit sha | null } }
+//                                  starterFetches: n, heads: { [repo]: commit sha | null },
+//                                  installs: n, authorizations: n }
 //   GET  /__demo/head?repo=NAME and /__demo/file?repo=NAME&path=P  read any repository's head
 //                                  and committed bytes (repo defaults to the demo repository).
+//
+// Signing in (the real worker's /auth/login, /auth/install and /auth/callback run):
+// the fake GitHub answers the OAuth code exchange and GET /user with the demo user,
+// and a redirect of the worker to github.com (the App's installations/new page, the OAuth
+// authorize page) is pointed at its pages:
+//   GET /__demo/github/install?state=S     "installs" the App for the user (/user/installations
+//                                          lists it from then on) and goes on as the controls say
+//   GET /__demo/github/authorize?state=S   authorizes at once: /auth/callback?code=...&state=S
+// A browser that starts signed out carries two cookies a test adds before its first load:
+//   ase_demo_signed_out=1   no demo session is minted for it
+//   ase_demo_browser=KEY    names its onboarding state, so the controls above apply before
+//                           and after it signs in (a session id would not exist yet)
 //
 // A repository created through POST /user/repos is empty, joins the listing
 // (installation 1) and takes the first commit through
@@ -340,9 +364,15 @@ interface Onboarding {
   created: { name: string; private: boolean; description?: string }[];
   starterFetches: number;
   nextId: number;
+  /** "Request user authorization during installation": the install page goes on to the callback with a code. */
+  installOauth: boolean;
+  installState: "echo" | "drop";
+  installs: number;
+  authorizations: number;
+  failTree: boolean;
 }
 function newOnboarding(): Onboarding {
-  return { hideDefault: false, installed: true, create: "ok", org: false, orgCreate: "ok", orgCreated: [], starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600 };
+  return { hideDefault: false, installed: true, create: "ok", org: false, orgCreate: "ok", orgCreated: [], starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600, installOauth: true, installState: "echo", installs: 0, authorizations: 0, failTree: false };
 }
 
 const ORG_LOGIN = "demo-org";
@@ -405,6 +435,10 @@ function githubFetch(
       if (onboarding.starter === "unavailable") return new Response("Not Found", { status: 404 });
       return new Response(starterArchive() as BodyInit, { headers: { "Content-Type": "application/x-gzip" } });
     }
+    // The OAuth code exchange and the signed-in user (the demo user).
+    if (url.hostname === "github.com" && path === "/login/oauth/access_token")
+      return jsonResponse({ access_token: "demo-token", expires_in: 28800 });
+    if (path === "/user" && method === "GET") return jsonResponse({ login: DEMO_LOGIN, avatar_url: "" });
     if (path === "/user/installations")
       return jsonResponse({
         installations: [
@@ -610,6 +644,7 @@ function githubFetch(
       return jsonResponse({ sha, url: `https://api.github.test${repoBase}/git/blobs/${sha}` }, 201);
     }
     if (path === `${repoBase}/git/trees` && method === "POST") {
+      if (onboarding.failTree) return jsonResponse({ message: "Validation Failed" }, 422);
       const changes: Change[] = (body.tree as { path: string; mode: string; content?: string; sha?: string | null }[]).map(
         (t) => ({ segments: t.path.split("/"), mode: t.mode, content: t.content, sha: t.sha }),
       );
@@ -763,6 +798,14 @@ function sessionCookie(req: Connect.IncomingMessage): string | null {
   return match ? match.slice(name.length + 1) : null;
 }
 
+function cookieNamed(req: Connect.IncomingMessage, name: string): string | null {
+  const match = (req.headers.cookie ?? "")
+    .split(";")
+    .map((p) => p.trim())
+    .find((p) => p.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : null;
+}
+
 function mintSession(): string {
   const id = newSessionId();
   sessions.set(id, {
@@ -785,8 +828,8 @@ const sessionActions = new Map<string, FakeActions>();
 const sessionOnboarding = new Map<string, Onboarding>();
 const onboardingOf = (id: string) => sessionOnboarding.get(id) ?? sessionOnboarding.set(id, newOnboarding()).get(id)!;
 // A repository's git for the head and file controls: the demo's, or one made or added by a test.
-const gitOf = (id: string, repoName: string | null) =>
-  (repoName && onboardingOf(id).repos.get(repoName)?.git) || sessions.get(id)!.git!;
+const gitOf = (key: string, id: string | null, repoName: string | null) =>
+  (repoName && onboardingOf(key).repos.get(repoName)?.git) || sessions.get(id ?? key)!.git!;
 
 function workerMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
@@ -805,10 +848,34 @@ function workerMiddleware(): Connect.NextHandleFunction {
       }
       const bodyBuffer = await readBody(req);
       const id = sessionCookie(req);
-      if (!id || !sessions.has(id)) {
+      const browser = cookieNamed(req, "ase_demo_browser");
+      // The pages of the fake GitHub: a browser that is not signed in has no session, only its key.
+      if (path === "/__demo/github/install" || path === "/__demo/github/authorize") {
+        const state = onboardingOf(browser ?? id ?? "anonymous");
+        const returned = url.searchParams.get("state");
+        let target: string;
+        if (path === "/__demo/github/install") {
+          state.installs++;
+          state.installed = true;
+          if (state.installOauth) {
+            const query = new URLSearchParams({ code: "fake-code", installation_id: "1", setup_action: "install" });
+            if (returned && state.installState === "echo") query.set("state", returned);
+            target = `/auth/callback?${query}`;
+          } else target = "/?installation_id=1&setup_action=install";
+        } else {
+          state.authorizations++;
+          target = `/auth/callback?${new URLSearchParams({ code: "fake-code", ...(returned ? { state: returned } : {}) })}`;
+        }
+        res.statusCode = 302;
+        res.setHeader("Location", target);
+        return res.end();
+      }
+      const keyed = Boolean(browser) && ["/__demo/onboarding", "/__demo/head", "/__demo/file"].includes(path);
+      if ((!id || !sessions.has(id)) && !keyed) {
         res.statusCode = 401;
         return res.end();
       }
+      const key = browser ?? id!;
       if (path === "/__demo/slow") {
         publishDelays.set(id, Math.max(0, Number(url.searchParams.get("ms") ?? "0") || 0));
         res.statusCode = 204;
@@ -822,10 +889,10 @@ function workerMiddleware(): Connect.NextHandleFunction {
       }
       if (path === "/__demo/head") {
         res.setHeader("Content-Type", "application/json");
-        return res.end(JSON.stringify({ commit: gitOf(id, url.searchParams.get("repo")).head || null }));
+        return res.end(JSON.stringify({ commit: gitOf(key, id, url.searchParams.get("repo")).head || null }));
       }
       if (path === "/__demo/onboarding") {
-        const state = onboardingOf(id);
+        const state = onboardingOf(key);
         if (req.method === "GET") {
           res.setHeader("Content-Type", "application/json");
           return res.end(JSON.stringify({
@@ -836,12 +903,17 @@ function workerMiddleware(): Connect.NextHandleFunction {
             created: state.created,
             orgCreated: state.orgCreated,
             starterFetches: state.starterFetches,
+            installs: state.installs,
+            authorizations: state.authorizations,
             heads: Object.fromEntries([...state.repos].map(([name, entry]) => [name, entry.git.head || null])),
           }));
         }
         const options = JSON.parse(bodyBuffer.toString() || "{}");
-        if (options.reset) sessionOnboarding.delete(id);
-        const next = onboardingOf(id);
+        if (options.reset) sessionOnboarding.delete(key);
+        const next = onboardingOf(key);
+        if (typeof options.installOauth === "boolean") next.installOauth = options.installOauth;
+        if (typeof options.failTree === "boolean") next.failTree = options.failTree;
+        if (["echo", "drop"].includes(options.installState)) next.installState = options.installState;
         if (options.repositories === "none" || options.repositories === "all") next.hideDefault = options.repositories === "none";
         if (typeof options.installed === "boolean") next.installed = options.installed;
         if (["ok", "forbidden", "taken"].includes(options.create)) next.create = options.create;
@@ -866,7 +938,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
       }
       if (path === "/__demo/file") {
         // The bytes of a file on the demo branch, as committed.
-        const bytes = fileAt(gitOf(id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "");
+        const bytes = fileAt(gitOf(key, id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "");
         res.statusCode = bytes ? 200 : 404;
         res.setHeader("Content-Type", "application/octet-stream");
         return res.end(bytes ?? Buffer.alloc(0));
@@ -930,7 +1002,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     if (!isWorkerPath) {
       const existingSession = sessionCookie(req);
       const slot = existingSession ? sessions.get(existingSession) : undefined;
-      if (isDocument && (!existingSession || !slot || slot.value.expiresAt <= Date.now())) {
+      if (isDocument && !cookieNamed(req, "ase_demo_signed_out") && (!existingSession || !slot || slot.value.expiresAt <= Date.now())) {
         const id = mintSession();
         const cookieName = sessionCookieName();
         mintedCookie = `${cookieName}=${id}; Path=/; HttpOnly; SameSite=Lax${publicOrigin().startsWith("https://") ? "; Secure" : ""}`;
@@ -951,16 +1023,30 @@ function workerMiddleware(): Connect.NextHandleFunction {
       : undefined;
     const id = sessionCookie(req) ?? agentSession ?? null;
     const slot = id ? sessions.get(id) : undefined;
+    const onboardingKey = cookieNamed(req, "ase_demo_browser") ?? id;
     const git = slot?.git || initialGit;
     if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();
     const fixtureGits = slot?.fixtureGits ?? new Map<string, Git>();
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, (id ? onboardingOf(id) : newOnboarding())));
+    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding()));
 
     res.statusCode = response.status;
-    response.headers.forEach((value, key) => res.setHeader(key, value));
+    response.headers.forEach((value, key) => {
+      if (key !== "set-cookie") res.setHeader(key, value);
+    });
+    // The worker's redirects to GitHub go to the fake GitHub's pages instead.
+    const location = response.headers.get("location");
+    if (response.status === 302 && location?.startsWith("https://github.com/")) {
+      const target = new URL(location);
+      res.setHeader(
+        "Location",
+        `/__demo/github/${target.pathname === "/login/oauth/authorize" ? "authorize" : "install"}${target.search}`,
+      );
+    }
+    const cookies = response.headers.getSetCookie();
+    if (cookies.length) res.setHeader("Set-Cookie", cookies);
     const buffer = Buffer.from(await response.arrayBuffer());
     res.end(buffer);
   };
