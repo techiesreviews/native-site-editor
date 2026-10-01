@@ -395,6 +395,10 @@ export function createRepositoryMenu(options: {
     setRepositories,
     setQuestions,
     close: dropdown.close,
+    /** Opens the menu (the Connect an agent spotlight's "Show me"). */
+    open: dropdown.open,
+    /** The tile at the top left that opens the menu: what a spotlight points at. */
+    trigger,
     destroy() {
       controller.abort();
       branchFlyout.destroy();

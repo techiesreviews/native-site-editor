@@ -31,9 +31,12 @@ import { createConfirmDialog } from "./components/confirm-dialog";
 import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
 import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
 import { createStartSite } from "./components/start-site";
-import { createSetupWizard, createWizardLanding, type WizardCreateOutcome } from "./components/setup-wizard";
-import { clearWizard, openingStep, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
-import { announceConnected } from "./wizard-tabs";
+import { createSetupWizard, type WizardCreateOutcome } from "./components/setup-wizard";
+import { clearWizard, connectionFromOnboarding, openingStep, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
+import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
+import { spotlight } from "./components/spotlight";
+import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
+import { createGithubTrip } from "./components/github-trip";
 import { createSetupChecklist } from "./components/setup-checklist";
 import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
@@ -2460,8 +2463,11 @@ function options(
   );
 }
 
+/** Cancels the automatic continue to GitHub while its message is showing. */
+let cancelAutoSignIn: (() => void) | undefined;
+
 function renderLogin(
-  mode: "loading" | "ready" | "expired" | "error" = "ready",
+  mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
   agentMenu?.destroy();
   agentMenu = undefined;
@@ -2487,22 +2493,29 @@ function renderLogin(
   snapshot = undefined;
   repositoryIndex.clear();
   app.className = "login-page";
+  // One layout for every state, so nothing jumps when the answer arrives: the
+  // loading and automatic states keep the card's size and hide what is below.
   app.innerHTML = `
-    <main class="login-card" aria-labelledby="login-title">
+    <main class="login-card" aria-labelledby="login-title" data-mode="${mode}">
       <a class="brand login-brand" href="/" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
-      <h1 id="login-title">Sign in to your workspace</h1>
-      <p class="login-description">Create your first site, or connect your GitHub account to open your projects.</p>
-      <div id="login-action"></div>
-      <p class="login-new">New to GitHub? <a href="https://github.com/signup" target="_blank" rel="noopener noreferrer">Create a free account</a>, confirm the email GitHub sends you, then come back and continue.</p>
+      <h1 id="login-title">Welcome to Native Site Editor</h1>
+      <p class="login-description">Open your sites, or create your first one.</p>
+      <div id="login-action" class="login-action"></div>
       <div id="notice" class="login-notice" role="alert" hidden></div>
-      <p class="login-footnote">The editor asks GitHub for access to the repositories you choose, and saves your changes to them as commits.</p>
+      <div id="login-more" class="login-more"></div>
     </main>
   `;
   const action = element("login-action");
-  if (mode === "loading") {
-    const loading = node("p", "login-state", "Checking your session…");
+  const more = element("login-more");
+  if (mode === "loading" || mode === "auto") {
+    const loading = node("p", "login-state login-busy");
     loading.setAttribute("role", "status");
+    const spinner = node("span", "login-spinner");
+    spinner.setAttribute("aria-hidden", "true");
+    loading.append(spinner, node("span", "", mode === "auto" ? "Signing you in with GitHub…" : "Checking your account…"));
     action.append(loading);
+    if (mode === "auto")
+      action.append(button("Use the button instead", () => cancelAutoSignIn?.(), "text-link login-cancel"));
   } else if (mode === "error") {
     action.append(
       button(
@@ -2512,11 +2525,26 @@ function renderLogin(
       ),
     );
   } else if (info?.configured) {
-    // New here: the Setup wizard. Back again: sign in.
-    action.append(
-      button("Create your site", () => void openWizard(), "button primary login-button"),
-      link("Sign in with GitHub", "/auth/login", "button secondary login-button login-signin"),
+    // One button for everyone: the Worker decides where the sign-in leads
+    // (the editor, GitHub's install page for an account without the App, or
+    // the Setup wizard for a first site), so there is no choice to make here.
+    action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
+    more.append(
+      node("p", "login-footnote", "The editor asks GitHub for access only to the repositories you choose, and saves your changes to them as commits."),
     );
+    const signup = node("p", "login-new");
+    const create = link("Create a free account", "https://github.com/signup");
+    create.className = "";
+    create.target = "_blank";
+    create.rel = "noopener noreferrer";
+    signup.append("New to GitHub? ", create, " (then confirm the email GitHub sends you).");
+    const next = node("details", "login-next");
+    next.append(
+      node("summary", "", "What happens next?"),
+      node("p", "login-next__lead", "The first time, GitHub shows two pages: authorize the editor (it signs you in), then install it and choose All repositories."),
+      createGithubTrip({ note: "Then you're back here. Next time it's one click." }),
+    );
+    more.append(signup, next);
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -2579,6 +2607,37 @@ function setupScope() {
   return scope ? JSON.stringify([scope.account, scope.repoId, scope.branch]) : "";
 }
 
+/**
+ * Connect an agent (the checklist): says what an agent is for and spotlights
+ * the project menu's tile, where the agent connection lives. "Show me" opens
+ * the menu with Connect with MCP lit; "Got it" just closes.
+ */
+function spotlightAgentConnection() {
+  spotlight(repositoryMenu?.trigger, {
+    title: "Connect an agent",
+    text: [AGENT_EXPLAINER.join(" "), agentWhere()],
+    actions: [
+      { label: "Show me", primary: true, run: showAgentConnection },
+      { label: "Got it" },
+    ],
+  });
+}
+
+let litEntry: AbortController | undefined;
+function showAgentConnection() {
+  litEntry?.abort();
+  repositoryMenu?.open();
+  const entry = document.querySelector<HTMLElement>(".agent-menu__action");
+  if (!entry) return;
+  entry.classList.add("is-spotlit");
+  // The highlight goes when the menu closes.
+  const panel = document.getElementById("repository-actions");
+  litEntry = new AbortController();
+  litEntry.signal.addEventListener("abort", () => entry.classList.remove("is-spotlit"));
+  panel?.addEventListener("toggle", () => !panel.matches(":popover-open") && litEntry?.abort(), { signal: litEntry.signal });
+  requestAnimationFrame(() => entry.focus());
+}
+
 function mountSetupChecklist() {
   const checklist = createSetupChecklist({
     start: () => {
@@ -2598,7 +2657,7 @@ function mountSetupChecklist() {
       return problem;
     },
     saveUrl: (url) => writeSiteSettings({ url }),
-    connect: () => void agentMenu?.connect(""),
+    connect: spotlightAgentConnection,
     dismiss: () => {
       setupAsked = undefined;
       setupRemember({ dismissed: true });
@@ -5489,18 +5548,20 @@ async function chooseRepository(resume?: WorkspaceLocation) {
 }
 
 // ---- Setup wizard (src/setup-wizard.ts, components/setup-wizard.ts) ----
-// A full-screen guide over the page: for a signed-out visitor from the
-// sign-in screen's Create your site, and for a signed-in account with no
-// repository in place of Get started. Its state is kept in localStorage so it
-// survives the trip to GitHub, which opens in another tab.
+// A full-screen guide over the page for a signed-in account with no
+// repository, in place of Get started: Create your site, Connect an agent
+// (optional), Put it online, Open the editor. Connect GitHub is its first
+// step: done for an account with the App, and a retry for one that came back
+// from GitHub's install page without installing it (the worker sends a new
+// sign-in without the App to that page by itself). Its state is kept in
+// localStorage so it survives a reload.
 let wizard: ReturnType<typeof createSetupWizard> | undefined;
-let wizardLanding: ReturnType<typeof createWizardLanding> | undefined;
 /** The wizard was left in this page load: Get started shows instead. */
 let wizardDismissed = false;
 /** The repository the wizard made, for the editor to open at the end. */
 let wizardCreated: Repository | undefined;
 
-/** What this browser's GitHub connection is: signed out, signed in without the App, or with it installed. */
+/** What this account's GitHub connection is: signed in without the App, or with it installed. */
 async function wizardConnection(): Promise<Connection> {
   try {
     const response = await fetch("/api/owners", { credentials: "same-origin", cache: "no-store" });
@@ -5514,45 +5575,26 @@ async function wizardConnection(): Promise<Connection> {
 }
 
 async function openWizard() {
-  if (wizard || wizardLanding) return;
+  if (wizard || !info.user) return;
   wizardDismissed = false;
   const memory = readWizard(localStorage);
-  const connection: Connection = info.user ? await wizardConnection() : "signed-out";
-  if (wizard || wizardLanding) return;
-  // GitHub sent this tab back while another one still waits for it: that one carries on.
-  if (info.user && memory?.waiting) {
-    if (await announceConnected()) {
-      wizardLanding = createWizardLanding({
-        login: info.user.login,
-        onContinue: () => {
-          wizardLanding?.root.remove();
-          wizardLanding = undefined;
-          writeWizard(localStorage, { waiting: false });
-          void openWizard();
-        },
-      });
-      document.body.append(wizardLanding.root);
-      wizardLanding.focus();
-      return;
-    }
-    writeWizard(localStorage, { waiting: false });
-  }
+  // The session says what is left to do (and a reload keeps it); asked again only when it did not.
+  const connection = connectionFromOnboarding(info.onboarding) ?? (await wizardConnection());
+  if (wizard) return;
   const step = openingStep(memory, connection);
   const kept = writeWizard(localStorage, { step });
   wizard = createSetupWizard({
-    login: info.user?.login ?? null,
+    login: info.user.login,
     connected: connection === "installed",
     step,
-    memory: { ...kept, ...(memory?.waiting && connection !== "installed" ? { waiting: true } : {}) },
+    memory: kept,
     connectUrl: "/auth/install",
-    connection: wizardConnection,
     loadOwners: () => api<OwnerInstallation[]>("owners"),
     create: createSiteInWizard,
     findRepository: findWizardRepository,
     agentPrompt: (choice, about) =>
-      setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about }),
+      setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }),
     remember: (change) => void writeWizard(localStorage, change),
-    signedIn: () => location.reload(),
     finish: (repo) => void finishWizard(repo),
     exit: closeWizard,
   });
@@ -5563,8 +5605,6 @@ async function openWizard() {
 function removeWizard() {
   wizard?.destroy();
   wizard = undefined;
-  wizardLanding?.root.remove();
-  wizardLanding = undefined;
 }
 
 /** Leaves the wizard: Get started for a signed-in account, the sign-in screen otherwise. */
@@ -6001,10 +6041,21 @@ async function switchAccount(login: string) {
   }
 }
 
+/** localStorage or sessionStorage, or a store that keeps nothing where the browser refuses it. */
+function storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  try {
+    return kind === "local" ? localStorage : sessionStorage;
+  } catch {
+    return { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
+  }
+}
+
 async function disconnect() {
   try {
     const response = await fetch("/auth/logout", { method: "POST" });
     if (!response.ok) throw new Error("Could not disconnect. Try again.");
+    // 204: that was the last account on this browser, so nothing continues by itself next time.
+    if (response.status === 204) forgetSignedIn(storage("local"));
     location.assign("/");
   } catch (error) {
     errorMessage(error);
@@ -6032,6 +6083,7 @@ async function start() {
       return;
     }
     if (session.user) {
+      rememberSignedIn(storage("local"));
       // The editor bundle is large; start it downloading before any
       // repository data arrives so opening the first file never waits for it.
       void loadEditorModule().catch(() => {});
@@ -6071,10 +6123,27 @@ async function start() {
         openNewRepository = true;
       }
       await loadRepositories(installed ? undefined : info.repositories ?? undefined);
+    } else if (
+      autoSignInPlan({ configured: session.configured, hasSession: false, pathname: location.pathname, search: location.search, local: storage("local"), session: storage("session") }) === "auto"
+    ) {
+      // Signed in here before and the session ended: go on to GitHub, which completes
+      // the authorization silently. Once per tab session; the message stays readable
+      // for a moment and can be cancelled.
+      markAutoSignInTried(storage("session"));
+      renderLogin("auto");
+      const timer = setTimeout(() => {
+        cancelAutoSignIn = undefined;
+        retainWorkspaceLink();
+        location.assign("/auth/login");
+      }, AUTO_SIGNIN_DELAY_MS);
+      cancelAutoSignIn = () => {
+        clearTimeout(timer);
+        cancelAutoSignIn = undefined;
+        renderLogin();
+      };
+      return;
     } else {
       renderLogin();
-      // Signed out in the middle of the wizard (it went to GitHub and came back): carry on, unless GitHub's answer was an error.
-      if (readWizard(localStorage) && !new URL(location.href).searchParams.has("error")) void openWizard();
     }
     const error = new URL(location.href).searchParams.get("error");
     if (error) {

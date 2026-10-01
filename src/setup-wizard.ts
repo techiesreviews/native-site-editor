@@ -1,14 +1,14 @@
 // The Setup wizard's state: which step a new user is on and what they chose,
-// kept in localStorage so it survives the trip to GitHub (which opens in
-// another tab and comes back through a sign-in, possibly a reload). Pure and
+// kept in localStorage so it survives a reload. Pure and
 // storage-agnostic, so it is tested without a browser (tests/setup-wizard.test.ts).
 import type { StartingPoint } from "../shared/starting-point";
 
-export type WizardStepId = "connect" | "create" | "online" | "open";
+export type WizardStepId = "connect" | "create" | "agent" | "online" | "open";
 
-export const WIZARD_STEPS: { id: WizardStepId; title: string }[] = [
+export const WIZARD_STEPS: { id: WizardStepId; title: string; optional?: boolean }[] = [
   { id: "connect", title: "Connect GitHub" },
   { id: "create", title: "Create your site" },
+  { id: "agent", title: "Connect an agent", optional: true },
   { id: "online", title: "Put it online" },
   { id: "open", title: "Open the editor" },
 ];
@@ -29,8 +29,6 @@ export interface WizardRepo {
 
 export interface WizardMemory {
   step: WizardStepId;
-  /** A tab went to GitHub and this wizard waits for it to come back. */
-  waiting?: boolean;
   name?: string;
   owner?: string;
   point?: StartingPoint;
@@ -54,7 +52,6 @@ export function readWizard(store: Store, now = Date.now()): WizardMemory | undef
     if (!value || typeof value !== "object" || !stepIds.has(value.step) || typeof value.at !== "number") return undefined;
     if (now - value.at > WIZARD_LIFETIME_MS || value.at > now + 60_000) return undefined;
     const out: WizardMemory = { step: value.step, at: value.at };
-    if (value.waiting === true) out.waiting = true;
     if (typeof value.name === "string") out.name = value.name.slice(0, 100);
     if (typeof value.owner === "string") out.owner = value.owner.slice(0, 100);
     if (value.point === "starter" || value.point === "blank") out.point = value.point;
@@ -78,8 +75,8 @@ export function readWizard(store: Store, now = Date.now()): WizardMemory | undef
 }
 
 export function writeWizard(store: Store, change: Partial<WizardMemory>, now = Date.now()): WizardMemory {
-  const next: WizardMemory = { ...(readWizard(store, now) ?? { step: "connect" }), ...change, at: now };
-  if (change.waiting === false) delete next.waiting;
+  const next: WizardMemory = { ...(readWizard(store, now) ?? { step: "create" }), ...change, at: now };
+  delete (next as { waiting?: boolean }).waiting; // kept by an older version: the wizard no longer waits in another tab
   try {
     store.setItem(WIZARD_KEY, JSON.stringify(next));
   } catch {
@@ -100,13 +97,22 @@ export const stepNumber = (id: WizardStepId) => WIZARD_STEPS.findIndex((step) =>
 export const stepAfter = (id: WizardStepId): WizardStepId => WIZARD_STEPS[Math.min(WIZARD_STEPS.length - 1, stepNumber(id))].id;
 export const stepBefore = (id: WizardStepId): WizardStepId => WIZARD_STEPS[Math.max(0, stepNumber(id) - 2)].id;
 
-/** What the browser can say about the GitHub connection. */
+/** What the account's connection to GitHub is: signed in without the App, or with it installed (a signed-out visitor sees the sign-in screen, not the wizard). */
 export type Connection = "signed-out" | "not-installed" | "installed";
 
-/** The step a wizard opens on: a returning user whose App is installed skips Connect GitHub. */
+/**
+ * The step a wizard opens on: an account whose App is installed skips Connect
+ * GitHub (it shows done); one without it opens there, with the retry, unless
+ * its site already exists.
+ */
 export function openingStep(memory: WizardMemory | undefined, connection: Connection): WizardStepId {
-  const remembered = memory?.step ?? "connect";
+  const remembered = memory?.step ?? "create";
   if (connection === "installed") return remembered === "connect" ? "create" : remembered;
   // Not connected: nothing after the first step can work, unless the site already exists.
   return memory?.repo ? remembered : "connect";
+}
+
+/** What /api/session's `onboarding` means for the wizard. */
+export function connectionFromOnboarding(onboarding: "install" | "create" | null | undefined): Connection | undefined {
+  return onboarding === "install" ? "not-installed" : onboarding === "create" ? "installed" : undefined;
 }

@@ -1,0 +1,137 @@
+/* A spotlight (spotlight.ts): the page dimmed, one element lit, a callout
+   with an arrow beside it. It is a manual popover, so it sits above every
+   other popover and dialog in the top layer. */
+.spotlight {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: var(--text);
+}
+.spotlight::backdrop {
+  background: transparent;
+}
+/* Centred: no target, so the whole page is dimmed. */
+.spotlight[data-mode="centered"] {
+  background: rgb(0 0 0 / 0.55);
+}
+/* The lit element: a ring, and a shadow so large that it dims the rest of the page. */
+.spotlight__hole {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.55);
+  outline: 2px solid var(--color-warning);
+  outline-offset: 0;
+  pointer-events: none;
+}
+.spotlight__hole[hidden] {
+  display: none;
+}
+.spotlight__callout {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  outline: none;
+  /* On a short or zoomed screen the callout scrolls, so its buttons stay reachable. */
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+.spotlight__callout:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.spotlight__title {
+  margin: 0;
+  font-size: var(--type-title);
+  line-height: 1.3;
+}
+.spotlight__text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spotlight__line {
+  margin: 0;
+  font-size: var(--type-base);
+  line-height: 1.55;
+}
+.spotlight__line strong {
+  font-weight: 600;
+}
+.spotlight__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+/* The arrow: a square turned 45 degrees, pointing at the lit element. */
+.spotlight__arrow {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--surface);
+  transform: rotate(45deg);
+  display: none;
+}
+.spotlight[data-mode="target"] .spotlight__arrow {
+  display: block;
+}
+.spotlight__callout[data-side="right"] .spotlight__arrow {
+  left: -7px;
+  top: calc(var(--arrow-top, 24px) - 7px);
+}
+.spotlight__callout[data-side="left"] .spotlight__arrow {
+  right: -7px;
+  top: calc(var(--arrow-top, 24px) - 7px);
+}
+.spotlight__callout[data-side="below"] .spotlight__arrow {
+  top: -7px;
+  left: calc(var(--arrow-left, 24px) - 7px);
+}
+.spotlight__callout[data-side="above"] .spotlight__arrow {
+  bottom: -7px;
+  left: calc(var(--arrow-left, 24px) - 7px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spotlight:not(.is-still) .spotlight__callout {
+    animation: spotlight-in 160ms ease-out both;
+  }
+  .spotlight:not(.is-still) .spotlight__hole {
+    animation: spotlight-ring 1.8s ease-in-out 2;
+  }
+}
+@keyframes spotlight-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes spotlight-ring {
+  50% {
+    outline-offset: 4px;
+  }
+}
+
+/* The Connect with MCP entry the spotlight's "Show me" lights up in the project menu. */
+.agent-menu__action.is-spotlit {
+  outline: 2px solid var(--color-warning);
+  outline-offset: -2px;
+  background: var(--hover);
+}

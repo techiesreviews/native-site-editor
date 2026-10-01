@@ -67,6 +67,8 @@
 //                                     editor goes to /auth/login
 //     { failTree: true | false }      POST git/trees answers 422 (while true), so a first commit
 //                                     stops after its first file
+//     { cancelInstall: true | false } GitHub's install page, left without installing (the browser
+//                                     goes back to "/" with no code): the account stays without the App
 //     { installState: "echo" | "drop" }
 //                                     whether that callback carries the `state` of the install URL
 //                                     back ("echo", default) or not ("drop": the install pending
@@ -464,12 +466,14 @@ interface Onboarding {
   /** "Request user authorization during installation": the install page goes on to the callback with a code. */
   installOauth: boolean;
   installState: "echo" | "drop";
+  /** The user leaves GitHub's install page without installing: it goes back to the editor with no code. */
+  cancelInstall: boolean;
   installs: number;
   authorizations: number;
   failTree: boolean;
 }
 function newOnboarding(): Onboarding {
-  return { hideDefault: false, installed: true, create: "ok", org: false, orgCreate: "ok", orgCreated: [], starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600, installOauth: true, installState: "echo", installs: 0, authorizations: 0, failTree: false };
+  return { hideDefault: false, installed: true, create: "ok", org: false, orgCreate: "ok", orgCreated: [], starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600, installOauth: true, installState: "echo", cancelInstall: false, installs: 0, authorizations: 0, failTree: false };
 }
 
 const ORG_LOGIN = "demo-org";
@@ -1070,7 +1074,10 @@ function workerMiddleware(): Connect.NextHandleFunction {
         const state = onboardingOf(browser ?? id ?? "anonymous");
         const returned = url.searchParams.get("state");
         let target: string;
-        if (path === "/__demo/github/install") {
+        if (path === "/__demo/github/install" && state.cancelInstall) {
+          // Cancelled on GitHub: nothing is installed and the browser goes back to the editor.
+          target = "/";
+        } else if (path === "/__demo/github/install") {
           state.installs++;
           state.installed = true;
           if (state.installOauth) {
@@ -1130,6 +1137,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
         if (typeof options.installOauth === "boolean") next.installOauth = options.installOauth;
         if (typeof options.failTree === "boolean") next.failTree = options.failTree;
         if (["echo", "drop"].includes(options.installState)) next.installState = options.installState;
+        if (typeof options.cancelInstall === "boolean") next.cancelInstall = options.cancelInstall;
         if (options.repositories === "none" || options.repositories === "all") next.hideDefault = options.repositories === "none";
         if (typeof options.installed === "boolean") next.installed = options.installed;
         if (["ok", "forbidden", "taken"].includes(options.create)) next.create = options.create;

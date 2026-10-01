@@ -167,3 +167,89 @@ test("the address field starts afresh in another repository", async ({ page, bas
   await item(page, "online").getByRole("button", { name: /Show how/ }).click();
   await expect(panel(page).getByLabel("Address once it is live")).toHaveValue("");
 });
+
+// Connect an agent: says what an agent is for and spotlights the project menu's
+// tile (where the agent connection lives), dimming the rest of the page.
+const spotlight = (page: Page) => page.getByRole("dialog", { name: "Connect an agent" });
+const tile = (page: Page) => page.locator(".repository-menu__trigger");
+
+test("Connect an agent spotlights the project menu, and Show me opens it with Connect with MCP lit", async ({ page, baseURL }) => {
+  await startBlankSite(page, baseURL);
+  await openChecklist(page);
+  await item(page, "agent").getByRole("button").click();
+  await expect(panel(page)).toBeHidden();
+  const callout = spotlight(page);
+  await expect(callout).toBeVisible();
+  await expect(callout).toContainText("An AI agent such as Claude Code or Codex can build and edit your site for you.");
+  await expect(callout).toContainText("It connects to this editor over MCP and its changes arrive here as drafts you review and save.");
+  await expect(callout).toContainText("You can always disconnect.");
+  await expect(callout).toContainText("Agents connect here, from the project menu. Open it and choose Connect with MCP to copy the setup for your agent.");
+  // The focus is in the callout; the highlight sits over the tile, and the callout beside it, not over it.
+  await expect(page.locator(".spotlight__callout")).toBeFocused();
+  const hole = (await page.locator(".spotlight__hole").boundingBox())!;
+  const target = (await tile(page).boundingBox())!;
+  expect(hole.x).toBeLessThanOrEqual(target.x);
+  expect(hole.y).toBeLessThanOrEqual(target.y);
+  expect(hole.x + hole.width).toBeGreaterThanOrEqual(target.x + target.width);
+  expect(hole.y + hole.height).toBeGreaterThanOrEqual(target.y + target.height);
+  const box = (await page.locator(".spotlight__callout").boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(hole.x + hole.width);
+  await expect(page.locator(".spotlight__callout")).toHaveAttribute("data-side", "right");
+
+  // It follows a resize.
+  await page.setViewportSize({ width: 900, height: 700 });
+  await expect(async () => {
+    const moved = (await page.locator(".spotlight__callout").boundingBox())!;
+    expect(moved.x + moved.width).toBeLessThanOrEqual(900);
+  }).toPass();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  // Show me: the menu opens with the entry lit and focused.
+  await callout.getByRole("button", { name: "Show me" }).click();
+  await expect(callout).toHaveCount(0);
+  await expect(page.locator("#repository-actions")).toBeVisible();
+  const entry = page.getByRole("button", { name: "Connect with MCP" });
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveClass(/is-spotlit/);
+  await expect(entry).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".agent-menu__action")).not.toHaveClass(/is-spotlit/);
+});
+
+test("the agent spotlight closes with Escape, Got it or a click outside, and gives the focus back", async ({ page, baseURL }) => {
+  await startBlankSite(page, baseURL);
+  const open = async () => {
+    await openChecklist(page);
+    await item(page, "agent").getByRole("button").click();
+    await expect(spotlight(page)).toBeVisible();
+  };
+  await open();
+  await page.keyboard.press("Escape");
+  await expect(spotlight(page)).toHaveCount(0);
+  await expect(page.locator("#repository-actions"), "Escape only closes the spotlight").toBeHidden();
+  await open();
+  await spotlight(page).getByRole("button", { name: "Got it" }).click();
+  await expect(spotlight(page)).toHaveCount(0);
+  await open();
+  await page.mouse.click(700, 600);
+  await expect(spotlight(page)).toHaveCount(0);
+  await expect(page.locator("#repository-actions")).toBeHidden();
+  // Tab stays inside the callout.
+  await open();
+  for (let press = 0; press < 4; press++) await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.closest(".spotlight__callout") !== null)).toBe(true);
+  await page.keyboard.press("Escape");
+});
+
+test("with the project menu's tile out of sight, the agent spotlight is a centred dialog", async ({ page, baseURL }) => {
+  await startBlankSite(page, baseURL);
+  await page.addStyleTag({ content: ".repository-menu__trigger { display: none !important; }" });
+  await openChecklist(page);
+  await item(page, "agent").getByRole("button").click();
+  await expect(spotlight(page)).toBeVisible();
+  await expect(page.locator(".spotlight")).toHaveAttribute("data-mode", "centered");
+  await expect(page.locator(".spotlight__hole")).toBeHidden();
+  const box = (await page.locator(".spotlight__callout").boundingBox())!;
+  expect(Math.abs(box.x + box.width / 2 - 720)).toBeLessThan(4);
+  await spotlight(page).getByRole("button", { name: "Got it" }).click();
+});

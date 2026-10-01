@@ -57,6 +57,8 @@ interface OAuthState {
   expiresAt: number;
   /** An MCP authorization to continue after signing in (`/auth/mcp/authorize?...`). */
   returnTo?: string;
+  /** This sign-in is the end of a trip to GitHub's install page: no second trip is started, whatever the account has. */
+  fromInstall?: boolean;
 }
 /** Set by /auth/install and used once by /auth/callback when GitHub does not send the state back. */
 interface InstallPending {
@@ -538,6 +540,8 @@ async function route(
       ...(returnTo.startsWith("/auth/mcp/authorize?") && returnTo.length < 4096
         ? { returnTo }
         : {}),
+      // A sign-in the stateless install return hands on to: it ends the install trip.
+      ...(url.searchParams.get("from") === "install" ? { fromInstall: true } : {}),
     });
     const target = new URL("https://github.com/login/oauth/authorize");
     target.searchParams.set("client_id", app.clientId);
@@ -548,7 +552,9 @@ async function route(
     const account = url.searchParams.get("login") ?? "";
     if (/^[A-Za-z0-9-]{1,39}$/.test(account)) target.searchParams.set("login", account);
     if (url.searchParams.has("add")) target.searchParams.set("prompt", "select_account");
-    return redirect(target.href, [setCookie(url, "oauth", id, 600)]);
+    // A fresh sign-in forgets an install trip left unfinished (cancelled on
+    // GitHub): without the pending cookie it can start the trip again.
+    return redirect(target.href, [setCookie(url, "oauth", id, 600), setCookie(url, "install", "", 0)]);
   }
   // One trip to GitHub for a new user: the App's installation page, which
   // (with "Request user authorization during installation" on) signs the user
@@ -563,7 +569,7 @@ async function route(
       );
     const state = randomId();
     const nonce = randomId();
-    await store(env, state, "PUT", { kind: "oauth", expiresAt: Date.now() + 600_000 });
+    await store(env, state, "PUT", { kind: "oauth", expiresAt: Date.now() + 600_000, fromInstall: true });
     await store(env, nonce, "PUT", { kind: "install", expiresAt: Date.now() + 600_000 });
     const target = new URL(`https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`);
     target.searchParams.set("state", state);
@@ -617,7 +623,7 @@ async function route(
       }
       if (oauthCookie) await store(env, oauthCookie, "DELETE");
       console.log(`auth callback: stateless install return, code discarded, fresh login (${seen})`);
-      return redirect("/auth/login", [setCookie(url, "oauth", "", 0), setCookie(url, "install", "", 0)]);
+      return redirect("/auth/login?from=install", [setCookie(url, "oauth", "", 0), setCookie(url, "install", "", 0)]);
     }
     console.log(`auth callback accepted: via=state (${seen})`);
     const code = url.searchParams.get("code");
@@ -680,7 +686,18 @@ async function route(
         await store(env, other, "DELETE");
       else kept.push(other);
     }
-    return redirect(state.kind === "oauth" ? state.returnTo ?? "/" : "/", [
+    // Where a new sign-in goes (the worker decides, so the browser never
+    // shows a screen that only forwards): an account without the App installed
+    // goes straight on to GitHub's install page, unless this sign-in already
+    // ended an install trip (a user who cancelled it is not sent again: the
+    // editor's Connect GitHub step offers the retry: /api/session's onboarding).
+    let next = state.kind === "oauth" ? state.returnTo ?? "/" : "/";
+    const fromInstall = Boolean(installCookie) || (state.kind === "oauth" && state.fromInstall === true);
+    if (next === "/" && !fromInstall) {
+      const owners = await new GitHub(token.access_token, fetcher).ownerInstallations(user.login).catch(() => undefined);
+      if (owners && owners.length === 0) next = "/auth/install";
+    }
+    return redirect(next, [
       setCookie(url, "session", id, duration),
       setCookie(url, "accounts", [id, ...kept].join("."), accountsLifetime),
       setCookie(url, "oauth", "", 0),
@@ -711,6 +728,15 @@ async function route(
           ).then((list) => list.filter((account) => account !== null)),
         ])
       : [undefined, undefined];
+    // What a signed-in account with nothing to open still has to do: install
+    // the App ("install") or make its first site ("create"). Worked out here,
+    // not remembered, so a reload keeps it. Null when it has repositories
+    // (or the listing failed and nothing is known).
+    let onboarding: "install" | "create" | null = null;
+    if (user && Array.isArray(repositories) && repositories.length === 0) {
+      const owners = await new GitHub(user.token, fetcher).ownerInstallations(user.login).catch(() => undefined);
+      if (owners) onboarding = owners.length ? "create" : "install";
+    }
     return json({
       configured: Boolean(app),
       user: user ? { login: user.login, avatar_url: user.avatar_url } : null,
@@ -718,7 +744,7 @@ async function route(
         ? `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
         : null,
       ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
-      ...(user ? { repositories, accounts } : {}),
+      ...(user ? { repositories, accounts, onboarding } : {}),
     });
   }
   if (path === "/api/publish") {

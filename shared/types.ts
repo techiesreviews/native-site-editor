@@ -69,6 +69,13 @@ export interface SessionInfo {
    * browser then requests `/api/repositories` itself.
    */
   repositories?: Repository[] | null;
+  /**
+   * For a signed-in account with no repository to open: what is left to do.
+   * "install": the App is not installed on the account (the Setup wizard opens
+   * on Connect GitHub); "create": it is, and the first site is next (the wizard
+   * opens on Create your site). Null when there is nothing to do or nothing known.
+   */
+  onboarding?: "install" | "create" | null;
 }
 
 /**

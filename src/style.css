@@ -711,7 +711,7 @@ dd {
   background: var(--background);
 }
 .login-card {
-  width: min(100%, 420px);
+  width: min(100%, 460px);
   padding: 34px;
   background: var(--surface);
   border: 0;
@@ -760,7 +760,90 @@ dd {
   text-align: center;
   font-size: var(--type-small);
   color: var(--muted);
-  margin: 25px 0 0;
+  margin: 18px 0 0;
+}
+/* The same card for loading, signing in by itself and the button: the action
+   keeps its height and what is below stays out of sight until it is known. */
+.login-action {
+  min-height: 78px;
+}
+.login-more {
+  min-height: 132px;
+}
+.login-card[data-mode="loading"] .login-more,
+.login-card[data-mode="auto"] .login-more {
+  visibility: hidden;
+}
+.login-busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  min-height: 44px;
+}
+.login-cancel {
+  display: block;
+  margin: 2px auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: var(--type-small);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.login-cancel:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.login-spinner {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--control-line);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: login-spin 0.9s linear infinite;
+}
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-spinner {
+    animation: none;
+    border-top-color: var(--control-line);
+    border-right-color: var(--primary);
+  }
+}
+/* What happens next: the screenshots of GitHub's two pages, under the button. */
+.login-next {
+  margin-top: 18px;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.login-next summary {
+  cursor: pointer;
+  color: var(--link);
+  text-align: center;
+}
+.login-next[open] summary {
+  margin-bottom: 12px;
+}
+.login-next__lead {
+  margin: 0 0 12px;
+  font-size: var(--type-base);
+  line-height: 1.6;
+  color: var(--text);
+}
+.login-next .trip__note {
+  color: var(--text);
+}
+.login-card:has(.login-next[open]) {
+  width: min(100%, 720px);
 }
 .login-setup {
   margin-top: 20px;
@@ -853,6 +936,5 @@ dd {
 }
 
 .login-signin {
-  margin-top: 10px;
-  border: 1px solid var(--control-line);
+  text-decoration: none;
 }

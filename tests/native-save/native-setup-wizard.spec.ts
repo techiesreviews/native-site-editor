@@ -2,9 +2,13 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { publishButton, showPublish } from "./publish";
 
 // The Setup wizard for new users, against the fake GitHub (see the top of
-// server.ts): signed out -> Create your site -> one trip to GitHub (install
-// plus sign-in) -> Create site with the Starter site as its first commit ->
-// finish -> the editor opens on it with the Setup checklist.
+// server.ts): signed out -> Continue with GitHub (the one button) -> the
+// worker sends an account without the App on to GitHub's install page by
+// itself -> back signed in, the wizard opens on Create your site (Connect
+// GitHub done) -> Create site with the Starter site as its first commit ->
+// Connect an agent (optional) -> Put it online -> the editor opens on it with
+// the Setup checklist. An account that came back without installing sees
+// Connect GitHub with a retry.
 //
 // A signed-out browser carries two cookies (ase_demo_signed_out: no demo
 // session is minted; ase_demo_browser: its onboarding state before and after
@@ -37,45 +41,40 @@ async function newBrowser(context: BrowserContext, baseURL: string) {
   ]);
 }
 
-/** Signed out, the account has nothing yet: the App is not installed and there are no repositories. */
+/** Signed out, the account has nothing yet: the App is not installed and there are no repositories. One button; the worker does the rest. */
 async function startSignedOut(page: Page, baseURL: string, controls: object = {}) {
   await newBrowser(page.context(), baseURL);
   await control(page, baseURL, { reset: true, repositories: "none", installed: false, ...controls });
   await page.goto(`${baseURL}/`);
-  await page.getByRole("button", { name: "Create your site" }).click();
-  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toBeVisible();
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  // Sign in, install (GitHub's install page, never an editor screen in between), back signed in: the wizard.
+  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
 
-/** Connect GitHub opens a tab; it comes back signed in, and this tab carries on at step 2. */
-async function connect(page: Page) {
-  const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("link", { name: "Connect GitHub" }).click()]);
-  await expect(page.getByRole("status").filter({ hasText: "GitHub opened in a new tab. Come back here when you've finished." })).toBeVisible();
-  await expect(popup.getByRole("heading", { name: "GitHub is connected" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
-  await popup.close();
+/** Past Connect an agent without connecting one. */
+async function toOnline(page: Page) {
+  await expect(page.getByRole("heading", { name: "Connect an agent" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Skip" }).click();
+  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible();
 }
 
 async function createStarterSite(page: Page) {
   await page.getByLabel("Repository name").fill("my-site");
   await page.getByRole("radio", { name: /Starter site/ }).check();
   await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
 }
 
-test("signed out: Create your site, one trip to GitHub, a site saved as its first commit, then the editor with the Setup checklist", async ({ page, baseURL }) => {
+test("signed out: one Continue with GitHub, the install trip by itself, a site saved as its first commit, the agent step, then the editor with the Setup checklist", async ({ page, baseURL, context }) => {
   await startSignedOut(page, baseURL!);
-  // Step 1: the account line, the reason for All repositories, and the placeholder for the recording.
-  await expect(page.getByRole("link", { name: /Create one free/ })).toHaveAttribute("href", "https://github.com/signup");
-  await expect(page.getByText(/choose All repositories/)).toBeVisible();
-  await expect(page.getByRole("img", { name: /illustration of GitHub's install page/ })).toBeVisible();
-  await expect(page.getByText("Choose All repositories.").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Do this with an agent" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
-
-  await connect(page);
-  expect((await state(page, baseURL!)).installs).toBe(1);
-  // Step 2 knows the signed-in account; step 1 is done.
+  // Signed in and installed on the way: sign-in (one authorization) and one install, no stop between.
+  const trip = await state(page, baseURL!);
+  expect(trip.installs).toBe(1);
+  expect(trip.authorizations).toBe(1);
+  // The steps: Connect GitHub is done, Create your site is current.
+  await expect(page.locator(".wizard__step")).toHaveText([/Connect GitHub/, /Create your site/, /Connect an agent\s*Optional/, /Put it online/, /Open the editor/]);
   await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
+  await expect(page.locator(".wizard__step").nth(1)).toHaveAttribute("aria-current", "step");
   await expect(page.getByText("github.com/native-demo-user/my-site")).toBeVisible();
   await expect(page.getByText("Free hosting needs Public.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Do this with an agent" })).toBeVisible();
@@ -86,8 +85,11 @@ test("signed out: Create your site, one trip to GitHub, a site saved as its firs
   await expect(page.locator(".wizard-form .onboard-field__hint.is-error")).toBeVisible();
   expect((await state(page, baseURL!)).created, "nothing was created for an invalid name").toEqual([]);
 
-  await createStarterSite(page);
+  await page.getByLabel("Repository name").fill("my-site");
+  await page.getByRole("radio", { name: /Starter site/ }).check();
+  await page.getByRole("button", { name: "Create site" }).click();
   // The repository exists and its first commit is the Starter site.
+  await expect(page.getByRole("heading", { name: "Connect an agent" })).toBeVisible({ timeout: 30_000 });
   expect(await head(page, baseURL!, "my-site")).toMatch(/^[0-9a-f]{40}$/);
   for (const path of ["index.html", "styles/site.css", "images/logo.svg", ".editor/config.json"])
     expect((await file(page, baseURL!, "my-site", path)).status(), path).toBe(200);
@@ -98,7 +100,22 @@ test("signed out: Create your site, one trip to GitHub, a site saved as its firs
   expect(config.site.url).toBeUndefined();
   expect(await (await file(page, baseURL!, "my-site", "index.html")).text()).not.toContain("starter-test.example");
 
-  // Step 3 is the mount point for publishing; skipping goes on.
+  // Connect an agent (optional): what it is, a drawn top bar with the project menu marked, and the setup to copy.
+  await expect(page.getByText("An AI agent such as Claude Code or Codex can build and edit your site for you.")).toBeVisible();
+  await expect(page.getByText("You can always disconnect.")).toBeVisible();
+  await expect(page.getByRole("img", { name: /picture of the editor's top bar/ })).toBeVisible();
+  await expect(page.locator(".wizard-bar__row--agent")).toHaveText("Connect with MCP");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy the agent setup now" }).click();
+  await expect(page.getByText(/^Copied\./)).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("native-demo-user/my-site");
+  expect(copied).toContain("/mcp");
+  expect(copied, "the site exists: no steps for creating it").not.toContain("Create the repository");
+  await page.getByRole("button", { name: "Next" }).click();
+
+  // Put it online is the mount point for publishing; skipping goes on.
+  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible();
   await expect(page.getByText("Coming next: one-click publishing.")).toBeVisible();
   await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(page.getByRole("heading", { name: "Your site is ready" })).toBeVisible();
@@ -111,20 +128,87 @@ test("signed out: Create your site, one trip to GitHub, a site saved as its firs
 
 test("when GitHub does not send the state back, the code is discarded and a fresh sign-in completes it", async ({ page, baseURL }) => {
   await startSignedOut(page, baseURL!, { installState: "drop" });
-  await connect(page);
-  // The stateless return never signed anyone in: a fresh /auth/login did (one authorization).
-  expect((await state(page, baseURL!)).authorizations).toBe(1);
+  // The stateless return signed no one in; the fresh /auth/login did (a second authorization), and it did not start a second install.
+  const trip = await state(page, baseURL!);
+  expect(trip.authorizations).toBe(2);
+  expect(trip.installs).toBe(1);
   await createStarterSite(page);
   expect(await head(page, baseURL!, "my-site")).toMatch(/^[0-9a-f]{40}$/);
 });
 
 test("with the App setting off, the return to the setup URL goes to /auth/login and signs in", async ({ page, baseURL }) => {
   await startSignedOut(page, baseURL!, { installOauth: false });
-  await connect(page);
   const after = await state(page, baseURL!);
   expect(after.installs).toBe(1);
-  expect(after.authorizations, "a second authorization completed the sign-in").toBe(1);
+  // The session exists from the first sign-in, so the setup URL's return needs no second one.
+  expect(after.authorizations).toBe(1);
   await createStarterSite(page);
+});
+
+test("installed but no repositories: the sign-in goes straight to Create your site, without a trip to GitHub's install page", async ({ page, baseURL }) => {
+  await startSignedOut(page, baseURL!, { installed: true });
+  const trip = await state(page, baseURL!);
+  expect(trip.installs).toBe(0);
+  expect(trip.authorizations).toBe(1);
+  await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
+});
+
+test("installed with repositories: the sign-in opens the editor, with no wizard", async ({ page, baseURL }) => {
+  await newBrowser(page.context(), baseURL!);
+  await control(page, baseURL, { reset: true, repositories: "all", installed: true });
+  await page.goto(`${baseURL}/`);
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  // Several repositories: the editor opens on the project menu, not on a wizard.
+  await expect(page.locator(".repository-menu__trigger")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".wizard")).toHaveCount(0);
+  expect((await state(page, baseURL!)).installs).toBe(0);
+});
+
+test("back from GitHub without installing the App: Connect GitHub explains the trip with screenshots and offers a retry, with no second redirect", async ({ page, baseURL }) => {
+  await newBrowser(page.context(), baseURL!);
+  // The user cancels on GitHub's install page: the browser comes back to the editor.
+  await control(page, baseURL, { reset: true, repositories: "none", installed: false, cancelInstall: true });
+  await page.goto(`${baseURL}/`);
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("You're signed in.")).toBeVisible();
+  await expect(page.getByText(/One more step on GitHub: install the editor on your account/)).toBeVisible();
+  await expect(page.getByText(/This is one trip: GitHub installs the editor and signs you in together/)).toBeVisible();
+  // No Back to a sign-in choice, and nothing after this step works yet.
+  await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+  // The two real screenshots, with alt text, in a row on a wide screen.
+  const signin = page.getByRole("img", { name: /GitHub's sign-in page/ });
+  const install = page.getByRole("img", { name: /install page for Native Site Editor/ });
+  await expect(signin).toBeVisible();
+  await expect(install).toBeVisible();
+  const [one, two] = [await signin.boundingBox(), await install.boundingBox()];
+  expect(Math.abs(one!.y - two!.y), "side by side on a wide screen").toBeLessThan(40);
+  await expect(page.getByText("If GitHub asks you to sign in")).toBeVisible();
+  await expect(page.getByText("Choose All repositories, then click Install & Authorize")).toBeVisible();
+  // Click to enlarge; Escape closes it.
+  await install.click();
+  const box = page.locator("dialog.lightbox");
+  await expect(box).toBeVisible();
+  await expect(box.getByRole("img", { name: /install page for Native Site Editor/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  // Narrow screens stack them.
+  await page.setViewportSize({ width: 390, height: 900 });
+  const [stackedOne, stackedTwo] = [await signin.boundingBox(), await install.boundingBox()];
+  expect(stackedTwo!.y).toBeGreaterThan(stackedOne!.y + stackedOne!.height - 1);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Nothing sent the browser to GitHub again.
+  const stopped = await state(page, baseURL!);
+  expect(stopped.authorizations).toBe(1);
+  expect(stopped.installs).toBe(0);
+
+  // The retry goes to GitHub's install page once more, in this tab, and carries on.
+  await control(page, baseURL, { cancelInstall: false });
+  await page.getByRole("link", { name: "Connect GitHub" }).click();
+  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
+  expect((await state(page, baseURL!)).installs).toBe(1);
+  await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
 });
 
 test("a returning user whose App is installed skips step 1", async ({ page, baseURL }) => {
@@ -143,7 +227,7 @@ test("a returning user whose App is installed skips step 1", async ({ page, base
   await page.getByRole("radio", { name: /Blank page/ }).check();
   await page.getByRole("radio", { name: /Private/ }).check();
   await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
   expect(await head(page, baseURL!, "blank-site")).toMatch(/^[0-9a-f]{40}$/);
   expect((await file(page, baseURL!, "blank-site", "styles/site.css")).status()).toBe(200);
   expect(((await state(page, baseURL!)).created as { name: string; private: boolean }[])[0]).toMatchObject({ name: "blank-site", private: true });
@@ -159,10 +243,10 @@ test("Leave setup shows Get started for a signed-in account", async ({ page, bas
   await expect(page.getByRole("heading", { name: "Use a repository you have" })).toBeVisible();
 });
 
-test("at a narrow width the steps become Step 1 of 4", async ({ page, baseURL }) => {
+test("at a narrow width the steps become Step 2 of 5", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await startSignedOut(page, baseURL!);
-  await expect(page.getByText("Step 1 of 4")).toBeVisible();
+  await expect(page.getByText("Step 2 of 5")).toBeVisible();
   await expect(page.locator(".wizard__steps")).toBeHidden();
   const overflow = await page.evaluate(() => document.querySelector(".wizard")!.scrollWidth > document.querySelector(".wizard")!.clientWidth);
   expect(overflow).toBe(false);
@@ -175,7 +259,7 @@ test("a first commit that stops after index.html is finished from the editor, wi
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("half-site");
   await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
   const first = await head(page, baseURL!, "half-site");
   expect(first).toMatch(/^[0-9a-f]{40}$/);
   expect((await file(page, baseURL!, "half-site", "index.html")).status()).toBe(200);
@@ -210,7 +294,7 @@ test("when the editor cannot create the repository, the wizard finds the one mad
   // The user makes it on GitHub (an empty repository the editor has access to) and says so.
   await control(page, baseURL, { add: [{ name: "manual-site", kind: "empty" }] });
   await page.getByRole("button", { name: "I've created it" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
   await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("button", { name: "Open the editor" }).click();
   // Opened empty, it gets the starting point it was asked for.
@@ -226,7 +310,7 @@ test("retrying a name that exists and that the account can reach opens it instea
   await control(page, baseURL, { add: [{ name: "retry-site", kind: "empty" }] });
   await page.getByLabel("Repository name").fill("retry-site");
   await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
 });
 
 test("the recovery banner belongs to its repository: switching away removes it, switching back brings it back, and Finish leaves none", async ({ page, baseURL }) => {
@@ -236,7 +320,7 @@ test("the recovery banner belongs to its repository: switching away removes it, 
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("half-site");
   await page.getByRole("button", { name: "Create site" }).click();
-  await expect(page.getByRole("heading", { name: "Put it online" })).toBeVisible({ timeout: 30_000 });
+  await toOnline(page);
   await page.getByRole("button", { name: "Skip for now" }).click();
   await control(page, baseURL, { failTree: false, repositories: "all" });
   await page.getByRole("button", { name: "Open the editor" }).click();

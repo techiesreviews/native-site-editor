@@ -1,0 +1,32 @@
+/* What GitHub shows on the trip (github-trip.ts): two numbered screenshot
+   cards in a row on wide screens, stacked on narrow ones, and a lightbox. */
+.trip { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.trip__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.trip__card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--radius-panel); background: var(--panel-surface, var(--surface-subtle)); }
+.trip__head { display: flex; align-items: flex-start; gap: 10px; font-size: var(--type-base); line-height: 1.45; }
+.trip__number { flex-shrink: 0; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: var(--on-primary); font-size: var(--type-small); font-weight: 600; }
+.trip__caption { font-weight: 600; }
+.trip__figure { flex: 1; display: flex; align-items: flex-start; justify-content: center; min-width: 0; margin: 0; }
+.trip__zoom { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface); overflow: hidden; cursor: zoom-in; line-height: 0; }
+.trip__zoom:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.trip__image { display: block; width: 100%; height: auto; max-height: 270px; object-fit: contain; object-position: top center; }
+.trip__zoom-hint { position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px; background: color-mix(in oklch, var(--text) 78%, transparent); color: var(--surface); font-size: var(--type-badge); line-height: 1.4; opacity: 0; }
+.trip__zoom:hover .trip__zoom-hint, .trip__zoom:focus-visible .trip__zoom-hint { opacity: 1; }
+.trip__note { margin: 0; font-size: var(--type-base); line-height: 1.6; }
+.trip__recording { position: relative; width: 100%; }
+.trip__video { display: block; width: 100%; border-radius: var(--radius); background: var(--surface); aspect-ratio: 16 / 10; object-fit: cover; }
+.trip__play { position: absolute; inset: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: var(--radius); background: color-mix(in oklch, var(--text) 30%, transparent); color: var(--on-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.trip__play:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .trip__cards { grid-template-columns: minmax(0, 1fr); }
+  .trip__image { max-height: 420px; }
+}
+
+.lightbox { max-width: min(96vw, 900px); max-height: 94vh; padding: 0; border: 0; border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); overflow: auto; }
+.lightbox::backdrop { background: rgb(0 0 0 / 0.7); }
+.lightbox__figure { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 16px; }
+.lightbox__image { display: block; max-width: 100%; max-height: 80vh; width: auto; height: auto; margin: 0 auto; border-radius: var(--radius); }
+.lightbox__caption { font-size: var(--type-base); text-align: center; }
+.lightbox__close { position: absolute; top: 8px; right: 8px; z-index: 1; display: inline-grid; place-items: center; width: var(--size-control); height: var(--size-control); border: 0; border-radius: var(--radius); background: var(--surface); color: var(--text); cursor: pointer; box-shadow: var(--shadow-small); }
+.lightbox__close:hover { background: var(--hover); }
+.lightbox__close:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }

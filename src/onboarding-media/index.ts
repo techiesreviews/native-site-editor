@@ -1,4 +1,4 @@
-// The recording of what to click on GitHub (Setup wizard, step 1): a short
+// What GitHub looks like (Setup wizard, step 2): a short
 // muted loop of GitHub's install page with the cursor on "All repositories",
 // then "Install & Authorize". The owner records it separately; to add it,
 // drop the files named below into this folder. Until they exist the wizard
@@ -10,11 +10,11 @@
 //   poster.jpg           the first frame; also what reduced motion shows
 //   github-install.vtt   captions (a starter file is here already)
 
-import { GITHUB_INSTALL_MEDIA } from "./names";
+import { GITHUB_INSTALL_MEDIA, GITHUB_SCREENSHOTS, VIDEO_REPLACES_SCREENSHOT } from "./names";
 
-export { GITHUB_INSTALL_MEDIA };
+export { GITHUB_INSTALL_MEDIA, GITHUB_SCREENSHOTS, VIDEO_REPLACES_SCREENSHOT };
 
-const urls = import.meta.glob("./*.{mp4,webm,jpg,vtt}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const urls = import.meta.glob("./*.{mp4,webm,jpg,png,webp,vtt}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
 /** The address of one of the media files, when it is in this folder. */
 export const mediaUrl = (file: string): string | undefined => urls[`./${file}`];

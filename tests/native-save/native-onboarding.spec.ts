@@ -65,19 +65,127 @@ async function publishNow(page: Page) {
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 }
 
-test("the sign-in screen offers Create your site, GitHub sign-in and a free account in a new tab", async ({ page, baseURL }) => {
-  await page.route("**/api/session", (route) => route.fulfill({ json: { configured: true, user: null } }));
+// The sign-in screen: one button for everyone. The worker decides where the
+// sign-in leads (see native-setup-wizard.spec.ts for each branch).
+const signedOutSession = (page: Page, delay = 0) =>
+  page.route("**/api/session", async (route) => {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    await route.fulfill({ json: { configured: true, user: null } });
+  });
+
+test("the sign-in screen shows a loading state first, then one Continue with GitHub button and no choice", async ({ page, baseURL }) => {
+  await signedOutSession(page, 1200);
   await page.goto(`${baseURL}/`);
-  await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveAttribute("href", "/auth/login");
-  // New users start the Setup wizard from the same screen.
-  await page.getByRole("button", { name: "Create your site" }).click();
-  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toBeVisible();
-  await page.getByRole("button", { name: "Leave setup" }).click();
-  await expect(page.getByRole("heading", { name: "Connect GitHub" })).toHaveCount(0);
+  // Until the session answers: a spinner in the same card, and no button to flash.
+  await expect(page.getByRole("status").filter({ hasText: "Checking your account…" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveCount(0);
+  const card = page.locator(".login-card");
+  const before = await card.boundingBox();
+  const button = page.getByRole("link", { name: "Continue with GitHub" });
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute("href", "/auth/login");
+  expect(Math.abs((await card.boundingBox())!.height - before!.height), "the card does not jump").toBeLessThan(80);
+  await expect(page.getByRole("heading", { name: "Welcome to Native Site Editor" })).toBeVisible();
+  // One way in: no second button, no choice cards.
+  await expect(page.getByRole("button", { name: "Create your site" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveCount(0);
+  await expect(page.locator(".login-card").getByRole("button")).toHaveCount(0);
+  await expect(page.getByText(/asks GitHub for access only to the repositories you choose/)).toBeVisible();
   const signup = page.getByRole("link", { name: "Create a free account" });
   await expect(signup).toHaveAttribute("href", "https://github.com/signup");
   await expect(signup).toHaveAttribute("target", "_blank");
   await expect(signup).toHaveAttribute("rel", /noopener/);
+  await expect(page.getByText(/then confirm the email GitHub sends you/)).toBeVisible();
+});
+
+test("What happens next? shows GitHub's two pages with real screenshots that open larger and close with Escape", async ({ page, baseURL }) => {
+  await signedOutSession(page);
+  await page.goto(`${baseURL}/`);
+  const screenshot = page.getByRole("img", { name: /install page for Native Site Editor/ });
+  await expect(screenshot, "folded away until asked for").toBeHidden();
+  await page.getByText("What happens next?").click();
+  await expect(page.getByText(/authorize the editor \(it signs you in\), then install it/)).toBeVisible();
+  await expect(page.getByText("If GitHub asks you to sign in")).toBeVisible();
+  await expect(page.getByText("Next time it's one click.")).toBeVisible();
+  const signin = page.getByRole("img", { name: /GitHub's sign-in page/ });
+  await expect(signin).toBeVisible();
+  await expect(screenshot).toBeVisible();
+  for (const image of [signin, screenshot]) expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(300);
+  await screenshot.click();
+  const box = page.locator("dialog.lightbox");
+  await expect(box).toBeVisible();
+  await expect(box.getByRole("img", { name: /install page for Native Site Editor/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  // The Close button and a click on the backdrop close it too.
+  await signin.click();
+  await box.getByRole("button", { name: "Close" }).click();
+  await expect(box).toHaveCount(0);
+});
+
+test("a valid session skips the sign-in screen: the editor opens with no button", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  await expect(page.locator(".repository-menu__trigger")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before")), "a flag, never a name or token").toBe("1");
+});
+
+test("a browser that signed in before continues to GitHub by itself, once", async ({ page, baseURL }) => {
+  await signedOutSession(page);
+  let logins = 0;
+  await page.route("**/auth/login", (route) => {
+    logins++;
+    return route.fulfill({ status: 200, contentType: "text/html", body: "<p>GitHub</p>" });
+  });
+  await page.addInitScript(() => localStorage.setItem("ase:signed-in-before", "1"));
+  await page.goto(`${baseURL}/`);
+  await expect(page.getByRole("status").filter({ hasText: "Signing you in with GitHub…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use the button instead" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveCount(0);
+  await expect(page.getByText("GitHub", { exact: true })).toBeVisible({ timeout: 10_000 });
+  expect(logins).toBe(1);
+  // Back with no session (it did not work): the normal screen, and no second try in this tab.
+  await page.goto(`${baseURL}/`);
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  await page.waitForTimeout(2200);
+  expect(logins).toBe(1);
+});
+
+test("an error on return shows the button and the message, and does not try again; Use the button instead cancels", async ({ page, baseURL }) => {
+  await signedOutSession(page);
+  let logins = 0;
+  await page.route("**/auth/login", (route) => {
+    logins++;
+    return route.fulfill({ status: 200, contentType: "text/html", body: "<p>GitHub</p>" });
+  });
+  await page.addInitScript(() => localStorage.setItem("ase:signed-in-before", "1"));
+  await page.goto(`${baseURL}/?error=${encodeURIComponent("GitHub access was not granted.")}`);
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "GitHub access was not granted." })).toBeVisible();
+  await page.waitForTimeout(2200);
+  expect(logins).toBe(0);
+
+  // A fresh tab session would try; the link cancels it within the moment the message shows.
+  await page.evaluate(() => sessionStorage.removeItem("ase:auto-signin-tried"));
+  await page.goto(`${baseURL}/`);
+  await page.getByRole("button", { name: "Use the button instead" }).click();
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  await page.waitForTimeout(2200);
+  expect(logins).toBe(0);
+});
+
+test("signing out of the last account forgets that this browser signed in before, so nothing continues by itself", async ({ page, baseURL, context }) => {
+  await page.goto(`${baseURL}/`);
+  await expect(page.locator(".repository-menu__trigger")).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before"))).toBe("1");
+  // The demo server would mint a session again on the next load: it is told not to.
+  await context.addCookies([{ name: "ase_demo_signed_out", value: "1", url: baseURL! }]);
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: /^Sign out/ }).click();
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before"))).toBeNull();
+  await page.waitForTimeout(2000);
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
 });
 
 test("creating a site from the Starter site makes the repository, shows the starter and saves it as the first commit", async ({ page, baseURL }) => {
