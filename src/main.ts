@@ -357,6 +357,13 @@ function openHistory(force = false) {
   if (!anchor || !info.user || !currentRepo || !snapshot) return;
   if (!force && panel.matches(":popover-open")) { panel.hidePopover(); return; }
   commitHistory?.destroy();
+  commitHistory = undefined;
+  // Before the first save there is no commit to list: the Worker is not asked.
+  if (snapshot.empty) {
+    panel.replaceChildren(node("p", "muted commit-history__message", "No commits yet. Save to GitHub makes the first one."));
+    positionHistory(panel, anchor);
+    return;
+  }
   const epoch = generation;
   const path = currentPath;
   const site = historyScope === "site" || !path;
@@ -2539,7 +2546,7 @@ function startSitePanel() {
     empty: Boolean(snapshot?.empty),
     start: writeStartingPoint,
     agent: async (about) => {
-      const prompt = setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: repo.name, private: repo.private, about });
+      const prompt = setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: repo.name, private: repo.private, about, repository: repo.full_name });
       try {
         await navigator.clipboard.writeText(prompt);
         return "Copied. Paste it into Claude Code, Codex or another coding agent.";
@@ -2559,6 +2566,10 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
   const scope = draftScope();
   if (!repo || !scope) return "Open a repository first.";
   const epoch = generation;
+  // Everything below reads and writes for this repository, branch and snapshot only.
+  const snap = snapshot!;
+  const bound = () => generation === epoch && snapshot === snap && currentRepo === repo;
+  const find = (path: string) => repositoryIndex.find(api, repo, snap, path);
   const siteName = siteNameFromRepository(repo.name);
   let starting: StarterFile[];
   try {
@@ -2568,16 +2579,34 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
   }
   if (epoch !== generation) return "The repository changed meanwhile. Try again.";
   const state = new Map<string, "free" | "taken" | "folder">();
+  // A file cannot go under a path that is a file: the folder it needs is taken by one.
+  const blockedBy = new Map<string, string>();
+  const isFile = async (path: string) => {
+    const now = pathNow(path);
+    if (now === "file") return true;
+    if (now !== undefined) return false;
+    const found = await find(path);
+    return Boolean(found);
+  };
   try {
     for (const file of starting) {
+      const parts = file.path.split("/");
+      for (let index = 1; index < parts.length; index++) {
+        const ancestor = parts.slice(0, index).join("/");
+        const blocked = await isFile(ancestor);
+        if (!bound()) return "The repository changed meanwhile. Try again.";
+        if (blocked) { blockedBy.set(file.path, ancestor); break; }
+      }
+      if (blockedBy.has(file.path)) continue;
       const now = pathNow(file.path);
-      const found = now === undefined ? await findEntry(file.path) : undefined;
+      const found = now === undefined ? await find(file.path) : undefined;
+      if (!bound()) return "The repository changed meanwhile. Try again.";
       state.set(file.path, now === "folder" ? "folder" : now !== undefined || found ? "taken" : "free");
     }
   } catch (error) {
     return error instanceof Error ? error.message : "GitHub could not be asked which files exist.";
   }
-  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  if (!bound()) return "The repository changed meanwhile. Try again.";
   const taken = starting.filter((file) => state.get(file.path) === "taken");
   let replace = false;
   if (taken.length) {
@@ -2593,13 +2622,19 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
     });
     if (!answer.value) return "Nothing was added.";
     replace = answer.value === "replace";
-    if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+    if (!bound()) return "The repository changed meanwhile. Try again.";
   }
   const problems: string[] = [];
+  const skipped = new Map<string, string[]>();
+  for (const [path, ancestor] of blockedBy) skipped.set(ancestor, [...(skipped.get(ancestor) ?? []), path]);
+  for (const [ancestor, paths] of skipped)
+    problems.push(`${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} skipped: ${ancestor} is a file here, so nothing can go in it.`);
   let added = 0;
   for (const file of starting) {
+    if (!bound()) return "The repository changed meanwhile. Some files may have been added as drafts; the rest were not.";
+    if (blockedBy.has(file.path)) continue;
     const here = state.get(file.path);
-    if (here === "folder") { problems.push(`${file.path} is a folder here.`); continue; }
+    if (here === "folder") { problems.push(`${file.path} is a folder here, so it was skipped.`); continue; }
     if (here === "taken" && !replace) continue;
     if ("base64" in file) {
       // Images and other bytes go the way an upload does; one in the way stays.
@@ -2610,6 +2645,11 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
         file: new File([bytes], file.path, { type: uploadImageType(file.path) }),
         taken: () => false,
       });
+      if (!bound()) {
+        // The upload went to the scope captured above; it is not left behind for another branch to see.
+        if (result.ok) draftStore().remove(scope, result.path);
+        return "The repository changed meanwhile. Try again.";
+      }
       if (result.ok) added++;
       else problems.push(result.error);
       continue;
@@ -2621,17 +2661,19 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
     if (drafted) ({ baseSha, original } = drafted);
     else if (here === "taken") {
       try {
-        const entry = await findEntry(file.path);
+        const entry = await find(file.path);
         if (entry) { baseSha = entry.sha; original = await readFile(repo.full_name, entry.sha); }
       } catch {
         problems.push(`${file.path} could not be read, so it was left as it is.`);
         continue;
       }
+      if (!bound()) return "The repository changed meanwhile. Try again.";
     }
+    if (!bound()) return "The repository changed meanwhile. Try again.";
     draftStore().save({ ...scope, version: 1, path: file.path, baseSha, original, content: file.content, updatedAt: Date.now() });
     added++;
   }
-  if (epoch !== generation) return undefined;
+  if (!bound()) return undefined;
   const failure = draftStore().error;
   if (failure) return failure;
   // Opened again: the home page is a draft now, so the native preview takes over from this screen.
@@ -5212,6 +5254,20 @@ async function chooseRepository(resume?: WorkspaceLocation) {
 // repository made) lists the repositories again.
 let waitingForRepositories = false;
 let openNewRepository = false;
+// The repository ids this browser last listed, kept (localStorage, as the
+// install page opens in another tab) to tell which one is new on return.
+const knownRepositoriesKey = () => `native-site-editor:repositories:${info.user?.login.toLowerCase() ?? ""}`;
+function rememberRepositories(list: Repository[]) {
+  try { localStorage.setItem(knownRepositoriesKey(), JSON.stringify(list.map((repo) => repo.id))); } catch { /* Not kept. */ }
+}
+function knownRepositories(): number[] | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem(knownRepositoriesKey()) ?? "null");
+    return Array.isArray(value) && value.every((id) => typeof id === "number") ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 function showGetStarted() {
   const screen = createGetStarted({
     login: info.user?.login ?? "",
@@ -5260,6 +5316,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
   const repo = data as Repository;
   waitingForRepositories = false;
   repositories = [...repositories.filter((known) => known.id !== repo.id), repo];
+  rememberRepositories(repositories);
   repositoryOptions();
   repositorySelect.disabled = false;
   repositorySelect.value = String(repo.id);
@@ -5299,6 +5356,10 @@ async function loadRepositories(prefetched?: Repository[]) {
     if (epoch !== generation) return;
     repositories = result;
     repositoryMenu?.setRepositories(repositories);
+    // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
+    const knownBefore = openNewRepository ? knownRepositories() ?? (info.repositories ?? []).map((repo) => repo.id) : undefined;
+    openNewRepository = false;
+    rememberRepositories(result);
     if (!repositories.length) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
@@ -5326,9 +5387,8 @@ async function loadRepositories(prefetched?: Repository[]) {
       return;
     }
     // Back from giving the editor access: the one repository that is new opens.
-    if (openNewRepository) {
-      openNewRepository = false;
-      const known = new Set((info.repositories ?? []).map((repo) => repo.id));
+    if (knownBefore) {
+      const known = new Set(knownBefore);
       const added = repositories.filter((repo) => !known.has(repo.id));
       if (added.length === 1 && !linked) {
         repositorySelect.value = String(added[0].id);
@@ -5405,6 +5465,7 @@ async function refreshRepositoryList() {
     next.every((repo, index) => repo.id === repositories[index].id)
   )
     return;
+  rememberRepositories(next);
   if (!currentRepo || !next.some((repo) => repo.id === currentRepo!.id)) {
     if (currentRepo) history.replaceState(null, "", location.pathname);
     await loadRepositories(next);

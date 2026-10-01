@@ -541,18 +541,22 @@ export function buildSitePrompt(about?: string) {
  * create one (with the GitHub CLI when the agent has it), have the user give
  * the editor access, connect over MCP with OAuth, and build the site.
  */
-export function setupPrompt(options: { editor: string; installUrl?: string | null; name: string; private: boolean; about?: string }) {
+export function setupPrompt(options: { editor: string; installUrl?: string | null; name: string; private: boolean; about?: string; /** The repository already open in the editor (owner/name): no creating or access steps. */ repository?: string }) {
   const url = `${options.editor}/mcp`;
-  return `Help me start a website with Native Site Editor (${options.editor}). The site is a GitHub repository whose files are the site: plain HTML, CSS and browser JavaScript, no build.
-
-1. Create the repository ${options.name} on my GitHub account. If you have the GitHub CLI, run
+  const first = options.repository
+    ? `1. The repository is ${options.repository}, and it is open in the editor at ${options.editor}. Keep that tab open.`
+    : `1. Create the repository ${options.name} on my GitHub account. If you have the GitHub CLI, run
    gh repo create ${options.name} --${options.private ? "private" : "public"}
    Otherwise ask me to create it on the editor's Get started screen.
-2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (Get started, Use a repository you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.
-3. Connect to the editor over MCP. Server URL: ${url} (streamable HTTP)
+2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (Get started, Use a repository you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.`;
+  const n = options.repository ? 2 : 3;
+  return `Help me start a website with Native Site Editor (${options.editor}). The site is a GitHub repository whose files are the site: plain HTML, CSS and browser JavaScript, no build.
+
+${first}
+${n}. Connect to the editor over MCP. Server URL: ${url} (streamable HTTP)
 ${addServerSteps(url)}
    If you cannot change your own MCP settings, tell me exactly what to do.
-4. ${buildSitePrompt(options.about)}
+${n + 1}. ${buildSitePrompt(options.about)}
 
 Your changes appear in my editor as unsaved drafts; I review them and save them to GitHub.`;
 }
