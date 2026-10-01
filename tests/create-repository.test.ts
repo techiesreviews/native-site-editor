@@ -28,6 +28,8 @@ function fixture(options: { installations?: unknown[]; create?: () => Response }
           { id: 12, account: { type: "User", login: "LEX" } },
         ],
       });
+    if (path === "/orgs/company/repos" && method === "POST")
+      return options.create?.() ?? Response.json({ ...created, full_name: "company/my-site", owner: { login: "company", type: "Organization" } }, { status: 201 });
     if (path === "/user/repos" && method === "POST") return options.create?.() ?? Response.json(created, { status: 201 });
     throw new Error(`Unexpected ${method} ${path}`);
   });
@@ -71,7 +73,7 @@ test("an invalid name is refused before GitHub is asked anything", async () => {
 });
 
 test("without an installation on the account the answer is 404 and nothing is created", async () => {
-  const { github, calls } = fixture({ installations: [{ id: 11, account: { type: "Organization", login: "lex" } }] });
+  const { github, calls } = fixture({ installations: [{ id: 11, account: { type: "Organization", login: "company" } }] });
   await rejects(github.createRepository("lex", { name: "my-site", private: false }), 404, /not installed/);
   assert.ok(!calls.some((call) => call.method === "POST"));
 });
@@ -93,6 +95,34 @@ test("a name already taken (GitHub's 422, or a 409) is a 409 that names the prob
 test("other failures stay failures", async () => {
   const { github } = fixture({ create: () => new Response("boom", { status: 500 }) });
   await rejects(github.createRepository("lex", { name: "my-site", private: false }), 502);
+});
+
+test("createRepository in an organisation posts to the organisation and names its installation", async () => {
+  const { github, calls } = fixture();
+  const repository = await github.createRepository("lex", { name: "my-site", owner: "Company", private: true });
+  assert.equal(repository.full_name, "company/my-site");
+  assert.equal(repository.owner.type, "Organization");
+  assert.equal(repository.installation_id, 11);
+  assert.equal(calls.find((call) => call.method === "POST")!.path, "/orgs/company/repos");
+});
+
+test("an organisation's taken name is a 409; one forbidden to members says an organisation owner may need to create it", async () => {
+  const taken = fixture({ create: () => Response.json({ message: "name already exists" }, { status: 422 }) });
+  await rejects(taken.github.createRepository("lex", { name: "my-site", owner: "company", private: false }), 409, /company may already have/);
+  for (const status of [403, 404]) {
+    const { github } = fixture({ create: () => Response.json({ message: "forbidden" }, { status }) });
+    await rejects(github.createRepository("lex", { name: "my-site", owner: "company", private: false }), 403, /company.*organisation owner may need to/);
+  }
+});
+
+test("an owner without an installation the user can reach is refused before anything is created", async () => {
+  const { github, calls } = fixture();
+  await rejects(github.createRepository("lex", { name: "my-site", owner: "stranger", private: false }), 403, /not installed on stranger/);
+  assert.ok(!calls.some((call) => call.method === "POST"));
+  // The user's own login as the owner is the personal account.
+  const own = fixture();
+  assert.equal((await own.github.createRepository("lex", { name: "my-site", owner: "lex", private: false })).installation_id, 12);
+  assert.equal(own.calls.find((call) => call.method === "POST")!.path, "/user/repos");
 });
 
 test("a new repository shows up in the next listing", async () => {

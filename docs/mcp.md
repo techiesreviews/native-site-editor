@@ -12,7 +12,7 @@ Two ways, both scoped to your signed-in editor session. A connection works on **
 
 ### OAuth: claude.ai, Claude Desktop, Claude Code
 
-The server implements the MCP authorization spec: protected resource metadata (`/.well-known/oauth-protected-resource/mcp`, named in the `WWW-Authenticate` header of a 401), authorization server metadata (`/.well-known/oauth-authorization-server`), dynamic client registration (`/auth/mcp/register`) and the authorization code grant with PKCE S256 (`/auth/mcp/authorize`, `/auth/mcp/token`). Authorizing is the editor's own GitHub sign-in followed by a consent page where you choose the repository.
+The server implements the MCP authorization spec: protected resource metadata (`/.well-known/oauth-protected-resource/mcp`, named in the `WWW-Authenticate` header of a 401), authorization server metadata (`/.well-known/oauth-authorization-server`), dynamic client registration (`/auth/mcp/register`) and the authorization code grant with PKCE S256 (`/auth/mcp/authorize`, `/auth/mcp/token`). Authorizing is the editor's own GitHub sign-in followed by a consent page where you choose the repository (any repository the editor lists, including those of organisations you belong to, shown as `owner/name`).
 
 **claude.ai and Claude Desktop** (custom connectors are shared between them through your Claude account):
 

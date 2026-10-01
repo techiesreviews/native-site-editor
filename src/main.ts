@@ -27,7 +27,7 @@ import { createCreateDialog, type CreateKind, type CreateRequest } from "./compo
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
-import { EMPTY_COMMIT } from "../shared/types";
+import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
 import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
 import { createStartSite } from "./components/start-site";
 import { createSetupChecklist } from "./components/setup-checklist";
@@ -5478,6 +5478,7 @@ function showGetStarted() {
     editor: location.origin,
     create: createSite,
     reload: () => void loadRepositories(),
+    loadOwners: () => api<OwnerInstallation[]>("owners"),
   });
   content.replaceChildren(screen.root);
   status("Connected. Create a site or choose a repository.");
@@ -5496,15 +5497,15 @@ async function checkNewRepositories() {
 }
 
 // The starting point chosen on Get started when the repository was made on
-// GitHub's own page: kept (localStorage, by account and repository name, as
+// GitHub's own page: kept (localStorage, by account, owner and repository name, as
 // the way back may be a new tab) until that repository opens.
-const startingPointKey = (name: string) => `native-site-editor:starting-point:${info.user?.login.toLowerCase() ?? ""}/${name.toLowerCase()}`;
-function rememberStartingPoint(name: string, point: StartingPoint) {
-  try { localStorage.setItem(startingPointKey(name), point); } catch { /* Not kept: Start your site asks. */ }
+const startingPointKey = (owner: string | undefined, name: string) => `native-site-editor:starting-point:${info.user?.login.toLowerCase() ?? ""}/${(owner ?? info.user?.login ?? "").toLowerCase()}/${name.toLowerCase()}`;
+function rememberStartingPoint(owner: string | undefined, name: string, point: StartingPoint) {
+  try { localStorage.setItem(startingPointKey(owner, name), point); } catch { /* Not kept: Start your site asks. */ }
 }
 function takeStartingPoint(repo: Repository): StartingPoint | undefined {
   try {
-    const key = startingPointKey(repo.name);
+    const key = startingPointKey(repo.owner.login, repo.name);
     const point = localStorage.getItem(key);
     if (point === null) return undefined;
     localStorage.removeItem(key);
@@ -5526,14 +5527,14 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
       credentials: "same-origin",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: choice.name, private: choice.private, description: "A website edited with Native Site Editor" }),
+      body: JSON.stringify({ name: choice.name, ...(choice.owner ? { owner: choice.owner } : {}), private: choice.private, description: "A website edited with Native Site Editor" }),
     });
   } catch {
     return { ok: false, message: "GitHub could not be reached. Try again." };
   }
   const data = await response.json().catch(() => ({}));
   if (response.status === 403 || response.status === 404) {
-    rememberStartingPoint(choice.name, choice.point);
+    rememberStartingPoint(choice.owner, choice.name, choice.point);
     return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
   }
   if (!response.ok) return { ok: false, message: data.error || "The repository could not be created. Try again." };

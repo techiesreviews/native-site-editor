@@ -44,6 +44,17 @@
 //                                     fixtures/starter-template; it has a test address, a
 //                                     noindex, wrangler.jsonc, .assetsignore and .github/ that
 //                                     the editor must drop) or a 404 from codeload
+//     { org: true }                   the account belongs to the organisation demo-org, where the
+//                                     App is installed (installation 2): GET /user/installations
+//                                     lists it and its repositories "org-site" (the native
+//                                     starter fixture) and "org-empty" (no commits) join the
+//                                     listing; false takes them away again
+//                                     ({ repositories: "none" } hides them too, so Get started
+//                                     shows with the installation present)
+//     { orgCreate: "ok" | "forbidden" | "taken" }
+//                                     POST /orgs/demo-org/repos: creates an empty repository in
+//                                     the organisation (default); 403 as when members may not
+//                                     create repositories; or 422 "name already exists"
 //     { add: [{ name, kind: "empty" | "no-site", private? }] }
 //                                     adds a repository to the listing: "empty" has no commits
 //                                     and no branches (branches -> [], branch -> 404, commits and
@@ -51,6 +62,7 @@
 //                                     commits but no root index.html (fixtures/no-site, a README)
 //   GET  /__demo/onboarding   -> { repositories: names listed, created: [{ name, private,
 //                                  description? }] as POST /user/repos received them,
+//                                  orgCreated: the same for POST /orgs/demo-org/repos,
 //                                  starterFetches: n, heads: { [repo]: commit sha | null } }
 //   GET  /__demo/head?repo=NAME and /__demo/file?repo=NAME&path=P  read any repository's head
 //                                  and committed bytes (repo defaults to the demo repository).
@@ -318,6 +330,10 @@ interface Onboarding {
   hideDefault: boolean;
   installed: boolean;
   create: "ok" | "forbidden" | "taken";
+  /** The organisation demo-org, its installation and repositories are there. */
+  org: boolean;
+  orgCreate: "ok" | "forbidden" | "taken";
+  orgCreated: { name: string; private: boolean; description?: string }[];
   starter: "ok" | "unavailable";
   // Repositories made by POST /user/repos or added by the test, with their own git.
   repos: Map<string, { repo: typeof DEMO_REPO; git: Git }>;
@@ -326,8 +342,19 @@ interface Onboarding {
   nextId: number;
 }
 function newOnboarding(): Onboarding {
-  return { hideDefault: false, installed: true, create: "ok", starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600 };
+  return { hideDefault: false, installed: true, create: "ok", org: false, orgCreate: "ok", orgCreated: [], starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600 };
 }
+
+const ORG_LOGIN = "demo-org";
+const ORG_SEEDED = ["org-site", "org-empty"];
+const orgRepo = (id: number, name: string, isPrivate = true) => ({
+  ...DEMO_REPO,
+  id,
+  name,
+  full_name: `${ORG_LOGIN}/${name}`,
+  private: isPrivate,
+  owner: { login: ORG_LOGIN, type: "Organization" },
+});
 
 // A repository with no commits and no branches.
 function emptyGit(): Git {
@@ -380,13 +407,30 @@ function githubFetch(
     }
     if (path === "/user/installations")
       return jsonResponse({
-        installations: onboarding.installed ? [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }] : [],
+        installations: [
+          ...(onboarding.installed ? [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }] : []),
+          ...(onboarding.org ? [{ id: 2, account: { type: "Organization", login: ORG_LOGIN } }] : []),
+        ],
       });
-    const listed = () => [
-      ...(onboarding.hideDefault ? [] : [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)]),
-      ...[...onboarding.repos.values()].map((entry) => entry.repo),
+    const listed = (owner = DEMO_LOGIN) => [
+      ...(onboarding.hideDefault || owner !== DEMO_LOGIN ? [] : [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)]),
+      ...[...onboarding.repos.values()]
+        .map((entry) => entry.repo)
+        .filter((repo) => repo.owner.login === owner && !(onboarding.hideDefault && ORG_SEEDED.includes(repo.name))),
     ];
     if (path === "/user/installations/1/repositories") return jsonResponse({ repositories: listed() });
+    if (path === "/user/installations/2/repositories" && onboarding.org) return jsonResponse({ repositories: listed(ORG_LOGIN) });
+    // Creating a repository in the organisation.
+    if (path === `/orgs/${ORG_LOGIN}/repos` && method === "POST" && onboarding.org) {
+      const name = String(body?.name ?? "");
+      onboarding.orgCreated.push({ name, private: body?.private === true, ...(body?.description ? { description: String(body.description) } : {}) });
+      if (onboarding.orgCreate === "forbidden") return jsonResponse({ message: "You are not allowed to create repositories in this organization." }, 403);
+      if (onboarding.orgCreate === "taken" || listed(ORG_LOGIN).some((repo) => repo.name.toLowerCase() === name.toLowerCase()))
+        return jsonResponse({ message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] }, 422);
+      const repo = orgRepo(onboarding.nextId++, name, body?.private === true);
+      onboarding.repos.set(name, { repo, git: emptyGit() });
+      return jsonResponse({ ...repo, html_url: `https://github.com/${repo.full_name}` }, 201);
+    }
     // Creating a repository: empty, and added to the installation.
     if (path === "/user/repos" && method === "POST") {
       const name = String(body?.name ?? "");
@@ -407,7 +451,7 @@ function githubFetch(
     }
     const extra = onboarding.repos.get(repoName);
     const git = extra ? extra.git : fixture ? fixtureGits.get(repoName)! : demoGit;
-    const repoBase = `/repos/${DEMO_REPO.owner.login}/${extra || fixture ? repoName : DEMO_REPO.name}`;
+    const repoBase = `/repos/${extra?.repo.owner.login ?? DEMO_REPO.owner.login}/${extra || fixture ? repoName : DEMO_REPO.name}`;
     // The contents API makes a file in one commit, and the first commit (and
     // the branch main) of an empty repository.
     const contents = new RegExp(`^${repoBase}/contents/(.+)$`).exec(path);
@@ -790,6 +834,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
               ...[...state.repos.values()].map((entry) => entry.repo),
             ].map((repo) => repo.name),
             created: state.created,
+            orgCreated: state.orgCreated,
             starterFetches: state.starterFetches,
             heads: Object.fromEntries([...state.repos].map(([name, entry]) => [name, entry.git.head || null])),
           }));
@@ -800,6 +845,15 @@ function workerMiddleware(): Connect.NextHandleFunction {
         if (options.repositories === "none" || options.repositories === "all") next.hideDefault = options.repositories === "none";
         if (typeof options.installed === "boolean") next.installed = options.installed;
         if (["ok", "forbidden", "taken"].includes(options.create)) next.create = options.create;
+        if (["ok", "forbidden", "taken"].includes(options.orgCreate)) next.orgCreate = options.orgCreate;
+        if (typeof options.org === "boolean" && options.org !== next.org) {
+          next.org = options.org;
+          for (const [name, entry] of next.repos) if (entry.repo.owner.login === ORG_LOGIN) next.repos.delete(name);
+          if (options.org) {
+            next.repos.set("org-site", { repo: orgRepo(700, "org-site"), git: buildInitialGit() });
+            next.repos.set("org-empty", { repo: orgRepo(701, "org-empty"), git: emptyGit() });
+          }
+        }
         if (["ok", "unavailable"].includes(options.starter)) next.starter = options.starter;
         for (const added of options.add ?? []) {
           const name = String(added.name);

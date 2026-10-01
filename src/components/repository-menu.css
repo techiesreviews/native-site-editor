@@ -429,3 +429,26 @@
     max-width: 65vw;
   }
 }
+
+/* Owner headings, when repositories of more than one owner are listed. */
+.repository-menu__owner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 2px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.repository-menu__owner:first-child {
+  padding-top: 2px;
+}
+
+.repository-menu__owner-kind {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}

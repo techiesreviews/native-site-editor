@@ -6,7 +6,8 @@ import {
   suggestedRepositoryName,
   type StartingPoint,
 } from "../../shared/starting-point";
-import { setupPrompt } from "./agent-menu";
+import type { OwnerInstallation } from "../../shared/types";
+import { createCommand, setupPrompt } from "./agent-menu";
 import "./onboarding.css";
 
 // Get started: the screen of a signed-in account with no repository in the
@@ -29,6 +30,8 @@ export type CreateOutcome =
 
 export interface CreateChoice {
   name: string;
+  /** The organisation to create it in; absent for the signed-in account. */
+  owner?: string;
   private: boolean;
   point: StartingPoint;
 }
@@ -40,6 +43,7 @@ export interface CreateChoice {
  */
 export function newRepositoryUrl(choice: CreateChoice) {
   const url = new URL("https://github.com/new");
+  if (choice.owner) url.searchParams.set("owner", choice.owner);
   url.searchParams.set("name", choice.name);
   url.searchParams.set("visibility", choice.private ? "private" : "public");
   url.searchParams.set("description", "A website edited with Native Site Editor");
@@ -75,6 +79,8 @@ export function createGetStarted(options: {
   editor: string;
   create: (choice: CreateChoice) => Promise<CreateOutcome>;
   reload: () => void;
+  /** The accounts and organisations the editor is installed on; the Owner picker shows when there is more than one. */
+  loadOwners?: () => Promise<OwnerInstallation[]>;
 }) {
   const root = node("section", "get-started");
   root.setAttribute("aria-labelledby", "get-started-title");
@@ -107,6 +113,12 @@ export function createGetStarted(options: {
   nameHint.id = "repository-name-hint";
   nameInput.setAttribute("aria-describedby", nameHint.id);
   nameLabel.append(node("span", "onboard-field__label", "Repository name"), nameInput, nameHint);
+  // Owner: the personal account or an organisation with an installation, shown once there is a choice.
+  const ownerLabel = node("label", "onboard-field");
+  const ownerSelect = node("select", "onboard-input");
+  ownerSelect.name = "owner";
+  ownerLabel.append(node("span", "onboard-field__label", "Owner"), ownerSelect);
+  ownerLabel.hidden = true;
   const visibility = node("fieldset", "onboard-group");
   visibility.append(
     node("legend", "onboard-field__label", "Visibility"),
@@ -125,10 +137,11 @@ export function createGetStarted(options: {
   message.setAttribute("role", "status");
   const fallback = node("div", "onboard-fallback");
   fallback.hidden = true;
-  form.append(createTitle, nameLabel, visibility, start, submit, message, fallback);
+  form.append(createTitle, ownerLabel, nameLabel, visibility, start, submit, message, fallback);
 
   const choice = (): CreateChoice => ({
     name: nameInput.value.trim(),
+    ...(ownerSelect.value && ownerSelect.value.toLowerCase() !== options.login.toLowerCase() ? { owner: ownerSelect.value } : {}),
     private: (form.elements.namedItem("visibility") as RadioNodeList).value === "private",
     point: (form.elements.namedItem("point") as RadioNodeList).value === "blank" ? "blank" : "starter",
   });
@@ -137,7 +150,7 @@ export function createGetStarted(options: {
     const problem = repositoryNameProblem(name);
     nameInput.setAttribute("aria-invalid", String(Boolean(problem && name)));
     nameHint.classList.toggle("is-error", Boolean(problem && name));
-    nameHint.textContent = problem && name ? problem : `github.com/${options.login}/${name || "…"}`;
+    nameHint.textContent = problem && name ? problem : ownerLabel.hidden ? `github.com/${options.login}/${name || "…"}` : `Creates ${ownerSelect.value}/${name || "…"}`;
     return problem;
   }
   nameInput.addEventListener("input", () => {
@@ -151,6 +164,25 @@ export function createGetStarted(options: {
     showName();
   });
   showName();
+  ownerSelect.addEventListener("change", () => {
+    showName();
+    agentPrompt();
+  });
+  void options.loadOwners?.().then((owners) => {
+    // A choice, or the only possible owner is an organisation (the personal account has no installation).
+    if (!owners.length || !root.isConnected || (owners.length === 1 && owners[0].login.toLowerCase() === options.login.toLowerCase())) return;
+    ownerSelect.replaceChildren(
+      ...owners.map((owner) => {
+        const option = node("option", "", owner.type === "Organization" ? `${owner.login} (organisation)` : owner.login);
+        option.value = owner.login;
+        return option;
+      }),
+    );
+    ownerSelect.disabled = owners.length === 1;
+    ownerLabel.hidden = false;
+    showName();
+    agentPrompt();
+  }, () => undefined);
 
   function showFallback(chosen: CreateChoice, text: string, created?: boolean) {
     message.textContent = text;
@@ -215,7 +247,7 @@ export function createGetStarted(options: {
     node(
       "p",
       "onboard-card__text",
-      "Choose repositories on your personal GitHub account for the editor. A repository with index.html at its top opens as a site; one without starts from the Starter site or a blank page.",
+      "Choose repositories on your GitHub account, or an organisation you belong to, for the editor. A repository with index.html at its top opens as a site; one without starts from the Starter site or a blank page.",
     ),
     existingActions,
     node("p", "onboard-card__note", "Coming back to this tab lists them."),
@@ -246,8 +278,9 @@ export function createGetStarted(options: {
   gh.append("Agents with the GitHub CLI create the repository themselves (", ghCommand, "), then ask you to give the editor access to it.");
   function agentPrompt() {
     const chosen = choice();
-    ghCommand.textContent = `gh repo create ${chosen.name || DEFAULT_REPOSITORY_NAME} --${chosen.private ? "private" : "public"}`;
-    return setupPrompt({ editor: options.editor, installUrl: options.installUrl, name: chosen.name || DEFAULT_REPOSITORY_NAME, private: chosen.private, about: about.value });
+    const name = chosen.name || DEFAULT_REPOSITORY_NAME;
+    ghCommand.textContent = createCommand({ name, private: chosen.private, owner: chosen.owner });
+    return setupPrompt({ editor: options.editor, installUrl: options.installUrl, name, private: chosen.private, owner: chosen.owner, about: about.value });
   }
   form.addEventListener("change", () => agentPrompt());
   async function copyPrompt() {

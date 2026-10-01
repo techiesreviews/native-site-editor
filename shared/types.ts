@@ -94,9 +94,18 @@ export interface PublishRequest {
   head?: string;
   files: PublishFile[];
 }
-/** A repository the editor made on the signed-in account (`POST /api/repositories`). */
+/** An account or organisation the editor's GitHub App is installed on, that the user can reach (`GET /api/owners`). */
+export interface OwnerInstallation {
+  id: number;
+  login: string;
+  type: "User" | "Organization";
+}
+
+/** A repository the editor made on the signed-in account or one of their organisations (`POST /api/repositories`). */
 export interface CreateRepositoryRequest {
   name: string;
+  /** The organisation to create it in; absent for the signed-in account. */
+  owner?: string;
   private: boolean;
   description?: string;
 }

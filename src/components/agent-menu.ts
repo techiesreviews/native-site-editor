@@ -541,12 +541,17 @@ export function buildSitePrompt(about?: string) {
  * create one (with the GitHub CLI when the agent has it), have the user give
  * the editor access, connect over MCP with OAuth, and build the site.
  */
-export function setupPrompt(options: { editor: string; installUrl?: string | null; name: string; private: boolean; about?: string; /** The repository already open in the editor (owner/name): no creating or access steps. */ repository?: string }) {
+/** The GitHub CLI command that creates the repository, in an organisation when `owner` is one. */
+export function createCommand(options: { name: string; private: boolean; owner?: string }) {
+  return `gh repo create ${options.owner ? `${options.owner}/` : ""}${options.name} --${options.private ? "private" : "public"}`;
+}
+
+export function setupPrompt(options: { editor: string; installUrl?: string | null; name: string; private: boolean; /** The organisation to create it in; absent for my own account. */ owner?: string; about?: string; /** The repository already open in the editor (owner/name): no creating or access steps. */ repository?: string }) {
   const url = `${options.editor}/mcp`;
   const first = options.repository
     ? `1. The repository is ${options.repository}, and it is open in the editor at ${options.editor}. Keep that tab open.`
-    : `1. Create the repository ${options.name} on my GitHub account. If you have the GitHub CLI, run
-   gh repo create ${options.name} --${options.private ? "private" : "public"}
+    : `1. Create the repository ${options.name} ${options.owner ? `in my GitHub organisation ${options.owner}` : "on my GitHub account"}. If you have the GitHub CLI, run
+   ${createCommand(options)}
    Otherwise ask me to create it on the editor's Get started screen.
 2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (Get started, Use a repository you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.`;
   const n = options.repository ? 2 : 3;

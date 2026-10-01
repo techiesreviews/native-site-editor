@@ -80,6 +80,9 @@ export function createRepositoryMenu(options: {
   const add = accessLink("Add repositories", "repository-menu__add");
   sites.append(heading, search, list, empty, select, branch);
   if (add) sites.append(add);
+  // The App's installations/new page lets the user pick the account or organisation.
+  const another = options.installUrl ? anotherAccountLink(options.installUrl) : undefined;
+  if (another) sites.append(another);
 
   // The branches, beside the open repository's row.
   const branches = node("div", "repository-menu__branches");
@@ -183,9 +186,23 @@ export function createRepositoryMenu(options: {
     }
   });
 
+  // The installation's settings page: an organisation's differs from a user's.
   function accessUrl(repo?: Repository) {
-    const installation = repo?.installation_id ?? repositories.find((item) => item.installation_id)?.installation_id;
-    return installation ? `https://github.com/settings/installations/${installation}` : options.installUrl;
+    const target = repo ?? repositories.find((item) => item.id === currentId) ?? repositories.find((item) => item.installation_id);
+    if (!target?.installation_id) return options.installUrl;
+    return target.owner.type === "Organization"
+      ? `https://github.com/organizations/${encodeURIComponent(target.owner.login)}/settings/installations/${target.installation_id}`
+      : `https://github.com/settings/installations/${target.installation_id}`;
+  }
+  function anotherAccountLink(href: string) {
+    const result = link("+ Install on another account ↗", href, "text-button repository-menu__action repository-menu__quiet repository-menu__another");
+    result.target = "_blank";
+    result.rel = "noopener noreferrer";
+    result.title = "Install the editor on another account or organisation, on GitHub";
+    result.addEventListener("click", () => {
+      awaitingAccess = true;
+    });
+    return result;
   }
   function accessLink(text: string, className: string) {
     if (!options.installUrl) return undefined;
@@ -245,12 +262,33 @@ export function createRepositoryMenu(options: {
   function render() {
     const query = search.value.trim().toLowerCase();
     const shown = repositories.filter((repo) => !query || repo.full_name.toLowerCase().includes(query));
-    list.replaceChildren(...shown.map(row));
+    // More than one owner: grouped under the owner's name, the personal account first, then organisations by name.
+    if (new Set(repositories.map((repo) => repo.owner.login.toLowerCase())).size < 2) list.replaceChildren(...shown.map(row));
+    else {
+      const rank = (repo: Repository) => (repo.owner.type === "Organization" ? 1 : 0);
+      const firsts = new Map<string, Repository>();
+      for (const repo of shown) if (!firsts.has(repo.owner.login.toLowerCase())) firsts.set(repo.owner.login.toLowerCase(), repo);
+      const ordered = [...firsts.values()].sort((a, b) => rank(a) - rank(b) || a.owner.login.localeCompare(b.owner.login));
+      list.replaceChildren(
+        ...ordered.flatMap((first) => [
+          ownerHeading(first),
+          ...shown.filter((repo) => repo.owner.login.toLowerCase() === first.owner.login.toLowerCase()).map(row),
+        ]),
+      );
+    }
     branchFlyout.attach(list.querySelector<HTMLElement>('.repository-menu__repo[aria-current="true"]') ?? undefined);
     if (repositories.length && !shown.length) {
       empty.textContent = "No repository matches.";
       empty.hidden = false;
     } else if (repositories.length) empty.hidden = true;
+  }
+  function ownerHeading(repo: Repository) {
+    const organisation = repo.owner.type === "Organization";
+    const item = node("li", "repository-menu__owner");
+    item.dataset.owner = repo.owner.login;
+    item.dataset.kind = organisation ? "organization" : "user";
+    item.append(node("span", "repository-menu__owner-name", repo.owner.login), node("span", "repository-menu__owner-kind", organisation ? "Organisation" : "You"));
+    return item;
   }
   function row(repo: Repository) {
     const item = node("li", "repository-menu__item");

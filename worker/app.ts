@@ -722,6 +722,7 @@ async function route(
       return json(
         await github.createRepository(user.login, {
           name: typeof data?.name === "string" ? data.name.trim() : "",
+          owner: typeof data?.owner === "string" && data.owner ? data.owner.slice(0, 100) : undefined,
           private: data?.private === true,
           description: typeof data?.description === "string" ? data.description : undefined,
         }),
@@ -730,6 +731,8 @@ async function route(
     }
     if (path === "/api/repositories")
       return json(await github.repositories(user.login));
+    // Create a site's owner choices: the user and organisations with an installation.
+    if (path === "/api/owners") return json(await github.ownerInstallations(user.login));
     // Start your site: the Starter site's files, named for the site.
     if (path === "/api/starter") {
       const name = (url.searchParams.get("name") ?? "").trim().slice(0, 100);

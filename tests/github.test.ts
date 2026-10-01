@@ -14,7 +14,7 @@ const repo: Repository = {
 };
 const reply = (data: unknown, status = 200) => Response.json(data, { status });
 
-test("repository discovery paginates and excludes organizations and unselected repositories", async () => {
+test("repository discovery paginates and excludes unselected repositories and other personal accounts", async () => {
   const calls: string[] = [];
   const github = new GitHub("secret", async (input) => {
     const url = new URL(String(input));
@@ -23,7 +23,7 @@ test("repository discovery paginates and excludes organizations and unselected r
       return reply({
         installations: [
           { id: 1, account: { type: "User", login: "lex" } },
-          { id: 2, account: { type: "Organization", login: "company" } },
+          { id: 2, account: { type: "User", login: "someone-else" } },
         ],
       });
     if (url.searchParams.get("page") === "1")
@@ -44,6 +44,54 @@ test("repository discovery paginates and excludes organizations and unselected r
     () => github.authorizeRepository("lex", "lex/not-selected"),
     (error: HttpError) => error.status === 403,
   );
+});
+
+/** A fake GitHub with a personal and an organisation installation, each listing its own repositories. */
+function withOrganisation() {
+  const calls: string[] = [];
+  const mine = { ...repo, id: 1, name: "mine", full_name: "lex/mine" };
+  const theirs = { ...repo, id: 2, name: "site", full_name: "company/site", owner: { login: "company", type: "Organization" } };
+  const github = new GitHub("secret", async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === "/user/installations")
+      return reply({
+        installations: [
+          { id: 22, account: { type: "Organization", login: "company" } },
+          { id: 11, account: { type: "User", login: "lex" } },
+          { id: 33, account: { type: "User", login: "someone-else" } },
+        ],
+      });
+    if (url.pathname === "/user/installations/11/repositories") return reply({ repositories: [mine] });
+    // GitHub lists only the organisation repositories the user can reach.
+    if (url.pathname === "/user/installations/22/repositories")
+      return reply({ repositories: [theirs, { ...theirs, id: 3, name: "x", full_name: "other/x", owner: { login: "other", type: "Organization" } }] });
+    if (url.pathname.startsWith("/repos/")) return reply({ name: "ok" });
+    throw new Error(`Unexpected ${url.pathname}`);
+  });
+  return { github, calls };
+}
+
+test("the listing merges the personal account's and organisations' repositories, each with its installation", async () => {
+  const { github, calls } = withOrganisation();
+  const listed = await github.repositories("lex");
+  assert.deepEqual(listed.map((item) => [item.full_name, item.owner.type, item.installation_id]), [
+    ["lex/mine", "User", 11],
+    ["company/site", "Organization", 22],
+  ]);
+  assert.ok(!calls.includes("/user/installations/33/repositories"), "another personal account's installation is not read");
+  assert.deepEqual(await github.ownerInstallations("lex"), [
+    { id: 11, login: "lex", type: "User" },
+    { id: 22, login: "company", type: "Organization" },
+  ]);
+});
+
+test("a repository outside the listing is refused, an organisation's inside it is authorised", async () => {
+  const { github, calls } = withOrganisation();
+  assert.equal((await github.authorizeRepository("lex", "company/site")).installation_id, 22);
+  for (const name of ["other/x", "company/hidden", "someone-else/their-site"])
+    await assert.rejects(() => github.authorizeRepository("lex", name), (error: HttpError) => error.status === 403, name);
+  assert.ok(!calls.some((path) => path.startsWith("/repos/")), "nothing was fetched from a refused repository");
 });
 
 test("branch slashes are encoded and the tree is fetched from one resolved commit", async () => {

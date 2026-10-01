@@ -1,6 +1,7 @@
 import type {
   CreateRepositoryRequest,
   Directory,
+  OwnerInstallation,
   Repository,
   Snapshot,
   TreeEntry,
@@ -234,19 +235,28 @@ export class GitHub {
     return repos;
   }
 
-  /** The GitHub App's installations on the personal account `login`. */
-  async installations(login: string): Promise<number[]> {
+  /**
+   * The GitHub App's installations the user can reach: on their personal
+   * account `login` and on organisations they belong to (GitHub's
+   * /user/installations lists only installations the user can access).
+   * Installations on another personal account are left out.
+   */
+  async ownerInstallations(login: string): Promise<OwnerInstallation[]> {
     const installations = await this.pages<{
       id: number;
-      account: { type: string; login: string };
+      account?: { type: string; login: string };
     }>("/user/installations", "installations");
-    return installations
-      .filter(
-        (installation) =>
-          installation.account.type === "User" &&
-          installation.account.login.toLowerCase() === login.toLowerCase(),
-      )
-      .map((installation) => installation.id);
+    const owners: OwnerInstallation[] = [];
+    for (const installation of installations) {
+      const account = installation.account;
+      if (!account || typeof account.login !== "string") continue;
+      const personal = account.type === "User";
+      if (personal && account.login.toLowerCase() !== login.toLowerCase()) continue;
+      if (!personal && account.type !== "Organization") continue;
+      owners.push({ id: installation.id, login: account.login, type: personal ? "User" : "Organization" });
+    }
+    // The personal account first, then organisations by name.
+    return owners.sort((a, b) => Number(b.type === "User") - Number(a.type === "User") || a.login.localeCompare(b.login));
   }
 
   /** Forgets the remembered repository listing of `login`, so the next one asks GitHub. */
@@ -256,22 +266,32 @@ export class GitHub {
 
   /**
    * Creates an empty repository (no commits) on the signed-in personal
-   * account. GitHub allows it to a GitHub App's user token when the App
-   * has the Administration (or Repository creation) permission, write, on an
-   * installation on the account; a repository the App creates this way is
-   * added to an installation limited to selected repositories by itself.
-   * Without an installation (404) or that permission (403) the editor sends
-   * the user to GitHub's own New repository page instead.
+   * account, or on the organisation `input.owner` when the user has an
+   * installation of the App on it. GitHub allows it to a GitHub App's user
+   * token when the App has the Administration (or Repository creation)
+   * permission, write, on an installation on the account or organisation; a
+   * repository the App creates this way is added to an installation limited
+   * to selected repositories by itself. Without an installation (404) or that
+   * permission (403), or when an organisation does not let members create
+   * repositories, the editor sends the user to GitHub's own New repository
+   * page instead.
    */
   async createRepository(login: string, input: CreateRepositoryRequest): Promise<Repository> {
     const problem = repositoryNameProblem(input.name);
     if (problem) throw new HttpError(400, problem);
-    const installations = await this.installations(login);
-    if (!installations.length)
+    const owners = await this.ownerInstallations(login);
+    const wanted = (input.owner || login).toLowerCase();
+    const target = owners.find((owner) => owner.login.toLowerCase() === wanted);
+    if (!target) {
+      // Never trust the client's owner: only the user or an organisation with an installation they can reach.
+      if (input.owner && wanted !== login.toLowerCase())
+        throw new HttpError(403, `The editor is not installed on ${input.owner}, or you cannot reach it. Choose another owner.`);
       throw new HttpError(404, "The editor is not installed on your GitHub account yet. Create the repository on GitHub, then give the editor access to it.");
+    }
+    const organisation = target.type === "Organization";
     let created: Repository;
     try {
-      created = await this.write<Repository>("/user/repos", "POST", {
+      created = await this.write<Repository>(organisation ? `/orgs/${segment(target.login)}/repos` : "/user/repos", "POST", {
         name: input.name,
         private: input.private,
         ...(input.description ? { description: input.description.slice(0, 350) } : {}),
@@ -281,9 +301,14 @@ export class GitHub {
       if (!(error instanceof HttpError)) throw error;
       // GitHub answers 422 for a name already taken on the account; request() reports it as 409.
       if (error.status === 409)
-        throw new HttpError(409, `GitHub did not accept the name ${input.name}. You may already have a repository with that name; choose another.`);
+        throw new HttpError(409, `GitHub did not accept the name ${input.name}. ${organisation ? `${target.login} may already have` : "You may already have"} a repository with that name; choose another.`);
       if (error.status === 403 || error.status === 404)
-        throw new HttpError(403, "The editor may not create repositories on your account yet. Create it on GitHub, then give the editor access to it.");
+        throw new HttpError(
+          403,
+          organisation
+            ? `The editor may not create repositories in ${target.login}, or the organisation does not let members create them. Create it on GitHub (an organisation owner may need to), then give the editor access to it.`
+            : "The editor may not create repositories on your account yet. Create it on GitHub, then give the editor access to it.",
+        );
       throw error;
     }
     this.forgetRepositories(login);
@@ -294,31 +319,21 @@ export class GitHub {
       private: created.private,
       default_branch: created.default_branch || "main",
       owner: { login: created.owner.login, type: created.owner.type },
-      installation_id: installations[0],
+      installation_id: target.id,
     };
   }
 
   private async listRepositories(login: string): Promise<Repository[]> {
-    const installations = await this.pages<{
-      id: number;
-      account: { type: string; login: string };
-    }>("/user/installations", "installations");
+    const installations = await this.ownerInstallations(login);
     const repos = new Map<number, Repository>();
     for (const installation of installations) {
-      if (
-        installation.account.type !== "User" ||
-        installation.account.login.toLowerCase() !== login.toLowerCase()
-      )
-        continue;
+      // GitHub intersects an installation's repositories with the user's own access.
       const rows = await this.pages<Repository>(
         `/user/installations/${installation.id}/repositories`,
         "repositories",
       );
       for (const repo of rows) {
-        if (
-          repo.owner.type === "User" &&
-          repo.owner.login.toLowerCase() === login.toLowerCase()
-        ) {
+        if (repo.owner.login.toLowerCase() === installation.login.toLowerCase()) {
           // Return only the fields the browser needs, not the full GitHub response.
           repos.set(repo.id, {
             id: repo.id,
