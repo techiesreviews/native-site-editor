@@ -2,6 +2,7 @@ import { INSPECTION_LIMIT, type AgentCommand } from "../shared/agent";
 import type { AgentHub, HubGrant } from "./agent-context";
 import { validateContext } from "./agent-context";
 import { HttpError } from "./github";
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 
 export const contextMaxAge = 120_000;
 const tabId = (value: unknown) =>
@@ -46,6 +47,9 @@ export function agentOperation(hub: AgentHub, action: any) {
     hub.tabId = tab;
   } else if (action.type === "queue") {
     const command = action.command as AgentCommand;
+    // Whatever the tool, an agent's change never reaches the workflows.
+    if ([command.path, command.args?.to, command.args?.parent].some((path) => typeof path === "string" && touchesGithubConfig(path)))
+      throw new HttpError(403, GITHUB_CONFIG_REFUSED);
     const commands = (hub.commands ??= []);
     const existing = commands.find(
       (item) => item.id === command.id && item.grantId === command.grantId,

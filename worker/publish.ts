@@ -7,6 +7,7 @@ import type {
 import { EMPTY_COMMIT } from "../shared/types";
 import { GitHub, HttpError } from "./github";
 import { base64Bytes } from "./blobs";
+import { touchesGithubConfig } from "../shared/protected-paths";
 
 const encoder = new TextEncoder();
 const validSha = (value: unknown): value is string =>
@@ -72,11 +73,10 @@ export function validatePublish(value: unknown): PublishRequest {
         400,
         "Invalid or duplicate file. Refresh the repository and try again.",
       );
-    if (file.path.startsWith(".github/workflows/"))
-      throw new HttpError(
-        403,
-        "Edit GitHub Actions workflows on GitHub. Workflow write access is not enabled in this editor.",
-      );
+    // Workflow files (the deploy pipeline of Publish is one) only with the
+    // user's confirmation, checked after the loop. Without the App's
+    // Workflows permission GitHub refuses the ref update, which github.ts
+    // reports as WORKFLOWS_PERMISSION_MESSAGE.
     paths.add(file.path);
     const size = encoder.encode(file.content).length;
     bytes += size;
@@ -86,7 +86,122 @@ export function validatePublish(value: unknown): PublishRequest {
         "Publish supports 4 MB per file and 24 MB per commit.",
       );
   }
+  for (const flag of [data.allowGithubConfig, data.allowWorkflows])
+    if (flag !== undefined && typeof flag !== "boolean") throw new HttpError(400, "Invalid request.");
+  const workflows = [
+    ...new Set(data.files.flatMap((file) => [file.path, ...(file.movedFrom ? [file.movedFrom] : [])]).filter(touchesGithubConfig)),
+  ];
+  if (workflows.length && !confirmedGithubConfig(data))
+    throw new HttpError(403, githubConfigMessage(workflows));
   return data as PublishRequest;
+}
+
+/** The user confirmed a save that changes `.github` (`allowGithubConfig`; `allowWorkflows` is the older name). */
+const confirmedGithubConfig = (data: Pick<PublishRequest, "allowGithubConfig" | "allowWorkflows">) => data.allowGithubConfig === true || data.allowWorkflows === true;
+const githubConfigMessage = (paths: string[]) =>
+  `Saving changes to .github (${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ", …" : ""}) needs your confirmation, because GitHub Actions workflows and actions run with the repository's secrets. Review them in the Save panel and confirm, or leave them out.`;
+
+const retryable = () =>
+  new HttpError(503, "GitHub could not be asked whether this save brings in changes to .github. Try again in a moment; your drafts are kept.");
+
+type GithubEntries = Map<string, string>;
+
+/**
+ * Every entry of a commit's root tree that counts as `.github` (any case: `.GitHub` too), by its exact name,
+ * with its type, mode and SHA. `undefined` commit: no entries (a repository with no commits). Any failure
+ * but a session or rate limit is a retryable 503: unknown never means absent.
+ */
+async function githubEntriesAt(github: GitHub, repo: Repository, commit: string | undefined): Promise<GithubEntries> {
+  const entries: GithubEntries = new Map();
+  if (!commit) return entries;
+  try {
+    const base = github.base(repo);
+    const { tree } = await github.get<{ tree: { sha: string } }>(`${base}/git/commits/${commit}`);
+    const root = await github.get<{ tree: { path: string; sha: string; type: string; mode?: string }[]; truncated?: boolean }>(`${base}/git/trees/${tree.sha}`);
+    if (root.truncated) throw new Error("truncated");
+    for (const entry of root.tree) if (touchesGithubConfig(entry.path)) entries.set(entry.path, `${entry.type} ${entry.mode ?? ""} ${entry.sha}`);
+    return entries;
+  } catch (error) {
+    if (error instanceof HttpError && (error.status === 401 || error.status === 429)) throw error;
+    throw retryable();
+  }
+}
+
+/** The names whose entry was added, removed or changed between two sets. */
+function changedEntries(before: GithubEntries, after: GithubEntries): string[] {
+  return [...new Set([...before.keys(), ...after.keys()])].filter((name) => before.get(name) !== after.get(name));
+}
+
+/** The branch's head by a direct read of its ref; `undefined` when GitHub does not say. */
+async function readRef(github: GitHub, repo: Repository, branch: string): Promise<string | undefined> {
+  const ref = await github.exchange(`${github.base(repo)}/git/ref/heads/${encodeURIComponent(branch)}`, "GET").catch((error) => {
+    if (error instanceof HttpError && (error.status === 401 || error.status === 429)) throw error;
+    return undefined;
+  });
+  const sha = ref?.ok ? ref.data?.object?.sha : undefined;
+  return typeof sha === "string" && /^[a-f0-9]{40}$/.test(sha) ? sha : undefined;
+}
+
+/**
+ * The branch's head this save is validated against, and, for a head the editor names that the branch does not
+ * name (ahead of it, as a lagging read or as any commit descending from it, such as one from a fork; or a
+ * branch GitHub does not list yet), the check that what it holds under `.github` is what the branch has. Every
+ * root entry that counts as `.github` (any case) is compared by exact name, type, mode and SHA: any added,
+ * removed or changed entry needs the user's confirmation (`confirmed` skips only that refusal). When the
+ * branch's head cannot be established (not listed, ref unreadable) the save is refused as retryable (503):
+ * unknown never means absent. The one exception is a repository GitHub says has no branches at all, whose
+ * base is taken to have no `.github`. `undefined` is that empty base.
+ */
+async function validatedBase(
+  github: GitHub,
+  repo: Repository,
+  branch: string,
+  resolved: { sha: string; named?: string; unlisted?: true },
+  supplied: string | undefined,
+  confirmed: boolean,
+): Promise<string | undefined> {
+  if (!supplied || !(resolved.named || resolved.unlisted)) return resolved.sha;
+  let actual = resolved.named;
+  if (!actual) {
+    actual = await readRef(github, repo, branch);
+    if (!actual) {
+      const branches = await github.branches(repo).catch((error) => {
+        if (error instanceof HttpError && (error.status === 401 || error.status === 429)) throw error;
+        throw retryable();
+      });
+      if (branches.length) throw retryable();
+    }
+  }
+  if (actual === supplied) return actual;
+  if (!confirmed) {
+    const [before, after] = await Promise.all([githubEntriesAt(github, repo, actual), githubEntriesAt(github, repo, supplied)]);
+    const changed = changedEntries(before, after);
+    if (changed.length) throw new HttpError(403, githubConfigMessage(changed.map((name) => `${name} (in the commit this save builds on)`)));
+  }
+  return actual;
+}
+
+/**
+ * Immediately before the branch is moved: GitHub's REST ref update has no compare-and-swap, so re-read the ref.
+ * If the branch is no longer where the save was validated, and what it holds under `.github` differs from what
+ * was validated, or the save would not be a fast-forward of it, refuse with 409. (A write between this read
+ * and the update remains possible; see docs/publishing-hosts.md, Known limits.)
+ */
+async function refuseMovedBranch(github: GitHub, repo: Repository, branch: string, validated: string | undefined, created: string, unlisted: boolean) {
+  const current = await readRef(github, repo, branch);
+  // Only a repository that had no commit at all when the save was checked may still have no readable
+  // branch (a first save's lag): nothing under `.github` existed for a later write to undo. Anywhere
+  // else an unreadable branch is refused, since it may have moved since the check.
+  if (!current && unlisted && !validated) return;
+  if (!current) throw retryable();
+  if (current === validated) return;
+  const moved = new HttpError(409, "The branch changed on GitHub while saving, so nothing was saved. Refresh and review the latest version; your drafts are kept.");
+  const [was, now] = await Promise.all([githubEntriesAt(github, repo, validated), githubEntriesAt(github, repo, current)]);
+  if (changedEntries(was, now).length) throw moved;
+  const compare = await github
+    .get<{ status?: string }>(`${github.base(repo)}/compare/${current}...${created}?per_page=1`)
+    .catch(() => undefined);
+  if (compare?.status !== "ahead" && compare?.status !== "identical") throw moved;
 }
 
 /** The git blob SHA of text (as UTF-8) or of bytes (an uploaded file). */
@@ -112,7 +227,9 @@ export async function publish(
   if (data.head === EMPTY_COMMIT) return startRepository(github, repo, data);
   const base = github.base(repo);
   // The head the editor saw (its last save, say) is trusted over a lagging read.
-  const head = (await github.head(repo, data.branch, data.head)).sha;
+  const resolved = await github.head(repo, data.branch, data.head);
+  const head = resolved.sha;
+  const validated = await validatedBase(github, repo, data.branch, resolved, data.head, confirmedGithubConfig(data));
   const commit = await github.get<{ tree: { sha: string } }>(
     `${base}/git/commits/${head}`,
   );
@@ -229,6 +346,7 @@ export async function publish(
         parents: [head],
       },
     );
+    await refuseMovedBranch(github, repo, data.branch, validated, created.sha, Boolean(resolved.unlisted));
     // If another writer advanced the branch, this is no longer a fast-forward.
     await github.write(
       `${base}/git/refs/heads/${encodeURIComponent(data.branch)}`,

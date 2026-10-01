@@ -156,6 +156,13 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal((await call("write_file", { path: "styles/site.css", content: "x", waitSeconds: 0 })).isError, true);
     assert.equal((await call("write_file", { path: "about", content: "x", waitSeconds: 0 })).isError, true);
     assert.equal((await call("write_file", { path: ".git/config", content: "x", waitSeconds: 0 })).isError, true);
+    // Workflows run with the repository's secrets: no tool reaches them, by file or by folder.
+    for (const path of [".github/workflows/pwn.yml", ".GitHub/Workflows/pwn.yml", "./.github//workflows/pwn.yml", ".github./workflows./pwn.yml", ".github/workflows", ".github", ".github/actions/deploy/action.yml", ".github/CODEOWNERS"]) {
+      assert.equal((await call("write_file", { path, content: "x", waitSeconds: 0 })).isError, true, path);
+      assert.equal((await call("delete_file", { path, waitSeconds: 0 })).isError, true, `delete ${path}`);
+      assert.equal((await call("move_file", { path: "styles/site.css", to: path, waitSeconds: 0 })).isError, true, `move to ${path}`);
+      assert.equal((await call("move_file", { path, to: "elsewhere", waitSeconds: 0 })).isError, true, `move from ${path}`);
+    }
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "pending");
     assert.equal((await call("write_file", { path: "styles/extra.css", content: "a {}\n", waitSeconds: 0 })).isError, true, "one waiting change per file");
 

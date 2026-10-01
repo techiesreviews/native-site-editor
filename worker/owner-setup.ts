@@ -43,7 +43,7 @@ export function githubAppManifest(origin: string, aliases: string[] = []) {
   return {
     name: "native-site-editor-techies",
     url: origin,
-    public: false,
+    public: true,
     hook_attributes: { active: false, url: `${origin}/auth/setup/webhook` },
     redirect_url: `${origin}/auth/setup/callback`,
     callback_urls: [origin, ...aliases].map((value) => `${value}/auth/callback`),
@@ -57,6 +57,14 @@ export function githubAppManifest(origin: string, aliases: string[] = []) {
       actions: "read",
       // Get started creates the user's new repository (POST /user/repos).
       administration: "write",
+      // Publish: GitHub Pages (enable, custom domain), the deploy workflow
+      // file, the repository secrets of a Cloudflare or Spacefast pipeline,
+      // and other hosts' deployments and commit statuses.
+      pages: "write",
+      workflows: "write",
+      secrets: "write",
+      statuses: "read",
+      deployments: "read",
     },
   };
 }
@@ -115,7 +123,7 @@ button,a.button{display:inline-flex;align-items:center;gap:8px;border:0;border-r
 </style>
 <main>
   <h1>Owner setup</h1>
-  <p class="muted">Register the editor's private GitHub App, install it on the starter repository, then sign in.</p>
+  <p class="muted">Register the editor's GitHub App, install it on the starter repository, then sign in.</p>
   <section id="locked" class="panel" ${ready || done ? "hidden" : ""}>
     <p id="locked-message">Open your private setup link to continue. This page alone does not grant owner access.</p>
   </section>

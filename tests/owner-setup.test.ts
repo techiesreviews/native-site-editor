@@ -55,7 +55,7 @@ function environment() {
 test("manifest registers the private hosted App with exact permissions and callbacks", () => {
   const manifest = githubAppManifest(origin, ["https://native-site-editor.pages.dev"]);
   assert.equal(manifest.name, "native-site-editor-techies");
-  assert.equal(manifest.public, false);
+  assert.equal(manifest.public, true);
   assert.equal(manifest.url, origin);
   assert.equal(manifest.redirect_url, `${origin}/auth/setup/callback`);
   assert.ok(manifest.callback_urls.includes(`${origin}/auth/callback`));
@@ -67,6 +67,11 @@ test("manifest registers the private hosted App with exact permissions and callb
     metadata: "read",
     actions: "read",
     administration: "write",
+    pages: "write",
+    workflows: "write",
+    secrets: "write",
+    statuses: "read",
+    deployments: "read",
   });
   assert.equal(manifest.request_oauth_on_install, true);
   assert.equal((manifest as { setup_url?: string }).setup_url, undefined);
@@ -268,4 +273,17 @@ test("Durable Object stores config write-once and preserves it across session de
   } finally {
     await worker.dispose();
   }
+});
+
+test("docs/native-github-app.json asks for the manifest's permissions", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const doc = JSON.parse(await readFile("docs/native-github-app.json", "utf8"));
+  const { administration, pages, workflows, secrets, statuses, deployments, contents, metadata, actions } = doc.parameters;
+  assert.deepEqual(
+    { contents, metadata, actions, administration, pages, workflows, secrets, statuses, deployments },
+    githubAppManifest(origin).default_permissions,
+  );
+  const url = new URL(doc.registration_url);
+  for (const key of ["pages", "workflows", "secrets", "statuses", "deployments"])
+    assert.equal(url.searchParams.get(key), doc.parameters[key]);
 });

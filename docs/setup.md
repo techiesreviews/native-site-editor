@@ -72,7 +72,8 @@ Owner setup fills these in. To register an App by hand, start at [New GitHub App
 - Callback: `<editor-origin>/auth/callback`. For local use, `http://127.0.0.1:8787/auth/callback`.
 - Keep expiring user tokens enabled. Tick **Request user authorization (OAuth) during installation**: a new user then installs the App and signs in in one trip to GitHub (`/auth/install`; see Setup wizard above). GitHub then ignores the setup URL. An App registered with this setting off still works: set the installation setup URL to the editor origin, and the editor goes to `/auth/login` when GitHub returns there.
 - Disable webhooks.
-- Repository permissions: **Contents: read and write**, **Metadata: read-only**, **Actions: read**, and **Administration: read and write**. Contents write enables commits of selected files; Actions read lets the save status show a commit's workflow runs (added 2026-09-25). Administration read and write enables Get started to create a repository for the signed-in user through POST /user/repos with the App's user token; GitHub adds a repository the App creates to the installation even when it is limited to selected repositories, so the new repository opens without another trip to GitHub. No Workflows or account permissions are requested.
+- Make the App public ("Make public" in its Advanced settings): a private App can be installed and authorized only by its owner account, so every other user gets a 404 at GitHub's sign-in and only the owner can sign in.
+- Repository permissions: **Contents: read and write**, **Metadata: read-only**, **Actions: read**, **Administration: read and write**, and, for Publish, **Pages: read and write**, **Workflows: read and write**, **Secrets: read and write**, **Commit statuses: read-only** and **Deployments: read-only**. Contents write enables commits of selected files; Actions read lets the save status show a commit's workflow runs (added 2026-09-25). Administration read and write enables Get started to create a repository for the signed-in user through POST /user/repos with the App's user token; GitHub adds a repository the App creates to the installation even when it is limited to selected repositories, so the new repository opens without another trip to GitHub. Pages write turns on GitHub Pages and sets its custom domain; Workflows write lets Save to GitHub add the deploy workflow (`.github/workflows/*.yml`), which GitHub otherwise refuses for an App; Secrets write stores a Cloudflare or Spacefast key as an encrypted repository secret, and its read lists the secret names (values are never readable); Commit statuses and Deployments read show the live address of other hosts. See [Publishing to a host](publishing-hosts.md). No account permissions are requested.
 - Allow installation on any account for eventual public use. The editor lists repositories owned by the signed-in personal account and by organisations the user belongs to where the App is installed. Installations on another personal account are ignored. For an organisation, the App needs Administration write on that organisation's installation, and the user needs the right to create repositories there, for Get started to create one directly.
 
 Save the **Client ID**, a generated **client secret**, and the **App slug**: into `.dev.vars` for local use (names in `.dev.vars.example`), or as Worker secrets with `npx wrangler secret put <NAME> --config wrangler.sessions.jsonc`. A GitHub App private key is not needed for the user-token flow. Install the App on selected repositories, then use **Connect GitHub** in the editor. After changing repository access, use **Reload**.
@@ -100,6 +101,17 @@ An App registered before this change (2026-10-01) did not request Administration
 4. Reconnect in the editor: sign out and sign in again, or open a new session. Get started then creates repositories directly.
 
 Until the updated permission is accepted, the editor uses the fallback to GitHub's New repository page.
+
+## Enable publishing to hosts on the existing app
+
+An App registered before 2026-10-01 lacks the permissions Publish uses, so the Publish panel reports which one is missing (for example "The editor needs the Pages permission: ask the owner to accept it"). To enable all of Publish:
+
+1. Open the GitHub App's permissions (for the production app, [native-site-editor-techies](https://github.com/settings/apps/native-site-editor-techies/permissions)).
+2. Under **Repository permissions**, add **Pages**, **Workflows** and **Secrets** with **Read and write** access, and **Commit statuses** and **Deployments** with **Read-only** access, and save. Keep the others as they are (Contents read and write, Metadata read-only, Actions read-only, Administration read and write). Each permission is used on its own: without Pages the editor cannot turn Pages on, without Workflows it cannot save the deploy workflow, without Secrets it cannot store a Cloudflare or Spacefast key (and shows the pipeline's secrets as unknown), and without Commit statuses or Deployments it does not list other hosts.
+3. Each installation owner accepts the updated permissions (Settings → Applications → Installed GitHub Apps → Review request).
+4. Reconnect in the editor: sign out and sign in again.
+
+New Apps registered through owner setup (the manifest in `worker/owner-setup.ts`, mirrored in `docs/native-github-app.json`) request all of these from the start.
 
 ## Sessions and accounts
 

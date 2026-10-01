@@ -100,11 +100,50 @@
 // commits) answers 409 "Git Repository is empty.", so an upload (/api/blob)
 // fails before it and works after it, and /__demo/file answers 404.
 //
+// Publishing controls (per browser session; the API under /api/publish/ is
+// documented in docs/publishing-hosts.md):
+//
+//   POST /__demo/hosting   JSON body, every key optional:
+//     { reset: true }                 back to the defaults below
+//     { pagesMode: "ok" | "private-free" | "forbidden" }
+//                                     POST /repos/:o/:r/pages: creates the site (default); 422 "Your
+//                                     current plan does not support GitHub Pages" (a private
+//                                     repository on a free plan); or 403 on every Pages call (the
+//                                     App lacks Pages)
+//     { pages: { [repo]: site | null } }   set (or remove) a repository's Pages site directly:
+//                                     { source: { branch, path }, build_type, cname, https_enforced }
+//     { healthPending: n, healthDomain: {...} }
+//                                     GET /pages/health answers 202 n times (default 1), then 200
+//                                     with { domain: { host: <cname>, ...healthDomain } }; without a
+//                                     cname it answers 400
+//     { secretsMode: "ok" | "forbidden" }
+//                                     repository Actions secrets: public key, list, PUT (default); or
+//                                     403 (the App lacks Secrets). PUT opens the sealed box with the
+//                                     repository's libsodium key; only the name, whether it opened and
+//                                     the plaintext length are kept, never the value
+//     { workflowsMode: "ok" | "refuse" }
+//                                     "refuse": PATCH refs/heads/main is refused with 422 "refusing
+//                                     to allow a GitHub App to create or update workflow ... without
+//                                     `workflows` permission" when the commit changes a file under
+//                                     .github/workflows/ (the App lacks Workflows)
+//     { deployments: [{ id, environment, creator, state, environment_url?, target_url? }],
+//       statuses: [{ context, state, target_url? }], deploymentsMode: "ok" | "forbidden" }
+//                                     what GET /deployments (+ /deployments/:id/statuses) and
+//                                     /commits/:sha/status answer for any commit
+//     { cloudflare: { token?, accounts?: [{ id, name, subdomain }], scriptsAccess? } }
+//                                     the fake api.cloudflare.com: accepts the token
+//                                     FAKE_CLOUDFLARE_TOKEN (exported below; override with `token`),
+//                                     lists the accounts (default one account "demo"), and answers
+//                                     the workers/scripts list with 403 when scriptsAccess is false
+//   GET  /__demo/hosting  -> { pages: { [repo]: site }, secrets: { [repo]: { NAME: { decrypted,
+//                              length } } }, workflowRefusals: n, cloudflareCalls: n }
+//
 // Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
 // (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
 // that all saves are simulated.
 
 import { createHash } from "node:crypto";
+import sodium from "libsodium-wrappers";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
@@ -349,6 +388,64 @@ interface FakeActions {
 }
 const NO_ACTIONS: FakeActions = { mode: "none" };
 
+// Publishing to a host, as a test sets it through `/__demo/hosting`, per
+// session: GitHub Pages, Actions secrets, deployments and commit statuses of
+// every repository, a refusal of workflow files, and a fake Cloudflare API.
+export const FAKE_CLOUDFLARE_TOKEN = "cf-test-token-0123456789abcdefghijklmnopqrstuvwxyz";
+export const FAKE_CLOUDFLARE_ACCOUNT = "b9b9a2b4c908c9d03abe92a52c2d0f43";
+interface PagesSite {
+  source: { branch: string; path: string };
+  build_type: string;
+  cname: string | null;
+  https_enforced: boolean;
+}
+interface Hosting {
+  /** Per repository name. */
+  pages: Map<string, PagesSite>;
+  /** POST /pages: "ok", "private-free" (422, a plan without Pages for private repositories), or "forbidden" (403, the App lacks Pages). */
+  pagesMode: "ok" | "private-free" | "forbidden";
+  /** GET /pages/health answers 202 this many times, then 200 with `healthDomain`. */
+  healthPending: number;
+  healthDomain: Record<string, unknown>;
+  /** "forbidden": the secrets calls answer 403 (the App lacks Secrets). */
+  secretsMode: "ok" | "forbidden";
+  /** Secret names per repository, with whether GitHub's key opened them and how long the plaintext was; never the value. */
+  secrets: Map<string, Map<string, { decrypted: boolean; length: number }>>;
+  /** "refuse": a ref update that changes .github/workflows/* is refused, as for an App without Workflows. */
+  workflowsMode: "ok" | "refuse";
+  workflowRefusals: number;
+  deployments: { id: number; environment: string; creator: string; state: string; environment_url?: string; target_url?: string }[];
+  statuses: { context: string; state: string; target_url?: string }[];
+  /** "forbidden": deployments and commit statuses answer 403. */
+  deploymentsMode: "ok" | "forbidden";
+  cloudflare: { token: string; accounts: { id: string; name: string; subdomain: string | null }[]; scriptsAccess: boolean; calls: number };
+  keys?: { publicKey: Uint8Array; privateKey: Uint8Array };
+}
+function newHosting(): Hosting {
+  return {
+    pages: new Map(),
+    pagesMode: "ok",
+    healthPending: 1,
+    healthDomain: { is_valid: true, dns_resolves: true, is_https_eligible: true, enforces_https: false },
+    secretsMode: "ok",
+    secrets: new Map(),
+    workflowsMode: "ok",
+    workflowRefusals: 0,
+    deployments: [],
+    statuses: [],
+    deploymentsMode: "ok",
+    cloudflare: { token: FAKE_CLOUDFLARE_TOKEN, accounts: [{ id: FAKE_CLOUDFLARE_ACCOUNT, name: "Demo account", subdomain: "demo" }], scriptsAccess: true, calls: 0 },
+  };
+}
+// Every file path to its blob sha, under a tree.
+function flattenTree(git: Git, treeSha: string | undefined, prefix = "", out = new Map<string, string>()) {
+  for (const entry of git.trees.get(treeSha ?? "") ?? []) {
+    if (entry.type === "tree") flattenTree(git, entry.sha, `${prefix}${entry.path}/`, out);
+    else out.set(prefix + entry.path, entry.sha);
+  }
+  return out;
+}
+
 // Onboarding, as a test sets it through `/__demo/onboarding`, per session.
 interface Onboarding {
   hideDefault: boolean;
@@ -417,6 +514,7 @@ function githubFetch(
   fixtureGits: Map<string, Git>,
   actions: FakeActions = NO_ACTIONS,
   onboarding: Onboarding = newOnboarding(),
+  hosting: Hosting = newHosting(),
 ): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
@@ -429,6 +527,23 @@ function githubFetch(
         headers: { "Content-Type": "application/json" },
       });
 
+    // The Cloudflare API, for a pasted token.
+    if (url.hostname === "api.cloudflare.com") {
+      hosting.cloudflare.calls++;
+      const cf = (result: unknown) => jsonResponse({ success: true, errors: [], result });
+      const denied = () => jsonResponse({ success: false, errors: [{ code: 1000, message: "Invalid API Token" }], result: null }, 401);
+      if (new Headers(init?.headers).get("Authorization") !== `Bearer ${hosting.cloudflare.token}`) return denied();
+      const api = path.replace("/client/v4", "");
+      if (api === "/user/tokens/verify") return cf({ id: "token", status: "active" });
+      if (api === "/accounts") return cf(hosting.cloudflare.accounts.map(({ id, name }) => ({ id, name })));
+      const account = /^\/accounts\/([a-f0-9]{32})\/(.+)$/.exec(api);
+      const found = account && hosting.cloudflare.accounts.find((entry) => entry.id === account[1]);
+      if (found && account[2] === "workers/subdomain")
+        return found.subdomain ? cf({ subdomain: found.subdomain }) : jsonResponse({ success: false, errors: [{ code: 10007 }], result: null }, 404);
+      if (found && account[2] === "workers/scripts")
+        return hosting.cloudflare.scriptsAccess ? cf([]) : jsonResponse({ success: false, errors: [{ code: 10000 }], result: null }, 403);
+      return jsonResponse({ success: false, errors: [], result: null }, 404);
+    }
     // The Starter site's tarball.
     if (url.hostname === "codeload.github.com") {
       onboarding.starterFetches++;
@@ -518,6 +633,82 @@ function githubFetch(
       if (/\/(commits|git\/commits|git\/trees|git\/blobs)(\/|$)/.test(path.slice(repoBase.length)))
         return jsonResponse({ message: "Git Repository is empty." }, 409);
     }
+    // Publishing to a host: GitHub Pages, repository secrets, deployments, statuses.
+    if (path.startsWith(`${repoBase}/`)) {
+      const rest = path.slice(repoBase.length);
+      const forbidden = () => jsonResponse({ message: "Resource not accessible by integration" }, 403);
+      if (rest === "/pages" || rest === "/pages/health") {
+        const site = hosting.pages.get(repoName);
+        if (hosting.pagesMode === "forbidden") return forbidden();
+        if (rest === "/pages/health") {
+          if (!site?.cname) return jsonResponse({ message: "Custom domain is not set up" }, 400);
+          if (hosting.healthPending > 0) {
+            hosting.healthPending--;
+            return new Response(null, { status: 202 });
+          }
+          return jsonResponse({ domain: { host: site.cname, ...hosting.healthDomain } });
+        }
+        if (method === "GET")
+          return site
+            ? jsonResponse({
+                html_url: `https://${DEMO_LOGIN}.github.io/${repoName}/`,
+                status: "built",
+                build_type: site.build_type,
+                source: site.source,
+                cname: site.cname,
+                https_enforced: site.https_enforced,
+                https_certificate: site.cname ? { state: "new" } : null,
+              })
+            : jsonResponse({ message: "Not Found" }, 404);
+        if (method === "POST") {
+          if (hosting.pagesMode === "private-free")
+            return jsonResponse({ message: "Your current plan does not support GitHub Pages for this repository." }, 422);
+          if (site) return jsonResponse({ message: "A GitHub Pages site already exists for this repository." }, 409);
+          hosting.pages.set(repoName, { source: body.source, build_type: body.build_type ?? "legacy", cname: null, https_enforced: false });
+          return jsonResponse({ source: body.source }, 201);
+        }
+        if (method === "PUT") {
+          if (!site) return jsonResponse({ message: "Not Found" }, 404);
+          if (body.https_enforced && !site.cname) return jsonResponse({ message: "The certificate does not exist yet." }, 422);
+          if (body.source) site.source = body.source;
+          if (body.build_type) site.build_type = body.build_type;
+          if ("cname" in body) site.cname = body.cname;
+          if (body.https_enforced !== undefined) site.https_enforced = body.https_enforced;
+          return new Response(null, { status: 204 });
+        }
+      }
+      if (rest.startsWith("/actions/secrets")) {
+        if (hosting.secretsMode === "forbidden") return forbidden();
+        hosting.keys ??= sodium.crypto_box_keypair();
+        const names = hosting.secrets.get(repoName) ?? hosting.secrets.set(repoName, new Map()).get(repoName)!;
+        if (rest === "/actions/secrets/public-key")
+          return jsonResponse({ key_id: "568250167242549743", key: Buffer.from(hosting.keys.publicKey).toString("base64") });
+        if (rest === "/actions/secrets" && method === "GET") return jsonResponse({ total_count: names.size, secrets: [...names.keys()].map((name) => ({ name })) });
+        const name = /^\/actions\/secrets\/([A-Z0-9_]+)$/.exec(rest)?.[1];
+        if (name && method === "PUT") {
+          let decrypted = false, length = 0;
+          try {
+            const opened = sodium.crypto_box_seal_open(Buffer.from(String(body.encrypted_value), "base64"), hosting.keys.publicKey, hosting.keys.privateKey);
+            decrypted = opened.length > 0;
+            length = opened.length;
+          } catch { /* a value the key does not open is recorded as such */ }
+          const created = !names.has(name);
+          names.set(name, { decrypted, length });
+          return new Response(null, { status: created ? 201 : 204 });
+        }
+      }
+      if (rest.startsWith("/deployments") || /^\/commits\/[^/]+\/status$/.test(rest)) {
+        if (hosting.deploymentsMode === "forbidden") return forbidden();
+        if (rest === "/deployments")
+          return jsonResponse(hosting.deployments.map((entry) => ({ id: entry.id, environment: entry.environment, creator: { login: entry.creator } })));
+        const statuses = /^\/deployments\/(\d+)\/statuses$/.exec(rest);
+        if (statuses) {
+          const entry = hosting.deployments.find((candidate) => candidate.id === Number(statuses[1]));
+          return jsonResponse(entry ? [{ state: entry.state, environment_url: entry.environment_url, target_url: entry.target_url }] : []);
+        }
+        return jsonResponse({ state: "success", statuses: hosting.statuses });
+      }
+    }
     if (path === `${repoBase}/actions/runs` || path === `${repoBase}/actions/workflows`) {
       if (actions.mode === "forbidden")
         return jsonResponse({ message: "Resource not accessible by integration" }, 403);
@@ -537,6 +728,13 @@ function githubFetch(
       if (git.stale && git.stale.reads-- > 0) return jsonResponse({ commit: { sha: git.stale.sha } });
       return jsonResponse({ commit: { sha: git.head } });
     }
+    // A branch's ref (worker/publish.ts reads it when GitHub does not list the branch yet).
+    const refRead = new RegExp(`^${repoBase}/git/ref/heads/(.+)$`).exec(path);
+    if (refRead && method === "GET") {
+      const name = decodeURIComponent(refRead[1]);
+      const sha = name === DEMO_REPO.default_branch ? git.head : git.branches?.get(name);
+      return sha ? jsonResponse({ ref: `refs/heads/${name}`, object: { sha, type: "commit" } }) : jsonResponse({ message: "Not Found" }, 404);
+    }
     // Whether `head` is ahead of, behind, or the same as `base`.
     const compare = new RegExp(`^${repoBase}/compare/([a-f0-9]{40})\\.\\.\\.([a-f0-9]{40})$`).exec(path);
     if (compare) {
@@ -544,7 +742,14 @@ function githubFetch(
       if (!git.commits.has(base) || !git.commits.has(head)) return jsonResponse({ message: "Not Found" }, 404);
       const reaches = (from: string, to: string): boolean => from === to || (git.commits.get(from)?.parents ?? []).some((parent) => reaches(parent, to));
       const status = base === head ? "identical" : reaches(head, base) ? "ahead" : reaches(base, head) ? "behind" : "diverged";
-      return jsonResponse({ status });
+      // The files that differ between the two commits' trees, as GitHub lists them.
+      const after = flattenTree(git, git.commits.get(head)!.tree);
+      const before = flattenTree(git, git.commits.get(base)!.tree);
+      const files = [
+        ...[...after].filter(([file, sha]) => before.get(file) !== sha).map(([file]) => ({ filename: file, status: before.has(file) ? "modified" : "added" })),
+        ...[...before.keys()].filter((file) => !after.has(file)).map((file) => ({ filename: file, status: "removed" })),
+      ];
+      return jsonResponse({ status, files });
     }
     // A file's history: the commits from `sha` back that changed `path`.
     if (path === `${repoBase}/commits` && method === "GET") {
@@ -664,6 +869,15 @@ function githubFetch(
       const next = git.commits.get(String(body.sha));
       if (!next || body.force || !next.parents.includes(git.head))
         return jsonResponse({ message: "Reference update failed" }, 409);
+      // A GitHub App without the Workflows permission may not change a workflow file.
+      if (hosting.workflowsMode === "refuse") {
+        const before = flattenTree(git, git.commits.get(git.head)?.tree);
+        const touched = [...flattenTree(git, next.tree)].filter(([file, sha]) => file.startsWith(".github/workflows/") && before.get(file) !== sha);
+        if (touched.length) {
+          hosting.workflowRefusals++;
+          return jsonResponse({ message: `refusing to allow a GitHub App to create or update workflow \`${touched[0][0]}\` without \`workflows\` permission` }, 422);
+        }
+      }
       if (git.lag) git.stale = { sha: git.head, reads: git.lag };
       git.head = body.sha;
       return jsonResponse({ ref: "refs/heads/main", object: { sha: body.sha } });
@@ -826,6 +1040,8 @@ function mintSession(): string {
 const publishDelays = new Map<string, number>();
 const sessionActions = new Map<string, FakeActions>();
 const sessionOnboarding = new Map<string, Onboarding>();
+const sessionHosting = new Map<string, Hosting>();
+const hostingOf = (id: string) => sessionHosting.get(id) ?? sessionHosting.set(id, newHosting()).get(id)!;
 const onboardingOf = (id: string) => sessionOnboarding.get(id) ?? sessionOnboarding.set(id, newOnboarding()).get(id)!;
 // A repository's git for the head and file controls: the demo's, or one made or added by a test.
 const gitOf = (key: string, id: string | null, repoName: string | null) =>
@@ -936,6 +1152,33 @@ function workerMiddleware(): Connect.NextHandleFunction {
         res.statusCode = 204;
         return res.end();
       }
+      if (path === "/__demo/hosting") {
+        const state = hostingOf(id);
+        if (req.method === "GET") {
+          res.setHeader("Content-Type", "application/json");
+          return res.end(JSON.stringify({
+            pages: Object.fromEntries(state.pages),
+            secrets: Object.fromEntries([...state.secrets].map(([repo, names]) => [repo, Object.fromEntries(names)])),
+            workflowRefusals: state.workflowRefusals,
+            cloudflareCalls: state.cloudflare.calls,
+          }));
+        }
+        const options = JSON.parse(bodyBuffer.toString() || "{}");
+        if (options.reset) sessionHosting.delete(id);
+        const next = hostingOf(id);
+        if (["ok", "private-free", "forbidden"].includes(options.pagesMode)) next.pagesMode = options.pagesMode;
+        if (typeof options.healthPending === "number") next.healthPending = options.healthPending;
+        if (options.healthDomain) next.healthDomain = options.healthDomain;
+        if (["ok", "forbidden"].includes(options.secretsMode)) next.secretsMode = options.secretsMode;
+        if (["ok", "refuse"].includes(options.workflowsMode)) next.workflowsMode = options.workflowsMode;
+        if (["ok", "forbidden"].includes(options.deploymentsMode)) next.deploymentsMode = options.deploymentsMode;
+        if (Array.isArray(options.deployments)) next.deployments = options.deployments;
+        if (Array.isArray(options.statuses)) next.statuses = options.statuses;
+        if (options.cloudflare) Object.assign(next.cloudflare, options.cloudflare);
+        if (options.pages) for (const [repo, site] of Object.entries(options.pages)) site ? next.pages.set(repo, site as PagesSite) : next.pages.delete(repo);
+        res.statusCode = 204;
+        return res.end();
+      }
       if (path === "/__demo/file") {
         // The bytes of a file on the demo branch, as committed.
         const bytes = fileAt(gitOf(key, id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "");
@@ -1030,7 +1273,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding()));
+    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {

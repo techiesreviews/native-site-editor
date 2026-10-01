@@ -1,6 +1,7 @@
 // Repository files as the connected editor tab sees them, for the MCP site
 // tools: GitHub at the revision the tab shows, overlaid with the tab's
 // browser drafts (new, changed, renamed and deleted files).
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { AGENT_TEXT_LIMIT, TEXT_PATH, textHash } from "../shared/agent";
 import { EMPTY_COMMIT, type EditorContext, type Repository, type TreeEntry } from "../shared/types";
 import { HttpError, type GitHub } from "./github";
@@ -212,7 +213,6 @@ export function writablePathProblem(path: string): string | undefined {
     /[\\\u0000-\u001f]/.test(path)
   )
     return "Invalid path. Use a repository path such as about/index.html.";
-  if (path.startsWith(".github/workflows/"))
-    return "Workflows cannot be changed through the editor.";
+  if (touchesGithubConfig(path)) return GITHUB_CONFIG_REFUSED;
   return undefined;
 }

@@ -25,6 +25,7 @@ import { MAX_PUBLISH_REQUEST_BYTES, publish } from "./publish";
 import { requestBytes, uploadBlob } from "./blobs";
 import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
+import { publishHosts } from "./hosts";
 import { starterFiles } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError } from "./github";
@@ -296,6 +297,7 @@ async function route(
         path === "/api/repositories" ||
         path === "/auth/setup/unlock" ||
         path === "/api/accounts/switch" ||
+        path.startsWith("/api/publish/") ||
         path.startsWith("/api/agent/")) &&
       request.method === "POST"
     )
@@ -729,6 +731,16 @@ async function route(
       url.searchParams.get("repo") ?? "",
     );
     return json(await publish(github, repo, data));
+  }
+  if (path.startsWith("/api/publish/")) {
+    // Publish to a host (worker/hosts.ts): Pages, Cloudflare and Spacefast pipelines.
+    if (request.method === "POST" && request.headers.get("Origin") !== url.origin)
+      throw new HttpError(403, "Invalid request origin.");
+    const user = await session(request, env);
+    if (!user) throw new HttpError(401, "Connect GitHub to publish your site.");
+    return json(
+      await publishHosts(request, url, new GitHub(user.token, fetcher), user.login, fetcher, readAuthorizationMaxAge),
+    );
   }
   if (path === "/api/blob") {
     // An uploaded file's bytes, made a blob for the publish that follows.

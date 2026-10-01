@@ -11,6 +11,7 @@ import {
   type WorkspaceLocation,
 } from "./workspace-state";
 import { createAgentMenu, setupPrompt } from "./components/agent-menu";
+import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type SavedDraft } from "./drafts";
@@ -3515,7 +3516,20 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   const moves = op.moves ?? [];
   const deletes = op.deletes ?? [];
   const creates = op.creates ?? [];
-  const edits = op.edits ?? new Map<string, string>();
+  let edits = op.edits ?? new Map<string, string>();
+  let done = op.done;
+  // An agent's operation, as expanded (the moves of a folder, the links rewritten in other files, the
+  // redirects), never reaches .github: a protected file in the moves, deletes or creations refuses it,
+  // and link rewrites in protected files are left out.
+  if (agentActingDepth > 0) {
+    const protectedPath = [...moves.flatMap((move) => [move.from, move.to]), ...deletes, ...creates.map((file) => file.path)].find(touchesGithubConfig);
+    if (protectedPath) return GITHUB_CONFIG_REFUSED;
+    const { kept, left } = splitProtectedEdits(edits);
+    if (left.length) {
+      edits = kept;
+      done += ` (${left.length} ${left.length === 1 ? "file" : "files"} in .github left unchanged.)`;
+    }
+  }
   // The files moved and deleted, with their blobs and text; the base of each file edited.
   const movable = new Map<string, MovableFile>();
   const bases = new Map<string, { sha: string; text: string } | undefined>();
@@ -3571,7 +3585,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   // Undo in the open file's editor takes the whole operation back.
   if (currentPath && editorModule?.isMounted(currentPath)) editorModule.recordHistoryAction(currentPath, () => undoNativeOperation(record));
   if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(op.focus ?? {});
-  announce(op.done);
+  announce(done);
   return undefined;
 }
 
@@ -5017,7 +5031,17 @@ const agentSiteActions: AgentSiteActions = {
 function applyAgentSiteCommand(command: AgentCommand) {
   if (!snapshot || command.branch !== snapshot.branch || command.commit !== snapshot.commit)
     throw new Error("The editor changed branch or revision.");
-  return applySiteCommand(agentSiteActions, command);
+  return agentActing(() => applySiteCommand(agentSiteActions, command));
+}
+// While an agent's command runs, file operations leave .github alone (see applyNativeOperation).
+let agentActingDepth = 0;
+async function agentActing<T>(run: () => Promise<T>): Promise<T> {
+  agentActingDepth++;
+  try {
+    return await run();
+  } finally {
+    agentActingDepth--;
+  }
 }
 // The page shown after the page `path` is gone: the nearest page above it
 // (by folder) that has one, else the home page.

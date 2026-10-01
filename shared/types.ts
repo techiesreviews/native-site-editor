@@ -93,6 +93,13 @@ export interface PublishRequest {
   /** The branch's head as the editor last saw it; see GitHub.head (worker/github.ts). */
   head?: string;
   files: PublishFile[];
+  /**
+   * The user confirmed a save that lists the `.github` files (workflows, actions, …) by name. Without it a
+   * request touching workflows is refused: they run with the repository's secrets (docs/publishing-hosts.md).
+   */
+  allowGithubConfig?: boolean;
+  /** The earlier name of `allowGithubConfig`. */
+  allowWorkflows?: boolean;
 }
 /** An account or organisation the editor's GitHub App is installed on, that the user can reach (`GET /api/owners`). */
 export interface OwnerInstallation {

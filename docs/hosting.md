@@ -13,6 +13,8 @@ Serve the repository root at the root of a domain (root links do not work from a
 
 A root `404.html` is the page hosts show for an address the site does not have (Cloudflare, Netlify and Vercel pick it up by name).
 
+Publishing from the editor (GitHub Pages, a Cloudflare pipeline, Spacefast, other hosts detected from the commit) is described in [Publishing to a host](publishing-hosts.md).
+
 ## Redirects
 
 `_redirects` at the repository root (Cloudflare Pages, Cloudflare Workers static assets and Netlify read it) holds one `from to status` line per redirect:

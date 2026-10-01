@@ -125,6 +125,10 @@ async function rateLimit(response: Response): Promise<HttpError | undefined> {
   return limitedError(retry > 0 ? retry : reset > now ? reset - now : 0);
 }
 
+/** GitHub refuses a GitHub App's change to .github/workflows/* without the Workflows permission. */
+export const WORKFLOWS_PERMISSION_MESSAGE =
+  "Saving the deploy workflow needs the Workflows permission. Ask the editor's owner to add Workflows: Read and write to the GitHub App and accept it for this repository, or add the workflow on GitHub yourself. Your drafts are kept.";
+
 export class GitHub {
   private objects: ObjectCache;
   constructor(
@@ -142,10 +146,10 @@ export class GitHub {
     return this.request<T>(path, method, body);
   }
 
-  private async request<T>(path: string, method: string, body?: unknown, limit?: number, fresh = false): Promise<T> {
+  private async send(path: string, method: string, body?: unknown, fresh = false): Promise<Response> {
     // Native Workers fetch rejects a GitHub instance as its `this` receiver.
     const fetcher = this.fetcher;
-    const response = await fetcher(`${apiRoot}${path}`, {
+    return fetcher(`${apiRoot}${path}`, {
       method,
       // A branch's head is never taken from a cache between here and GitHub.
       ...(fresh ? { cache: "no-store" as const } : {}),
@@ -162,11 +166,39 @@ export class GitHub {
       console.error(`GitHub ${path.split("?")[0]} unreachable:`, error instanceof Error ? error.message : error);
       throw new HttpError(502, "GitHub could not be reached. Try again.");
     });
+  }
+
+  /**
+   * A call whose failure statuses the caller reads itself (publishing to a
+   * host: Pages not enabled is a 404, a pending DNS check a 202). Only an
+   * expired session and GitHub's rate limiting are errors here. `data` is the
+   * JSON answer when there is one (an error's `message` included).
+   */
+  async exchange(
+    path: string,
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+    body?: unknown,
+  ): Promise<{ status: number; ok: boolean; data: any }> {
+    const response = await this.send(path, method, body);
+    if (response.status === 401) throw new HttpError(401, "Your GitHub session expired. Connect again.");
+    const limited = await rateLimit(response.clone());
+    if (limited) throw limited;
+    let data: any;
+    if (response.status !== 204 && response.body) data = await boundedJson(response, 1024 * 1024).catch(() => undefined);
+    return { status: response.status, ok: response.ok, data };
+  }
+
+  private async request<T>(path: string, method: string, body?: unknown, limit?: number, fresh = false): Promise<T> {
+    const response = await this.send(path, method, body, fresh);
     if (!response.ok) {
       if (response.status === 401)
         throw new HttpError(401, "Your GitHub session expired. Connect again.");
+      // GitHub's reason for a refused write, read before rateLimit() consumes the body.
+      const detail = method === "GET" ? "" : await response.clone().text().then((text) => text.slice(0, 2000), () => "");
       const limited = await rateLimit(response);
       if (limited) throw limited;
+      if (method !== "GET" && /workflow/i.test(detail) && /permission/i.test(detail))
+        throw new HttpError(403, WORKFLOWS_PERMISSION_MESSAGE);
       if (method !== "GET" && [409, 422].includes(response.status))
         throw new HttpError(409, "GitHub rejected the update. The branch may have changed or require a pull request. Refresh and review before retrying; your drafts are kept.");
       if (method !== "GET" && response.status === 403)
@@ -615,23 +647,29 @@ export class GitHub {
    * branch can still name the commit before. `known`, a commit the editor
    * already saw on this branch, is the head when it is ahead of the one named.
    */
-  async head(repo: Repository, branch: string, known?: string): Promise<{ sha: string; tree?: string }> {
+  async head(repo: Repository, branch: string, known?: string): Promise<{ sha: string; tree?: string; named?: string; unlisted?: true }> {
     if (!branch || branch.length > 255)
       throw new HttpError(400, "Choose a branch.");
     type Branch = { commit: { sha: string; commit?: { tree?: { sha?: string } } } };
+    let unlisted = false;
     const ref = await this.get<Branch>(`${this.base(repo)}/branches/${segment(branch)}`, undefined, true).catch((error): Branch => {
       // Right after the first save to an empty repository GitHub may not
       // list its new branch yet; the commit the editor made is the head.
-      if (error instanceof HttpError && error.status === 404 && known && known !== EMPTY_COMMIT && /^[a-f0-9]{40}$/.test(known))
+      if (error instanceof HttpError && error.status === 404 && known && known !== EMPTY_COMMIT && /^[a-f0-9]{40}$/.test(known)) {
+        unlisted = true;
         return { commit: { sha: known } };
+      }
       throw error;
     });
+    // `unlisted`: GitHub named no such branch, so `known` is taken on trust and what it holds is unchecked.
+    if (unlisted) return { sha: ref.commit.sha, unlisted: true };
     const named = { sha: ref.commit.sha, tree: ref.commit.commit?.tree?.sha };
     if (!known || known === named.sha || !/^[a-f0-9]{40}$/.test(known)) return named;
     const compare = await this.get<{ status?: string }>(
       `${this.base(repo)}/compare/${named.sha}...${known}?per_page=1`,
     ).catch(() => undefined);
-    return compare?.status === "ahead" ? { sha: known } : named;
+    // `named`: the commit the branch itself names, when `known` is taken over it.
+    return compare?.status === "ahead" ? { sha: known, named: named.sha } : named;
   }
 
   async snapshot(repo: Repository, branch: string, known?: string): Promise<Snapshot> {

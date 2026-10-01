@@ -9,6 +9,7 @@ import type {
   TreeEntry,
 } from "../shared/types";
 import { GitHub, HttpError } from "./github";
+import { touchesGithubConfig } from "../shared/protected-paths";
 
 const pageSize = 20;
 const maxPage = 50;
@@ -44,7 +45,7 @@ function requirePath(value: unknown): string {
 
 function requireRestorablePath(value: unknown): string {
   const path = requirePath(value);
-  if (path.startsWith(".github/workflows/"))
+  if (touchesGithubConfig(path))
     throw new HttpError(
       403,
       "Restore GitHub Actions workflows on GitHub. Workflow write access is not enabled in this editor.",

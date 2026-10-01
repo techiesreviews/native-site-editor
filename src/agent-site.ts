@@ -4,6 +4,7 @@
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
 import { expandStyleImports } from "../shared/css-imports";
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
@@ -434,6 +435,10 @@ const hashOf = async (actions: AgentSiteActions, path: string) => {
 export async function applySiteCommand(actions: AgentSiteActions, command: AgentCommand): Promise<AgentCommandOutcome> {
   const args = command.args ?? {};
   const path = command.path;
+  // Last line of defence: nothing an agent queued may touch the workflows, as a
+  // path, a move's destination, or a folder that holds them.
+  for (const candidate of [path, args.to, args.parent])
+    if (typeof candidate === "string" && touchesGithubConfig(candidate)) throw new Error(GITHUB_CONFIG_REFUSED);
   switch (command.operation) {
     case "update_active_draft":
     case "create_file_draft":

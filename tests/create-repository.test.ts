@@ -149,7 +149,7 @@ test("head follows the editor's own commit while GitHub does not list the new br
     if (new URL(String(input)).pathname.includes("/branches/")) return Response.json({ message: "Branch not found" }, { status: 404 });
     throw new Error(String(input));
   });
-  assert.deepEqual(await github.head(repo, "main", known), { sha: known, tree: undefined });
+  assert.deepEqual(await github.head(repo, "main", known), { sha: known, unlisted: true });
   await rejects(github.head(repo, "main", EMPTY_COMMIT), 404);
   await rejects(github.head(repo, "main"), 404);
 });

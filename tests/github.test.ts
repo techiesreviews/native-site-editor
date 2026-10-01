@@ -310,7 +310,7 @@ test("a branch head is read fresh; a commit the tab already saw ahead of it is t
     return reply({ tree: [], truncated: false });
   });
   // GitHub still names the commit before a save: the save's commit is the head.
-  assert.deepEqual(await github.head(repo, "main", known), { sha: known });
+  assert.deepEqual(await github.head(repo, "main", known), { sha: known, named });
   assert.equal(asked[0].cache, "no-store");
   assert.ok(asked[1].path.endsWith(`/compare/${named}...${known}`));
   assert.equal((await github.snapshot(repo, "main", known)).commit, known);
