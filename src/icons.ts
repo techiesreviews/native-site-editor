@@ -12,6 +12,7 @@ import arrowsClockwise from "@phosphor-icons/core/regular/arrows-clockwise.svg?r
 import caretDown from "@phosphor-icons/core/regular/caret-down.svg?raw";
 import caretLeft from "@phosphor-icons/core/regular/caret-left.svg?raw";
 import caretRight from "@phosphor-icons/core/regular/caret-right.svg?raw";
+import check from "@phosphor-icons/core/regular/check.svg?raw";
 import clockCounterClockwise from "@phosphor-icons/core/regular/clock-counter-clockwise.svg?raw";
 import copy from "@phosphor-icons/core/regular/copy.svg?raw";
 import dotsSixVertical from "@phosphor-icons/core/regular/dots-six-vertical.svg?raw";
@@ -27,6 +28,7 @@ import linkSimple from "@phosphor-icons/core/regular/link-simple.svg?raw";
 import packageIcon from "@phosphor-icons/core/regular/package.svg?raw";
 import plus from "@phosphor-icons/core/regular/plus.svg?raw";
 import sparkle from "@phosphor-icons/core/regular/sparkle.svg?raw";
+import listChecks from "@phosphor-icons/core/regular/list-checks.svg?raw";
 import trash from "@phosphor-icons/core/regular/trash.svg?raw";
 import undo from "@phosphor-icons/core/regular/arrow-u-up-left.svg?raw";
 import redo from "@phosphor-icons/core/regular/arrow-u-up-right.svg?raw";
@@ -40,6 +42,7 @@ const icons = {
   "caret-down": caretDown,
   "caret-left": caretLeft,
   "caret-right": caretRight,
+  check,
   "clock-counter-clockwise": clockCounterClockwise,
   copy,
   "dots-six-vertical": dotsSixVertical,
@@ -52,6 +55,7 @@ const icons = {
   link,
   "link-break": linkBreak,
   "link-simple": linkSimple,
+  "list-checks": listChecks,
   package: packageIcon,
   plus,
   redo,

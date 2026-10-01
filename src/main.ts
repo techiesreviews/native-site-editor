@@ -30,6 +30,8 @@ import { createConfirmDialog } from "./components/confirm-dialog";
 import { EMPTY_COMMIT } from "../shared/types";
 import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
 import { createStartSite } from "./components/start-site";
+import { createSetupChecklist } from "./components/setup-checklist";
+import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker, type PagePickerItem } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
@@ -137,6 +139,7 @@ function mountWorkspace() {
       <div id="repository-menu"></div>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
+        <div id="setup-checklist"></div>
         <div id="change-status"></div>
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
         <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
@@ -183,6 +186,7 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
+  mountSetupChecklist();
   repositorySelect = element<HTMLSelectElement>("repository");
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
@@ -2558,6 +2562,149 @@ function startSitePanel() {
   }).root;
 }
 
+// ---- Set up your site (src/setup-checklist.ts, components/setup-checklist.ts) ----
+// A pill in the top bar for a repository that went through Get started or
+// Start your site, and for any repository from the project menu. Its items
+// are ticked from the state the editor holds, each time it may have changed.
+
+let setupChecklist: ReturnType<typeof createSetupChecklist> | undefined;
+/** The repository the user asked the checklist for from the menu, for this page load. */
+let setupAsked: number | undefined;
+let setupFinishing: { timer: ReturnType<typeof setTimeout>; scope: string } | undefined;
+/** Account, repository and branch the checklist is of. */
+function setupScope() {
+  const scope = draftScope();
+  return scope ? JSON.stringify([scope.account, scope.repoId, scope.branch]) : "";
+}
+
+function mountSetupChecklist() {
+  const checklist = createSetupChecklist({
+    start: () => {
+      const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
+      if (choice) choice.focus();
+      else announce("This repository has a home page already.");
+    },
+    save: () => {
+      const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
+      if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    },
+    saveName: async (name) => {
+      const problem = await writeSiteSettings({ name });
+      if (!problem) setupRemember({ named: true });
+      return problem;
+    },
+    saveUrl: (url) => writeSiteSettings({ url }),
+    connect: () => void agentMenu?.connect(""),
+    dismiss: () => {
+      setupAsked = undefined;
+      setupRemember({ dismissed: true });
+    },
+  });
+  setupChecklist = checklist;
+  element("setup-checklist").append(checklist.root);
+  // The project menu's item, above the agent's.
+  element("agent-menu").before(checklist.menuItem);
+  checklist.onRequest(() => {
+    setupAsked = currentRepo?.id;
+    refreshSetup();
+    // After the menu has closed and given its focus back.
+    setTimeout(() => checklist.open(), 0);
+  });
+}
+
+function setupRemember(change: SetupMemory) {
+  if (!info.user || !currentRepo) return undefined;
+  const memory = writeSetupMemory(localStorage, info.user.login, currentRepo.id, change);
+  refreshSetup();
+  return memory;
+}
+
+/** A starting point was applied to repository `repoId`: the checklist shows by itself. */
+function startSetupChecklist(repoId: number) {
+  if (info.user) writeSetupMemory(localStorage, info.user.login, repoId, { auto: true, dismissed: false, finished: false });
+}
+
+function noteSetupAgent(connected: boolean) {
+  if (connected && info.user && currentRepo) writeSetupMemory(localStorage, info.user.login, currentRepo.id, { agent: true });
+  refreshSetup();
+}
+
+function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
+  const repo = currentRepo;
+  const scope = draftScope();
+  if (!repo || !scope || !snapshot) return undefined;
+  const home = draftStore().get(scope, NATIVE_HOME_PAGE);
+  const drafted = Boolean(home && !home.deleted);
+  const settings = nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH, scope));
+  return {
+    homePage: drafted || (nativeEngaged && !home?.deleted),
+    committed: !snapshot.empty,
+    homeUnsaved: drafted && home!.baseSha === null,
+    siteName: settings.name,
+    defaultName: siteNameFromRepository(repo.name),
+    siteUrl: settings.url,
+  };
+}
+
+function refreshSetup() {
+  const checklist = setupChecklist;
+  if (!checklist) return;
+  const repo = currentRepo;
+  const state = setupState();
+  const account = info.user?.login;
+  const idle = { progress: setupProgress({ homePage: false, committed: false, homeUnsaved: false, defaultName: "", agent: false }), defaultName: "", visible: false, scope: "" };
+  if (!repo || !account || !state) { checklist.update(idle); return; }
+  let memory = readSetupMemory(localStorage, account, repo.id);
+  if (agentMenu?.connected() && !memory.agent) memory = writeSetupMemory(localStorage, account, repo.id, { agent: true });
+  const progress = setupProgress({ ...state, nameConfirmed: memory.named, agent: Boolean(memory.agent) });
+  // Done by itself: "Your site is set up" for a moment, then gone for good.
+  const finishing = progress.complete && memory.auto && !memory.finished && setupAsked !== repo.id;
+  const scopeKey = setupScope();
+  if (setupFinishing && (!finishing || setupFinishing.scope !== scopeKey)) {
+    clearTimeout(setupFinishing.timer);
+    setupFinishing = undefined;
+  }
+  if (finishing && !setupFinishing) {
+    const timer = setTimeout(() => {
+      setupFinishing = undefined;
+      // Still this repository and branch, and still done (an undo may have undone it).
+      const again = setupState();
+      if (setupScope() === scopeKey && again && setupProgress({ ...again, nameConfirmed: readSetupMemory(localStorage, account, repo.id).named, agent: true }).complete)
+        setupRemember({ finished: true });
+    }, 4000);
+    setupFinishing = { timer, scope: scopeKey };
+  }
+  checklist.update({ progress, siteName: state.siteName, siteUrl: state.siteUrl, defaultName: state.defaultName, visible: setupVisible(memory, setupAsked === repo.id), scope: setupScope() });
+}
+
+// The site's name or address into `.editor/config.json` as a draft (the
+// rest of the file kept); Save to GitHub keeps it. Undo in the editor takes it back.
+async function writeSiteSettings(change: { name?: string; url?: string }): Promise<string | undefined> {
+  // The file is read for this repository, branch and snapshot; if the user
+  // moves on meanwhile, nothing is written (it would land in the other one).
+  const epoch = generation, snap = snapshot, repo = currentRepo, where = setupScope();
+  const stale = () => generation !== epoch || snapshot !== snap || currentRepo !== repo || setupScope() !== where;
+  let text = nativeEffectiveSource(NATIVE_CONFIG_PATH);
+  if (text === undefined) {
+    try {
+      text = (await branchText(NATIVE_CONFIG_PATH))?.text;
+    } catch (error) {
+      return error instanceof Error ? error.message : `${NATIVE_CONFIG_PATH} could not be read.`;
+    }
+  }
+  if (stale()) return "The repository changed meanwhile. Try again.";
+  const next = withSiteSettings(text, change);
+  if ("error" in next) return next.error;
+  const what = change.name !== undefined ? "name" : "address";
+  return applyNativeOperation({
+    edits: new Map([[NATIVE_CONFIG_PATH, next.text]]),
+    done: `Site ${what} set as a draft. Save to GitHub to keep it.`,
+    undone: `Undid setting the site ${what}.`,
+  });
+}
+
 // A starting point's files as drafts: the files of `point` (the blank page,
 // or the Starter site the Worker fetches), new files as new drafts, images
 // as uploads, then the project opened again so the preview shows the site.
@@ -2677,6 +2824,7 @@ async function writeStartingPoint(point: StartingPoint): Promise<string | undefi
   if (!bound()) return undefined;
   const failure = draftStore().error;
   if (failure) return failure;
+  startSetupChecklist(repo.id);
   // Opened again: the home page is a draft now, so the native preview takes over from this screen.
   await loadSnapshot();
   if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Save to GitHub to keep them.`);
@@ -4738,6 +4886,7 @@ async function openComponentLinkedStyle(page: string) {
 
 function updateAgentContext() {
   agentMenu?.changed();
+  refreshSetup();
 }
 
 // ---- Agents (src/agent-site.ts): the context shared, and changes applied through the editor's own actions. ----
@@ -5622,7 +5771,7 @@ async function start() {
         context: agentContext,
         onCommand: applyAgentSiteCommand,
         // Ask agent shows in the edit bar while an agent is connected.
-        onConnection: () => { if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
+        onConnection: (connected) => { noteSetupAgent(connected); if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
         onRequests: (requests) => nativePreview?.setRequests(requests),
         onQuestions: (count) => repositoryMenu?.setQuestions(count),
         // A question in the selector's list: its pin, card open, answer box focused.

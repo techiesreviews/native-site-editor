@@ -58,5 +58,8 @@ An agent working directly on the site's repository, with its changes reconciled 
 **Get started**:
 A screen shown to a signed-in user with no repository in the editor yet. It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor.
 
+**Setup checklist**:
+A small checklist (the "Setup 2/4" pill in the top bar) that guides a new site after its starting point: Start your site, Save to GitHub, Name your site, Put it online, and an optional Connect an agent. Each item is ticked from the repository's state. It shows by itself for a repository that went through Get started or Start your site, until dismissed or done, and for any repository from the project menu's Set up your site.
+
 **Starting point**:
 The initial content written to an empty repository or one without a home page: either the Starter site (a small studio site downloaded from the public template techiesreviews/native-site-editor-starter, prepared for the new site) or a Blank page (one HTML page at index.html and one stylesheet at styles/site.css in the native conventions). Both are written as drafts when the user chooses them through Get started or Start your site, and saved to GitHub when the user chooses Save.
