@@ -423,3 +423,20 @@ test("blob texts are read in batched GraphQL queries, and a blob they do not giv
   const limited = new GitHub("secret", async () => reply({ errors: [{ type: "RATE_LIMITED", message: "API rate limit exceeded" }] }));
   await assert.rejects(() => limited.prefetchTexts(repo, [sha(7)]), (error: HttpError) => error.status === 429 && /GitHub is limiting requests/.test(error.message));
 });
+
+test("a Worker subrequest limit is a 503 and any other network failure a 502", async () => {
+  const limited = new GitHub("secret", async () => {
+    throw new Error("Too many subrequests by single Worker invocation.");
+  });
+  await assert.rejects(
+    () => limited.get("/user"),
+    (error: HttpError) => error.status === 503 && /busy reading this site/.test(error.message),
+  );
+  const down = new GitHub("secret", async () => {
+    throw new TypeError("Network connection lost.");
+  });
+  await assert.rejects(
+    () => down.get("/user"),
+    (error: HttpError) => error.status === 502 && /could not be reached/.test(error.message),
+  );
+});

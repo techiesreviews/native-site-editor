@@ -62,6 +62,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
+import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
 import type {
@@ -2403,7 +2404,7 @@ async function api<T>(
   path: string,
   params?: Record<string, string>,
 ): Promise<T> {
-  const response = await fetch(
+  const response = await fetchWithReadRetry(
     `/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`,
     { credentials: "same-origin", cache: "no-store" },
   );

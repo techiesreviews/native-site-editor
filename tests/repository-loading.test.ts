@@ -33,10 +33,10 @@ test("repository file reads keep only two batches in flight and reuse cache entr
   const shas = Array.from({ length: 121 }, (_, index) => index.toString(16).padStart(40, "0"));
   const read = await readFileTexts(api, cache, 2, repo.full_name, [...shas, shas[0]]);
   assert.equal(Object.keys(read).length, 121);
-  assert.equal(calls, 4);
+  assert.equal(calls, 7);
   assert.equal(peak, 2);
   await readFileTexts(api, cache, 400, repo.full_name, shas.slice(0, 10));
-  assert.equal(calls, 5);
+  assert.equal(calls, 8);
 });
 
 test("repository file reads keep cache hits even when new batch entries evict the cache", async () => {
@@ -194,4 +194,16 @@ test("native asset loading drops stale completions", async () => {
     onProgress: () => assert.fail("stale loads do not update preview"),
   });
   assert.deepEqual(loaded, []);
+});
+
+test("45 files are read as batches of 20, 20 and 5", async () => {
+  const sizes: number[] = [];
+  const api = async <T>(_path: string, params?: Record<string, string>): Promise<T> => {
+    const list = params!.shas.split(",");
+    sizes.push(list.length);
+    return { files: Object.fromEntries(list.map((sha) => [sha, sha])) } as T;
+  };
+  const shas = Array.from({ length: 45 }, (_, index) => index.toString(16).padStart(40, "0"));
+  await readFileTexts(api, new Map(), 400, repo.full_name, shas);
+  assert.deepEqual(sizes, [20, 20, 5]);
 });

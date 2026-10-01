@@ -163,7 +163,12 @@ export class GitHub {
       },
     }).catch((error) => {
       // The path only; the token is in the headers and never logged.
-      console.error(`GitHub ${path.split("?")[0]} unreachable:`, error instanceof Error ? error.message : error);
+      const message = error instanceof Error ? error.message : String(error);
+      if (/too many subrequests/i.test(message)) {
+        console.error(`GitHub ${path.split("?")[0]} not attempted: the Worker's subrequest limit was reached (${message})`);
+        throw new HttpError(503, "The editor is busy reading this site. Try again in a moment.");
+      }
+      console.error(`GitHub ${path.split("?")[0]} unreachable:`, message);
       throw new HttpError(502, "GitHub could not be reached. Try again.");
     });
   }
