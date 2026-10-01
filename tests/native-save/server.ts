@@ -25,6 +25,45 @@
 // `fixtures/native-conventions` is `native-conventions` (id 531), a site
 // with components, layered shared styles and a folder with no page.
 //
+// Onboarding controls (per browser session, like the other /__demo/ controls;
+// send them after the first page load has minted the session cookie, with
+// `page.request`). They let the browser suites drive "Get started":
+//
+//   POST /__demo/onboarding   JSON body, every key optional:
+//     { reset: true }                 back to the defaults below, forgetting repos made or added
+//     { repositories: "none" }        the account has no repositories (the demo and fixture
+//                                     repositories leave the listing); "all" restores them
+//     { installed: false }            GET /user/installations answers none, so creating a
+//                                     repository fails with 404 (the editor is not installed)
+//     { create: "ok" | "forbidden" | "taken" }
+//                                     POST /user/repos: creates an empty repository (default);
+//                                     403 "Resource not accessible by integration" (the
+//                                     fallback path); or 422 "name already exists"
+//     { starter: "ok" | "unavailable" }
+//                                     the starter tarball (codeload.github.com, built from
+//                                     fixtures/starter-template; it has a test address, a
+//                                     noindex, wrangler.jsonc, .assetsignore and .github/ that
+//                                     the editor must drop) or a 404 from codeload
+//     { add: [{ name, kind: "empty" | "no-site", private? }] }
+//                                     adds a repository to the listing: "empty" has no commits
+//                                     and no branches (branches -> [], branch -> 404, commits and
+//                                     trees -> 409 "Git Repository is empty."); "no-site" has
+//                                     commits but no root index.html (fixtures/no-site, a README)
+//   GET  /__demo/onboarding   -> { repositories: names listed, created: [{ name, private,
+//                                  description? }] as POST /user/repos received them,
+//                                  starterFetches: n, heads: { [repo]: commit sha | null } }
+//   GET  /__demo/head?repo=NAME and /__demo/file?repo=NAME&path=P  read any repository's head
+//                                  and committed bytes (repo defaults to the demo repository).
+//
+// A repository created through POST /user/repos is empty, joins the listing
+// (installation 1) and takes the first commit through
+// PUT /repos/:owner/:repo/contents/:path (what the worker's first save uses),
+// which creates the branch asked for in the body (else main); after that the
+// normal git-data and commit flow (trees, commits, PATCH refs/heads/main)
+// works on it. Until that first commit every git data call (blobs, trees,
+// commits) answers 409 "Git Repository is empty.", so an upload (/api/blob)
+// fails before it and works after it, and /__demo/file answers 404.
+//
 // Ports: 5206 for focused tests, 5208 for the (later) exposed demo. Demo mode
 // (`ASE_NATIVE_SAVE_DEMO=1`) adds a visible banner marking the account, repo and
 // that all saves are simulated.
@@ -38,6 +77,7 @@ import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
+import { tarball } from "../tar-helper.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
@@ -250,7 +290,9 @@ function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
 
 // The bytes at `path` in the head commit's tree, if it is a file there.
 function fileAt(git: Git, path: string): Buffer | undefined {
-  let entries = git.trees.get(git.commits.get(git.head)!.tree) ?? [];
+  const head = git.commits.get(git.head);
+  if (!head) return undefined;
+  let entries = git.trees.get(head.tree) ?? [];
   const parts = path.split("/");
   for (let index = 0; index < parts.length; index++) {
     const entry = entries.find((item) => item.path === parts[index]);
@@ -271,9 +313,54 @@ interface FakeActions {
 }
 const NO_ACTIONS: FakeActions = { mode: "none" };
 
+// Onboarding, as a test sets it through `/__demo/onboarding`, per session.
+interface Onboarding {
+  hideDefault: boolean;
+  installed: boolean;
+  create: "ok" | "forbidden" | "taken";
+  starter: "ok" | "unavailable";
+  // Repositories made by POST /user/repos or added by the test, with their own git.
+  repos: Map<string, { repo: typeof DEMO_REPO; git: Git }>;
+  created: { name: string; private: boolean; description?: string }[];
+  starterFetches: number;
+  nextId: number;
+}
+function newOnboarding(): Onboarding {
+  return { hideDefault: false, installed: true, create: "ok", starter: "ok", repos: new Map(), created: [], starterFetches: 0, nextId: 600 };
+}
+
+// A repository with no commits and no branches.
+function emptyGit(): Git {
+  return { blobs: new Map(), trees: new Map(), commits: new Map(), head: "" };
+}
+
+let starterTarball: Uint8Array | undefined;
+// The starter template's files as GitHub's codeload serves them (one top folder).
+function starterArchive(): Uint8Array {
+  if (!starterTarball) {
+    const files: Record<string, Buffer> = {};
+    const root = resolve(projectRoot, "fixtures/starter-template");
+    const walk = (relative: string) => {
+      for (const dirent of readdirSync(join(root, relative), { withFileTypes: true })) {
+        const rel = relative ? `${relative}/${dirent.name}` : dirent.name;
+        if (dirent.isDirectory()) walk(rel);
+        else files[rel] = readFileSync(join(root, rel));
+      }
+    };
+    walk("");
+    starterTarball = tarball(files, "techiesreviews-native-site-editor-starter-0123456");
+  }
+  return starterTarball;
+}
+
 // A fake `fetch` bound to one session's git models: the demo repository's,
 // and the fixture repositories' (cloned on first use).
-function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeActions = NO_ACTIONS): typeof fetch {
+function githubFetch(
+  demoGit: Git,
+  fixtureGits: Map<string, Git>,
+  actions: FakeActions = NO_ACTIONS,
+  onboarding: Onboarding = newOnboarding(),
+): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
     const path = url.pathname;
@@ -285,12 +372,32 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
         headers: { "Content-Type": "application/json" },
       });
 
+    // The Starter site's tarball.
+    if (url.hostname === "codeload.github.com") {
+      onboarding.starterFetches++;
+      if (onboarding.starter === "unavailable") return new Response("Not Found", { status: 404 });
+      return new Response(starterArchive() as BodyInit, { headers: { "Content-Type": "application/x-gzip" } });
+    }
     if (path === "/user/installations")
       return jsonResponse({
-        installations: [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }],
+        installations: onboarding.installed ? [{ id: 1, account: { type: "User", login: DEMO_LOGIN } }] : [],
       });
-    if (path === "/user/installations/1/repositories")
-      return jsonResponse({ repositories: [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)] });
+    const listed = () => [
+      ...(onboarding.hideDefault ? [] : [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)]),
+      ...[...onboarding.repos.values()].map((entry) => entry.repo),
+    ];
+    if (path === "/user/installations/1/repositories") return jsonResponse({ repositories: listed() });
+    // Creating a repository: empty, and added to the installation.
+    if (path === "/user/repos" && method === "POST") {
+      const name = String(body?.name ?? "");
+      onboarding.created.push({ name, private: body?.private === true, ...(body?.description ? { description: String(body.description) } : {}) });
+      if (onboarding.create === "forbidden") return jsonResponse({ message: "Resource not accessible by integration" }, 403);
+      if (onboarding.create === "taken" || listed().some((repo) => repo.name.toLowerCase() === name.toLowerCase()))
+        return jsonResponse({ message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] }, 422);
+      const repo = { ...DEMO_REPO, id: onboarding.nextId++, name, full_name: `${DEMO_LOGIN}/${name}`, private: body?.private === true };
+      onboarding.repos.set(name, { repo, git: emptyGit() });
+      return jsonResponse({ ...repo, owner: { ...repo.owner, id: 1 }, html_url: `https://github.com/${repo.full_name}` }, 201);
+    }
 
     const repoName = /^\/repos\/[^/]+\/([^/]+)/.exec(path)?.[1] ?? DEMO_REPO.name;
     const fixture = FIXTURE_REPOS.find((item) => item.repo.name === repoName);
@@ -298,8 +405,41 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       if (!initialFixtureGits.has(repoName)) initialFixtureGits.set(repoName, buildInitialGit(fixture.root));
       fixtureGits.set(repoName, cloneGit(initialFixtureGits.get(repoName)!));
     }
-    const git = fixture ? fixtureGits.get(repoName)! : demoGit;
-    const repoBase = `/repos/${DEMO_REPO.owner.login}/${fixture ? repoName : DEMO_REPO.name}`;
+    const extra = onboarding.repos.get(repoName);
+    const git = extra ? extra.git : fixture ? fixtureGits.get(repoName)! : demoGit;
+    const repoBase = `/repos/${DEMO_REPO.owner.login}/${extra || fixture ? repoName : DEMO_REPO.name}`;
+    // The contents API makes a file in one commit, and the first commit (and
+    // the branch main) of an empty repository.
+    const contents = new RegExp(`^${repoBase}/contents/(.+)$`).exec(path);
+    if (contents && method === "PUT") {
+      const filePath = contents[1].split("/").map(decodeURIComponent);
+      if (typeof body?.content !== "string" || !body?.message) return jsonResponse({ message: "Invalid request." }, 422);
+      // The branch asked for, else the default one. An empty repository's first
+      // commit makes it; in any other repository it must exist.
+      const branch = typeof body.branch === "string" && body.branch ? body.branch : DEMO_REPO.default_branch;
+      const isEmpty = !git.head && !git.branches?.size;
+      const onMain = branch === DEMO_REPO.default_branch;
+      const parent = onMain ? git.head : git.branches?.get(branch) ?? "";
+      if (!parent && !isEmpty) return jsonResponse({ message: `Branch ${branch} not found` }, 422);
+      if (parent && fileAt({ ...git, head: parent }, filePath.join("/"))) return jsonResponse({ message: "Invalid request. \"sha\" wasn't supplied." }, 422);
+      const bytes = Buffer.from(body.content, "base64");
+      const baseTree = parent ? git.commits.get(parent)!.tree : "";
+      const tree = writeTree(git, baseTree, [{ segments: filePath, mode: "100644", content: bytes.toString("utf8") }]);
+      const parents = parent ? [parent] : [];
+      const sha = commitSha(tree + ":" + parents.join(",") + ":" + Date.now());
+      git.commits.set(sha, { tree, parents, message: String(body.message), date: new Date().toISOString() });
+      if (onMain) git.head = sha;
+      else (git.branches ??= new Map()).set(branch, sha);
+      return jsonResponse({ content: { path: filePath.join("/"), sha: blobSha(bytes) }, commit: { sha } }, 201);
+    }
+    // GitHub's answers for a repository with no commits.
+    // Any git data call (blobs, trees, commits) is a 409 until the first commit.
+    if (!git.head && !git.branches?.size && path.startsWith(repoBase)) {
+      if (path === `${repoBase}/branches`) return jsonResponse([]);
+      if (path.startsWith(`${repoBase}/branches/`)) return jsonResponse({ message: "Branch not found" }, 404);
+      if (/\/(commits|git\/commits|git\/trees|git\/blobs)(\/|$)/.test(path.slice(repoBase.length)))
+        return jsonResponse({ message: "Git Repository is empty." }, 409);
+    }
     if (path === `${repoBase}/actions/runs` || path === `${repoBase}/actions/workflows`) {
       if (actions.mode === "forbidden")
         return jsonResponse({ message: "Resource not accessible by integration" }, 403);
@@ -310,11 +450,12 @@ function githubFetch(demoGit: Git, fixtureGits: Map<string, Git>, actions: FakeA
       return jsonResponse({ total_count: runs.length, workflow_runs: runs.map((run, index) => ({ id: index + 1, head_sha: url.searchParams.get("head_sha"), html_url: `https://github.com/${DEMO_REPO.full_name}/actions/runs/${index + 1}`, ...run })) });
     }
     if (path === `${repoBase}/branches`)
-      return jsonResponse([{ name: "main" }, ...[...(git.branches?.keys() ?? [])].map((name) => ({ name }))]);
+      return jsonResponse([...(git.head ? [{ name: "main" }] : []), ...[...(git.branches?.keys() ?? [])].map((name) => ({ name }))]);
     const other = new RegExp(`^${repoBase}/branches/(.+)$`).exec(path);
     const otherHead = other ? git.branches?.get(decodeURIComponent(other[1])) : undefined;
     if (otherHead) return jsonResponse({ commit: { sha: otherHead } });
     if (path === `${repoBase}/branches/main`) {
+      if (!git.head) return jsonResponse({ message: "Branch not found" }, 404);
       if (git.stale && git.stale.reads-- > 0) return jsonResponse({ commit: { sha: git.stale.sha } });
       return jsonResponse({ commit: { sha: git.head } });
     }
@@ -597,6 +738,11 @@ function mintSession(): string {
 // browser session. Public demo mode does not expose this control channel.
 const publishDelays = new Map<string, number>();
 const sessionActions = new Map<string, FakeActions>();
+const sessionOnboarding = new Map<string, Onboarding>();
+const onboardingOf = (id: string) => sessionOnboarding.get(id) ?? sessionOnboarding.set(id, newOnboarding()).get(id)!;
+// A repository's git for the head and file controls: the demo's, or one made or added by a test.
+const gitOf = (id: string, repoName: string | null) =>
+  (repoName && onboardingOf(id).repos.get(repoName)?.git) || sessions.get(id)!.git!;
 
 function workerMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
@@ -632,11 +778,41 @@ function workerMiddleware(): Connect.NextHandleFunction {
       }
       if (path === "/__demo/head") {
         res.setHeader("Content-Type", "application/json");
-        return res.end(JSON.stringify({ commit: sessions.get(id)!.git!.head }));
+        return res.end(JSON.stringify({ commit: gitOf(id, url.searchParams.get("repo")).head || null }));
+      }
+      if (path === "/__demo/onboarding") {
+        const state = onboardingOf(id);
+        if (req.method === "GET") {
+          res.setHeader("Content-Type", "application/json");
+          return res.end(JSON.stringify({
+            repositories: [
+              ...(state.hideDefault ? [] : [DEMO_REPO, ...FIXTURE_REPOS.map((fixture) => fixture.repo)]),
+              ...[...state.repos.values()].map((entry) => entry.repo),
+            ].map((repo) => repo.name),
+            created: state.created,
+            starterFetches: state.starterFetches,
+            heads: Object.fromEntries([...state.repos].map(([name, entry]) => [name, entry.git.head || null])),
+          }));
+        }
+        const options = JSON.parse(bodyBuffer.toString() || "{}");
+        if (options.reset) sessionOnboarding.delete(id);
+        const next = onboardingOf(id);
+        if (options.repositories === "none" || options.repositories === "all") next.hideDefault = options.repositories === "none";
+        if (typeof options.installed === "boolean") next.installed = options.installed;
+        if (["ok", "forbidden", "taken"].includes(options.create)) next.create = options.create;
+        if (["ok", "unavailable"].includes(options.starter)) next.starter = options.starter;
+        for (const added of options.add ?? []) {
+          const name = String(added.name);
+          const repo = { ...DEMO_REPO, id: next.nextId++, name, full_name: `${DEMO_LOGIN}/${name}`, private: added.private !== false };
+          const git = added.kind === "no-site" ? buildInitialGit(resolve(projectRoot, "fixtures/no-site")) : emptyGit();
+          next.repos.set(name, { repo, git });
+        }
+        res.statusCode = 204;
+        return res.end();
       }
       if (path === "/__demo/file") {
         // The bytes of a file on the demo branch, as committed.
-        const bytes = fileAt(sessions.get(id)!.git, url.searchParams.get("path") ?? "");
+        const bytes = fileAt(gitOf(id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "");
         res.statusCode = bytes ? 200 : 404;
         res.setHeader("Content-Type", "application/octet-stream");
         return res.end(bytes ?? Buffer.alloc(0));
@@ -727,7 +903,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS));
+    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, (id ? onboardingOf(id) : newOnboarding())));
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => res.setHeader(key, value));
