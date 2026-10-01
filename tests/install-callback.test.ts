@@ -154,3 +154,14 @@ test("owner setup installs through /auth/install, so its sign-in has a state", a
   const page = await (await handle(get("/auth/setup"), env)).text();
   assert.ok(!page.includes("github.com/apps/"));
 });
+
+test("a sign-in GitHub sends to an alias address without a sign-in started there is handed on to the editor's own address", async () => {
+  const { env } = environment();
+  env.EDITOR_ORIGIN = origin;
+  env.EDITOR_ALIASES = "https://alias.example";
+  const before = exchanges;
+  const response = await handle(new Request("https://alias.example/auth/callback?code=abc&installation_id=1&setup_action=install"), env);
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), `${origin}/auth/callback?code=abc&installation_id=1&setup_action=install`);
+  assert.equal(exchanges, before, "no code is exchanged on the alias");
+});

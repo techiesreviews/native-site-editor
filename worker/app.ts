@@ -570,6 +570,13 @@ async function route(
     return redirect(target.href, [setCookie(url, "oauth", state, 600), setCookie(url, "install", nonce, 600)]);
   }
   if (path === "/auth/callback") {
+    // GitHub sends a sign-in made while installing to the App's first callback
+    // URL, which may be an alias (EDITOR_ALIASES). Without a sign-in started
+    // here (no oauth cookie on this address), hand it on to the editor's own
+    // address, where the browser's cookies are.
+    const canonical = editorOrigin(env, url.origin);
+    if (canonical !== url.origin && !cookie(request, "oauth"))
+      return redirect(`${canonical}${url.pathname}${url.search}`);
     // A code is only ever exchanged with a state that is the one this browser
     // holds (as for /auth/login), so a code cannot be planted on a browser by
     // sending it here. GitHub may not send the state back after an install
