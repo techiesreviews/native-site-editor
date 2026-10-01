@@ -273,3 +273,37 @@ test("a home page an agent writes switches the site on, and discarding all bring
     await client.close();
   }
 });
+
+test("a remembered starting point is dropped, not applied, when the repository has files", async ({ page, baseURL }) => {
+  await control(page, baseURL, { create: "forbidden" });
+  await openGetStarted(page, baseURL);
+  await page.getByLabel("Repository name").fill("notes");
+  await page.getByRole("button", { name: "Create repository" }).click();
+  await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
+  await control(page, baseURL, { add: [{ name: "notes", kind: "no-site" }] });
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "notes")!.id}&branch=main`);
+  await expect(page.getByText("No home page")).toBeVisible({ timeout: 30_000 });
+  // Nothing was drafted unasked, and the choice is gone.
+  await expect(page.getByRole("heading", { name: "Start your site" })).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes("starting-point")))).toEqual([]);
+});
+
+test("a second save works after the snapshot refresh of the first one failed", async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none", add: [{ name: "blank-repo", kind: "empty" }] });
+  await openRepository(page, baseURL, "blank-repo");
+  await startSiteWith(page, "Blank page");
+  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
+  await page.route("**/api/snapshot**", (route) => route.abort());
+  await listChanges(page);
+  await publishNow(page);
+  const first = await head(page, baseURL, "blank-repo");
+  expect(first).toMatch(/^[0-9a-f]{40}$/);
+  // A second draft, saved on top of the first commit rather than as another first save.
+  await page.keyboard.press("Escape");
+  await page.locator(".monaco-editor").first().click();
+  await page.keyboard.type("<!-- more -->");
+  await listChanges(page);
+  await publishNow(page);
+  expect(await head(page, baseURL, "blank-repo")).not.toBe(first);
+});

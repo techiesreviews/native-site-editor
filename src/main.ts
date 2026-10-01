@@ -3832,6 +3832,8 @@ function releaseFiles(paths: Set<string>) {
 // it a site-less repository again (Start your site). Done by opening the
 // project again, as the drafts are kept. True while that is pending.
 let nativeResyncing = false;
+// Pending while the project is opened again, so an agent's write waits for the updated context.
+let nativeResyncDone: Promise<void> | undefined;
 function resyncNativeSite(): boolean {
   if (nativeResyncing) return true;
   const scope = draftScope();
@@ -3842,9 +3844,11 @@ function resyncNativeSite(): boolean {
   const wanted = committed || drafted;
   if (wanted === nativeEngaged) return false;
   nativeResyncing = true;
-  queueMicrotask(() => {
-    // Nothing is reopened when the home page went away; else the open file is.
-    void loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; });
+  nativeResyncDone = new Promise<void>((resolve) => {
+    queueMicrotask(() => {
+      // Nothing is reopened when the home page went away; else the open file is.
+      void loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; nativeResyncDone = undefined; resolve(); });
+    });
   });
   return true;
 }
@@ -4663,7 +4667,7 @@ async function mountSource(
     },
     onHistory: openHistory,
     onDiscardAll: () => void discardAllChanges(),
-    publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? (snapshot.empty ? EMPTY_COMMIT : trustedHead()) : undefined),
+    publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? (snapshot.empty && (!headSeen || headSeen.commit === EMPTY_COMMIT) ? EMPTY_COMMIT : trustedHead()) : undefined),
     onRefused: () => void checkBranchHead(true),
     onDiscardChange: discardFileChange,
     deletedUpstream: (path) => deletedUpstream.has(path),
@@ -4778,6 +4782,7 @@ function agentFileTarget(path: string): FileRowTarget | undefined {
 }
 const agentSiteActions: AgentSiteActions = {
   async text(path) {
+    await nativeResyncDone;
     const mounted = editorModule?.getMountedSource(path);
     if (mounted !== undefined) return mounted;
     const scope = draftScope();
@@ -4792,13 +4797,17 @@ const agentSiteActions: AgentSiteActions = {
     if (!editorModule) throw new Error("The editor is not ready.");
     editorModule.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
   },
-  writeDraft: (path, content, create) =>
-    applyNativeOperation({
+  writeDraft: async (path, content, create) => {
+    const error = await applyNativeOperation({
       ...(create ? { creates: [{ path, content }] } : { edits: new Map([[path, content]]) }),
       ...(nativePageRoute(path) ? { open: path } : {}),
       done: `An agent ${create ? "created" : "changed"} ${path}.`,
       undone: `Undid the agent's change to ${path}.`,
-    }),
+    });
+    // A home page just written switches the site on: the context is whole before the write is answered.
+    await nativeResyncDone;
+    return error;
+  },
   async open(path) {
     if (currentPath !== path || !editorModule?.isMounted(path)) await restoreFile(path, generation, { linkDefaultStyle: false });
     return currentPath === path;
@@ -5150,7 +5159,9 @@ async function loadSnapshot(
     // Agents see the site as it is now (pages found, or none yet).
     updateAgentContext();
     // A repository made on GitHub's own page for a chosen starting point gets it now.
-    const chosenPoint = !isNative ? takeStartingPoint(repo) : undefined;
+    // Only an empty repository gets it unasked; for any other the remembered choice is dropped.
+    const remembered = !isNative ? takeStartingPoint(repo) : undefined;
+    const chosenPoint = result.empty ? remembered : undefined;
     if (chosenPoint) void writeStartingPoint(chosenPoint).then((problem) => { if (problem) errorMessage(new Error(problem)); });
     if (info.user)
       rememberWorkspace(info.user.login, {
