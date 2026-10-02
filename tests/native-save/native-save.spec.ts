@@ -144,7 +144,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Saved to GitHub heading"));
   await expect(frame.getByRole("heading", { name: "Saved to GitHub heading" })).toBeVisible();
 
-  // The native save menu commits to GitHub; the Change status shows in the top bar (native-change-status.spec.ts).
+  // The native save menu commits to GitHub; the Change status shows on the button (native-change-status.spec.ts).
   await openSaveMenu(page);
   // Hovering shows no heading, idle text or second button: Publish itself commits.
   await expect(page.locator("#publish-files strong, #publish-files button.primary")).toHaveCount(0);
@@ -161,8 +161,7 @@ test("edits patch the preview and the native Save UI commits to GitHub", async (
 
   const message = page.locator(".publish-menu__message");
   await expect(message).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await expect(message.getByRole("link", { name: /View commit/ })).toHaveAttribute("href", /\/commit\//);
-  await expect(message).toContainText("Its status shows in the top bar.");
+  await expect(message.getByRole("link", { name: /commit/ })).toHaveAttribute("href", /\/commit\//);
   await expect(message).not.toContainText(/build|live|publish/i);
 });
 
@@ -266,7 +265,8 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   // Type more while the request is still pending.
   await pasteSource(page, "", indexSource.replace("A native browser preview", "Typed during save"));
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Saved");
+  // The edit typed meanwhile waits: the button offers to publish it.
+  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Publish1");
 
   // The in-flight edit survives as a new draft on top of the committed content.
   await expect(frame.getByRole("heading", { name: "Typed during save" })).toBeVisible();

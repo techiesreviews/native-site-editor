@@ -5,6 +5,7 @@ import { EMPTY_COMMIT, type PublishFile, type PublishResult } from "../../shared
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
+import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
 import "./publish-menu.css";
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
@@ -41,7 +42,7 @@ export function createPublishMenu(options: {
   currentPath: string;
   onPublished: (result: PublishResult, submitted: SavedDraft[]) => void;
   onExpired: () => void;
-  /** Native projects word the progress as saving to GitHub; the Change status shows in the top bar (components/site-actions.ts). */
+  /** Native projects word the progress as saving to GitHub. */
   saveLabels?: boolean;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
   onDiscardChange?: (change: FileChange) => void;
@@ -62,15 +63,13 @@ export function createPublishMenu(options: {
   panel.setAttribute("aria-label", "Changes to publish");
   const trigger = node("button", "button primary");
   trigger.type = "button";
-  // The button names its progress while a publish runs, then goes back to Publish.
+  // The button names the progress of a publish, then its deploy
+  // (deploy-status.ts), and goes back to Publish when it is done.
   const label = node("span", "publish-menu__label", "Publish");
   trigger.append(label);
-  let labelTimer: ReturnType<typeof setTimeout> | undefined;
-  function showProgress(text: string, settle = false) {
-    clearTimeout(labelTimer);
+  function showProgress(text: string) {
     label.textContent = text;
     count.hidden = text !== "Publish";
-    if (settle) labelTimer = setTimeout(() => showProgress("Publish"), 2000);
   }
   // How many changes wait; the button keeps its name, the count is seen.
   const count = node("span", "publish-menu__count");
@@ -90,12 +89,14 @@ export function createPublishMenu(options: {
   const unticked = new Set<string>();
   let records: FileChange[] = [];
   let pending = false, disposed = false;
+  // The deploy of this repository's last save, if one is shown, and whether the message says it.
+  let deploy: DeployStatus | undefined;
+  let showingDeploy = false;
   const selected = (change: FileChange) =>
     !gone(change) && !unticked.has(change.path) && !(change.from !== undefined && unticked.has(change.from));
   function refresh(resetMessage = true) {
     if (pending) return;
     records = listChanges(draftStore().list(options.scope));
-    trigger.disabled = records.length === 0;
     count.textContent = records.length ? String(records.length) : "";
     list.replaceChildren();
     for (const change of records) {
@@ -123,8 +124,40 @@ export function createPublishMenu(options: {
     // A refusal is said until every file it named is settled.
     const notice = refusedNotice(options.scope);
     if (notice) message.textContent = notice;
-    else if (resetMessage || refusing) message.textContent = "";
+    else if (resetMessage || refusing || showingDeploy) showDeploy();
     refusing = Boolean(notice);
+    showState();
+  }
+  function showState() {
+    if (pending) return;
+    // With nothing to publish but a deploy to follow, the button stays
+    // hoverable (aria-disabled) so its menu shows where to watch it.
+    const idle = records.length === 0;
+    trigger.disabled = idle && !deploy;
+    if (idle && deploy) trigger.setAttribute("aria-disabled", "true");
+    else trigger.removeAttribute("aria-disabled");
+    const word = !deploy || records.length ? "Publish"
+      : deploy.state === "saved" ? "Saved"
+      : deploy.state === "building" ? "Deploying…"
+      : deploy.state === "live" ? "Published"
+      : "Deploy failed";
+    showProgress(word);
+    if (word === "Publish") delete trigger.dataset.state;
+    else trigger.dataset.state = deploy!.state;
+  }
+  // The menu says what the button does and links to where to look.
+  function showDeploy() {
+    showingDeploy = Boolean(deploy);
+    if (!deploy) { message.textContent = ""; return; }
+    const words = deploy.state === "saved" ? "Saved to GitHub."
+      : deploy.state === "building" ? "Saved to GitHub. Deploying…"
+      : deploy.state === "live" ? "Published."
+      : "The deploy failed; the site was not updated.";
+    const to = link(deploy.link.text, deploy.link.href, "text-link");
+    to.target = "_blank"; to.rel = "noopener noreferrer";
+    to.setAttribute("aria-label", deploy.link.name);
+    message.replaceChildren(node("span", "", `${words} `), to);
+    if (deploy.note) message.append(node("span", "", ` ${deploy.note}`));
   }
   let refusing = false;
   // The text a change compares, GitHub's before the draft's; none for a
@@ -301,11 +334,12 @@ export function createPublishMenu(options: {
   async function send() {
     const chosen = listChanges(draftStore().list(options.scope)).filter(selected);
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
-    if (pending) return;
+    if (pending || trigger.getAttribute("aria-disabled") === "true") return;
     if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }
     pending = true; trigger.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = pendingText;
+    showingDeploy = false;
     showProgress(options.saveLabels ? "Saving…" : "Publishing…");
     // Uploaded files go up first; the button says so, then goes back to saving.
     const upload = async (blob: Blob, sha: string) => {
@@ -375,26 +409,18 @@ export function createPublishMenu(options: {
       // Reconcile even if the user navigated away while the request was in flight.
       options.onPublished(data as PublishResult, submitted);
       if (disposed) return;
-      showProgress(options.saveLabels ? "Saved" : "Published", true);
-      message.replaceChildren(node("span", "", "Saved to GitHub. "));
-      const commit = link("View commit ↗", data.url, "text-link");
-      commit.target = "_blank"; commit.rel = "noopener noreferrer";
-      message.append(
-        commit,
-        node(
-          "span",
-          "",
-          options.saveLabels
-            ? " Its status shows in the top bar."
-            : " The status in the top bar follows the build.",
-        ),
-      );
+      // Following the deploy (site-actions.ts) took over the status; else it is just Saved.
+      if (deployStatus()?.commit !== data.commit)
+        setDeployStatus({
+          repo: options.scope.repo, commit: data.commit, state: "saved", final: true,
+          link: { text: "View commit ↗", href: data.url, name: "View the commit on GitHub" },
+        });
+      showDeploy();
     } catch (error) {
       if ((error as { status?: number }).status === 401) { options.onExpired(); return; }
       if (!disposed) message.textContent = error instanceof Error ? error.message : "Publishing failed. Your drafts are kept.";
     } finally {
       pending = false;
-      if (label.textContent !== "Saved" && label.textContent !== "Published") showProgress("Publish");
       if (!disposed) {
         refresh(false);
       }
@@ -404,8 +430,14 @@ export function createPublishMenu(options: {
   trigger.addEventListener("focus", () => refresh());
   // Native toggle fires after shared hover/click handling; do not rebuild during a publish.
   panel.addEventListener("beforetoggle", event => { if ((event as ToggleEvent).newState === "open") refresh(); });
+  const unfollow = onDeployStatus((status) => {
+    deploy = status?.repo === options.scope.repo ? status : undefined;
+    // Each check of the deploy says it again: the list of changes stays as it is.
+    if (!pending && (showingDeploy || !message.textContent)) showDeploy();
+    showState();
+  });
   refresh();
-  return { root, refresh, destroy() { disposed = true; clearTimeout(labelTimer); if (dialog.open) dialog.close(); dropdown.destroy(); } };
+  return { root, refresh, destroy() { disposed = true; unfollow(); if (dialog.open) dialog.close(); dropdown.destroy(); } };
 }
 
 /** Text as gzip bytes. */

@@ -1,11 +1,13 @@
-// The site beyond the editor: the Change status of the last save in the top
-// bar (Saved → Building → Live or Failed, read through the Worker's
-// `/api/change-status`, so the GitHub token never reaches the browser), and,
+// The site beyond the editor: the Change status of the last save, shown on
+// the Publish button (Saved → Deploying → Published or Deploy failed, read
+// through the Worker's `/api/change-status`, so the GitHub token never
+// reaches the browser; see deploy-status.ts), and,
 // in the project menu, "View live site" (from `.editor/config.json`'s
 // `site.url`) and "Download site" (the repository's files as edited, drafts
 // included, as a .zip).
 import "./site-actions.css";
 import { button, link, node } from "../ui/dom";
+import { setDeployStatus } from "../deploy-status";
 import { changeStatusLabel, changeStatusPending, type ChangeState, type ChangeStatus } from "../../shared/change-status";
 import { buildSiteZip, saveBytes, siteUrlFromConfig, siteZipName, type SiteFiles } from "../site-download";
 import { NATIVE_CONFIG_PATH } from "../../shared/native-project";
@@ -18,7 +20,7 @@ export interface SavedCommit {
 }
 
 export interface SiteActionsOptions {
-  /** Where the status shows (the top bar). */
+  /** Where the status is announced to screen readers (the top bar). */
   statusHost: HTMLElement;
   /** Where "View live site" and "Download site" go (the project menu's panel). */
   menuHost: HTMLElement;
@@ -49,18 +51,11 @@ export async function readSiteUrl(site: SiteFiles): Promise<string | undefined> 
 
 export function mountSiteActions(options: SiteActionsOptions) {
   const pollDelay = options.pollDelay ?? defaultPollDelay;
-  // Top bar status.
-  const status = node("div", "change-status");
-  status.hidden = true;
-  const dot = node("span", "change-status__dot");
-  dot.setAttribute("aria-hidden", "true");
-  const label = node("span", "change-status__label");
-  const links = node("span", "change-status__links");
-  status.append(dot, label, links);
+  // The status shows on the Publish button; the top bar only announces it.
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
-  options.statusHost.replaceChildren(status, live);
+  options.statusHost.replaceChildren(live);
 
   // Project menu items.
   const liveSite = link("View live site ↗", "#", "text-button repository-menu__action site-actions__live");
@@ -114,23 +109,18 @@ export function mountSiteActions(options: SiteActionsOptions) {
   }
 
   function render(saved: SavedCommit, state: ChangeState, result?: ChangeStatus, note?: string) {
-    status.hidden = false;
-    status.dataset.state = state === "building" || state === "live" || state === "failed" ? state : "saved";
+    const shown = state === "building" || state === "live" || state === "failed" ? state : "saved";
     const words = changeStatusLabel(state);
-    label.textContent = words;
-    status.title = note ?? `${words}: commit ${saved.commit.slice(0, 7)}${result?.name ? ` (${result.name})` : ""}`;
-    links.replaceChildren();
-    const add = (text: string, href: string, name: string) => {
-      const anchor = link(text, href, "text-link change-status__link");
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.setAttribute("aria-label", name);
-      links.append(anchor);
-    };
-    if (state === "live" && siteUrl) add("View live site ↗", siteUrl, "View live site");
-    else if ((state === "building" || state === "failed" || state === "live") && result?.url)
-      add("View run ↗", result.url, state === "failed" ? "View the failed run on GitHub" : "View the run on GitHub");
-    else add("View commit ↗", saved.url, "View the commit on GitHub");
+    const at = (text: string, href: string, name: string) => ({ text, href, name });
+    const runLink = result?.url
+      ? at(state === "building" ? "Watch the deploy ↗" : "View run ↗", result.url,
+        state === "failed" ? "View the failed run on GitHub" : state === "building" ? "Watch the deploy on GitHub" : "View the run on GitHub")
+      : undefined;
+    const commitLink = at("View commit ↗", saved.url, "View the commit on GitHub");
+    const linkTo = state === "live" && siteUrl ? at("View live site ↗", siteUrl, "View live site")
+      : shown !== "saved" && runLink ? runLink
+      : commitLink;
+    setDeployStatus({ repo: saved.repo, commit: saved.commit, state: shown, final: !changeStatusPending(state), link: linkTo, ...(note ? { note } : {}) });
     if (live.textContent !== words) live.textContent = state === "failed" ? "Failed: the site was not updated." : words === "Live" ? "Live: the site is updated." : words;
   }
 
@@ -148,7 +138,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
     let errors = 0;
     render(saved, "waiting");
     void refreshSite();
-    const alive = () => id === tracking && status.isConnected && current();
+    const alive = () => id === tracking && live.isConnected && current();
     const schedule = () => { timer = setTimeout(check, pollDelay(Date.now() - started)); };
     async function check() {
       if (!alive()) { if (id === tracking && !current()) clear(); return; }
@@ -183,8 +173,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
   function clear() {
     stop();
     following = undefined;
-    status.hidden = true;
-    delete status.dataset.state;
+    setDeployStatus(undefined);
     live.textContent = "";
   }
 
@@ -196,6 +185,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
     refreshSite,
     destroy() {
       stop();
+      setDeployStatus(undefined);
       menu?.removeEventListener("toggle", onToggle);
     },
   };
