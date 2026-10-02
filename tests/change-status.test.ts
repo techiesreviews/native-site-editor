@@ -61,28 +61,74 @@ function github(answer: (path: string, search: URLSearchParams) => Response) {
   return { client, calls };
 }
 
+const noChecks = () => Response.json({ total_count: 0, check_runs: [] });
+
 test("the endpoint reads the commit's runs, and the workflows when there are none", async () => {
   const running = github((path, search) => {
+    if (path.endsWith("/check-runs")) return noChecks();
     assert.equal(path, "/repos/lex/site/actions/runs");
     assert.equal(search.get("head_sha"), sha);
     return Response.json({ total_count: 1, workflow_runs: [run("in_progress")] });
   });
   assert.equal((await changeStatus(running.client, repo, sha)).state, "building");
-  assert.equal(running.calls.length, 1);
+  assert.equal(running.calls.length, 2);
 
-  const pending = github((path) => path.endsWith("/actions/runs")
-    ? Response.json({ total_count: 0, workflow_runs: [] })
+  const pending = github((path) => path.endsWith("/check-runs") ? noChecks()
+    : path.endsWith("/actions/runs") ? Response.json({ total_count: 0, workflow_runs: [] })
     : Response.json({ total_count: 2, workflows: [{ state: "active" }, { state: "disabled_manually" }] }));
   assert.deepEqual(await changeStatus(pending.client, repo, sha), { state: "waiting" });
-  assert.deepEqual(pending.calls.map((call) => call.split("?")[0]), ["/repos/lex/site/actions/runs", "/repos/lex/site/actions/workflows"]);
+  assert.deepEqual(pending.calls.map((call) => call.split("?")[0]).sort(),
+    ["/repos/lex/site/actions/runs", "/repos/lex/site/actions/workflows", `/repos/lex/site/commits/${sha}/check-runs`]);
 
-  const none = github((path) => path.endsWith("/actions/runs")
-    ? Response.json({ total_count: 0, workflow_runs: [] })
+  // No workflows, and nothing checked the commit before it either.
+  const parent = "b".repeat(40);
+  const none = github((path) => path.endsWith("/check-runs") ? noChecks()
+    : path.endsWith("/actions/runs") ? Response.json({ total_count: 0, workflow_runs: [] })
+    : path.endsWith(`/git/commits/${sha}`) ? Response.json({ sha, parents: [{ sha: parent }] })
     : Response.json({ total_count: 0, workflows: [] }));
   assert.deepEqual(await changeStatus(none.client, repo, sha), { state: "none" });
+  assert.ok(none.calls.some((call) => call.startsWith(`/repos/lex/site/commits/${parent}/check-runs`)));
 });
 
-test("without Actions: read the endpoint answers unavailable, not an error", async () => {
+// A check run as Cloudflare Workers Builds reports one.
+const check = (status: string, conclusion: string | null = null, slug = "cloudflare-workers-and-pages") => ({
+  name: "Workers Builds: site",
+  status,
+  conclusion,
+  html_url: "https://github.com/lex/site/runs/9",
+  details_url: "https://dash.cloudflare.com/builds/9",
+  app: { slug },
+});
+
+test("a host's check runs (Cloudflare Workers Builds) give the status, linking to the host's build", async () => {
+  const parent = "b".repeat(40);
+  const host = (checks: object[], before: object[] = []) => github((path) =>
+    path === `/repos/lex/site/commits/${sha}/check-runs` ? Response.json({ total_count: checks.length, check_runs: checks })
+    : path === `/repos/lex/site/commits/${parent}/check-runs` ? Response.json({ total_count: before.length, check_runs: before })
+    : path.endsWith(`/git/commits/${sha}`) ? Response.json({ sha, parents: [{ sha: parent }] })
+    : path.endsWith("/actions/runs") ? Response.json({ total_count: 0, workflow_runs: [] })
+    : Response.json({ total_count: 0, workflows: [] }));
+  assert.deepEqual(await changeStatus(host([check("in_progress")]).client, repo, sha),
+    { state: "building", url: "https://dash.cloudflare.com/builds/9", name: "Workers Builds: site" });
+  assert.equal((await changeStatus(host([check("completed", "success")]).client, repo, sha)).state, "live");
+  assert.equal((await changeStatus(host([check("completed", "failure")]).client, repo, sha)).state, "failed");
+  // Not reported yet, but the host checked the commit before: one is coming.
+  assert.deepEqual(await changeStatus(host([], [check("completed", "success")]).client, repo, sha), { state: "waiting" });
+  // Actions' own check runs are its workflow runs again: left out.
+  assert.deepEqual(await changeStatus(host([check("completed", "failure", "github-actions")]).client, repo, sha), { state: "none" });
+  // Without Actions: read, the check runs still answer.
+  const checksOnly = github((path) => path.includes("/actions/")
+    ? Response.json({ message: "Resource not accessible by integration" }, { status: 403 })
+    : Response.json({ total_count: 1, check_runs: [check("completed", "success")] }));
+  assert.equal((await changeStatus(checksOnly.client, repo, sha)).state, "live");
+  // Without Checks: read, the workflow runs still answer.
+  const actionsOnly = github((path) => path.endsWith("/check-runs")
+    ? Response.json({ message: "Resource not accessible by integration" }, { status: 403 })
+    : Response.json({ total_count: 1, workflow_runs: [run("in_progress")] }));
+  assert.equal((await changeStatus(actionsOnly.client, repo, sha)).state, "building");
+});
+
+test("without Actions: read and Checks: read the endpoint answers unavailable, not an error", async () => {
   const forbidden = github(() => Response.json({ message: "Resource not accessible by integration" }, { status: 403 }));
   assert.deepEqual(await changeStatus(forbidden.client, repo, sha), { state: "unavailable" });
   const disabled = github(() => Response.json({ message: "Not Found" }, { status: 404 }));

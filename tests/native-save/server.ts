@@ -385,6 +385,8 @@ function fileAt(git: Git, path: string): Buffer | undefined {
 interface FakeActions {
   mode: "none" | "forbidden" | "runs";
   runs?: { name?: string; status: string; conclusion?: string | null; html_url?: string }[];
+  /** A host's check runs for any commit (Cloudflare Workers Builds); without them GitHub answers 404. */
+  checks?: { name?: string; status: string; conclusion?: string | null; details_url?: string }[];
   /** Every commit the editor asked about. */
   asked?: string[];
 }
@@ -712,6 +714,10 @@ function githubFetch(
         }
         return jsonResponse({ state: "success", statuses: hosting.statuses });
       }
+    }
+    if (new RegExp(`^${repoBase}/commits/[0-9a-f]{40}/check-runs$`).test(path)) {
+      if (!actions.checks) return jsonResponse({ message: "Not Found" }, 404);
+      return jsonResponse({ total_count: actions.checks.length, check_runs: actions.checks.map((run, index) => ({ id: index + 1, app: { slug: "cloudflare-workers-and-pages" }, html_url: `https://github.com/${DEMO_REPO.full_name}/runs/${index + 1}`, ...run })) });
     }
     if (path === `${repoBase}/actions/runs` || path === `${repoBase}/actions/workflows`) {
       if (actions.mode === "forbidden")

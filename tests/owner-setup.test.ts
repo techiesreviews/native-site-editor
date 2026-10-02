@@ -66,6 +66,7 @@ test("manifest registers the private hosted App with exact permissions and callb
     contents: "write",
     metadata: "read",
     actions: "read",
+    checks: "read",
     administration: "write",
     pages: "write",
     workflows: "write",
@@ -278,13 +279,13 @@ test("Durable Object stores config write-once and preserves it across session de
 test("docs/native-github-app.json asks for the manifest's permissions", async () => {
   const { readFile } = await import("node:fs/promises");
   const doc = JSON.parse(await readFile("docs/native-github-app.json", "utf8"));
-  const { administration, pages, workflows, secrets, statuses, deployments, contents, metadata, actions } = doc.parameters;
+  const { administration, pages, workflows, secrets, statuses, deployments, contents, metadata, actions, checks } = doc.parameters;
   assert.deepEqual(
-    { contents, metadata, actions, administration, pages, workflows, secrets, statuses, deployments },
+    { contents, metadata, actions, checks, administration, pages, workflows, secrets, statuses, deployments },
     githubAppManifest(origin).default_permissions,
   );
   const url = new URL(doc.registration_url);
-  for (const key of ["pages", "workflows", "secrets", "statuses", "deployments"])
+  for (const key of ["actions", "checks", "pages", "workflows", "secrets", "statuses", "deployments"])
     assert.equal(url.searchParams.get(key), doc.parameters[key]);
 });
 

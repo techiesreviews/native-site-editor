@@ -16,9 +16,9 @@ const stylesPath = "styles/site.css";
 const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
-type Run = { name?: string; status: string; conclusion?: string | null };
-async function setActions(page: Page, baseURL: string | undefined, mode: "none" | "forbidden" | "runs", runs: Run[] = []) {
-  const response = await page.request.post(`${baseURL}/__demo/actions`, { data: { mode, runs } });
+type Run = { name?: string; status: string; conclusion?: string | null; details_url?: string };
+async function setActions(page: Page, baseURL: string | undefined, mode: "none" | "forbidden" | "runs", runs: Run[] = [], checks?: Run[]) {
+  const response = await page.request.post(`${baseURL}/__demo/actions`, { data: { mode, runs, checks } });
   expect(response.status()).toBe(204);
 }
 
@@ -112,6 +112,19 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   const head = await page.locator("#revision").getAttribute("title");
   expect(asked.length).toBeGreaterThan(1);
   expect(new Set(asked)).toEqual(new Set([head]));
+});
+
+test("a host that deploys without a workflow (Cloudflare Workers Builds) is followed through its check runs", async ({ page, baseURL }) => {
+  const build = (status: string, conclusion: string | null = null) =>
+    [{ name: "Workers Builds: site", status, conclusion, details_url: "https://dash.cloudflare.com/builds/7" }];
+  await setActions(page, baseURL, "none", [], build("in_progress"));
+  await editAndSave(page, "Workers Builds heading");
+  await expect(label(page)).toHaveText("Deploying…");
+  await expect(await deployLink(page, "Watch the deploy on GitHub")).toHaveAttribute("href", "https://dash.cloudflare.com/builds/7");
+
+  await setActions(page, baseURL, "none", [], build("completed", "success"));
+  await expect(label(page)).toHaveText("Published");
+  await expect(label(page)).toHaveText("Publish", { timeout: 10_000 });
 });
 
 test("a failed workflow run shows Failed with a link to the run", async ({ page, baseURL }) => {

@@ -67,8 +67,10 @@ export function githubAppManifest(origin: string, aliases: string[] = [], owner 
     default_permissions: {
       contents: "write",
       metadata: "read",
-      // The Change status after a save reads the commit's workflow runs.
+      // The Change status after a save reads the commit's workflow runs, and
+      // the check runs of hosts that deploy without one (Cloudflare Workers Builds).
       actions: "read",
+      checks: "read",
       // Get started creates the user's new repository (POST /user/repos).
       administration: "write",
       // Publish: GitHub Pages (enable, custom domain), the deploy workflow

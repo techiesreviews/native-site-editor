@@ -159,7 +159,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
       errors = 0;
       const elapsed = Date.now() - started;
       if (result.state === "unavailable") {
-        render(saved, "none", result, "Build status needs the GitHub App's Actions: read permission.");
+        render(saved, "none", result, "Build status needs the GitHub App's Actions: read or Checks: read permission.");
         return;
       }
       if (result.state === "waiting" && elapsed > WAIT_LIMIT) { render(saved, "none", result); return; }

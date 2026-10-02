@@ -3,7 +3,7 @@
   "source": "https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters",
   "owner_account": "personal",
   "registration_base_url": "https://github.com/settings/apps/new",
-  "registration_url": "https://github.com/settings/apps/new?name=native-site-editor-techies&description=Browser-native%20site%20editor%20for%20selected%20techiesreviews%20repositories&url=https%3A%2F%2Feditor.techies.tools&callback_urls%5B%5D=https%3A%2F%2Feditor.techies.tools%2Fauth%2Fcallback&callback_urls%5B%5D=https%3A%2F%2Fnative-site-editor.pages.dev%2Fauth%2Fcallback&request_oauth_on_install=true&public=true&webhook_active=false&contents=write&metadata=read&actions=read&administration=write&pages=write&workflows=write&secrets=write&statuses=read&deployments=read",
+  "registration_url": "https://github.com/settings/apps/new?name=native-site-editor-techies&description=Browser-native%20site%20editor%20for%20selected%20techiesreviews%20repositories&url=https%3A%2F%2Feditor.techies.tools&callback_urls%5B%5D=https%3A%2F%2Feditor.techies.tools%2Fauth%2Fcallback&callback_urls%5B%5D=https%3A%2F%2Fnative-site-editor.pages.dev%2Fauth%2Fcallback&request_oauth_on_install=true&public=true&webhook_active=false&contents=write&metadata=read&actions=read&checks=read&administration=write&pages=write&workflows=write&secrets=write&statuses=read&deployments=read",
   "parameters": {
     "name": "native-site-editor-techies",
     "description": "Browser-native site editor for selected techiesreviews repositories",
@@ -18,6 +18,7 @@
     "contents": "write",
     "metadata": "read",
     "actions": "read",
+    "checks": "read",
     "administration": "write",
     "pages": "write",
     "workflows": "write",
@@ -28,7 +29,7 @@
   "manual_checks": [
     "GitHub App is public (a private App can be installed and authorized only by its owner, so every other account gets a 404 at GitHub's sign-in).",
     "Webhooks are inactive.",
-    "Repository permissions are Contents: Read and write, Metadata: Read-only, Actions: Read-only (for the Change status after a save) Administration: Read and write (so Get started can create the user's repository), Pages: Read and write (Publish turns on GitHub Pages and sets its custom domain), Workflows: Read and write (Publish saves the deploy workflow), Secrets: Read and write (Publish stores a Cloudflare or Spacefast key as a repository secret and lists secret names), Commit statuses: Read-only and Deployments: Read-only (Publish shows a host's live address).",
+    "Repository permissions are Contents: Read and write, Metadata: Read-only, Actions: Read-only and Checks: Read-only (for the Change status after a save: workflow runs, and the check runs of hosts such as Cloudflare Workers Builds), Administration: Read and write (so Get started can create the user's repository), Pages: Read and write (Publish turns on GitHub Pages and sets its custom domain), Workflows: Read and write (Publish saves the deploy workflow), Secrets: Read and write (Publish stores a Cloudflare or Spacefast key as a repository secret and lists secret names), Commit statuses: Read-only and Deployments: Read-only (Publish shows a host's live address).",
     "Request user authorization (OAuth) during installation is on: installing the App also signs the user in, through /auth/install and /auth/callback (the setup URL is then ignored by GitHub).",
     "Install on Only select repositories: techiesreviews/native-site-editor-starter."
   ]
