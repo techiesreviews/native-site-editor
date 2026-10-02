@@ -85,7 +85,7 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   await editAndSave(page, "Followed to live");
   await expect(label(page)).toHaveText("Saved");
   await expect(trigger(page)).toHaveAttribute("data-state", "saved");
-  // Nothing to publish: it looks disabled, but its menu still opens.
+  // Nothing to publish: disabled, but hovering still opens its menu.
   await expect(trigger(page)).toBeDisabled();
   await expect(await deployLink(page, "View the commit on GitHub")).toHaveAttribute("href", /\/commit\/[0-9a-f]{40}$/);
   await expect(page.locator(".topbar .change-status")).toHaveCount(0);
@@ -104,7 +104,6 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   // Then the button is back as it was: Publish, disabled, no state.
   await expect(label(page)).toHaveText("Publish", { timeout: 10_000 });
   await expect(trigger(page)).not.toHaveAttribute("data-state");
-  await expect(trigger(page)).not.toHaveAttribute("aria-disabled");
   await expect(publishButton(page)).toBeDisabled();
 
   // The editor asked about the saved commit, the branch's new head.

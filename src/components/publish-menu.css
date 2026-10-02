@@ -67,8 +67,6 @@
 /* The count of waiting changes on the trigger. */
 .publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: var(--type-badge); font-weight: 600; }
 .publish-menu__count:empty, .publish-menu__count[hidden] { display: none; }
-/* Nothing to publish while a deploy is followed: looks disabled, still opens its menu. */
-.publish-menu > .button[aria-disabled="true"] { opacity: 0.7; cursor: default; }
 .publish-menu > .button[data-state="live"] { background: var(--color-success); opacity: 1; }
 .publish-menu > .button[data-state="failed"] { background: var(--danger); opacity: 1; }
 /* The grand total, unfolding to the changes, each with its counts. */

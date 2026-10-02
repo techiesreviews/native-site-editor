@@ -23,8 +23,9 @@ export function mountDropdown(options: {
   const isOpen = () => panel.matches(":popover-open");
   const contains = (target: Node | null) => trigger.contains(target) || panel.contains(target);
   const cancelClose = () => clearTimeout(timer);
-  function open() {
-    if (trigger.disabled) return;
+  /** `force` opens it for a disabled trigger too (a status to show, nothing to do). */
+  function open(force = false) {
+    if (trigger.disabled && !force) return;
     cancelClose();
     if (!CSS.supports("position-area", "bottom")) {
       const rect = trigger.getBoundingClientRect();
@@ -81,5 +82,5 @@ export function mountDropdown(options: {
     trigger.setAttribute("aria-expanded", String(isOpen()));
     if (!isOpen()) pinned = false;
   }, { signal });
-  return { open, close, isOpen, destroy() { cancelClose(); controller.abort(); close(); } };
+  return { open, close, scheduleClose, isOpen, destroy() { cancelClose(); controller.abort(); close(); } };
 }

@@ -130,12 +130,7 @@ export function createPublishMenu(options: {
   }
   function showState() {
     if (pending) return;
-    // With nothing to publish but a deploy to follow, the button stays
-    // hoverable (aria-disabled) so its menu shows where to watch it.
-    const idle = records.length === 0;
-    trigger.disabled = idle && !deploy;
-    if (idle && deploy) trigger.setAttribute("aria-disabled", "true");
-    else trigger.removeAttribute("aria-disabled");
+    trigger.disabled = records.length === 0;
     const word = !deploy || records.length ? "Publish"
       : deploy.state === "saved" ? "Saved"
       : deploy.state === "building" ? "Deploying…"
@@ -334,7 +329,7 @@ export function createPublishMenu(options: {
   async function send() {
     const chosen = listChanges(draftStore().list(options.scope)).filter(selected);
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
-    if (pending || trigger.getAttribute("aria-disabled") === "true") return;
+    if (pending) return;
     if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }
     pending = true; trigger.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
@@ -430,6 +425,12 @@ export function createPublishMenu(options: {
   trigger.addEventListener("focus", () => refresh());
   // Native toggle fires after shared hover/click handling; do not rebuild during a publish.
   panel.addEventListener("beforetoggle", event => { if ((event as ToggleEvent).newState === "open") refresh(); });
+  // Disabled with nothing to publish, the button opens no menu; while a
+  // deploy shows, hovering it still does, for the link to watch it.
+  root.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse" && trigger.disabled && !pending && deploy) dropdown.open(true);
+  });
+  root.addEventListener("pointerleave", () => { if (trigger.disabled) dropdown.scheduleClose(); });
   const unfollow = onDeployStatus((status) => {
     deploy = status?.repo === options.scope.repo ? status : undefined;
     // Each check of the deploy says it again: the list of changes stays as it is.
