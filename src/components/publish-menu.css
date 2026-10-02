@@ -66,7 +66,7 @@
 .publish-menu__note { font-size: var(--type-small); color: var(--muted); }
 /* The count of waiting changes on the trigger. */
 .publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: var(--type-badge); font-weight: 600; }
-.publish-menu__count:empty { display: none; }
+.publish-menu__count:empty, .publish-menu__count[hidden] { display: none; }
 /* The grand total, unfolding to the changes, each with its counts. */
 .publish-menu__total { font-size: var(--type-base); }
 .publish-menu__total-summary { font-weight: 600; cursor: pointer; }

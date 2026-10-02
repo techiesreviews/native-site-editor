@@ -259,10 +259,14 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   await openSaveMenu(page);
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saving to GitHub", { timeout: 5_000 });
+  // The disabled button names the progress, then that it saved.
+  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Saving…");
+  await expect(page.locator(".publish-menu > .button.primary")).toBeDisabled();
 
   // Type more while the request is still pending.
   await pasteSource(page, "", indexSource.replace("A native browser preview", "Typed during save"));
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Saved");
 
   // The in-flight edit survives as a new draft on top of the committed content.
   await expect(frame.getByRole("heading", { name: "Typed during save" })).toBeVisible();

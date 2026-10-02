@@ -60,8 +60,18 @@ export function createPublishMenu(options: {
   const panel = node("div", "publish-menu__panel");
   panel.id = "publish-files";
   panel.setAttribute("aria-label", "Changes to publish");
-  const trigger = node("button", "button primary", "Publish");
+  const trigger = node("button", "button primary");
   trigger.type = "button";
+  // The button names its progress while a publish runs, then goes back to Publish.
+  const label = node("span", "publish-menu__label", "Publish");
+  trigger.append(label);
+  let labelTimer: ReturnType<typeof setTimeout> | undefined;
+  function showProgress(text: string, settle = false) {
+    clearTimeout(labelTimer);
+    label.textContent = text;
+    count.hidden = text !== "Publish";
+    if (settle) labelTimer = setTimeout(() => showProgress("Publish"), 2000);
+  }
   // How many changes wait; the button keeps its name, the count is seen.
   const count = node("span", "publish-menu__count");
   count.setAttribute("aria-hidden", "true");
@@ -296,6 +306,13 @@ export function createPublishMenu(options: {
     pending = true; trigger.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = pendingText;
+    showProgress(options.saveLabels ? "Saving…" : "Publishing…");
+    // Uploaded files go up first; the button says so, then goes back to saving.
+    const upload = async (blob: Blob, sha: string) => {
+      showProgress("Uploading…");
+      try { return await postUpload(options.scope.repo, blob, sha); }
+      finally { showProgress(options.saveLabels ? "Saving…" : "Publishing…"); }
+    };
     // One commit of `files` on top of `base`; resolves to nothing when the
     // session expired or GitHub changed files (said in the menu).
     async function post(files: PublishFile[], base: string | undefined): Promise<PublishResult | undefined> {
@@ -340,7 +357,7 @@ export function createPublishMenu(options: {
         if (!rest.length) data = started;
         else {
           try {
-            await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+            await sendUploads(uploadBytes(), options.scope, submitted, upload);
             const after = await post(rest, started.commit);
             if (!after) { keepFirst(); return; }
             data = { ...after, files: [...started.files, ...after.files], deleted: after.deleted ?? [] };
@@ -351,13 +368,14 @@ export function createPublishMenu(options: {
         }
       } else {
         // Uploaded files become GitHub blobs first; the commit names them.
-        await sendUploads(uploadBytes(), options.scope, submitted, (blob, sha) => postUpload(options.scope.repo, blob, sha));
+        await sendUploads(uploadBytes(), options.scope, submitted, upload);
         data = await post(files, head);
         if (!data) return;
       }
       // Reconcile even if the user navigated away while the request was in flight.
       options.onPublished(data as PublishResult, submitted);
       if (disposed) return;
+      showProgress(options.saveLabels ? "Saved" : "Published", true);
       message.replaceChildren(node("span", "", "Saved to GitHub. "));
       const commit = link("View commit ↗", data.url, "text-link");
       commit.target = "_blank"; commit.rel = "noopener noreferrer";
@@ -376,6 +394,7 @@ export function createPublishMenu(options: {
       if (!disposed) message.textContent = error instanceof Error ? error.message : "Publishing failed. Your drafts are kept.";
     } finally {
       pending = false;
+      if (label.textContent !== "Saved" && label.textContent !== "Published") showProgress("Publish");
       if (!disposed) {
         refresh(false);
       }
@@ -386,7 +405,7 @@ export function createPublishMenu(options: {
   // Native toggle fires after shared hover/click handling; do not rebuild during a publish.
   panel.addEventListener("beforetoggle", event => { if ((event as ToggleEvent).newState === "open") refresh(); });
   refresh();
-  return { root, refresh, destroy() { disposed = true; if (dialog.open) dialog.close(); dropdown.destroy(); } };
+  return { root, refresh, destroy() { disposed = true; clearTimeout(labelTimer); if (dialog.open) dialog.close(); dropdown.destroy(); } };
 }
 
 /** Text as gzip bytes. */
