@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: ${options.step}
         run: ${options.run}
         env:
