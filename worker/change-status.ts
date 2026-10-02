@@ -53,7 +53,9 @@ export async function changeStatus(github: GitHub, repo: Repository, sha: string
     const workflows = await github.get<{ workflows?: { state?: string }[] }>(`${base}/actions/workflows?per_page=100`, 1024 * 1024);
     expected += (workflows.workflows ?? []).filter((workflow) => !workflow.state || workflow.state === "active").length;
   }
-  if (!expected && checks) {
+  // No workflows and the check runs refused: a host may well deploy it, unseen; say why.
+  if (!expected && !checks) return { state: "unavailable" };
+  if (!expected) {
     const commit = await github.get<{ parents?: { sha: string }[] }>(`${base}/git/commits/${sha}`);
     const parent = commit.parents?.[0]?.sha;
     if (parent) expected += (await checksOf(parent))?.length ?? 0;

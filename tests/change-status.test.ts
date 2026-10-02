@@ -126,6 +126,12 @@ test("a host's check runs (Cloudflare Workers Builds) give the status, linking t
     ? Response.json({ message: "Resource not accessible by integration" }, { status: 403 })
     : Response.json({ total_count: 1, workflow_runs: [run("in_progress")] }));
   assert.equal((await changeStatus(actionsOnly.client, repo, sha)).state, "building");
+  // Nor with no workflows: a host may deploy it unseen, so the status says why (the permission).
+  const unseen = github((path) => path.endsWith("/check-runs")
+    ? Response.json({ message: "Resource not accessible by integration" }, { status: 403 })
+    : path.endsWith("/actions/runs") ? Response.json({ total_count: 0, workflow_runs: [] })
+    : Response.json({ total_count: 0, workflows: [] }));
+  assert.deepEqual(await changeStatus(unseen.client, repo, sha), { state: "unavailable" });
 });
 
 test("without Actions: read and Checks: read the endpoint answers unavailable, not an error", async () => {
