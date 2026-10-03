@@ -317,7 +317,6 @@ export function createComponentTools(deps: ComponentDeps) {
         label,
         title: at.within ? `In the ${slotLabel(at.within).toLowerCase()} slot of ${label}: select the instance` : `Select the ${label} instance`,
         onSelect: () => deps.preview()?.selectNode({ path: at.path, node: at.node }),
-        onEdit: guardedEdit(at.tag, at.within),
       };
     } else if (host && isComponent(host.tag)) {
       const label = componentLabel(host.tag);
@@ -325,8 +324,7 @@ export function createComponentTools(deps: ComponentDeps) {
         label,
         title: host.path && host.node ? `Select this ${label} instance` : `Inside the ${label} component`,
         onSelect: () => void selectHost(host),
-        onEdit: deps.currentPath() === templateOf(host.tag)?.path ? undefined
-          : guardedEdit(host.tag, undefined, selection.node ? { path: selection.path, node: [...selection.node], tag: selection.tag } : undefined),
+
       };
     }
     return out;

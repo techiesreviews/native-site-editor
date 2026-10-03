@@ -71,7 +71,7 @@ row in view above it.
 
 ## Edit component
 
-The pencil over the component name in the edit bar (or *Edit component* in the panel) opens the template in the code pane and
+The complete component-root name button in the edit bar (or *Edit component* in the panel) opens the template in the code pane and
 selects, in the instance being worked on, the template element that shows the
 selected slot (the root element when the instance itself was selected); the
 slot's own tag is then selected in the code. A violet strip over the preview
@@ -196,4 +196,17 @@ The seam browser test runs the production component controller with mocked compo
 - Make component does not offer to move CSS, and does not create a loader for
   a site without one.
 
-The edit bar name reveals a faded pencil on hover and keyboard focus; touch devices show it continuously. The pencil is a separate, named button in a permanently reserved gutter, so it never covers the name, caret, or grip. Direct and enclosing component actions have distinct accessible names. Inside a component, clicking the context name still selects its host instance. The section name and grip retain their drag behavior. All actions except the grip become inert during section dragging. Stale pencils announce that the component must be selected again after selection or source changes. Components without an available template source have no pencil. An enclosing template already open has no redundant edit action; entering another template preserves the selected part when its path and tag still match.
+The edit bar offers component editing only when the component root itself is
+selected. Light-DOM slot children and template children keep the instance-selection
+caret, which only selects the host; paragraphs, wrappers and buttons do not acquire
+an enclosing-component edit action. This root rule is independent of the section-only
+Add catalogue: an existing component with an article root can still be edited.
+
+The normal name button shows the complete component name. A theme-colored edit icon
+slides and fades over its right edge on fine-pointer hover, using only transform and
+opacity over 140 ms with ease-out. No gutter or width/padding animation changes its
+hit area. Keyboard focus reveals the icon immediately; reduced motion removes the
+slide and transition. Touch edits with one tap on the complete name without requiring
+a hover reveal. The section grip still drags, and a drag release cannot also edit.
+Context carets stay separate selection actions. Stale root actions retain their
+source/selection guards, and missing template sources provide no edit action.

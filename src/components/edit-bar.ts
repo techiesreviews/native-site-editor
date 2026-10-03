@@ -286,7 +286,15 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // end, so the capture is never lost to a re-render.
   // It is the bar's name with small dots before it, so the section is
   // picked up by its name, with no separate handle.
+  let editNameAction: (() => void) | undefined;
+  let suppressGripClick = false;
   const grip = button("", () => undefined, "edit-bar__button edit-bar__grip");
+  grip.addEventListener("click", (event) => {
+    if (press?.dragging) return;
+    if (suppressGripClick && event.detail !== 0) { suppressGripClick = false; return; }
+    suppressGripClick = false;
+    editNameAction?.();
+  });
   const gripDots = icon("grip");
   gripDots.classList.add("edit-bar__grip-dots");
   const gripName = node("span", "edit-bar__kind");
@@ -313,6 +321,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (!current) return;
     if (grip.hasPointerCapture(current.pointerId)) grip.releasePointerCapture(current.pointerId);
     if (!current.dragging) return;
+    suppressGripClick = true;
     document.documentElement.style.userSelect = userSelect;
     bar.classList.remove("is-dragging");
     for (const item of bar.querySelectorAll("[inert]")) item.removeAttribute("inert");
@@ -327,6 +336,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (dragging) drag?.cancel();
   }
   grip.addEventListener("pointerdown", (event) => {
+    suppressGripClick = false;
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || press || !drag) return;
     // No focus move and no text selection from the press itself.
     event.preventDefault();
@@ -794,19 +804,25 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       kindName.prepend(componentIcon(12));
       kindName.title = `<${model.component.tag}>`;
     } else kindName.removeAttribute("title");
-    function editableName(name: HTMLElement, onEdit: () => void, label: string, enclosing = false) {
-      const region = node("span", "edit-bar__component-name");
-      name.replaceWith(region);
-      const pencil = button("", () => {
-        if (!press?.dragging) onEdit();
-      }, "edit-bar__button edit-bar__component-edit");
-      pencil.setAttribute("aria-label", `Edit ${enclosing ? "enclosing " : ""}${label} component`);
-      pencil.title = `Edit ${enclosing ? "enclosing " : ""}${label} component`;
-      pencil.append(mark("edit", 16, "edit-bar__icon"));
-      pencil.addEventListener("pointerdown", (event) => event.stopPropagation());
-      region.append(name, pencil);
+    editNameAction = undefined;
+    grip.classList.remove("edit-bar__component-name");
+    grip.querySelector(".edit-bar__component-edit")?.remove();
+    grip.setAttribute("aria-label", "Drag to move");
+    grip.title = "Drag to move";
+    if (model.component?.onEdit) {
+      const onEdit = model.component.onEdit;
+      const nameButton = kindName === gripName ? grip : button("", () => { if (!press?.dragging) onEdit(); }, "edit-bar__component-name");
+      if (nameButton === grip) {
+        editNameAction = onEdit;
+        grip.classList.add("edit-bar__component-name");
+      } else { kindName.replaceWith(nameButton); nameButton.append(kindName); }
+      nameButton.setAttribute("aria-label", `Edit ${model.kind} component`);
+      nameButton.title = `Edit ${model.kind} component${nameButton === grip ? "; drag to move" : ""}`;
+      const overlay = node("span", "edit-bar__component-edit");
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.append(mark("edit", 16, "edit-bar__icon"));
+      nameButton.append(overlay);
     }
-    if (model.component?.onEdit) editableName(kindName === gripName ? grip : kindName, model.component.onEdit, model.kind);
     if (model.context) {
       const { onSelect } = model.context;
       const chip = button("", () => { if (!press?.dragging) onSelect(); }, "edit-bar__button edit-bar__context");
@@ -814,7 +830,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.setAttribute("aria-label", model.context.title);
       chip.title = model.context.title;
       bar.prepend(chip);
-      if (model.context.onEdit) editableName(chip, model.context.onEdit, model.context.label, true);
     }
     for (const control of model.controls) {
       if (control.kind === "button") {
