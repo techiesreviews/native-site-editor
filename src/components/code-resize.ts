@@ -24,8 +24,12 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     const frameStyle = frameHost && getComputedStyle(frameHost);
     const canvasReserve = 48 + (bar?.getBoundingClientRect().height ?? 0) +
       (Number.parseFloat(frameStyle?.paddingTop ?? "0") || 0) + (Number.parseFloat(frameStyle?.paddingBottom ?? "0") || 0);
-    const minimum = Math.floor(Math.min(128, Math.max(96, available - 120), Math.max(0, available - canvasReserve)));
-    return { minimum, maximum: Math.max(minimum, available - Math.max(120, canvasReserve)) };
+    // Tabs consume part of the row: even when canvas and source cannot both
+    // fit, retain 48px of source and let the containing layout scroll.
+    const tabs = pane.querySelector<HTMLElement>(".code-pane__title");
+    const sourceFloor = 48 + (tabs?.getBoundingClientRect().height ?? 32);
+    const minimum = Math.ceil(Math.max(sourceFloor, Math.min(128, Math.max(96, available - 120), Math.max(0, available - canvasReserve))));
+    return { minimum, maximum: Math.max(minimum, available - Math.max(120, canvasReserve)), canvasReserve, cramped: available < minimum + canvasReserve };
   };
   let height = 0.4;
   let collapsed = false;
@@ -37,9 +41,11 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
 
   function apply() {
     main.classList.toggle("code-collapsed", collapsed);
-    const { minimum, maximum } = bounds();
+    const { minimum, maximum, canvasReserve, cramped } = bounds();
     const px = Math.round(collapsed ? minimum : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
     main.style.setProperty("--code-height", `${px}px`);
+    main.style.gridTemplateRows = cramped ? `minmax(${canvasReserve}px, 1fr) ${px}px` : "";
+    main.style.overflowY = cramped ? "auto" : "";
     handle.setAttribute("aria-valuemin", String(Math.round(minimum)));
     handle.setAttribute("aria-valuemax", String(Math.round(maximum)));
     handle.setAttribute("aria-valuenow", String(px));
@@ -114,6 +120,8 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
       handle.remove();
       main.classList.remove("code-collapsed", "code-resizing");
       main.style.removeProperty("--code-height");
+      main.style.gridTemplateRows = "";
+      main.style.overflowY = "";
     },
   };
 }

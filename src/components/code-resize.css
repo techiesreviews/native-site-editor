@@ -55,9 +55,6 @@ main:not(.has-preview) .code-resize {
   isolation: isolate;
 }
 /* Minimized panes retain their source surface and width handle. */
-.code-split--secondary-collapsed > .code-width-resize:is(:hover, :focus-visible) {
-  margin: 0 0 0 -8px;
-}
 .code-width-resize[hidden] {
   display: none;
 }
@@ -66,9 +63,6 @@ main:not(.has-preview) .code-resize {
   position: absolute;
   inset: 0 -3px;
   cursor: col-resize;
-}
-.code-split--secondary-collapsed > .code-width-resize::before {
-  inset: 0 0 0 -6px;
 }
 .code-width-resize:focus-visible::before {
   outline: var(--focus-ring);

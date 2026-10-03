@@ -52,3 +52,15 @@ test('narrow short viewport retains both source surfaces, a usable canvas and re
   for(const selector of ['#content .monaco-editor','#content-secondary .monaco-editor']){const box=(await page.locator(selector).boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(391);}
   await sourceViewport(page);
 });
+for(const viewport of [{width:844,height:390},{width:568,height:320},{width:844,height:180}]){
+  test(`landscape ${viewport.width}x${viewport.height} retains source floor and truthful resize bounds`,async({page,baseURL})=>{
+    await page.setViewportSize(viewport);await load(page,baseURL);
+    const grip=page.locator('.code-resize');await grip.focus();await page.keyboard.press('Home');
+    await page.locator('#content').scrollIntoViewIfNeeded();await sourceViewport(page);
+    const minimum=Number(await grip.getAttribute('aria-valuemin'));
+    expect(minimum).toBeGreaterThanOrEqual(48);await expect(grip).toHaveAttribute('aria-valuenow',String(minimum));
+    expect((await page.locator('#code-split').boundingBox())!.height).toBeCloseTo(minimum,0);
+    await grip.focus();await page.keyboard.press('Enter');await sourceViewport(page);
+    await page.keyboard.press('Enter');await sourceViewport(page);
+  });
+}
