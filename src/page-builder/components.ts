@@ -356,7 +356,8 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Edit component. ----
 
   /**
-   * Opens `tag`'s template in the code pane and selects its part matching
+   * Opens `tag`'s template in the code pane; root entry selects its root.
+   * Legacy explicit slot entry selects its part matching
    * `slot` (the element holding that slot, its `<slot>` marked in the code)
    * in the instance on show, else the template's first element.
    */
@@ -700,7 +701,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const selected = deps.selection();
     const edit = selected?.path === at.path && JSON.stringify(selected.node) === JSON.stringify(at.node)
       ? identity(selected).component?.onEdit : undefined;
-    if (edit) actions.append(iconButton(`Edit component (${usageSummary(found)})`, "edit", edit));
+    if (edit) actions.append(iconButton(`Edit component (${usageSummary(found)})`, "edit", () => {
+      const current = deps.selection();
+      if (current?.path !== at.path || current.tag !== at.tag || JSON.stringify(current.node) !== JSON.stringify(at.node)) return;
+      identity(current).component?.onEdit?.();
+    }));
     actions.append(iconButton("Detach instance…", "detach", () => void openDetach(at)));
     head.append(title, actions);
     const meta = node("p", "component-panel__meta", found.instances > 1 ? `One of ${usageSummary(found)}` : `Used once on this site`);

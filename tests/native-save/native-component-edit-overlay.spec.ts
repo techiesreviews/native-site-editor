@@ -92,9 +92,21 @@ test('programmatic address switch closes the old context before opening the new 
   const output=document.createElement('output');output.id='address-order-output';pane.append(output);
   const bar=createEditBar(pane,pane), rect={top:100,left:100,width:200,height:50,right:300,bottom:150};
   const record=(text:string)=>{output.textContent+=text+' ';};
-  bar.show({kind:'Link',controls:[{kind:'address',label:'A',value:'/a',open:true,onInput:()=>{},onOpen:()=>record('openA'),onClose:()=>record('closeA')}]},rect);
-  bar.show({kind:'Link',controls:[{kind:'address',label:'B',value:'/b',open:true,onInput:()=>{},onOpen:()=>record('openB'),onClose:()=>record('closeB')}]},rect);
+  bar.show({kind:'Link',controls:[{kind:'address',label:'A',value:'/a',onInput:()=>{},onOpen:()=>record('openA'),onClose:()=>record('closeA')},{kind:'address',label:'B',value:'/b',onInput:()=>{},onOpen:()=>record('openB'),onClose:()=>record('closeB')}]},rect);
  });
+ const pane=page.locator('#address-order');
+ await pane.getByRole('button',{name:'A',exact:true}).click();
+ await pane.getByRole('button',{name:'B',exact:true}).evaluate(element=>(element as HTMLElement).click());
  await expect(page.locator('#address-order-output')).toHaveText('openA closeA openB ');
  await expect(page.locator('#address-order .edit-bar__field-input')).toHaveValue('/b');
+});
+
+test('root panel Edit remains usable after typing its instance slot',async({page})=>{
+ await root(page);
+ const panel=page.getByRole('region',{name:'Component properties'});
+ const title=panel.locator('.component-slot[data-slot="title"] input[data-field="text:title"]');
+ await title.fill('Edited root title');await title.press('Tab');
+ await expect(frame(page).locator('project-card').first().locator('[slot="title"]')).toHaveText('Edited root title');
+ await panel.getByRole('button',{name:/^Edit component/}).click();
+ await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
 });
