@@ -563,7 +563,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "slot-ghosts") {
       const report = site && mounted && !viewing && readSlotGhostReport((data as { report?: unknown }).report,
         { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
-      if (report) slotGhosts.update(report); else slotGhosts.clear();
+      if (report) slotGhosts.update(report); else slotGhosts.clear(false);
       return;
     }
     if (data.type === "inspect-result") {
@@ -698,6 +698,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // The runtime lost its selection in a re-render (the element was
       // removed or replaced) and nothing was requested in its place.
       if (raw.path === "" && reason === "refresh") {
+        slotGhosts.clear();
         canvas.setCrumbs([]);
         editBar.hide();
         pageBuilder.selected("", undefined, undefined);
@@ -713,6 +714,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (raw.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
         tag: typeof raw.tag === "string" ? raw.tag : undefined, exact: typeof raw.tag === "string" && Object.hasOwn(site.components, raw.tag) };
       else if (slotHost?.path === pagePath && slotHost.node) slotSelection = { path: pagePath, node: [...slotHost.node], tag: slotHost.tag, exact: true };
+      slotGhosts.selectionChanged();
       const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
       pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
       canvas.setCrumbs(readCrumbs(raw.crumbs));

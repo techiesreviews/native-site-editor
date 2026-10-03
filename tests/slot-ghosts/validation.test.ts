@@ -23,3 +23,9 @@ test("reject stale and malformed instance targets", () => {
     assert.equal(readSlotGhostReport({ ...report, ...change }, expected), undefined, JSON.stringify(change));
   }
 });
+test("visible display-contents outlets need no rectangle; exact case remains distinct", () => {
+  const entries = ["cta-label", "Image", "image"].map((name, i) => ({ name, occurrence: 0, slotNode: [i], hidden: false, assigned: false }));
+  const parsed = readSlotGhostReport({ ...report, entries }, expected);
+  assert.deepEqual(parsed.entries, entries);
+  assert.equal(readSlotGhostReport({ ...report, entries: [{ ...entries[0], rect: { ...rect, height: 0, bottom: 0 } }] }, expected), undefined);
+});

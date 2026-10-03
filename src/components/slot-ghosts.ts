@@ -7,7 +7,7 @@ export interface SlotGhostReport {
   context: string; pagePath: string; tag: string; templatePath: string;
   hostNode: number[]; hostRect: SlotGhostRect; entries: SlotGhostEntry[];
 }
-/** One name fills all same-name outlets. Source/revision guards belong to the caller. */
+/** One name assigns to the first same-name outlet. Source/revision guards belong to the caller. */
 export type SlotGhostFillTarget = Pick<SlotGhostReport, "context" | "pagePath" | "tag" | "templatePath" | "hostNode"> & { name: string };
 const path = (v: unknown): v is number[] => Array.isArray(v) && v.length > 0 && v.length <= 64 && v.every(n => Number.isInteger(n) && n >= 0 && n <= 100_000);
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max;
@@ -51,7 +51,10 @@ export function mountSlotGhosts(pane: HTMLElement, frame: HTMLIFrameElement, opt
   let report: SlotGhostReport | undefined;
   let destroyed = false;
   let key = "";
-  const clear = () => { report = undefined; key = ""; layer.replaceChildren(); };
+  let dismissed = "";
+  let lastHostReport: SlotGhostReport | undefined;
+  const identity = (r: SlotGhostReport) => JSON.stringify([r.context, r.pagePath, r.templatePath, r.tag, r.hostNode]);
+  const clear = (resetDismissal = true) => { report = undefined; key = ""; if (resetDismissal) { dismissed = ""; lastHostReport = undefined; } layer.replaceChildren(); };
   function position() {
     if (!report || destroyed) return;
     const f = frame.getBoundingClientRect(), p = pane.getBoundingClientRect();
@@ -70,13 +73,32 @@ export function mountSlotGhosts(pane: HTMLElement, frame: HTMLIFrameElement, opt
     layer.style.height = `${Math.max(0, bottom - top) / py}px`;
     const rail = layer.firstElementChild as HTMLElement | null;
     if (rail) {
-      rail.style.left = `${Math.max(0, Math.min((hostLeft - left) / px, (right - left) / px - rail.offsetWidth))}px`;
-      // Keep controls inside the frame; the compact rail sits on the host's lower edge.
-      rail.style.top = `${Math.max(0, Math.min((hostTop + h.height * sy - top) / py, (bottom - top) / py - rail.offsetHeight))}px`;
+      const width = (right - left) / px, height = (bottom - top) / py;
+      rail.style.maxHeight = `${Math.min(160, height)}px`;
+      const rw = rail.offsetWidth, rh = rail.offsetHeight;
+      const preferredX = Math.max(0, Math.min((hostLeft - left) / px, width - rw));
+      const preferredY = Math.max(0, Math.min((hostTop + h.height * sy - top) / py - rh - 6, height - rh));
+      // Use physical editor control rectangles, including scaled controls.
+      const obstacles = Array.from(pane.querySelectorAll<HTMLElement>(".edit-bar, .insert-point__plus, .card-ghost__add, .card-add"))
+        .map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0)
+        .map(r => ({ left: (r.left - left) / px - 4, right: (r.right - left) / px + 4,
+          top: (r.top - top) / py - 4, bottom: (r.bottom - top) / py + 4 }));
+      const xs = [preferredX, 0, width - rw, ...obstacles.flatMap(r => [r.left - rw, r.right])];
+      const ys = [preferredY, ...obstacles.flatMap(r => [r.top - rh, r.bottom]), 0, height - rh];
+      const candidates = ys.flatMap(y => xs.map(x => ({ x, y }))).filter(({ x, y }) =>
+        x >= 0 && y >= 0 && x + rw <= width && y + rh <= height &&
+        !obstacles.some(r => x < r.right && x + rw > r.left && y < r.bottom && y + rh > r.top))
+        .sort((a, b) => Math.abs(a.y - preferredY) + Math.abs(a.x - preferredX) - Math.abs(b.y - preferredY) - Math.abs(b.x - preferredX));
+      const candidate = candidates[0];
+      layer.hidden = !candidate;
+      if (candidate) { rail.style.left = `${candidate.x}px`; rail.style.top = `${candidate.y}px`; }
     }
   }
   function update(next: SlotGhostReport) {
     if (destroyed) return;
+    lastHostReport = next;
+    if (dismissed && dismissed !== identity(next)) dismissed = "";
+    if (dismissed) { report = next; layer.replaceChildren(); return; }
     report = next;
     const nextKey = JSON.stringify({ ...next, hostRect: undefined, entries: next.entries.map(e => ({ ...e, rect: undefined })) });
     if (key !== nextKey) {
@@ -90,13 +112,16 @@ export function mountSlotGhosts(pane: HTMLElement, frame: HTMLIFrameElement, opt
         const label = document.createElement("span"); label.textContent = "Empty slots"; rail.append(label);
         for (const [name, entries] of groups) {
           const button = document.createElement("button"); button.type = "button";
-          const title = name ? name.charAt(0).toUpperCase() + name.slice(1) : "Content";
-          button.textContent = `Add ${title}${entries.length > 1 ? ` · ${entries.length} outlets` : ""}`;
+          const readable = name.replace(/-/g, " ");
+          const title = readable ? readable.charAt(0).toUpperCase() + readable.slice(1) : "Content";
+          const collision = [...groups.keys()].some(other => other !== name && other.replace(/-/g, " ").toLowerCase() === readable.toLowerCase());
+          button.textContent = `Add ${title}${collision ? ` (${name})` : ""}${entries.length > 1 ? ` · ${entries.length} outlets · first outlet${entries[0].hidden ? " hidden" : ""}` : ""}`;
+          button.title = `Slot: ${name || "(default)"}. Content goes to the first outlet${entries[0].hidden ? ", which is hidden" : ""}.`;
           button.addEventListener("click", () => {
-            if ((report !== next && key !== nextKey) || !report || layer.hidden || options.expectedIsCurrent?.(report) === false) return;
+            if (dismissed || !layer.contains(button) || (report !== next && key !== nextKey) || !report || layer.hidden || options.expectedIsCurrent?.(report) === false) return;
             options.onFill({ context: report.context, pagePath: report.pagePath, tag: report.tag, templatePath: report.templatePath, hostNode: [...report.hostNode], name });
           });
-          button.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); clear(); frame.focus(); } });
+          button.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); dismissed = report ? identity(report) : ""; clear(false); frame.focus(); } });
           rail.append(button);
         }
         layer.append(rail);
@@ -105,6 +130,12 @@ export function mountSlotGhosts(pane: HTMLElement, frame: HTMLIFrameElement, opt
     position();
   }
   const observer = new ResizeObserver(position); observer.observe(pane); observer.observe(frame);
+  let layoutFrame = 0;
+  const layoutObserver = new MutationObserver(records => {
+    if (records.every(r => layer.contains(r.target)) || layoutFrame) return;
+    layoutFrame = requestAnimationFrame(() => { layoutFrame = 0; position(); });
+  });
+  layoutObserver.observe(pane, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
   window.addEventListener("resize", position); window.addEventListener("scroll", position, true);
-  return { update, clear, destroy() { destroyed = true; clear(); observer.disconnect(); window.removeEventListener("resize", position); window.removeEventListener("scroll", position, true); layer.remove(); } };
+  return { update, clear, selectionChanged() { if (lastHostReport && options.expectedIsCurrent?.(lastHostReport) === false) clear(); }, destroy() { destroyed = true; clear(); observer.disconnect(); layoutObserver.disconnect(); cancelAnimationFrame(layoutFrame); window.removeEventListener("resize", position); window.removeEventListener("scroll", position, true); layer.remove(); } };
 }

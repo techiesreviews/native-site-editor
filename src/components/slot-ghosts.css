@@ -1,5 +1,5 @@
 .slot-ghosts { position: absolute; z-index: 8; overflow: hidden; pointer-events: none; }
-.slot-ghosts__rail { position: absolute; display: flex; align-items: center; gap: 4px; max-width: 100%; width: max-content; overflow: auto; padding: 3px; border-radius: 6px; background: var(--surface, #fff); color: var(--text, #222); box-shadow: 0 1px 5px #0002; font: 11px/1.4 system-ui, sans-serif; }
+.slot-ghosts__rail { position: absolute; display: flex; align-items: center; flex-wrap: wrap; pointer-events: auto; max-height: 160px; gap: 4px; max-width: 100%; width: max-content; overflow-x: hidden; overflow-y: auto; padding: 3px; border-radius: 6px; background: var(--surface, #fff); color: var(--text, #222); box-shadow: 0 1px 5px #0002; font: 11px/1.4 system-ui, sans-serif; }
 .slot-ghosts__rail > span { padding: 0 4px; white-space: nowrap; }
 .slot-ghosts__rail button { pointer-events: auto; flex: none; border: 1px solid #8886; border-radius: 4px; background: var(--surface, #fff); color: inherit; padding: 3px 6px; font: inherit; cursor: pointer; }
 .slot-ghosts__rail button:focus-visible { outline: 2px solid #6855df; outline-offset: -2px; }
