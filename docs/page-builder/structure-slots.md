@@ -14,3 +14,5 @@ Field sessions capture the originating source, template, scope, mounted model/se
 
 
 Attributes also unfold under each component root. Existing values use the parsed DOM's once-decoded attribute values. `openAttribute` uses the same field-session proof and one typing group as slots; removing and adding attributes use guarded source operations. The new name/value form calls `openAttributeAdd` on first focus and retains that proof through rerenders, rejecting changed sources/models/scopes. Duplicate names and event-handler names are refused. Unchanged entity-spelled values preserve their source bytes.
+
+Image details retain repository suggestions and Upload image…. The upload operation captures its real host and version proof when the picker opens, validates before upload and after its asynchronous result, and writes one atomic source edit. Changing selection alone does not retarget it; source/template/scope/model changes refuse it. Cancel and discarded controls dispose unopened proofs. Host integration and real Monaco Undo remain pending.

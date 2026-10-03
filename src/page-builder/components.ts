@@ -155,6 +155,8 @@ export interface ComponentStructureModel {
   openAttributeAdd(): { add(name: string, value: string): { ok: true } | { error: string }; close(): void } | undefined;
   removeAttribute(name: string): boolean;
   openField(name: string, part: ComponentSlotPart): ComponentFieldSession | undefined;
+  images: readonly string[];
+  openImageUpload(name: string): { upload(files: File[]): Promise<boolean>; close(): void } | undefined;
   setVisible(name: string, on: boolean): boolean;
   selectSlot(name: string): void;
   edit(): void;
@@ -1283,6 +1285,32 @@ export function createComponentTools(deps: ComponentDeps) {
         const at = read();
         if (!at || !attributeSourceSafe(at) || at.instance.attributes.filter(item => item.name === name).length !== 1) return false;
         return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
+      },
+      images: deps.images().map(image => `/${image}`),
+      openImageUpload(name) {
+        const at = read(), slot = at?.slots.find(item => item.name === name);
+        if (!at || !slot || slotValue(at.source, at.template, at.instance, slot).kind !== "image") return;
+        const proof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
+        if (!proof) return;
+        let closed = false;
+        const close = () => { if (!closed) { closed = true; proof.dispose?.(); } };
+        return {
+          close,
+          async upload(files) {
+            try {
+              if (closed || !files.length || !read(initial.source, proof)) return false;
+              const uploaded = await deps.upload(files.slice(0, 1));
+              if (closed || uploaded === undefined) return false;
+              const current = read(initial.source, proof);
+              if (!current) return false;
+              const problem = nativeElementUrlProblem(uploaded, ["http", "https"], false);
+              if (problem) { deps.announce(problem); return false; }
+              const edit = slotAttributeEdit(current, slot, "src", uploaded);
+              return !!edit && change(path, [edit], "Image replaced", current.node);
+            } catch (error) { deps.error(error); return false; }
+            finally { close(); }
+          },
+        };
       },
       openField(name, part) {
         return openSession((at, value) => {

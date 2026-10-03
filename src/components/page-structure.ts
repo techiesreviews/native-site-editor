@@ -300,7 +300,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const detailOpen = new Map<string, boolean>();
   const attributeForms = new Map<string, HTMLFormElement>();
   const formClosers = new Map<HTMLFormElement, () => void>();
+  const uploadClosers = new Map<HTMLInputElement, () => void>();
   function cleanControls() {
+    for (const [input, close] of uploadClosers) if (!tree.contains(input)) { close(); uploadClosers.delete(input); }
     for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
     for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
     for (const [id, form] of attributeForms) if (!tree.contains(form)) {
@@ -400,7 +402,27 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         details.addEventListener("toggle", () => detailOpen.set(detailKey, details.open));
         const summary = document.createElement("summary"); summary.textContent = slot.kind === "image" ? "Image" : "Link";
         details.append(summary);
-        if (slot.kind === "image") details.append(field("src", "Image", slot.value.src ?? ""), field("alt", "Alt text", slot.value.alt ?? ""));
+        if (slot.kind === "image") {
+          const image = field("src", "Image", slot.value.src ?? "");
+          const suggestions = document.createElement("datalist");
+          suggestions.id = `structure-images-${model.host.node.join("-")}-${result.length}`;
+          for (const value of model.images) { const option = document.createElement("option"); option.value = value; suggestions.append(option); }
+          image.querySelector("input")?.setAttribute("list", suggestions.id);
+          const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
+          let pending: ReturnType<ComponentStructureModel["openImageUpload"]>;
+          uploadClosers.set(file, () => { pending?.close(); pending = undefined; });
+          const upload = button("Upload image…", () => {
+            pending?.close();
+            pending = handlers.componentSlots?.(model.host.path, model.host.node)?.openImageUpload(slot.name);
+            if (pending) file.click();
+          }, "text-button");
+          file.addEventListener("cancel", () => { pending?.close(); pending = undefined; });
+          file.addEventListener("change", () => {
+            const captured = pending, files = [...(file.files ?? [])]; pending = undefined; file.value = "";
+            if (!files.length) captured?.close(); else void captured?.upload(files);
+          });
+          details.append(image, suggestions, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
+        }
         else {
           if (slot.value.editable) details.append(field("text", "Button text", slot.value.text));
           else details.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
@@ -659,6 +681,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     },
     destroy() {
       for (const close of fieldClosers.values()) close();
+      for (const close of uploadClosers.values()) close();
+      uploadClosers.clear();
       for (const close of formClosers.values()) close();
       formClosers.clear();
       fieldClosers.clear(); fieldInputs.clear(); detailOpen.clear(); attributeForms.clear();
