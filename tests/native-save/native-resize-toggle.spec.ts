@@ -1,9 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The three resize handles are also their panels' toggles: the sidebar's
-// edge hides the page structure, the handle above the code split hides the
-// code so the preview fills, and the handle between the code panes hides the
-// side-by-side pane. A press released within 4 px is a click and toggles; a
+// edge hides the page structure; code handles minimize their panes while
+// keeping source visible. A press released within 4 px is a click and toggles; a
 // drag resizes and never toggles; Enter and Space toggle; hover or focus
 // makes the handle bigger; the state and the size to come back to persist.
 const indexPath = "index.html";
@@ -162,10 +161,10 @@ test("the sidebar handle: Enter and Space toggle, and the hidden state and width
   await expect(tree(page)).toBeVisible();
 });
 
-test("the code handle: click hides the code so the preview fills, and brings it back at its height", async ({ page, baseURL }) => {
+test("the code handle: click minimizes visible source and restores its height", async ({ page, baseURL }) => {
   const handle = codeHandle(page);
   await expect(handle).toHaveAttribute("aria-controls", "code-split");
-  await expect(handle).toHaveAttribute("title", "Drag to resize, click to hide the code");
+  await expect(handle).toHaveAttribute("title", "Drag to resize, click to minimize the code");
   await expect(handle).not.toHaveAttribute("aria-expanded", /.*/);
   await expectHoverGrowth(page, handle, "height");
 
@@ -178,17 +177,20 @@ test("the code handle: click hides the code so the preview fills, and brings it 
   const frameHeight = (await box(frame(page))).height;
 
   await press(page, handle);
-  await expect(primary(page)).toBeHidden();
+  await expect(primary(page)).toBeVisible();
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
   await expect(page.locator("#main")).toHaveClass(/code-collapsed/);
-  await expect(handle).toHaveAttribute("aria-valuetext", "Code hidden");
-  await expect(handle).toHaveAttribute("title", "Drag to resize, click to show the code");
-  await expect.poll(async () => (await box(split(page))).height).toBeLessThanOrEqual(12);
-  await expect.poll(async () => (await box(frame(page))).height).toBeGreaterThan(frameHeight + splitHeight - 20);
-  await expect(widthHandle(page)).toBeHidden();
-  // The collapsed handle stays at the bottom edge and still grows on hover.
-  const main = await box(page.locator("#main"));
-  const collapsed = await box(handle);
-  expect(collapsed.y + collapsed.height).toBeGreaterThan(main.y + main.height - 12);
+  await expect(handle).toHaveAttribute("aria-valuetext", /Code minimized, \d+ pixels; source remains visible/);
+  await expect(handle).toHaveAttribute("title", "Drag to resize, click to restore the code");
+  const minimizedHeight = Number(await handle.getAttribute("aria-valuemin"));
+  expect(minimizedHeight).toBeGreaterThanOrEqual(96);
+  await expect.poll(async () => (await box(split(page))).height).toBe(minimizedHeight);
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
+  await expect.poll(async () => (await box(frame(page))).height).toBeGreaterThan(frameHeight + splitHeight - minimizedHeight - 2);
+  await expect(widthHandle(page)).toBeVisible();
+  // The minimized handle stays above the readable source viewport.
+  const minimized = await box(handle);
+  expect(Math.abs(minimized.y + minimized.height / 2 - (await box(split(page))).y)).toBeLessThanOrEqual(1);
   await expectHoverGrowth(page, handle, "height");
 
   await press(page, handle, 0, 2);
@@ -199,27 +201,30 @@ test("the code handle: click hides the code so the preview fills, and brings it 
   // Enter and Space toggle.
   await handle.focus();
   await page.keyboard.press("Enter");
-  await expect(primary(page)).toBeHidden();
+  await expect(primary(page)).toBeVisible();
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
   await page.keyboard.press(" ");
   await expect(primary(page)).toBeVisible();
   await expect.poll(async () => (await box(split(page))).height).toBe(splitHeight);
 
   // Collapsed state and height survive a reload.
   await page.keyboard.press("Enter");
-  await expect(primary(page)).toBeHidden();
+  await expect(primary(page)).toBeVisible();
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
   await load(page, baseURL);
-  await expect(primary(page)).toBeHidden();
-  await expect(handle).toHaveAttribute("aria-valuetext", "Code hidden");
+  await expect(primary(page)).toBeVisible();
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
+  await expect(handle).toHaveAttribute("aria-valuetext", /Code minimized, \d+ pixels; source remains visible/);
   await press(page, handle);
   await expect(primary(page)).toBeVisible();
   await expect.poll(async () => (await box(split(page))).height).toBe(splitHeight);
 });
 
-test("the code width handle: click hides the side-by-side pane so the first pane fills, and brings it back", async ({ page, baseURL }) => {
+test("the code width handle: click minimizes the visible side-by-side source and restores its split", async ({ page, baseURL }) => {
   const handle = widthHandle(page);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(handle).toBeVisible();
-  await expect(handle).toHaveAttribute("title", "Drag to resize, click to hide the side-by-side pane");
+  await expect(handle).toHaveAttribute("title", "Drag to resize, click to minimize the side-by-side pane");
   await expectHoverGrowth(page, handle, "width");
   // Hovering widens it over the panes without moving them.
   const primaryRest = await box(primary(page));
@@ -235,14 +240,15 @@ test("the code width handle: click hides the side-by-side pane so the first pane
   const primaryWidth = (await box(primary(page))).width;
 
   await press(page, handle);
-  await expect(secondary(page)).toBeHidden();
-  await expect(handle).toHaveAttribute("aria-valuetext", "Side-by-side pane hidden");
-  await expect(handle).toHaveAttribute("title", "Drag to resize, click to show the side-by-side pane");
+  await expect(secondary(page)).toBeVisible();
+  await expect(page.locator("#content-secondary .monaco-editor")).toBeVisible();
+  await expect(handle).toHaveAttribute("aria-valuetext", /Side-by-side pane minimized, \d+ pixels; source remains visible/);
+  await expect(handle).toHaveAttribute("title", "Drag to resize, click to restore the side-by-side pane");
   const splitBox = await box(split(page));
-  await expect.poll(async () => (await box(primary(page))).width).toBe(splitBox.width - 6);
-  // The handle stays at the right edge and still grows on hover.
+  await expect.poll(async () => (await box(primary(page))).width).toBe(splitBox.width - 6 - 160);
+  // The handle stays beside the minimized source and still grows on hover.
   const edge = await box(handle);
-  expect(Math.abs(edge.x + edge.width - (splitBox.x + splitBox.width))).toBeLessThanOrEqual(1);
+  expect(Math.abs(edge.x + edge.width - (splitBox.x + splitBox.width - 160))).toBeLessThanOrEqual(1);
   await expectHoverGrowth(page, handle, "width");
 
   await press(page, handle);
@@ -251,23 +257,26 @@ test("the code width handle: click hides the side-by-side pane so the first pane
 
   await handle.focus();
   await page.keyboard.press("Enter");
-  await expect(secondary(page)).toBeHidden();
+  await expect(secondary(page)).toBeVisible();
+  await expect(page.locator("#content-secondary .monaco-editor")).toBeVisible();
   await page.keyboard.press(" ");
   await expect(secondary(page)).toBeVisible();
   await expect.poll(async () => (await box(primary(page))).width).toBe(primaryWidth);
 
   await page.keyboard.press("Enter");
-  await expect(secondary(page)).toBeHidden();
+  await expect(secondary(page)).toBeVisible();
+  await expect(page.locator("#content-secondary .monaco-editor")).toBeVisible();
   await load(page, baseURL);
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
-  await expect(secondary(page)).toBeHidden();
+  await expect(secondary(page)).toBeVisible();
+  await expect(page.locator("#content-secondary .monaco-editor")).toBeVisible();
   await expect(handle).toBeVisible();
   await press(page, handle);
   await expect(secondary(page)).toBeVisible();
   await expect.poll(async () => (await box(primary(page))).width).toBe(primaryWidth);
 });
 
-test("the edit bar stays inside the frame with the sidebar and the code hidden, and rows still select after", async ({ page }) => {
+test("the edit bar stays inside the frame with the sidebar hidden and code minimized, and rows still select after", async ({ page }) => {
   const inner = page.frameLocator(".native-preview-frame");
   await inner.locator(".hero h1").evaluate((el) => (el as HTMLElement).click());
   await expect(bar(page)).toBeVisible();
@@ -291,7 +300,8 @@ test("the edit bar stays inside the frame with the sidebar and the code hidden, 
   await expect(bar(page)).toBeVisible();
   await expect.poll(barInside).toBe(true);
   await press(page, codeHandle(page));
-  await expect(primary(page)).toBeHidden();
+  await expect(primary(page)).toBeVisible();
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
   await expect(bar(page)).toBeVisible();
   await expect.poll(barInside).toBe(true);
 

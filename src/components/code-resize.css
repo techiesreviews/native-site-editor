@@ -1,7 +1,7 @@
 @import "./resize-handle.css";
 
 /* Along the code split's top edge; taller on hover or focus. While the code
-   is hidden it stays at the top of the strip left at the bottom. */
+   is minimized it stays above the visible source viewport. */
 .code-resize {
   position: absolute;
   top: -5px;
@@ -31,9 +31,6 @@
 main:not(.has-preview) .code-resize {
   display: none;
 }
-main.has-preview.code-collapsed .code-width-resize {
-  display: none;
-}
 
 /* Vertical splitter between the code panes. A narrow, transparent hit target
    (no decorative divider line); on hover or focus it widens over both panes
@@ -57,10 +54,7 @@ main.has-preview.code-collapsed .code-width-resize {
 .code-split > .code-pane {
   isolation: isolate;
 }
-/* Collapsed, it sits at the split's right edge and grows inwards only. */
-.code-split--secondary-collapsed > .code-pane#secondary-pane {
-  display: none;
-}
+/* Minimized panes retain their source surface and width handle. */
 .code-split--secondary-collapsed > .code-width-resize:is(:hover, :focus-visible) {
   margin: 0 0 0 -8px;
 }

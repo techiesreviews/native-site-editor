@@ -5,16 +5,13 @@ main.has-preview {
   height: 100%;
 }
 main.has-preview.code-collapsed {
-  grid-template-rows: minmax(0, 1fr) 12px;
+  grid-template-rows: minmax(0, 1fr) var(--code-height, 128px);
 }
 main.has-preview > .preview-pane {
   grid-row: 1;
 }
 main.has-preview > .code-split {
   grid-row: 2;
-}
-main.has-preview.code-collapsed .code-pane {
-  display: none;
 }
 main.has-preview .workspace-content {
   position: relative;
@@ -128,4 +125,14 @@ main.has-preview .code-editor {
 }
 .native-preview-pane.is-viewing :is(.edit-bar, .edit-bar__popover, .edit-bar__note, .insert-layer, .insert-picker, .agent-pins, .agent-pins__tray, .agent-pin-card) {
   display: none !important;
+}
+
+/* Short screens keep the minimized source and canvas usable together. */
+@media (max-width: 600px) and (max-height: 700px) {
+  main.has-preview .canvas-bar {
+    padding-block: 3px;
+  }
+  main.has-preview .canvas-host.is-framed {
+    padding-block: 4px;
+  }
 }
