@@ -217,3 +217,10 @@ test("nativeElementLabel names a component instance by its component, as the pag
   assert.equal(nativeElementLabel("section", false), "Section");
   assert.equal(nativeElementLabel("my-thing", false), "my-thing");
 });
+
+test("attribute edits safely replace single-quoted and unquoted values", () => {
+  const single = `<img alt='old'>`;
+  assert.equal(apply(single, [setAttributeEdit(single, rangeAt(single, 0).tag, "alt", "O'Reilly")]), `<img alt="O'Reilly">`);
+  const unquoted = `<img alt=old>`;
+  assert.equal(apply(unquoted, [setAttributeEdit(unquoted, rangeAt(unquoted, 0).tag, "alt", `hello world" onerror="alert(1)`)]), `<img alt="hello world&quot; onerror=&quot;alert(1)">`);
+});

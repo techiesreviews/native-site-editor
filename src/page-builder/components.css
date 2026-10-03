@@ -1,0 +1,606 @@
+/* Components, first class (src/page-builder/components.ts): the component
+   accent (--component, --component-surface, --component-text in theme.css)
+   on everything that names an instance or a component. */
+
+.component-mark {
+  color: var(--component);
+}
+
+/* ---- The edit bar: an instance's name, the chip back to the instance. ---- */
+.edit-bar .edit-bar__kind--component {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--component-text);
+}
+.edit-bar .edit-bar__kind--component .icon {
+  margin: 0;
+}
+.edit-bar .edit-bar__context {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: var(--component-surface);
+  color: var(--component-text);
+  font-size: var(--type-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.edit-bar .edit-bar__context .icon {
+  margin: 0;
+}
+.edit-bar .edit-bar__context:hover {
+  background: linear-gradient(var(--hover) 0 0), var(--component-surface);
+}
+.edit-bar__context-caret {
+  color: var(--component);
+  font-weight: 400;
+}
+.edit-bar .edit-bar__component-action {
+  color: var(--component-text);
+  font-weight: 600;
+}
+
+/* ---- The page structure: the mark on an instance's row, a rail along
+   what the page slots into it, and the slot each part fills. ---- */
+.page-structure__row--component .page-structure__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--component-text);
+}
+.page-structure__row--component[aria-selected="true"] .page-structure__kind {
+  color: var(--component-text);
+}
+.page-structure__row--component .page-structure__kind .icon {
+  margin: 0;
+  align-self: center;
+}
+.page-structure__row--component + .page-structure__group > .page-structure__row {
+  position: relative;
+}
+.page-structure__row--component + .page-structure__group > .page-structure__row::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: calc(12px + (var(--depth, 1) - 1) * 16px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--component);
+  opacity: 0.45;
+}
+.page-structure__row[data-slot]::after {
+  content: attr(data-slot) / "";
+  flex: none;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: var(--radius-small);
+  background: var(--component-surface);
+  color: var(--component-text);
+  font-size: var(--type-badge);
+  font-weight: 600;
+  line-height: 16px;
+}
+
+/* ---- The properties panel, docked at the foot of the sidebar. ---- */
+.component-panel {
+  flex: none;
+  max-height: min(50%, 520px);
+  overflow: auto;
+  margin: 8px -20px 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-surface);
+  box-shadow: 0 -8px 16px -12px var(--semantic-shadow);
+}
+.component-panel[hidden] {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .component-panel {
+    animation: component-panel-in 160ms ease-out;
+  }
+  @keyframes component-panel-in {
+    from { opacity: 0; transform: translateY(6px); }
+  }
+}
+/* The name and actions stay in view while the slots scroll under them. */
+.component-panel__head {
+  position: sticky;
+  z-index: 1;
+  top: -12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -12px -20px 0;
+  padding: 12px 20px 6px;
+  background: var(--panel-surface);
+}
+.component-panel__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.component-panel__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--type-title);
+  font-weight: 600;
+  color: var(--component-text);
+}
+.component-panel__name .icon {
+  margin: 0;
+}
+.component-panel__tag {
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.component-panel__actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.component-panel__icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-compact);
+  height: var(--size-compact);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.component-panel__icon-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.component-panel__icon-button:focus-visible,
+.component-slot__name:focus-visible,
+.component-slot__summary:focus-visible,
+.component-switch:focus-visible,
+.component-panel__text-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.component-panel__meta {
+  margin: 4px 0 0;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.component-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.component-panel__heading {
+  margin: 14px 0 4px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.component-panel__empty {
+  margin: 6px 0 0;
+  font-size: var(--type-small);
+  line-height: 1.4;
+  color: var(--muted);
+}
+.component-panel__problem {
+  margin: 2px 0 0;
+  font-size: var(--type-small);
+  color: var(--warning-fg);
+}
+.component-panel__problem[hidden] {
+  display: none;
+}
+.component-panel__text-button {
+  align-self: flex-start;
+  min-height: var(--size-icon);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-size: var(--type-small);
+  cursor: pointer;
+}
+.component-panel__text-button:hover {
+  background: var(--hover);
+}
+
+/* A slot: its name (which selects it in the preview), its state, its fields. */
+.component-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -8px;
+  padding: 4px 8px 6px;
+  border-radius: var(--radius);
+}
+.component-slot.is-current {
+  background: var(--component-surface);
+  box-shadow: inset 2px 0 0 var(--component);
+}
+.component-slot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: var(--size-compact);
+}
+.component-slot__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--size-icon);
+  margin-left: -4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+.component-slot__name:hover {
+  background: var(--hover);
+}
+.component-slot__name .icon {
+  margin: 0;
+}
+.component-slot__kind {
+  color: var(--muted);
+}
+.component-slot.is-current .component-slot__kind {
+  color: var(--component);
+}
+.component-slot.is-off .component-slot__name {
+  color: var(--muted);
+  font-weight: 400;
+}
+.component-slot__badge {
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: var(--type-badge);
+  line-height: 18px;
+}
+.component-slot__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.component-slot__fields.is-default .component-field__input {
+  color: var(--muted);
+}
+.component-slot__fields.is-default .component-field__input:focus {
+  color: var(--text);
+}
+.component-slot__summary {
+  display: block;
+  width: 100%;
+  min-height: var(--size-compact);
+  padding: 0 8px;
+  border: 1px dashed var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--type-base);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.component-slot__summary:hover {
+  background: var(--hover);
+}
+
+/* A switch for an optional part: on, in the component accent. */
+.component-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--control-line);
+  cursor: pointer;
+}
+.component-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px var(--semantic-shadow);
+}
+.component-switch[aria-checked="true"] {
+  background: var(--component);
+}
+.component-switch[aria-checked="true"]::after {
+  left: 14px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .component-switch,
+  .component-switch::after {
+    transition: background-color 140ms ease-out, left 140ms ease-out;
+  }
+}
+
+.component-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.component-field__label {
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.component-field__input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--size-compact);
+  padding: 0 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-base);
+}
+.component-field__input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+.component-field__upload {
+  display: flex;
+  margin-top: -2px;
+}
+
+/* Attributes of the instance tag: name, value, remove; a new one on Enter. */
+.component-attributes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.component-attribute {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.component-field--inline {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.component-attribute__name {
+  flex: none;
+  width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.component-attribute--new .component-field__input {
+  flex: 1;
+}
+.component-attribute__new-name {
+  flex: none !important;
+  width: 80px;
+  font-family: var(--font-mono);
+}
+
+/* ---- While a template is open: a strip over the preview, the code pane's title tinted. ---- */
+.code-pane__title.code-pane__title--component {
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.component-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 8px 4px 16px;
+  box-sizing: border-box;
+  background: var(--component-surface);
+  color: var(--component-text);
+  font-size: var(--type-base);
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--component) 30%, transparent);
+}
+.component-banner__tag {
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+}
+.component-banner__space {
+  flex: 1;
+}
+.component-banner__done {
+  flex: none;
+  min-height: var(--size-compact);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--component);
+  color: var(--surface);
+  font: inherit;
+  font-size: var(--type-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+.component-banner__done:hover {
+  background: color-mix(in oklch, var(--component) 88%, var(--text));
+}
+.component-banner__done:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.component-banner[hidden] {
+  display: none;
+}
+.component-banner .icon {
+  margin: 0;
+}
+.component-banner__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.component-banner__text strong {
+  font-weight: 600;
+}
+.component-banner__used {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  min-height: 20px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in oklch, var(--component) 40%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--component-text);
+  font: inherit;
+  font-size: var(--type-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+.component-banner__used:hover {
+  background: color-mix(in oklch, var(--component) 12%, transparent);
+}
+.component-banner__used:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.component-banner__used:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.component-banner__used .icon {
+  margin: 0;
+}
+
+/* Used on: the pages (and components) the open component shows on. */
+.component-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--panel-padding);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.component-menu__heading {
+  margin: 6px 8px 4px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.component-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--size-control);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-base);
+  text-align: left;
+  cursor: pointer;
+}
+.component-menu__item + .component-menu__item {
+  margin-top: 2px;
+}
+.component-menu__item:hover {
+  background: var(--hover);
+}
+.component-menu__item:focus-visible {
+  background: var(--hover);
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.component-menu__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.component-menu__name .icon {
+  margin: 0;
+}
+.component-menu__meta {
+  flex: none;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+
+/* ---- Make component and Detach: the files, shown before anything is written. ---- */
+.create-dialog.component-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.component-dialog__files,
+.component-dialog__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.component-dialog__file {
+  margin: 0;
+}
+.component-dialog__file-name {
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.component-dialog__code {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  line-height: 1.5;
+  white-space: pre;
+}

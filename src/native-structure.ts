@@ -141,10 +141,9 @@ export function setAttributeEdit(source: string, tag: StartTag, name: string, va
   if (current) {
     return value === undefined
       ? { start: current.start, end: current.end, text: "" }
-      : current.value === "" && source[current.valueEnd] !== "\""
-        // A bare attribute (`alt`) becomes a quoted one.
-        ? { start: current.start, end: current.end, text: ` ${name}="${escaped}"` }
-        : { start: current.valueStart, end: current.valueEnd, text: escaped };
+      // Rewrite with a known delimiter: single quotes and unquoted values
+      // cannot safely receive a value escaped for double quotes.
+      : { start: current.start, end: current.end, text: ` ${name}="${escaped}"` };
   }
   if (value === undefined) return { start: tag.end, end: tag.end, text: "" };
   // A new attribute goes last in the start tag, before `>` or ` />`.

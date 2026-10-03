@@ -67,6 +67,7 @@ import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
 import { mountEditorPalette } from "./page-builder/palette";
+import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import type {
   EditorContext,
   Directory,
@@ -346,7 +347,10 @@ function mountWorkspace() {
   });
   nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
   pageStructure = createPageStructure(element("structure"), {
-    label: (item) => structureLabel(item, Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag))),
+    label: (item) => {
+      const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
+      return { ...structureLabel(item, component), component };
+    },
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
     pageMeta: nativePageMeta,
     onPageMeta: (path, field, value) => void writeNativePageMeta(path, field, value).then((error) => { if (error) errorMessage(new Error(error)); }),
@@ -369,6 +373,8 @@ function mountWorkspace() {
     onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
     announce: (text) => { element("status").textContent = text; },
   });
+  componentTools?.destroy();
+  componentTools = mountComponentTools();
   mountPalette();
 }
 
@@ -434,6 +440,61 @@ function mountPalette() {
     },
     announce,
     onError: errorMessage,
+  });
+}
+
+// Components as first-class page builder objects (src/page-builder/components.ts).
+let componentTools: ComponentTools | undefined;
+function mountComponentTools() {
+  return createComponentTools({
+    site: () => nativeSite,
+    sources: () => nativeSources(),
+    editor: () => editorModule,
+    preview: () => nativePreview,
+    currentPath: () => currentPath,
+    selection: () => lastNativeSelection,
+    openFile: async (path) => {
+      const epoch = generation;
+      if (currentPath !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch);
+      return epoch === generation && currentPath === path && Boolean(editorModule?.isMounted(path));
+    },
+    announce,
+    error: errorMessage,
+    images: nativeImagePaths,
+    upload: async (files) => {
+      const [uploaded] = await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files);
+      return uploaded === undefined ? undefined : `/${uploaded}`;
+    },
+    links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title) : []),
+    pageLabel: nativePageLabelOf,
+    // New files as drafts (a component made from the page), as the Files tab's New file writes them.
+    createFiles: async (made) => {
+      const scope = draftScope();
+      if (!scope || !snapshot) return "Open a repository first.";
+      for (const file of made) {
+        if (pathNow(file.path)) return `${file.path} already exists.`;
+        const problem = await branchPathProblem(file.path).catch(() => undefined);
+        if (problem) return problem;
+      }
+      for (const file of made)
+        draftStore().save({ ...scope, version: 1, path: file.path, baseSha: null, original: "", content: file.content, updatedAt: Date.now() });
+      if (draftStore().error) return draftStore().error ?? undefined;
+      afterFileChanges();
+      return undefined;
+    },
+    removeFiles: (paths) => {
+      const scope = draftScope();
+      if (!scope) return;
+      for (const path of paths) editorModule?.dropDraft(scope, path);
+      afterFileChanges();
+    },
+    panelHost: app.querySelector<HTMLElement>(".sidebar")!,
+    addStrip: (strip) => nativePreview?.addStrip(strip),
+    codeTitle: element("primary-title").parentElement!,
+    previewPage: () => {
+      const route = nativePreview?.route();
+      return route && nativeSite ? nativeSite.routes[route] : undefined;
+    },
   });
 }
 
@@ -1030,6 +1091,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   if (!preview || !editor || !path || !rect || currentPath !== path || !editor.isMounted(path) || selection.tag === "main") {
     nativeFormatActions = {};
     preview?.hideEditBar();
+    componentTools?.show(undefined);
     return;
   }
   const source = nativeSources()[path] ?? "";
@@ -1423,6 +1485,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     if (!onMove && items.some((control) => control.kind === "button" && control.icon === "duplicate"))
       onMove = (direction) => { cards?.move(selection, direction); };
   }
+  // Edit component, Make component… (src/page-builder/components.ts).
+  if (componentTools) controls.push(...componentTools.controls(selection));
   // Ask agent: a request about this element for a connected agent, pinned on it.
   const menu = agentMenu;
   if (node && menu?.connected() && nativeSite) {
@@ -1445,9 +1509,10 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
+  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable, ...componentTools?.identity(selection) };
   nativeEditBarModel = model;
   preview.showEditBar(model, rect);
+  componentTools?.show(selection);
 }
 
 // The Address of a link just made closed with no address: the link goes
@@ -1652,7 +1717,10 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   // Agents see the selection (get_selection).
   if (reveal) updateAgentContext();
   pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
-  if (!selection.path) nativePreview?.hideEditBar();
+  if (!selection.path) {
+    nativePreview?.hideEditBar();
+    componentTools?.show(undefined);
+  }
   if (!reveal) {
     if (!selection.path || currentPath !== selection.path) {
       nativePreview?.hideEditBar();
@@ -2420,6 +2488,7 @@ function setCurrentPage(path?: string) {
   }
   updateCurrentPageLabel();
   element("primary-title").textContent = path ?? "";
+  componentTools?.refresh();
   element("explorer-toggle").title = path
     ? `Pages & files — ${path}`
     : "Pages & files";
@@ -5039,6 +5108,8 @@ async function mountSource(
       renderDraftFiles();
       commitHistory?.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
+      // An open template's banner counts its instances again.
+      componentTools?.refresh();
       // The Page fields follow the page's head (typed, undone or redone).
       if (value && nativeRouteForPath(value.path)) pageStructure?.refreshMeta();
       // A heading or title typed in the open file renames it in the top bar.
@@ -5064,7 +5135,11 @@ async function mountSource(
   });
   // Another file opened over the selected page: its controls would edit the
   // wrong file, so the bar waits for the next preview click.
-  if (nativeModeActive() && lastNativeSelection?.path !== path) nativePreview?.hideEditBar();
+  if (nativeModeActive() && lastNativeSelection?.path !== path) {
+    nativePreview?.hideEditBar();
+    componentTools?.show(undefined);
+  }
+  componentTools?.refresh();
   // Checked before the file-generation guard: handling that click is what
   // superseded this open.
   const pending = pendingNativeSelection;

@@ -115,7 +115,9 @@ export interface NativePreviewSelection {
   // A selector unique among the rendered page's elements (for one in a
   // component's template, among its instance's, with the instance's own as `host`).
   selector?: string;
-  host?: { tag: string; selector: string };
+  // For an element of a component's template, the instance it renders in
+  // (with where that instance is written, when the runtime can tell).
+  host?: { tag: string; selector: string; path?: string; node?: number[] };
 }
 
 // A text selection inside the selected element: offsets into its DOM text
@@ -313,6 +315,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let componentColor = "";
   const postTheme = () =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus, component: componentColor }, "*");
+  // The component whose template is open: its instances show outlined.
+  let focusTag = "";
+  const postFocus = () =>
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "component-focus", tag: focusTag }, "*");
   // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
   const editBar = createEditBar(pane, frame, {
     start: (at) => toRuntime("drag-start", at),
@@ -540,6 +546,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (canvas.spacing()) toCanvas({ type: "canvas-spacing", on: true });
       lastAvoid = "";
       postAvoid();
+      postFocus();
       pins.reset();
       schedule();
       return;
@@ -731,8 +738,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function readHost(raw: unknown) {
     if (!raw || typeof raw !== "object") return undefined;
-    const { tag, selector } = raw as Record<string, unknown>;
-    return typeof tag === "string" && typeof selector === "string" ? { tag: tag.slice(0, 100), selector: selector.slice(0, 2000) } : undefined;
+    const { tag, selector, path, node } = raw as Record<string, unknown>;
+    if (typeof tag !== "string" || typeof selector !== "string") return undefined;
+    const host: NonNullable<NativePreviewSelection["host"]> = { tag: tag.slice(0, 100), selector: selector.slice(0, 2000) };
+    if (typeof path === "string" && site && nativeSitePaths(site).includes(path) && indexes(node)) {
+      host.path = path;
+      host.node = node;
+    }
+    return host;
   }
   function readTextSelection(raw: unknown): NativeTextSelection | undefined {
     if (!raw || typeof raw !== "object") return undefined;
@@ -804,6 +817,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   return {
+    /** Puts a strip above the frame (the page builder's banner over a component's template). */
+    addStrip(strip: HTMLElement) {
+      pane.insertBefore(strip, frameHost);
+    },
     /** Show the pane and adopt a site. Idempotent for the same site. */
     activate(next: NativeSite) {
       site = next;
@@ -823,6 +840,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
       if (input.assets) assets = input.assets;
+      if (Object.hasOwn(input, "component") && (input.component ?? "") !== focusTag) {
+        focusTag = input.component ?? "";
+        if (ready) postFocus();
+      }
       if (site && input.component && Object.hasOwn(site.components, input.component)) {
         // The page already on show wins; then any page that uses the component; else the component alone.
         const tag = input.component;

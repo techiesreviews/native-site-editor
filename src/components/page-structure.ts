@@ -1,6 +1,7 @@
 import { node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
+import { componentIcon } from "../page-builder/component-icon";
 import "./page-structure.css";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
@@ -47,8 +48,12 @@ export interface PageStructureHandlers {
   planUrl?: (path: string, value: string) => UrlPlan;
   /** Changes the page's URL (Enter); resolves to an error message, or nothing when done. */
   applyUrl?: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
-  /** The kind and distinguishing text a row shows for an element. */
-  label: (item: NativeStructureItem) => { kind: string; text: string };
+  /**
+   * The kind and distinguishing text a row shows for an element, and
+   * whether it is a component instance (its row wears the component mark,
+   * and the rows inside it the accent's rail).
+   */
+  label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
   /** A row was chosen: select this element in the preview. */
   onSelect: (path: string, node: number[]) => void;
   /**
@@ -153,6 +158,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let structure: NativeStructure | undefined;
   let rendered = "";
   let selected: string | undefined;
+  let pendingSelection: { path: string; node: number[] } | undefined;
   // Rows folded or unfolded by hand; any other row inside <main> is folded.
   const foldState = new Map<string, boolean>();
   const inMain = new Set<string>();
@@ -285,11 +291,18 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.style.setProperty("--depth", String(level - 1));
     const toggle = node("span", "page-structure__toggle");
     toggle.setAttribute("aria-hidden", "true");
-    const { kind, text } = handlers.label(item);
+    const { kind, text, component } = handlers.label(item);
     const label = node("span", "page-structure__label");
-    label.append(node("span", "page-structure__kind", kind));
+    const kindName = node("span", "page-structure__kind", kind);
+    if (component) {
+      el.classList.add("page-structure__row--component");
+      kindName.prepend(componentIcon(12));
+    }
+    label.append(kindName);
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
+    // What the page slots into an instance names its slot (drawn by CSS, so the row's name stays its own).
+    if (item.slot) el.dataset.slot = item.slot;
     el.addEventListener("pointerdown", (event) => pressRow(event, item, el));
     el.addEventListener("pointermove", moveRow);
     el.addEventListener("pointerup", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(true); });
@@ -451,13 +464,26 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         selected = undefined;
       }
       structure = next;
+      const pending = pendingSelection;
+      // Selection can arrive before the structure for the same render.
+      // Consume it on the next named page only; unrelated navigation drops it.
+      if (path && pending) {
+        pendingSelection = undefined;
+        if (pending.path === path) selected = key(pending.node);
+      }
       const signature = next ? `${next.path}\n${JSON.stringify(next.items)}` : "";
       if (signature === rendered && !tree.hidden === Boolean(next?.path)) return;
       rendered = signature;
       render();
+      if (pending?.path === path) {
+        const current = rows.get(key(pending.node));
+        if (current) reveal(current);
+        current?.scrollIntoView({ block: "nearest" });
+      }
     },
     /** Mark the row of the element selected in the preview, and show it. */
     select(target: { path: string; node: number[] } | undefined) {
+      pendingSelection = target && target.path !== structure?.path ? { path: target.path, node: [...target.node] } : undefined;
       const id = target && structure && target.path === structure.path ? key(target.node) : undefined;
       if (id === selected) return;
       const current = setSelected(id);
