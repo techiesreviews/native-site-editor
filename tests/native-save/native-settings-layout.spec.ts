@@ -3,12 +3,18 @@ import { mkdir } from "node:fs/promises";
 import { storedDraft } from "./drafts";
 const settings = (page: Page, name = "Page settings") => page.getByRole("dialog", { name, exact: true });
 const pageBlock = (page: Page) => page.getByRole("group", { name: "Page", exact: true });
+async function showPages(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+}
+async function openPageSettings(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click(); }
+async function openNavigation(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Navigation", exact: true }).click(); }
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main");
 }
-async function pageSettings(page: Page) { await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click(); }
+async function pageSettings(page: Page) { await openPageSettings(page); }
 test("category switches keep all page values and Apply includes hidden fields", async ({ page, baseURL }) => {
   await open(page, baseURL); await pageSettings(page);
   const panel = settings(page);
@@ -52,14 +58,14 @@ test("keyboard categories and scrolling leave the footer visible; Escape restore
   await page.screenshot({ path: ".scratch/settings-layout/page-social-dark.png" });
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  await expect(pageBlock(page).getByRole("button", { name: "Page settings", exact: true })).toBeFocused();
+  await expect(page.locator("#explorer-toggle")).toBeFocused();
 });
 test("all settings families fit 390px with horizontal categories and stacked controls", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
   for (const [family, categories] of [["Page settings", ["General", "Search", "Social"]], ["Site settings", ["General", "Social", "Pages"]], ["Navigation", ["Links", "Add link"]]] as const) {
-    if (family === "Site settings") { await page.locator(".repository-menu__trigger").click(); await page.getByRole("button", { name: family, exact: true }).click(); }
-    else await pageBlock(page).getByRole("button", { name: family, exact: true }).click();
+    if (family === "Site settings") { await showPages(page); await page.getByRole("button", { name: family, exact: true }).click(); }
+    else { await showPages(page); await pageBlock(page).getByRole("button", { name: family, exact: true }).click(); }
     const panel = settings(page, family);
     await expect(panel.getByRole("tablist")).toHaveAttribute("aria-orientation", "horizontal");
     for (const category of categories) {
@@ -74,9 +80,9 @@ test("all settings families fit 390px with horizontal categories and stacked con
     await panel.getByRole("button", { name: "Cancel", exact: true }).click();
   }
 });
-test("site categories preserve identity and image edits until Cancel, returning focus to repository control", async ({ page, baseURL }) => {
+test("site categories preserve identity and image edits until Cancel, returning focus to the settings control", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.locator(".repository-menu__trigger").click();
+  await showPages(page);
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   const panel = settings(page, "Site settings");
   await panel.getByLabel("Site name", { exact: true }).fill("Unsaved identity");
@@ -90,5 +96,5 @@ test("site categories preserve identity and image edits until Cancel, returning 
   await expect(panel.getByLabel("Default social image")).toHaveValue("https://studio.example/share.png");
   await panel.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
-  await expect(page.locator(".repository-menu__trigger")).toBeFocused();
+  await expect(page.locator("#explorer-toggle")).toBeFocused();
 });

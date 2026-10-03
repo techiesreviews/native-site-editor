@@ -173,11 +173,12 @@ function mountWorkspace() {
     </header>
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
+      <div class="explorer-settings"><button type="button" id="site-settings-toggle" class="icon-button" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button></div>
       <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages or files" hidden>
         <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
         <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
       </div>
-      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
+      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><div class="pages-settings" role="group" aria-label="Page"><button type="button" id="page-settings-toggle" class="text-button">Page settings</button><button type="button" id="navigation-settings-toggle" class="text-button">Navigation</button></div></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
         <nav id="files" aria-label="Repository files"></nav>
@@ -209,9 +210,12 @@ function mountWorkspace() {
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
     onSignOut: disconnect,
-    onSiteSettings: () => void openNativeSiteSettings(),
   });
   element("repository-menu").append(repositoryMenu.root);
+  element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
+  const settingsPage = () => currentPath && nativeRouteForPath(currentPath) ? currentPath : nativeSite?.routes["/"];
+  element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); });
+  element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); });
   configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
   const showImages = () => { repositoryMenu?.close(); void openMediaPicker().catch(errorMessage); };
   element("media-library-toggle").addEventListener("click", showImages);
@@ -3201,7 +3205,7 @@ function mountSetupChecklist() {
   setupChecklist = checklist;
   element("setup-checklist").append(checklist.root);
   // The project menu's item, above the agent's.
-  element("agent-menu").before(checklist.menuItem);
+  // Setup remains available through its progress control.
   checklist.onRequest(() => {
     setupAsked = currentRepo?.id;
     refreshSetup();
@@ -3606,6 +3610,7 @@ function updateExplorerTabs(reset = false) {
   if (reset) explorerTab = "pages";
   const tab = native ? explorerTab : "files";
   element("explorer-tabs").hidden = !native;
+  element("site-settings-toggle").hidden = !native;
   for (const name of ["pages", "files"] as const) {
     const button = element(`explorer-tab-${name}`);
     const panel = element(`explorer-${name}`);

@@ -5,14 +5,20 @@ import { mkdir } from "node:fs/promises";
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name, exact: true });
 const pageBlock = (page: Page) => page.getByRole("group", { name: "Page", exact: true });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+async function showPages(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+}
+async function openPageSettings(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click(); }
+async function openNavigation(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Navigation", exact: true }).click(); }
 async function open(page: Page, baseURL: string | undefined, repo = 501, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await expect(pageBlock(page).getByRole("button", { name: "Page settings", exact: true })).toBeVisible();
+  await expect(page.locator("#page-settings-toggle")).toHaveCount(1);
 }
 async function openSite(page: Page) {
-  await page.locator(".repository-menu__trigger").click();
+  await showPages(page);
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   await expect(dialog(page, "Site settings")).toBeVisible();
 }
@@ -20,7 +26,7 @@ async function openSite(page: Page) {
 test("page settings edit SEO, linked social details and a live share card, with draft undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await expect(pageBlock(page).getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const panel = dialog(page, "Page settings");
   await panel.getByLabel("Title", { exact: true }).fill("A garden studio");
   await panel.getByLabel("Description", { exact: true }).fill("Independent gardens, thoughtfully designed.");
@@ -81,7 +87,7 @@ test("site settings list pages, apply favicon and defaults together, and open 40
 
 test("navigation renames, reorders, adds pages and external links in the shared template", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await pageBlock(page).getByRole("button", { name: "Navigation", exact: true }).click();
+  await openNavigation(page);
   const panel = dialog(page, "Navigation");
   await expect(panel).toContainText("Shared component");
   await panel.getByLabel("Link 1 label", { exact: true }).fill("Our work");
@@ -142,7 +148,7 @@ test("page settings preserve named entities when changing another field", async 
     model.setValue(model.getValue().replace(/<title>[\s\S]*?<\/title>/i, "<title>Caf&eacute; &copy;</title>"));
   }, "/src/components/monaco.ts");
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("<title>Caf&eacute; &copy;</title>");
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const panel = dialog(page, "Page settings");
   await expect(panel.getByLabel("Title", { exact: true })).toHaveValue("Café ©");
   await panel.getByLabel("Description", { exact: true }).fill("A changed description");
@@ -151,7 +157,7 @@ test("page settings preserve named entities when changing another field", async 
   const source = (await storedDraft(page, "index.html"))!.content;
   expect(source).toContain("<title>Caf&eacute; &copy;</title>");
   expect(source).not.toContain("&amp;eacute;");
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   await expect(dialog(page, "Page settings").getByLabel("Title", { exact: true })).toHaveValue("Café ©");
   await expect(dialog(page, "Page settings").getByLabel("Description", { exact: true })).toHaveValue("A changed description");
 });
@@ -165,7 +171,7 @@ async function prependSourceNote(page: Page) {
 
 test("page settings refuse the source changed while their dialog was open", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   await settings.getByLabel("Title", { exact: true }).fill("Stale title");
   await prependSourceNote(page);
@@ -193,13 +199,13 @@ test("site settings and 404 refuse a stale home-page template", async ({ page, b
 
 test("an explicitly unlinked equal social title survives reopening the controller", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await settings.getByLabel("Use page title", { exact: true }).uncheck();
   await settings.getByRole("button", { name: "Apply page settings" }).click();
   await expect(settings).not.toBeVisible();
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   await expect(dialog(page, "Page settings").getByLabel("Use page title", { exact: true })).not.toBeChecked();
 });
 
@@ -234,7 +240,7 @@ test("repeated unchanged native selection and text-selection reports preserve th
 
 test("batch source checks reject an edit arriving during the first async file lookup", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   await settings.getByLabel("Title", { exact: true }).fill("Racing title");
   await settings.getByRole("button", { name: "Apply page settings" }).evaluate(async (button, modulePath) => {
@@ -261,7 +267,7 @@ test("URL changes preserve an edit arriving while the redirects file is being re
     if (new URL(route.request().url()).searchParams.get("sha") === redirectSha) { reading = true; await blocked; }
     await route.continue();
   });
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   const url = settings.getByRole("textbox", { name: "URL", exact: true });
   await url.fill("/studio/"); await url.press("Enter");
@@ -290,7 +296,7 @@ test("URL changes cannot carry old moves into another repository during redirect
     if (new URL(route.request().url()).searchParams.get("sha") === redirectSha) { reading = true; await blocked; }
     await route.continue();
   });
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   const url = settings.getByRole("textbox", { name: "URL", exact: true });
   await url.fill("/studio/"); await url.press("Enter");
@@ -307,7 +313,7 @@ test("URL changes cannot carry old moves into another repository during redirect
 
 test("Page settings changes a URL and keeps its page and shared navigation together", async ({ page, baseURL }) => {
   await open(page, baseURL, 501, "about/index.html");
-  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettings(page);
   const settings = dialog(page, "Page settings");
   const url = settings.getByRole("textbox", { name: "URL", exact: true });
   await url.fill("/studio/"); await url.press("Enter");

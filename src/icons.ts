@@ -24,6 +24,7 @@ import file from "@phosphor-icons/core/regular/file.svg?raw";
 import fileDashed from "@phosphor-icons/core/regular/file-dashed.svg?raw";
 import folder from "@phosphor-icons/core/regular/folder.svg?raw";
 import folderOpen from "@phosphor-icons/core/regular/folder-open.svg?raw";
+import gear from "@phosphor-icons/core/regular/gear.svg?raw";
 import house from "@phosphor-icons/core/regular/house.svg?raw";
 import link from "@phosphor-icons/core/regular/link.svg?raw";
 import linkBreak from "@phosphor-icons/core/regular/link-break.svg?raw";
@@ -39,6 +40,7 @@ import redo from "@phosphor-icons/core/regular/arrow-u-up-right.svg?raw";
 import x from "@phosphor-icons/core/regular/x.svg?raw";
 
 const icons = {
+  gear,
   "arrow-down": arrowDown,
   "arrow-left": arrowLeft,
   "arrow-right": arrowRight,

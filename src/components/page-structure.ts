@@ -140,7 +140,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The line between rows that shows where a dragged row will go.
   const drop = node("div", "page-structure__drop");
   drop.hidden = true;
-  host.append(hint, meta, tree);
+  host.append(hint, tree);
 
   // The Page fields for the page on show; a field being typed in keeps its text.
   function renderMeta(path: string) {

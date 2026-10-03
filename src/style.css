@@ -888,3 +888,6 @@ dd {
 .login-signin {
   text-decoration: none;
 }
+
+.explorer-settings { display: flex; justify-content: flex-end; padding: 4px 8px; }
+.pages-settings { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
