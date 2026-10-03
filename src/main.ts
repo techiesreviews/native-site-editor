@@ -2056,6 +2056,19 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   }
 }
 
+function refuseNativeSelection(selection: NativePreviewSelection, message: string) {
+  pendingNativeInstanceSelection = undefined;
+  pendingNativeSelection = undefined;
+  nativeElementMoveAction = undefined;
+  lastNativeSelection = undefined;
+  if (currentPath) editorModule?.markElement(currentPath, undefined, false);
+  nativePreview?.clearSelection();
+  stylePanel?.update();
+  pageStructure?.select(undefined);
+  componentTools?.show(undefined);
+  if (selection.reason !== "refresh") announce(message);
+}
+
 async function selectNativeSource(selection: NativePreviewSelection) {
   nativeElementMoveAction = undefined;
   const sources = nativeSources();
@@ -2064,18 +2077,20 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     pendingNativeInstanceSelection = undefined;
     if (selection.path === pending.path && selection.node?.join(".") === pending.node.join(".") &&
         (pending.epoch !== generation || pending.scope !== setupScope() || JSON.stringify(nativeSite?.components) !== pending.components || Object.entries(pending.sources).some(([path, source]) => sources[path] !== source))) {
-      announce("The instance changed before it could be selected. Select it again."); return;
+      refuseNativeSelection(selection, "The instance changed before it could be selected. Select it again."); return;
     }
   }
   if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== sources[selection.path]) {
-    announce("The source changed. Wait for the preview before selecting this element."); return;
+    refuseNativeSelection(selection, "The source changed. Wait for the preview before selecting this element."); return;
   }
-  const scopePath = nativeEditableTemplatePath() ?? nativeSite?.routes[nativePreview?.route() ?? ""];
+  const pagePath = nativeSite?.routes[nativePreview?.route() ?? ""];
+  if (selection.reason !== "refresh" && selection.path === pagePath) nativeSourceIntent = undefined;
+  const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : nativeEditableTemplatePath() ?? pagePath;
   if (selection.path && scopePath && nativeSite) {
     const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name);
-    if (!mapped) { announce("Select the page instance, or choose Edit to edit its shared template."); return; }
+    if (!mapped) { refuseNativeSelection(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
     if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
-      if (!mapped.node || sources[mapped.path] === undefined) return;
+      if (!mapped.node || sources[mapped.path] === undefined) { refuseNativeSelection(selection, "The instance is no longer available. Select it again."); return; }
       pendingNativeInstanceSelection = { path: mapped.path, node: [...mapped.node],
         sources: Object.fromEntries([selection.path, mapped.path, ...(selection.hostChain ?? (selection.host ? [selection.host] : [])).map(host => host.path)].filter((path): path is string => !!path).map(path => [path, sources[path]])),
         components: JSON.stringify(nativeSite.components), epoch: generation, scope: setupScope() };

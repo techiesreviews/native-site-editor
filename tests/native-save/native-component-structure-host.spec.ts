@@ -117,3 +117,43 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
 });
+
+test("a refused painted selection clears the old edit target before scrolling or detached Remove", async ({ page }) => {
+  await tree(page).getByRole("treeitem", { name: /^Section/ }).first().click();
+  const editBar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
+  await expect(editBar.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await editBar.getByRole("button", { name: "Remove", exact: true }).evaluate(element => Object.assign(window, { refusedOldRemove: element }));
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const mutateBeforeHostSelection = (event: MessageEvent) => {
+      if (event.data?.source !== "astro-native-preview" || event.data.type !== "select" || event.data.reason !== "click" || !event.data.host) return;
+      window.removeEventListener("message", mutateBeforeHostSelection, true);
+      const before = editor.getMountedSource("index.html")!;
+      const changed = `<!-- agent changed before host selection -->\n${before}`;
+      editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: changed });
+      Object.assign(window, { refusedChangedSource: changed });
+    };
+    window.addEventListener("message", mutateBeforeHostSelection, true);
+  });
+  await frame(page).locator("project-card").first().locator("card-note p").click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#status")).toHaveText("The instance changed before it could be selected. Select it again.");
+  await expect(editBar).toBeHidden();
+  await expect(tree(page).locator('[aria-selected="true"]')).toHaveCount(0);
+  await frame(page).locator("body").evaluate(() => window.scrollBy(0, 200));
+  await expect(frame(page).locator('[data-native-selection-box="selected"]')).toBeHidden();
+  await expect(editBar).toBeHidden();
+  const preserved = await page.evaluate(async () => {
+    (window as any).refusedOldRemove.click();
+    return { source: (await import("/src/components/code-editor.ts")).getMountedSource("index.html"), expected: (window as any).refusedChangedSource };
+  });
+  expect(preserved.source).toBe(preserved.expected);
+  await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
+});
+
+test("clicking a real page element leaves explicit template scope and opens that page", async ({ page }) => {
+  await firstCard(page).getByRole("button", { name: "Edit component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Heading");
+});

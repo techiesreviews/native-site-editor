@@ -853,6 +853,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "clear-selection" }, "*");
   }
   function clearSelection() {
+    selectNode = undefined;
+    selectText = undefined;
     staleClick = false;
     codeLink.cancel();
     canvas.setCrumbs([]);
@@ -1047,6 +1049,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     hideEditBar() {
       editBar.hide();
     },
+    /** Clear the runtime outline and every host selection surface together. */
+    clearSelection() { clearSelection(); },
     setError(message: string | undefined) {
       loadError = Boolean(message);
       showBanner(message, true);
