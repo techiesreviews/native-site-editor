@@ -88,6 +88,8 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   let builtFor = "";
   // Hover/focus updates the insertion destination for native element choices.
   let active: string | undefined;
+  let hovered: string | undefined;
+  let focused: string | undefined;
   interface Entry {
     item: AddItem;
     root: HTMLElement;
@@ -116,11 +118,20 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     if (entry && !at) position.textContent = `This destination cannot accept ${entry.item.name}.`;
   }
 
+  function clearInactive(tag: string) {
+    if (active !== tag || hovered === tag || focused === tag) return;
+    active = focused ?? hovered;
+    renderPosition();
+  }
+
+  function resetActive() { active = undefined; hovered = undefined; focused = undefined; }
+
   function refreshAvailability() {
     for (const entry of entries.values()) entry.option.setAttribute("aria-disabled", String(!choicePoint(entry.item)));
   }
 
   function refuse(item: AddItem) {
+    entries.get(item.tag)?.option.setAttribute("aria-disabled", "true");
     const text = `This destination cannot accept ${item.name}.`;
     position.textContent = text; live.textContent = text;
     panel.classList.add("has-no-place");
@@ -141,6 +152,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const key = choices.map((choice) => `${choice.tag}:${choice.label}:${"group" in choice ? choice.group : ""}`).join("|");
     if (key !== builtFor) {
       builtFor = key;
+      resetActive();
       for (const entry of entries.values()) entry.thumb.destroy();
       entries.clear();
       groups.length = 0;
@@ -203,8 +215,10 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       active = item.tag;
       renderPosition();
     };
-    option.addEventListener("pointerenter", activate);
-    option.addEventListener("focus", activate);
+    option.addEventListener("pointerenter", () => { hovered = item.tag; activate(); });
+    option.addEventListener("focus", () => { focused = item.tag; activate(); });
+    option.addEventListener("pointerleave", () => { if (hovered === item.tag) hovered = undefined; clearInactive(item.tag); });
+    option.addEventListener("blur", () => { if (focused === item.tag) focused = undefined; clearInactive(item.tag); });
     entries.set(item.tag, { item, root, option, thumb });
     return root;
   }
@@ -223,6 +237,15 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     for (const entry of entries.values()) {
       entry.root.hidden = !matchesQuery(entry.item, query);
       if (!entry.root.hidden) shown++;
+    }
+    for (const tag of [hovered, focused]) {
+      if (!tag || !entries.get(tag)?.root.hidden) continue;
+      if (hovered === tag) hovered = undefined;
+      if (focused === tag) focused = undefined;
+    }
+    if (active && (!entries.has(active) || entries.get(active)!.root.hidden)) {
+      active = focused ?? hovered;
+      renderPosition();
     }
     for (const group of groups) group.root.hidden = group.tags.every((tag) => entries.get(tag)!.root.hidden);
     search.hidden = !total;
@@ -338,6 +361,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   window.addEventListener("resize", onResize);
 
   function show(gap: InsertPoint | undefined) {
+    resetActive();
     gapKey = gap ? keyOf(gap) : undefined;
     panel.classList.toggle("is-gap", Boolean(gap));
     query = "";
@@ -359,6 +383,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   function close(restoreFocus: boolean) {
     if (!open) return;
     open = false;
+    resetActive();
     const gap = gapKey;
     gapKey = undefined;
     panel.hidden = true;

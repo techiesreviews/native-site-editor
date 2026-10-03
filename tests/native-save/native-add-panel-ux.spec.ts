@@ -54,7 +54,7 @@ async function probe(page: Page, baseURL: string | undefined) {
     document.body.append(canvas);
     const view = createAddPanel({
       choices: () => [], extraChoices: () => nativeElementChoices,
-      pointFor: choice => { calls++; return nativeMarkupInsertEdit(effectiveSource, point.parent, point.index, nativeChoiceMarkup(choice.tag)!) ? { ...point } : undefined; },
+      pointFor: choice => { calls++; if (choice.tag === "native:grid") return undefined; return nativeMarkupInsertEdit(effectiveSource, point.parent, point.index, nativeChoiceMarkup(choice.tag)!) ? { ...point } : undefined; },
       preview: tag => { const markup = nativeChoiceMarkup(tag)!; return { markup, doc: `<html><body><main>${markup}</main></body></html>` }; },
       canvasWidth: () => 1000, points: () => [point], defaultPoint: () => point,
       prepare() {}, insert() { inserts++; },
@@ -62,7 +62,7 @@ async function probe(page: Page, baseURL: string | undefined) {
       dock: () => ({ left: 0, top: 60, bottom: 800, width: 350 }), onState() {},
     });
     view.openDocked();
-    Object.assign(window, { addUXProbe: { view, calls: () => calls, inserts: () => inserts, reset: () => { calls = 0; }, sourceChanged: () => { effectiveSource = '<img src="blocked.svg">'; }, dispose: () => { view.destroy(); canvas.remove(); } } });
+    Object.assign(window, { addUXProbe: { view, openGap: () => view.openFor(point), calls: () => calls, inserts: () => inserts, reset: () => { calls = 0; }, sourceChanged: () => { effectiveSource = '<img src="blocked.svg">'; }, dispose: () => { view.destroy(); canvas.remove(); } } });
   });
 }
 
@@ -98,5 +98,44 @@ test("a refused drag drop explains the destination visibly without inserting", a
   await expect(page.locator(".pb-drag-ghost")).toHaveCount(0);
   await expect(add.locator(".pb-add-panel__position")).toContainText("cannot accept Heading");
   expect(await page.evaluate(() => (window as any).addUXProbe.inserts())).toBe(0);
+  await expect(heading).toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(() => (window as any).addUXProbe.dispose());
+});
+
+
+test("destination warnings follow current pointer or focus and reset for hidden items and new gaps", async ({ page, baseURL }) => {
+  await probe(page, baseURL);
+  const add = panel(page), grid = add.getByRole("option", { name: /^Grid HTML$/ });
+  const position = add.locator(".pb-add-panel__position"), search = add.getByRole("searchbox");
+  await grid.hover();
+  await expect(position).toContainText("cannot accept Grid");
+  await page.mouse.move(850, 300);
+  await page.evaluate(() => (window as any).addUXProbe.view.retarget());
+  await expect(position).toHaveText("Goes at the end");
+  await expect(add).not.toHaveClass(/has-no-place/);
+
+  // Leaving the pointer keeps the keyboard's current item active.
+  await grid.focus();
+  await grid.dispatchEvent("pointerenter"); await grid.dispatchEvent("pointerleave");
+  await expect(position).toContainText("cannot accept Grid");
+  await expect(grid).toBeFocused();
+  await search.focus();
+  await expect(position).toHaveText("Goes at the end");
+
+  // Moving keyboard focus keeps a still-hovered item active.
+  await grid.focus(); await grid.dispatchEvent("pointerenter");
+  await search.focus();
+  await expect(position).toContainText("cannot accept Grid");
+  await search.fill("Heading");
+  await expect(grid).toBeHidden();
+  await expect(position).toHaveText("Goes at the end");
+  await expect(add).not.toHaveClass(/has-no-place/);
+
+  await search.fill(""); await grid.dispatchEvent("pointerenter");
+  await expect(position).toContainText("cannot accept Grid");
+  await page.evaluate(() => { (window as any).addUXProbe.view.close(false); (window as any).addUXProbe.openGap(); });
+  await expect(search).toBeFocused();
+  await expect(position).toHaveText("Goes at the end");
+  await expect(add).not.toHaveClass(/has-no-place/);
   await page.evaluate(() => (window as any).addUXProbe.dispose());
 });

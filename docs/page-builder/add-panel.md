@@ -106,7 +106,9 @@ thumbnail document, page HTML and insertion markup stay unchanged.
 
 Unavailable items are dimmed and remain keyboard reachable. Focusing, clicking
 or dropping an item at a refused destination explains the refusal in the visible
-position text. Hover derives only the active item's destination. Opening, source
+position text. The header follows the currently hovered or keyboard-focused item;
+leaving it, hiding it in search or reopening for a gap restores the general
+destination. Hover derives only the active item's destination. Opening, source
 refresh and selection/point changes update all availability states. Clicks and
 drops always derive a fresh point, so stale availability cannot permit insertion.
 
