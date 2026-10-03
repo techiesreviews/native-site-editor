@@ -19,6 +19,7 @@
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { mountComponentPanelResize } from "./component-panel-resize";
 import { button, node } from "../ui/dom";
 import { nativePageBody, type NativeSite } from "../../shared/native-project";
 import type { NativePreviewSelection } from "../components/native-preview";
@@ -128,6 +129,7 @@ export function createComponentTools(deps: ComponentDeps) {
   panel.setAttribute("aria-label", "Component properties");
   panel.hidden = true;
   deps.panelHost.append(panel);
+  const destroyResize = mountComponentPanelResize(deps.panelHost, panel);
   const banner = node("div", "component-banner");
   banner.setAttribute("role", "status");
   banner.hidden = true;
@@ -1026,6 +1028,7 @@ export function createComponentTools(deps: ComponentDeps) {
     },
     editComponent,
     destroy() {
+      destroyResize();
       panel.remove();
       banner.remove();
       usedOn.remove();

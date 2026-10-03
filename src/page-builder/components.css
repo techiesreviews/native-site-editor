@@ -1,3 +1,4 @@
+@import "../components/resize-handle.css";
 /* Components, first class (src/page-builder/components.ts): the component
    accent (--component, --component-surface, --component-text in theme.css)
    on everything that names an instance or a component. */
@@ -88,7 +89,7 @@
 /* ---- The properties panel, docked at the foot of the sidebar. ---- */
 .component-panel {
   flex: none;
-  max-height: min(50%, 520px);
+  box-sizing: border-box;
   overflow: auto;
   margin: 8px -20px 0;
   padding: 12px 20px 16px;
@@ -233,7 +234,6 @@
 }
 .component-slot.is-current {
   background: var(--component-surface);
-  box-shadow: inset 2px 0 0 var(--component);
 }
 .component-slot__head {
   display: flex;
@@ -604,3 +604,14 @@
   line-height: 1.5;
   white-space: pre;
 }
+
+.component-panel-resize { flex: 0 0 10px; position: relative; margin: 0 -20px; cursor: row-resize; touch-action: none; }
+.component-panel-resize[hidden] { display: none; }
+.component-panel-resize:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.component-panel-resize { --chevron-turn: -90deg; }
+.component-panel-resize.is-collapsed { --chevron-turn: 90deg; }
+.component-panel-resize .resize-grip { width: 28px; height: 4px; }
+.component-panel-resize:is(:hover, :focus-visible) .resize-grip { width: 44px; height: 16px; opacity: 1; background: var(--primary); }
+.component-panel-resize:is(:hover, :focus-visible) svg { opacity: 1; }
+.component-panel.is-folded { overflow: hidden; }
+.component-panel.is-folded .component-panel__body { display: none; }

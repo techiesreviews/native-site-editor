@@ -1,0 +1,34 @@
+import { test, expect } from "@playwright/test";
+test("component properties resize, fold, restore and persist without a slot edge", async ({ page, baseURL }) => {
+  const open = async () => {
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+    await page.frameLocator(".native-preview-frame").locator("project-card").first().evaluate(element => (element as HTMLElement).click());
+  };
+  await open();
+  const panel = page.getByRole("region", { name: "Component properties" });
+  const handle = page.getByRole("separator", { name: "Resize component properties" });
+  await expect(handle).toBeVisible();
+  const before = (await panel.boundingBox())!.height;
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down(); await page.mouse.move(box.x + box.width / 2, box.y - 80, { steps: 5 }); await page.mouse.up();
+  const resized = (await panel.boundingBox())!.height;
+  expect(resized).toBeGreaterThan(before);
+  await handle.press("Enter");
+  await expect(handle).toHaveAttribute("aria-valuenow", "0");
+  await expect(panel.locator(".component-panel__body")).toBeHidden();
+  await handle.press("Enter");
+  expect((await panel.boundingBox())!.height).toBe(resized);
+  await open();
+  await expect(handle).toBeVisible();
+  expect((await panel.boundingBox())!.height).toBe(resized);
+  await handle.press("ArrowDown");
+  expect((await panel.boundingBox())!.height).toBeLessThan(resized);
+  await page.frameLocator(".native-preview-frame").locator("project-card [slot=title]").first().evaluate(element => (element as HTMLElement).click());
+  const selected = panel.locator(".component-slot.is-current").first();
+  await expect(selected).toBeVisible();
+  expect(await selected.evaluate(element => getComputedStyle(element).boxShadow)).toBe("none");
+  await page.frameLocator(".native-preview-frame").locator("section.hero").evaluate(element => (element as HTMLElement).click());
+  await expect(panel).toBeHidden(); await expect(handle).toBeHidden();
+});
