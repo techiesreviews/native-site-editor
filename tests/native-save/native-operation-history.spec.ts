@@ -357,6 +357,9 @@ for (const action of ["rename", "delete"] as const) test(`an opaque binary draft
   // Load the seeded opaque draft through the same startup tree as a returning browser.
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible();
+  const readDraft = (path: string) => page.evaluate(async path => (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, path), path);
+  const originalRecord = await readDraft("images/binary.png");
+  expect(originalRecord?.opaque).toBe(true);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Files", exact: true }).click();
   const explorer = page.locator("#explorer");
@@ -374,6 +377,15 @@ for (const action of ["rename", "delete"] as const) test(`an opaque binary draft
     await expect(page.locator("#status")).toContainText("Deleted");
   }
   await history(page, "undo"); await expect(page.locator("#status")).toContainText("Undid");
+  expect(await readDraft("images/binary.png")).toEqual(originalRecord);
+  expect(await readDraft("images/renamed.png")).toBeUndefined();
   await history(page, "redo"); await expect(page.locator("#status")).toContainText(action === "rename" ? "Renamed" : "Deleted");
+  expect(await readDraft("images/binary.png")).toBeUndefined();
+  if (action === "rename") {
+    const renamed = await readDraft("images/renamed.png");
+    expect(renamed?.opaque).toBe(true);
+    expect(renamed?.sourceSha).toBe(originalRecord?.sourceSha);
+    expect(renamed?.upload).toEqual(originalRecord?.upload);
+  }
   await expect(frame(page).locator(".hero h1")).toBeVisible();
 });
