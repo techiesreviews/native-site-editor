@@ -91,7 +91,7 @@ export function elementPathAt(html: string, start: number): number[] | undefined
 }
 
 // The outer range of a marked element in a parsed source whose page part ends at `limit`.
-function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element, limit = html.length): ElementRange | undefined {
+export function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element, limit = html.length): ElementRange | undefined {
   const tag = tagOf(tags, el);
   if (!tag) return undefined;
   // The element's end tag precedes the next start tag outside its subtree.

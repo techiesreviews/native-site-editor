@@ -1,0 +1,232 @@
+/* "Add card" over the native preview: a ghost where one more item of a grid
+   would go, and the popover that names a new page. */
+.card-grid-layer {
+  position: absolute;
+  z-index: 19;
+  overflow: hidden;
+  pointer-events: none;
+}
+.card-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed color-mix(in oklch, var(--primary) 55%, transparent);
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--primary) 5%, transparent);
+  animation: card-ghost-in 160ms ease-out;
+}
+.card-ghost[hidden] {
+  display: none;
+}
+.card-ghost.is-column {
+  justify-items: start;
+  padding-left: 2px;
+}
+.card-ghost.is-below {
+  align-items: start;
+  padding-top: 20px;
+}
+@keyframes card-ghost-in {
+  from {
+    opacity: 0;
+  }
+}
+.card-ghost__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--size-compact);
+  margin: 0;
+  border: 1px solid var(--control-line);
+  border-radius: 999px;
+  padding: 0 12px 0 10px;
+  background: var(--panel-surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-base);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--shadow-small);
+  transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+.card-ghost.is-compact .card-ghost__add {
+  padding: 0;
+  width: var(--size-compact);
+  justify-content: center;
+}
+.card-ghost.is-compact .card-ghost__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.card-ghost__add:hover,
+.card-ghost__add:focus-visible,
+.card-ghost.is-open .card-ghost__add {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.card-ghost__add:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The popover for a new page and its card. */
+.card-add {
+  position: absolute;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--panel-padding-roomy);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  font-size: var(--type-base);
+  box-shadow: var(--shadow);
+  animation: card-add-in 160ms ease-out;
+}
+.card-add[hidden] {
+  display: none;
+}
+@keyframes card-add-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.card-add__title {
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+.card-add__where,
+.card-add__url {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.card-add__where {
+  margin-top: -4px;
+}
+.card-add__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.card-add__label {
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.card-add__input {
+  height: var(--size-control);
+  margin: 0;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 0 8px;
+  background: var(--surface-input);
+  color: inherit;
+  font: inherit;
+}
+.card-add__input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+.card-add__input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.card-add__url code {
+  color: var(--text);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.card-add__message {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: var(--type-small);
+}
+.card-add__message[hidden] {
+  display: none;
+}
+.card-add__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.card-add__create,
+.card-add__only {
+  min-height: var(--size-control);
+  margin: 0;
+  border-radius: var(--radius);
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.card-add__create {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.card-add__create:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.card-add__create:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.card-add__only {
+  border: 1px solid var(--control-line);
+  background: transparent;
+  color: inherit;
+}
+.card-add__only:hover {
+  background: var(--hover);
+}
+.card-add__create:focus-visible,
+.card-add__only:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-ghost,
+  .card-add {
+    animation: none;
+  }
+  .card-ghost__add {
+    transition: none;
+  }
+}
+
+/* The Pages tab's new page row: "Add a card to “Recent work” on Home". */
+.pages-edit__card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-left: 20px;
+  color: var(--text);
+  font-size: var(--type-small);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.pages-edit__card-box {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+.pages-edit__card-box:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}

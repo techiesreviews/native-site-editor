@@ -54,6 +54,7 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
 import { createCommitHistory } from "./components/commit-history";
+import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
@@ -279,6 +280,7 @@ function mountWorkspace() {
     moveTo: (target) => void moveNativePageTo(target),
     dropProblem: nativeDropProblem,
     drop: (source, parent) => void confirmNativeMove(source, parent),
+    cardOffer: (parent) => cards?.cardOffer(parent),
   });
   element("explorer-pages").append(pagesTree.root);
   mountExplorerTabs();
@@ -296,7 +298,22 @@ function mountWorkspace() {
     element("code-split").querySelector<HTMLElement>(".code-pane")!,
     element("secondary-pane"),
   );
+  cards = mountCards();
+  // A selection inside a component's template gets Select card once the runtime says which card.
+  let selectedGrid = "";
   nativePreview = createNativePreview(element("main"), {
+    cards: {
+      describe: (grid) => cards?.describe(grid),
+      plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: "Open a native site first." },
+      addCard: (grid) => void cards?.addCard(grid),
+      addPage: (grid, title) => cards?.addPage(grid, title) ?? Promise.resolve("Open a native site first."),
+    },
+    onItemGrids: (report) => {
+      const key = JSON.stringify(report.selected && [report.selected.path, report.selected.parent, report.selected.index, report.selected.row]);
+      if (key === selectedGrid) return;
+      selectedGrid = key;
+      if (lastNativeSelection) renderNativeEditBar(lastNativeSelection);
+    },
     onSelect: (selection) => void selectNativeSource(selection),
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
@@ -309,7 +326,7 @@ function mountWorkspace() {
     insertChoices: nativeSectionChoices,
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => pageStructure?.update(structure),
-    onMove: (direction) => { if (lastNativeSelection) moveNativeSection(lastNativeSelection, direction); },
+    onMove: (direction) => { if (lastNativeSelection && !moveNativeSection(lastNativeSelection, direction)) cards?.move(lastNativeSelection, direction); },
     onSectionDrag: (gap) => {
       const outcome = gap && lastNativeSelection ? moveNativeSectionTo(lastNativeSelection, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
@@ -1330,6 +1347,13 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
     });
   }
+  // An item of a card grid, or anything inside one: Move, Duplicate, Remove, Add card, Open page, Select card.
+  if (cards && !isNativeSectionTag(selection.tag)) {
+    const items = cards.controls(selection, source);
+    controls.push(...items);
+    if (!onMove && items.some((control) => control.kind === "button" && control.icon === "duplicate"))
+      onMove = (direction) => { cards?.move(selection, direction); };
+  }
   // Ask agent: a request about this element for a connected agent, pinned on it.
   const menu = agentMenu;
   if (node && menu?.connected() && nativeSite) {
@@ -1589,6 +1613,8 @@ async function selectNativeSource(selection: NativePreviewSelection) {
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
+// Card grids: Add card, New page and card, and their edit bar (src/page-builder/cards.ts).
+let cards: Cards | undefined;
 // The loaded native site: its pages by route and its components by tag,
 // read from the repository's files (shared/native-project.ts).
 let nativeSite: NativeSite | undefined;
@@ -3170,6 +3196,8 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
   const planned = planNativeNew(request);
   if (!planned.ok) return planned.error;
   const plan = planned.value;
+  // With its card in the grid that lists its siblings: the page made from a sibling's, as one operation.
+  if (request.addCard && cards) return cards.createWithCard(request);
   return commitNativePage({ file: plan.file, route: plan.route, title: plan.title, content: plan.content, done: `Created the page ${plan.title} at ${plan.route}.` });
 }
 
@@ -3220,6 +3248,49 @@ async function commitNativePage(page: {
     editorModule?.recordHistoryAction(page.file, () => undoNativeCreation(creation));
   element("status").textContent = page.done;
   return undefined;
+}
+
+// ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
+
+function mountCards() {
+  return createCards({
+    site: () => nativeSite,
+    source: (path) => nativeEffectiveSource(path),
+    isSection: isNativeSectionTag,
+    editor: () => editorModule,
+    preview: () => nativePreview,
+    ensureOpen: async (path) => {
+      if (currentPath === path && editorModule?.isMounted(path)) return true;
+      const epoch = generation;
+      await restoreFile(path, epoch, { linkDefaultStyle: false });
+      return epoch === generation && currentPath === path && Boolean(editorModule?.isMounted(path));
+    },
+    openPage: (file) => void restoreFile(file, generation),
+    change: applyNativeChange,
+    exists: nativePathExists,
+    siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+    saveNewDraft: (path, content) => {
+      const scope = draftScope();
+      if (!scope) return "Open a repository first.";
+      draftStore().save({ ...scope, version: 1, path, baseSha: null, original: "", content, updatedAt: Date.now() });
+      const failure = draftStore().error;
+      if (failure) {
+        draftStore().remove(scope, path);
+        return failure;
+      }
+      afterFileChanges();
+      return undefined;
+    },
+    dropNewDraft: (path) => {
+      const scope = draftScope();
+      if (!scope || draftStore().get(scope, path)?.baseSha !== null) return;
+      if (!editorModule?.discardNewFile(path)) editorModule?.dropDraft(scope, path);
+      afterFileChanges();
+    },
+    operation: applyNativeOperation,
+    pageLabel: nativePageLabelOf,
+    announce,
+  });
 }
 
 // ---- The Pages tab's Rename, Duplicate and Delete. ----
@@ -3279,6 +3350,10 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
     ? "It is removed from GitHub when you save. Until then, Restore brings it back."
     : "It is not on GitHub yet, so this discards it.";
   let paths = [target.file];
+  // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
+  const card = cards?.cardsLinkingTo(target.route, new Set(everything));
+  const cardOption = card ? { label: card.label, checked: true } : undefined;
+  let removeCard = false;
   if (target.subpages > 0) {
     const count = `${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`;
     const answer = await confirmDialog.choose({
@@ -3292,17 +3367,23 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
         { label: "Delete only this page", value: "only" },
         { label: `Delete ${target.label} and its ${count}`, value: "all" },
       ],
+      option: cardOption,
     });
     if (!answer.value) { announce(`Cancelled deleting ${target.label}`); return; }
     if (answer.value === "all") paths = everything;
+    removeCard = answer.option;
   } else {
-    const ok = await confirmDialog.ask({
+    const question = {
       title: `Delete the page ${target.label} (${target.file})?`,
       notes: [...(links ? [links] : []), ...(inside.length ? [`Everything else in ${folder} goes with it.`] : []), saveNote(everything)],
       action: "Delete",
-    });
-    if (!ok) { announce(`Cancelled deleting ${target.file}`); return; }
+    };
+    const answer = cardOption
+      ? await confirmDialog.choose({ ...question, actions: [{ label: question.action, value: "confirm" }], option: cardOption })
+      : { value: (await confirmDialog.ask(question)) ? "confirm" : undefined, option: false };
+    if (answer.value !== "confirm") { announce(`Cancelled deleting ${target.file}`); return; }
     if (inside.length) paths = everything;
+    removeCard = answer.option;
   }
   const parent = parentRoute(target.route);
   const what = paths.length > 1 && target.subpages
@@ -3310,7 +3391,8 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
     : `the page ${target.label}`;
   const error = await applyNativeOperation({
     deletes: paths,
-    done: `Deleted ${what}.`,
+    ...(removeCard && card ? { edits: card.edits } : {}),
+    done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
     undone: `Undid deleting ${what}.`,
     focus: { route: parent === "/" ? undefined : parent },
   });

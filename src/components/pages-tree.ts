@@ -14,6 +14,8 @@ export interface NativeNewRequest {
   parent: string;
   title: string;
   slug: string;
+  /** Add a card for it to the grid that lists its siblings (`cardOffer`). */
+  addCard?: boolean;
 }
 
 /** A row an action applies to: a page, or a URL with subpages and no page of its own (no `file`). */
@@ -77,6 +79,8 @@ export function createPagesTree(options: {
   dropProblem?: (source: NativePagesTarget, parent: string) => string | undefined;
   /** A row dropped: `source` goes under `parent` (the caller confirms). */
   drop?: (source: NativePagesTarget, parent: string) => void;
+  /** For a new page under `parent`: the label of a checkbox (on by default) that adds its card to the grid listing its siblings, when one does. */
+  cardOffer?: (parent: string) => string | undefined;
 }) {
   const root = node("section", "pages");
   const heading = node("div", "files-heading pages-heading");
@@ -150,12 +154,22 @@ export function createPagesTree(options: {
     message.setAttribute("aria-live", "polite");
     // Enter creates and Escape cancels; the row shows only what stops it.
     form.append(line, url, message);
+    // Its siblings listed in a card grid somewhere: its card can go there too.
+    const offer = parent === "/" ? undefined : options.cardOffer?.(parent);
+    const card = node("input", "pages-edit__card-box");
+    card.type = "checkbox";
+    card.checked = true;
+    if (offer) {
+      const label = node("label", "pages-edit__card");
+      label.append(card, node("span", "", offer));
+      form.append(label);
+    }
     item.append(form);
 
     let slug = "";
     let slugEdited = false;
     let pending = false;
-    const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug });
+    const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug, ...(offer ? { addCard: card.checked } : {}) });
     // The URL follows the title until it is edited by hand; a problem shows once there is something to check.
     const check = (showEmpty = false) => {
       if (!slugEdited) slug = slugify(input.value);

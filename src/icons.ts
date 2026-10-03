@@ -6,6 +6,8 @@
 import "./icons.css";
 
 import arrowDown from "@phosphor-icons/core/regular/arrow-down.svg?raw";
+import arrowLeft from "@phosphor-icons/core/regular/arrow-left.svg?raw";
+import arrowRight from "@phosphor-icons/core/regular/arrow-right.svg?raw";
 import arrowUp from "@phosphor-icons/core/regular/arrow-up.svg?raw";
 import arrowUpRight from "@phosphor-icons/core/regular/arrow-up-right.svg?raw";
 import arrowsClockwise from "@phosphor-icons/core/regular/arrows-clockwise.svg?raw";
@@ -38,6 +40,8 @@ import x from "@phosphor-icons/core/regular/x.svg?raw";
 
 const icons = {
   "arrow-down": arrowDown,
+  "arrow-left": arrowLeft,
+  "arrow-right": arrowRight,
   "arrow-up": arrowUp,
   "arrow-up-right": arrowUpRight,
   "arrows-clockwise": arrowsClockwise,

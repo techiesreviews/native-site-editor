@@ -127,7 +127,7 @@ export function nativeNewPageTitle(homeTitle: string | undefined, title: string)
 }
 
 /** `html` without its structured data (`<script type="application/ld+json">`), each with its own lines. */
-function withoutStructuredData(html: string): string {
+export function withoutStructuredData(html: string): string {
   let text = html;
   for (;;) {
     const tag = startTags(text).find((item) => item.name === "script" && startTagAttribute(text, item, "type")?.value.trim().toLowerCase() === "application/ld+json");

@@ -10,6 +10,7 @@ import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import { createAgentPins, type PinRequest } from "./agent-pins";
+import { createCardGridControls, type CardGridHandlers, type ItemGridReport, type ItemGridsReport } from "./card-grid-controls";
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
@@ -183,6 +184,10 @@ interface NativePreviewHandlers {
   // A request to agents dismissed from its pin, and the user's answer to an agent's question.
   onDismissRequest?: (id: string) => void;
   onAnswerRequest?: (id: string, text: string) => Promise<void>;
+  // Grids of repeated items: what each is and how to add to it (src/components/card-grid-controls.ts),
+  // and the grids under the pointer and around the selection whenever they change.
+  cards?: CardGridHandlers;
+  onItemGrids?: (report: ItemGridsReport) => void;
 }
 
 // A list of element-child indexes from the runtime.
@@ -324,6 +329,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
     dock: handlers.addPanelDock,
   });
+  const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards) : undefined;
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
   const pins = createAgentPins(pane, frame, {
@@ -569,6 +575,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       handlers.onTextSelection?.(readTextSelection((data as { selection?: unknown }).selection));
       return;
     }
+    if (data.type === "item-grids" && site) {
+      const raw = data as { hover?: unknown; selected?: unknown };
+      const report = { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected) };
+      cardGrids?.update(report);
+      handlers.onItemGrids?.(report);
+      return;
+    }
     if (data.type === "structure" && site) {
       const raw = data as unknown as { path?: unknown; items?: unknown };
       const path = typeof raw.path === "string" && (raw.path === "" || site.routes[route] === raw.path) ? raw.path : undefined;
@@ -672,6 +685,23 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!keys.every((key) => typeof rect[key] === "number" && Number.isFinite(rect[key]))) return undefined;
     return Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
   }
+  function readItemGrid(raw: unknown): ItemGridReport | null {
+    if (!raw || typeof raw !== "object" || !site) return null;
+    const grid = raw as Record<string, unknown>;
+    const box = readRect(grid.ghost && typeof grid.ghost === "object" ? { ...(grid.ghost as object), bottom: 0, right: 0 } : undefined);
+    if (typeof grid.path !== "string" || site.routes[route] !== grid.path || !indexes(grid.parent) || !box) return null;
+    if (![grid.index, grid.position, grid.count].every((value) => Number.isInteger(value) && (value as number) >= 0)) return null;
+    return {
+      path: grid.path,
+      parent: grid.parent,
+      index: grid.index as number,
+      position: grid.position as number,
+      count: grid.count as number,
+      row: grid.row === true,
+      beside: grid.beside === true,
+      ghost: { top: box.top, left: box.left, width: box.width, height: box.height },
+    };
+  }
   function readHost(raw: unknown) {
     if (!raw || typeof raw !== "object") return undefined;
     const { tag, selector } = raw as Record<string, unknown>;
@@ -701,6 +731,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       alone = undefined;
       insertControls.clear();
       pageBuilder.clear();
+      cardGrids?.clear();
       clearSelection();
     }
     // A fragment on the page on show scrolls there too.
@@ -749,6 +780,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           route = next;
           insertControls.clear();
           pageBuilder.clear();
+          cardGrids?.clear();
           // Quietly: the runtime reports the lost selection after the render,
           // and a click here would cancel the file open that led to this.
           staleClick = false;
@@ -761,6 +793,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         alone = undefined;
         insertControls.clear();
         pageBuilder.clear();
+        cardGrids?.clear();
       }
       schedule();
       pageBuilder.sourcesChanged();
@@ -838,6 +871,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         editBar.hide();
         insertControls.clear();
         pageBuilder.clear();
+        cardGrids?.clear();
         postClearSelection();
       }
     },
@@ -845,6 +879,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     attachAddButton(addButton: HTMLButtonElement) {
       pageBuilder.attachAddButton(addButton);
       pageBuilder.setActive(mounted);
+    },
+    /** The grid of repeated items around the selection, as the runtime last reported it. */
+    selectedItemGrid() {
+      return cardGrids?.selected();
+    },
+    /** Add to the grid around the selection, as its Add card button does. */
+    addToSelectedGrid() {
+      cardGrids?.addToSelected();
     },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {
@@ -884,6 +926,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       insertControls.clear();
       pageBuilder.clear();
       pageBuilder.setActive(false);
+      cardGrids?.clear();
       clearSelection();
       handlers.onStructure?.(undefined);
       pane.remove();
@@ -903,6 +946,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       stopTheme();
       insertControls.destroy();
       pageBuilder.destroy();
+      cardGrids?.destroy();
       pane.remove();
       host.classList.remove("has-preview");
     },

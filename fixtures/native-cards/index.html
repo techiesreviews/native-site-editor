@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Small websites · Larkspur Studio</title>
+  <meta name="description" content="Small, editable websites for independent businesses.">
+  <link rel="canonical" href="https://larkspur.example/">
+  <link rel="stylesheet" href="/styles/site.css">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body>
+  <site-header></site-header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <h1>Small websites that stay yours</h1>
+      <p class="lead">One or two sentences that say who this is for and what they get.</p>
+    </section>
+    <section class="flow" id="work">
+      <h2>Recent work</h2>
+      <div class="cards">
+        <card-project>
+          <p slot="note">Cafe · Identity and site · 2025</p>
+          <h3 slot="title">Fern &amp; Kettle</h3>
+          <p slot="body" class="body">A one-page site with a menu the owners change themselves before opening each morning.</p>
+          <a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>
+        </card-project>
+        <card-project>
+          <p slot="note">Ceramics studio · Portfolio · 2025</p>
+          <h3 slot="title">Harbour Lane Pottery</h3>
+          <p slot="body" class="body">A quiet portfolio for a working potter, with large photographs and a dates page for kiln openings.</p>
+          <a slot="link" href="/work/harbour-lane-pottery/">Read about Harbour Lane Pottery</a>
+        </card-project>
+      </div>
+    </section>
+    <section class="flow" id="services">
+      <h2>What we do</h2>
+      <ul class="services">
+        <li>Plain HTML sites</li>
+        <li>Editing workshops</li>
+        <li>Hosting set-up</li>
+      </ul>
+    </section>
+  </main>
+  <site-footer></site-footer>
+</body>
+</html>
