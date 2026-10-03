@@ -132,3 +132,15 @@ test('published preload callback loads before blue theme and planner refuses a d
   assert.ok('error'in planNativeLayoutInsert(input({sources:{'index.html':html,'styles/site.css':'body{color:red}','theme.css':'body{color:blue}'}})));
  }finally{await browser.close();}
 });
+test('script-loaded CSS bundles traverse their import graph while favicon assets remain irrelevant',async()=>{
+ const html=page.replace('</head>',`<link id="bundle" rel="preload" as="style" href="bundle.css" onload="this.rel='stylesheet';this.onload=null"><link rel="stylesheet" href="theme.css"><link rel="icon" href="icon.png"></head>`);
+ const sources={'index.html':html,'bundle.css':'@import "styles/site.css";','styles/site.css':'body {color:rgb(255,0,0)}','theme.css':'body {color:rgb(0,0,255)}'};
+ const result=planNativeLayoutInsert(input({sources}));assert.ok('error'in result);assert.match(result.error,/Choose another stylesheet/);
+ const favicon=good(input({sources:{'index.html':page.replace('</head>','<link rel="icon" href="icon.png"></head>'),'styles/site.css':''}}));assert.ok(favicon.operation.edits.has('styles/site.css'));
+ const {chromium}=await import('@playwright/test');const browser=await chromium.launch({headless:true});
+ try{
+  const tab=await browser.newPage();await tab.route('https://native-layout.test/**',route=>{const path=new URL(route.request().url()).pathname.slice(1);return route.fulfill({contentType:path.endsWith('.css')?'text/css':'text/html',body:sources[path as keyof typeof sources]??html});});
+  await tab.goto('https://native-layout.test/');await tab.waitForFunction(()=>document.querySelector('#bundle')!.getAttribute('rel')==='stylesheet');
+  assert.equal(await tab.evaluate(()=>getComputedStyle(document.body).color),'rgb(0, 0, 255)');
+ }finally{await browser.close();}
+});

@@ -108,7 +108,13 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
       if (href === undefined) continue;
       const resolved = resolveImportPath(point.path, href);
       if (resolved === cssPath && (!rel.includes("stylesheet") || startTagAttributes(nextPage, element.tag).some(attribute => /^on/.test(attribute.name)))) indirect = true;
-      if (!rel.includes("stylesheet")) continue;
+      if (!rel.includes("stylesheet")) {
+        const likelyCss = asciiLower(attr(nextPage, element, "as") ?? "") === "style" || /\.css(?:[?#]|$)/i.test(href);
+        if (likelyCss) {
+          if (resolved) visit(resolved); else if (isExternalImport(href)) external = true; else unknown = true;
+        }
+        continue;
+      }
       const media = asciiLower((attr(nextPage, element, "media") ?? "").trim());
       const type = asciiLower((attr(nextPage, element, "type") ?? "").trim());
       if (resolved === cssPath) {
