@@ -117,6 +117,8 @@ function icon(name: IconName) {
 }
 
 export interface EditBarModel {
+  /** Source and editor session used to construct the controls' edit closures. */
+  origin?: { path: string; source: string; revision: string; node?: number[] };
   // Short kind label shown first: Heading, Paragraph, Link, Component…
   kind: string;
   controls: EditBarControl[];

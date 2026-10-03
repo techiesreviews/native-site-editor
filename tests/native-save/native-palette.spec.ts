@@ -314,3 +314,31 @@ test("session expiry disposes palette listeners before editor remount", async ({
   await expect(palette(page)).toHaveCount(1);
   expect(errors).toEqual([]);
 });
+
+
+test("searching again after a source edit cannot bless old edit bar closures", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await frame.locator("section.filler h2").click();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
+  await search(page).fill("duplicate");
+  const changed = await page.evaluate(async () => {
+    const modulePath = "/src/components/monaco.ts";
+    const { monaco } = await import(modulePath);
+    const model = monaco.editor.getModels().find((model: { getValue(): string }) => model.getValue().includes('class="filler"'));
+    if (!model) throw new Error("Page source model missing");
+    const source = "<!-- source shifted before existing controls refreshed -->\n" + model.getValue();
+    model.setValue(source);
+    const input = document.querySelector<HTMLInputElement>(".command-palette__input")!;
+    // Rebuild commands and execute in the same task, before preview/edit-bar refresh.
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    return source;
+  });
+  await expect(page.locator("#status")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  await expect.poll(() => editorText(page)).toBe(changed);
+  await expect(frame.locator("section.filler")).toHaveCount(1);
+});

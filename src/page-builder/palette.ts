@@ -143,6 +143,15 @@ function barButton(label: string): HTMLButtonElement | undefined {
     buttons.find((item) => item.title === label || item.title.startsWith(`${label}:`) || item.textContent === label);
 }
 
+/** Controls retain the source revision from their construction, even after a new search. */
+function modelOriginCurrent(deps: EditorPaletteDeps, model: EditBarModel): boolean {
+  const origin = model.origin;
+  const selection = deps.selection();
+  return Boolean(origin && selection && deps.currentPath() === origin.path && selection.path === origin.path &&
+    deps.revision?.() === origin.revision && deps.source(origin.path) === origin.source &&
+    JSON.stringify(selection.node) === JSON.stringify(origin.node));
+}
+
 function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
@@ -151,7 +160,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const source = deps.source(selection.path);
   const identity = JSON.stringify(selection);
   const guard = (run: () => void | Promise<void>) => guardCommand(run,
-    () => deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
+    () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
     () => deps.announce("The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
@@ -416,7 +425,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       // Ask agent with what was typed, about the selected element.
       const model = deps.editBar();
       const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
-      if (!prompt || text.length < 3) return [];
+      if (!model || !prompt || text.length < 3) return [];
       const revision = deps.revision?.();
       const selection = deps.selection();
       const source = selection && deps.source(selection.path);
@@ -430,7 +439,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
         run: guardCommand(async () => {
           const problem = await prompt.onSend(text);
           if (problem) deps.onError(new Error(problem));
-        }, () => deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+        }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
         () => deps.announce("The selection changed. Reopen the command palette and try again.")),
       }];
     },

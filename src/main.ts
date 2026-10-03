@@ -1413,7 +1413,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
+  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
   nativeEditBarModel = model;
   preview.showEditBar(model, rect);
 }
@@ -1440,6 +1440,10 @@ function applyNativeChange(path: string, source: string, edits: { start: number;
   const preview = nativePreview;
   const editor = editorModule;
   if (!preview || !editor) return false;
+  if (nativeSources()[path] !== source) {
+    announce("The source changed. Select the element again and try again.");
+    return false;
+  }
   preview.selectAfterUpdate(next ? { path, node: next } : undefined);
   try {
     editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
