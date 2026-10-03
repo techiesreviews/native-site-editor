@@ -18,7 +18,8 @@ function harness() {
     source: (path: string) => records.get(path)?.content, assetVersion: (path: string) => records.get(path)?.sourceSha,
     entry: async () => undefined, mounted: () => false,
     prepareSources: () => ({ apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }),
-    history: (u: typeof undo, r: typeof redo) => { undo = u; redo = r; }, refresh: () => {}, announce: () => {} };
+    modelState: () => ({ isCurrent: () => true }), historyCurrent: () => true,
+    history: (u: typeof undo, r: typeof redo) => { undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} };
   const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"images":{}}']]), moves: [], deletes: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
   return { host, batch, records, bytes, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
 }
@@ -79,4 +80,34 @@ test("rollback preserves a newer mounted source when its owned undo refuses", as
   await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /store failure/);
   assert.equal(source, "external"); assert.equal(h.records.get("index.html")?.content, "external");
   assert.equal(h.records.size, 1); assert.equal(h.bytes.map.size, 0);
+});
+
+test("an affected file mounted during snapshot rejects before any writes", async () => {
+  const h = harness(); let mounted = false;
+  h.host.mounted = () => mounted;
+  h.host.modelState = () => { const original = mounted; return { isCurrent: () => mounted === original }; };
+  h.host.entry = async () => { mounted = true; return undefined; };
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /files changed/);
+  assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);
+});
+test("newly mounted or changed cached affected models refuse both Undo and Redo", async () => {
+  const h = harness(); let identity = 1, mounted = false;
+  h.host.mounted = () => mounted;
+  h.host.modelState = () => { const captured = identity; return { isCurrent: () => identity === captured }; };
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  mounted = true; assert.equal(h.undo(), false); assert.equal(h.records.size, 2);
+  mounted = false; assert.equal(h.undo(), true); assert.equal(h.records.size, 0);
+  identity++; assert.equal(await h.redo(), false); assert.equal(h.records.size, 0);
+});
+test("an initiating history host unmounted during preparation refuses all writes", async () => {
+  const h = harness(); let hostCurrent = true;
+  h.host.historyCurrent = () => hostCurrent;
+  h.host.entry = async () => { hostCurrent = false; return undefined; };
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /files changed/);
+  assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);
+});
+test("refused history registration rolls back exact own records and newly staged bytes", async () => {
+  const h = harness(); h.host.history = () => false;
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /initiating editor changed/);
+  assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);
 });

@@ -367,6 +367,24 @@ export function forgetDraftModel(scope: DraftScope, path: string) {
   drafts.delete(key);
   return true;
 }
+/** Read-only proof of mounted and cached models for one originating scope/path. */
+export function captureFileModelState(scope: DraftScope, path: string) {
+  const key = draftKey(scope, path), editor = mounted.get(path), cached = drafts.get(key);
+  const model = editor?.model ?? cached?.model;
+  const session = editor?.session;
+  const version = model?.getAlternativeVersionId(), source = model?.getValue();
+  return { isCurrent: () => mounted.get(path) === editor && drafts.get(key) === cached &&
+    (!editor || editor.session === session) && (!model || !model.isDisposed() &&
+      model.getAlternativeVersionId() === version && model.getValue() === source) };
+}
+/** The history journal must stay attached to its initiating mounted editor/session. */
+export function captureHistoryHost(path: string) {
+  const editor = mounted.get(path);
+  if (!editor || editor.readOnly) return undefined;
+  const model = editor.model, session = editor.session;
+  return { isCurrent: () => mounted.get(path) === editor && editor.model === model &&
+    editor.session === session && !editor.readOnly && !model.isDisposed() };
+}
 export function getMountedSource(path: string) {
   return mounted.get(path)?.model.getValue();
 }

@@ -2489,12 +2489,14 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
     applyBatch: async batch => {
       const editor = editorModule;
       if (!editor || !currentPath) throw new Error("Open a page before changing images.");
-      const historyPath = currentPath;
+      const historyPath = currentPath, historyHost = editor.captureHistoryHost(currentPath);
+      if (!historyHost) throw new Error("Open an editable page before changing images.");
       await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
         scope, store: draftStore(), bytes: uploadBytes(), assertLive,
         paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
         assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
         entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
+        modelState: path => editor.captureFileModelState(scope, path), historyCurrent: historyHost.isCurrent,
         mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
         history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
         refresh: () => { for (const path of batch.edits.keys()) editor.forgetDraftModel(scope, path); afterFileChanges(); updateNativePreviewSources(); },

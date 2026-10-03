@@ -15,7 +15,9 @@ export interface MediaDraftHost {
   entry(path: string): Promise<MovableFile | undefined>;
   mounted(path: string): boolean;
   prepareSources(edits: { path: string; expectedSource: string; text: string }[]): SourceReceipt | undefined;
-  history(undo: () => boolean, redo: () => boolean | Promise<boolean>): void;
+  modelState(path: string): { isCurrent(): boolean };
+  historyCurrent(): boolean;
+  history(undo: () => boolean, redo: () => boolean | Promise<boolean>): boolean;
   refresh(): void;
   announce(message: string): void;
 }
@@ -24,6 +26,8 @@ interface State {
   after: Map<string, SavedDraft | undefined>;
   entries: Map<string, MovableFile | undefined>;
   sources: SourceReceipt;
+  modelStates: Map<string, { isCurrent(): boolean }>;
+  mountedStates: Map<string, boolean>;
   staged: Map<string, { sha: string; blob: Blob }>;
   ownedKeys: Set<string>;
   releases: (() => void)[];
@@ -48,6 +52,8 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       await host.bytes.delete(key);
     }
   };
+  const modelsCurrent = (state: State) => [...state.modelStates].every(([path, proof]) => proof.isCurrent() && host.mounted(path) === state.mountedStates.get(path));
+  const captureModels = (state: State) => { state.modelStates = new Map([...state.before.keys()].map(path => [path, host.modelState(path)])); };
   const capture = (records: Map<string, SavedDraft | undefined>) => new Map([...records.keys()].map(path => [path, host.store.get(scope, path)]));
   const restoreOwn = (expected: Map<string, SavedDraft | undefined>, desired: Map<string, SavedDraft | undefined>) => {
     for (const [path, record] of desired) if (host.store.get(scope, path) === expected.get(path)) write(path, record);
@@ -66,12 +72,12 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       });
       const sources = host.prepareSources(edits);
       if (!sources) throw new Error("The editor source changed while preparing image changes.");
-      const state: State = { before, after: new Map(), entries: new Map(), sources, staged: new Map(), ownedKeys: new Set(), releases: [], committed: false };
+      const state: State = { mountedStates: new Map([...before.keys()].map(path => [path, host.mounted(path)])), modelStates: new Map([...before.keys()].map(path => [path, host.modelState(path)])), before, after: new Map(), entries: new Map(), sources, staged: new Map(), ownedKeys: new Set(), releases: [], committed: false };
       for (const path of before.keys()) {
         host.assertLive();
         state.entries.set(path, await host.entry(path));
         host.assertLive();
-        if (!unchanged(before) || !sources.isCurrent()) throw new Error("The files changed while preparing image changes.");
+        if (!unchanged(before) || !sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed while preparing image changes.");
       }
       return state;
     },
@@ -91,7 +97,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
     },
     commit(batch, state) {
       host.assertLive();
-      if (!unchanged(state.before) || !state.sources.isCurrent()) throw new Error("The files changed before image changes could be applied.");
+      if (!unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed before image changes could be applied.");
       const planned = new Map(state.before);
       const local: DraftAccess = { get: (_, path) => planned.get(path), save: record => { planned.set(record.path, record); return true; }, remove: (_, path) => { planned.set(path, undefined); return true; } };
       for (const move of batch.moves) {
@@ -129,7 +135,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         try {
           host.assertLive();
           const expected = applied ? state.after : state.before;
-          if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent()) return false;
+          if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) return false;
           const desired = undo ? state.before : state.after;
           if (!(undo ? state.sources.undo() : state.sources.redo())) return false;
           const writes = capture(expected);
@@ -148,20 +154,21 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           if (undo) state.before = capture(desired); else state.after = capture(desired);
           applied = !undo;
           host.refresh();
+          captureModels(state);
           return true;
         } catch (error) { host.announce(error instanceof Error ? error.message : "The image history action could not be applied."); return false; }
       };
-      host.history(() => moveHistory(true), async () => {
+      const registered = host.history(() => moveHistory(true), async () => {
         const restaged = { ...state, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
         try {
           host.assertLive();
-          if (applied || !unchanged(state.before) || !state.sources.isCurrent()) return false;
+          if (applied || !unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) return false;
           for (const upload of state.staged.values()) {
             const key = uploadKey(scope, upload.sha);
             restaged.releases.push(holdUploadKey(key));
             const existing = await host.bytes.get(key);
             host.assertLive();
-            if (!unchanged(state.before) || !state.sources.isCurrent()) throw new Error("The files changed while restoring image bytes.");
+            if (!unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed while restoring image bytes.");
             if (!existing) { restaged.ownedKeys.add(key); await host.bytes.put(key, upload.blob); }
             host.assertLive();
           }
@@ -174,7 +181,18 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           return false;
         } finally { release(restaged); }
       });
+      if (!registered || !host.historyCurrent()) {
+        state.committed = false;
+        const restored = state.sources.undo();
+        const desired = new Map(state.before);
+        for (const [path] of batch.edits) if (host.mounted(path)) {
+          if (restored) state.after.set(path, host.store.get(scope, path)); else desired.delete(path);
+        }
+        restoreOwn(state.after, desired);
+        throw new Error("The initiating editor changed; image changes were rolled back.");
+      }
       host.refresh();
+      captureModels(state);
     },
     async rollback(_batch, state) { if (!state.committed) await cleanup(state); },
   };
