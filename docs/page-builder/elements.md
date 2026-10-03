@@ -126,3 +126,27 @@ inline declarations while writing their replacement class rules. That migration
 must share one guarded Undo/Redo operation and must preserve unrelated inline
 properties. This leaf keeps the catalogue unchanged and does not claim to fix the
 Style host contract.
+
+## Native attribute field planner (host wiring pending)
+
+`locateNativeFieldElement(source, tag)` captures an exact parsed start tag and the
+full source snapshot. `nativeElementFields(source, tag)` exposes video source,
+poster and title; iframe source and title; form action and method; and native
+control name and accessible label. Submit-capable buttons and submit/image inputs
+also expose `formaction`. Foreign and inert content is excluded. Visible label
+captions are not edited by this planner.
+
+`nativeElementAttributeEdits(source, located, patch)` validates every property
+before returning one start-tag edit and `expectedSource`. Unknown properties,
+invalid methods, duplicate patched attributes, or a changed source refuse the
+whole patch. Null removes an attribute. Existing custom method values remain
+visible as a disabled current option; reading a page never resets them.
+
+Values decode HTML entities once when read and escape raw values once when written.
+URLs allow relative and HTTP(S) addresses; iframe source additionally permits
+`about:blank`, and form actions permit `mailto:` and `tel:`. Protocol checks reject
+control characters and executable schemes, including entity spellings, without
+rewriting emitted URL values. Other source bytes, including Unicode whitespace and
+slashes belonging to unquoted attribute values, remain intact. The host must
+capture selection, check `expectedSource`, and apply this edit through its existing
+single Undo transaction. This pure leaf does not add a panel or backend.

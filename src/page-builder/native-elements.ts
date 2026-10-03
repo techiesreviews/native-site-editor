@@ -19,10 +19,20 @@ export interface NativeElementOptions {
   type?: "text" | "email" | "tel" | "number" | "date";
 }
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+/** Validate a raw attribute value without changing the value written to HTML. */
+export function nativeElementUrlProblem(raw: string, allowed: readonly string[] = ["http", "https", "mailto", "tel", "about:blank"]): string | undefined {
+  const decoded = decodeHtmlEntities(raw, true);
+  if (/[\u0000-\u001f\u007f]/.test(decoded)) return "URLs cannot contain control characters.";
+  const normalized = decoded.replace(/ /g, "");
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(normalized)?.[1].toLowerCase();
+  if (!scheme || allowed.includes(scheme)) return undefined;
+  if (normalized.toLowerCase() === "about:blank" && allowed.includes("about:blank")) return undefined;
+  return "Use a relative URL or an HTTP(S) URL.";
+}
 function url(value: string) {
   const decoded = decodeHtmlEntities(value, true);
-  const normalized = decoded.replace(/[\u0000-\u0020\u007f]/g, "");
-  if (/^[a-z][a-z0-9+.-]*:/i.test(normalized) && !/^(?:https?:|mailto:|tel:|about:blank$)/i.test(normalized)) throw new Error("Use a relative URL or an HTTP(S) URL.");
+  const problem = nativeElementUrlProblem(value);
+  if (problem) throw new Error(problem);
   return escape(decoded);
 }
 export const nativeElementChoices: readonly AddChoice[] = [
