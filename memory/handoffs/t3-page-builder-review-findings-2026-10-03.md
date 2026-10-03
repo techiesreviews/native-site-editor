@@ -84,3 +84,60 @@ Two further defects were confirmed while checking the final host boundary:
 - P1, `main.ts:mountComponentTools.createFiles/removeFiles`: creation captures scope A, awaits a path lookup, and may save after switching to B because it lacks generation/scope checks. Subsequent cleanup uses current scope B and can remove its same-path draft. This control flow was statically confirmed. Use a creation receipt bound to the original scope and exact draft identities, verify after every asynchronous lookup, and refuse lookup failures. Cleanup must only reverse files created by that operation.
 
 Assigned components leaf contract/tests to `grunt_components_current`, root host adapter/regression to the exclusive `grunt_workflow` integrator. No push is authorized until these fixes are reviewed and verified.
+
+Both Make defects are now closed: leaf `0c71ed3` plus root `36b6303` passed Astra review, 458 root units and 56 combined browser checks. The reviewed checkpoint was pushed as `e32ad1f` and deployed preview-only after fresh starter screenshots.
+
+## Media review — `e878467`
+
+Astra held integration for these reproduced P2 defects:
+
+1. `media-references.ts` misses valid `image-set("/images/a.png" 1x)` and escaped `u\72l(/images/a.png)`; Chromium accepts both. Usage is empty, rename misses references, and Delete unused can offer a used image. Parse string image candidates and escaped identifiers; verify usage/rename/unused refusal.
+2. The shared HTML source parser accepts `</scriptish>` as the end of script raw text. A fake image string after that prefix is then rewritten. Require a real closing-name delimiter in shared parser and the media style boundary matcher.
+3. Optimization reads image A, then captures the current version B at Add time after the asset changes. Its final guard accepts B while importing encoded A. Bind a version receipt to blob/preview acquisition and carry it through the import request; refuse changed versions.
+4. Recovered dirty host picker compares only the opening image tag. Deleting one of two identical images lets the next occupy its source index and pass the guard. Bind the original complete source and context, checking again after file restoration awaits.
+
+The batch snapshot/guard/stage/guard/synchronous-commit ordering, metadata preservation, escaping and worker cancellation passed review. Atomic host adapter, original-scope rollback/byte ownership, one Undo and mutation browser verification are still required.
+
+
+## Wave 2 host follow-up review — 2026-10-03T11:03Z
+
+Independent GPT-6-Astra/medium review ran through local Codex CLI because managed slots stayed occupied by completed agents. Result: `.scratch/t3-continuation/review-wave2-cli-result.md`, log `.scratch/t3-continuation/review-wave2-cli.log`. Style host `decf9f1` approved, including guards, repeated edits, shared responsive controls and custom420px. Edit-bar identical-snapshot cache approved. Site host `fd9c8e3`, raw parser `86c9111`, media follow-up `3c16eaa` held for corrections:
+
+1. P1: `changeNativeUrl` computes old edits, awaits `_redirects`, then captures operation guards too late. Carry original scope/epoch/full input snapshots through each await; no stale source overwrite or old move into new workspace.
+2. P2: site image/favicon upload can leave origin draft/bytes after scope switch, then refresh current workspace. Original-scope owned receipt/cleanup and no current refresh are required. Root atomic media adapter remains unimplemented.
+3. P2: raw-text closing delimiter uses JS whitespace (`\\s`) including NBSP/VT. Accept HTML whitespace only (`[\\t\\n\\f\\r />]`) in shared parser and media style matcher.
+4. P2: escaped CSS URL function identifier consumes one whitespace code unit and misses CRLF as one escape terminator. Preserve source offsets; include usage/rename/unused refusal regressions.
+5. P2: Effects post-operation `openAfter` can become stale, then caller mutates current stylesheet sets and selects old node. Revalidate original scope/epoch and retain selection only if it has not changed.
+
+Assigned root host/parser owner `grunt_workflow`; that worker now additionally owns only media-references/tests leaf corrections in sol-media. Original dirty shared media files remain excluded. Do not describe all held slices as approved until follow-up review.
+
+
+## Collections leaf review — 2026-10-03T11:09Z
+
+Independent Astra/medium CLI read all eight files of `2eb563f`, held approval. Result `.scratch/t3-continuation/review-collections-cli-result.md`; source probes confirmed five defects, custom-field path was confirmed from implementation:
+
+1. P1: bindings in script attributes remain allowed (`script[src={image}]` can create executable remote scripts). Forbid script bindings including empty collections.
+2. P1: URL safety omits object[data], accepting data:text/html. Validate all relevant native URL contexts or forbid active-resource bindings.
+3. P2: absent field named constructor reads inherited Object.prototype constructor and crashes substitution. Own-property reads only for substitution/conditions/sort.
+4. P2: authoring template closing tag with extra attributes is accepted; validate complete template shell, not only inner markup.
+5. P2: New custom field name accepts built-in title, replacing the page title; reject reserved names at this entry.
+6. P2: date fallback selects first time element rather than first time[datetime].
+
+Assigned original collections worker. Host automatic rebake/history still pending. That worker also exclusively owns code-editor redoable history-action extension and tests in its worktree; root main host remains exclusively with workflow worker. No leaf integration until fixes are independently reviewed.
+
+
+## Native elements and media host final review — 2026-10-03T11:39Z
+
+- Astra held elements e745e58 for six reproduced cases: complete HTML attribute entity decoding for URLs, fake href/sandbox/form attributes inside quotes, refresh-meta entity sanitization/index mismatch, transparent phrasing/interactive browser repairs, indentation changing textarea/pre contents, and native:* editor catalogue keys emitted as tags. Grunt corrected all as6220276 (28 focused/551 full units/types); independent final review now approves those corrections combined with the root shared attribute/parser fixes. Whole-document template/SVG restriction and URL-list rejection remain documented limits. Host insertion/slash/palette/Move integration is not complete.
+- Astra approves collections4fe4c5f quoted fake datetime fix, and generichistory roota6fc64e/e4cc9eb plus Add1a3748b. Collections auto rebake/host lifecycle remains pending.
+- Media hosta24c041 held for P1 newly mounted affected model after snapshot (receipt captured only initially mounted files; store may change while model remains old), plus P2 pure upload/metadata changing page during awaits loses history registration. Initial/Undo/Redo need complete model mounted/cache identity guards; bind history host before commit and handle registration false with exact-owned rollback. Root owner is fixing with a read-only model-state capture API and regression tests. Evidence585 units,17 media/history and41 Add/canvas/selector/palette browsers pass, but do not override reproduced review defects. Result `.scratch/t3-continuation/review-media-final-result.md`; reviewer session77742 finished and closed.
+
+
+## Final candidate review — 2026-10-03T11:50Z
+
+Astra independently approves settings67b8811/23a1f51. Mediaef41313 fixes previous newly mounted model and origin history host findings, but remains held for one P2: unconditional captureModels after host.refresh launders unrelated synchronous model changes. Probe observes unrelatedModelVersion2, undoAccepted true, remainingDrafts0. Preserve guards of models not changed by an owned source transition; only advance verified own transitions/cache eviction. Assigned exclusive root transaction/tests ownership to grunt_workflow; no release pending correction. Evidence589 units,19 media/history and18 settings browser passes does not override this finding. Reviewer CLI8782 finished/closed; result `.scratch/t3-continuation/review-release-result.md`.
+
+
+## Narrow fixes checkpoint — 2026-10-03T11:57Z
+
+Media proof P2 corrected asb32b18e; fifteen engine units and nineteen realMonaco/history browsers pass. Final narrow independent review active CLI83801. Realstarter browser found img-src policy blocked Blob objectURL thumbnails;5d81764 minimally adds blob: to production headers and test harness image directive only, with nine actual decode/media/transaction browser checks passing. No release approval claimed yet.
