@@ -202,3 +202,6 @@
   font-size: var(--type-base);
 }
 .pages-rename:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+#explorer-images { min-width: 0; min-height: 0; height: min(70vh, 700px); overflow: hidden; }
+.explorer-tabs { min-width: 0; }
+.explorer-tab { flex: 1; min-width: 0; padding-inline: 8px; }

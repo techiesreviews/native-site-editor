@@ -63,7 +63,7 @@ import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
-import { configureMediaPicker, openMediaPicker, closeMediaPicker } from "./page-builder/media-picker";
+import { configureMediaPicker, mountMediaLibrary, openMediaPicker, closeMediaPicker } from "./page-builder/media-picker";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext } from "./page-builder/media-workspace";
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
@@ -164,7 +164,6 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
-      <button type="button" id="media-library-toggle" class="topbar-add" title="Manage repository images">Images</button>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
         <div id="setup-checklist"></div>
@@ -176,11 +175,13 @@ function mountWorkspace() {
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
       <div class="explorer-settings"><button type="button" id="site-settings-toggle" class="icon-button" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button></div>
-      <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages or files" hidden>
+      <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, files or images" hidden>
         <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
         <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
+        <button type="button" id="explorer-tab-images" class="explorer-tab" role="tab" aria-controls="explorer-images" aria-selected="false" tabindex="-1">Images</button>
       </div>
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><div class="pages-settings" role="group" aria-label="Page"><button type="button" id="page-settings-toggle" class="text-button">Page settings</button><button type="button" id="navigation-settings-toggle" class="text-button">Navigation</button></div></div>
+      <div id="explorer-images" class="explorer-panel" aria-labelledby="explorer-tab-images" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
         <nav id="files" aria-label="Repository files"></nav>
@@ -218,9 +219,8 @@ function mountWorkspace() {
   const settingsPage = () => currentPath && nativeRouteForPath(currentPath) ? currentPath : nativeSite?.routes["/"];
   element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); });
   element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); });
+  disposeExplorerImages();
   configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
-  const showImages = () => { repositoryMenu?.close(); void openMediaPicker().catch(errorMessage); };
-  element("media-library-toggle").addEventListener("click", showImages);
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   mountSetupChecklist();
   repositorySelect = element<HTMLSelectElement>("repository");
@@ -2620,6 +2620,8 @@ function adoptNativeBaseSources(
 }
 
 function deactivateNative() {
+  disposeExplorerImages();
+  configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
   closeMediaPicker();
   nativeSite = undefined;
   updateExplorerTabs();
@@ -3624,6 +3626,7 @@ function renderFileTree() {
 
 // Draws the tree again when a change appeared, went, or was saved.
 function renderDraftFiles() {
+  requestExplorerImagesRefresh();
   if (snapshot && treeSignature(treeState()) !== drawnNewFiles) renderFileTree();
 }
 
@@ -3634,27 +3637,78 @@ function fileRow(path: string) {
 
 // The explorer's Pages | Files tabs: a native site shows both, Pages first
 // when the project loads; any other project shows only its files, no tabs.
-let explorerTab: "pages" | "files" = "pages";
+type ExplorerTab = "pages" | "files" | "images";
+const explorerTabNames: ExplorerTab[] = ["pages", "files", "images"];
+let explorerTab: ExplorerTab = "pages";
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
 
+let explorerImages: ReturnType<typeof mountMediaLibrary> | undefined;
+let explorerImagesScope = "", explorerImagesSignature = "", explorerImagesRefreshNeeded = false;
+let explorerImagesObserver: MutationObserver | undefined;
+function disposeExplorerImages() {
+  explorerImagesObserver?.disconnect(); explorerImagesObserver = undefined;
+  explorerImages?.dispose(); explorerImages = undefined;
+  explorerImagesScope = ""; explorerImagesSignature = ""; explorerImagesRefreshNeeded = false;
+}
+function imagesSignature() {
+  const scope = draftScope();
+  return JSON.stringify([generation, setupScope(), snapshot?.commit, scope ? draftStore().list(scope) : []]);
+}
+function ensureExplorerImages() {
+  if (!nativeSite || !snapshot || !draftScope()) return;
+  const scope = `${generation}:${setupScope()}`;
+  if (explorerImages && explorerImagesScope === scope) { requestExplorerImagesRefresh(); return; }
+  disposeExplorerImages(); explorerImagesScope = scope;
+  explorerImagesSignature = imagesSignature();
+  explorerImages = mountMediaLibrary(element("explorer-images"));
+}
+function requestExplorerImagesRefresh() {
+  if (!explorerImages) return;
+  if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
+  const signature = imagesSignature();
+  if (signature === explorerImagesSignature) return;
+  explorerImagesSignature = signature; explorerImagesRefreshNeeded = true;
+  queueMicrotask(flushExplorerImagesRefresh);
+}
+function flushExplorerImagesRefresh() {
+  const view = explorerImages;
+  if (!view || !explorerImagesRefreshNeeded) return;
+  if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
+  if (view.element.getAttribute("aria-busy") === "true") {
+    if (!explorerImagesObserver) {
+      explorerImagesObserver = new MutationObserver(() => {
+        if (view.element.getAttribute("aria-busy") === "true") return;
+        explorerImagesObserver?.disconnect(); explorerImagesObserver = undefined;
+        if (explorerImages === view) flushExplorerImagesRefresh();
+      });
+      explorerImagesObserver.observe(view.element, { attributes: true, attributeFilter: ["aria-busy"] });
+    }
+    return;
+  }
+  explorerImagesRefreshNeeded = false;
+  void view.refresh();
+}
+
 function mountExplorerTabs() {
-  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files") };
-  for (const [name, tab] of Object.entries(tabs) as ["pages" | "files", HTMLButtonElement][]) {
+  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
+  for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
     tab.addEventListener("click", () => selectExplorerTab(name));
     tab.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
-      const next = event.key === "Home" ? "pages" : event.key === "End" ? "files" : name === "pages" ? "files" : "pages";
+      const index = explorerTabNames.indexOf(name);
+      const next = event.key === "Home" ? "pages" : event.key === "End" ? "images" : explorerTabNames[(index + (event.key === "ArrowRight" ? 1 : -1) + 3) % 3];
       selectExplorerTab(next);
       tabs[next].focus();
     });
   }
 }
 
-function selectExplorerTab(name: "pages" | "files") {
+function selectExplorerTab(name: ExplorerTab) {
   explorerTab = name;
   updateExplorerTabs();
   if (name === "pages") renderPagesTree();
+  if (name === "images") ensureExplorerImages();
 }
 
 function updateExplorerTabs(reset = false) {
@@ -3664,7 +3718,7 @@ function updateExplorerTabs(reset = false) {
   const tab = native ? explorerTab : "files";
   element("explorer-tabs").hidden = !native;
   element("site-settings-toggle").hidden = !native;
-  for (const name of ["pages", "files"] as const) {
+  for (const name of explorerTabNames) {
     const button = element(`explorer-tab-${name}`);
     const panel = element(`explorer-${name}`);
     button.setAttribute("aria-selected", String(tab === name));
@@ -3674,7 +3728,7 @@ function updateExplorerTabs(reset = false) {
     if (native) panel.setAttribute("role", "tabpanel");
     else panel.removeAttribute("role");
   }
-  if (!native) pagesTree?.reset();
+  if (!native) { pagesTree?.reset(); disposeExplorerImages(); }
 }
 
 // The site's pages as a tree, from its routes (new drafts included); labels
@@ -4802,6 +4856,7 @@ function afterFileChanges() {
   updateAgentContext();
   updateCurrentPageLabel();
   resyncNativeSite();
+  requestExplorerImagesRefresh();
 }
 
 // Opens `path` after an operation, or the home page (else the folder summary)

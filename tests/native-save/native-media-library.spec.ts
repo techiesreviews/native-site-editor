@@ -5,10 +5,12 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await page.locator("#media-library-toggle").click();
-  await expect(page.getByRole("dialog", { name: "Images", exact: true })).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Images", exact: true })).toBeVisible();
 }
-const library = (page: Page) => page.getByRole("dialog", { name: "Images", exact: true });
+const library = (page: Page) => page.getByRole("region", { name: "Images", exact: true });
+async function closeLibrary(page: Page) { await page.getByRole("tab", { name: "Pages", exact: true }).click(); await page.keyboard.press("Escape"); }
 
 test("image library searches repository images and shows transitive page usage", async ({ page, baseURL }) => {
   await open(page, baseURL);
@@ -38,7 +40,7 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/garden-desk.svg");
   const renamed = await source();
   expect(renamed).toEqual(before.replaceAll("studio-desk.svg", "garden-desk.svg"));
-  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await closeLibrary(page);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/studio-desk.svg");
   await expect.poll(() => storedDraft(page, "images/garden-desk.svg")).toBeUndefined();
@@ -60,7 +62,7 @@ test("delete keeps metadata and binary deletion together until Undo", async ({ p
   await panel.getByRole("button", { name: "Delete images", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
-  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await closeLibrary(page);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Restore me");
   await expect.poll(() => storedDraft(page, "images/studio-desk.svg")).toBeUndefined();
@@ -106,7 +108,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
     } });
     await openMediaPicker();
   }, { picker: "/src/page-builder/media-picker.ts", workspace: "/src/page-builder/media-workspace.ts" });
-  const panel = library(page);
+  const panel = page.getByRole("dialog", { name: "Images", exact: true });
   await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
@@ -134,7 +136,7 @@ test("cancelling optimisation aborts pending worker work and keeps Add disabled"
   await panel.getByRole("button", { name: "Cancel", exact: true }).click();
   release!();
   await expect(panel.getByRole("button", { name: "Add optimised copies", exact: true })).not.toBeVisible();
-  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await closeLibrary(page);
   await expect(panel).not.toBeVisible();
   expect(errors).toEqual([]);
 });
