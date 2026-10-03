@@ -94,6 +94,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   const assets = new Map<string, Promise<{ url: string; blob: Blob; width?: number; height?: number; version?: string }>>();
   let detailVersion = 0;
   let detailPath: string | undefined;
+  let pendingDetailFocus: { path: string; active: Element | null } | undefined;
   let optimisation: AbortController | undefined;
   let busy = false;
   let pendingTasks = 0;
@@ -145,7 +146,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     tell("An image change is in progress. Wait for it to finish before making another change.");
   }, { capture: true, signal: listeners.signal });
   dialog.addEventListener("keydown", event => {
-    if (!busy || event.target instanceof Element && canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (!busy || event.target instanceof Element && canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) && !(event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)) return;
     event.preventDefault(); event.stopImmediatePropagation();
     tell("An image change is in progress. Wait for it to finish before making another change.");
   }, { capture: true, signal: listeners.signal });
@@ -178,6 +179,10 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     ]);
     const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
     loadingLibrary = true;
+    if (sheet.dataset.mode === "delete") {
+      detailVersion++; sheet.hidden = true; delete sheet.dataset.mode;
+      tell("Repository images are refreshing. Reopen Delete after the refresh to check current references.");
+    }
     let next: MediaLibrary;
     try { next = await adapter.load(); }
     finally { if (request === refreshVersion) loadingLibrary = false; }
@@ -232,6 +237,9 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   }
   function draw() {
     if (!alive || !library) return;
+    const active = document.activeElement;
+    const card = active instanceof Element ? active.closest<HTMLElement>(".media-library__card") : null;
+    const browseFocus = active instanceof HTMLButtonElement ? { path: card?.dataset.path, label: active.getAttribute("aria-label"), chip: active.classList.contains("media-library__chip") ? active.textContent : undefined, usage: active.classList.contains("media-library__usage") } : undefined;
     observers.forEach((observer) => observer.disconnect()); observers.clear();
     chips.replaceChildren();
     const allTags = [...new Set(Object.values(library.metadata).flatMap((entry) => entry.tags))].sort();
@@ -284,10 +292,17 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       }, { root: modal ? browse : dialog, rootMargin: "200px" });
       observers.add(observer); observer.observe(card);
     }
+    setBusyControls();
+    if (browseFocus && !pendingDetailFocus && document.activeElement === document.body && !active?.isConnected) {
+      const replacement = [...dialog.querySelectorAll<HTMLButtonElement>(".media-library__grid button,.media-library__chip")].find(control => browseFocus.path ? control.closest<HTMLElement>(".media-library__card")?.dataset.path === browseFocus.path && (browseFocus.usage ? control.classList.contains("media-library__usage") : control.getAttribute("aria-label") === browseFocus.label) : browseFocus.chip !== undefined && control.classList.contains("media-library__chip") && control.textContent === browseFocus.chip);
+      if (replacement?.getClientRects().length) replacement.focus();
+    }
   }
   async function showDetail(path: string, focusUsage = false, background = false) {
     if (!alive) return;
     const initiatingFocus = document.activeElement;
+    if (!background) pendingDetailFocus = { path, active: initiatingFocus };
+    delete sheet.dataset.mode;
     optimisation?.abort();
     detailPath = path;
     const version = ++detailVersion;
@@ -330,24 +345,30 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       }), "button"));
     }
     setBusyControls();
-    if (!background && document.activeElement === initiatingFocus) {
+    const requestedFocus = background ? pendingDetailFocus?.path === path ? pendingDetailFocus.active : undefined : initiatingFocus;
+    if (requestedFocus !== undefined && (document.activeElement === requestedFocus || document.activeElement === document.body && (!requestedFocus?.isConnected || !requestedFocus.getClientRects().length))) {
       if (focusUsage) usageTitle.focus(); else sheet.querySelector<HTMLElement>("button")?.focus();
     }
+    if (pendingDetailFocus?.path === path) pendingDetailFocus = undefined;
   }
   function confirmDelete(paths: string[], unusedOnly = false) {
     if (!alive) return;
+    if (loadingLibrary) { tell("Repository images are refreshing. Wait for them to finish before deleting images."); return; }
     optimisation?.abort();
     detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
     if (!paths.length) { sheet.append(node("p", "", "None of the selected images are unused. References in components and CSS also count.")); return; }
+    sheet.dataset.mode = "delete";
+    const confirmationVersion = detailVersion;
     const pages = new Set(paths.flatMap((path) => library.usage[path]?.pages ?? []));
     sheet.append(node("h3", "", `Delete ${paths.length} ${paths.length === 1 ? "image" : "images"}?`), node("p", "", pages.size ? `Used on ${pages.size} pages. Their references will break if you delete these images.` : "These images have no page usage. Check any component and CSS references below."));
     for (const path of paths) sheet.append(node("p", "media-library__hint", `${path}${library.usage[path]?.files.length ? ` · Referenced by ${library.usage[path].files.join(", ")}` : " · No source references"}`));
-    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
+    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { if (confirmationVersion !== detailVersion || sheet.dataset.mode !== "delete") { tell("Image references changed. Reopen Delete to check current references."); return; } await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
   }
   function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     if (!alive) return;
     optimisation?.abort();
     detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
+    delete sheet.dataset.mode;
     const key = `native-site-editor:media-optimise:${library.key}`;
     let defaults = { ...DEFAULT_MEDIA_OPTIMISE };
     try { defaults = { ...defaults, ...JSON.parse(localStorage.getItem(key) ?? "{}") }; } catch { /* Defaults work without storage. */ }
@@ -416,11 +437,11 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const jump = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
     if (jump !== undefined) { event.preventDefault(); buttons[Math.max(0, Math.min(buttons.length - 1, at + jump))]?.focus(); }
   }, { signal: listeners.signal });
-  uploadInput.addEventListener("change", () => { const files = [...(uploadInput.files ?? [])]; uploadInput.value = ""; if (files.length && busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (files.length && library) showOptimise(files); }, { signal: listeners.signal });
+  uploadInput.addEventListener("change", () => { const files = [...(uploadInput.files ?? [])]; uploadInput.value = ""; if (files.length && busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (files.length && library) showOptimise(files); else if (files.length) tell("Repository images are loading. Wait for them to finish before uploading images."); }, { signal: listeners.signal });
   dialog.addEventListener("dragover", (event) => { if (event.dataTransfer?.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }, { signal: listeners.signal });
   dialog.addEventListener("drop", (event) => {
     if (!event.dataTransfer?.files.length) return; event.preventDefault();
-    if (busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (library) showOptimise([...event.dataTransfer.files]);
+    if (busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (library) showOptimise([...event.dataTransfer.files]); else tell("Repository images are loading. Wait for them to finish before uploading images.");
   }, { signal: listeners.signal });
   const ready = task(async () => { summary.textContent = "Reading repository images and references…"; await refresh(); if (options.files?.length && alive) showOptimise(options.files); }, false);
   return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };

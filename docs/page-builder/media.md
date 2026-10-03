@@ -173,3 +173,10 @@ controls with their query, folder, sort and selection intact. A compact image
 preview leaves the metadata heading and default alt field visible immediately;
 remaining metadata and file actions share the pane's single scroll area. The
 modal keeps its browsing tools and two-column layout.
+
+Refreshes restore a replaced focused thumbnail, usage button or tag chip by its
+image path or tag value. A keyboard detail request made while loading finishes
+with focus on Back to grid, provided focus has not moved elsewhere. Refreshes
+refuse new delete confirmations and invalidate existing confirmations so current
+usage must be reviewed before deleting. Detached confirmation controls cannot
+commit a delete after their reference snapshot has been invalidated.

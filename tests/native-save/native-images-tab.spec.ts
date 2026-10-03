@@ -236,7 +236,6 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect((box?.y ?? 900) + (box?.height ?? 900)).toBeLessThan(700);
     await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-    await pane(page).getByRole("button", { name: "Back to grid", exact: true }).focus();
     await expect(pane(page).getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
     await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-details-desktop-${colorScheme}.png` });
   });
@@ -264,4 +263,80 @@ test("compact details reveal metadata and return to the same browse filters", as
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).toBeChecked();
   await library.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).not.toBeChecked();
+});
+
+async function mountDelayedReferences(page: Page, baseURL: string | undefined) {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    let loads = 0, removed = 0;
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;right:0;top:60px;width:440px;height:600px;z-index:1000;background:var(--surface)";
+    document.body.append(host);
+    const view = createMediaLibraryView(host, {
+      async load() {
+        const fresh = ++loads > 1;
+        if (fresh) await new Promise<void>(resolve => { (window as any).releaseFocusLoad = resolve; });
+        return { key: "focus", items: [{ path: "images/a.svg", version: "A" }], metadata: { "images/a.svg": { alt: "", tags: ["portrait"] } }, usage: fresh ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: ["New reference"] } } : {} };
+      },
+      async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
+      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() { removed++; }, async rewrite() {}, async openPage() {},
+    });
+    Object.assign(window, { focusProbe: { refresh: () => { void view.refresh(); }, removed: () => removed, dispose: () => { view.dispose(); host.remove(); } } });
+    await view.ready;
+  });
+}
+test("refresh restores thumbnail, chip and usage focus and completes a keyboard detail request", async ({ page, baseURL }) => {
+  await mountDelayedReferences(page, baseURL);
+  const library = pane(page), thumb = library.getByRole("button", { name: "Details for images/a.svg", exact: true });
+  await page.evaluate(() => (window as any).focusProbe.refresh());
+  await expect(library).toHaveAttribute("aria-busy", "true");
+  await thumb.focus(); await page.keyboard.press("Enter");
+  await expect(library.locator(".media-library__sheet")).toContainText("Loading image");
+  await page.evaluate(() => (window as any).releaseFocusLoad());
+  const back = library.getByRole("button", { name: "Back to grid", exact: true });
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Enter"); await expect(thumb).toBeFocused();
+  for (const target of [thumb, library.getByRole("button", { name: "portrait", exact: true }), library.getByRole("button", { name: "Used on 1 pages", exact: true })]) {
+    await target.focus();
+    await page.evaluate(() => (window as any).focusProbe.refresh());
+    await expect(library).toHaveAttribute("aria-busy", "true");
+    await page.evaluate(() => (window as any).releaseFocusLoad());
+    await expect(library).not.toHaveAttribute("aria-busy", "true");
+    await expect(target).toBeFocused();
+  }
+  await thumb.focus(); await page.keyboard.press("Tab");
+  await expect(library.getByLabel("Select images/a.svg", { exact: true })).toBeFocused();
+  await page.evaluate(() => (window as any).focusProbe.refresh());
+  await thumb.focus(); await page.keyboard.press("Enter");
+  await page.locator("#explorer-toggle").focus();
+  await page.evaluate(() => (window as any).releaseFocusLoad());
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.locator("#explorer-toggle")).toBeFocused();
+  await page.evaluate(() => (window as any).focusProbe.dispose());
+});
+test("refresh refuses stale delete confirmations and requires fresh usage", async ({ page, baseURL }) => {
+  await mountDelayedReferences(page, baseURL);
+  const library = pane(page), thumb = library.getByRole("button", { name: "Details for images/a.svg", exact: true });
+  await thumb.click(); await expect(library.getByLabel("Default alt text", { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).focusProbe.refresh());
+  await library.getByRole("button", { name: "Delete image…", exact: true }).click();
+  await expect(library.locator(".media-library__message")).toContainText("Wait for them to finish before deleting");
+  await expect(library.getByRole("button", { name: "Delete images", exact: true })).toHaveCount(0);
+  await page.evaluate(() => (window as any).releaseFocusLoad());
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await library.getByRole("button", { name: "Delete image…", exact: true }).click();
+  await expect(library.locator(".media-library__sheet")).toContainText("Used on 1 pages");
+  await page.evaluate(() => {
+    (window as any).staleImageDelete = [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button => button.textContent === "Delete images");
+    (window as any).focusProbe.refresh();
+  });
+  await expect(library.getByRole("button", { name: "Delete images", exact: true })).toBeHidden();
+  await page.evaluate(() => (window as any).releaseFocusLoad());
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() => (window as any).staleImageDelete.click());
+  await expect(library.locator(".media-library__message")).toContainText("Reopen Delete");
+  expect(await page.evaluate(() => (window as any).focusProbe.removed())).toBe(0);
+  await page.evaluate(() => (window as any).focusProbe.dispose());
 });
