@@ -76,7 +76,7 @@ function cssUrls(text: string, add: (value: string, start: number, end: number, 
       }
     }
     if (/[a-z_\\-]/i.test(text[at])) {
-      const token = /^(?:[\w-]|\\(?:[\da-f]{1,6}\s?|[^\r\n\f]))+/i.exec(text.slice(at))?.[0];
+      const token = /^(?:[\w-]|\\(?:[\da-f]{1,6}(?:\r\n|[\t\n\r\f ])?|[^\r\n\f]))+/i.exec(text.slice(at))?.[0];
       if (!token) { at++; continue; }
       const name = cssDecode(token).toLowerCase();
       const after = whitespace(at + token.length);
@@ -95,7 +95,7 @@ function cssUrls(text: string, add: (value: string, start: number, end: number, 
         let end = begin;
         while (end < text.length && text[end] !== ")") { if (text[end] === "\\") end++; end++; }
         const raw = text.slice(begin, end), value = raw.trimEnd();
-        if (text[end] === ")" && value && !/[\s"'(]/.test(value.replace(/\\(?:[\da-f]{1,6}\s?|.)/gi, ""))) add(cssDecode(value), begin, begin + value.length, "");
+        if (text[end] === ")" && value && !/[\s"'(]/.test(value.replace(/\\(?:[\da-f]{1,6}(?:\r\n|[\t\n\r\f ])?|.)/gi, ""))) add(cssDecode(value), begin, begin + value.length, "");
         at = end + 1; continue;
       }
       at += token.length; continue;
@@ -159,7 +159,7 @@ export function scanMediaReferences(file: string, source: string): MediaReferenc
       cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote));
     }
     if (tag.name === "style") {
-      const closing = /<\/style(?=[\s/>])/i.exec(source.slice(tag.end));
+      const closing = /<\/style(?=[\t\n\f\r />])/i.exec(source.slice(tag.end));
       const end = closing ? tag.end + closing.index : -1;
       styleEnd = end >= 0 ? end + closing![0].length : source.length;
       if (end >= 0) cssUrls(source.slice(tag.end, end), (value, start, finish, quote) => add(value, tag.end + start, tag.end + finish, undefined, undefined, quote));

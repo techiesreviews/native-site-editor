@@ -131,7 +131,7 @@ test("used images cannot pass Delete unused and unread sources cannot be called 
   assert.equal(f.batches.length, 0);
 });
 test("Delete unused refuses image-set strings and escaped url references", async () => {
-  for (const css of ['.x{background:image-set("/images/unused.png" 1x)}', '.x{background:u\\72l(/images/unused.png)}']) {
+  for (const css of ['.x{background:image-set("/images/unused.png" 1x)}', '.x{background:u\\72l(/images/unused.png)}', '.x{background:u\\72\r\nl(/images/unused.png)}']) {
     const f = fixture(); f.text.set("styles/site.css", css); await f.host.load();
     await assert.rejects(f.host.remove(["images/unused.png"], true), /now referenced/);
     assert.equal(f.batches.length, 0); assert.equal(f.paths.has("images/unused.png"), true);

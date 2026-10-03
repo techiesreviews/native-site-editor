@@ -81,3 +81,19 @@ test("usage traverses nested components and cyclic CSS imports once per page", (
   assert.deepEqual(usage["images/a.png"].alts, ["Brand"]);
   assert.deepEqual(usage["images/unused.png"].files, []);
 });
+
+test("raw-text closing tags do not accept NBSP or vertical tab as HTML whitespace", () => {
+  for (const delimiter of ["\u00a0", "\v"]) {
+    const source = `<script>const fake = "</script${delimiter}><img src='/images/fake.png'>";</script><style>.x{content:"</style${delimiter}><img src='/images/fake.png'>";background:url(/images/a.png)}</style><img src="/images/real.png">`;
+    assert.deepEqual(scanMediaReferences("index.html", source).map(ref => ref.path), ["images/a.png", "images/real.png"]);
+    assert.equal(rewriteMediaReferences("index.html", source, "images/fake.png", "images/new.png"), source);
+    assert.ok(rewriteMediaReferences("index.html", source, "images/a.png", "images/new.png").includes("background:url(/images/new.png)"));
+  }
+});
+test("CSS hexadecimal function-name escapes consume CRLF as one whitespace pair", () => {
+  const source = '.x{background:u\\72\r\nl(/images/a.png?keep=1#fragment)}';
+  assert.deepEqual(scanMediaReferences("styles/site.css", source).map(ref => ref.path), ["images/a.png"]);
+  assert.equal(rewriteMediaReferences("styles/site.css", source, "images/a.png", "images/new.png"), source.replace("/images/a.png", "/images/new.png"));
+  const usage = mediaUsageIndex(["images/a.png"], { "index.html": '<link rel="stylesheet" href="/styles/site.css">', "styles/site.css": source }, ["index.html"]);
+  assert.deepEqual(usage["images/a.png"].pages, ["index.html"]);
+});
