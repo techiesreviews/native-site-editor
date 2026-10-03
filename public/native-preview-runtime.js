@@ -1588,6 +1588,11 @@
     if (!path) return;
     var link = nearestLinkHref(el);
     var cascade = matchingRules(el, true);
+    // Style panel defaults include properties that no author rule declares.
+    var panelComputed = getComputedStyle(el);
+    var panelProperties = "display flex-direction flex-wrap justify-content align-items gap grid-template-columns width min-width max-width height font-family font-size font-weight line-height letter-spacing text-align color background-color background-image border-width border-style border-color border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius opacity box-shadow transition transform transform-origin margin-top margin-right margin-bottom margin-left padding-top padding-right padding-bottom padding-left".split(" ");
+    cascade.computed = cascade.computed || {};
+    panelProperties.forEach(function (property) { cascade.computed[property] = panelComputed.getPropertyValue(property); });
     var payload = {
       path: path,
       tag: el.localName,

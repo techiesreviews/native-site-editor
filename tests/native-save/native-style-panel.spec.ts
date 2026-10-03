@@ -56,8 +56,9 @@ test("tablet and hover changes write media and state rules; hide stays scoped", 
   await panel(page).getByRole("combobox", { name: "Style state" }).selectOption("");
   await panel(page).getByRole("button", { name: "Hide on this size" }).click();
   await expect.poll(() => css(page)).toMatch(/@media \(max-width: 768px\) \{\s*\.lead \{[^}]*display: none;/s);
-  await expect(frame(page).locator(".lead")).toBeVisible();
+  await expect(frame(page).locator(".lead")).toBeHidden();
   await panel(page).getByRole("combobox", { name: "Style breakpoint" }).selectOption("all");
+  await expect(frame(page).locator(".lead")).toBeVisible();
   await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).toHaveValue("");
 });
 
@@ -161,4 +162,22 @@ test("focused selects and presets accept repeated own edits", async ({ page, bas
     await expect.poll(() => css(page)).toContain(`color: var(${name});`);
     await expect(preset).toBeFocused();
   }
+});
+
+test("canvas and Style panel share breakpoint scope without snapping a custom width", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  const width = page.getByRole("textbox", { name: "Frame width in pixels" });
+  const breakpoint = panel(page).getByRole("combobox", { name: "Style breakpoint" });
+  await width.fill("420");
+  await width.press("Enter");
+  await expect(breakpoint).toHaveValue("tablet");
+  await expect(width).toHaveValue("420");
+  await expect(page.locator(".canvas-stage")).toHaveCSS("width", "420px");
+  await fill(page, "Padding top", "19px");
+  await expect.poll(() => css(page)).toMatch(/@media \(max-width: 768px\) \{\s*\.lead \{\s*padding-top: 19px;/);
+  await breakpoint.selectOption("mobile");
+  await expect(width).toHaveValue("390");
+  await expect(page.getByRole("button", { name: "Mobile, 390 px" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Desktop, fills the canvas" }).click();
+  await expect(breakpoint).toHaveValue("all");
 });

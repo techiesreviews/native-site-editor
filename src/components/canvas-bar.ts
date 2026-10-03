@@ -8,6 +8,8 @@
 // The width and the toggle last for the browser session. Nothing here
 // touches the site's files.
 
+import { setCurrentBreakpoint, subscribeBreakpoint } from "../page-builder/breakpoints";
+
 import desktop from "@phosphor-icons/core/regular/desktop.svg?raw";
 import tablet from "@phosphor-icons/core/regular/device-tablet.svg?raw";
 import mobile from "@phosphor-icons/core/regular/device-mobile.svg?raw";
@@ -118,6 +120,7 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   let width: CanvasWidth = readStoredWidth(remembered(WIDTH_KEY));
   let spacing = remembered(SPACING_KEY) === "on";
   let dragging = false;
+  let fromCanvas = false;
 
   // The canvas's room for a frame: its width less the gutters a framed width keeps.
   function available() {
@@ -142,6 +145,9 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   }
   function setWidth(next: CanvasWidth, store: boolean) {
     width = next;
+    fromCanvas = true;
+    try { setCurrentBreakpoint(next !== "fill" && next <= 390 ? "mobile" : next !== "fill" && next <= 768 ? "tablet" : "all"); }
+    finally { fromCanvas = false; }
     const framed = next !== "fill";
     frameHost.classList.toggle("is-framed", framed);
     stage.style.width = framed ? `${next}px` : "";
@@ -262,6 +268,9 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   }
   crumbsNav.addEventListener("scroll", () => crumbsNav.classList.toggle("is-clipped", crumbsNav.scrollLeft > 1));
 
+  const unsubscribeBreakpoint = subscribeBreakpoint((value) => {
+    if (!fromCanvas) setWidth(widthFor(value === "all" ? "desktop" : value), true);
+  });
   setWidth(width, false);
   spacingButton.setAttribute("aria-pressed", String(spacing));
   setCrumbs([]);
@@ -273,6 +282,7 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
     spacing: () => spacing,
     destroy() {
       observer.disconnect();
+      unsubscribeBreakpoint();
     },
   };
 }

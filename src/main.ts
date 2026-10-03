@@ -58,6 +58,9 @@ import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
+import { createStylePanel, type StylePanelContext } from "./components/style-panel";
+import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
+import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
@@ -107,6 +110,7 @@ function loadEditorModule() {
     },
   ));
 }
+let stylePanel: ReturnType<typeof createStylePanel> | undefined;
 let disposeEditor: (() => void) | undefined;
 let agentMenu: ReturnType<typeof createAgentMenu> | undefined;
 let activeFileContext: EditorContext["file"] = null;
@@ -374,6 +378,51 @@ function mountWorkspace() {
     onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
     announce: (text) => { element("status").textContent = text; },
   });
+  stylePanel?.dispose();
+  const staleStyle = () => status("The style target or source changed. Select it again and make a fresh edit.");
+  const styleContextMatches = (expected: StylePanelContext | undefined, current: StylePanelContext | undefined) =>
+    !!expected && !!current && expected.key === current.key &&
+    expected.target?.path === current.target?.path && expected.target?.selector === current.target?.selector && expected.target?.start === current.target?.start &&
+    Object.keys(expected.files).length === Object.keys(current.files).length &&
+    Object.entries(expected.files).every(([path, source]) => current.files[path] === source);
+  stylePanel = createStylePanel({
+    context: nativeStylePanelContext,
+    write: async (properties, breakpoint, state, expected) => {
+      const context = nativeStylePanelContext(), epoch = generation;
+      const target = context?.target, source = target && context?.files[target.path];
+      if (versionView || !target || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); return; }
+      if (!(await openSecondary(target.path))) return;
+      if (generation !== epoch || versionView || !styleContextMatches(context, nativeStylePanelContext())) { staleStyle(); return; }
+      const next = writeCssProperties(source, { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state, expectedSource: source }, properties);
+      const edit = minimalTextEdit(source, next);
+      if (edit) {
+        applyNativeChange(target.path, source, [edit], undefined, "Style updated");
+        editorModule?.revealRange(target.path, edit.start, edit.start + edit.text.length);
+      }
+    },
+    variable: async (variable, value, expected) => {
+      const context = nativeStylePanelContext(), epoch = generation, source = context?.files[variable.path];
+      if (versionView || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); return; }
+      if (!(await openSecondary(variable.path))) return;
+      if (generation !== epoch || versionView || !styleContextMatches(context, nativeStylePanelContext())) { staleStyle(); return; }
+      const next = writeCssProperties(source, { selector: variable.selector, baseStart: variable.ruleStart, expectedSource: source }, { [variable.name]: value });
+      const edit = minimalTextEdit(source, next);
+      if (edit) applyNativeChange(variable.path, source, [edit], undefined, "Global style updated");
+    },
+    addClass: async (name, expected) => {
+      if (!name || /[\s\x00-\x1f]/.test(name)) throw new Error("Enter one class name without spaces.");
+      const selected = lastNativeSelection, context = nativeStylePanelContext();
+      if (!selected?.node || versionView || currentPath !== selected.path || !styleContextMatches(expected, context)) { staleStyle(); return; }
+      const source = context!.files[selected.path];
+      const range = locateNativeElementRange(source, selected.node);
+      if (!range) return;
+      const edit = setAttributeEdit(source, range.tag, "class", name);
+      if (edit) applyNativeChange(selected.path, source, [edit], selected.node, "Class added");
+    },
+    history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
+    error: (message) => errorMessage(new Error(message)),
+  });
+  element("main").append(stylePanel.root);
   componentTools?.destroy();
   componentTools = mountComponentTools();
   mountPalette();
@@ -697,6 +746,7 @@ function syncLinkedStyles(path: string, content: string) {
   }
   const previous = linkedStyleSourceByPath.get(path);
   linkedStyleSourceByPath.set(path, content);
+  if (previous !== content) stylePanel?.update();
   if (previous !== content && linkedStyle && (path === linkedStyle.page || path === secondaryPath)) void refreshLinkedStyleRules();
 }
 // A rule in the style panel: its range in its file and how the cascade treats it.
@@ -1023,6 +1073,23 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   const source = nativeSources()[selection.path];
   const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
   editorModule?.markElement(selection.path, tag, reveal);
+}
+
+// The Style panel reads the same source and matched rules as the CSS pane.
+function nativeStylePanelContext(): StylePanelContext | undefined {
+  if (!nativeSite) return undefined;
+  const selection = lastNativeSelection, sources = nativeSources();
+  const source = selection ? sources[selection.path] : undefined;
+  const tag = selection?.node && source !== undefined ? locateNativeElement(source, selection.node) : undefined;
+  const className = tag && source !== undefined ? startTagAttribute(source, tag, "class")?.value.trim().split(/\s+/)[0] : undefined;
+  const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
+    ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
+  return {
+    key: selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}:${className ?? ""}` : `${generation}:${setupScope()}`,
+    tag: selection?.tag ?? "", className,
+    target: className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined,
+    files: sources, computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
+  };
 }
 
 // The selected element when it is a link, else the nearest ancestor link
@@ -1709,6 +1776,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 async function selectNativeSource(selection: NativePreviewSelection) {
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
+  stylePanel?.update();
   // Agents see the selection (get_selection).
   if (reveal) updateAgentContext();
   pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
