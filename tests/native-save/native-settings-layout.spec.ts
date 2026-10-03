@@ -45,7 +45,7 @@ test("keyboard categories and scrolling leave the footer visible; Escape restore
   await general.press("ArrowDown");
   await expect(panel.getByRole("tab", { name: "Search", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("End");
-  await expect(panel.getByRole("tab", { name: "Social", exact: true })).toBeFocused();
+  await expect(panel.getByRole("tab", { name: "Fields", exact: true })).toBeFocused();
   const footer = panel.locator(".site-settings__footer");
   const before = await footer.boundingBox();
   await panel.locator(".site-settings__content").evaluate((element) => { element.scrollTop = element.scrollHeight; });

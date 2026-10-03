@@ -83,7 +83,9 @@ import { nativeImageAsset, singleBackgroundAsset } from "./page-builder/style-im
 import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
-import { isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
+import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
+import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { mountCollectionsPanel } from "./components/collections-panel";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { fetchWithReadRetry } from "./read-retry";
@@ -2303,15 +2305,33 @@ function nativeSettingsController() {
   const stale = () => scope !== setupScope() || epoch !== generation;
   const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
   return createSiteSettings({
-    async applyPage(path, fields) {
+    async applyPage(path, fields, pageFields) {
       if (stale() || sourcesChanged()) return changed;
       const source = nativeEffectiveSource(path);
       if (source === undefined || !nativeRouteForPath(path)) return "The page could not be read.";
+      // General, Search, Social and staged Fields all apply to one candidate
+      // from the source captured with this dialog: one write, one Undo.
       let next = source;
-      try { for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value); }
-      catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
+      try {
+        for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value);
+        if (pageFields) next = pageFields(next);
+      } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
       if (next === source) return undefined;
-      return applyNativeOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." });
+      return applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." });
+    },
+    pageFields(host, path) {
+      // Date and custom fields, staged against this dialog's own snapshot.
+      const saved = nativeCollectionSnapshot();
+      return mountCollectionsPanel(host, {
+        sources: () => stale() ? {} : nativeCollectionSnapshot().sources,
+        routes: () => stale() ? {} : nativeCollectionSnapshot().routes,
+        identity: () => nativeCollectionSnapshot().identity,
+        revision: () => stale() ? "" : nativeCollectionSnapshot().revision,
+        page: () => saved.sources[path] === undefined ? undefined : path,
+        apply: () => false,
+        openPage: () => {},
+        announce,
+      }, { settings: true });
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
     applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep, expectedSources),
@@ -4486,6 +4506,42 @@ interface NativeOperation {
   undone: string;
   /** The Pages tab's row to show and focus after, when it is open. */
   focus?: { file?: string; route?: string };
+  /** A whole-graph proof (a collection plan's), checked with every source guard. */
+  current?: () => boolean;
+}
+
+// The whole current file graph for collection planning: every existing path
+// (binary and unloaded ones too), the text actually loaded, the routes those
+// files derive, the repository/branch/load revision and the site identity.
+function nativeCollectionSnapshot(scope = draftScope()): NativeCollectionSnapshot {
+  const files = nativeFiles(scope).sort();
+  const sources: Record<string, string> = {};
+  for (const path of files) {
+    const source = nativeEffectiveSource(path, scope);
+    if (source !== undefined) sources[path] = source;
+  }
+  const routes = deriveNativeRoutes(files);
+  return { files, sources, routes, revision: `${setupScope()}\n${generation}`,
+    identity: { name: readSiteIdentity(sources[NATIVE_CONFIG_PATH], sources[routes["/"]] ?? "").name } };
+}
+
+/**
+ * Plans an operation against the whole graph so dependent collection listings
+ * are baked from the result, then applies everything as one NativeOperation:
+ * one draft write and one Undo. The plan's graph, identity, revision and every
+ * input source are checked again right before the synchronous write.
+ */
+async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): Promise<string | undefined> {
+  if (!nativeSite) return "Open a native site first.";
+  const snapshot = nativeCollectionSnapshot();
+  // The site name may change in this very operation: read it from the result.
+  const candidate = (path: string) => origin.edits?.get(path) ?? origin.creates?.find(file => file.path === path)?.content ?? snapshot.sources[path];
+  const candidateIdentity = { name: readSiteIdentity(candidate(NATIVE_CONFIG_PATH), candidate(snapshot.routes["/"] ?? NATIVE_HOME_PAGE) ?? "").name };
+  const plan = planNativeCollectionOperation({ ...snapshot, origin, candidateIdentity });
+  if ("error" in plan) return plan.error;
+  const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot());
+  if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
+  return applyNativeOperation({ ...plan.operation, current });
 }
 
 // A branch file's blob and text, for a draft of an edit to it.
@@ -4529,7 +4585,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   for (const path of [...moves.flatMap((move) => [move.from, move.to]), ...deletes, ...creates.map((file) => file.path), ...edits.keys()])
     if (!expectedSources.has(path)) expectedSources.set(path, nativeEffectiveSource(path));
   const staleOperation = () => epoch !== generation || scopeKey !== setupScope() ||
-    [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
+    [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source) || (op.current ? !op.current() : false);
   const changedOperation = "The repository or source changed meanwhile. Review the latest files and try again.";
   if (staleOperation()) return changedOperation;
   // The files moved and deleted, with their blobs and text; the base of each file edited.

@@ -3,13 +3,17 @@ import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
 import type { NavigationLink } from "../page-builder/site-navigation";
+import type { CollectionsPanel } from "./collections-panel";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string }
 export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
-  applyPage: (path: string, fields: Partial<Record<HeadField, string>>) => Promise<string | undefined>;
+  /** `pageFields` overlays staged Date/custom fields on the metadata candidate. */
+  applyPage: (path: string, fields: Partial<Record<HeadField, string>>, pageFields?: (source: string) => string) => Promise<string | undefined>;
+  /** Mounts the staged Date/custom page fields; the dialog destroys it on close. */
+  pageFields?: (host: HTMLElement, path: string) => CollectionsPanel;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
@@ -133,15 +137,26 @@ function section(parent: HTMLElement, title: string) {
   parent.append(fieldset);
   return fieldset;
 }
-function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, run: () => Promise<string | undefined>) {
+// Every value the dialog's form holds, to tell whether typing happened while
+// an Apply was waiting.
+function formStamp(root: HTMLElement) {
+  return JSON.stringify([...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")]
+    .map((input) => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
+}
+function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, run: () => Promise<string | undefined>, unchanged: () => boolean = () => true) {
   const apply = button(label, async () => {
     if (apply.disabled) return;
     apply.disabled = true;
     dialog.status.textContent = "Applying drafts…";
+    // Inputs stay editable meanwhile. Close only if they still hold exactly
+    // what was applied; newer typing is kept and needs a fresh Apply proof.
+    const submitted = formStamp(dialog.root);
     try {
       const error = await run();
       if (error) dialog.status.textContent = error;
-      else dialog.root.close();
+      else if (!dialog.root.isConnected) return;
+      else if (formStamp(dialog.root) === submitted && unchanged()) dialog.root.close();
+      else dialog.status.textContent = "Applied the earlier values as drafts. Your newer changes are kept here; close and reopen to apply them.";
     } catch (error) { dialog.status.textContent = error instanceof Error ? error.message : "The change could not be applied."; }
     finally { apply.disabled = false; }
   }, "button");
@@ -172,6 +187,14 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const generalPanel = dialog.category("General", "file");
       const searchPanel = dialog.category("Search", "list-checks");
       const socialPanel = dialog.category("Social", "link");
+      const fieldsPanel = handlers.pageFields ? dialog.category("Fields", "file-dashed") : undefined;
+      let pageFields: CollectionsPanel | undefined;
+      let stampAtApply: string | undefined;
+      if (fieldsPanel) {
+        fieldsPanel.append(node("p", "site-settings__hint", "Date and custom fields that collection listings can show, sort and filter by."));
+        pageFields = handlers.pageFields!(fieldsPanel, options.path);
+        dialog.root.addEventListener("close", () => pageFields?.destroy(), { once: true });
+      }
       const details = section(generalPanel, "Page details");
       const title = textField(details, "Title", values.title, "Shown in browser tabs and search results.");
       title.placeholder = new DOMParser().parseFromString(options.source, "text/html").querySelector("h1")?.textContent?.trim() ?? "";
@@ -181,7 +204,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         plan: (value) => handlers.planUrl(options.path, value),
         apply: async (value, keep) => {
           const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
-          if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";
+          if (fieldsChanged || pageFields?.pageFieldsDirty()) return "Apply page details before changing the URL, so those edits are kept.";
           const error = await handlers.applyUrl(options.path, value, keep);
           if (!error) dialog.root.close();
           return error;
@@ -260,10 +283,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         const effectiveDescription = hasHeadField(options.source, "og:description") ? values["og:description"] : description.value;
         if ((title.value !== values.title || titleLink.checked !== initialTitleLink || socialTitle.value !== initialSocialTitle) && socialTitle.value !== effectiveTitle) fields["og:title"] = socialTitle.value;
         if ((description.value !== values.description || descriptionLink.checked !== initialDescriptionLink || socialDescription.value !== initialSocialDescription) && socialDescription.value !== effectiveDescription) fields["og:description"] = socialDescription.value;
-        const error = await handlers.applyPage(options.path, fields);
-        if (!error) linkPreferences.set(options.path, { title: titleLink.checked, description: descriptionLink.checked });
+        const linked = { title: titleLink.checked, description: descriptionLink.checked };
+        const panel = pageFields;
+        stampAtApply = panel?.pageFieldsStamp();
+        const error = await handlers.applyPage(options.path, fields, panel ? (source) => panel.pageFieldSource(source) : undefined);
+        if (!error) linkPreferences.set(options.path, linked);
         return error;
-      });
+      }, () => pageFields?.pageFieldsStamp() === stampAtApply);
       dialog.show();
     },
     site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {
