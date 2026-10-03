@@ -428,12 +428,37 @@ export function createComponentTools(deps: ComponentDeps) {
 
   /** Opens a page that uses `tag` and selects its first instance there. */
   async function openUse(file: string, tag: string) {
+    const locate = () => {
+      const source = deps.sources()[file] ?? "";
+      const holder = holderOf(pageBody(source), tag);
+      const match = holder && new RegExp(`<${holder}(?=[\\s/>])`, "i").exec(pageBody(source));
+      const node = match ? elementPathAt(source, nativePageBody(source).start + match.index) : undefined;
+      return holder && node ? { holder, request: { path: file, node } } : undefined;
+    };
+    // The file switch schedules its render before openFile resolves.
+    const before = locate();
+    if (before) deps.preview()?.selectAfterUpdate(before.request);
     if (!(await deps.openFile(file))) return;
-    const source = deps.sources()[file] ?? "";
-    const match = new RegExp(`<${tag}(?=[\\s/>])`, "i").exec(pageBody(source));
-    if (!match) return;
-    const nodePath = elementPathAt(source, nativePageBody(source).start + match.index);
-    if (nodePath) deps.preview()?.selectNode({ path: file, node: nodePath });
+    const target = locate();
+    if (!target) return;
+    deps.preview()?.selectNode(target.request);
+    // Shown through another component: its instance on the page holds this one.
+    if (target.holder !== tag) deps.announce(`${componentLabel(tag)} is inside ${componentLabel(target.holder)} on this page: ${componentLabel(target.holder)} selected.`);
+  }
+
+  /** The tag on a page that shows `tag`: itself, else the first component whose template does (through others too). */
+  function holderOf(html: string, tag: string) {
+    const current = site();
+    if (!current) return undefined;
+    const shows = (name: string, seen: Set<string>): boolean => {
+      if (name === tag) return true;
+      if (seen.has(name)) return false;
+      seen.add(name);
+      const template = deps.sources()[current.components[name] ?? ""] ?? "";
+      return Object.keys(current.components).some((other) => new RegExp(`<${other}(?=[\\s/>])`, "i").test(template) && shows(other, seen));
+    };
+    const used = [...html.matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]*)(?=[\s/>])/gi)].map((match) => match[1].toLowerCase());
+    return used.find((name) => name === tag) ?? used.find((name) => isComponent(name) && shows(name, new Set()));
   }
 
   // ---- The properties panel. ----
@@ -654,8 +679,10 @@ export function createComponentTools(deps: ComponentDeps) {
       const files = [...(file.files ?? [])];
       file.value = "";
       if (!files.length) return;
+      // The instance the upload is for, not whatever is selected when it finishes.
+      const target = shown && { path: shown.path, node: shown.node, tag: shown.tag };
       const path = await deps.upload(files.slice(0, 1));
-      if (path !== undefined) setImage(slot.name, path);
+      if (path !== undefined && target) setImage(target, slot.name, path);
     });
     const row = node("div", "component-field__upload");
     row.append(pick, file);
@@ -697,10 +724,13 @@ export function createComponentTools(deps: ComponentDeps) {
     return fillInsertEdit(at.source, at.instance, at.slots, slot.name, markup);
   }
 
-  function setImage(slotName: string, path: string) {
-    const at = current();
+  function setImage(target: { path: string; node: number[]; tag: string }, slotName: string, path: string) {
+    const at = instanceAt(target.path, target.node);
     const slot = at?.slots.find((entry) => entry.name === slotName);
-    if (!at || !slot) return;
+    if (!at || !slot || at.tag !== target.tag) {
+      deps.announce("The instance changed while the image uploaded; it was not replaced.");
+      return;
+    }
     const edit = slotAttributeEdit(at, slot, "src", path);
     if (edit) change(at.path, [edit], "Image replaced", keepSelection(at, !at.states.get(slotName)?.filled));
   }
@@ -943,6 +973,12 @@ export function createComponentTools(deps: ComponentDeps) {
     const problem = await deps.createFiles(newFiles);
     if (problem) { deps.error(new Error(problem)); return; }
     const editor = deps.editor();
+    // Writing the files can wait on GitHub: a page changed meanwhile keeps its change, and no component is made.
+    if (deps.sources()[path] !== source) {
+      deps.removeFiles(newFiles.map((file) => file.path));
+      deps.announce("The page changed meanwhile; no component was made.");
+      return;
+    }
     if (!editor || !editable(path)) {
       deps.removeFiles(newFiles.map((file) => file.path));
       deps.announce("Open the page first.");

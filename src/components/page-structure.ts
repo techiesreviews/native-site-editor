@@ -158,6 +158,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let structure: NativeStructure | undefined;
   let rendered = "";
   let selected: string | undefined;
+  let pendingSelection: { path: string; node: number[] } | undefined;
   // Rows folded or unfolded by hand; any other row inside <main> is folded.
   const foldState = new Map<string, boolean>();
   const inMain = new Set<string>();
@@ -463,13 +464,26 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         selected = undefined;
       }
       structure = next;
+      const pending = pendingSelection;
+      // Selection can arrive before the structure for the same render.
+      // Consume it on the next named page only; unrelated navigation drops it.
+      if (path && pending) {
+        pendingSelection = undefined;
+        if (pending.path === path) selected = key(pending.node);
+      }
       const signature = next ? `${next.path}\n${JSON.stringify(next.items)}` : "";
       if (signature === rendered && !tree.hidden === Boolean(next?.path)) return;
       rendered = signature;
       render();
+      if (pending?.path === path) {
+        const current = rows.get(key(pending.node));
+        if (current) reveal(current);
+        current?.scrollIntoView({ block: "nearest" });
+      }
     },
     /** Mark the row of the element selected in the preview, and show it. */
     select(target: { path: string; node: number[] } | undefined) {
+      pendingSelection = target && target.path !== structure?.path ? { path: target.path, node: [...target.node] } : undefined;
       const id = target && structure && target.path === structure.path ? key(target.node) : undefined;
       if (id === selected) return;
       const current = setSelected(id);

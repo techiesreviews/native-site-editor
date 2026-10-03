@@ -319,3 +319,35 @@ test("new component names: a dash, lowercase, free", () => {
   assert.equal(sections.length, 2);
   assert.equal(suggestTagName(source, rangeOf(source, "section", 1), []), "section-scroll-to");
 });
+
+test("review: attribute edits rewrite the whole attribute, double-quoted and escaped", () => {
+  const single = `<x-a title='old' data-n=plain></x-a>`;
+  const tag = rangeOf(single, "x-a").tag;
+  assert.equal(apply(single, attributeEdit(single, tag, "title", "O'Reilly")), `<x-a title="O'Reilly" data-n=plain></x-a>`);
+  assert.equal(apply(single, attributeEdit(single, tag, "data-n", "hello world")), `<x-a title='old' data-n="hello world"></x-a>`);
+  assert.equal(apply(single, attributeEdit(single, tag, "title", `x" onclick="alert(1)`)), `<x-a title="x&quot; onclick=&quot;alert(1)" data-n=plain></x-a>`);
+  // Values are read decoded, so they are escaped once.
+  const encoded = `<x-a title="A &amp; B"></x-a>`;
+  assert.equal(readInstance(encoded, rangeOf(encoded, "x-a")).attributes[0].value, "A & B");
+});
+
+test("review: detach keeps entities and the page's own spacing", () => {
+  const source = `<x-card title="A &amp; B" id="caf&eacute;">Hello <em>world</em>!</x-card>`;
+  const template = `<p><slot></slot></p>`;
+  assert.equal(detachMarkup(source, template, readInstance(source, rangeOf(source, "x-card"))).markup, `<p title="A &amp; B" id="caf&eacute;">Hello <em>world</em>!</p>`);
+  const pair = `<x-b><b slot="s">a</b><i slot="s">b</i></x-b>`;
+  assert.equal(detachMarkup(pair, `<p><slot name="s"></slot></p>`, readInstance(pair, rangeOf(pair, "x-b"))).markup, `<p><b>a</b><i>b</i></p>`);
+});
+
+test("review: usage counts elements, not text in scripts, textareas or comments", () => {
+  const site = { routes: { "/": "index.html" }, components: { "x-card": "components/x-card/x-card.html" } };
+  const sources = { "index.html": `<body><script>const example = "<x-card></x-card>";</script><textarea><x-card></x-card></textarea><!-- <x-card> --></body>`, "components/x-card/x-card.html": `<p></p>` };
+  assert.deepEqual(componentUsage(site, sources, "x-card"), { instances: 0, pages: [], components: [] });
+});
+
+test("review: generated slot names never collide", () => {
+  const source = `<section><h2>A</h2><h3>B</h3><p class="title-2">C</p></section>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-x");
+  assert.ok(!("error" in plan));
+  assert.deepEqual(plan.slots.map((slot) => slot.name), ["title", "title-2", "title-2-2"]);
+});

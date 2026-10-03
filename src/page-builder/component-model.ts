@@ -241,7 +241,20 @@ const blank = (html: string, node: SourceNode) => node.type === "text" && !html.
 /** Elements and text that is not just white space. */
 const meaningful = (html: string, nodes: SourceNode[]) => nodes.filter((node) => !blank(html, node));
 
-/** Every attribute of a start tag, in order, with its range (leading white space included). */
+/** `text` with its character references decoded (an attribute value as the browser reads it). */
+export function decodeEntities(text: string) {
+  let out = "";
+  for (let i = 0; i < text.length;) {
+    const entity = text[i] === "&" ? decodeEntity(text, i) : undefined;
+    if (entity) {
+      out += entity.text;
+      i += entity.length;
+    } else out += text[i++];
+  }
+  return out;
+}
+
+/** Every attribute of a start tag, in order, with its value decoded and its range (leading white space included). */
 export function startTagAttributes(html: string, tag: StartTag) {
   const out: { name: string; value: string; start: number; end: number }[] = [];
   const text = html.slice(tag.nameEnd, tag.end);
@@ -249,7 +262,7 @@ export function startTagAttributes(html: string, tag: StartTag) {
   for (const match of text.matchAll(pattern)) {
     out.push({
       name: match[1].toLowerCase(),
-      value: match[2] ?? match[3] ?? match[4] ?? "",
+      value: decodeEntities(match[2] ?? match[3] ?? match[4] ?? ""),
       start: tag.nameEnd + match.index,
       end: tag.nameEnd + match.index + match[0].length,
     });
@@ -665,9 +678,9 @@ export function attributeEdit(source: string, tag: StartTag, name: string, value
   const current = startTagAttribute(source, tag, name);
   const escaped = value === undefined ? "" : escapeAttribute(value);
   if (current) {
-    if (value === undefined) return { start: current.start, end: current.end, text: "" };
-    if (current.value === "" && source[current.valueEnd] !== "\"" && source[current.valueEnd] !== "'") return { start: current.start, end: current.end, text: ` ${name}="${escaped}"` };
-    return { start: current.valueStart, end: current.valueEnd, text: escaped };
+    // The whole attribute is written again, double-quoted and escaped, so a
+    // value with a quote or a space never spills into another attribute.
+    return { start: current.start, end: current.end, text: value === undefined ? "" : ` ${name}="${escaped}"` };
   }
   if (value === undefined) return { start: tag.end, end: tag.end, text: "" };
   let at = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
@@ -693,11 +706,12 @@ export interface ComponentUsage {
   components: { tag: string; count: number }[];
 }
 
+// Elements named `tag` as parsed: comments and raw text (a script's string,
+// a textarea's content) are not elements.
 function tagCount(html: string, tag: string) {
+  if (!html.toLowerCase().includes(`<${tag}`)) return 0;
   let count = 0;
-  const pattern = new RegExp(`<${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[\\s/>])`, "gi");
-  const plain = html.replace(/<!--[\s\S]*?-->/g, "");
-  for (const _ of plain.matchAll(pattern)) count++;
+  for (const el of descendants(parseSource(html))) if (el.name === tag) count++;
   return count;
 }
 
@@ -800,7 +814,7 @@ export function detachMarkup(source: string, template: string, instance: Instanc
   // for the template line it lands on.
   const fillText = (node: SourceNode, forward: string | undefined, slot: SourceElement) => {
     let text = source.slice(node.start, node.end);
-    if (node.type === "text") return forward ? `<span slot="${escapeAttribute(forward)}">${text.trim()}</span>` : text.trim();
+    if (node.type === "text") return forward ? `<span slot="${escapeAttribute(forward)}">${text.trim()}</span>` : text;
     const attributes = startTagAttributes(source, node.tag).filter((item) => item.name !== "slot" && item.name !== "data-key");
     // A plain wrapper that only carried the slot goes: a `<span slot>`, or
     // a block (`<p slot>`) slotted into a line of text, where it could not stand.
@@ -817,7 +831,17 @@ export function detachMarkup(source: string, template: string, instance: Instanc
       const name = (attribute(template, node, "name") ?? "").trim();
       const pass = attribute(template, node, "slot") ?? forward;
       const fill = instance.fills.get(name);
-      if (fill?.length) return fill.map((part) => fillText(part, pass, node)).join(" ");
+      if (fill?.length) {
+        // The page's own spacing: text as written, the white space between
+        // neighbouring fills kept, nothing added; only the run's ends trimmed.
+        let out = "";
+        fill.forEach((part, index) => {
+          const before = index ? source.slice(fill[index - 1].end, part.start) : "";
+          if (index && !before.trim()) out += before;
+          out += fillText(part, pass, node);
+        });
+        return out.trim();
+      }
       if (!meaningful(template, node.children).length) return REMOVED;
       return pass ? emit(node.children, pass) : emit(node.children);
     }
@@ -830,13 +854,19 @@ export function detachMarkup(source: string, template: string, instance: Instanc
     if (forward) open = withSlot(open, forward);
     if (node === root) {
       for (const item of hostAttributes) {
-        let value: string | undefined = item.value;
         if (item.name === "class") {
-          const own = startTagAttribute(open, local(), "class")?.value.split(/\s+/).filter(Boolean) ?? [];
-          value = [...own, ...item.value.split(/\s+/).filter((word) => word && !own.includes(word))].join(" ");
+          const own = decodeEntities(startTagAttribute(open, local(), "class")?.value ?? "").split(/\s+/).filter(Boolean);
+          const value = [...own, ...item.value.split(/\s+/).filter((word) => word && !own.includes(word))].join(" ");
+          const edit = attributeEdit(open, local(), "class", value);
+          open = open.slice(0, edit.start) + edit.text + open.slice(edit.end);
+          continue;
         }
-        const edit = attributeEdit(open, local(), item.name, value);
-        open = open.slice(0, edit.start) + edit.text + open.slice(edit.end);
+        // Any other attribute moves as the page wrote it (its quotes and character references kept).
+        const gone = attributeEdit(open, local(), item.name, undefined);
+        open = open.slice(0, gone.start) + gone.text + open.slice(gone.end);
+        const at = open.endsWith("/>") ? open.length - 2 : open.length - 1;
+        const written = source.slice(item.start, item.end).replace(/^\s+/, " ");
+        open = open.slice(0, at).replace(/\s+$/, "") + written + open.slice(at);
       }
     }
     const inner = node.close ? emit(node.children) : "";
@@ -935,11 +965,12 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   if ([...descendants([root])].some((el) => el.name === "slot")) return { error: "This element holds slots of a component; make the component from the page instead." };
   if (["main", "body", "html", "head"].includes(root.name)) return { error: `A <${root.name}> cannot be a component.` };
 
-  const used = new Map<string, number>();
+  const used = new Set<string>();
   const unique = (name: string) => {
-    const count = (used.get(name) ?? 0) + 1;
-    used.set(name, count);
-    return count === 1 ? name : `${name}-${count}`;
+    let free = name;
+    for (let n = 2; used.has(free); n++) free = `${name}-${n}`;
+    used.add(free);
+    return free;
   };
   const slots: MakeComponentPlan["slots"] = [];
   const fills: string[] = [];
