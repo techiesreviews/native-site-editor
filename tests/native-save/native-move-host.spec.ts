@@ -154,3 +154,31 @@ test("a new shadow selection clears the previous section shortcut before its fil
   await expect.poll(() => page.evaluate(() => Boolean((window as any).gapMoveChecked))).toBe(true);
   expect((await storedDraft(page, "index.html")).content).toBe(before);
 });
+
+test("a section move waiting for its page editor refuses a foreign draft written during that await", async ({ page, baseURL }) => {
+  const record = await storedDraft(page, "index.html");
+  expect(record).toBeDefined();
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=styles/site.css`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  await expect(frame(page).locator("#first")).toBeVisible();
+  const row = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first();
+  const raced = await row.evaluate(async (element, record) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const { draftStore } = await import("/src/drafts.ts");
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
+    const awaiting = document.querySelector("#current-page")?.getAttribute("data-path") === "index.html" && editor.getMountedSource("index.html") === undefined;
+    const changed = record!.content.replace('<section id="first">', '<section id="first" data-agent="during-open">');
+    draftStore().save({ ...record!, content: changed, updatedAt: Date.now() } as import("../../src/drafts").SavedDraft);
+    return { awaiting, changed };
+  }, record);
+  expect(raced.awaiting).toBe(true);
+  await expect(page.locator("#status")).toHaveText("The source changed while its editor opened. Select the section again before moving it.");
+  expect(await source(page)).toBeUndefined();
+  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "first");
+  expect((await storedDraft(page, "index.html"))?.content).toBe(raced.changed);
+  await expect(frame(page).locator("#first")).toHaveAttribute("data-agent", "during-open");
+  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first().press("Alt+ArrowDown");
+  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "target");
+  expect(await source(page)).toContain('data-agent="during-open"');
+  await undo(page); await expect.poll(() => source(page)).toBe(raced.changed);
+});

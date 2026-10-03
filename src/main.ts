@@ -153,6 +153,7 @@ function closeEditor() {
 
 async function openCodeEditor(
   file: import("./components/code-editor").SourceFile,
+  beforeMount?: () => boolean,
 ) {
   closeEditor();
   const request = editorRequest;
@@ -160,6 +161,7 @@ async function openCodeEditor(
   try {
     editorModule = await loadEditorModule();
     if (request !== editorRequest || !info.user) return;
+    if (beforeMount && !beforeMount()) { content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again.")); return; }
     disposeEditor = editorModule.mountCodeEditor(
       content,
       file.scope ? { ...file, historyScope: nativeHistorySession(file.scope, file.path) } : file,
@@ -1890,9 +1892,13 @@ function moveNativeSection(target: { path: string; node?: number[]; tag: string 
 // still cannot be made is said so rather than passed off as the end of the
 // list.
 async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
-  const epoch = generation, scope = setupScope();
-  await restoreFile(target.path, epoch, { linkDefaultStyle: false });
+  const epoch = generation, scope = setupScope(), draft = draftScope();
+  const cachedModel = draft ? editorModule?.captureFileModelState(draft, target.path, true) : undefined;
+  await restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === generation && scope === setupScope() && nativeEffectiveSource(target.path) === paintedSource });
   if (epoch !== generation || scope !== setupScope() || currentPath !== target.path || nativeEffectiveSource(target.path) !== paintedSource) {
+    if (epoch !== generation || scope !== setupScope()) return;
+    if (draft && cachedModel?.isCurrent() && !editorModule?.isMounted(target.path)) editorModule?.forgetDraftModel(draft, target.path);
+    updateNativePreviewSources();
     announce("The source changed while its editor opened. Select the section again before moving it."); return;
   }
   if (!moveNativeSection(target, direction)) element("status").textContent = "The section could not be moved";
@@ -5754,7 +5760,7 @@ async function openEntry(
   entry: TreeEntry,
   path: string,
   epoch: number,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean } = {},
+  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
 ) {
   if (epoch !== generation || !currentRepo || !snapshot || !info.user) return;
   // A file deleted in the drafts opens as a note with Restore; one renamed
@@ -5829,7 +5835,7 @@ async function mountSource(
   readOnly: boolean,
   epoch: number,
   selection: number,
-  options: { linkDefaultStyle?: boolean } = {},
+  options: { linkDefaultStyle?: boolean; beforeMount?: () => boolean } = {},
 ) {
   if (
     !currentRepo ||
@@ -5928,7 +5934,8 @@ async function mountSource(
     readOnly: readOnly,
     onSessionExpired: () =>
       errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
-  });
+  }, options.beforeMount);
+  if (options.beforeMount && !editorModule?.isMounted(path)) return;
   // Another file opened over the selected page: its controls would edit the
   // wrong file, so the bar waits for the next preview click.
   if (nativeModeActive() && lastNativeSelection?.path !== path) {
@@ -6247,7 +6254,7 @@ async function applyAgentCommand(command: AgentCommand) {
 async function restoreFile(
   path: string,
   epoch: number,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean } = {},
+  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
 ) {
   const selection = ++fileGeneration;
   const repo = currentRepo!;
