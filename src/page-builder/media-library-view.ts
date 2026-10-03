@@ -306,6 +306,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   async function showDetail(path: string, focusUsage = false, background = false) {
     if (!alive) return;
     const initiatingFocus = document.activeElement;
+    const initiatingInsideDetail = initiatingFocus instanceof Element && sheet.contains(initiatingFocus);
     if (!background) pendingDetailFocus = { path, active: initiatingFocus };
     const focusRequest = pendingDetailFocus;
     delete sheet.dataset.mode;
@@ -320,7 +321,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       if (pendingDetailFocus === focusRequest) pendingDetailFocus = undefined;
       if (alive && version === detailVersion && !data) {
         assets.delete(path); sheet.hidden = true; detailPath = undefined;
-        if (document.activeElement === document.body || document.activeElement === initiatingFocus) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
+        if (document.activeElement === document.body || (!background || initiatingInsideDetail) && document.activeElement === initiatingFocus) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
       }
       return;
     }
@@ -377,7 +378,19 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const pages = new Set(paths.flatMap((path) => library.usage[path]?.pages ?? []));
     sheet.append(node("h3", "", `Delete ${paths.length} ${paths.length === 1 ? "image" : "images"}?`), node("p", "", pages.size ? `Used on ${pages.size} pages. Their references will break if you delete these images.` : "These images have no page usage. Check any component and CSS references below."));
     for (const path of paths) sheet.append(node("p", "media-library__hint", `${path}${library.usage[path]?.files.length ? ` · Referenced by ${library.usage[path].files.join(", ")}` : " · No source references"}`));
-    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { detailVersion++; sheet.hidden = true; delete sheet.dataset.mode; }), button("Delete images", () => void task(async () => { if (confirmationVersion !== detailVersion || sheet.dataset.mode !== "delete") { tell("This delete confirmation has expired. Open a new confirmation to review current image references."); return; } await adapter.remove(paths, unusedOnly); sheet.hidden = true; delete sheet.dataset.mode; await refresh(); tell("Images deleted as drafts."); })));
+    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { detailVersion++; sheet.hidden = true; delete sheet.dataset.mode; }), button("Delete images", () => void task(async () => { if (confirmationVersion !== detailVersion || sheet.dataset.mode !== "delete") { tell("This delete confirmation has expired. Open a new confirmation to review current image references."); return; }
+      const thumbnails = [...grid.querySelectorAll<HTMLElement>(".media-library__thumbnail")];
+      const deletedIndex = thumbnails.findIndex(control => paths.includes(control.closest<HTMLElement>(".media-library__card")!.dataset.path!));
+      const initiatingFocus = document.activeElement;
+      const restoreBrowseFocus = initiatingFocus instanceof Element && sheet.contains(initiatingFocus);
+      await adapter.remove(paths, unusedOnly); sheet.hidden = true; delete sheet.dataset.mode; await refresh();
+      if (restoreBrowseFocus && (document.activeElement === initiatingFocus || document.activeElement === document.body)) {
+        const remaining = [...grid.querySelectorAll<HTMLElement>(".media-library__thumbnail")];
+        const target = remaining[Math.min(Math.max(deletedIndex, 0), remaining.length - 1)] ?? grid;
+        if (target === grid) grid.tabIndex = -1;
+        target.focus();
+      }
+      tell("Images deleted as drafts."); })));
   }
   function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     if (!alive) return;

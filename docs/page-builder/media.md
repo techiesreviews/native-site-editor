@@ -180,3 +180,10 @@ with focus on Back to grid, provided focus has not moved elsewhere. Refreshes
 refuse new delete confirmations and invalidate existing confirmations so current
 usage must be reviewed before deleting. Detached confirmation controls cannot
 commit a delete after their reference snapshot has been invalidated.
+
+Failed background image reloads return focus to the thumbnail only when focus was
+lost from the detail sheet; Search and controls elsewhere keep focus. Failed direct
+detail loads clear the cached failure so the same image can be retried. Successful
+deletions focus the neighbouring visible thumbnail, or the empty grid when none
+remain. A refresh requested during deletion is refused until the mutation finishes; it does not invalidate the active
+delete confirmation or display a misleading Reopen Delete notice.

@@ -204,3 +204,102 @@ test("refresh preserves the visible form but rejects Save while metadata reload 
   });
   expect(result).toEqual({ hasStaleForm: true, hasFormAfterReopen: false, mutations: 0, alt: "Restored alt" });
 });
+
+for (const focusTarget of ["search", "outside", "detail"] as const) {
+  test(`failed background image reload preserves ${focusTarget} focus`, async ({ page, baseURL }) => {
+    await mount(page, baseURL);
+    await page.evaluate(async () => {
+      (window as any).mediaPaneHarness.view.dispose();
+      const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+      const host = document.querySelector<HTMLElement>("#media-pane-harness")!;
+      host.style.width = "800px";
+      let loads = 0;
+      const view = createMediaLibraryView(host, {
+        async load() { return { key: "background-failure", items: [{ path: "images/a.svg", version: String(++loads) }], metadata: {}, usage: {} }; },
+        async blob() {
+          if (loads > 1) return new Promise<Blob>((_resolve, reject) => { (window as any).rejectBackgroundBlob = () => reject(new Error("Background image failed")); });
+          return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
+        },
+        async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+      });
+      Object.assign(window, { backgroundFailure: view }); await view.ready;
+    });
+    const panel = pane(page);
+    await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+    await expect(panel.getByLabel("Default alt text", { exact: true })).toBeVisible();
+    const target = focusTarget === "search" ? panel.getByLabel("Search images", { exact: true }) : focusTarget === "detail" ? panel.getByLabel("Default alt text", { exact: true }) : page.locator("#explorer-toggle");
+    await target.focus();
+    await expect(target).toBeFocused();
+    await page.evaluate(() => { (window as any).backgroundRefresh = (window as any).backgroundFailure.refresh(); });
+    await expect.poll(() => page.evaluate(() => Boolean((window as any).rejectBackgroundBlob))).toBe(true);
+    await page.evaluate(async () => { (window as any).rejectBackgroundBlob(); await (window as any).backgroundRefresh; });
+    await expect(panel.locator(".media-library__sheet")).toBeHidden();
+    if (focusTarget === "detail") await expect(panel.getByRole("button", { name: "Details for images/a.svg", exact: true })).toBeFocused();
+    else await expect(target).toBeFocused();
+    await page.evaluate(() => (window as any).backgroundFailure.dispose());
+  });
+}
+
+for (const lastImage of [false, true]) {
+  test(`pending deletion rejects refresh and focuses ${lastImage ? "empty grid" : "next thumbnail"} after success`, async ({ page, baseURL }) => {
+    await mount(page, baseURL);
+    await page.evaluate(async (lastImage) => {
+      (window as any).mediaPaneHarness.view.dispose();
+      const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+      const host = document.querySelector<HTMLElement>("#media-pane-harness")!;
+      let deleted = false, loads = 0;
+      const view = createMediaLibraryView(host, {
+        async load() { loads++; return { key: "delete-race", items: (deleted ? [] : [{ path: "images/a.svg" }]).concat(lastImage ? [] : [{ path: "images/b.svg" }]), metadata: {}, usage: {} }; },
+        async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
+        async metadata() {}, async upload() { return ""; }, async rename() {},
+        async remove() { await new Promise<void>(resolve => { (window as any).releaseImageDelete = resolve; }); deleted = true; },
+        async rewrite() {}, async openPage() {},
+      });
+      Object.assign(window, { deleteRace: { view, loads: () => loads } }); await view.ready;
+    }, lastImage);
+    const panel = pane(page);
+    await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+    await panel.getByRole("button", { name: "Delete image…", exact: true }).click();
+    const confirm = panel.getByRole("button", { name: "Delete images", exact: true });
+    await confirm.focus(); await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => Boolean((window as any).releaseImageDelete))).toBe(true);
+    await page.evaluate(async () => { await (window as any).deleteRace.view.refresh(); });
+    await expect(confirm).toBeVisible();
+    await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
+    expect(await page.evaluate(() => (window as any).deleteRace.loads())).toBe(1);
+    await page.evaluate(() => (window as any).releaseImageDelete());
+    await expect(panel.getByRole("status").last()).toContainText("Images deleted as drafts.");
+    await expect(lastImage ? panel.locator(".media-library__grid") : panel.getByRole("button", { name: "Details for images/b.svg", exact: true })).toBeFocused();
+    await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
+    await page.evaluate(() => (window as any).deleteRace.view.dispose());
+  });
+}
+
+test("a failed direct image load can be retried without refreshing the library", async ({ page, baseURL }) => {
+  await mount(page, baseURL);
+  await page.evaluate(async () => {
+    (window as any).mediaPaneHarness.view.dispose();
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const host = document.querySelector<HTMLElement>("#media-pane-harness")!;
+    let fail = true;
+    const view = createMediaLibraryView(host, {
+      async load() { return { key: "direct-retry", items: [{ path: "images/a.svg" }], metadata: {}, usage: {} }; },
+      async blob() {
+        if (fail) throw new Error("Direct image failed");
+        return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
+      },
+      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+    });
+    Object.assign(window, { directRetry: { view, succeed: () => { fail = false; } } }); await view.ready;
+  });
+  const panel = pane(page), thumbnail = panel.getByRole("button", { name: "Details for images/a.svg", exact: true });
+  await thumbnail.focus(); await page.keyboard.press("Enter");
+  await expect(panel.getByRole("status").last()).toContainText("Direct image failed");
+  await expect(panel.locator(".media-library__sheet")).toBeHidden();
+  await expect(thumbnail).toBeFocused();
+  await page.evaluate(() => (window as any).directRetry.succeed());
+  await page.keyboard.press("Enter");
+  await expect(panel.getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
+  await expect(panel.getByLabel("Default alt text", { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).directRetry.view.dispose());
+});
