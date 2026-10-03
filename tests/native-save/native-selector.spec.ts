@@ -306,13 +306,14 @@ test("slotted light DOM selection keeps page ownership and inline grouped CSS ig
 
 // Text from the editor caret to the end of its line.
 async function caretToLineEnd(page: Page, host: string) {
-  const textbox = page.locator(`${host} [role="textbox"]`).first();
-  await textbox.evaluate((el) => (el as HTMLElement).focus());
-  await page.keyboard.press("Shift+End");
-  await page.keyboard.press("ControlOrMeta+C");
-  const text = await page.evaluate(() => navigator.clipboard.readText());
-  await page.keyboard.press("ArrowLeft");
-  return text;
+  // Read the logical caret without selecting text: keyboard reads can move a caret inside folded HTML.
+  return page.evaluate(async (host) => {
+    const { monaco } = await import("/src/components/monaco.ts");
+    const editor = monaco.editor.getEditors().find((editor: { getDomNode(): HTMLElement | null }) => editor.getDomNode()?.closest(host));
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    return model && position ? model.getLineContent(position.lineNumber).slice(position.column - 1) : undefined;
+  }, host);
 }
 
 test("selecting an element puts the caret after its start tag in the owning source", async ({ page }) => {
@@ -345,7 +346,14 @@ test("selecting an element puts the caret after its start tag in the owning sour
   await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+Home");
   await page.keyboard.type("<!-- note -->\n");
-  await expect(page.locator("#content .code-editor__element")).toHaveCount(1);
+  // One source decoration can render as several spans when the editor wraps a line.
+  await expect.poll(() => page.evaluate(async () => {
+    const { monaco } = await import("/src/components/monaco.ts");
+    const editor = monaco.editor.getEditors().find((editor: { getDomNode(): HTMLElement | null }) => editor.getDomNode()?.closest("#content"));
+    const model = editor?.getModel();
+    return model?.getAllDecorations().filter((item: { options: { className?: string } }) => item.options.className === "code-editor__element")
+      .map((item: { range: unknown }) => model.getValueInRange(item.range));
+  })).toEqual(["<card-note>"]);
 });
 
 test("a click while the file is still opening is not lost", async ({ page }) => {
