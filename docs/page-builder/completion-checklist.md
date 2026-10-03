@@ -15,7 +15,7 @@ Current scope comes from Lex's authorized continuation in destination T3 thread 
 - [x] Remove `pb-add-panel__code-toggle` and its per-item/hover HTML peek functionality. Keep actual code panes.
 - [x] Remove Effects from the edit bar and its associated preset generator/handlers; preserve authored site CSS and native Style shadow/transform/transition. Independent review approved.
 - [x] Replace the separate Edit component button with a faded name-hover/focus pencil, with safe text/caret/drag spacing and guarded template navigation. Independent review approved; real-starter screenshot displayed.
-- [x] Refactor media manager browsing/details into a roomier, single-scroll layout with metadata initially visible. Code/UX/design review approved; real starter reviewed at desktop/narrow and screenshot displayed. Final keyboard/background error-focus polish is pending separately.
+- [x] Refactor media manager browsing/details into a roomier, single-scroll layout with metadata initially visible. Code/UX/design review approved; real starter reviewed at desktop/narrow and screenshot displayed. Final keyboard/background error-focus polish is reviewed and integrated.
 - [x] Keep actual code visible in minimized panes; preserve remembered drag/keyboard restore. Very short layouts retain a scrollable source floor.
 - [ ] Finish template conditions and optional-slot canvas affordances without mutating site DOM for editor overlays.
 - [ ] Final consistency/accessibility/source/Undo checks, fresh real-starter feature screenshots displayed in this thread, exact-candidate preview release and verified version.
