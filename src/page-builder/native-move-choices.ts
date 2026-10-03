@@ -88,8 +88,11 @@ export function nativeElementSiblingMove(source: string, from: readonly number[]
   const current = nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index });
   if (current.status !== "stayed") return current.status === "refused" ? current : { status: "refused", error: "The selected element cannot be moved." };
   const before = nativeDestinations(source, "", from).find(value => value.placement === "before")!;
-  const parent = indexedElements(source).find(value => same(value.path, before.point.parent));
-  if (direction === "up" && index === 0 || direction === "down" && parent && index === parent.children.length - 1) return { status: "stayed", reason: "edge" };
+  const elements = indexedElements(source);
+  const parent = elements.find(value => same(value.path, before.point.parent));
+  // A full document's body is the path root, not an indexed child element.
+  const children = before.point.parent.length ? parent?.children.length : elements.filter(value => value.path.length === 1).length;
+  if (direction === "up" && index === 0 || direction === "down" && children !== undefined && index === children - 1) return { status: "stayed", reason: "edge" };
   return nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index: direction === "up" ? index - 1 : index + 2 });
 }
 

@@ -106,3 +106,14 @@ test("Chromium resolves the computed moved selection after nested parent shifts"
     assert.deepEqual(selected, { id: "moved", parent: "ARTICLE", identical: 2 });
   } finally { await browser.close(); }
 });
+
+
+test("full-document body sibling edges count visible root children while unsupported fragment roots refuse", () => {
+  const document = '<html><head></head><body><script>ignored()</script><meta http-equiv="refresh" content="2"><main></main><footer></footer></body></html>';
+  assert.deepEqual(nativeElementSiblingMove(document, [1], "down"), { status: "stayed", reason: "edge" });
+  assert.deepEqual(nativeElementSiblingMove(document, [0], "up"), { status: "stayed", reason: "edge" });
+  const up = nativeElementSiblingMove(document, [1], "up");
+  assert.equal(up.status, "moved");
+  if (up.status === "moved") assert.deepEqual(up.selection, [0]);
+  assert.equal(nativeElementSiblingMove('<main></main><footer></footer>', [1], "down").status, "refused");
+});
