@@ -116,6 +116,11 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   await expect(body).toHaveText("No description yet.");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  const templateDraft = await storedDraft(page, path);
+  await body.dblclick({ position: { x: 5, y: 5 } }); await body.press("x");
+  await expect(body).not.toHaveAttribute("contenteditable", /.+/);
+  expect(await storedDraft(page, path)).toEqual(templateDraft);
+  await expect(body).toHaveText("No description yet.");
 });
 
 test("a refused painted selection clears the old edit target before scrolling or detached Remove", async ({ page }) => {
@@ -156,4 +161,62 @@ test("clicking a real page element leaves explicit template scope and opens that
   await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Heading");
+});
+
+
+test("changing branch clears an old same-path template permission before the new preview paints", async ({ page, baseURL }) => {
+  const base = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  const feature = base.replace("A native browser preview", "Feature branch preview").replace(/<p slot="body">[\s\S]*?<\/p>/, "");
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: feature } });
+  await firstCard(page).getByRole("button", { name: "Edit component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await page.evaluate(() => window.addEventListener("message", event => { if (event.data?.testScopePaint) ((window as any).branchPaintPermissions ??= []).push(event.data.permission); }));
+  await page.addInitScript(() => {
+    window.addEventListener("message", event => {
+      if (event.data?.testScopePaint) ((window as any).branchPaintPermissions ??= []).push(event.data.permission);
+      const payload = event.data?.payload;
+      if (event.data?.type === "update" && payload?.pages?.["/"]?.includes("Feature branch preview")) window.parent.postMessage({ testScopePaint: true, permission: payload.editableTemplatePath ?? null }, "*");
+    });
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=feature&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with feature");
+  await expect(frame(page).locator(".hero h1")).toHaveText("Feature branch preview");
+  const permissions = await page.evaluate(() => (window as any).branchPaintPermissions as unknown[]);
+  expect(permissions.length).toBeGreaterThan(0);
+  expect(permissions.every(permission => permission === null)).toBe(true);
+  const before = await source(page);
+  const fallback = frame(page).locator("project-card").first().locator(".project-card__body");
+  await expect(fallback).toHaveText("No description yet.");
+  await fallback.dblclick({ position: { x: 5, y: 5 } }); await fallback.press("x");
+  await expect(fallback).not.toHaveAttribute("contenteditable", /.+/);
+  expect(await source(page)).toBe(before);
+  expect(await storedDraft(page, "components/project-card/project-card.html")).toBeUndefined();
+});
+
+test("a nested host-chain report from an older render cannot replace a fresh page selection", async ({ page }) => {
+  await page.evaluate(() => window.addEventListener("message", event => {
+    if (event.data?.source !== "astro-native-preview" || event.data.type !== "select") return;
+    Object.assign(window, { latestSelectionContext: event.data.context });
+    if (event.data.hostChain?.length >= 2 && !(window as any).oldNestedReport) Object.assign(window, { oldNestedReport: event.data });
+  }));
+  const inner = frame(page).locator("project-card").first().locator("card-note p");
+  const point = await inner.evaluate(el => ({ x: el.clientWidth - 3, y: el.clientHeight / 2 }));
+  await inner.click({ position: point });
+  await expect(firstCard(page)).toHaveAttribute("aria-selected", "true");
+  await expect.poll(() => page.evaluate(() => (window as any).oldNestedReport?.hostChain?.length ?? 0)).toBeGreaterThanOrEqual(2);
+  const changed = await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const changed = `<!-- a newer painted source -->\n${before}`;
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: changed });
+    return changed;
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).latestSelectionContext !== (window as any).oldNestedReport.context)).toBe(true);
+  await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 } });
+  const kind = page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind");
+  await expect(kind).toHaveText("Heading");
+  await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { source: document.querySelector<HTMLIFrameElement>(".native-preview-frame")!.contentWindow!, data: (window as any).oldNestedReport })));
+  await expect(kind).toHaveText("Heading");
+  await expect(firstCard(page)).not.toHaveAttribute("aria-selected", "true");
+  expect(await source(page)).toBe(changed);
 });

@@ -896,6 +896,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** Show the pane and adopt a site. Idempotent for the same site. */
     activate(next: NativeSite) {
+      editableTemplatePath = undefined;
       site = next;
       if (!Object.hasOwn(next.routes, route)) {
         route = nativeDefaultRoute(next);
@@ -1077,6 +1078,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!mounted) return;
       mounted = false;
       site = undefined;
+      editableTemplatePath = undefined;
       componentStyles = {};
       loadError = false;
       insertControls.clear();

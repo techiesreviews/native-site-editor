@@ -3063,6 +3063,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     componentStyles: Object.fromEntries(nativeComponentStyles),
     assets: Object.fromEntries(nativeAssets),
     route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(site),
+    editableTemplatePath: nativeEditableTemplatePath(),
   });
   updateAgentContext();
   void loadNativeAssets();
