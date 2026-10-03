@@ -3,7 +3,7 @@ import { startTagAttribute, VOID_ELEMENTS } from "../../shared/html-source";
 import { descendants, parseSource, type SourceElement } from "./component-model";
 import { escapeText } from "./site-head";
 import { decodeHtmlEntities } from "./html-entities";
-import { fieldName, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { fieldName, ownPageField, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 
 export interface CollectionSpec {
   folder: string;
@@ -72,14 +72,14 @@ export function collectionRecords(sources: Record<string, string>, routes: Recor
     const field = spec.filter.slice(0, at);
     if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
     const value = spec.filter.slice(at + 1);
-    records = records.filter((record) => record.fields[field] === value);
+    records = records.filter((record) => ownPageField(record.fields, field) === value);
   }
   if (spec.sort) {
     const descending = spec.sort.startsWith("-");
     const field = descending ? spec.sort.slice(1) : spec.sort;
     if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
     records = records.map((record, index) => ({ record, index })).sort((a, b) => {
-      const av = a.record.fields[field] ?? "", bv = b.record.fields[field] ?? "";
+      const av = ownPageField(a.record.fields, field), bv = ownPageField(b.record.fields, field);
       const comparison = av < bv ? -1 : av > bv ? 1 : 0;
       return comparison ? comparison * (descending ? -1 : 1) : a.index - b.index;
     }).map(({ record }) => record);

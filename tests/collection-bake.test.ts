@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyCollectionEdits, bindCollectionTemplate, planBake, planCollectionChange } from "../src/page-builder/collection-bake.ts";
 import { collectionSpec, makeGridCollection } from "../src/page-builder/collection-model.ts";
-import { readPageFields, withPageField } from "../src/page-builder/collection-fields.ts";
+import { readPageFields, withCustomPageField, withPageField } from "../src/page-builder/collection-fields.ts";
 const identity = { name: "Studio" };
 const page = (title: string, extras = "", body = "") => `<!doctype html><html><head><title>${title} | Studio</title>${extras}</head><body>${body}</body></html>`;
 const listing = `<main><p data-if="outside">Keep outside</p><div class="cards" data-each="/work/" data-sort="-date" data-limit="2"><template><article><a href="{url}">{title}</a><img src="{image}" data-if="image"><p>{description}</p></article></template><b>Old baked card</b></div></main>`;
@@ -115,4 +115,37 @@ test("a valid custom sort with an empty exact filter returns an empty collection
   const source = sources["index.html"].replace('data-sort="-date"', 'data-sort="category" data-filter="category=No match"');
   const plan = good(planBake({ ...sources, "index.html": source }, routes, identity));
   assert.equal(plan.collections[0].records.length, 0);
+});
+
+test("script source bindings fail even for empty collections", () => {
+  assert.throws(() => bindCollectionTemplate(`<script src="{image}"></script>`, { image: "https://example.com/a.js" }), /script/);
+  const source = sources["index.html"].replace(/<template>[\s\S]*?<\/template>/, `<template><script src="{image}"></script></template>`).replace('data-each="/work/"', 'data-each="/empty/"');
+  assert.ok("error" in planBake({ ...sources, "index.html": source }, routes, identity));
+});
+test("object data bindings validate URL semantics", () => {
+  assert.throws(() => bindCollectionTemplate(`<object data="{image}"></object>`, { image: "data:text/html,<script>alert(1)</script>" }), /Unsafe collection URL/);
+});
+test("missing constructor fields bind empty and work in conditions, sorting and filtering", () => {
+  assert.equal(bindCollectionTemplate(`<p>{constructor}</p><div data-if="constructor">Yes</div>`, {}, ["constructor"]), "<p></p>");
+  const after = { ...sources, "work/first/index.html": withCustomPageField(sources["work/first/index.html"], "constructor", "Clay", identity), "index.html": sources["index.html"].replace('data-sort="-date"', 'data-sort="constructor"').replace(/<template>[\s\S]*?<\/template>/, `<template><p>{constructor}</p></template>`) };
+  assert.ok(!("error" in planBake(after, routes, identity)));
+  after["index.html"] = after["index.html"].replace('data-sort="constructor"', 'data-filter="constructor=Clay"');
+  assert.equal(good(planBake(after, routes, identity)).collections[0].records.length, 1);
+});
+test("malformed authoring template closing tags reject full plans including empty lists", () => {
+  for (const folder of ["/work/", "/empty/"]) {
+    const source = sources["index.html"].replace('</template>', '</template extra>').replace('data-each="/work/"', `data-each="${folder}"`);
+    assert.ok("error" in planBake({ ...sources, "index.html": source }, routes, identity));
+  }
+});
+test("custom field creation rejects every reserved builtin", () => {
+  for (const field of ["title", "description", "image", "date", "url"]) assert.throws(() => withCustomPageField(sources["index.html"], field, "Oops", identity), /built-in/);
+});
+test("date fallback finds the first time carrying datetime", () => {
+  assert.equal(readPageFields(page("Time", "", `<time>Today</time><time datetime="2026-10-03">Dated</time>`), "/", identity).date, "2026-10-03");
+});
+
+test("a datetime name inside another attribute does not hide the first dated time", () => {
+  const html = page("Time", "", `<time title="no datetime here">Today</time><time datetime="2026-10-03">Dated</time>`);
+  assert.equal(readPageFields(html, "/", identity).date, "2026-10-03");
 });

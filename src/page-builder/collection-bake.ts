@@ -1,6 +1,6 @@
 import { startTags, VOID_ELEMENTS } from "../../shared/html-source";
 import { parseSource, type SourceNode } from "./component-model";
-import { builtinFields, fieldName, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { builtinFields, fieldName, ownPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { attribute, collectionRecords, readCollections, validCollectionRoute, type CollectionRecord } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { escapeText } from "./site-head";
@@ -22,7 +22,7 @@ export function applyCollectionEdits(source: string, edits: CollectionEdit[]): s
   }
   return source;
 }
-const urlAttributes = new Set(["href", "src", "action", "formaction", "poster", "cite", "xlink:href"]);
+const urlAttributes = new Set(["href", "src", "data", "action", "formaction", "poster", "cite", "xlink:href"]);
 export function safeCollectionUrl(value: string): boolean {
   const normalized = value.replace(/[\u0000-\u0020\u007f]+/g, "").replace(/\\/g, "/");
   return !normalized.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/i.test(normalized) || /^https?:\/\//i.test(normalized);
@@ -39,7 +39,7 @@ function fieldsIn(value: string, known: Set<string>): string[] {
 }
 function substitute(value: string, fields: PageFields, known: Set<string>, escape: (value: string) => string): string {
   fieldsIn(value, known);
-  return value.replace(/\{([a-z][a-z0-9_-]*)\}/g, (_, name: string) => escape(fields[name] ?? ""));
+  return value.replace(/\{([a-z][a-z0-9_-]*)\}/g, (_, name: string) => escape(ownPageField(fields, name)));
 }
 function validateAttributes(source: string, start: number, end: number): void {
   let tail = source.slice(start, end - 1);
@@ -123,6 +123,7 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
         if (name === "data-if") continue;
         const bound = fieldsIn(value, known);
         if (!bound.length) continue;
+        if (node.name === "script") throw new Error("Bindings are not supported on script elements.");
         if (name.startsWith("on") || ["style", "srcdoc", "srcset"].includes(name)) throw new Error(`Bindings are not supported in ${name}.`);
         const decoded = decodeHtmlEntities(value, true);
         const plain = substitute(decoded, fields, known, (text) => text);
@@ -138,7 +139,7 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
         inner = template.slice(node.tag.end, node.close?.start ?? node.tag.end);
         if (/[{}]/.test(inner)) throw new Error(`Bindings are not supported inside ${node.name}.`);
       } else inner = render(node.children, node.tag.end, node.close?.start ?? node.tag.end);
-      if (condition !== undefined && !fields[condition]?.trim()) continue;
+      if (condition !== undefined && !ownPageField(fields, condition).trim()) continue;
       output += tag + inner + (node.close ? template.slice(node.close.start, node.close.end) : "");
     }
     return output + template.slice(cursor, to);
@@ -161,6 +162,7 @@ export function planBake(sources: Record<string, string>, routes: Record<string,
         const { element, template, spec } = collection;
         const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path);
         const known = [...new Set(all.flatMap((record) => Object.keys(record.fields)))];
+        validateTemplate(source.slice(template.start, template.end));
         const markup = source.slice(template.tag.end, template.close!.start);
         // An empty list still validates its template instead of silently accepting a typo.
         bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
