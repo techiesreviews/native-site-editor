@@ -164,11 +164,13 @@ const publishers = new Set<() => void>();
 export function refreshDrafts() {
   for (const refresh of publishers) refresh();
 }
-// An undo step that is not a text change (a page created in the explorer):
-// undoing runs it, and it cannot be redone.
-type HistoryAction = { path: string; action: () => void | Promise<void> };
+/** Returning false refuses the operation and retains its history entry. */
+export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
+// Legacy actions run once on Undo; actions with Redo move between both stacks.
+type HistoryAction = { path: string; action: HistoryActionCallback; redo?: HistoryActionCallback };
 const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
-const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: VisualHistoryEntry[] }>();
+const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: (VisualHistoryEntry | HistoryAction)[] }>();
+const runningVisualHistory = new Set<string>();
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
 // A companion of a single (ungrouped) edit runs whenever the model itself is undone to before
 // that edit or redone to after it, by the toolbar, the keyboard or Monaco's own stack once the
@@ -211,6 +213,7 @@ function invalidateVisualHistory(session: string) {
   if (history) { history.undo.length = 0; history.redo.length = 0; }
 }
 function canRunVisualHistory(session: string, direction: "undo" | "redo", fallback: monaco.editor.ITextModel) {
+  if (runningVisualHistory.has(session)) return false;
   const entry = historyFor(session)[direction];
   const candidate = entry.at(-1);
   if (isAction(candidate)) return true;
@@ -222,12 +225,14 @@ function canRunVisualHistory(session: string, direction: "undo" | "redo", fallba
  * Records `action` as the next undo step of the mounted file `path`'s history,
  * below any later edit: Undo runs it once the edits after it are undone. A
  * text change typed in the file clears it with the rest of the history.
+ * Supply redo for a reversible action. False, throws and rejected promises keep
+ * the entry in place. Callbacks own source/draft checks and any side-effect rollback.
  */
-export function recordHistoryAction(path: string, action: () => void | Promise<void>) {
+export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback) {
   const editor = mounted.get(path);
   if (!editor) return false;
   const history = historyFor(editor.session);
-  history.undo.push({ path, action });
+  history.undo.push({ path, action, redo });
   history.redo.length = 0;
   for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
   return true;
@@ -272,48 +277,64 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
   if (fallback?.readOnly) return false;
   const session = fallback?.session ?? [...mounted.values()].at(-1)?.session;
   if (!session) return false;
-  const history = historyFor(session);
-  const source = direction === "undo" ? history.undo : history.redo;
-  const target = direction === "undo" ? history.redo : history.undo;
-  const last = source.at(-1);
-  if (isAction(last)) {
-    source.pop();
-    history.redo.length = 0;
-    await last.action();
-    for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
+  if (runningVisualHistory.has(session)) return false;
+  runningVisualHistory.add(session);
+  try {
+    const history = historyFor(session);
+    const source = direction === "undo" ? history.undo : history.redo;
+    const target = direction === "undo" ? history.redo : history.undo;
+    const last = source.at(-1);
+    if (isAction(last)) {
+      const owner = fallback ?? mounted.get(last.path) ?? [...mounted.values()].find((editor) => editor.session === session);
+      if (!owner || owner.readOnly || owner.session !== session) return false;
+      const ownerPath = [...mounted].find(([, editor]) => editor === owner)?.[0];
+      const action = direction === "undo" ? last.action : last.redo;
+      if (!action) return false;
+      const accepted = await action();
+      // The callback may await network work or change workspace. It owns its
+      // side effects; only this exact, still-mounted journal may receive history.
+      if (accepted === false || visualHistory.get(session) !== history || source.at(-1) !== last ||
+          !ownerPath || mounted.get(ownerPath) !== owner || owner.session !== session || owner.model.isDisposed()) return false;
+      source.pop();
+      if (last.redo) target.push(last);
+      else history.redo.length = 0;
+      return true;
+    }
+    const entry = last;
+    if (entry && mounted.get(entry.path)?.model !== entry.model && fallback?.ensureHistoryTarget)
+      await fallback.ensureHistoryTarget(entry.path);
+    // Loading a displaced stylesheet is asynchronous. A newer action or a
+    // workspace switch owns the history now; never pop its journal entry.
+    if ((fallbackPath && mounted.get(fallbackPath) !== fallback) || source.at(-1) !== entry) return false;
+    const targetEditor = entry ? mounted.get(entry.path) : undefined;
+    const expected = direction === "undo" ? entry?.after : entry?.undone;
+    if (entry && targetEditor?.model === entry.model && targetEditor.session === session && !targetEditor.readOnly &&
+        !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === expected) {
+      source.pop();
+      routedModelChanges.add(entry.model);
+      try { await entry.model[direction](); }
+      finally { routedModelChanges.delete(entry.model); }
+      if (direction === "undo") entry.undone = entry.model.getAlternativeVersionId();
+      else entry.after = entry.model.getAlternativeVersionId();
+      const companions = entry.companions ?? [];
+      for (const companion of direction === "undo" ? [...companions].reverse() : companions) companion[direction]();
+      target.push(entry);
+      for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
+      return true;
+    }
+    invalidateVisualHistory(session);
+    if (entry) return false;
+    if (!fallback || fallback.readOnly || fallback.model.isDisposed() || !(direction === "undo" ? fallback.model.canUndo() : fallback.model.canRedo())) return false;
+    if (direction === "undo") fallback.model.pushStackElement();
+    routedModelChanges.add(fallback.model);
+    try { await fallback.model[direction](); }
+    finally { routedModelChanges.delete(fallback.model); }
+    fallback.refresh();
     return true;
-  }
-  const entry = last;
-  if (entry && mounted.get(entry.path)?.model !== entry.model && fallback?.ensureHistoryTarget)
-    await fallback.ensureHistoryTarget(entry.path);
-  // Loading a displaced stylesheet is asynchronous. A newer action or a
-  // workspace switch owns the history now; never pop its journal entry.
-  if ((fallbackPath && mounted.get(fallbackPath) !== fallback) || source.at(-1) !== entry) return false;
-  const targetEditor = entry ? mounted.get(entry.path) : undefined;
-  const expected = direction === "undo" ? entry?.after : entry?.undone;
-  if (entry && targetEditor?.model === entry.model && targetEditor.session === session && !targetEditor.readOnly &&
-      !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === expected) {
-    source.pop();
-    routedModelChanges.add(entry.model);
-    try { await entry.model[direction](); }
-    finally { routedModelChanges.delete(entry.model); }
-    if (direction === "undo") entry.undone = entry.model.getAlternativeVersionId();
-    else entry.after = entry.model.getAlternativeVersionId();
-    const companions = entry.companions ?? [];
-    for (const companion of direction === "undo" ? [...companions].reverse() : companions) companion[direction]();
-    target.push(entry);
+  } finally {
+    runningVisualHistory.delete(session);
     for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
-    return true;
   }
-  invalidateVisualHistory(session);
-  if (entry) return false;
-  if (!fallback || fallback.readOnly || fallback.model.isDisposed() || !(direction === "undo" ? fallback.model.canUndo() : fallback.model.canRedo())) return false;
-  if (direction === "undo") fallback.model.pushStackElement();
-  routedModelChanges.add(fallback.model);
-  try { await fallback.model[direction](); }
-  finally { routedModelChanges.delete(fallback.model); }
-  fallback.refresh();
-  return true;
 }
 const editorFor = (path: string) => {
   const editor = mounted.get(path);
