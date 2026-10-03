@@ -179,7 +179,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,
         plan: (value) => handlers.planUrl(options.path, value),
         apply: async (value, keep) => {
-          const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== values["og:title"] || socialDescription.value !== values["og:description"] || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
+          const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
           if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";
           const error = await handlers.applyUrl(options.path, value, keep);
           if (!error) dialog.root.close();
@@ -241,6 +241,10 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       photo.addEventListener("error", () => { photo.hidden = true; placeholder.hidden = false; placeholder.textContent = "Image preview unavailable"; });
       for (const input of [title, description, titleLink, descriptionLink, socialTitle, socialDescription, image]) input.addEventListener("input", refresh);
       refresh();
+      // Missing social metadata follows the displayed page details. Compare
+      // URL changes with that initial UI state, rather than absent raw tags.
+      const initialSocialTitle = socialTitle.value;
+      const initialSocialDescription = socialDescription.value;
       applyButton(dialog, "Apply page settings", async () => {
         if (canonical.value && !/^https?:\/\//i.test(canonical.value.trim())) return "Canonical URL must start with https:// or http://.";
         if (theme.value && !CSS.supports("color", theme.value)) return "Enter a valid CSS colour for the theme colour.";
