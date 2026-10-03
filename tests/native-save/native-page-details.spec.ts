@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 
-// Page details live in the page's <head>: the Page block's Title and
+// Page details live in the page's <head>: Page settings Title and
 // Description, and the Pages tab's Rename, write its <title> and
 // <meta name="description"> (og:title and og:description along; see
 // shared/native-project.ts `nativePageWithDetail`) as typed, and Save to
@@ -30,9 +30,6 @@ const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
-const block = (page: Page) => page.getByRole("group", { name: "Page" });
-const title = (page: Page) => block(page).getByLabel("Title");
-const description = (page: Page) => block(page).getByLabel("Description");
 const undo = (page: Page) => page.locator(".code-editor__undo").first();
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const code = (page: Page) => page.locator("#content .view-lines");
@@ -94,39 +91,42 @@ async function closeSaveMenu(page: Page) {
   await expect(page.locator("#publish-files")).toBeHidden();
 }
 
-test("the fields show the page's head, sit above the tree, and are absent for a component alone", async ({ page, baseURL }) => {
+test("Page settings shows the page head and keeps metadata fields out of the structure sidebar", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
-  await expect(block(page)).toBeVisible();
-  await expect(title(page)).toHaveValue("Native Studio");
-  await expect(description(page)).toHaveValue("A small site built from plain HTML, CSS and shared components.");
-  await expect(title(page)).toHaveAttribute("placeholder", "A native browser preview");
-  const blockBox = (await block(page).boundingBox())!;
-  const treeBox = (await tree(page).boundingBox())!;
-  expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(treeBox.y);
+  await readSetting(page, "Title", "Native Studio");
+  await readSetting(page, "Description", "A small site built from plain HTML, CSS and shared components.");
+  await expect(page.locator("#structure").getByLabel("Title", { exact: true })).toHaveCount(0);
+  await expect(tree(page)).toBeVisible();
 
   // A component no page uses shows by itself: no page, so no Page fields.
   await expand(page, "components/feature-block");
   await row(page, "feature-block.html").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   await expect(page.locator("#structure .sidebar-hint")).toContainText("component by itself", { timeout: 30_000 });
-  await expect(block(page)).toBeHidden();
+  await expect(page.locator("#structure").getByLabel("Title", { exact: true })).toHaveCount(0);
+  await expect(settingsDialog(page)).toBeHidden();
 });
 
 test("typing a title and a description writes the head, og tags along, one undo step each; back as it was, nothing to save", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
-  await title(page).fill("Home & <more>");
-  await expect(status(page)).toHaveText("Title updated");
-  await expect(code(page)).toContainText("<title>Home &amp; &lt;more></title>");
+  await writeSetting(page, "Title", "Home & <more>");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(code(page)).toContainText("<title>Home &amp; &lt;more&gt;</title>");
   await expect(page.locator("#current-page")).toHaveText("Home");
   await page.keyboard.press("Enter");
-  await description(page).fill('The "home" page');
-  await expect(status(page)).toHaveText("Description updated");
+  await writeSetting(page, "Description", 'The "home" page');
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await page.keyboard.press("Enter");
   const written = (await draft(page, "index.html")).content;
   expect(written).toBe(starterHome
-    .replace("<title>Native Studio</title>", "<title>Home &amp; &lt;more></title>")
-    .replace('<meta property="og:title" content="Native Studio">', '<meta property="og:title" content="Home &amp; <more>">')
+    .replace("<title>Native Studio</title>", "<title>Home &amp; &lt;more&gt;</title>")
+    .replace('<meta property="og:title" content="Native Studio">', '<meta property="og:title" content="Home &amp; &lt;more&gt;">')
     .replace(/content="A small site built from plain HTML, CSS and shared components\."/g, 'content="The &quot;home&quot; page"'));
+  const publishedDetails = await page.evaluate(source => {
+    const document = new DOMParser().parseFromString(source, "text/html");
+    return { title: document.title, socialTitle: document.querySelector('meta[property="og:title"]')?.getAttribute("content") };
+  }, written);
+  expect(publishedDetails).toEqual({ title: "Home & <more>", socialTitle: "Home & <more>" });
   // The head never shows in the preview.
   await expect(frame(page).locator("body")).not.toContainText('"home" page');
   await openSaveMenu(page);
@@ -136,64 +136,65 @@ test("typing a title and a description writes the head, og tags along, one undo 
 
   // Undo: the description, then the title.
   await undo(page).click();
-  await expect(description(page)).toHaveValue("A small site built from plain HTML, CSS and shared components.");
+  await readSetting(page, "Description", "A small site built from plain HTML, CSS and shared components.");
   await undo(page).click();
-  await expect(title(page)).toHaveValue("Native Studio");
+  await readSetting(page, "Title", "Native Studio");
   expect(await draft(page, "index.html")).toBeUndefined();
   await expect(saveTrigger(page)).toBeDisabled();
 
   // An emptied title leaves an empty <title>, and the top bar falls back to the heading.
   await open(page, baseURL, 501, "about/index.html");
-  await title(page).fill("");
-  await expect(status(page)).toHaveText("Title removed");
-  await expect(code(page)).toContainText("<title></title>");
+  await writeSetting(page, "Title", "");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  // Applying the dialog may restore the head fold; assert the actual source bytes.
+  await expect.poll(async () => (await draft(page, "about/index.html"))?.content).toContain("<title></title>");
   await expect(page.locator("#current-page")).toHaveText("About this project");
 });
 
 test("the fields follow the preview's page and keep what was typed on each page", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
-  await title(page).fill("Home");
+  await writeSetting(page, "Title", "Home");
   await page.keyboard.press("Enter");
-  await expect(title(page)).not.toBeFocused();
+  await expect(settingsDialog(page)).toBeHidden();
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
-  await expect(title(page)).toHaveValue("About this project");
-  await title(page).fill("About");
-  await description(page).fill("Who made this");
+  await readSetting(page, "Title", "About this project");
+  await writeSetting(page, "Title", "About");
+  await writeSetting(page, "Description", "Who made this");
   await follow(page, "Home");
   await expect(tree(page).getByRole("treeitem", { name: "Section A native browser preview" })).toBeVisible();
-  await expect(title(page)).toHaveValue("Home");
+  await readSetting(page, "Title", "Home");
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
-  await expect(title(page)).toHaveValue("About");
-  await expect(description(page)).toHaveValue("Who made this");
+  await readSetting(page, "Title", "About");
+  await readSetting(page, "Description", "Who made this");
   await openSaveMenu(page);
   await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(2);
 });
 
 test("a typed title survives a reload, and saving commits it in the page", async ({ page, baseURL }) => {
   await open(page, baseURL, 530, fernPath);
-  await expect(title(page)).toHaveValue("Fern & Kettle");
-  await title(page).fill("Fern & Kettle café");
-  await expect(status(page)).toHaveText("Title updated");
+  await readSetting(page, "Title", "Fern & Kettle");
+  await writeSetting(page, "Title", "Fern & Kettle café");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await page.reload();
-  await expect(title(page)).toHaveValue("Fern & Kettle café", { timeout: 30_000 });
+  await readSetting(page, "Title", "Fern & Kettle café");
   await saveAll(page);
   expect(await branchFile(page, routingRepo, fernPath)).toContain("<title>Fern &amp; Kettle café</title>");
   await expect(saveTrigger(page)).toBeDisabled();
   // Saved on the branch: a fresh load reads it from GitHub, with no draft left.
   await page.reload();
-  await expect(title(page)).toHaveValue("Fern & Kettle café", { timeout: 30_000 });
+  await readSetting(page, "Title", "Fern & Kettle café");
   await expect(page.locator("#current-page")).toHaveText("Fern & Kettle café");
   await expect(saveTrigger(page)).toBeDisabled();
 });
 
 test("a description a page lacks is added after its title; the Pages tab's Rename writes the title", async ({ page, baseURL }) => {
   await open(page, baseURL, 531, "notes/first-note/index.html");
-  await expect(title(page)).toHaveValue("The first note");
-  await expect(description(page)).toHaveValue("");
-  await description(page).fill("Notes, the first.");
-  await expect(status(page)).toHaveText("Description updated");
+  await readSetting(page, "Title", "The first note");
+  await readSetting(page, "Description", "");
+  await writeSetting(page, "Description", "Notes, the first.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await page.keyboard.press("Enter");
   expect((await draft(page, "notes/first-note/index.html")).content).toContain('  <title>The first note</title>\n  <meta name="description" content="Notes, the first.">\n');
 
@@ -238,3 +239,22 @@ test("renaming a page's folder in the Files tab updates the links to it and can 
   await expect(frame(page).locator("h1")).toHaveText("Fern and Kettle");
   await expect(page.locator(".native-preview-error")).toBeHidden();
 });
+
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function openSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+async function readSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
+  await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+}
+async function writeSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await settingsDialog(page).getByLabel(label, { exact: true }).fill(value);
+  await settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(settingsDialog(page)).toBeHidden();
+}

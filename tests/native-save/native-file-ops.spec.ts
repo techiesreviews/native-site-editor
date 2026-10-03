@@ -383,7 +383,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   // Duplicate, from the row's menu: a titled copy beside it.
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Fern & Kettle café" });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Page settings…", "Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
   await menu.getByRole("menuitem", { name: "Duplicate" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle-copy/index.html");
   await expect(status(page)).toHaveText("Duplicated Fern & Kettle café as Fern & Kettle café (copy) at /work/fern-and-kettle-copy/.");
@@ -404,7 +404,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await openPages(page);
   await item(page, "Home").focus();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("menu", { name: "Actions for Home" }).getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Duplicate"]);
+  await expect(page.getByRole("menu", { name: "Actions for Home" }).getByRole("menuitem")).toHaveText(["Page settings…", "Add subpage", /^Rename/, "Duplicate"]);
   await page.keyboard.press("Escape");
 
   // Delete a page with its subpages.

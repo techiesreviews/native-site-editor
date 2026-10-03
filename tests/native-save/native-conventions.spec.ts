@@ -23,7 +23,6 @@ test.afterEach(() => {
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
-const block = (page: Page) => page.getByRole("group", { name: "Page" });
 
 // Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
 async function expandRow(page: Page, name: string) {
@@ -75,15 +74,17 @@ test("a site previews its components and the styles its pages link", async ({ pa
   await expect(frame(page).locator("site-header .brand")).toHaveText("Conventions");
 });
 
-test("the Page block shows the page's title and description, editable", async ({ page, baseURL }) => {
+test("Page settings shows the page's title and description, editable", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const title = block(page).getByLabel("Title");
-  const description = block(page).getByLabel("Description");
+  await openSettings(page);
+  const title = settingsDialog(page).getByLabel("Title", { exact: true });
+  const description = settingsDialog(page).getByLabel("Description", { exact: true });
   await expect(title).toHaveValue("Built by convention");
   await expect(description).toHaveValue("A site read from its files: its pages, components and styles are found where they are.");
   await expect(title).toBeEditable();
   await expect(description).toBeEditable();
-  await expect(block(page).locator(".page-structure__meta-notice")).toBeHidden();
+  await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator("#structure").getByLabel("Title", { exact: true })).toHaveCount(0);
 
   // Selecting a preview element still opens the page source at it.
   await frame(page).locator("h1").click();
@@ -91,8 +92,8 @@ test("the Page block shows the page's title and description, editable", async ({
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
 
   await open(page, baseURL, "notes/first-note/index.html");
-  await expect(title).toHaveValue("The first note");
-  await expect(description).toHaveValue("");
+  await readSetting(page, "Title", "The first note");
+  await readSetting(page, "Description", "");
 });
 
 test("the Pages tab labels pages by their titles, and a new page is a folder of its own", async ({ page, baseURL }) => {
@@ -120,7 +121,7 @@ test("the Pages tab labels pages by their titles, and a new page is a folder of 
   // It is built from the home page: its header, its own title, an empty <main>.
   await expect(frame(page).locator("site-header .brand")).toHaveText("Conventions");
   await expect(frame(page).locator("main")).toBeEmpty();
-  await expect(block(page).getByLabel("Title")).toHaveValue("Second note");
+  await readSetting(page, "Title", "Second note");
   // The title is in the file; the code pane shows the page's <head> folded on first view.
   await expect.poll(async () => (await storedDraft(page, "notes/second-note/index.html"))?.content).toContain("<title>Second note</title>");
   await expect(page.locator("#content .view-lines")).toContainText("<head>");
@@ -201,7 +202,20 @@ test("the Pages tab's Rename is enabled, and Duplicate titles the copy in its he
   await expect(page.locator("#current-page")).toHaveText("The first note (copy)");
   await expect(page.locator("#status")).toHaveText("Duplicated The first note as The first note (copy) at /notes/first-note-copy/.");
   await expect(frame(page).locator("h1")).toHaveText("First note");
-  await expect(block(page).getByLabel("Title")).toHaveValue("The first note (copy)");
+  await readSetting(page, "Title", "The first note (copy)");
   await openPages(page);
   await expect(item(page, "The first note (copy)")).toBeVisible();
 });
+
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function openSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+async function readSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
+  await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+}

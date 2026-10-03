@@ -24,8 +24,7 @@ test.afterEach(() => {
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const heading = (page: Page) => frame(page).locator("h1");
-const block = (page: Page) => page.getByRole("group", { name: "Page" });
-const title = (page: Page) => block(page).getByLabel("Title");
+
 const follow = (page: Page, name: string) =>
   frame(page).getByRole("link", { name, exact: true }).click({ modifiers: ["ControlOrMeta"] });
 
@@ -39,17 +38,17 @@ test("pages are routed by their paths, and root and relative links follow to the
   await open(page, baseURL);
   await expect(heading(page)).toHaveText("Routed by folders");
   await expect(page.locator(".native-preview-warning")).toBeHidden();
-  await expect(title(page)).toHaveValue("Routed by folders");
+  await readSetting(page, "Title", "Routed by folders");
 
   // work/index.html is /work/.
   await follow(page, "Our work");
   await expect(heading(page)).toHaveText("Work");
-  await expect(title(page)).toHaveValue("Work");
+  await readSetting(page, "Title", "Work");
 
   // work/fern-and-kettle/index.html is /work/fern-and-kettle/, titled by its <title>.
   await follow(page, "Fern and Kettle");
   await expect(heading(page)).toHaveText("Fern and Kettle");
-  await expect(title(page)).toHaveValue("Fern & Kettle");
+  await readSetting(page, "Title", "Fern & Kettle");
 
   // The link Address suggests the site's pages by title; a page under _parts/ is not one.
   await frame(page).getByRole("link", { name: "All work", exact: true }).click();
@@ -71,8 +70,8 @@ test("pages are routed by their paths, and root and relative links follow to the
 test("opening a nested page file shows its route, and titling it writes its <title>", async ({ page, baseURL }) => {
   await open(page, baseURL, "work/index.html");
   await expect(heading(page)).toHaveText("Work");
-  await title(page).fill("Our work");
-  await expect(page.locator("#status")).toHaveText("Title updated");
+  await writeSetting(page, "Title", "Our work");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   // The <head> is collapsed in the code editor: the draft holds the title.
   await expect.poll(async () => (await storedDraft(page, "work/index.html"))?.content).toContain("<title>Our work</title>");
 
@@ -83,8 +82,8 @@ test("opening a nested page file shows its route, and titling it writes its <tit
   await page.keyboard.press("Escape");
 
   // The title as it was: nothing left to save.
-  await title(page).fill("Work");
-  await expect(page.locator("#status")).toHaveText("Title updated");
+  await writeSetting(page, "Title", "Work");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await expect(publishButton(page)).toBeDisabled();
 });
 
@@ -126,3 +125,22 @@ test("two files for one component show a warning above the page, which still ren
   await follow(page, "Our work");
   await expect(heading(page)).toHaveText("Work");
 });
+
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function openSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+async function readSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
+  await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+}
+async function writeSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await settingsDialog(page).getByLabel(label, { exact: true }).fill(value);
+  await settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(settingsDialog(page)).toBeHidden();
+}

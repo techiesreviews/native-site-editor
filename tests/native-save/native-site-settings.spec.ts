@@ -9,8 +9,8 @@ async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
 }
-async function openPageSettings(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click(); }
-async function openNavigation(page: Page) { await showPages(page); await pageBlock(page).getByRole("button", { name: "Navigation", exact: true }).click(); }
+async function openPageSettings(page: Page) { await showPages(page); await page.locator("#page-settings-toggle").click(); }
+async function openNavigation(page: Page) { await showPages(page); await page.locator("#navigation-settings-toggle").click(); }
 async function open(page: Page, baseURL: string | undefined, repo = 501, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });

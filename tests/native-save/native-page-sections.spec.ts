@@ -89,19 +89,18 @@ test("a new page starts with an empty <main>, and a section component goes in it
   ));
 });
 
-test("the top bar shows the open page's title, follows the Page block's title, and a stylesheet's path", async ({ page, baseURL }) => {
+test("the top bar shows the open page's title, follows the applied Page settings title, and a stylesheet's path", async ({ page, baseURL }) => {
   await open(page, baseURL, 501, "about/index.html");
   // The page's <title>.
   await expect(label(page)).toHaveText("About this project");
   await expect(page.locator("#explorer-toggle")).toHaveAttribute("title", "Pages & files — about/index.html");
-  const title = page.getByRole("group", { name: "Page" }).getByLabel("Title");
-  await title.fill("Our story");
-  await expect(page.locator("#status")).toHaveText("Title updated");
+  await writeSetting(page, "Title", "Our story");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await expect(label(page)).toHaveText("Our story");
   // An empty title: the first heading.
-  await title.fill("");
+  await writeSetting(page, "Title", "");
   await expect(label(page)).toHaveText("About this project");
-  await title.fill("Our story");
+  await writeSetting(page, "Title", "Our story");
   await expect(label(page)).toHaveText("Our story");
 
   // Switching pages in the Pages tab follows.
@@ -153,3 +152,17 @@ test("a page whose <main> holds no section offers one place at the end of <main>
   await open(page, baseURL, 530);
   await expect(page.locator(".insert-point__plus")).toHaveCount(2);
 });
+
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function openSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+async function writeSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await settingsDialog(page).getByLabel(label, { exact: true }).fill(value);
+  await settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(settingsDialog(page)).toBeHidden();
+}

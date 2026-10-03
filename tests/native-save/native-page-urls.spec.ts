@@ -38,7 +38,6 @@ async function expandRow(page: Page, name: string) {
   if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
   await expect(treeRow).toHaveAttribute("aria-expanded", "true");
 }
-const block = (page: Page) => page.getByRole("group", { name: "Page" });
 const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
@@ -83,7 +82,7 @@ test("a single-file page has no subpages; a folder page's subpage is a folder in
   await expect(explorer(page).getByRole("button", { name: "Add subpage to Notes" })).toHaveCount(0);
   await item(page, "Notes").focus();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("menu", { name: "Actions for Notes" }).getByRole("menuitem")).toHaveText([/^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
+  await expect(page.getByRole("menu", { name: "Actions for Notes" }).getByRole("menuitem")).toHaveText(["Page settings…", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
   await page.keyboard.press("Escape");
 
   await item(page, "Fern & Kettle").hover();
@@ -113,13 +112,14 @@ test("a single-file page has no subpages; a folder page's subpage is a folder in
   await expect(saveTrigger(page)).toBeDisabled();
 });
 
-test("the Page block's URL changes a page's URL: links in pages and the header nav follow, the old URL redirects, Undo takes it all back, Save commits it", async ({ page, baseURL }) => {
+test("Page settings URL changes a page's URL: links in pages and the header nav follow, the old URL redirects, Undo takes it all back, Save commits it", async ({ page, baseURL }) => {
   const notePath = "notes/first-note/index.html";
   await open(page, baseURL, 531, notePath);
-  const url = block(page).getByRole("textbox", { name: "URL", exact: true });
+  await openSettings(page);
+  const url = settingsDialog(page).getByRole("textbox", { name: "URL", exact: true });
   await expect(url).toHaveValue("/notes/first-note/");
-  const message = block(page).locator(".url-change__message");
-  const keep = block(page).getByRole("checkbox", { name: /^Keep the old URL working/ });
+  const message = settingsDialog(page).locator(".url-change__message");
+  const keep = settingsDialog(page).getByRole("checkbox", { name: /^Keep the old URL working/ });
 
   // Checked as typed.
   await url.fill("/notes/Bad URL/");
@@ -145,7 +145,7 @@ test("the Page block's URL changes a page's URL: links in pages and the header n
   await expect(page.locator("#current-page")).toHaveText("The first note");
   await expect(frame(page).locator("h1")).toHaveText("First note");
   await expect(frame(page).locator("site-header nav a")).toHaveAttribute("href", "/notes/hello/");
-  await expect(url).toHaveValue("/notes/hello/");
+  await readSetting(page, "URL", "/notes/hello/");
   expect((await draft(page, "index.html")).content).toContain('<a href="/notes/hello/" data-key="note-link">First note</a>');
   expect((await draft(page, "components/site-header/site-header.html")).content).toContain('<a href="/notes/hello/" data-key="nav-note">Notes</a>');
   expect((await draft(page, redirectsPath)).content).toBe("/notes/first-note/ /notes/hello/ 301\n");
@@ -155,11 +155,12 @@ test("the Page block's URL changes a page's URL: links in pages and the header n
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(status(page)).toHaveText("Undid changing the URL of The first note to /notes/hello/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", notePath);
-  await expect(url).toHaveValue("/notes/first-note/");
+  await readSetting(page, "URL", "/notes/first-note/");
   for (const path of ["index.html", "components/site-header/site-header.html", redirectsPath, "notes/hello/index.html", notePath])
     expect(await draft(page, path), path).toBeUndefined();
 
   // Again, saved: one commit with the move, the links and the redirect.
+  await openSettings(page);
   await url.fill("/notes/hello/");
   await url.press("Enter");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "notes/hello/index.html");
@@ -234,7 +235,8 @@ test("Move to… from the keyboard puts a page under another; the confirmation s
   await item(page, "Notes").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Notes" });
-  for (let n = 0; n < 2; n++) await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  for (let n = 0; n < 3; n++) await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Move to…" })).toBeFocused();
   await page.keyboard.press("Enter");
 
@@ -340,8 +342,21 @@ test("Create page on a folder with no page makes its index.html from the home pa
   await page.getByRole("menuitem", { name: "Create page" }).click();
   await expect(status(page)).toHaveText("Created the page Notes at /notes/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "notes/index.html");
-  await expect(block(page).getByLabel("Title")).toHaveValue("Notes");
+  await readSetting(page, "Title", "Notes");
   const made = (await draft(page, "notes/index.html")).content;
   expect(made).toContain("<title>Notes</title>");
   expect(made).toContain('<site-header data-key="header"></site-header>');
 });
+
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function openSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+async function readSetting(page: Page, label: string, value: string) {
+  await openSettings(page);
+  await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
+  await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+}
