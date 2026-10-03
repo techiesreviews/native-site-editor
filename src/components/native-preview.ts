@@ -18,6 +18,9 @@ import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import { createPageBuilder } from "../page-builder/page-builder";
+import { createCanvasBar } from "./canvas-bar";
+import { readCrumbs } from "../page-builder/canvas-model";
+import { linkCodeToCanvas } from "../page-builder/code-link";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -284,6 +287,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   frame.setAttribute("sandbox", "allow-scripts");
   frame.setAttribute("srcdoc", RUNTIME_DOC);
   frameHost.append(frame);
+  // The canvas around the frame: breakpoints, breadcrumb, spacing (canvas-bar.ts).
+  const toCanvas = (message: Record<string, unknown>) =>
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", ...message }, "*");
+  const canvas = createCanvasBar(frameHost, frame, {
+    onCrumb: (index) => toCanvas({ type: "canvas-crumb", action: "select", index }),
+    onCrumbHover: (index) => toCanvas({ type: "canvas-crumb", action: "hover", index: index ?? -2 }),
+    onSpacing: (on) => toCanvas({ type: "canvas-spacing", on }),
+  });
   const errorBox = node("div", "native-preview-error");
   errorBox.setAttribute("role", "alert");
   errorBox.hidden = true;
@@ -292,15 +303,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const warningBox = node("div", "native-preview-warning");
   warningBox.setAttribute("role", "status");
   warningBox.hidden = true;
-  pane.append(errorBox, warningBox, frameHost);
+  pane.append(errorBox, warningBox, canvas.bar, frameHost);
   // A drag from the edit bar's grip: the editor holds the pointer and sends
   // its place in the frame; the runtime answers with `section-drag` messages.
   const toRuntime = (type: string, at?: { x: number; y: number }) =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type, ...at }, "*");
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
+  let componentColor = "";
   const postTheme = () =>
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus }, "*");
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus, component: componentColor }, "*");
   // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
   const editBar = createEditBar(pane, frame, {
     start: (at) => toRuntime("drag-start", at),
@@ -365,6 +377,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let messageId = 0;
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
+    componentColor = colors.component;
     if (ready) postTheme();
   });
   // A load/site failure (frame hidden) outranks a transient runtime error
@@ -383,9 +396,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       errorBox.textContent = message;
       errorBox.hidden = false;
       frameHost.hidden = hideFrame;
+      canvas.bar.hidden = hideFrame;
     } else {
       errorBox.hidden = true;
       frameHost.hidden = false;
+      canvas.bar.hidden = false;
     }
   }
 
@@ -494,6 +509,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
       return;
     }
+    // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
+    if (data.type === "canvas-clear") {
+      clearSelection();
+      return;
+    }
     // Pins' places describe the DOM too, but each report is whole and
     // sent only when it changed, so none is dropped.
     if (data.type === "pin-rects") {
@@ -517,6 +537,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "ready") {
       ready = true;
       postTheme();
+      if (canvas.spacing()) toCanvas({ type: "canvas-spacing", on: true });
+      lastAvoid = "";
+      postAvoid();
       pins.reset();
       schedule();
       return;
@@ -628,12 +651,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         pageNode?: unknown;
         selector?: unknown;
         host?: unknown;
+        crumbs?: unknown;
       };
       const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
+      if (reason === "click") codeLink.cancel();
       // The runtime lost its selection in a re-render (the element was
       // removed or replaced) and nothing was requested in its place.
       if (raw.path === "" && reason === "refresh") {
+        canvas.setCrumbs([]);
         editBar.hide();
         pageBuilder.selected("", undefined, undefined);
         handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
@@ -646,6 +672,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const pagePath = site.routes[route];
       const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
       pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
+      canvas.setCrumbs(readCrumbs(raw.crumbs));
       handlers.onSelect?.({
         path: raw.path,
         tag: typeof raw.tag === "string" ? raw.tag : "",
@@ -743,11 +770,38 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function clearSelection() {
     staleClick = false;
+    codeLink.cancel();
+    canvas.setCrumbs([]);
     editBar.hide();
     pageBuilder.selected("", undefined, undefined);
     postClearSelection();
     handlers.onSelect?.({ path: "", tag: "", text: "", reason: "click", selectors: [] });
   }
+
+  // The code pane's cursor selects its element here (as a refresh, so the
+  // cursor stays put; the canvas scrolls only to an element out of sight),
+  // and the line under the pointer gets a soft dashed box (code-link.ts).
+  // Canvas labels keep clear of the edit bar: the runtime hears where it
+  // stands over the frame (frame-viewport coordinates), or that it is hidden.
+  let lastAvoid = "";
+  const postAvoid = () => {
+    const bar = editBar.element;
+    const at = bar.hidden ? undefined : bar.getBoundingClientRect();
+    const box = frame.getBoundingClientRect();
+    const rect = at && at.width ? { top: at.top - box.top, left: at.left - box.left, bottom: at.bottom - box.top, right: at.right - box.left } : null;
+    const key = JSON.stringify(rect);
+    if (key === lastAvoid) return;
+    lastAvoid = key;
+    toCanvas({ type: "canvas-avoid", rect });
+  };
+  const avoidWatch = new MutationObserver(() => requestAnimationFrame(postAvoid));
+  avoidWatch.observe(editBar.element, { attributes: true, attributeFilter: ["style", "hidden"], childList: true });
+
+  const codeLink = linkCodeToCanvas({
+    owns: (path) => Boolean(site && mounted && ready && !viewing && nativeSitePaths(site).includes(path)),
+    hint: (request) => toCanvas({ type: "canvas-hint", request: request ?? null }),
+    select: (request) => toCanvas({ type: "canvas-code-select", request }),
+  });
 
   return {
     /** Show the pane and adopt a site. Idempotent for the same site. */
@@ -867,7 +921,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pane.classList.toggle("is-viewing", Boolean(bar));
       pageBuilder.setViewing(Boolean(bar));
       if (bar) {
-        pane.insertBefore(bar, frameHost);
+        pane.insertBefore(bar, canvas.bar);
+        canvas.setCrumbs([]);
         editBar.hide();
         insertControls.clear();
         pageBuilder.clear();
@@ -942,6 +997,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();
+      canvas.destroy();
+      codeLink.destroy();
+      avoidWatch.disconnect();
       pins.destroy();
       stopTheme();
       insertControls.destroy();

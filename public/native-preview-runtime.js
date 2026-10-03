@@ -547,6 +547,7 @@
     ensureBoxes();
     drawBox(hoverBox, hovered);
     drawBox(selectBox, selected);
+    canvasPaint();
     scheduleRect();
     schedulePins();
     scheduleItemGrids();
@@ -1529,6 +1530,7 @@
       var pageNode = elementIndexPath(outer);
       if (pageNode) payload.pageNode = pageNode;
     }
+    payload.crumbs = canvasCrumbs(el);
     lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
   }
@@ -2184,6 +2186,257 @@
       });
     });
   }
+
+  // ---- Canvas (page builder, canvas slice; docs/page-builder/canvas.md) ----
+  // Design-tool feedback drawn over the page, never part of it: a label on
+  // the hovered element (`section.hero`, a component's tag), a soft dashed
+  // box for what the editor points at (a line hovered in the code pane, a
+  // crumb hovered in the breadcrumb), Webflow-style margin and padding
+  // shading when the editor turns it on, and the selection's ancestors for
+  // the breadcrumb. Esc and Ctrl/⌘+↑ select the parent.
+  var componentColor = "#8b3fd9";
+  var canvasHint = null;
+  var canvasSpacing = false;
+  var canvasCrumbEls = [];
+  var canvasLabel = null;
+  var canvasHintBox = null;
+  var canvasSpacingBoxes = null;
+  // Where the editor's edit bar stands over the frame, for labels to keep clear of.
+  var canvasAvoid = null;
+  function canvasOverlay(name) {
+    var el = document.createElement("div");
+    el.setAttribute("data-native-selection-box", name);
+    el.style.cssText = "position:absolute;display:none;pointer-events:none;z-index:2147483646;box-sizing:border-box;";
+    document.documentElement.appendChild(el);
+    return el;
+  }
+  function canvasEnsure() {
+    if (canvasLabel) return;
+    canvasHintBox = canvasOverlay("hint");
+    canvasLabel = canvasOverlay("label");
+    canvasLabel.style.cssText += "z-index:2147483647;padding:0 5px;border-radius:3px;white-space:nowrap;" +
+      "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
+    canvasSpacingBoxes = ["margin", "margin", "margin", "margin", "padding", "padding", "padding", "padding"].map(function (kind) {
+      var el = canvasOverlay("spacing");
+      el.setAttribute("data-native-spacing", kind);
+      el.style.cssText += "align-items:center;justify-content:center;overflow:hidden;" +
+        "font:600 11px/1 system-ui,-apple-system,'Segoe UI',sans-serif;" +
+        (kind === "margin" ? "background:rgba(246,170,92,.42);color:#6b3d08;" : "background:rgba(132,196,104,.42);color:#24501a;");
+      return el;
+    });
+  }
+  // A component instance on the page (its tag is one of the site's components).
+  function canvasIsComponent(el) {
+    return !!(el && state && Object.prototype.hasOwnProperty.call(state.components || {}, el.localName) && el.shadowRoot);
+  }
+  // Components and what their templates render wear the editor's component
+  // accent: changing them changes every instance. The page's own elements,
+  // slotted ones included, wear the selection colour.
+  function canvasColor(el) {
+    var root = el.getRootNode && el.getRootNode();
+    return el !== pageEl && (canvasIsComponent(el) || root instanceof ShadowRoot) ? componentColor : boxColor;
+  }
+  function canvasInk(color) {
+    return luminance(rgba(color)) > 0.3 ? "#16161d" : "#ffffff";
+  }
+  function canvasLabelText(el) {
+    if (el === pageEl) return "body";
+    if (canvasIsComponent(el)) return el.localName;
+    var first = (el.getAttribute("class") || "").trim().split(/\s+/)[0];
+    if (first) return el.localName + "." + first;
+    var id = (el.getAttribute("id") || "").trim();
+    return id ? el.localName + "#" + id : el.localName;
+  }
+  function canvasSectionRoot(n) {
+    var root = n.parentNode;
+    return root instanceof ShadowRoot && root.host && sectionLike(root.host) && root.host.localName !== "section";
+  }
+  function canvasUp(n) {
+    if (n.parentElement) return n.parentElement;
+    var root = n.getRootNode && n.getRootNode();
+    return root instanceof ShadowRoot ? root.host : null;
+  }
+  // The element a click would select around `el`: past slots and a section
+  // component's root (the instance stands for it), up to the page root.
+  function canvasParent(el) {
+    var next = canvasUp(el);
+    while (next && (next instanceof HTMLSlotElement || canvasSectionRoot(next))) next = canvasUp(next);
+    if (!next || next === pageEl) return null;
+    // Inside the page, through the shadow roots of components within components.
+    for (var at = next; at; at = canvasUp(at)) if (at === pageEl) return next;
+    return null;
+  }
+  function canvasCrumbs(el) {
+    var list = [];
+    for (var at = el; at && list.length < 64; at = canvasParent(at)) list.unshift(at);
+    canvasCrumbEls = list;
+    return list.map(function (item) {
+      var root = item.getRootNode && item.getRootNode();
+      return {
+        label: canvasLabelText(item),
+        kind: canvasIsComponent(item) ? "component" : root instanceof ShadowRoot ? "template" : "element"
+      };
+    });
+  }
+  function canvasDrawLabel(el) {
+    var rect = el && el.isConnected && el.getBoundingClientRect();
+    if (!rect || (!rect.width && !rect.height)) { canvasLabel.style.display = "none"; return; }
+    var color = canvasColor(el);
+    canvasLabel.textContent = canvasLabelText(el);
+    canvasLabel.style.background = color;
+    canvasLabel.style.color = canvasInk(color);
+    canvasLabel.style.display = "block";
+    // At the element's left edge, kept inside the frame's width.
+    var width = canvasLabel.offsetWidth;
+    var left = Math.max(0, Math.min(rect.left, document.documentElement.clientWidth - width));
+    // Above the element's top-left corner, else just inside it, else below
+    // it: the first place clear of the edit bar.
+    var places = [rect.top + 1, rect.bottom + 1];
+    if (rect.top >= 18) places.unshift(rect.top - 17);
+    var top = places.find(function (y) { return !canvasCovered(left, y, width, 16); });
+    if (top === undefined) top = places[0];
+    canvasLabel.style.left = left + window.scrollX + "px";
+    canvasLabel.style.top = top + window.scrollY + "px";
+  }
+  // Whether a box (frame-viewport coordinates) falls under the edit bar.
+  function canvasCovered(left, top, width, height) {
+    var bar = canvasAvoid;
+    return !!bar && left < bar.right && left + width > bar.left && top < bar.bottom && top + height > bar.top;
+  }
+  function canvasPlace(box, left, top, width, height, value) {
+    if (!(width > 0.5 && height > 0.5)) { box.style.display = "none"; return; }
+    box.style.display = "flex";
+    box.style.left = left + "px";
+    box.style.top = top + "px";
+    box.style.width = width + "px";
+    box.style.height = height + "px";
+    box.textContent = Math.min(width, height) >= 14 && value >= 1 ? String(Math.round(value)) : "";
+  }
+  function canvasDrawSpacing(el) {
+    var rect = el && el.isConnected && el.getBoundingClientRect();
+    if (!rect || (!rect.width && !rect.height)) {
+      canvasSpacingBoxes.forEach(function (box) { box.style.display = "none"; });
+      return;
+    }
+    var s = getComputedStyle(el);
+    var px = function (name) { return Math.max(0, parseFloat(s.getPropertyValue(name)) || 0); };
+    var m = { t: px("margin-top"), r: px("margin-right"), b: px("margin-bottom"), l: px("margin-left") };
+    var p = { t: px("padding-top"), r: px("padding-right"), b: px("padding-bottom"), l: px("padding-left") };
+    var bd = { t: px("border-top-width"), r: px("border-right-width"), b: px("border-bottom-width"), l: px("border-left-width") };
+    var x = rect.left + window.scrollX, y = rect.top + window.scrollY, w = rect.width, h = rect.height;
+    var box = canvasSpacingBoxes;
+    canvasPlace(box[0], x - m.l, y - m.t, w + m.l + m.r, m.t, m.t);
+    canvasPlace(box[1], x + w, y, m.r, h, m.r);
+    canvasPlace(box[2], x - m.l, y + h, w + m.l + m.r, m.b, m.b);
+    canvasPlace(box[3], x - m.l, y, m.l, h, m.l);
+    var ix = x + bd.l, iy = y + bd.t, iw = w - bd.l - bd.r, ih = h - bd.t - bd.b;
+    canvasPlace(box[4], ix, iy, iw, p.t, p.t);
+    canvasPlace(box[5], ix + iw - p.r, iy + p.t, p.r, ih - p.t - p.b, p.r);
+    canvasPlace(box[6], ix, iy + ih - p.b, iw, p.b, p.b);
+    canvasPlace(box[7], ix, iy + p.t, p.l, ih - p.t - p.b, p.l);
+  }
+  // Called from updateBoxes, after the hover and selection boxes.
+  function canvasPaint() {
+    canvasEnsure();
+    if (canvasHint && !canvasHint.isConnected) canvasHint = null;
+    var hint = canvasHint && canvasHint !== selected ? canvasHint : null;
+    if (hoverBox && hovered) {
+      var hoverColor = canvasColor(hovered);
+      hoverBox.style.borderColor = hoverColor;
+      hoverBox.style.background = "color-mix(in srgb, " + hoverColor + " 4%, transparent)";
+    }
+    drawBox(canvasHintBox, hint);
+    if (hint) {
+      var hintColor = canvasColor(hint);
+      canvasHintBox.style.border = "1px dashed " + hintColor;
+      canvasHintBox.style.background = "color-mix(in srgb, " + hintColor + " 8%, transparent)";
+    }
+    canvasDrawLabel(hint || (hovered && hovered !== selected && !sectionDrag ? hovered : null));
+    canvasDrawSpacing(canvasSpacing && !sectionDrag ? (hint || hovered || selected) : null);
+  }
+  function canvasSelect(el, reason) {
+    if (editing && editing !== el) stopEditing(true);
+    selected = el;
+    updateBoxes();
+    emitSelection(el, reason);
+  }
+  // The parent of the selection, or no selection (the page's <body>) above the top.
+  function canvasSelectParent() {
+    var parentEl = canvasParent(selected);
+    if (parentEl) { canvasSelect(parentEl, "click"); return; }
+    stopEditing(true);
+    selected = null;
+    updateBoxes();
+    emit("canvas-clear");
+  }
+  document.addEventListener("keydown", function (e) {
+    var up = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === "ArrowUp";
+    var esc = e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey;
+    if ((!up && !esc) || !selected || !selected.isConnected || sectionDrag) return;
+    // A form field on the page (in a component too) keeps its own keys.
+    var target = typeof e.composedPath === "function" ? e.composedPath()[0] : e.target;
+    if (target instanceof Element && /^(input|textarea|select)$/.test(target.localName)) return;
+    // Escape first drops what was typed (onEditingKey); the next one climbs.
+    if (esc && editing && editing.innerHTML !== editingHtml) return;
+    e.preventDefault();
+    e.stopPropagation();
+    canvasSelectParent();
+  }, true);
+  window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
+    var msg = e.data || {};
+    if (msg.source !== "astro-native-preview-host") return;
+    if (msg.type === "theme") {
+      if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
+      updateBoxes();
+      return;
+    }
+    if (msg.type === "canvas-avoid") {
+      var bar = msg.rect;
+      canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
+      updateBoxes();
+      return;
+    }
+    if (msg.type === "canvas-spacing") {
+      canvasSpacing = !!msg.on;
+      updateBoxes();
+      return;
+    }
+    // A crumb of the breadcrumb, by its place in the last path sent; -1 is the page itself.
+    if (msg.type === "canvas-crumb") {
+      var index = Number(msg.index);
+      var crumb = index === -1 ? pageEl : canvasCrumbEls[index];
+      if (msg.action === "hover") {
+        canvasHint = crumb && crumb.isConnected ? crumb : null;
+        updateBoxes();
+      } else if (msg.action === "select" && crumb && crumb.isConnected) {
+        canvasHint = null;
+        if (crumb === pageEl) { stopEditing(true); selected = null; updateBoxes(); emit("canvas-clear"); }
+        else if (crumb !== selected) canvasSelect(crumb, "click");
+      }
+      return;
+    }
+    // The element a line of the code pane belongs to, pointed at (or nothing).
+    if (msg.type === "canvas-hint") {
+      canvasHint = msg.request ? resolveNodePath(msg.request) : null;
+      updateBoxes();
+      return;
+    }
+    // The cursor moved in the code pane: its element is selected without
+    // moving the cursor (a refresh), and scrolled to when out of sight.
+    if (msg.type === "canvas-code-select") {
+      var wanted = resolveNodePath(msg.request);
+      if (!wanted) return;
+      // Already selected: nothing to report, but it is still brought into sight.
+      if (wanted !== selected) canvasSelect(wanted, "refresh");
+      var rect = wanted.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        wanted.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+      }
+    }
+  });
+  // ---- End of canvas ----
 
   window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
   window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });

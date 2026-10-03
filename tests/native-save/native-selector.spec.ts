@@ -381,7 +381,9 @@ test("preview frame fills the pane above the code split", async ({ page }) => {
   const split = await box(page, "#main > .code-split");
   const pane = await box(page, "#main > .preview-pane");
   const frame = await box(page, ".native-preview-frame");
-  expect(Math.abs(frame.height - (main.height - split.height))).toBeLessThanOrEqual(4);
+  // Under the canvas bar (breadcrumb and breakpoints).
+  const canvasBar = await box(page, "#main > .preview-pane > .canvas-bar");
+  expect(Math.abs(frame.height - (main.height - split.height - canvasBar.height))).toBeLessThanOrEqual(4);
   expect(Math.abs(frame.width - pane.width)).toBeLessThanOrEqual(2);
 });
 
