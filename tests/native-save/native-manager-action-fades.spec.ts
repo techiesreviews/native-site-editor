@@ -7,11 +7,41 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.locator("#explorer-toggle").click();
   await expect(page.locator("#explorer")).toBeVisible();
 }
-async function painted(overlay: Locator, opacity: string) {
-  await expect(overlay).toHaveCSS("opacity", opacity);
-  // The overlay box never moves or blocks the row; its buttons keep a stable hit target.
+type Hit = { inButton: boolean; inOverlay: boolean; inHost: boolean };
+// What a pointer would actually reach at a point, without moving the pointer there.
+async function hitAt(overlay: Locator, target: Locator, dx?: number): Promise<Hit> {
+  const box = (await target.boundingBox())!;
+  const x = dx === undefined ? box.x + box.width / 2 : box.x + dx;
+  const y = box.y + box.height / 2;
+  return overlay.evaluate((el, [x, y]) => {
+    const hit = document.elementFromPoint(x, y);
+    const host = el.closest(".row-action-host")!;
+    const buttons = [...el.children];
+    return {
+      inButton: Boolean(hit && buttons.some((b) => b.contains(hit))),
+      inOverlay: Boolean(hit && el.contains(hit) && hit !== el),
+      inHost: Boolean(hit && host.contains(hit)),
+    };
+  }, [x, y]);
+}
+async function surface(overlay: Locator) {
+  return overlay.evaluate((el) => { const s = getComputedStyle(el, "::before"); return { opacity: s.opacity, pointer: s.pointerEvents }; });
+}
+/** Rest: nothing visible or hittable; points over the actions reach the row. Shown: real, stable hit targets. */
+async function painted(overlay: Locator, opacity: "0" | "1") {
   await expect(overlay).toHaveCSS("pointer-events", "none");
-  await expect(overlay.locator("> button").first()).toHaveCSS("pointer-events", "auto");
+  await expect.poll(() => surface(overlay)).toEqual({ opacity, pointer: "none" });
+  const buttons = await overlay.locator("> *").all();
+  expect(buttons.length).toBeGreaterThan(0);
+  for (const button of buttons) {
+    await expect(button).toHaveCSS("opacity", opacity);
+    await expect(button).toHaveCSS("pointer-events", opacity === "1" ? "auto" : "none");
+    const hit = await hitAt(overlay, button);
+    if (opacity === "1") expect(hit.inButton).toBe(true);
+    else expect(hit).toEqual({ inButton: false, inOverlay: false, inHost: true });
+  }
+  // The faded lead-in never takes clicks from the row beneath it.
+  expect(await hitAt(overlay, overlay, 4)).toMatchObject({ inOverlay: false, inHost: true });
 }
 
 test("Pages and Files overlay existing actions without shrinking names, and keep keyboard menus", async ({ page, baseURL }) => {
@@ -63,11 +93,11 @@ test("Images reveal usage actions beside the filename while thumbnails and usage
   await expect(page.locator(".media-library__sheet").getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
 });
 
-test("reduced motion reveals immediately and coarse pointer actions remain available", async ({ page, baseURL }) => {
+test("reduced motion reveals actions immediately on hover", async ({ page, baseURL }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await open(page, baseURL);
   const overlay = page.locator(".pages-row.is-current .row-action-overlay").first();
-  await expect(overlay).toHaveCSS("transition-duration", "0s");
+  await expect(overlay.locator("> *").first()).toHaveCSS("transition-duration", "0s");
   await page.locator(".pages-row.is-current").first().hover();
   await painted(overlay, "1");
 });
@@ -87,4 +117,34 @@ test.describe("touch", () => {
     await buttons.last().tap();
     await expect(page.getByRole("menu")).toBeVisible();
   });
+});
+
+test("a hidden Restore cannot be reached at rest; hovering its row reveals it and it restores", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.locator("#explorer").getByRole("tab", { name: "Files", exact: true }).click();
+  const line = page.locator("#explorer .file-row-line.row-action-host:not(.is-folder)")
+    .filter({ visible: true }).filter({ hasNot: page.locator(".file-row.selected, .file-row[data-path=\"index.html\"]") }).first();
+  const fileRow = line.locator(".file-row");
+  const path = (await fileRow.getAttribute("data-path"))!;
+  await fileRow.focus();
+  await page.keyboard.press("Delete");
+  await page.getByRole("dialog", { name: `Delete ${path}?` }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toHaveText(`Deleted ${path}.`);
+  await expect(fileRow).toHaveClass(/is-deleted/);
+
+  const overlay = line.locator(".row-action-overlay");
+  const restore = overlay.getByRole("button", { name: `Restore ${path}` });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(1400, 900);
+  await painted(overlay, "0");
+  // A driver or script reaching for the hidden Restore finds the row, not the action.
+  await expect(restore.click({ trial: true, timeout: 1_000 })).rejects.toThrow();
+  await expect(fileRow).toHaveClass(/is-deleted/);
+  await expect(page.locator("#status")).toHaveText(`Deleted ${path}.`);
+
+  await line.hover();
+  await painted(overlay, "1");
+  await restore.click();
+  await expect(page.locator("#status")).toHaveText(`Restored ${path}.`);
+  await expect(fileRow).not.toHaveClass(/is-deleted/);
 });

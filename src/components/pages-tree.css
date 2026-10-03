@@ -212,6 +212,7 @@
 .pages-row.row-action-host.is-current { --row-action-background: var(--current); }
 .pages-item:focus-visible > .pages-row.row-action-host { --row-action-background: var(--hover); }
 .pages-row.row-action-host.is-drop-target { --row-action-background: var(--current); }
-.pages-item:focus-visible > .pages-row > .row-action-overlay { opacity: 1; transition: none; }
-.pages-item:focus-visible > .pages-row > .row-action-overlay > * > * { transform: none; transition: none; }
-.pages-row .row-action-overlay > :is(.pages-more, .pages-add) { opacity: 1; }
+/* The focused tree item owns the row's actions, revealed immediately. */
+.pages-item:focus-visible > .pages-row > .row-action-overlay > * { opacity: 1; pointer-events: auto; transition: none; }
+.pages-item:focus-visible > .pages-row > .row-action-overlay::before,
+.pages-item:focus-visible > .pages-row > .row-action-overlay > * > * { opacity: 1; transform: none; transition: none; }

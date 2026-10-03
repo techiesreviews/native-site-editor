@@ -30,6 +30,12 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", { name, exact: true });
+// Row actions appear when the pointer enters their row, as a person reaches for them.
+async function rowAction(page: Page, name: string) {
+  const action = explorer(page).getByRole("button", { name, exact: true });
+  await action.locator("xpath=ancestor::*[contains(concat(' ', @class, ' '), ' row-action-host ')][1]").hover();
+  return action;
+}
 const status = (page: Page) => page.locator("#status");
 
 // Opens a page row in the Pages tree (rows start collapsed unless they lead to the open page).
@@ -176,7 +182,7 @@ test("a file deleted from its menu stays struck through with Restore; Delete, Sh
   await expect(row(page, "_parts")).toHaveClass(/is-deleted/);
 
   // Restore brings it back as it was.
-  await explorer(page).getByRole("button", { name: "Restore _parts/note.html" }).click();
+  await (await rowAction(page, "Restore _parts/note.html")).click();
   await expect(status(page)).toHaveText("Restored _parts/note.html.");
   await expect(row(page, "note.html")).not.toHaveClass(/is-deleted/);
   expect(await draft(page, "_parts/note.html")).toBeUndefined();
@@ -237,7 +243,7 @@ test("dragging a file onto a folder moves it there; a folder cannot go inside it
   await expect(row(page, "work")).toBeVisible();
 
   // Move back, from the row's menu.
-  await explorer(page).getByRole("button", { name: "Actions for styles/note.html" }).click();
+  await (await rowAction(page, "Actions for styles/note.html")).click();
   await page.getByRole("menuitem", { name: "Move back to _parts/note.html" }).click();
   await expect(status(page)).toHaveText("Moved styles/note.html back to _parts/note.html.");
   await expect(moved).toHaveCount(0);
@@ -408,7 +414,7 @@ test("the Pages tab renames a title in place, duplicates a page, and deletes a p
   await page.keyboard.press("Escape");
 
   // Delete a page with its subpages.
-  await explorer(page).getByRole("button", { name: "Actions for Work" }).click();
+  await (await rowAction(page, "Actions for Work")).click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
   const deleteWork = page.getByRole("dialog", { name: "Delete Work?" });
   await expect(deleteWork).toContainText("1 page links to these pages; those links will lead nowhere.");

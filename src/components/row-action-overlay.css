@@ -1,8 +1,9 @@
 /* Shared row affordance: names keep their full resting width. Hosts supply
    their painted background so the reveal blends into hover/selection states.
-   The overlay box never moves, so its buttons keep a stable hit target while
-   fading in; only the icons slide. The fade and padding pass clicks through to
-   the row; the existing (non-destructive) buttons stay clickable at rest. */
+   The faded surface is a pointer-transparent paint layer that slides in like
+   the section/component overlay; button boxes never move, so a revealed
+   button stays under the pointer. At rest the buttons are disabled for the
+   pointer, and the fade and padding always pass clicks through to the row. */
 .row-action-host { position: relative; --row-action-background: var(--surface); }
 .row-action-overlay {
   position: absolute;
@@ -12,31 +13,41 @@
   gap: 2px;
   padding: 0 4px 0 20px;
   border-radius: inherit;
-  background: linear-gradient(to right, transparent, var(--row-action-background) 20px);
-  opacity: 0;
+  isolation: isolate;
   pointer-events: none;
-  transition: opacity 140ms ease-out;
 }
-.row-action-overlay > * { pointer-events: auto; }
-.row-action-overlay > * > * { transform: translateX(6px); transition: transform 140ms ease-out; }
-.row-action-host:hover > .row-action-overlay,
-.row-action-host:focus-within > .row-action-overlay,
-.row-action-host:has(> .row-action-overlay [aria-expanded="true"]) > .row-action-overlay {
-  opacity: 1;
+.row-action-host > .row-action-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(to right, transparent, var(--row-action-background) 20px);
+  pointer-events: none;
 }
-.row-action-host:hover > .row-action-overlay > * > *,
-.row-action-host:focus-within > .row-action-overlay > * > *,
-.row-action-host:has(> .row-action-overlay [aria-expanded="true"]) > .row-action-overlay > * > * { transform: none; }
-.row-action-host:focus-within > .row-action-overlay,
+.row-action-host > .row-action-overlay::before,
+.row-action-host > .row-action-overlay > * > * { opacity: 0; transform: translateX(40%); transition: transform 140ms ease-out, opacity 140ms ease-out; }
+.row-action-host > .row-action-overlay > * { opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
+
+.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
+.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay::before,
+.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay > * > * { opacity: 1; transform: none; }
+/* Keyboard access is immediate. */
+.row-action-host:focus-within > .row-action-overlay::before,
+.row-action-host:focus-within > .row-action-overlay > *,
 .row-action-host:focus-within > .row-action-overlay > * > * { transition: none; }
-.row-action-overlay > button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.row-action-host > .row-action-overlay > button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 @media (hover: none), (pointer: coarse) {
   .row-action-host { min-height: 44px; }
-  .row-action-overlay > button { min-width: 44px; min-height: 44px; }
-  .row-action-overlay { opacity: 1; transition: none; }
-  .row-action-overlay > * > * { transform: none; transition: none; }
+  .row-action-host > .row-action-overlay > button { min-width: 44px; min-height: 44px; }
+  .row-action-host > .row-action-overlay::before,
+  .row-action-host > .row-action-overlay > *,
+  .row-action-host > .row-action-overlay > * > * { opacity: 1; transform: none; transition: none; }
+  .row-action-host > .row-action-overlay > * { pointer-events: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .row-action-overlay, .row-action-overlay > * > * { transition: none; }
-  .row-action-overlay > * > * { transform: none; }
+  .row-action-host > .row-action-overlay::before,
+  .row-action-host > .row-action-overlay > *,
+  .row-action-host > .row-action-overlay > * > * { transition: none; }
+  .row-action-host > .row-action-overlay > * > * { transform: none; }
 }
