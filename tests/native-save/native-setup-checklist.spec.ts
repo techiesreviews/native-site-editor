@@ -93,7 +93,7 @@ test("an empty repository's checklist goes from 1/3 to 3/3 as the site is saved 
   await expect(pill(page)).toBeHidden();
 });
 
-test("dismissing the checklist hides it for the repository and stays hidden after a reload", async ({ page, baseURL }) => {
+test("dismissing setup keeps it hidden after reload and the repository menu offers no reopen entry", async ({ page, baseURL }) => {
   await startBlankSite(page, baseURL);
   await openChecklist(page);
   await panel(page).getByRole("button", { name: "Dismiss the checklist" }).click();
@@ -101,11 +101,15 @@ test("dismissing the checklist hides it for the repository and stays hidden afte
   await page.reload();
   await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
   await expect(pill(page)).toBeHidden();
-  // Still there from the project menu.
+  // Dismissal remains effective; the removed menu entry does not reopen setup.
   await page.getByRole("button", { name: /repository actions/ }).click();
-  await page.getByRole("button", { name: "Set up your site" }).click();
-  await expect(panel(page)).toBeVisible();
-  await expect(pill(page)).toHaveText("Setup 1/3");
+  const menu = page.locator("#repository-actions");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Set up your site", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(panel(page)).toBeHidden();
+  await expect(pill(page)).toBeHidden();
 });
 
 test("the checklist is keyboard operable and fits a narrow window", async ({ page, baseURL }) => {
@@ -122,17 +126,19 @@ test("the checklist is keyboard operable and fits a narrow window", async ({ pag
   await expect(pill(page)).toBeFocused();
 });
 
-test("an ordinary repository shows no checklist by itself but has it in the project menu", async ({ page, baseURL }) => {
+test("an ordinary repository keeps setup hidden and omits the removed menu entry", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await expect(pill(page)).toBeHidden();
   await page.getByRole("button", { name: /repository actions/ }).click();
-  await page.getByRole("button", { name: "Set up your site" }).click();
-  await expect(panel(page)).toBeVisible();
-  await expect(item(page, "start")).toHaveClass(/is-done/);
-  await expect(item(page, "save")).toHaveClass(/is-done/);
-  await expect(pill(page)).toBeVisible();
+  const menu = page.locator("#repository-actions");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Set up your site", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(panel(page)).toBeHidden();
+  await expect(pill(page)).toBeHidden();
 });
 
 // Connect an agent: says what an agent is for and spotlights the project menu's
