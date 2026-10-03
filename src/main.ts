@@ -2496,10 +2496,10 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
         paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
         assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
         entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
-        modelState: path => editor.captureFileModelState(scope, path), historyCurrent: historyHost.isCurrent,
+        modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
         mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
         history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
-        refresh: () => { for (const path of batch.edits.keys()) editor.forgetDraftModel(scope, path); afterFileChanges(); updateNativePreviewSources(); },
+        refresh: () => { afterFileChanges(); updateNativePreviewSources(); },
         announce,
       }));
     },

@@ -18,7 +18,7 @@ function harness() {
     source: (path: string) => records.get(path)?.content, assetVersion: (path: string) => records.get(path)?.sourceSha,
     entry: async () => undefined, mounted: () => false,
     prepareSources: () => ({ apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }),
-    modelState: () => ({ isCurrent: () => true }), historyCurrent: () => true,
+    modelState: () => ({ isCurrent: () => true }), evictModel: (_: string, proof: { isCurrent(): boolean }) => proof.isCurrent() ? proof : undefined, historyCurrent: () => true,
     history: (u: typeof undo, r: typeof redo) => { undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} };
   const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"images":{}}']]), moves: [], deletes: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
   return { host, batch, records, bytes, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
@@ -110,4 +110,29 @@ test("refused history registration rolls back exact own records and newly staged
   const h = harness(); h.host.history = () => false;
   await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /initiating editor changed/);
   assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);
+});
+
+for (const phase of ["apply", "undo", "redo"]) test(`refresh ${phase} cannot adopt an unrelated model version`, async () => {
+  const h = harness(); let version = 1, refreshes = 0;
+  h.host.modelState = () => { const captured = version; return { isCurrent: () => version === captured }; };
+  h.host.refresh = () => { if (++refreshes === (phase === "apply" ? 1 : phase === "undo" ? 2 : 3)) version++; };
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  if (phase === "apply") { assert.equal(h.undo(), false); assert.equal(h.records.size, 2); }
+  else { assert.equal(h.undo(), true); if (phase === "undo") { assert.equal(await h.redo(), false); assert.equal(h.records.size, 0); }
+    else { assert.equal(await h.redo(), true); assert.equal(h.undo(), false); assert.equal(h.records.size, 2); } }
+});
+
+test("a verified own cached-model eviction advances only that path's proof", async () => {
+  const h = harness(), models = new Map<string, object>([[".editor/media.json", {}]]);
+  h.host.modelState = path => { const captured = models.get(path); return { isCurrent: () => models.get(path) === captured }; };
+  h.host.evictModel = (path, proof) => {
+    if (!proof.isCurrent()) return undefined;
+    models.delete(path);
+    return h.host.modelState(path);
+  };
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(models.has(".editor/media.json"), false);
+  assert.equal(h.undo(), true); assert.equal(await h.redo(), true);
+  models.set("images/a.png", {});
+  assert.equal(h.undo(), false); assert.equal(h.records.size, 2);
 });

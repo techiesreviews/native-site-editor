@@ -16,6 +16,7 @@ export interface MediaDraftHost {
   mounted(path: string): boolean;
   prepareSources(edits: { path: string; expectedSource: string; text: string }[]): SourceReceipt | undefined;
   modelState(path: string): { isCurrent(): boolean };
+  evictModel(path: string, proof: { isCurrent(): boolean }): { isCurrent(): boolean } | undefined;
   historyCurrent(): boolean;
   history(undo: () => boolean, redo: () => boolean | Promise<boolean>): boolean;
   refresh(): void;
@@ -53,7 +54,19 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
     }
   };
   const modelsCurrent = (state: State) => [...state.modelStates].every(([path, proof]) => proof.isCurrent() && host.mounted(path) === state.mountedStates.get(path));
-  const captureModels = (state: State) => { state.modelStates = new Map([...state.before.keys()].map(path => [path, host.modelState(path)])); };
+  const advanceOwnedSources = (batch: MediaWorkspaceBatch, state: State) => {
+    if (!state.sources.isCurrent()) return;
+    // Capture only the verified receipt transition, before any host/store callback.
+    for (const path of batch.edits.keys()) if (state.mountedStates.get(path)) state.modelStates.set(path, host.modelState(path));
+  };
+  const evictOwnedCaches = (batch: MediaWorkspaceBatch, state: State) => {
+    for (const path of batch.edits.keys()) if (!state.mountedStates.get(path)) {
+      const proof = state.modelStates.get(path)!;
+      const next = host.evictModel(path, proof);
+      if (next) state.modelStates.set(path, next);
+      // A refused eviction preserves the old proof and therefore refuses stale history.
+    }
+  };
   const capture = (records: Map<string, SavedDraft | undefined>) => new Map([...records.keys()].map(path => [path, host.store.get(scope, path)]));
   const restoreOwn = (expected: Map<string, SavedDraft | undefined>, desired: Map<string, SavedDraft | undefined>) => {
     for (const [path, record] of desired) if (host.store.get(scope, path) === expected.get(path)) write(path, record);
@@ -114,6 +127,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         planned.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: upload.sha, opaque: true, upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
       }
       if (!state.sources.apply()) throw new Error("The editor source changed before image changes could be applied.");
+      advanceOwnedSources(batch, state);
       state.after = capture(state.before);
       try {
         for (const [path, record] of planned) { try { write(path, record); } finally { state.after.set(path, host.store.get(scope, path)); } }
@@ -138,6 +152,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) return false;
           const desired = undo ? state.before : state.after;
           if (!(undo ? state.sources.undo() : state.sources.redo())) return false;
+          advanceOwnedSources(batch, state);
           const writes = capture(expected);
           try { for (const [path, record] of desired) { try { write(path, record); } finally { writes.set(path, host.store.get(scope, path)); } } }
           catch (error) {
@@ -153,11 +168,12 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           }
           if (undo) state.before = capture(desired); else state.after = capture(desired);
           applied = !undo;
+          evictOwnedCaches(batch, state);
           host.refresh();
-          captureModels(state);
           return true;
         } catch (error) { host.announce(error instanceof Error ? error.message : "The image history action could not be applied."); return false; }
       };
+      evictOwnedCaches(batch, state);
       const registered = host.history(() => moveHistory(true), async () => {
         const restaged = { ...state, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
         try {
@@ -192,7 +208,6 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         throw new Error("The initiating editor changed; image changes were rolled back.");
       }
       host.refresh();
-      captureModels(state);
     },
     async rollback(_batch, state) { if (!state.committed) await cleanup(state); },
   };

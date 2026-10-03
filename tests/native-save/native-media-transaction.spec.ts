@@ -27,7 +27,7 @@ for (const change of ["mount affected source", "unmount history host"] as const)
       const pending = applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
         scope, store, bytes, assertLive() {}, paths: () => ["affected.html"], source: path => api.getMountedSource(path) ?? (path === "affected.html" ? "before" : undefined), assetVersion: () => undefined,
         entry: async path => { if (change === "mount affected source") await pause(); return path === "affected.html" ? { path, sha: "a".repeat(40), text: "before" } : undefined; },
-        mounted: api.isMounted, modelState: path => api.captureFileModelState(scope, path), historyCurrent: historyHost.isCurrent,
+        mounted: api.isMounted, modelState: path => api.captureFileModelState(scope, path), evictModel: (path, proof) => api.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
         prepareSources: api.prepareHistorySources,
         history: (undo, redo) => { historyCalls++; return api.recordHistoryAction("history.html", undo, redo); }, refresh() {}, announce() {},
       })).then(() => "success", (error: Error) => error.message);

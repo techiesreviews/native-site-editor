@@ -377,6 +377,15 @@ export function captureFileModelState(scope: DraftScope, path: string) {
     (!editor || editor.session === session) && (!model || !model.isDisposed() &&
       model.getAlternativeVersionId() === version && model.getValue() === source) };
 }
+/** Evicts only an unchanged, unmounted cached model and proves its absence. */
+export function evictDraftModel(scope: DraftScope, path: string, proof: { isCurrent(): boolean }) {
+  if (!proof.isCurrent() || mounted.has(path)) return undefined;
+  const key = draftKey(scope, path);
+  if (!drafts.has(key)) return proof;
+  forgetDraftModel(scope, path);
+  if (mounted.has(path) || drafts.has(key)) return undefined;
+  return captureFileModelState(scope, path);
+}
 /** The history journal must stay attached to its initiating mounted editor/session. */
 export function captureHistoryHost(path: string) {
   const editor = mounted.get(path);
