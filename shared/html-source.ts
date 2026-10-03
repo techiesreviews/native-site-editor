@@ -16,6 +16,9 @@ export interface StartTag {
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "plaintext"]);
 export const MARK = "data-native-src";
 
+// HTML folds ASCII letters only; Unicode lowercasing can also change offset lengths.
+const asciiLower = (text: string) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
+
 export function startTags(html: string): StartTag[] {
   const out: StartTag[] = [];
   let i = 0;
@@ -38,8 +41,8 @@ export function startTags(html: string): StartTag[] {
       continue;
     }
     let j = lt + 1;
-    while (j < html.length && !/[\s/>]/.test(html[j])) j++;
-    const name = html.slice(lt + 1, j).toLowerCase();
+    while (j < html.length && !/[\t\n\f\r />]/.test(html[j])) j++;
+    const name = asciiLower(html.slice(lt + 1, j));
     const nameEnd = j;
     // Attributes: quoted values may contain `>`.
     while (j < html.length && html[j] !== ">") {
@@ -101,12 +104,12 @@ export function elementEnd(html: string, tags: StartTag[], tagIndex: number, bou
   let opens = 0;
   for (let i = tagIndex + 1; i < tags.length && tags[i].start < boundary; i++)
     if (tags[i].name === tag.name) opens++;
-  const span = html.slice(tag.end, boundary).toLowerCase();
+  const span = asciiLower(html.slice(tag.end, boundary));
   const needle = `</${tag.name}`;
   const closes: number[] = [];
   for (let at = span.indexOf(needle); at >= 0; at = span.indexOf(needle, at + 1)) {
     const after = span[at + needle.length];
-    if (after === undefined || after === ">" || /\s/.test(after)) closes.push(at);
+    if (after === undefined || after === ">" || after === "/" || /[\t\n\f\r ]/.test(after)) closes.push(at);
   }
   // Every same-named descendant closes before this element does, so exactly
   // one extra end tag belongs here, and it is the last one.
@@ -200,13 +203,13 @@ export function textRangeInSource(inner: string, start: number, end: number, tex
 // Whether every element opened in `html` closes in it and vice versa.
 function balanced(html: string) {
   const stack: string[] = [];
-  const pattern = /<!--[\s\S]*?-->|<\/([a-zA-Z][^\s/>]*)[^>]*>|<([a-zA-Z][^\s/>]*)(?:"[^"]*"|'[^']*'|[^'">])*>/g;
+  const pattern = /<!--[\s\S]*?-->|<\/([a-zA-Z][^\t\n\f\r />]*)[^>]*>|<([a-zA-Z][^\t\n\f\r />]*)(?:"[^"]*"|'[^']*'|[^'">])*>/g;
   for (const match of html.matchAll(pattern)) {
     if (match[2] !== undefined) {
-      const name = match[2].toLowerCase();
+      const name = asciiLower(match[2]);
       if (!VOID_ELEMENTS.has(name) && !match[0].endsWith("/>")) stack.push(name);
     } else if (match[1] !== undefined) {
-      if (stack.pop() !== match[1].toLowerCase()) return false;
+      if (stack.pop() !== asciiLower(match[1])) return false;
     }
   }
   return stack.length === 0;
@@ -232,7 +235,7 @@ export function startTagAttribute(html: string, tag: StartTag, name: string): Ta
     const nameStart = cursor;
     while (cursor < tag.end && !/[\t\n\f\r =/>]/.test(html[cursor])) cursor++;
     if (cursor === nameStart) { cursor++; continue; }
-    const attributeName = html.slice(nameStart, cursor).toLowerCase();
+    const attributeName = asciiLower(html.slice(nameStart, cursor));
     const nameEnd = cursor;
     while (cursor < tag.end && whitespace(html[cursor])) cursor++;
     let valueStart = nameEnd;
@@ -254,14 +257,14 @@ export function startTagAttribute(html: string, tag: StartTag, name: string): Ta
       }
       end = cursor;
     } else cursor = nameEnd;
-    if (attributeName === name.toLowerCase()) {
+    if (attributeName === asciiLower(name)) {
       return { start, end, valueStart, valueEnd, value: html.slice(valueStart, valueEnd) };
     }
   }
   return undefined;
 }
 
-const blankSource = (text: string) => !text.replace(/<!--[\s\S]*?-->/g, "").trim();
+const blankSource = (text: string) => /^[\t\n\f\r ]*$/.test(text.replace(/<!--[\s\S]*?-->/g, ""));
 
 /** Whether a component template is exactly one `<section>` element. */
 export function isSectionTemplate(html: string) {
@@ -272,7 +275,7 @@ export function isSectionTemplate(html: string) {
   // ends where the depth first returns to zero.
   const events = [
     ...tags.filter((tag) => tag.name === "section").map((tag) => ({ at: tag.start, depth: 1, end: -1 })),
-    ...[...html.matchAll(/<\/section\s*>/gi)].map((match) => ({ at: match.index, depth: -1, end: match.index + match[0].length })),
+    ...[...html.matchAll(/<\/section[\t\n\f\r ]*>/gi)].map((match) => ({ at: match.index, depth: -1, end: match.index + match[0].length })),
   ].sort((a, b) => a.at - b.at);
   let depth = 0;
   for (const event of events) {
