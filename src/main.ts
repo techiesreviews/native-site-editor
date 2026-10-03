@@ -4161,7 +4161,7 @@ function mountCards() {
       if (!editorModule?.discardNewFile(path)) editorModule?.dropDraft(scope, path);
       afterFileChanges();
     },
-    operation: applyNativeOperation,
+    operation: applyNativeCollectionOperation,
     pageLabel: nativePageLabelOf,
     announce,
   });

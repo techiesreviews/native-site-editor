@@ -155,3 +155,37 @@ test("deleting a collection page folder drops its card in the same Undo/Redo", a
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(() => homeDraft(page)).toBe(home);
 });
+
+test("Add on an automatic listing creates only the page; the bake adds exactly one card, one Undo/Redo", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  // Bake the listing once through Page settings, so its cards are on Home.
+  await open(page, baseURL, "work/two/index.html");
+  const panel = await openPageSettings(page);
+  await panel.getByLabel("Title", { exact: true }).fill("Two");
+  await panel.getByLabel("Description", { exact: true }).fill("Second");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel).not.toBeVisible();
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  const baked = await homeDraft(page);
+  expect(listingOf(baked)).toContain('href="/work/one/"');
+  const articles = frame(page).locator('[data-key="work-list"] article');
+  await expect(articles).toHaveCount(2);
+  await articles.first().hover();
+  await page.locator(".card-ghost__add").click();
+  await page.getByRole("textbox", { name: "Page title" }).fill("Three");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toContainText("Created the page Three at /work/three/");
+  const three = (await storedDraft(page, "work/three/index.html"))!.content;
+  expect(three).toContain("Three");
+  const home = await homeDraft(page);
+  expect(listingOf(home).split('href="/work/three/"').length - 1).toBe(1);
+  expect(home).toContain("<template><article><a href=\"{url}\">{title}</a><time>{date}</time></article></template>");
+  await expect(articles).toHaveCount(3);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, "work/three/index.html")).toBeUndefined();
+  await expect.poll(() => homeDraft(page)).toBe(baked);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => homeDraft(page)).toBe(home);
+  expect((await storedDraft(page, "work/three/index.html"))?.content).toBe(three);
+});

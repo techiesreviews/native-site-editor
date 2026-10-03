@@ -19,6 +19,7 @@ import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructur
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
+import { readCollections } from "./collection-model";
 import { gridAt, gridOfItem, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 
 interface RangeEdit {
@@ -175,6 +176,18 @@ export function createCards(deps: CardsDeps) {
     return { noun: found.grid.noun, label: found.grid.label, collection: found.grid.collection };
   }
 
+  // A grid inside a `data-each` listing is baked from its pages: a new page
+  // is its new card, so nothing is inserted by hand there.
+  function automatic(source: string, grid: SourceGrid) {
+    const first = grid.items[0];
+    if (!first) return false;
+    try {
+      return readCollections(source).some(({ element, template }) => element.start <= first.range.start && first.range.end <= element.end &&
+        !(template.start <= first.range.start && first.range.end <= template.end));
+    } catch { return false; }
+  }
+  const automaticNote = "This listing shows its pages automatically: add a page to it, and its card follows.";
+
   // Adds a card with placeholder text after the grid's last item and selects it.
   async function addCard(path: string, parent: number[]) {
     if (!(await deps.ensureOpen(path))) return;
@@ -182,6 +195,7 @@ export function createCards(deps: CardsDeps) {
     const route = routeOf(path);
     if (!found || !route) { deps.announce("That grid is not on the page any more."); return; }
     const { source, grid } = found;
+    if (automatic(source, grid)) { deps.announce(automaticNote); return; }
     const last = grid.items[grid.items.length - 1];
     const copy = cardMarkup(source, route, grid, last);
     const edit = insertAfterEdit(source, last.range, copy.text);
@@ -204,6 +218,14 @@ export function createCards(deps: CardsDeps) {
     const target = planPage(found.grid.collection, title);
     if (!target.ok) return target.error;
     const content = subpageDocument(source, grid, title, target.value.route);
+    // A baked listing: only the page is created; the bake adds its card in
+    // the same operation and Undo.
+    if (automatic(source, grid)) return deps.operation({
+      creates: [{ path: target.value.file, content }],
+      edits: new Map(),
+      done: `Created the page ${title} at ${target.value.route}; ${grid.label} lists it.`,
+      undone: `Undid creating the page ${title}.`,
+    });
     const last = grid.items[grid.items.length - 1];
     const copy = cardMarkup(source, route, grid, last, { title, route: target.value.route });
     const edit = insertAfterEdit(source, last.range, copy.text);
@@ -359,10 +381,18 @@ export function createCards(deps: CardsDeps) {
       const { source, grid, file, route } = found;
       const title = request.title.trim();
       const content = subpageDocument(source, grid, title, target.value.route);
+      const where = `“${grid.label}” on ${deps.pageLabel(file)}`;
+      if (automatic(source, grid)) return deps.operation({
+        creates: [{ path: target.value.file, content }],
+        edits: new Map(),
+        open: target.value.file,
+        done: `Created the page ${title} at ${target.value.route}; ${where} lists it.`,
+        undone: `Undid creating the page ${title}.`,
+        focus: { file: target.value.file },
+      });
       const last = grid.items[grid.items.length - 1];
       const copy = cardMarkup(source, route, grid, last, { title, route: target.value.route });
       const next = applyEdits(source, [insertAfterEdit(source, last.range, copy.text)]);
-      const where = `“${grid.label}” on ${deps.pageLabel(file)}`;
       return deps.operation({
         creates: [{ path: target.value.file, content }],
         edits: new Map([[file, next]]),
