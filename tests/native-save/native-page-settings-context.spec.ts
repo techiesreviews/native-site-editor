@@ -18,4 +18,7 @@ test("Page settings keeps the first heading hint and refuses a component-only pr
   await page.locator("#page-settings-toggle").click();
   await expect(page.locator("#status")).toHaveText("Open a page to edit its settings.");
   await expect(settings).toBeHidden();
+  await page.locator("#navigation-settings-toggle").click();
+  await expect(page.locator("#status")).toHaveText("Open a page to edit its navigation.");
+  await expect(page.getByRole("dialog", { name: "Navigation", exact: true })).toBeHidden();
 });

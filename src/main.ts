@@ -236,7 +236,7 @@ function mountWorkspace() {
   const settingsPage = () => nativeSite?.routes[nativePreview?.route() ?? ""] ??
     (currentPath && nativeRouteForPath(currentPath) ? currentPath : undefined);
   element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); else announce("Open a page to edit its settings."); });
-  element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); });
+  element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); else announce("Open a page to edit its navigation."); });
   disposeExplorerImages();
   configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
