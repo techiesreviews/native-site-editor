@@ -103,8 +103,31 @@ test("Page settings shows the page head and keeps metadata fields out of the str
   await row(page, "feature-block.html").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   await expect(page.locator("#structure .sidebar-hint")).toContainText("component by itself", { timeout: 30_000 });
-  await expect(page.locator("#structure").getByLabel("Title", { exact: true })).toHaveCount(0);
+  const componentPath = "components/feature-block/feature-block.html";
+  const before = await page.evaluate(async path => {
+    const { getMountedSource } = await import('/src/components/code-editor.ts');
+    return { component: getMountedSource(path), home: getMountedSource('index.html') };
+  }, componentPath);
+  const homeDraft = await draft(page, 'index.html');
+  const componentDraft = await draft(page, componentPath);
+  await openExplorer(page, "Pages");
+  const gear = page.locator("#page-settings-toggle");
+  // A component alone has no page metadata target. An enabled trigger must
+  // refuse to open a fallback Home dialog; a disabled trigger is also valid.
+  if (await gear.isEnabled()) await gear.click();
   await expect(settingsDialog(page)).toBeHidden();
+  expect(await draft(page, 'index.html')).toEqual(homeDraft);
+  expect(await draft(page, componentPath)).toEqual(componentDraft);
+  expect(await page.evaluate(async path => {
+    const { getMountedSource } = await import('/src/components/code-editor.ts');
+    return { component: getMountedSource(path), home: getMountedSource('index.html') };
+  }, componentPath)).toEqual(before);
+});
+
+test("Page settings Title keeps the first heading as its placeholder", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501);
+  await openSettings(page);
+  await expect(settingsDialog(page).getByLabel("Title", { exact: true })).toHaveAttribute("placeholder", "A native browser preview");
 });
 
 test("typing a title and a description writes the head, og tags along, one undo step each; back as it was, nothing to save", async ({ page, baseURL }) => {
@@ -113,10 +136,8 @@ test("typing a title and a description writes the head, og tags along, one undo 
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
   await expect(code(page)).toContainText("<title>Home &amp; &lt;more&gt;</title>");
   await expect(page.locator("#current-page")).toHaveText("Home");
-  await page.keyboard.press("Enter");
   await writeSetting(page, "Description", 'The "home" page');
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
-  await page.keyboard.press("Enter");
   const written = (await draft(page, "index.html")).content;
   expect(written).toBe(starterHome
     .replace("<title>Native Studio</title>", "<title>Home &amp; &lt;more&gt;</title>")
@@ -154,8 +175,6 @@ test("typing a title and a description writes the head, og tags along, one undo 
 test("the fields follow the preview's page and keep what was typed on each page", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
   await writeSetting(page, "Title", "Home");
-  await page.keyboard.press("Enter");
-  await expect(settingsDialog(page)).toBeHidden();
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
   await readSetting(page, "Title", "About this project");
@@ -195,7 +214,6 @@ test("a description a page lacks is added after its title; the Pages tab's Renam
   await readSetting(page, "Description", "");
   await writeSetting(page, "Description", "Notes, the first.");
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
-  await page.keyboard.press("Enter");
   expect((await draft(page, "notes/first-note/index.html")).content).toContain('  <title>The first note</title>\n  <meta name="description" content="Notes, the first.">\n');
 
   await openExplorer(page, "Pages");
@@ -255,6 +273,11 @@ async function readSetting(page: Page, label: string, value: string) {
 async function writeSetting(page: Page, label: string, value: string) {
   await openSettings(page);
   await settingsDialog(page).getByLabel(label, { exact: true }).fill(value);
-  await settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true }).click();
+  const apply = settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true });
+  // Exercise the dialog keyboard path rather than pressing Enter after close.
+  for (let step = 0; step < 30 && !await apply.evaluate(el => el === document.activeElement); step++) await page.keyboard.press("Tab");
+  await expect(apply).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(settingsDialog(page)).toBeHidden();
+  await expect(page.locator("#explorer-toggle")).toBeFocused();
 }
