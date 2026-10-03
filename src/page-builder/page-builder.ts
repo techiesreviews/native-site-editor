@@ -35,6 +35,8 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   let points: InsertPoint[] = [];
   let selection: { path: string; node?: number[] } | undefined;
   let addButton: HTMLButtonElement | undefined;
+  // History shows an earlier version: nothing is added until it is left.
+  let viewing = false;
   let refreshTimer = 0;
   const canvas = createCanvasLayer(pane, frame);
   const flash = createInsertFlash(canvas.layer);
@@ -49,6 +51,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   }
 
   function insert(point: InsertPoint, choice: InsertChoice) {
+    if (viewing) return;
     flash.arm(point.path, [...point.parent, point.index]);
     deps.insert(point, choice);
   }
@@ -108,9 +111,13 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       empty.update(next);
       panel.retarget();
     },
-    /** The runtime selected an element (or nothing). */
-    selected(path: string, node: number[] | undefined, rect: SelectionRect | undefined) {
-      selection = path ? { path, node } : undefined;
+    /**
+     * The runtime selected an element (or nothing); for one inside a
+     * component's template, `instance` is the page element it renders in,
+     * which a click in the Add panel inserts after.
+     */
+    selected(path: string, node: number[] | undefined, rect: SelectionRect | undefined, instance?: { path: string; node: number[] }) {
+      selection = instance ?? (path ? { path, node } : undefined);
       // A section just added is highlighted and shown whole (as much as fits).
       if (flash.selected(path, node, rect) && rect) {
         const height = frame.clientHeight;
@@ -155,6 +162,20 @@ export function createPageBuilder(deps: PageBuilderDeps) {
         if (panel.isDocked()) panel.close(false);
         else panel.openDocked();
       });
+    },
+    /** History shows an earlier version (or no longer): "+ Add" is unavailable and the panel closes meanwhile. */
+    setViewing(on: boolean) {
+      viewing = on;
+      if (on) {
+        panel.close(false);
+        points = [];
+        empty.clear();
+        flash.clear();
+      }
+      if (addButton) {
+        addButton.disabled = on;
+        addButton.title = on ? "Go back to the latest version to add sections" : "Add a section to the page";
+      }
     },
     /** The preview is shown or hidden: so is "+ Add", and the panel closes with it. */
     setActive(active: boolean) {

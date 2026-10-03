@@ -315,7 +315,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     insertControls: () => insertControls,
     inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
     choices: () => handlers.insertChoices?.() ?? [],
-    insert: (point, choice) => handlers.onInsert?.(point, choice),
+    // An earlier version on show (History) is not edited: its places are not the source's.
+    insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
     prepare: (tags) => {
       const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
       if (wanted.length) handlers.onComponentStyles?.(wanted);
@@ -528,6 +529,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const raw = data as unknown as { path?: unknown; points?: unknown };
       const path = raw.path;
       if (typeof path !== "string" || site.routes[route] !== path || !Array.isArray(raw.points)) return;
+      // An earlier version on show (History): its gaps are counted in its
+      // markup, not the current source's, so nothing is offered there.
+      if (viewing) {
+        insertControls.update([]);
+        pageBuilder.points([]);
+        return;
+      }
       const points = raw.points.slice(0, 500).flatMap((item): InsertPoint[] => {
         if (!item || typeof item !== "object") return [];
         const point = item as Record<string, unknown>;
@@ -604,6 +612,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         node?: unknown;
         link?: unknown;
         rect?: unknown;
+        pageNode?: unknown;
         selector?: unknown;
         host?: unknown;
       };
@@ -620,7 +629,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
       const selectedNode = indexes(raw.node) ? raw.node : undefined;
-      pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect));
+      // Inside a component's template: the page's instance it renders in.
+      const pagePath = site.routes[route];
+      const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
+      pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
       handlers.onSelect?.({
         path: raw.path,
         tag: typeof raw.tag === "string" ? raw.tag : "",
@@ -820,6 +832,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       viewing?.remove();
       viewing = bar;
       pane.classList.toggle("is-viewing", Boolean(bar));
+      pageBuilder.setViewing(Boolean(bar));
       if (bar) {
         pane.insertBefore(bar, frameHost);
         editBar.hide();

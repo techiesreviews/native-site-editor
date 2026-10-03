@@ -91,3 +91,12 @@ plus buttons between sections used to open.
   another component) shows what the template has.
 - Templates with `data-if` or slots that the preview hides when empty are shown as written.
 - Touch dragging uses the same pointer events but was only tried with a mouse.
+
+## Review fixes
+
+- While History shows an earlier version, nothing is added: the panel closes, "+ Add" is
+  disabled, the runtime's insert points (counted in the old markup) are ignored, and any insert
+  is refused, until Back to latest.
+- With an element of a component's template selected (the selection's file is the component),
+  a click adds after the page element that instance renders in: the runtime's `select` message
+  carries that element's page index path as `pageNode`.

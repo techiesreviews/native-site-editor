@@ -132,6 +132,45 @@ test("an item dragged onto the canvas goes into the gap under the pointer; Escap
   await expect(frame(page).locator("feature-block")).toHaveCount(0);
 });
 
+test("with an element of a component's template selected, a click adds after the page's instance of it", async ({ page }) => {
+  // A note inside a card's template inside the cards section: the section is the page's.
+  await frame(page).locator("section.cards project-card card-note").first().click();
+  await expect(page.locator("#current-page")).not.toHaveAttribute("data-path", indexPath);
+  await addButton(page).click();
+  await expect(panel(page)).toContainText("Goes before “Scroll to verify”");
+  await feature(page).click();
+  await expect(frame(page).locator("section.cards + feature-block + section.filler")).toHaveCount(1);
+  await expect.poll(() => editorText(page)).toBe(indexSource.replace(`  <section class="filler"`, `  ${instance}\n  <section class="filler"`));
+});
+
+test("while History shows an earlier version nothing can be added, until Back to latest", async ({ page, baseURL }) => {
+  const source = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/external-edit`, {
+    data: { path: "index.html", content: source.replace("A native browser preview", "Edited on GitHub") },
+  });
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText("Edited on GitHub", { timeout: 30_000 });
+  await addButton(page).click();
+  await expect(panel(page)).toBeVisible();
+  await page.locator("#history-button").click();
+  await page.getByRole("dialog", { name: "History" }).locator(".commit-history__item").nth(1).locator(".commit-history__view").click();
+  const bar = page.getByRole("region", { name: "Earlier version" });
+  await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
+  // The panel closed, "+ Add" waits, and the gaps of the old version offer nothing.
+  await expect(panel(page)).toBeHidden();
+  await expect(addButton(page)).toBeDisabled();
+  await expect(page.locator(".insert-point__plus")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await bar.getByRole("button", { name: "Back to latest" }).click();
+  await expect(frame(page).locator(".hero h1")).toHaveText("Edited on GitHub");
+  await expect(addButton(page)).toBeEnabled();
+  await expect(page.locator(".insert-point__plus")).toHaveCount(4);
+  await addButton(page).click();
+  await feature(page).click();
+  await expect(frame(page).locator("section.filler + feature-block")).toHaveCount(1);
+});
+
 test("a plus between sections opens the panel for its gap, and it closes after adding", async ({ page }) => {
   await frame(page).locator("section.hero").hover();
   const plus = page.getByRole("button", { name: "Add a section before “A native browser preview”", exact: true });

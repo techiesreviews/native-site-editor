@@ -1400,6 +1400,14 @@
     payload.selector = locator.selector;
     if (locator.host) payload.host = locator.host;
     payload.rect = rectOf(el);
+    // Inside a component's template (or a template inside that): the page
+    // element it renders in, which the Add panel inserts after.
+    var outer = el;
+    while (outer && outer.getRootNode && outer.getRootNode() instanceof ShadowRoot) outer = outer.getRootNode().host;
+    if (outer && outer !== el && pageEl && pageEl.contains(outer)) {
+      var pageNode = elementIndexPath(outer);
+      if (pageNode) payload.pageNode = pageNode;
+    }
     lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
   }
