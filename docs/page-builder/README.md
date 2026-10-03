@@ -88,8 +88,8 @@ own content and the site works without the editor. They are not editor bookkeepi
   the site's colour, type and spacing variables.
 - **elements**: inserting inside sections: heading, text, image, button, list, columns
   or grid, video or embed, divider, and native forms (`<form action>` with fields).
-  These were removed earlier because the Add picker inserted them badly; this slice
-  brings them back with proper placement.
+  Insertion inside sections was removed on 2026-09-25 at Lex's request, so this slice
+  waits for Lex to confirm it is wanted back.
 - **site**: navigation built from pages, page settings (SEO, social, favicon, 404), and
   CSS-first interactions (scroll reveal with `animation-timeline: view()`, hover
   presets).
