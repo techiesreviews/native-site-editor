@@ -63,3 +63,9 @@ source elements and shift paths. Ordinary comments remain supported, including
 inside colgroup. Literal comment markers in raw-text content are not structural comments and
 do not trigger this refusal. Quoted attribute angle brackets remain outside the
 existing strict tokenizer bounds.
+
+Comments with a `--!>` ending before the canonical `-->`, and nested `<!--`
+openings within a comment, are conservatively refused at the structural tokenizer
+before colgroup text validation. Canonical comments, including empty comments and
+internal `--`, remain supported. Alternate-ending text after a completed comment
+and literal markers in raw-text content do not trigger a global source ban.

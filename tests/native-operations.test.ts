@@ -197,3 +197,43 @@ test("abrupt structural comments refuse browser path shifts without rejecting li
     assert.equal(await page.locator('colgroup > col').count(), 1);
   } finally { await browser.close(); }
 });
+
+test("comment syntax matrix keeps canonical paths and refuses alternate or nested forms", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const cases = [
+      { comment: '<!-- ordinary -->', accepted: true },
+      { comment: '<!-- ok -- still -->', accepted: true },
+      { comment: '<!---->', accepted: true },
+      { comment: '<!-- ordinary --->', accepted: true },
+      { comment: '<!-- a --!><section>S</section>-->', accepted: false },
+      { comment: '<!-->', accepted: false },
+      { comment: '<!--->', accepted: false },
+      { comment: '<!-- outer <!-- inner -->', accepted: false },
+      { comment: '<!-- outer <!--> inner -->', accepted: false },
+    ];
+    for (const {comment, accepted} of cases) {
+      const source = `<main>${comment}<div>D</div></main>`;
+      await page.setContent(source);
+      const children = await page.locator('main').evaluate(el => Array.from(el.children).map(child => child.localName));
+      if (accepted) assert.deepEqual(children, ['div'], comment);
+      if (comment.includes('--!>')) assert.deepEqual(children, ['section','div']);
+      const edit = nativeMarkupInsertEdit(source, [0], 0, '<section>New</section>');
+      assert.equal(!!edit, accepted, comment);
+      if (edit) {
+        await page.setContent(applyGuardedSourceEdit(source, edit)!);
+        assert.deepEqual(await page.locator('main').evaluate(el => Array.from(el.children).map(child => child.localName)), ['section','div']);
+      }
+    }
+    const table = '<main><table><colgroup><!-- a --!>x--><col></colgroup><tbody><tr><td>A</td></tr></tbody></table></main>';
+    await page.setContent(table);
+    assert.deepEqual(await page.locator('table').evaluate(el => Array.from(el.children).map(child => child.localName)), ['colgroup','colgroup','tbody']);
+    assert.equal(nativeMarkupInsertEdit(table, [0], 1, '<section>New</section>'), undefined);
+    const raw = '<main><script>const markers = "--!> <!-- nested <!-->";</script><textarea>--!> <!-- nested <!--></textarea><div>D</div><!-- canonical -->--!></main>';
+    const edit = nativeMarkupInsertEdit(raw, [0], 2, '<section>New</section>'); assert.ok(edit);
+    await page.setContent(applyGuardedSourceEdit(raw, edit)!);
+    assert.equal(await page.locator('textarea').textContent(), '--!> <!-- nested <!-->');
+    assert.equal(await page.locator('main > section').textContent(), 'New');
+  } finally { await browser.close(); }
+});

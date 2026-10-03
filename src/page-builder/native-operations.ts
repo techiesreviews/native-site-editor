@@ -81,6 +81,11 @@ function tree(source: string): SourceNode | undefined {
       if (source.startsWith("<!-->", lt) || source.startsWith("<!--->", lt)) return undefined;
       const end = source.indexOf("-->", lt + 4);
       if (end < 0) return undefined;
+      const bangEnd = source.indexOf("--!>", lt + 4);
+      const nested = source.indexOf("<!--", lt + 4);
+      // Alternate endings can expose nodes before our canonical end; nested
+      // comment syntax is outside this conservative tokenizer's bounds.
+      if (bangEnd >= 0 && bangEnd < end || nested >= 0 && nested < end) return undefined;
       at = end + 3; continue;
     }
     const tail = source.slice(lt);
