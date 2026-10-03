@@ -29,7 +29,7 @@ async function select(page: Page) {
 
 test("all decoded classes select one escaped CSS rule; add preserves tokens and attributes with one Undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const before = await setClasses(page, "lead hero&amp;title café keep");
+  const before = await setClasses(page, "lead  hero&#38;title café keep");
   await select(page);
   for (const name of ["lead", "hero&title", "café", "keep"]) await expect(chip(page, name)).toBeVisible();
   await chip(page, "hero&title").focus(); await page.keyboard.press("Enter");
@@ -47,7 +47,7 @@ test("all decoded classes select one escaped CSS rule; add preserves tokens and 
   await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
   await expect(chip(page, "extra:class")).toHaveAttribute("aria-pressed", "true");
   const after = await source(page);
-  expect(after).toBe(before.replace("class='lead hero&amp;title café keep'", 'class="lead hero&amp;title café keep extra:class"'));
+  expect(after).toBe(before.replace("class='lead  hero&#38;title café keep'", "class='lead  hero&#38;title café keep extra:class'"));
   expect(after).toContain('data-key="hero-lead"'); expect(after).not.toContain("&amp;amp;");
   await panel(page).getByRole("button", { name: "Link padding sides" }).focus(); await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => source(page)).toBe(before);

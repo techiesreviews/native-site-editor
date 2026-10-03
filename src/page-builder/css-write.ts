@@ -99,7 +99,7 @@ function checkedCss(source: string): CssBlock[] | undefined {
         const prelude = clean.slice(boundary, i);
         if (!prelude.trim()) invalid = true;
         const start = boundary + prelude.search(/\S/);
-        const block: CssBlock = { selector: trimCssWhitespace(withoutComments(source.slice(start, i))), start, open: i, close: i, end: i, parent, children: [], declarations: [] };
+        const block: CssBlock = { selector: normalized(source.slice(start, i)), start, open: i, close: i, end: i, parent, children: [], declarations: [] };
         blocks.push(block);
         parent?.children.push(block);
         i = scan(i + 1, block);
@@ -115,7 +115,40 @@ function checkedCss(source: string): CssBlock[] | undefined {
 }
 export function scanCss(source: string): CssBlock[] { return checkedCss(source) ?? []; }
 const lastWhere = <T>(items: T[], predicate: (item: T) => boolean) => [...items].reverse().find(predicate);
-const normalized = (value: string) => trimCssWhitespace(value.replace(/[\t\n\f\r ]+/g, " "));
+// Only selector whitespace outside strings, comments and escapes is insignificant.
+function normalized(value: string): string {
+  let result = "", pendingSpace = false;
+  for (let i = 0; i < value.length;) {
+    const c = value[i];
+    if (/[\t\n\f\r ]/.test(c)) { pendingSpace = !!result; i++; continue; }
+    if (pendingSpace) { result += " "; pendingSpace = false; }
+    const start = i;
+    if (c === "/" && value[i + 1] === "*") {
+      const end = value.indexOf("*/", i + 2); i = end < 0 ? value.length : end + 2;
+    } else if (c === "'" || c === '"') {
+      const quote = c; i++;
+      while (i < value.length) {
+        if (value[i] === "\\") { i += 2; continue; }
+        if (value[i++] === quote) break;
+      }
+    } else if (c === "\\") {
+      i++;
+      if (/[0-9a-f]/i.test(value[i] ?? "")) {
+        let count = 0;
+        while (i < value.length && count < 6 && /[0-9a-f]/i.test(value[i])) { i++; count++; }
+        if (/[\t\n\f\r ]/.test(value[i] ?? "")) {
+          if (value[i] === "\r" && value[i + 1] === "\n") i++;
+          i++;
+        }
+      } else if (i < value.length) {
+        if (value[i] === "\r" && value[i + 1] === "\n") i++;
+        i++;
+      }
+    } else i++;
+    result += value.slice(start, i);
+  }
+  return result;
+}
 const ancestors = (rule: CssBlock) => {
   const out: CssBlock[] = [];
   for (let parent = rule.parent; parent; parent = parent.parent) out.unshift(parent);

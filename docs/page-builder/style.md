@@ -169,3 +169,9 @@ sources, selection identity and target remain unchanged. This permits repeated
 select/preset changes without accepting an intervening external source edit.
 Duplicate declarations retain the last important declaration when any declaration
 is important; otherwise the last declaration remains the editable one.
+
+Adding a class preserves the existing quoted attribute’s raw entity spellings,
+whitespace and quote character. Only the new token is HTML-escaped and appended;
+an unquoted value is quoted when needed. A duplicate leaves the source unchanged.
+Selector matching collapses only CSS whitespace outside strings, comments and
+escapes, so distinct attribute values and escaped class names remain distinct.

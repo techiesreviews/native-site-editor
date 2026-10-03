@@ -450,7 +450,18 @@ function mountWorkspace() {
       if (!range) return;
       const classes = context?.classes ?? [];
       if (classes.includes(name)) return;
-      const edit = setAttributeEdit(source, range.tag, "class", [...classes, name].join(" "));
+      const attribute = startTagAttribute(source, range.tag, "class");
+      let edit;
+      if (!attribute) edit = setAttributeEdit(source, range.tag, "class", name);
+      else {
+        const quote = source[attribute.valueStart - 1];
+        const quoted = quote === "'" || quote === '"';
+        const escaped = name.replace(/&/g, "&amp;").replace(quoted && quote === "'" ? /'/g : /"/g, quoted && quote === "'" ? "&#39;" : "&quot;");
+        const raw = source.slice(attribute.valueStart, attribute.valueEnd);
+        if (quoted) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: (raw ? " " : "") + escaped };
+        else if (!raw) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: `="${escaped}"` };
+        else edit = { start: attribute.valueStart, end: attribute.valueEnd, text: `"${raw.replace(/"/g, "&quot;")} ${escaped}"` };
+      }
       if (applyNativeChange(selected.path, source, [edit], selected.node, "Class added")) {
         nativeStyleClass = { selectionKey: context!.selectionKey!, name };
         stylePanel?.update();
