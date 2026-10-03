@@ -351,3 +351,21 @@ test("review: generated slot names never collide", () => {
   assert.ok(!("error" in plan));
   assert.deepEqual(plan.slots.map((slot) => slot.name), ["title", "title-2", "title-2-2"]);
 });
+
+test("review: detach preserves slot boundary spaces, forwarded text and pre whitespace", () => {
+  const source = `<x-card> world </x-card>`;
+  const instance = readInstance(source, rangeOf(source, "x-card"));
+  assert.equal(detachMarkup(source, `<p>Hello<slot></slot>!</p>`, instance).markup, `<p>Hello world !</p>`);
+  assert.equal(detachMarkup(source, `<x-inner><slot slot="body"></slot></x-inner>`, instance).markup, `<x-inner><span slot="body"> world </span></x-inner>`);
+  const pre = `<x-card> first\n  second \n </x-card>`;
+  assert.equal(detachMarkup(pre, `<pre><slot></slot></pre>`, readInstance(pre, rangeOf(pre, "x-card"))).markup, `<pre> first\n  second \n </pre>`);
+  const newline = `<div>\n  <x-card>first\n</x-card>\n</div>`;
+  assert.equal(detachMarkup(newline, `<pre><slot></slot></pre>`, readInstance(newline, rangeOf(newline, "x-card"))).markup, `<pre>first\n</pre>`);
+  const indented = `<div>\n  ${pre}\n</div>`;
+  assert.equal(detachMarkup(indented, `<pre><slot></slot></pre>`, readInstance(indented, rangeOf(indented, "x-card"))).markup, `<pre> first\n  second \n </pre>`);
+});
+
+test("review: detach merges class tokens without corrupting named or numeric references", () => {
+  const source = `<x-card class='caf&eacute; caf&#233; caf&#xE9;'></x-card>`;
+  assert.equal(detachMarkup(source, `<p class="base"></p>`, readInstance(source, rangeOf(source, "x-card"))).markup, `<p class="base caf&eacute; caf&#233; caf&#xE9;"></p>`);
+});

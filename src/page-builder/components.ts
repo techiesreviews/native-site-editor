@@ -27,6 +27,8 @@ import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange
 import { componentLabel } from "../native-insert";
 import {
   attributeEdit,
+  parseSource,
+  descendants,
   attributeNameProblem,
   componentUsage,
   detachMarkup,
@@ -430,10 +432,9 @@ export function createComponentTools(deps: ComponentDeps) {
   async function openUse(file: string, tag: string) {
     const locate = () => {
       const source = deps.sources()[file] ?? "";
-      const holder = holderOf(pageBody(source), tag);
-      const match = holder && new RegExp(`<${holder}(?=[\\s/>])`, "i").exec(pageBody(source));
-      const node = match ? elementPathAt(source, nativePageBody(source).start + match.index) : undefined;
-      return holder && node ? { holder, request: { path: file, node } } : undefined;
+      const holder = holderOf(source, tag);
+      const node = holder ? elementPathAt(source, holder.start) : undefined;
+      return holder && node ? { holder: holder.name, request: { path: file, node } } : undefined;
     };
     // The file switch schedules its render before openFile resolves.
     const before = locate();
@@ -455,10 +456,11 @@ export function createComponentTools(deps: ComponentDeps) {
       if (seen.has(name)) return false;
       seen.add(name);
       const template = deps.sources()[current.components[name] ?? ""] ?? "";
-      return Object.keys(current.components).some((other) => new RegExp(`<${other}(?=[\\s/>])`, "i").test(template) && shows(other, seen));
+      return [...descendants(parseSource(template))].some((other) => isComponent(other.name) && shows(other.name, seen));
     };
-    const used = [...html.matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]*)(?=[\s/>])/gi)].map((match) => match[1].toLowerCase());
-    return used.find((name) => name === tag) ?? used.find((name) => isComponent(name) && shows(name, new Set()));
+    const body = nativePageBody(html);
+    const used = [...descendants(parseSource(html, body.start, body.end))];
+    return used.find((element) => element.name === tag) ?? used.find((element) => isComponent(element.name) && shows(element.name, new Set()));
   }
 
   // ---- The properties panel. ----
@@ -680,7 +682,7 @@ export function createComponentTools(deps: ComponentDeps) {
       file.value = "";
       if (!files.length) return;
       // The instance the upload is for, not whatever is selected when it finishes.
-      const target = shown && { path: shown.path, node: shown.node, tag: shown.tag };
+      const target = shown && { path: shown.path, node: [...shown.node], tag: shown.tag, source: deps.sources()[shown.path] };
       const path = await deps.upload(files.slice(0, 1));
       if (path !== undefined && target) setImage(target, slot.name, path);
     });
@@ -724,10 +726,10 @@ export function createComponentTools(deps: ComponentDeps) {
     return fillInsertEdit(at.source, at.instance, at.slots, slot.name, markup);
   }
 
-  function setImage(target: { path: string; node: number[]; tag: string }, slotName: string, path: string) {
+  function setImage(target: { path: string; node: number[]; tag: string; source: string | undefined }, slotName: string, path: string) {
     const at = instanceAt(target.path, target.node);
     const slot = at?.slots.find((entry) => entry.name === slotName);
-    if (!at || !slot || at.tag !== target.tag) {
+    if (!at || !slot || at.tag !== target.tag || at.source !== target.source) {
       deps.announce("The instance changed while the image uploaded; it was not replaced.");
       return;
     }

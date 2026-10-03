@@ -210,9 +210,10 @@ test("Edit component opens the template at the part, says what an edit changes, 
 });
 
 test("Used on opens the page instance that shows a nested component", async ({ page, baseURL }) => {
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/card-list/card-list.html", content: `<section><project-card title="Nested"></project-card></section>\n` } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/card-note/card-note.html", content: `<aside><!-- <project-card> --><script>"<project-card>"</script><textarea><project-card></textarea>Note</aside>\n` } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/card-list/card-list.html", content: `<section><!-- <project-card> --><script>"<project-card>"</script><textarea><project-card></textarea><project-card title="Nested"></project-card></section>\n` } });
   const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
-  const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<card-list></card-list>\n  <section class="prose" data-key="prose">`);
+  const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<!-- <project-card> --><script>"<project-card>"</script><textarea><project-card></textarea><card-note></card-note><card-list></card-list>\n  <section class="prose" data-key="prose">`);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, cardPath);
   const banner = page.locator(".component-banner");
@@ -325,6 +326,15 @@ test("image upload finishes on the instance that started it", async ({ page, bas
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").first().click();
+  await pauseUpload(page);
+  await panel(page).locator(".component-slot[data-slot='image'] input[type='file']").setInputFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
+  await row(page, "Media card").nth(1).click();
+  await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
+  await expect.poll(() => editorText(page)).toContain(`<media-card data-key="first">\n    <img slot="image" src="/images/chosen.png" alt="Placeholder">\n  </media-card>\n  <media-card data-key="second"></media-card>`);
+});
+
+async function pauseUpload(page: Page) {
   // Uploads stay in IndexedDB until Save; pause reading the file, not /api/blob.
   await page.evaluate(() => {
     const original = File.prototype.arrayBuffer;
@@ -336,9 +346,30 @@ test("image upload finishes on the instance that started it", async ({ page, bas
       return original.call(this);
     };
   });
-  await panel(page).locator(".component-slot[data-slot='image'] input[type='file']").setInputFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
-  await row(page, "Media card").nth(1).click();
-  await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
-  await expect.poll(() => editorText(page)).toContain(`<media-card data-key="first">\n    <img slot="image" src="/images/chosen.png" alt="Placeholder">\n  </media-card>\n  <media-card data-key="second"></media-card>`);
-});
+}
+
+for (const action of ["delete", "reorder"] as const) {
+  test(`image upload rejects an instance ${action} while reading the file`, async ({ page, baseURL }) => {
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure><slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot></figure>\n` } });
+    const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
+    const first = `<media-card data-key="first"></media-card>`;
+    const second = `<media-card data-key="second"></media-card>`;
+    const source = (await about.text()).replace(`<section class="prose" data-key="prose">`, `${first}${second}<section class="prose" data-key="prose">`);
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: source } });
+    await open(page, baseURL, "about/index.html");
+    await row(page, "Media card").first().click();
+    await pauseUpload(page);
+    await panel(page).locator(".component-slot[data-slot='image'] input[type='file']").setInputFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
+    const changed = source.replace(`${first}${second}`, action === "delete" ? second : `${second}${first}`);
+    await page.locator(`#content [role="textbox"]`).first().focus();
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.insertText(changed);
+    await expect(frame(page).locator("media-card")).toHaveCount(action === "delete" ? 1 : 2);
+    const beforeUpload = await editorText(page);
+    expect(beforeUpload).toContain(action === "delete" ? second : `${second}${first}`);
+    await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
+    await expect(status(page)).toHaveText("The instance changed while the image uploaded; it was not replaced.");
+    expect(await editorText(page)).toBe(beforeUpload);
+  });
+}

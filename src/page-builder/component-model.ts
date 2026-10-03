@@ -146,7 +146,7 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
 
 const elements = (nodes: SourceNode[]) => nodes.filter((node): node is SourceElement => node.type === "element");
 
-function* descendants(nodes: SourceNode[]): Generator<SourceElement> {
+export function* descendants(nodes: SourceNode[]): Generator<SourceElement> {
   for (const node of nodes) {
     if (node.type !== "element") continue;
     yield node;
@@ -814,7 +814,7 @@ export function detachMarkup(source: string, template: string, instance: Instanc
   // for the template line it lands on.
   const fillText = (node: SourceNode, forward: string | undefined, slot: SourceElement) => {
     let text = source.slice(node.start, node.end);
-    if (node.type === "text") return forward ? `<span slot="${escapeAttribute(forward)}">${text.trim()}</span>` : text;
+    if (node.type === "text") return forward ? `<span slot="${escapeAttribute(forward)}">${text}</span>` : text;
     const attributes = startTagAttributes(source, node.tag).filter((item) => item.name !== "slot" && item.name !== "data-key");
     // A plain wrapper that only carried the slot goes: a `<span slot>`, or
     // a block (`<p slot>`) slotted into a line of text, where it could not stand.
@@ -822,7 +822,9 @@ export function detachMarkup(source: string, template: string, instance: Instanc
     if (!attributes.length && node.close && !forward && (node.name === "span" || (phrasing && BLOCKS.has(node.name) && textOnly(node.children))))
       text = source.slice(node.tag.end, node.close.start);
     else text = withSlot(text, forward);
-    return reindent(text, lineIndent(slot.start));
+    const inPre = (element: SourceElement | undefined): boolean => Boolean(element && (element.name === "pre" || inPre(element.parent)));
+    const holdsPre = [...descendants([node])].some((element) => element.name === "pre");
+    return inPre(slot.parent) || holdsPre ? text : reindent(text, lineIndent(slot.start));
   };
   const emit = (nodes: SourceNode[], forward?: string): string => nodes.map((node) => {
     if (node.type === "text") return template.slice(node.start, node.end);
@@ -833,14 +835,14 @@ export function detachMarkup(source: string, template: string, instance: Instanc
       const fill = instance.fills.get(name);
       if (fill?.length) {
         // The page's own spacing: text as written, the white space between
-        // neighbouring fills kept, nothing added; only the run's ends trimmed.
+        // neighbouring fills and the slot boundary spaces kept, nothing added.
         let out = "";
         fill.forEach((part, index) => {
           const before = index ? source.slice(fill[index - 1].end, part.start) : "";
           if (index && !before.trim()) out += before;
           out += fillText(part, pass, node);
         });
-        return out.trim();
+        return out;
       }
       if (!meaningful(template, node.children).length) return REMOVED;
       return pass ? emit(node.children, pass) : emit(node.children);
@@ -855,9 +857,13 @@ export function detachMarkup(source: string, template: string, instance: Instanc
     if (node === root) {
       for (const item of hostAttributes) {
         if (item.name === "class") {
-          const own = decodeEntities(startTagAttribute(open, local(), "class")?.value ?? "").split(/\s+/).filter(Boolean);
-          const value = [...own, ...item.value.split(/\s+/).filter((word) => word && !own.includes(word))].join(" ");
-          const edit = attributeEdit(open, local(), "class", value);
+          // Keep the source tokens, including all named and numeric references.
+          // Decoding a small entity subset then escaping would corrupt the rest.
+          const own = startTagAttribute(open, local(), "class")?.value.split(/\s+/).filter(Boolean) ?? [];
+          const host = startTagAttribute(source, instance.range.tag, "class")?.value.split(/\s+/).filter(Boolean) ?? [];
+          const value = [...own, ...host.filter((word) => !own.includes(word))].join(" ");
+          const edit = attributeEdit(open, local(), "class", "");
+          edit.text = ` class="${value.replace(/"/g, "&quot;")}"`;
           open = open.slice(0, edit.start) + edit.text + open.slice(edit.end);
           continue;
         }
@@ -881,7 +887,14 @@ export function detachMarkup(source: string, template: string, instance: Instanc
   // Template lines start at the margin; the page's start at the instance's indentation.
   const indent = indentOf(source, instance.range.start);
   const newline = lineEnding(source);
-  markup = markup.split(/\r?\n/).map((line, index) => (index && line.trim() ? indent + line : line.trimEnd())).join(newline).trim();
+  const preContents = [...descendants(parseSource(markup))].filter((element) => element.name === "pre")
+    .map((element) => ({ start: element.tag.end, end: element.close?.start ?? element.end }));
+  let offset = 0;
+  markup = markup.split(/\r?\n/).map((line, index) => {
+    const inPre = preContents.some((range) => offset >= range.start && offset <= range.end);
+    offset += line.length + (markup.slice(offset + line.length, offset + line.length + 2) === "\r\n" ? 2 : 1);
+    return index && line.trim() && !inPre ? indent + line : line;
+  }).join(newline).trim();
   return { markup, dropped };
 }
 
