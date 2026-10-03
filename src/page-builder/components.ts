@@ -4,14 +4,8 @@
 //
 // - Identity: an instance's name in the edit bar wears the component mark;
 //   an element inside an instance gets a chip that selects the instance.
-// - Properties: the instance's slots are grouped beneath its Structure row;
-//   legacy field helpers below remain available to the guarded slot writers.
-//   The old panel is detached, rather than duplicating these controls.
-//   Previously slots were listed in a panel docked at the foot
-//   of the sidebar while an instance (or something inside one) is selected:
-//   each slot's text, image or link, editable in place; optional slots
-//   switched on and off; a filled slot reset to the template's fallback;
-//   and the instance tag's attributes.
+// - Properties: guarded instance slots and attributes live in Structure when
+//   the host enables that adapter; the legacy panel remains until then.
 // - Edit component: the template opens in the code pane at the matching
 //   part, with a banner saying how many instances an edit there changes
 //   and where they are (Used on).
@@ -23,6 +17,8 @@
 // code pane shows it as it happens.
 
 import { nativeElementUrlProblem } from "./native-elements";
+import { startTags } from "../../shared/html-source";
+import { mountComponentPanelResize } from "./component-panel-resize";
 import { readSlotConditions, planSlotCondition } from "./component-conditions";
 import { button, node } from "../ui/dom";
 import { nativePageBody, type NativeSite } from "../../shared/native-project";
@@ -32,6 +28,7 @@ import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange
 import { componentLabel } from "../native-insert";
 import {
   attributeEdit,
+  startTagAttributes,
   parseSource,
   descendants,
   attributeNameProblem,
@@ -114,6 +111,8 @@ export interface ComponentDeps {
   createFiles: (files: { path: string; content: string }[]) => Promise<ComponentFileCreation>;
   /** The sidebar, whose foot holds the properties panel. */
   panelHost: HTMLElement;
+  /** Enable only when the host wires Structure componentSlots. */
+  structureFields?: boolean;
   /** Puts the banner over a component's template above the preview's frame. */
   addStrip: (strip: HTMLElement) => void;
   /** The code pane's title row, tinted while a template is open in it. */
@@ -156,6 +155,7 @@ export interface ComponentStructureModel {
   removeAttribute(name: string): boolean;
   openField(name: string, part: ComponentSlotPart): ComponentFieldSession | undefined;
   images: readonly string[];
+  links: readonly {label: string; value: string}[];
   openImageUpload(name: string): { upload(files: File[]): Promise<boolean>; close(): void } | undefined;
   setVisible(name: string, on: boolean): boolean;
   selectSlot(name: string): void;
@@ -167,6 +167,8 @@ export function createComponentTools(deps: ComponentDeps) {
   const panel = node("section", "component-panel");
   panel.setAttribute("aria-label", "Component properties");
   panel.hidden = true;
+  if (!deps.structureFields) deps.panelHost.append(panel);
+  const destroyResize = !deps.structureFields ? mountComponentPanelResize(deps.panelHost, panel) : undefined;
   const banner = node("div", "component-banner");
   banner.setAttribute("role", "status");
   banner.hidden = true;
@@ -646,8 +648,41 @@ export function createComponentTools(deps: ComponentDeps) {
       return;
     }
     shown = at;
-    panel.hidden = true;
-    panel.replaceChildren();
+    if (deps.structureFields) { panel.hidden = true; panel.replaceChildren(); return; }
+    const values = at.slots.map((slot) => slotValue(at.source, at.template, at.instance, slot));
+    const key = JSON.stringify([
+      at.path, at.node, at.tag, at.within ?? null,
+      at.slots.map((slot, index) => [slot.name, values[index].kind, values[index].editable, at.states.get(slot.name)]),
+      at.instance.attributes.map((item) => item.name),
+    ]);
+    if (key !== shape) {
+      const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : undefined;
+      const field = active?.dataset.field;
+      const caret = active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : undefined;
+      shape = key;
+      render(at, values);
+      // The focus stays on the same control, else on the slot it belonged to
+      // (a Reset that went away leaves it on the slot's field, then its name).
+      const slotOf = field?.slice(field.indexOf(":") + 1);
+      const again = field === undefined ? undefined : [field, `text:${slotOf}`, `name:${slotOf}`]
+        .map((key) => panel.querySelector<HTMLElement>(`[data-field="${CSS.escape(key)}"]`)).find(Boolean);
+      if (again) {
+        again.focus();
+        if (again instanceof HTMLInputElement && caret && caret[0] !== null && again.dataset.field === field) again.setSelectionRange(caret[0], caret[1]);
+      }
+    } else patch(at, values);
+    // A slot just switched on: its first field, ready to type in.
+    const wanted = focusNext && panel.querySelector<HTMLInputElement>(`[data-field="${CSS.escape(focusNext)}"]`);
+    if (wanted) {
+      focusNext = undefined;
+      wanted.focus();
+      wanted.select();
+    }
+    if (panel.hidden) {
+      panel.hidden = false;
+      // The panel takes room from the page structure: its selected row stays in view.
+      deps.panelHost.querySelector<HTMLElement>(".page-structure [aria-selected='true']")?.scrollIntoView({ block: "nearest" });
+    }
   }
 
   // Values into the fields, except the one being typed in.
@@ -862,16 +897,32 @@ export function createComponentTools(deps: ComponentDeps) {
     if (edit) live(at.path, edit, part === "alt" ? "Alt text changed" : part === "src" ? "Image changed" : "Link changed", keepSelection(at, !at.states.get(slotName)?.filled));
   }
 
+  function openingSourceSafe(source: string, tag: ElementRange["tag"]) {
+    const opening = document.createElement("template");
+    opening.innerHTML = source.slice(tag.start, tag.end) + `</${tag.name}>`;
+    const actual = opening.content.firstElementChild, attributes = startTagAttributes(source, tag);
+    if (!actual || actual.localName !== tag.name || actual.attributes.length !== attributes.length) return false;
+    return attributes.every(attribute => {
+      const fragment = document.createElement("template");
+      fragment.innerHTML = `<x-attribute${source.slice(attribute.start, attribute.end)}></x-attribute>`;
+      const parsed = fragment.content.firstElementChild;
+      return parsed?.attributes.length === 1 && parsed.getAttributeNames()[0] === attribute.name
+        && parsed.getAttribute(attribute.name) === actual.getAttribute(attribute.name);
+    });
+  }
+
   /** Sets `name` on the element the page fills `slot` with, or fills it first with a copy of its fallback. */
   function slotAttributeEdit(at: Located, slot: TemplateSlot, name: string, value: string): RangeEdit | undefined {
     const fill = at.instance.fills.get(slot.name);
     const element = fill?.length === 1 && fill[0].type === "element" ? fill[0] : undefined;
-    if (element) return attributeEdit(at.source, element.tag, name, value);
+    if (element) {
+      if (!openingSourceSafe(at.source, element.tag)) { deps.announce("The slot attribute markup is ambiguous; edit its source directly."); return; }
+      return attributeEdit(at.source, element.tag, name, value);
+    }
     if (fill?.length) { deps.announce("Select it in the preview to change it."); return undefined; }
     let markup = fillMarkup(at.template, slot);
-    const first = /^<([a-zA-Z][^\s/>]*)/.exec(markup);
-    if (!first) return undefined;
-    const tag = { name: first[1].toLowerCase(), start: 0, nameEnd: first[0].length, end: markup.indexOf(">") + 1 };
+    const tag = startTags(markup)[0];
+    if (!tag || tag.start !== 0 || !openingSourceSafe(markup, tag)) return undefined;
     const set = attributeEdit(markup, tag, name, value);
     markup = markup.slice(0, set.start) + set.text + markup.slice(set.end);
     return fillInsertEdit(at.source, at.instance, at.slots, slot.name, markup);
@@ -1182,19 +1233,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return opening.content.firstElementChild?.getAttribute(name) ?? undefined;
     };
     // The legacy token ranges must describe the browser's actual attributes.
-    const attributeSourceSafe = (at: Located) => {
-      const opening = document.createElement("template");
-      opening.innerHTML = at.source.slice(at.range.tag.start, at.range.tag.end) + `</${at.tag}>`;
-      const actual = opening.content.firstElementChild;
-      if (!actual || actual.localName !== at.tag || actual.attributes.length !== at.instance.attributes.length) return false;
-      return at.instance.attributes.every(attribute => {
-        const fragment = document.createElement("template");
-        fragment.innerHTML = `<x-attribute${at.source.slice(attribute.start, attribute.end)}></x-attribute>`;
-        const parsed = fragment.content.firstElementChild;
-        return parsed?.attributes.length === 1 && parsed.getAttributeNames()[0] === attribute.name
-          && parsed.getAttribute(attribute.name) === actual.getAttribute(attribute.name);
-      });
-    };
+    const attributeSourceSafe = (at: Located) => openingSourceSafe(at.source, at.range.tag);
     const openSession = (plan: (at: Located, value: string) => RangeEdit | { error: string } | undefined, message: string): ComponentFieldSession | undefined => {
       if (!read()) return;
       const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
@@ -1216,7 +1255,7 @@ export function createComponentTools(deps: ComponentDeps) {
           if (!at) return reject();
           const edit = plan(at, value);
           if (!edit) return reject();
-          if ("error" in edit) { deps.announce(edit.error); return reject(); }
+          if ("error" in edit) { deps.announce(edit.error); return false; }
           const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
           if (next === at.source) return true;
           live(path, edit, message, at.node);
@@ -1287,6 +1326,7 @@ export function createComponentTools(deps: ComponentDeps) {
         return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
       },
       images: deps.images().map(image => `/${image}`),
+      links: deps.links(),
       openImageUpload(name) {
         const at = read(), slot = at?.slots.find(item => item.name === name);
         if (!at || !slot || slotValue(at.source, at.template, at.instance, slot).kind !== "image") return;
@@ -1374,6 +1414,7 @@ export function createComponentTools(deps: ComponentDeps) {
     editComponent,
     fillInstanceSlot,
     destroy() {
+      destroyResize?.();
       panel.remove();
       banner.remove();
       usedOn.remove();

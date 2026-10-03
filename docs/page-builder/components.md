@@ -34,7 +34,7 @@ everything that is a component, in both schemes:
 
 ## Instance fields in Structure
 
-The separate properties panel is retired. A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
+The host retires the separate properties panel only when it enables `structureFields` alongside the Structure adapter; otherwise the existing panel remains available. A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
 
 - Text is editable inline. An empty slot shows its fallback; typing copies that content into the page in template slot order.
 - Image details unfold into Image and Alt text. Link details unfold into Button text and Link / URL. Unsupported rich text remains Content and selects the authored element instead of flattening it.
