@@ -55,9 +55,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined; }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   const gestureEvents = new AbortController();
+  let gestureTimer: ReturnType<typeof setTimeout> | undefined;
   const finishGesture = () => {
     if (!interacting) return;
-    setTimeout(() => {
+    if (gestureTimer) clearTimeout(gestureTimer);
+    gestureTimer = setTimeout(() => {
+      gestureTimer = undefined;
       interacting = false;
       if (widgetsPending) { widgetsPending = false; report("The style source changed during the gesture. Review the current values and retry."); rebuildWidgets?.(); }
       else if (pending && !root.contains(document.activeElement)) { pending = false; render(); }
@@ -123,9 +126,30 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     }
     return out;
   }
+  function syncTarget(context: StylePanelContext) {
+    const target = body.querySelector<HTMLElement>(".style-panel__target");
+    if (!target) return;
+    const selector = target.querySelector(".style-panel__selector"), path = target.querySelector(".style-panel__path");
+    if (selector) selector.textContent = context.target?.selector ?? context.tag;
+    if (path) path.textContent = context.target?.path ?? "No class rule selected";
+    const old = target.querySelector(".style-panel__show-code");
+    if (context.target?.start === undefined || !context.workspace) old?.remove();
+    else if (!old) {
+      const captured = context;
+      const show = button("Show in code", () => {
+        const fresh = handlers.context();
+        const expected = currentContext(show.isConnected && fresh?.key === captured.key ? fresh : captured);
+        if (expected) void handlers.showCode(expected).catch(report);
+      }, "style-panel__show-code");
+      target.append(show);
+    }
+    const hint = body.querySelector(".style-panel__new-rule-hint");
+    if (context.target?.start !== undefined) hint?.remove();
+  }
   function refreshValues() {
     const context = handlers.context(), own = ownValues();
     renderContext = context; renderOwn = own;
+    if (context) syncTarget(context);
     widgets.forEach(widget => widget.refresh());
     if (global && context) {
       const variables = siteVariables(context.files);
@@ -170,6 +194,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     try {
       written = writeCssProperties(expected.files[target.path] ?? "", { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state: currentState }, properties);
     } catch (error) { report(error); return false; }
+    if (busy) return false;
     writing = true;
     const accepted = await commit(() => handlers.write(properties, breakpoint, currentState, expected));
     writing = false;
@@ -179,7 +204,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     // An external edit, navigation or rejected host write cannot refresh them.
     if (!current || current.key !== expected.key || current.target?.path !== target.path || current.target?.selector !== target.selector || current.readOnly ||
       Object.keys(current.files).length !== Object.keys(expected.files).length ||
-      Object.keys(expected.files).some((path) => current.files[path] !== (path === target.path ? written : expected.files[path]))) { report("The CSS change did not land. Retry the style change."); return false; }
+      Object.keys(expected.files).some((path) => current.files[path] !== (path === target.path ? written : expected.files[path]))) { report("The source changed after your edit. Review the current values and retry."); update(); return false; }
     for (const snapshot of controlSnapshots) {
       const before = snapshot.expected;
       if (before?.key === expected.key && before.target?.path === target.path && before.target?.selector === target.selector &&
@@ -193,15 +218,23 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const snapshot = { expected: renderContext };
     controlSnapshots.add(snapshot);
     const own = renderOwn[field.property] ?? "", computed = renderContext?.computed[field.property] ?? "";
-    const apply = (value: string) => {
-      if (!currentContext(snapshot.expected)) return;
+    let acceptedValue: string | undefined;
+    let pendingValue: string | undefined;
+    const apply = async (value: string) => {
       if (field.unit && /^-?(?:\d+\.?\d*|\.\d+)$/.test(value)) value += "px";
       if (field.property === "grid-template-columns" && /^\d+$/.test(value)) {
         if (+value < 1 || +value > 24) { report("Choose 1–24 grid columns, or enter a CSS template."); return; }
         value = `repeat(${value}, minmax(0, 1fr))`;
       }
       if (value && !CSS.supports(field.property, value.replace(/\s*!important\s*$/, ""))) { report(`Enter a valid ${field.label.toLowerCase()} value.`); return; }
-      if (onChange) void onChange(value, snapshot.expected); else void write({ [field.property]: value }, snapshot.expected);
+      if (value === acceptedValue || value === pendingValue) return;
+      if (!currentContext(snapshot.expected)) return;
+      pendingValue = value;
+      try {
+        const accepted = onChange ? await onChange(value, snapshot.expected) : await write({ [field.property]: value }, snapshot.expected);
+        if (accepted !== false) acceptedValue = value;
+      } catch (error) { report(error); }
+      finally { pendingValue = undefined; }
     };
     let control: HTMLInputElement | HTMLSelectElement;
     if (field.options) {
@@ -224,7 +257,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     control.name = field.property; control.setAttribute("aria-label", field.label);
     control.dataset.property = field.property; control.value = own; control.classList.toggle("is-computed", !own);
     control.addEventListener("focus", () => { if (handlers.context()?.key === snapshot.expected?.key) snapshot.expected = handlers.context(); });
-    control.addEventListener("change", () => apply(control.value.trim()));
+    control.addEventListener("change", () => { void apply(control.value.trim()); });
     function openVariableMenu(x: number, y: number) {
       closeVariableMenu();
       const expected = currentContext(control.isConnected && snapshot.expected?.key === renderContext?.key ? renderContext : snapshot.expected), workspace = expected?.workspace;
@@ -341,19 +374,23 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     root.classList.toggle("is-collapsed", collapsed); root.parentElement?.classList.toggle("has-style-panel", !collapsed);
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
+  let pendingWidgetRestore: ((final?: boolean) => void) | undefined;
   function captureWidgetFocus() {
+    if (restoringWidgetFocus && document.activeElement === document.body && pendingWidgetRestore) return pendingWidgetRestore;
     const previous = document.activeElement instanceof HTMLElement && document.activeElement.closest(".grid-editor, .image-focal-point") ? document.activeElement : undefined;
     const focusKey = renderContext?.key;
     const identity = (control: HTMLElement) => control.dataset.styleControl ?? control.getAttribute("aria-label") ?? control.closest("label")?.textContent ?? (control instanceof HTMLButtonElement ? control.textContent : undefined);
     const label = previous && identity(previous), token = ++focusRestoreToken;
     restoringWidgetFocus = !!previous;
-    return (final = false) => {
+    const restore = (final = false) => {
       if (token !== focusRestoreToken) return;
       if (!previous || previous.isConnected || !label || document.activeElement !== document.body || handlers.context()?.key !== focusKey) { restoringWidgetFocus = false; return; }
       const control = [...body.querySelectorAll<HTMLElement>(".grid-editor input, .grid-editor button, .image-focal-point input, .image-focal-point [tabindex]")].find(control => identity(control) === label);
       if (control) { control.focus(); restoringWidgetFocus = false; }
       else if (final) restoringWidgetFocus = false;
     };
+    pendingWidgetRestore = restore;
+    return restore;
   }
   function render() {
     const restoreWidgetFocus = captureWidgetFocus();
@@ -420,14 +457,14 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected"));
     if (context.target?.start !== undefined && context.workspace) target.append(button("Show in code", () => { const expected = currentContext(classSnapshot.expected); if (expected) void handlers.showCode(expected).catch(report); }, "style-panel__show-code"));
     body.append(target);
-    if (context.target && context.target.start === undefined) body.append(node("p", "style-panel__hint", "No class rule yet. The first style edit creates it in this stylesheet."));
+    if (context.target && context.target.start === undefined) body.append(node("p", "style-panel__hint style-panel__new-rule-hint", "No class rule yet. The first style edit creates it in this stylesheet."));
     if (context.className) body.append(node("p", "style-panel__shared-scope", context.target?.selector === cssClassSelector(context.className) ? `Edits apply to every element with class “${context.className}”.` : `Edits apply to every element matching “${context.target?.selector ?? cssClassSelector(context.className)}”.`));
     if (context.readOnly) { body.append(node("p", "style-panel__hint", "This version is read only.")); return; }
     {
       const form = node("form", "style-panel__add-class"); const input = node("input"); input.type = "text"; input.name = "class"; input.placeholder = "e.g. hero-title"; input.setAttribute("aria-label", "Class name"); const add = button("Add class", () => {}, ""); add.type = "submit";
       if (!context.className) form.append(node("p", "style-panel__hint", "Add a class to style this element in the site's CSS."));
       form.append(input, add);
-      form.addEventListener("submit", (event) => { event.preventDefault(); const expected = currentContext(classSnapshot.expected); if (expected) void commit(() => handlers.addClass(input.value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""), expected)); }); body.append(form);
+      form.addEventListener("submit", (event) => { event.preventDefault(); const fresh = handlers.context(); const expected = currentContext(form.isConnected && fresh?.key === classSnapshot.expected?.key ? fresh : classSnapshot.expected); if (expected) void commit(() => handlers.addClass(input.value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""), expected)); }); body.append(form);
     }
     if (!context.className) return;
     if (getCurrentBreakpoint() !== "all") body.append(button("Hide on this size", () => void write({ display: "none" }, context), "style-panel__hide"));
@@ -496,7 +533,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
           const view = mountImageFocalPoint(focal.host, { mode: result.mode, previewAsset: result.asset,
             authored: own[result.mode], computed: widgetContext.computed[result.mode], fit: widgetContext.computed["object-fit"], size: widgetContext.computed["background-size"],
             expected: proof.captured, readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: () => proof.isCurrent(true),
-            onChange: async properties => { if (!proof.isCurrent(true)) throw new Error("The image or style source changed. Retry with the current preview."); await proof.change(properties); }, onError: report });
+            onChange: async properties => {
+              if (!proof.isCurrent(true)) throw new Error("The image or style source changed. Retry with the current preview.");
+              const target = proof.captured.expected.target;
+              const rule = target && locateWriteRule(proof.captured.expected.files[target.path] ?? "", options());
+              const declaration = document.createElement("div").style;
+              declaration.cssText = (rule?.declarations ?? []).map(item => `${item.property}:${item.value};`).join("");
+              const prioritized = Object.fromEntries(Object.entries(properties).map(([property, value]) => [property, value && declaration.getPropertyPriority(property) === "important" ? `${value} !important` : value]));
+              await proof.change(prioritized);
+            }, onError: report });
           widgets.push({ ...view, kind: "focal", isCurrent: () => proof.isCurrent(true) });
           filter(); restore(true);
         }).catch(error => { if (request === focalRequest && widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); restore(true); report(error); } });
@@ -534,5 +579,5 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (changed) render(); else applyFold();
   });
   render();
-  return { root, update, dispose() { gestureEvents.abort(); widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
+  return { root, update, dispose() { gestureEvents.abort(); if (gestureTimer) clearTimeout(gestureTimer); rebuildWidgets = undefined; widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
 }

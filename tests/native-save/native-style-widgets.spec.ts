@@ -119,13 +119,13 @@ test("a host that returns without changing source rejects widget acceptance and 
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await page.evaluate(async () => {
     const {createStylePanel}=await import("/src/components/style-panel.ts"),{writeCssProperties}=await import("/src/page-builder/css-write.ts");
-    let source=".item { display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }", failNext=true;
+    let source=".item { display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }", failNext=true, raceNext=false;
     const host=document.createElement("main");host.className="has-preview";host.style.cssText="position:fixed;inset:0;background:white;z-index:1000;display:grid";document.body.append(host);
     const view=createStylePanel({context:()=>({key:"retry",tag:"div",className:"item",classes:["item"],target:{path:"test.css",selector:".item",start:0},files:{"test.css":source},computed:{display:"grid"}}),
-      async write(properties){if(failNext){failNext=false;return;}source=writeCssProperties(source,{selector:".item",baseStart:0},properties);},
+      async write(properties){if(failNext){failNext=false;return;}source=writeCssProperties(source,{selector:".item",baseStart:0},properties);if(raceNext){raceNext=false;source+="\n.external { color:red; }";view.update();await Promise.resolve();}},
       variable:async()=>{},selectClass:()=>{},addClass:async()=>{},showCode:async()=>{},history:()=>{},error(message){host.dataset.error=message;}},host);
     host.append(view.root);(view.root.querySelector(".style-panel__opener") as HTMLButtonElement).click();
-    Object.assign(window,{styleRetry:{source:()=>source,fail:()=>{failNext=true;},dispose:()=>{view.dispose();host.remove();}}});
+    Object.assign(window,{styleRetry:{source:()=>source,fail:()=>{failNext=true;},race:()=>{raceNext=true;},dispose:()=>{view.dispose();host.remove();}}});
   });
   const panel=page.getByRole("complementary",{name:"Style panel"}).last();await panel.getByRole("searchbox",{name:"Search styles"}).fill("grid");
   const grid=panel.getByRole("region",{name:"Grid layout"});await grid.getByLabel("Columns",{exact:true}).fill("3");
@@ -140,6 +140,15 @@ test("a host that returns without changing source rejects widget acceptance and 
   await expect(panel).not.toHaveAttribute("aria-busy","true");await expect(padding).toHaveValue("19");await expect(padding).toBeFocused();
   expect(await page.evaluate(()=>(window as any).styleRetry.source())).not.toContain("padding-top: 19px");
   await padding.press("Enter");await expect.poll(()=>page.evaluate(()=>(window as any).styleRetry.source())).toContain("padding-top: 19px");
+  await panel.getByRole("searchbox",{name:"Search styles"}).fill("grid");
+  await grid.getByLabel("Columns",{exact:true}).fill("4");
+  await page.evaluate(()=>(window as any).styleRetry.race());
+  await grid.getByRole("button",{name:"Replace with 4 equal columns"}).press("Enter");
+  await expect(panel.locator(".grid-editor")).not.toHaveAttribute("aria-disabled","true");
+  await expect(page.locator("main.has-preview").last()).toHaveAttribute("data-error",/source changed after your edit/);
+  await grid.getByLabel("Columns",{exact:true}).fill("5");
+  await grid.getByRole("button",{name:"Replace with 5 equal columns"}).press("Enter");
+  await expect.poll(()=>page.evaluate(()=>(window as any).styleRetry.source())).toContain("repeat(5, minmax(0, 1fr))");
   await page.evaluate(()=>(window as any).styleRetry.dispose());
 });
 test("ordinary field keeps its unfinished text and focus when an asset loads or its CSS rule moves", async ({page,baseURL}) => {
@@ -162,4 +171,11 @@ test("background focus previews the earlier important image and expands authored
   const actual=await frame(page).locator(".lead").evaluate(element=>getComputedStyle(element).backgroundImage);
   expect(await focal.locator("img").getAttribute("src")).toBe(actual.slice(5,-2));
   await expect(focal.locator(".image-focal-point__status")).not.toContainText("computed");
+  const before=await source(page);
+  const x=focal.getByLabel("X (%)",{exact:true});await x.fill("42");await x.press("Enter");
+  await expect(frame(page).locator(".lead")).toHaveCSS("background-position","42% 30%");
+  expect(await source(page)).toContain("background-position: 42% 30% !important");
+  await x.press("ControlOrMeta+Z");
+  await expect.poll(()=>source(page)).toBe(before);
+  await expect(frame(page).locator(".lead")).toHaveCSS("background-position","20% 30%");
 });
