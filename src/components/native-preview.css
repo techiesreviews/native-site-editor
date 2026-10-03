@@ -139,3 +139,5 @@ main.has-preview .code-editor {
 
 /* Keep the restore grip in the zero-height code row; hidden editors cannot tab. */
 main.has-preview.code-collapsed > .code-split > :not(.code-resize) { display: none; }
+/* The small collapsed restore target must remain above canvas overlay controls. */
+main.has-preview.code-collapsed > .code-split { z-index: 30; }

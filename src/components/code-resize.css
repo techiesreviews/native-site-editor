@@ -72,6 +72,12 @@ main:not(.has-preview) .code-resize {
   user-select: none;
 }
 
-main.has-preview.code-collapsed .code-resize { top: -10px; }
+main.has-preview.code-collapsed .code-resize { top: -10px; left: 50%; right: auto; width: 64px; transform: translateX(-50%); }
 main.has-preview.code-collapsed .code-resize:is(:hover, :focus-visible),
 main.has-preview.code-collapsed.code-resizing .code-resize { top: -18px; }
+
+@media (pointer: coarse) {
+  main.has-preview.code-collapsed .code-resize,
+  main.has-preview.code-collapsed .code-resize:is(:hover, :focus-visible),
+  main.has-preview.code-collapsed.code-resizing .code-resize { top: -44px; height: 44px; }
+}

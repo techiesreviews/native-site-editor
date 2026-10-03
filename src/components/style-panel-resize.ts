@@ -20,7 +20,7 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
     if (disposed) return;
     width = value < minimum() / 2 ? 0 : Math.round(Math.max(minimum(), Math.min(maximum(), value)));
     if (!width && panel.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
-    if (retain) requested = width;
+    if (retain) requested = width ? value : 0;
     workspace.style.setProperty("--style-panel-width", `${width}px`);
     for (const child of panel.children) {
       if (!(child instanceof HTMLElement) || child === handle) continue;

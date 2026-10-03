@@ -101,6 +101,7 @@ test("Style splitter drags, folds, restores and persists one width through keybo
   await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click(); await expect(handle).toHaveAttribute("aria-valuenow", "370");
   await panel(page).getByRole("textbox", { name: "Padding top", exact: true }).focus(); await page.keyboard.press("Escape");
   await expect(handle).toHaveAttribute("aria-valuenow", "0");
+  await expect(handle).toBeFocused();
   await handle.press("Space"); await expect(handle).toHaveAttribute("aria-valuenow", "370");
   await page.reload(); await expect(frame(page).locator(".lead")).toBeVisible();
   await expect(handle).toHaveAttribute("aria-valuenow", "370");

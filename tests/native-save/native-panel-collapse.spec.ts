@@ -22,6 +22,15 @@ async function gripInside(page: Page, handle: Locator) {
   expect(grip.y).toBeGreaterThanOrEqual(main.y - 1);
   expect(grip.x + grip.width).toBeLessThanOrEqual(main.x + main.width + 1);
   expect(grip.y + grip.height).toBeLessThanOrEqual(main.y + main.height + 1);
+  const vertical = await handle.getAttribute("aria-orientation") === "vertical";
+  expect(await metric(handle, vertical ? "height" : "width")).toBe(64);
+  // Away from the centred restore tab, the canvas edge stays available for
+  // classic iframe scrollbars instead of becoming a panel toggle hit target.
+  expect(await handle.evaluate((element, vertical) => {
+    const main = document.querySelector("#main")!.getBoundingClientRect();
+    const hit = document.elementFromPoint(vertical ? main.right - 2 : main.left + 20, vertical ? main.top + 20 : main.bottom - 2);
+    return Boolean(hit && element.contains(hit));
+  }, vertical)).toBe(false);
 }
 for (const width of [1440, 390]) {
   test(`code and Style collapse to zero and their edge grips restore at ${width}px`, async ({ page, baseURL }) => {
@@ -102,4 +111,48 @@ test("legacy collapsed preferences fully hide code and Style and restore remembe
   await expect.poll(() => metric(page.locator("#code-split"), "height")).toBe(Math.round(mainHeight * 0.55));
   await style(page).press("Enter");
   await expect.poll(() => metric(page.locator("#style-dock"), "width")).toBe(320);
+});
+
+
+test("Minimize code command returns focused Monaco to the visible restore grip", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await page.locator('#content [role="textbox"]').first().focus();
+  expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".monaco-editor")))).toBe(true);
+  await page.keyboard.press("ControlOrMeta+p");
+  const palette = page.locator("dialog.command-palette");
+  await palette.getByRole("combobox").fill("> Minimize code");
+  await palette.getByRole("combobox").press("Enter");
+  await expect(code(page)).toHaveAttribute("aria-valuenow", "0");
+  await expect(code(page)).toBeFocused();
+  await expect(page.locator("#content .monaco-editor")).toBeHidden();
+});
+
+test("a narrow clamped Style width retains its requested desktop restoration width", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await style(page).click();
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "280");
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "234");
+  await style(page).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await style(page).click();
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "280");
+});
+
+
+test("touch restore grips use centred 44px targets and reopen both panels", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 1000 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage(); await load(page, baseURL);
+    await code(page).tap();
+    await expect(code(page)).toHaveAttribute("aria-valuenow", "0");
+    expect(await metric(code(page), "height")).toBe(44);
+    expect(await metric(code(page), "width")).toBe(64);
+    await code(page).tap();
+    await expect(page.locator("#content .monaco-editor")).toBeVisible();
+    expect(await metric(style(page), "width")).toBe(44);
+    expect(await metric(style(page), "height")).toBe(64);
+    await style(page).tap();
+    await expect(page.locator(".style-panel__body")).toBeVisible();
+  } finally { await context.close(); }
 });

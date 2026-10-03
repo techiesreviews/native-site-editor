@@ -7,7 +7,9 @@ resize in 10px steps, or 40px with Shift. Dragging into the collapse threshold
 hides the panel and keeps its previous size for a later click restoration.
 Dragging a collapsed grip back into the canvas reopens the panel at the new size.
 
-The restore grips stay visible inside the canvas's bottom and right edges. Code
+The restore grips stay visible as centred 64px strips inside the canvas's bottom
+and right edges. The remaining edge stays available for iframe scrollbars; touch
+targets are 44px thick. Code
 has no residual source tabs or editors when collapsed. Style has no 32px rail or
 vertical opener. Hidden content is inert and hidden from accessibility APIs;
 focus returns to the grip when a control inside a panel initiates its collapse.
@@ -26,8 +28,13 @@ preference's legacy `collapsed: true` now means fully hidden, and its stored
 height remains available for restoration. Panel resizing never writes page,
 stylesheet or draft content.
 
-Browser coverage uses the native starter at 1440px and 390px, checks zero panel
+Focused browser coverage uses the native-demo fixture at 1440px and 390px, checks zero panel
 sizes, visible restore grips, click/drag/keyboard restoration, persisted heights
 and widths, hidden controls outside Tab navigation, no horizontal overflow and
 unchanged source/drafts. The existing code-width and Page Structure tests remain
 part of the focused validation.
+
+Restoring Style in a narrow viewport clamps its effective width without replacing
+the remembered desktop width. In cramped stacked layouts, expanded code keeps a
+96px source row where available; hiding it still returns to zero. Short Style
+docks scroll their body instead of painting controls over the source row.

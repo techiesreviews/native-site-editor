@@ -12,7 +12,16 @@
 main.has-preview:not(.has-style-panel) { grid-template-columns: minmax(0, 1fr) 0; }
 main.has-preview > .style-panel.is-collapsed { border-left: 0; }
 .style-panel.is-collapsed > :not(.style-panel-resize) { display: none !important; }
-.style-panel.is-collapsed > .style-panel-resize { left: -10px; }
+.style-panel.is-collapsed > .style-panel-resize { left: -10px; top: 50%; bottom: auto; height: 64px; transform: translateY(-50%); }
 .style-panel.is-collapsed > .style-panel-resize:is(:hover, :focus-visible),
 .style-panel-resizing .style-panel.is-collapsed > .style-panel-resize { left: -18px; }
 @media (prefers-reduced-motion: reduce) { .style-panel-resize { transition: none !important; } }
+
+@media (pointer: coarse) {
+  .style-panel.is-collapsed > .style-panel-resize,
+  .style-panel.is-collapsed > .style-panel-resize:is(:hover, :focus-visible),
+  .style-panel-resizing .style-panel.is-collapsed > .style-panel-resize { left: -44px; width: 44px; }
+}
+main.has-preview > .style-panel.is-collapsed { z-index: 30; }
+/* Short stacked viewports scroll the dock body rather than paint over code. */
+main.has-preview > .style-panel:not(.is-collapsed) > .style-panel__body { overflow: auto; overscroll-behavior: contain; }

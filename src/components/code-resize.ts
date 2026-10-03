@@ -16,14 +16,17 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   pane.prepend(handle);
   const bounds = () => {
     const available = main.getBoundingClientRect().height;
-    // Keep source plus tabs readable, reserving canvas space in short layouts.
+    // Reserve canvas space when expanding code in short layouts.
     const bar = main.querySelector<HTMLElement>(".canvas-bar");
     const frameHost = main.querySelector<HTMLElement>(".preview-frame-host");
     const frameStyle = frameHost && getComputedStyle(frameHost);
     const canvasReserve = 48 + (bar?.getBoundingClientRect().height ?? 0) +
       (Number.parseFloat(frameStyle?.paddingTop ?? "0") || 0) + (Number.parseFloat(frameStyle?.paddingBottom ?? "0") || 0);
-    const maximum = Math.max(0, available - Math.max(120, canvasReserve));
-    return { minimum: Math.min(96, maximum), maximum };
+    const minimum = Math.min(96, available);
+    // Expanded source remains readable in a cramped stacked layout. Collapse
+    // still has no floor, and the canvas reserve wins whenever both can fit.
+    const maximum = Math.max(minimum, available - Math.max(120, canvasReserve));
+    return { minimum, maximum };
   };
   let height = 0.4;
   let collapsed = false;
