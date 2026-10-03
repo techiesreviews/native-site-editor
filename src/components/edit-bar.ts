@@ -76,6 +76,8 @@ export type EditBarControl =
       // new tab and title), applied as changed, in the same undo step.
       extras?: AddressExtra[];
       onInput: (value: string) => void;
+      // Runs once when this field opens; retained renders do not reopen it.
+      onOpen?: () => void;
       onClose?: () => void;
     }
   | {
@@ -509,6 +511,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     return matches;
   }
   function openAddressField(item: HTMLButtonElement, control: AddressControl) {
+    control.onOpen?.();
     const label = node("label", "edit-bar__field-label", control.label);
     const input = document.createElement("input");
     input.type = "text";

@@ -66,3 +66,21 @@ test('paragraph, wrapper and button identities in light DOM and template content
  expect(result.entries.every((entry:any)=>!entry.componentEdit&&!entry.contextEdit&&entry.hasSelect)).toBe(true);
  expect(result.selected).toEqual(Array.from({length:6},()=>({path:'index.html',node:[0]})));expect(result.opened).toEqual([]);
 });
+
+test('address opening captures once across retained renders and captures again after closing', async ({page}) => {
+ await page.evaluate(async () => {
+  const modulePath='/src/components/edit-bar.ts';
+  const {createEditBar}=await import(modulePath);
+  const pane=document.createElement('div');pane.id='address-hook';pane.style.cssText='position:fixed;inset:100px;z-index:1000';document.body.append(pane);
+  const output=document.createElement('output');output.id='address-hook-output';pane.append(output);
+  const bar=createEditBar(pane,pane);
+  let revision=0;
+  const show=()=>bar.show({kind:'Link',controls:[{kind:'address',label:'Address',value:'/before',onOpen:()=>{output.textContent+=`open${revision} `;},onClose:()=>{output.textContent+='close ';},onInput:()=>{revision++;show();}}]}, {top:100,left:100,width:200,height:50,right:300,bottom:150});
+  show();
+ });
+ const pane=page.locator('#address-hook'),address=pane.getByRole('button',{name:'Address',exact:true}),output=page.locator('#address-hook-output');
+ await address.click();await expect(output).toHaveText('open0 ');
+ const input=pane.locator('.edit-bar__field-input');await input.fill('/after');await expect(input).toHaveValue('/after');await expect(output).toHaveText('open0 ');
+ await input.press('Escape');await expect(output).toHaveText('open0 close ');
+ await address.click();await expect(output).toHaveText('open0 close open1 ');
+});
