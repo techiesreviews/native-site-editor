@@ -68,6 +68,7 @@ import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loadi
 import { iconMarkup, setIcon } from "./icons";
 import { mountEditorPalette } from "./page-builder/palette";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
+import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
 import type {
   EditorContext,
   Directory,
@@ -453,6 +454,7 @@ function mountComponentTools() {
     preview: () => nativePreview,
     currentPath: () => currentPath,
     selection: () => lastNativeSelection,
+    revision: () => `${generation}:${setupScope()}`,
     openFile: async (path) => {
       const epoch = generation;
       if (currentPath !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch);
@@ -469,24 +471,17 @@ function mountComponentTools() {
     pageLabel: nativePageLabelOf,
     // New files as drafts (a component made from the page), as the Files tab's New file writes them.
     createFiles: async (made) => {
-      const scope = draftScope();
-      if (!scope || !snapshot) return "Open a repository first.";
-      for (const file of made) {
-        if (pathNow(file.path)) return `${file.path} already exists.`;
-        const problem = await branchPathProblem(file.path).catch(() => undefined);
-        if (problem) return problem;
-      }
-      for (const file of made)
-        draftStore().save({ ...scope, version: 1, path: file.path, baseSha: null, original: "", content: file.content, updatedAt: Date.now() });
-      if (draftStore().error) return draftStore().error ?? undefined;
-      afterFileChanges();
-      return undefined;
-    },
-    removeFiles: (paths) => {
-      const scope = draftScope();
-      if (!scope) return;
-      for (const path of paths) editorModule?.dropDraft(scope, path);
-      afterFileChanges();
+      const scope = draftScope(), epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
+      if (!scope || !snapshot) return { error: "Open a repository first." };
+      return createComponentFileDrafts(made, {
+        scope, store,
+        isCurrent: () => epoch === generation && key === setupScope(),
+        exists: path => Boolean(pathNow(path)),
+        checkPath: branchPathProblem,
+        drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
+        refresh: afterFileChanges,
+        announce,
+      });
     },
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
     addStrip: (strip) => nativePreview?.addStrip(strip),
