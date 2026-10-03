@@ -1,0 +1,143 @@
+import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
+const panel = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
+const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+async function open(page: Page, baseURL: string | undefined, repo = 501) {
+  await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+}
+async function select(page: Page, selector = ".lead") {
+  await frame(page).locator(selector).click();
+  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await expect(panel(page).getByText("Spacing", { exact: true })).toBeVisible();
+}
+async function fill(page: Page, label: string, value: string) {
+  await panel(page).getByRole("textbox", { name: label, exact: true }).fill(value);
+  await panel(page).getByRole("textbox", { name: label, exact: true }).press("Enter");
+}
+const css = async (page: Page, path = "styles/site.css") => (await storedDraft(page, path))?.content ?? "";
+
+test("box model padding updates CSS and preview; shared undo restores both", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  const padding = panel(page).getByRole("textbox", { name: "Padding top", exact: true });
+  await expect(padding).toHaveAttribute("placeholder", "0px");
+  await fill(page, "Padding top", "24");
+  await expect(frame(page).locator(".lead")).toHaveCSS("padding-top", "24px");
+  await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*padding-top: 24px;/s);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  await expect(page.locator("#content-secondary .view-lines")).toContainText("padding-top: 24px;");
+  await panel(page).getByRole("button", { name: "Link padding sides" }).focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(frame(page).locator(".lead")).toHaveCSS("padding-top", "0px");
+  await expect.poll(() => css(page)).not.toContain("padding-top: 24px");
+});
+
+test("site variable preset writes var() and global colours edit in place", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByText("Typography", { exact: true }).click();
+  await panel(page).getByRole("combobox", { name: "Text colour preset", exact: true }).selectOption("--accent");
+  await expect(frame(page).locator(".lead")).toHaveCSS("color", "rgb(47, 109, 58)");
+  await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
+  await panel(page).getByRole("button", { name: "Global styles", exact: true }).click();
+  await fill(page, "--accent", "#345678");
+  await expect(frame(page).locator(".lead")).toHaveCSS("color", "rgb(52, 86, 120)");
+  await expect.poll(() => css(page)).toContain("--accent: #345678;");
+});
+
+test("tablet and hover changes write media and state rules; hide stays scoped", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByRole("combobox", { name: "Style breakpoint" }).selectOption("tablet");
+  await fill(page, "Padding top", "18px");
+  await expect.poll(() => css(page)).toMatch(/@media \(max-width: 768px\) \{\s*\.lead \{\s*padding-top: 18px;/);
+  await panel(page).getByRole("combobox", { name: "Style state" }).selectOption(":hover");
+  await fill(page, "Padding top", "26px");
+  await expect.poll(() => css(page)).toMatch(/\.lead:hover \{\s*padding-top: 26px;/);
+  await panel(page).getByRole("combobox", { name: "Style state" }).selectOption("");
+  await panel(page).getByRole("button", { name: "Hide on this size" }).click();
+  await expect.poll(() => css(page)).toMatch(/@media \(max-width: 768px\) \{\s*\.lead \{[^}]*display: none;/s);
+  await expect(frame(page).locator(".lead")).toBeVisible();
+  await panel(page).getByRole("combobox", { name: "Style breakpoint" }).selectOption("all");
+  await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).toHaveValue("");
+});
+
+test("Add class writes HTML before styling a heading; never writes inline CSS", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await frame(page).locator(".hero h1").click();
+  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await panel(page).getByRole("textbox", { name: "Class name" }).fill("hero-title");
+  await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
+  await expect(frame(page).locator("h1.hero-title")).toBeVisible();
+  await fill(page, "Padding top", "16px");
+  await expect(frame(page).locator("h1.hero-title")).toHaveCSS("padding-top", "16px");
+  await expect.poll(() => css(page)).toMatch(/\.hero-title \{\s*padding-top: 16px;/);
+  const html = (await storedDraft(page, "index.html"))!.content;
+  expect(html).toContain('class="hero-title"'); expect(html).not.toContain("style=");
+});
+
+test("linked box sides and pixel scrub each commit one undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByRole("button", { name: "Link padding sides" }).click();
+  await fill(page, "Padding left", "12px");
+  for (const side of ["top", "right", "bottom", "left"]) await expect(frame(page).locator(".lead")).toHaveCSS(`padding-${side}`, "12px");
+  const input = panel(page).getByRole("textbox", { name: "Padding left", exact: true });
+  const box = (await input.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2, { steps: 5 }); await page.mouse.up();
+  await expect(frame(page).locator(".lead")).toHaveCSS("padding-left", "22px");
+  await panel(page).getByRole("button", { name: "Link padding sides" }).focus(); await page.keyboard.press("ControlOrMeta+Z");
+  await expect(frame(page).locator(".lead")).toHaveCSS("padding-left", "12px");
+});
+
+test("panel uses theme tokens in light and dark; collapses with Escape", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({ path: `.scratch/style/panel-${colorScheme}.png` });
+  }
+  await panel(page).getByRole("textbox", { name: "Padding top", exact: true }).focus(); await page.keyboard.press("Escape");
+  await expect(panel(page).getByRole("button", { name: "Open Style panel" })).toBeFocused();
+  await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).not.toBeVisible();
+});
+
+test("transform fields write plain CSS in the selected media and state scope", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByRole("combobox", { name: "Style breakpoint" }).selectOption("mobile");
+  await panel(page).getByRole("combobox", { name: "Style state" }).selectOption(":focus-visible");
+  await panel(page).getByText("Effects", { exact: true }).click();
+  await fill(page, "Transform", "translateX(12px) rotate(5deg)");
+  await fill(page, "Transform origin", "top left");
+  await expect.poll(() => css(page)).toMatch(/@media \(max-width: 390px\) \{\s*\.lead:focus-visible \{[^}]*transform: translateX\(12px\) rotate\(5deg\);[^}]*transform-origin: top left;/s);
+  await panel(page).getByRole("combobox", { name: "Style breakpoint" }).selectOption("all");
+  await panel(page).getByRole("combobox", { name: "Style state" }).selectOption("");
+  await expect(panel(page).getByRole("textbox", { name: "Transform", exact: true })).toHaveValue("");
+});
+
+test("a detached field cannot write after the selected element changes", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByRole("textbox", { name: "Padding top", exact: true }).evaluate((input) => {
+    (window as typeof window & { staleStyleInput?: HTMLInputElement }).staleStyleInput = input as HTMLInputElement;
+  });
+  await frame(page).locator("section.cards").evaluate((element) => (element as HTMLElement).click());
+  await expect(panel(page).locator(".style-panel__target")).toHaveText(".cards");
+  await page.evaluate(() => {
+    const input = (window as typeof window & { staleStyleInput?: HTMLInputElement }).staleStyleInput!;
+    input.value = "33px";
+    input.dispatchEvent(new Event("change"));
+  });
+  await expect(page.locator("#notice")).toContainText("The style target changed.");
+  expect(await css(page)).not.toContain("padding-top: 33px");
+});
+
+test("an unfinished stylesheet rejects edits without changing its CSS draft", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  await page.locator(`#content-secondary [role="textbox"]`).first().focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.insertText("\n.broken {\n");
+  await expect.poll(() => css(page)).toContain(".broken {");
+  const before = await css(page);
+  await fill(page, "Padding top", "14px");
+  await expect(page.locator("#notice")).toContainText("unbalanced CSS delimiters");
+  expect(await css(page)).toBe(before);
+});

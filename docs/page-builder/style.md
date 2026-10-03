@@ -1,0 +1,142 @@
+# Style panel
+
+The Style tab at the right edge of the canvas opens a docked panel. Select an
+instance on the canvas or in Page structure. Its first class identifies the rule
+being edited. The code panes stay underneath the canvas and panel.
+
+The panel covers Layout, Spacing, Size, Typography, Background, Border and Effects, including transform and transform origin.
+Spacing opens first. Click a side of the box model to type a CSS value; bare numbers
+become pixels. Drag a pixel value horizontally to scrub it, or use Alt+arrow keys
+(Shift changes the increment to 10px). Each ring has its own linked-sides toggle.
+A scrub commits once on release. Variables and non-pixel units remain editable by
+typing; scrubbing never silently converts them to pixels.
+
+Authored values appear normally; computed values appear muted as defaults. Font
+families include the site's `@font-face` families and `--font-*` presets. Colour,
+spacing and type controls offer the site's variables, writing `var(--name)`.
+Columns accepts either an integer from 1 to 24 or a CSS grid template. Clear a
+field to remove its explicit declaration. CSS shorthand values are expanded for
+display; removing a longhand does not erase an existing shorthand.
+
+An element without a class first offers Add class, a source edit to its HTML.
+Styling never writes an inline `style` attribute. The writer prefers a matched
+local CSS rule whose selector is exactly `.firstclass` or `.parent .firstclass`,
+choosing the most specific matched parent rule and then source order. Other
+selectors remain available in the existing cascade pane. Without such a rule,
+the panel appends `.firstclass` to a local stylesheet linked by the page.
+
+All sizes edits the base rule. Tablet ≤768 and Mobile ≤390 write inside a matching
+`@media (max-width: …px)` block. Existing matching blocks are reused; compound
+conditions are kept separate. The selected rule's layer is retained when creating
+media and state rules. State chooses none, `:hover` or `:focus-visible`. Hide on
+this size writes `display: none` within the selected media/state scope.
+
+Global styles lists the site's local `:root` variables by Colours, Typography,
+Spacing and Other. Changes edit their original rule, including selector lists and
+nested layers. Colour aliases resolve using the site's variables, so editor
+palette tokens cannot change the site's swatches.
+
+Each committed change uses one verified Monaco source edit and the existing
+preview pipeline. Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z in the panel use the shared source
+undo/redo history. Escape collapses the panel and restores focus to its opener.
+There is no decorative animation; reduced-motion users get the same stable UI.
+The chrome uses `src/theme.css` tokens in both colour schemes.
+
+## Integration
+
+- `src/components/style-panel.ts` and `.css`: dock, controls, variable presets,
+  global styles, box model and keyboard/pointer handling.
+- `src/page-builder/css-write.ts`: source-only rule scanning, class-rule location,
+  declaration edits, media/state insertion, indentation/CRLF preservation and
+  variable discovery/resolution.
+- `src/page-builder/breakpoints.ts`: `getCurrentBreakpoint()`,
+  `setCurrentBreakpoint("all" | "tablet" | "mobile")`,
+  `subscribeBreakpoint(listener)` (returns unsubscribe), and `breakpointWidths`.
+  The canvas device switcher can subscribe to and set this shared state. This
+  slice does not resize the canvas when the selected editing breakpoint changes.
+- `src/main.ts`: imports, panel mounting beside the preview, a source/cascade
+  adapter, source edits through `applyNativeChange`, and refresh hooks for source
+  changes and selections. Existing cascade rendering is retained.
+- `public/native-preview-runtime.js`: `emitSelection` additionally reports the
+  panel's computed CSS properties, including properties with no author declaration.
+
+## Validation
+
+`tests/css-write.test.ts` covers 39 cases: comments, quoted punctuation and URLs,
+CRLF, spaces/tabs, missing semicolons, duplicate declarations, `!important`, nested
+rules/layers, condition isolation, state rules, rule indexes, class escaping,
+variable aliases and breakpoint subscriptions.
+
+`tests/native-save/native-style-panel.spec.ts` covers nine browser flows: padding
+source/preview/undo, a variable preset and global colour edit, tablet/state/hide
+rules, Add class without inline CSS, linked sides plus scrub undo, light/dark
+screenshots plus Escape, scoped transforms, stale detached controls, and malformed
+CSS rejection. Screenshots are `.scratch/style/panel-light.png` and
+`.scratch/style/panel-dark.png`; both were viewed during implementation.
+
+The full validation results and inherited-suite failures, if any, are recorded in
+the implementation handoff. Logs are under `.scratch/style/`.
+
+## Limits
+
+Styling currently requires a linked local stylesheet. A site with only embedded
+or external CSS must add a local stylesheet in source first; the panel does not
+create or link a stylesheet automatically. New state rules are authored but the
+panel does not force hover or focus in the canvas. The CSS writer deliberately
+edits simple matched class selectors rather than rewriting selector lists,
+relative nested selectors, or component `:host`/`::slotted` rules.
+
+## Host integration still required
+
+The leaf modules are usable with the recovered host adapter, but its asynchronous
+source checks and the canvas device connection must be completed when the shared
+host files are integrated. The style panel passes an optional `expected` context
+as the fourth argument of `write` and the third argument of `variable` and
+`addClass`. A stale detached control is rejected before calling the adapter.
+The writer also accepts `expectedSource`; it rejects a changed source even when a
+replacement rule has the same selector at the same offset.
+
+In `src/main.ts`, update the recovered `createStylePanel` callbacks as follows:
+
+1. Include `generation`, repository ID and branch in `nativeStylePanelContext().key`
+   ahead of the existing selection path/node/class key. This distinguishes an
+   identical selection in another repository or branch.
+2. In `write(properties, breakpoint, state, expected)`, capture the context,
+   generation, target and `context.files[target.path]` **before** `openSecondary`.
+   After it resolves, require the generation and context key to match, no
+   `versionView`, and the CSS source to equal that captured source. Pass
+   `expectedSource: source` to `writeCssProperties`. Do not recompute a source
+   location from a newer file using the old `target.start`.
+3. In `variable(variable, value, expected)`, capture the generation, context and
+   `context.files[variable.path]` before opening the stylesheet. Require the same
+   generation/context/source afterwards and pass that source as `expectedSource`.
+   Keep `variable.selector` and `variable.ruleStart` from the captured variable;
+   the writer refuses a missing or mismatched explicit rule location.
+4. In `addClass(name, expected)`, require the current context key and page source
+   to equal the supplied context before locating and editing the selected HTML
+   element. Route this through the corrected `setAttributeEdit` implementation.
+5. On rejection announce that the target/source changed and ask for a fresh edit;
+   do not retry against a different selection. Preserve the existing verified
+   `applyNativeChange` edit and undo path.
+
+For shared canvas sizing, integrate in `src/components/canvas-bar.ts`, whose
+`setWidth` currently owns the width and device buttons. Use the same
+`breakpoints.ts` state, with `desktop` mapped to `all`. Derive the scope for custom
+widths: ≤390 is `mobile`, ≤768 is `tablet`, and wider/fill is `all`. In `setWidth`,
+call `setCurrentBreakpoint` with a local `fromCanvas` guard. Subscribe once to
+breakpoint changes: when not `fromCanvas`, apply `widthFor` for the corresponding
+canvas device. This guard keeps a custom 420px canvas from snapping to 768px when
+it publishes the tablet scope. Initialise from the remembered canvas width and
+unsubscribe in `destroy`. Keep the existing width storage and custom-width field;
+the panel and device controls then describe one shared responsive editing scope.
+
+## Recovery checks
+
+The recovered six browser flows passed before changes on port 5276. Added
+regressions cover transform/media/state source writes, detached field callbacks,
+and refusing an unfinished stylesheet. The CSS unit suite also covers malformed
+structure, stale source/rule locations, comments within values and literal comment
+punctuation within strings. The light and dark screenshots were regenerated and
+visually inspected. Shared `main.ts` and preview runtime changes are deliberately
+outside the leaf-module commit; their integration and the asynchronous host race
+must be verified separately.
