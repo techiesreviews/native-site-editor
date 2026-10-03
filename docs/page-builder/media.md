@@ -116,3 +116,41 @@ helpers have focused unit coverage. Browser tests in
 optimisation Worker, and host integration for rename/delete/Undo. The mutation
 browser cases require the host's new atomic adapter. Use `ASE_TEST_PORT=5296` or
 `5297` to isolate media browser runs.
+
+## Persistent explorer pane API
+
+`mountMediaLibrary(container, options?)` from `media-picker.ts` mounts a real
+`section` with an Images region directly into a host element. It returns
+`{ element, ready, refresh, dispose }`. Await `ready` for the initial load; call
+`refresh()` after external draft/history changes, including Undo. The host owns
+its dimensions and visibility. Set the host's `hidden` property when switching
+explorer tabs; this preserves selection, filters, details and repository drafts.
+Dispose before replacing/removing a host, then mount again when needed. Remount
+reads effective drafts from the adapter rather than resetting repository state.
+
+The common implementation lives in `media-library-view.ts`. It serves search,
+folders, tags, usage, metadata, selection, uploads, optimisation, rename and delete
+for both surfaces. `openMediaPicker({ onPick, accept, files })` remains the modal
+selection API and `closeMediaPicker()` closes only that modal. The pane has no
+dialog, backdrop, Close button or focus trap. Its narrow layout uses the editor's
+existing tokens and puts details in the pane's available width.
+
+By default mounting captures the configured adapter. An isolated host can provide
+`options.adapter` explicitly. `configureMediaPicker(nextAdapter)` disposes all
+existing panes and the active modal before installing the new adapter. Repository
+switching therefore requires mounting a new pane; detached old controls cannot
+mutate the newly configured repository. An in-flight transaction still relies on
+the host's original-scope final guards described above. Disposing aborts optimisation,
+invalidates pending loads/details, disconnects thumbnail observers, revokes generated
+Blob URLs and removes the view and its event handlers. It never clears drafts.
+
+The root explorer's third-tab wiring is deliberately left to the host owner;
+this leaf module does not modify `main.ts`. The isolated native-save browser
+harness in `native-media-pane.spec.ts` mounts the API with the real editor adapter
+and verifies non-dialog rendering, filtering/details, draft persistence through
+hide/remount, atomic rename/Undo, adapter invalidation, late-load disposal and
+pending-worker cancellation. Run on free port 5366 or 5367, for example:
+
+```sh
+ASE_TEST_PORT=5366 npm run test:browser -- tests/native-save/native-media-pane.spec.ts tests/native-save/native-media-library.spec.ts tests/native-save/native-media-transaction.spec.ts
+```
