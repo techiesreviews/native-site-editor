@@ -304,6 +304,14 @@ test("slotted light DOM selection keeps page ownership and inline grouped CSS ig
   await expect(page.locator("#content-secondary .view-lines")).toContainText("body");
 });
 
+async function editorSource(page: Page, host: string) {
+  return page.evaluate(async (host) => {
+    const { monaco } = await import("/src/components/monaco.ts");
+    const editor = monaco.editor.getEditors().find((editor: { getDomNode(): HTMLElement | null }) => editor.getDomNode()?.closest(host));
+    return editor?.getModel()?.getValue();
+  }, host);
+}
+
 // Text from the editor caret to the end of its line.
 async function caretToLineEnd(page: Page, host: string) {
   // Read the logical caret without selecting text: keyboard reads can move a caret inside folded HTML.
@@ -485,7 +493,9 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await page.keyboard.type("!");
   await page.keyboard.press("Enter");
   await expect(featureTitle).toHaveText("A feature worth sharing!");
-  await expect(page.locator("#content .view-lines")).toContainText("A feature worth sharing!</slot>");
+  const featureSource = readFileSync(resolve(fixture, "components/feature-block/feature-block.html"), "utf8");
+  // Folded view-lines omit valid source text; read the existing model without moving its caret.
+  await expect.poll(() => editorSource(page, "#content")).toBe(featureSource.replace("A feature worth sharing</slot>", "A feature worth sharing!</slot>"));
 
   // Opening a page brings its route back.
   await page.locator("#explorer-toggle").click();
