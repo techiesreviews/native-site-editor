@@ -54,6 +54,9 @@ import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNe
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
+import { positionText } from "./page-builder/insert-target";
+import { nativeElementChoices, nativeChoiceMarkup } from "./page-builder/native-elements";
+import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
@@ -356,6 +359,9 @@ function mountWorkspace() {
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
+    insertExtraChoices: () => nativeElementChoices.map(choice => /native:(?:grid|columns)$/.test(choice.tag) ? { ...choice, label: `${choice.label} (layout CSS integration pending)` } : choice),
+    insertPointFor: nativeElementAddPoint,
+    insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a compatible HTML destination. Layout CSS integration is pending.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => pageStructure?.update(structure),
     onMove: (direction) => { if (lastNativeSelection && !moveNativeSection(lastNativeSelection, direction)) cards?.move(lastNativeSelection, direction); },
@@ -501,7 +507,7 @@ function mountWorkspace() {
       if (!rule || target.start === undefined) { staleStyle(); return; }
       if (!(await context.workspace.openDefinition(target.path, rule.start, rule.open, context.workspace.revision))) staleStyle();
     },
-    history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
+    history: (direction) => editorModule?.runVisualHistory(direction, currentPath),
     error: (message) => errorMessage(new Error(message)),
   }, element("main"));
   element("main").append(stylePanel.root);
@@ -1889,8 +1895,33 @@ function nativeSectionChoices(): InsertChoice[] {
 // Puts a new instance of a section component into the page at `point`, as
 // one undo step, and selects it. The page file opens first when another
 // file is in the editor, since edits go through the mounted editor.
+const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string }>();
+function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
+  const markup = nativeChoiceMarkup(choice.tag);
+  if (/native:(?:grid|columns)$/.test(choice.tag)) return;
+  if (!markup) return fallback;
+  if (versionView || !nativeSite) return;
+  const selected = lastNativeSelection;
+  const path = selected?.path && Object.values(nativeSite.routes).includes(selected.path) ? selected.path : fallback?.path;
+  const source = path && nativeEffectiveSource(path);
+  if (!path || source === undefined) return;
+  const destinations = selected?.path === path && selected.node ? nativeDestinations(source, path, selected.node) : [];
+  const candidates = mode !== "click" ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
+  if (fallback?.path === path) candidates.push({ point: fallback, description: `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
+  const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
+  if (!found) return;
+  const point = { ...found.point, parent: [...found.point.parent] };
+  nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
+  return point;
+}
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
+  const native = nativeChoiceMarkup(choice.tag);
+  const captured = nativeAddPoints.get(point);
+  const sourceBefore = captured?.source ?? nativeEffectiveSource(path);
+  const epochBefore = captured?.epoch ?? generation, scopeBefore = captured?.scope ?? setupScope();
+  const current = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && nativeEffectiveSource(path) === sourceBefore;
+  if (native && !current()) { errorMessage(new Error("The insertion source changed. Choose the destination again.")); return; }
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
   if (currentPath !== path || !editorModule?.isMounted(path)) {
     const epoch = generation;
@@ -1902,7 +1933,8 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   if (!editor || !preview) return;
   const template = nativeSources()[nativeSite.components[choice.tag] ?? ""] ?? "";
   const source = nativeSources()[path] ?? "";
-  const edit = nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
+  if (native && !current()) { errorMessage(new Error("The insertion source changed. Choose the destination again.")); return; }
+  const edit = native ? nativeMarkupInsertEdit(source, point.parent, point.index, native) : nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
   if (!edit) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;

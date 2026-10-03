@@ -47,15 +47,15 @@ test("the Add panel shows live thumbnails without HTML previews, and a click add
   await addButton(page).click();
   await expect(panel(page)).toBeVisible();
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "true");
-  await expect(panel(page).getByRole("searchbox", { name: "Search components" })).toBeFocused();
+  await expect(panel(page).getByRole("searchbox", { name: "Search elements and components" })).toBeFocused();
   await expect(panel(page)).toContainText("Goes at the end");
-  await expect(panel(page).getByRole("group", { name: "Sections" }).getByRole("option")).toHaveText([/^Feature block\s*<feature-block>$/]);
+  await expect(panel(page).getByRole("group", { name: "More sections" }).getByRole("option")).toHaveText([/^Feature block\s*<feature-block>$/]);
 
   // A live thumbnail: the component as the page would show it, in a frame that runs nothing.
-  const thumb = panel(page).locator(".pb-thumb__frame").first();
+  const thumb = feature(page).locator(".pb-thumb__frame");
   await expect(thumb).toHaveAttribute("sandbox", "allow-same-origin");
-  await expect(page.frameLocator(".pb-add-panel .pb-thumb__frame").first().getByRole("heading", { name: "A feature worth sharing" })).toBeAttached();
-  await expect(panel(page).locator(".pb-thumb").first()).toHaveClass(/is-ready/);
+  await expect(feature(page).frameLocator(".pb-thumb__frame").getByRole("heading", { name: "A feature worth sharing" })).toBeAttached();
+  await expect(feature(page).locator(".pb-thumb")).toHaveClass(/is-ready/);
 
   await feature(page).hover();
   await feature(page).focus();
@@ -89,6 +89,7 @@ test("an item dragged onto the canvas goes into the gap under the pointer; Escap
   await addButton(page).click();
   await frame(page).locator("section.filler h2").scrollIntoViewIfNeeded();
   const option = feature(page);
+  await option.scrollIntoViewIfNeeded();
   const from = (await option.boundingBox())!;
   const filler = (await frame(page).locator("section.filler").boundingBox())!;
 
@@ -173,6 +174,7 @@ test("a plus between sections opens the panel for its gap, and it closes after a
   await expect(panel(page)).toContainText("Goes before “A native browser preview”");
   // "+ Add" is not the opener here.
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "false");
+  await panel(page).getByRole("searchbox").fill("Feature block");
   await page.keyboard.press("ArrowDown");
   await expect(feature(page)).toBeFocused();
   await page.keyboard.press("Enter");

@@ -20,7 +20,7 @@ export interface AddPanelHandlers {
   // Optional native choices join the same searchable catalogue. Keys must be unique.
   extraChoices?(): readonly AddChoice[];
   // Native/container targets can differ from section-component targets.
-  pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined): InsertPoint | undefined;
+  pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined, mode?: "click" | "drop" | "gap"): InsertPoint | undefined;
   destinationText?(point: InsertPoint | undefined): string;
   // The HTML adding `tag` writes, and its thumbnail document.
   preview(tag: string): { markup: string; doc: string } | undefined;
@@ -104,7 +104,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
 
   function choicePoint(choice: InsertChoice) {
     const fallback = target();
-    return handlers.pointFor ? handlers.pointFor(choice, fallback) : fallback;
+    return handlers.pointFor ? handlers.pointFor(choice, fallback, gapKey ? "gap" : "click") : fallback;
   }
 
   function renderPosition() {
@@ -168,7 +168,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         ...canvas,
         announce: (text: string) => { live.textContent = text; },
         drop: (point: InsertPoint) => {
-          const at = handlers.pointFor ? handlers.pointFor(item, point) : point;
+          const at = handlers.pointFor ? handlers.pointFor(item, point, "drop") : point;
           if (!at) return;
           if (gapKey) close(false);
           handlers.insert(at, { tag: item.tag, label: item.label });

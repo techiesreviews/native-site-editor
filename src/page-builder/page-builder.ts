@@ -8,6 +8,8 @@
 import type { InsertChoice, InsertControls, InsertPoint } from "../components/insert-controls";
 import type { SelectionRect } from "../components/edit-bar";
 import { instanceMarkup } from "../native-insert";
+import { nativeChoiceMarkup } from "./native-elements";
+import type { AddPanelHandlers } from "./add-panel";
 import { addCatalog, suggestedItems } from "./add-catalog";
 import { createAddPanel, insertPointKey } from "./add-panel";
 import { createCanvasLayer, createEmptyCanvas, createInsertFlash } from "./canvas-overlays";
@@ -21,6 +23,9 @@ export interface PageBuilderDeps {
   // What the preview renders: the site, its sources, styles and images, and the route on show.
   inputs(): ThumbnailInputs | undefined;
   choices(): InsertChoice[];
+  extraChoices?: AddPanelHandlers["extraChoices"];
+  pointFor?: AddPanelHandlers["pointFor"];
+  destinationText?: AddPanelHandlers["destinationText"];
   insert(point: InsertPoint, choice: InsertChoice): void;
   // Component styles to read (the preview's `onComponentStyles`).
   prepare(tags: string[]): void;
@@ -44,7 +49,10 @@ export function createPageBuilder(deps: PageBuilderDeps) {
 
   function preview(tag: string) {
     const inputs = deps.inputs();
-    if (!inputs || !Object.hasOwn(inputs.site.components, tag)) return undefined;
+    if (!inputs) return undefined;
+    const native = nativeChoiceMarkup(tag);
+    if (native) return { markup: native, doc: thumbnailDocument(inputs, native) };
+    if (!Object.hasOwn(inputs.site.components, tag)) return undefined;
     const page = inputs.site.routes[inputs.route];
     const markup = instanceMarkup(page ? inputs.sources[page] ?? "" : "", tag, inputs.sources[inputs.site.components[tag]] ?? "");
     return { markup, doc: thumbnailDocument(inputs, markup) };
@@ -71,6 +79,9 @@ export function createPageBuilder(deps: PageBuilderDeps) {
 
   const panel = createAddPanel({
     choices: deps.choices,
+    extraChoices: deps.extraChoices,
+    pointFor: deps.pointFor,
+    destinationText: deps.destinationText,
     preview,
     canvasWidth,
     points: () => points,

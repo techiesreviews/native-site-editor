@@ -56,27 +56,34 @@ URL attributes use the complete HTML5 attribute decoder before validation. URL-l
 attributes (`srcset`, `imagesrcset`, `ping`, `archive`) are conservatively rejected
 until a candidate parser is available.
 
-## Root adapter next steps
+## Integrated Add catalogue
 
-1. Add `extraChoices: () => nativeElementChoices` to the current Add handlers.
-   In `preview(key)`, handle `nativeChoiceMarkup(key)` first and use the existing
-   thumbnail-document builder with site CSS. Keep component preview behavior intact.
-2. Derive source destinations from the authoritative native selection and current
-   draft. Choose an explicit before/after/inside destination. Show its `description`
-   through optional `destinationText(point)`. Use optional `pointFor(choice, fallback)`
-   to select and validate the right point for each choice; return `undefined` when
-   `nativeMarkupInsertEdit` rejects the choice. Hover/focus updates the destination
-   sentence. Keep section-component targets on their existing route.
-3. In the existing `insert(point, choice)` adapter, recognize `native:*`, generate
-   markup, obtain `nativeMarkupInsertEdit`, verify its source guard, and apply exactly
-   one editor range edit. Then select/reveal the inserted source element through the
-   host's existing source-to-preview mapping. Do not emit the catalogue key as a tag.
-4. Route inline +, palette, and slash to these same choices/operations. Slash runtime
+The production Add panel includes native Elements and Forms alongside section
+components. A docked native choice uses the selected HTML container, or goes after
+an ordinary selected text element. The destination sentence describes that source
+position. A section plus keeps its explicit gap; dragging uses the actual gap
+under the pointer. Every choice is validated against that destination before a
+single guarded range edit, followed by native selection and one Undo step.
+Component insertion keeps its existing instance and slot behavior.
+
+Grid and Columns are visibly disabled while their class and stylesheet transaction
+is pending. Their leaf previews use inline layout CSS; exposing them before native
+class/CSS integration would prevent ordinary Style rules from taking effect.
+
+## Remaining root adapters
+
+Move before/after/inside, palette/slash native choices, and Grid/Columns class/CSS
+transactions still need production host integration. Layout insertion and subsequent
+Style edits must preserve unrelated source and share guarded Undo/Redo behavior.
+
+
+
+1. Route palette and slash to these same choices/operations. Slash runtime
    wiring remains pending; activate only in an empty text block and leave code typing
    alone. Map source points to runtime geometry before offering them as canvas gaps.
-5. Wire Move before/after/inside to `nativeMoveToEdit`, guarded and applied through
+2. Wire Move before/after/inside to `nativeMoveToEdit`, guarded and applied through
    the same single-operation editor path. Test stale drafts and preview reselection.
-6. Test integrated insertion, Undo, selection/reveal, shared-template scope, dragging,
+3. Test integrated layout insertion, Undo, selection/reveal, shared-template scope, dragging,
    and slash in the host. None of those integrated behaviors are claimed by this leaf.
 
 ## Validation

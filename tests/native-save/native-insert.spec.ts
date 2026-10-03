@@ -42,7 +42,7 @@ async function hoverIn(page: Page, selector: string) {
 }
 const picker = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 
-test("a plus between sections inserts a section component, and only those are offered", async ({ page }) => {
+test("a section plus inserts a component from its section-only group alongside native HTML", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   // One plus per gap among <main>'s sections, including both ends.
   await expect(page.locator(".insert-point__plus")).toHaveCount(4);
@@ -73,9 +73,9 @@ test("a plus between sections inserts a section component, and only those are of
   await expect(before).toHaveAttribute("aria-expanded", "true");
   await expect(picker(page)).toBeVisible();
   await expect(picker(page)).toContainText("Goes before “Scroll to verify”");
-  await expect(picker(page).getByRole("searchbox", { name: "Search components" })).toBeFocused();
-  // Only section components; a button or a card does not fit a section slot.
-  const options = picker(page).getByRole("option");
+  await expect(picker(page).getByRole("searchbox", { name: "Search elements and components" })).toBeFocused();
+  // The component group contains only section templates; native HTML has separate groups.
+  const options = picker(page).getByRole("group", { name: "More sections" }).getByRole("option");
   await expect(options).toHaveText([/^Feature block\s*<feature-block>$/]);
 
   await options.first().click();
@@ -119,13 +119,14 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await scrollFrame(page, "bottom");
   await hoverIn(page, "section.filler p:last-child");
   await end.click();
-  const search = picker(page).getByRole("searchbox", { name: "Search components" });
+  const search = picker(page).getByRole("searchbox", { name: "Search elements and components" });
   await expect(picker(page)).toContainText("Goes at the end");
   await page.keyboard.type("zzz");
-  await expect(picker(page)).toContainText("No components match “zzz”");
+  await expect(picker(page)).toContainText("No items match “zzz”");
   await picker(page).getByRole("button", { name: "Clear search" }).click();
   await expect(search).toBeFocused();
   await expect(search).toHaveValue("");
+  await search.fill("Feature block");
   await page.keyboard.press("ArrowDown");
   await expect(picker(page).getByRole("option", { name: /Feature block/ })).toBeFocused();
   await page.keyboard.press("ArrowUp");
@@ -147,7 +148,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   );
 });
 
-test("with no section component the picker explains what fits", async ({ page, baseURL }) => {
+test("with no section component the picker still offers portable native HTML", async ({ page, baseURL }) => {
   // Feature block's template made a <div>: nothing fits between sections.
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(featurePath)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", featurePath, { timeout: 30_000 });
@@ -165,11 +166,9 @@ test("with no section component the picker explains what fits", async ({ page, b
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
-  await expect(picker(page)).toContainText(
-    "No components fit here yet. A component fits between sections when its template is one <section> element.",
-  );
-  await expect(picker(page).getByRole("searchbox")).toHaveCount(0);
-  await expect(picker(page).getByRole("option")).toHaveCount(0);
+  await expect(picker(page).getByRole("searchbox")).toBeVisible();
+  await expect(picker(page).getByRole("option", { name: /Feature block/ })).toHaveCount(0);
+  await expect(picker(page).getByRole("option", { name: /^Heading HTML$/ })).toBeVisible();
 });
 
 test("inserting while a component file is open edits the page", async ({ page }) => {

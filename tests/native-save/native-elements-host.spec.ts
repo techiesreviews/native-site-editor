@@ -1,0 +1,75 @@
+import { expect, test } from "@playwright/test";
+const frame = (page: import("@playwright/test").Page) => page.frameLocator(".native-preview-frame");
+const source = (page: import("@playwright/test").Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+test("native Add shares the component catalogue, writes portable HTML and Undo preserves the page", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  const before = await source(page);
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add to the page" });
+  await expect(add.getByRole("option", { name: /Feature block/ })).toBeVisible();
+  await expect(add.getByRole("option", { name: /^Grid / })).toHaveAttribute("aria-disabled", "true");
+  await expect(add.getByRole("option", { name: /^Grid / })).toContainText("layout CSS integration pending");
+  await add.getByRole("searchbox").fill("Heading");
+  const heading = add.getByRole("option", { name: /^Heading HTML$/ });
+  await heading.focus();
+  await expect(add.locator(".pb-add-panel__position")).toContainText("After h1, inside section");
+  await heading.press("Enter");
+  await expect(frame(page).locator(".hero h2")).toHaveText("Heading");
+  expect(await source(page)).toContain("<h2>Heading</h2>");
+  expect(await source(page)).not.toContain("native:");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+});
+test("native Add uses the selected HTML container without creating editor catalogue tags", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero")).toBeVisible();
+  await frame(page).locator(".hero").evaluate(element => (element as HTMLElement).click());
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add to the page" });
+  await add.getByRole("searchbox").fill("Text");
+  const text = add.getByRole("option", { name: /^Text HTML$/ });
+  await text.focus();
+  await expect(add.locator(".pb-add-panel__position")).toContainText("Inside section");
+  await text.press("Enter");
+  await expect(frame(page).locator(".hero > p").last()).toHaveText("Text");
+  expect(await source(page)).not.toContain("native:");
+});
+
+test("native dragging uses the actual canvas gap instead of the selected container", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  const before = await source(page);
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add to the page" });
+  await add.getByRole("searchbox").fill("Heading");
+  const option = add.getByRole("option", { name: /^Heading HTML$/ });
+  await option.scrollIntoViewIfNeeded();
+  await frame(page).locator("section.filler h2").scrollIntoViewIfNeeded();
+  const from = (await option.boundingBox())!, gap = (await frame(page).locator("section.filler").boundingBox())!;
+  await page.mouse.move(from.x + 30, from.y + 30); await page.mouse.down();
+  await page.mouse.move(from.x + 80, from.y + 60, { steps: 4 });
+  await page.mouse.move(gap.x + gap.width / 2, gap.y + 4, { steps: 6 });
+  await expect(page.locator(".insert-point.is-target")).toHaveCount(1);
+  await page.mouse.up();
+  await expect(frame(page).locator("section.cards + h2")).toHaveText("Heading");
+  await expect(frame(page).locator("section.cards + h2 + section.filler")).toHaveCount(1);
+  await expect(frame(page).locator(".hero > h2")).toHaveCount(0);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+});
+
+test("native choice from a section plus respects that explicit gap", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  await frame(page).locator("section.hero").hover();
+  await page.getByRole("button", { name: "Add a section before “A native browser preview”", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add to the page" });
+  await add.getByRole("searchbox").fill("Heading");
+  await add.getByRole("option", { name: /^Heading HTML$/ }).click();
+  await expect(frame(page).locator("main > h2:first-child + section.hero")).toHaveCount(1);
+  await expect(add).toBeHidden();
+});
