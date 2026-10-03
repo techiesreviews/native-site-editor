@@ -289,14 +289,26 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
   const edit = insertion(source, parent, index, markup);
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }
-/** One replacement, guarded against stale source; removal never takes neighbours. */
-export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): GuardedSourceEdit | undefined {
+function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">) {
   const root = tree(source);
   const moving = root && atPath(root, from);
   const parent = root && atPath(root, destination.parent);
   if (!moving || moving.opaque || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
   if (!canContain(parent, [moving])) return undefined;
+  return { moving, parent };
+}
+
+/** Validate a move destination, including legitimate same-parent no-op positions. */
+export function nativeMoveDestinationValid(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): boolean {
+  return Boolean(moveDestination(source, from, destination));
+}
+
+/** One replacement, guarded against stale source; removal never takes neighbours. */
+export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): GuardedSourceEdit | undefined {
+  const valid = moveDestination(source, from, destination);
+  if (!valid) return undefined;
+  const { moving, parent } = valid;
   const index = from[from.length - 1];
   if (moving.parent === parent && [index, index + 1].includes(destination.index)) return undefined;
   const lineStart = source.lastIndexOf("\n", moving.start - 1) + 1;

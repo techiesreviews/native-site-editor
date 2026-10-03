@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -57,4 +57,20 @@ test("moving or inserting a wrapped definition item cannot auto-close the destin
     assert.equal(await page.locator('#target > div > div > dl > dt').textContent(),'Inner term');
     assert.equal(await page.locator('main > div').count(),0);
   }finally{await browser.close();}
+});
+
+test("shared move destination gate distinguishes safe no-ops from metadata and invalid containment", () => {
+  const source='<main><link rel=x><p>a</p><div><p>b</p></div></main>';
+  assert.equal(nativeMoveDestinationValid(source,[0,0],{parent:[0],index:0}),false);
+  for(const index of [1,2]) {
+    assert.equal(nativeMoveDestinationValid(source,[0,1],{parent:[0],index}),true);
+    assert.equal(nativeMoveEdit(source,[0,1],{parent:[0],index}),undefined);
+  }
+  assert.equal(nativeMoveDestinationValid(source,[0,1],{parent:[0,2],index:1}),true);
+  assert.ok(nativeMoveEdit(source,[0,1],{parent:[0,2],index:1}));
+  for(const index of [-1,4,0.5]) assert.equal(nativeMoveDestinationValid(source,[0,1],{parent:[0],index}),false);
+  assert.equal(nativeMoveDestinationValid(source,[0,2],{parent:[0,2],index:0}),false);
+  assert.equal(nativeMoveDestinationValid(source,[],{parent:[0],index:0}),false);
+  assert.equal(nativeMoveDestinationValid('<main><x-card></x-card></main>',[0,0],{parent:[0],index:0}),false);
+  assert.equal(nativeMoveDestinationValid('<main><dl><dt></dt></dl><div><dt>Term</dt></div></main>',[0,1],{parent:[0,0,0],index:0}),false);
 });
