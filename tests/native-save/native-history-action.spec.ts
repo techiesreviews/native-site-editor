@@ -12,6 +12,7 @@ async function mount(page: Page, baseURL: string | undefined) {
     let dispose = make("scope-A");
     api.clearHistory();
     const harness = {
+      mountOther() { const other = document.createElement("div"); host.append(other); return api.mountCodeEditor(other, { key: "history-other", historyScope: "scope-A", path: "other.css", source: ".card {color:red}" }); },
       api, state, release: undefined as (() => void) | undefined, pending: undefined as Promise<boolean> | undefined,
       swap(scope: string) { dispose(); dispose = make(scope); },
       record(redo = true) {
@@ -101,4 +102,53 @@ for (const direction of ["undo", "redo"] as const) test(`async ${direction} cann
   expect(await run(page, "undo")).toBe(true);
   expect(await run(page, "redo")).toBe(true);
   expect((await state(page)).events).toEqual(["undo", "redo"]);
+});
+
+test("owned source receipt preserves earlier and later visual text versions through Undo and Redo", async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as any).historyTest;
+    h.api.replaceActiveRange({ path: "history.html", start: 3, end: 8, expected: "Hello", text: "Before" });
+    h.receipt = h.api.prepareHistorySources([{ path: "history.html", expectedSource: "<p>Before</p>", text: "<p>Batch</p>" }]);
+    if (!h.receipt?.apply()) throw new Error("Apply refused");
+    h.api.recordHistoryAction("history.html", h.receipt.undo, h.receipt.redo);
+    h.api.replaceActiveRange({ path: "history.html", start: 3, end: 8, expected: "Batch", text: "Later" });
+  });
+  for (const text of ["Batch", "Before", "Hello"]) {
+    expect(await run(page, "undo")).toBe(true);
+    expect(await page.evaluate(() => (window as any).historyTest.api.getMountedSource("history.html"))).toBe(`<p>${text}</p>`);
+  }
+  for (const text of ["Before", "Batch", "Later"]) {
+    expect(await run(page, "redo")).toBe(true);
+    expect(await page.evaluate(() => (window as any).historyTest.api.getMountedSource("history.html"))).toBe(`<p>${text}</p>`);
+  }
+});
+test("prepared source receipts reject changed mounted identity and same-text newer versions", async ({ page }) => {
+  const rejected = await page.evaluate(() => {
+    const h = (window as any).historyTest;
+    const first = h.api.prepareHistorySources([{ path: "history.html", expectedSource: "<p>Hello</p>", text: "<p>Batch</p>" }]);
+    h.api.replaceActiveRange({ path: "history.html", start: 3, end: 8, expected: "Hello", text: "Other" });
+    h.api.replaceActiveRange({ path: "history.html", start: 3, end: 8, expected: "Other", text: "Hello" });
+    const versionRefused = first.apply();
+    const second = h.api.prepareHistorySources([{ path: "history.html", expectedSource: "<p>Hello</p>", text: "<p>Batch</p>" }]);
+    h.swap("scope-B");
+    return { versionRefused, scopeRefused: second.apply(), source: h.api.getMountedSource("history.html") };
+  });
+  expect(rejected).toEqual({ versionRefused: false, scopeRefused: false, source: "<p>Hello</p>" });
+});
+test("multi-model receipts verify every source before any apply or restore mutation", async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const h = (window as any).historyTest; h.mountOther();
+    const edits = [{ path: "history.html", expectedSource: "<p>Hello</p>", text: "<p>Batch</p>" }, { path: "other.css", expectedSource: ".card {color:red}", text: ".card {color:blue}" }];
+    const stale = h.api.prepareHistorySources(edits);
+    h.api.replaceActiveRange({ path: "other.css", start: 13, end: 16, expected: "red", text: "green" });
+    const applyRefused = stale.apply();
+    const unchanged = h.api.getMountedSource("history.html");
+    edits[1].expectedSource = ".card {color:green}";
+    const owned = h.api.prepareHistorySources(edits);
+    const applied = owned.apply();
+    h.api.replaceActiveRange({ path: "other.css", start: 13, end: 17, expected: "blue", text: "black" });
+    const undoRefused = owned.undo();
+    return { applyRefused, unchanged, applied, undoRefused, first: h.api.getMountedSource("history.html"), other: h.api.getMountedSource("other.css") };
+  });
+  expect(result).toEqual({ applyRefused: false, unchanged: "<p>Hello</p>", applied: true, undoRefused: false, first: "<p>Batch</p>", other: ".card {color:black}" });
 });

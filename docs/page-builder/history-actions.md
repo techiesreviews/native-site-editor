@@ -27,11 +27,27 @@ must handle its own rollback and return false when refused. A callback that chan
 the mounted workspace or clears/replaces the journal can complete its side effects,
 but does not receive a Redo entry in the replacement workspace.
 
-Callbacks that restore mounted text through ordinary agent/model writes invalidate
-visual history by design. Use existing visual text edits with history companions
-for model changes; do not suppress all model notifications while awaiting a receipt,
-since a concurrent agent change must still invalidate stale history. The host batch
-transaction must preserve that distinction when combining source and draft history.
+For a batch with mounted text, call `prepareHistorySources(edits)` while taking the
+operation snapshot. Each edit has `path`, `expectedSource` and final `text`. The
+returned receipt exposes synchronous `apply()`, `undo()`, `redo()` and `isCurrent()`;
+preparation returns undefined when a model is missing, read only, stale, duplicated
+or belongs to another history session. Before every mutation, all models must still
+have the captured mounted identity, session, complete source and alternative
+version. Apply writes isolated local model steps without recording visual entries.
+The receipt captures each before/after version and rewinds only its owned steps on
+Undo/Redo, preserving previous visual edits and Monaco versions.
+
+After asynchronous file preparation, the host verifies its repository/draft guards,
+calls receipt.apply(), commits all drafts synchronously and records receipt.undo
+and receipt.redo with its owned draft callbacks as one history action. Failed draft
+writes use receipt.undo() for rollback. The host must never await between final
+checks and those commits. A refused receipt must prevent all corresponding draft
+mutations. Only synchronous, isolated text-model stack steps are supported; async
+workspace undo cannot be owned by this receipt.
+
+Ordinary agent/model writes still invalidate visual history. The receipt masks
+model notifications only during each synchronous owned mutation, never across an
+await, so concurrent agent edits retain their existing invalidation behavior.
 
 `tests/native-save/native-history-action.spec.ts` mounts the real Monaco editor and
 uses the production journal. It covers legacy behavior, action/text ordering,

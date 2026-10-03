@@ -237,6 +237,104 @@ export function recordHistoryAction(path: string, action: HistoryActionCallback,
   for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
   return true;
 }
+export interface HistorySourceEdit { path: string; expectedSource: string; text: string }
+export interface HistorySourceReceipt {
+  apply(): boolean;
+  undo(): boolean;
+  redo(): boolean;
+  isCurrent(): boolean;
+}
+/**
+ * Prepares owned, isolated local text steps without recording another journal
+ * entry. The host commits drafts synchronously, then records this receipt's
+ * callbacks as its single history action. No model notification is masked
+ * across an await, and every source/model/session/version is checked first.
+ */
+export function prepareHistorySources(edits: HistorySourceEdit[]): HistorySourceReceipt | undefined {
+  if (new Set(edits.map((edit) => edit.path)).size !== edits.length) return undefined;
+  const steps = edits.map((edit) => {
+    const editor = mounted.get(edit.path);
+    if (!editor || editor.readOnly || editor.model.isDisposed() || editor.model.getValue() !== edit.expectedSource) return undefined;
+    return { ...edit, editor, session: editor.session, model: editor.model, before: editor.model.getAlternativeVersionId(), after: undefined as number | undefined };
+  });
+  if (steps.some((step) => !step)) return undefined;
+  const owned = steps.filter((step): step is NonNullable<typeof step> => Boolean(step));
+  if (new Set(owned.map((step) => step.editor.session)).size > 1 || new Set(owned.map((step) => step.model)).size !== owned.length) return undefined;
+  let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
+  const matchesStep = (step: typeof owned[number], after: boolean) => mounted.get(step.path) === step.editor &&
+    !step.editor.readOnly && step.editor.session === step.session && !step.model.isDisposed() && step.model.getAlternativeVersionId() === (after ? step.after : step.before) &&
+    step.model.getValue() === (after ? step.text : step.expectedSource);
+  const matches = (after: boolean) => owned.every((step) => matchesStep(step, after));
+  const move = (direction: "undo" | "redo", expectedState: "applied" | "undone") => {
+    if (state !== expectedState || !matches(direction === "undo")) return false;
+    const moved: typeof owned = [];
+    try {
+      for (const step of owned) {
+        if (!matchesStep(step, direction === "undo")) throw new Error("The source changed during its text history operation.");
+        if (step.text === step.expectedSource) continue;
+        routedModelChanges.add(step.model);
+        try {
+          const result = step.model[direction]();
+          // These are isolated text-model steps. A workspace-wide async undo
+          // is not an owned local step and cannot be committed by this receipt.
+          if (result) { void result.catch(() => {}); throw new Error("The text history step is asynchronous."); }
+        } finally { routedModelChanges.delete(step.model); }
+        moved.push(step);
+        const after = direction === "redo";
+        if (step.model.getAlternativeVersionId() !== (after ? step.after : step.before) ||
+            step.model.getValue() !== (after ? step.text : step.expectedSource)) throw new Error("The owned text history step changed.");
+      }
+      state = direction === "undo" ? "undone" : "applied";
+      return true;
+    } catch {
+      // A synchronous local failure rolls back only the steps already moved.
+      for (const step of moved.reverse()) {
+        if (!matchesStep(step, direction === "redo")) { state = "failed"; continue; }
+        routedModelChanges.add(step.model);
+        try { const result = step.model[direction === "undo" ? "redo" : "undo"](); if (result) void result.catch(() => {}); }
+        catch { state = "failed"; }
+        finally { routedModelChanges.delete(step.model); }
+      }
+      if (!matches(expectedState === "applied")) state = "failed";
+      return false;
+    }
+  };
+  return {
+    isCurrent: () => state !== "failed" && matches(state === "applied"),
+    apply() {
+      if (state !== "prepared" || !matches(false)) return false;
+      const applied: typeof owned = [];
+      try {
+        for (const step of owned) {
+          if (!matchesStep(step, false)) throw new Error("The source changed during its text history operation.");
+          if (step.text !== step.expectedSource) {
+            step.model.pushStackElement();
+            routedModelChanges.add(step.model);
+            try { step.model.pushEditOperations([], [{ range: step.model.getFullModelRange(), text: step.text }], () => null); }
+            finally { routedModelChanges.delete(step.model); }
+            step.model.pushStackElement();
+          }
+          step.after = step.model.getAlternativeVersionId();
+          applied.push(step);
+        }
+        if (!matches(true)) throw new Error("The source changed while applying its text step.");
+        state = "applied";
+        return true;
+      } catch {
+        for (const step of applied.reverse()) if (step.text !== step.expectedSource && matchesStep(step, true)) {
+          routedModelChanges.add(step.model);
+          try { const result = step.model.undo(); if (result) void result.catch(() => {}); }
+          catch { state = "failed"; }
+          finally { routedModelChanges.delete(step.model); }
+        }
+        state = matches(false) ? "prepared" : "failed";
+        return false;
+      }
+    },
+    undo: () => move("undo", "applied"),
+    redo: () => move("redo", "undone"),
+  };
+}
 /** Discards the mounted new file `path` as its Discard changes does, without asking. */
 export function discardNewFile(path: string) {
   return mounted.get(path)?.discardNew() ?? false;
