@@ -24,13 +24,17 @@ test("page settings edit SEO, linked social details and a live share card, with 
   const panel = dialog(page, "Page settings");
   await panel.getByLabel("Title", { exact: true }).fill("A garden studio");
   await panel.getByLabel("Description", { exact: true }).fill("Independent gardens, thoughtfully designed.");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(panel.getByLabel("Social title", { exact: true })).toHaveValue("A garden studio");
   await expect(panel.locator(".site-settings__card strong")).toHaveText("A garden studio");
   await panel.getByLabel("Use page title", { exact: true }).uncheck();
   await panel.getByLabel("Social title", { exact: true }).fill("Share our gardens");
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
   await panel.getByLabel("Title", { exact: true }).fill("Garden studio");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(panel.getByLabel("Social title", { exact: true })).toHaveValue("Share our gardens");
   await panel.getByLabel("Social image", { exact: true }).fill("/images/placeholder.svg");
+  await panel.getByRole("tab", { name: "Search", exact: true }).click();
   await panel.getByLabel("Canonical URL", { exact: true }).fill("https://garden.example/");
   await panel.getByLabel("Hide from search engines", { exact: true }).check();
   await panel.getByLabel("Theme colour", { exact: true }).fill("#2f6d3a");
@@ -57,6 +61,7 @@ test("site settings list pages, apply favicon and defaults together, and open 40
   await expect(panel.locator(".site-settings__affected li")).toHaveCount(2);
   await panel.getByLabel("Site name", { exact: true }).fill("Garden Studio");
   await panel.getByLabel("Favicon", { exact: true }).fill("/images/placeholder.svg");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await panel.getByLabel("Default social image", { exact: true }).fill("https://garden.example/card.png");
   await page.screenshot({ path: ".scratch/site/site-settings-light.png" });
   await panel.getByRole("button", { name: "Apply site settings" }).click();
@@ -69,6 +74,7 @@ test("site settings list pages, apply favicon and defaults together, and open 40
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, "about/index.html"))?.content ?? "").not.toContain("Garden Studio");
   await openSite(page);
+  await dialog(page, "Site settings").getByRole("tab", { name: "Pages", exact: true }).click();
   await dialog(page, "Site settings").getByRole("button", { name: "Create and open 404 page" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "404.html");
 });
@@ -81,8 +87,11 @@ test("navigation renames, reorders, adds pages and external links in the shared 
   await panel.getByLabel("Link 1 label", { exact: true }).fill("Our work");
   await panel.getByRole("button", { name: "Move About up", exact: true }).click();
   await expect(panel.getByLabel("Link 1 label", { exact: true })).toHaveValue("About");
+  await panel.getByRole("tab", { name: "Add link", exact: true }).click();
   await panel.getByLabel("Page to add", { exact: true }).selectOption("/about/");
   await panel.getByRole("button", { name: "Add page", exact: true }).click();
+  await expect(panel.getByRole("tab", { name: "Links", exact: true })).toBeFocused();
+  await panel.getByRole("tab", { name: "Add link", exact: true }).click();
   await panel.getByRole("button", { name: "Add external link", exact: true }).click();
   await panel.getByLabel("Link 4 label", { exact: true }).fill("Partner");
   await panel.getByLabel("Link 4 URL", { exact: true }).fill("https://partner.example/");
@@ -176,6 +185,7 @@ test("site settings and 404 refuse a stale home-page template", async ({ page, b
   await expect(settings.getByRole("status")).toContainText("source changed");
   expect((await storedDraft(page, "index.html"))!.content).toBe(before);
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
+  await settings.getByRole("tab", { name: "Pages", exact: true }).click();
   await settings.getByRole("button", { name: /404/ }).click();
   await expect(settings.getByRole("status")).toContainText("source changed");
   expect(await storedDraft(page, "404.html")).toBeUndefined();
@@ -185,6 +195,7 @@ test("an explicitly unlinked equal social title survives reopening the controlle
   await open(page, baseURL);
   await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
   const settings = dialog(page, "Page settings");
+  await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await settings.getByLabel("Use page title", { exact: true }).uncheck();
   await settings.getByRole("button", { name: "Apply page settings" }).click();
   await expect(settings).not.toBeVisible();

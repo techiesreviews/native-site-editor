@@ -1,3 +1,4 @@
+import { icon } from "../icons";
 import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
@@ -25,29 +26,91 @@ function settingsDialog(title: string, scope: string) {
   root.setAttribute("aria-labelledby", id);
   const heading = node("h2", "site-settings__title", title);
   heading.id = id;
-  const close = button("Close", () => root.close(), "site-settings__close");
+  const close = button("", () => root.close(), "site-settings__close");
+  close.append(icon("x", 18));
   close.setAttribute("aria-label", `Close ${title.toLowerCase()}`);
   const top = node("div", "site-settings__top");
-  top.append(heading, close);
+  const introduction = node("div", "site-settings__introduction");
   const note = node("p", "site-settings__scope", scope);
+  note.id = `${id}-scope`;
+  root.setAttribute("aria-describedby", note.id);
+  introduction.append(heading, note);
+  top.append(introduction, close);
   const body = node("div", "site-settings__body");
+  const categories = node("div", "site-settings__categories");
+  categories.setAttribute("role", "tablist");
+  categories.setAttribute("aria-label", `${title} categories`);
+  const narrow = matchMedia("(max-width: 640px)");
+  const orientation = () => categories.setAttribute("aria-orientation", narrow.matches ? "horizontal" : "vertical");
+  orientation();
+  narrow.addEventListener("change", orientation);
+  const content = node("div", "site-settings__content");
+  body.append(categories, content);
   const status = node("p", "site-settings__status");
   status.setAttribute("role", "status");
   const actions = node("div", "site-settings__actions");
-  root.append(top, note, body, status, actions);
+  const footer = node("div", "site-settings__footer");
+  footer.append(node("p", "site-settings__draft-note", "Drafts until you save to GitHub"), status, actions);
+  root.append(top, body, footer);
+  const tabs: { label: string; tab: HTMLButtonElement; panel: HTMLElement }[] = [];
+  const select = (label: string, focus = false) => {
+    for (const item of tabs) {
+      const active = item.label === label;
+      item.tab.setAttribute("aria-selected", String(active));
+      item.tab.tabIndex = active ? 0 : -1;
+      item.panel.hidden = !active;
+      if (active && focus) item.tab.focus();
+    }
+    content.scrollTop = 0;
+  };
+  function category(label: string, symbol: Parameters<typeof icon>[0]) {
+    const panel = node("div", "site-settings__category");
+    panel.id = `${id}-panel-${tabs.length}`;
+    panel.setAttribute("role", "tabpanel");
+    const tab = button("", () => select(label), "site-settings__category-tab");
+    tab.append(icon(symbol, 18), node("span", "", label));
+    tab.id = `${id}-tab-${tabs.length}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", panel.id);
+    panel.setAttribute("aria-labelledby", tab.id);
+    panel.append(node("h3", "site-settings__category-title", label));
+    tabs.push({ label, tab, panel });
+    categories.append(tab); content.append(panel);
+    select(tabs[0].label);
+    return panel;
+  }
+  categories.addEventListener("keydown", (event) => {
+    const index = tabs.findIndex((item) => item.tab === event.target);
+    if (index < 0) return;
+    let next: number | undefined;
+    if (["ArrowDown", "ArrowRight"].includes(event.key)) next = (index + 1) % tabs.length;
+    if (["ArrowUp", "ArrowLeft"].includes(event.key)) next = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = tabs.length - 1;
+    if (next !== undefined) { event.preventDefault(); select(tabs[next].label, true); }
+  });
   let opener: Element | null;
+  let returnFocus: HTMLElement | null;
   root.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
   root.addEventListener("close", () => {
+    narrow.removeEventListener("change", orientation);
     if (opener instanceof HTMLElement && opener.isConnected && !opener.closest("[popover]:not(:popover-open)")) opener.focus();
+    else if (returnFocus?.isConnected) returnFocus.focus();
     root.remove();
   });
-  return { root, body, actions, status, show() { opener = document.activeElement; document.body.append(root); root.showModal(); } };
+  return { root, body: content, category, select, actions, status, show() {
+    opener = document.activeElement;
+    const popover = opener?.closest("[popover]");
+    returnFocus = popover?.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(popover.id)}"]`) : null;
+    document.body.append(root); root.showModal(); tabs[0]?.tab.focus();
+  } };
 }
 
 function textField(parent: HTMLElement, label: string, value: string, hint?: string) {
   const wrap = node("label", "site-settings__field");
-  const input = node("input", "site-settings__input");
-  input.type = "text";
+  const input = label.toLowerCase().includes("description") ? node("textarea", "site-settings__input") : node("input", "site-settings__input");
+  if (input instanceof HTMLInputElement) input.type = "text";
+  else input.rows = 3;
   input.value = value;
   input.setAttribute("aria-label", label);
   wrap.append(node("span", "site-settings__label", label), input);
@@ -85,7 +148,7 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
 }
 
-async function uploadInto(input: HTMLInputElement, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
+async function uploadInto(input: HTMLInputElement | HTMLTextAreaElement, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
   const before = input.value;
   try {
     const value = await handlers.uploadImage();
@@ -105,13 +168,11 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
   return {
     page(options: { path: string; source: string; route: string; images: string[] }) {
       const values = readHeadSettings(options.source);
-      const dialog = settingsDialog("Page settings", `This page · ${options.route} · Changes become drafts. Save to GitHub to keep them.`);
-      const columns = node("div", "site-settings__columns");
-      dialog.body.append(columns);
-      const left = node("div");
-      const right = node("div");
-      columns.append(left, right);
-      const details = section(left, "Page details");
+      const dialog = settingsDialog("Page settings", `This page · ${options.route}`);
+      const generalPanel = dialog.category("General", "file");
+      const searchPanel = dialog.category("Search", "list-checks");
+      const socialPanel = dialog.category("Social", "link");
+      const details = section(generalPanel, "Page details");
       const title = textField(details, "Title", values.title, "Shown in browser tabs and search results.");
       const description = textField(details, "Description", values.description, "A short summary for search results.");
       const url = createUrlChange({
@@ -127,12 +188,12 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       });
       if (options.route === "/") { url.input.readOnly = true; details.append(node("p", "site-settings__hint", "The home page's URL is always /.")); }
       details.append(url.root);
-      const search = section(left, "Search and browser");
+      const search = section(searchPanel, "Search visibility");
       const canonical = textField(search, "Canonical URL", values.canonical, "The preferred full address when this content appears at multiple URLs.");
       const hidden = checkbox(search, "Hide from search engines", /\b(noindex|none)\b/i.test(values.robots));
       search.append(node("p", "site-settings__hint", "Adds noindex for search engines. This does not make a page private."));
       const theme = textField(search, "Theme colour", values["theme-color"], "A CSS colour for supported browser chrome, for example #2f6d3a.");
-      const social = section(right, "Social preview");
+      const social = section(socialPanel, "Share card");
       const preference = linkPreferences.get(options.path);
       const titleLink = checkbox(social, "Use page title", preference?.title ?? (!values["og:title"] || values["og:title"] === values.title));
       const socialTitle = textField(social, "Social title", values["og:title"] || values.title);
@@ -191,21 +252,25 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       dialog.show();
     },
     site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {
-      const dialog = settingsDialog("Site settings", "Shared site · Changes become drafts in one action. Save to GitHub to keep them.");
-      const general = section(dialog.body, "Identity");
+      const dialog = settingsDialog("Site settings", "Shared across your site");
+      const generalPanel = dialog.category("General", "house");
+      const socialPanel = dialog.category("Social", "link");
+      const pagesPanel = dialog.category("Pages", "file");
+      const general = section(generalPanel, "Site identity");
       const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
       const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
       addImageChoices(favicon, options.images);
       general.append(button("Upload favicon…", () => uploadInto(favicon, dialog, handlers), "site-settings__link"));
-      const image = textField(general, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
+      const social = section(socialPanel, "Default share image");
+      const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
       addImageChoices(image, options.images);
-      general.append(button("Upload default image…", () => uploadInto(image, dialog, handlers), "site-settings__link"));
-      const affected = section(dialog.body, `Affected pages (${options.pages.length})`);
+      social.append(button("Upload default image…", () => uploadInto(image, dialog, handlers), "site-settings__link"));
+      const affected = section(pagesPanel, `Affected pages (${options.pages.length})`);
       affected.append(node("p", "site-settings__hint", "Favicon and social site name apply to these pages. Their title and description stay their own."));
       const list = node("ul", "site-settings__affected");
       for (const page of options.pages) list.append(node("li", "", `${page.label} · ${page.route}`));
       affected.append(list);
-      const missing = section(dialog.body, "404 page");
+      const missing = section(pagesPanel, "404 page");
       missing.append(node("p", "site-settings__hint", "The page visitors see at a missing address. Your static host decides when to serve it."));
       missing.append(button(options.has404 ? "Open 404 page" : "Create and open 404 page", async () => {
         const error = await handlers.open404();
@@ -215,17 +280,20 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       dialog.show();
     },
     navigation(options: { path: string; source: string; links: NavigationLink[]; pages: SitePageChoice[]; shared: boolean }) {
-      const dialog = settingsDialog("Navigation", `${options.shared ? "Shared component · Used by every page that includes it" : "This page's header"} · ${options.path}`);
-      dialog.body.append(node("p", "site-settings__hint", "Drag links to reorder, or use Move up and Move down. Applying writes clean links to this source file."));
+      const dialog = settingsDialog("Navigation", `${options.shared ? "Shared component" : "This page's header"} · ${options.path}`);
+      const linksPanel = dialog.category("Links", "link");
+      const addPanel = dialog.category("Add link", "plus");
+      linksPanel.append(node("p", "site-settings__hint", "Drag links to reorder, or use Move up and Move down. Applying writes clean links to this source file."));
       const list = node("ol", "site-settings__nav");
-      dialog.body.append(list);
+      linksPanel.append(list);
       const links = options.links.map((link) => ({ ...link }));
       let dragging: number | undefined;
       const move = (from: number, to: number) => { const [link] = links.splice(from, 1); links.splice(to, 0, link); draw(); };
       function draw() {
         list.replaceChildren(...links.map((link, index) => {
           const row = node("li", "site-settings__nav-row");
-          const grip = node("button", "site-settings__grip", "⋮⋮");
+          const grip = node("button", "site-settings__grip");
+          grip.append(icon("dots-six-vertical", 18));
           grip.type = "button";
           grip.draggable = true;
           grip.setAttribute("aria-label", `Reorder ${link.label}`);
@@ -246,10 +314,12 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
           label.addEventListener("input", () => { link.label = label.value; });
           href.addEventListener("input", () => { link.href = href.value; });
           const controls = node("div", "site-settings__nav-controls");
-          const up = button("↑", () => move(index, index - 1), "site-settings__link");
+          const up = button("", () => move(index, index - 1), "site-settings__link");
+          up.append(icon("arrow-up", 16));
           up.disabled = index === 0;
           up.setAttribute("aria-label", `Move ${link.label} up`);
-          const down = button("↓", () => move(index, index + 1), "site-settings__link");
+          const down = button("", () => move(index, index + 1), "site-settings__link");
+          down.append(icon("arrow-down", 16));
           down.disabled = index === links.length - 1;
           down.setAttribute("aria-label", `Move ${link.label} down`);
           controls.append(up, down, button("Remove", () => { links.splice(index, 1); draw(); }, "site-settings__link"));
@@ -258,20 +328,20 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         }));
       }
       draw();
-      const add = section(dialog.body, "Add a link");
+      const add = section(addPanel, "Choose a destination");
       const pickerLabel = node("label", "site-settings__field");
       const picker = node("select", "site-settings__input");
       picker.setAttribute("aria-label", "Page to add");
       pickerLabel.append(node("span", "site-settings__label", "Page to add"), picker);
       for (const page of options.pages.filter((page) => page.route !== "/404.html")) { const option = node("option", "", `${page.label} · ${page.route}`); option.value = page.route; picker.append(option); }
-      add.append(pickerLabel, button("Add page", () => { const page = options.pages.find((page) => page.route === picker.value); if (page) { links.push({ href: page.route, label: page.label }); draw(); } }, "site-settings__link"), button("Add external link", () => { links.push({ href: "https://", label: "New link" }); draw(); list.lastElementChild?.querySelector<HTMLInputElement>("input")?.focus(); }, "site-settings__link"));
+      add.append(pickerLabel, button("Add page", () => { const page = options.pages.find((page) => page.route === picker.value); if (page) { links.push({ href: page.route, label: page.label }); draw(); dialog.select("Links", true); } }, "site-settings__link"), button("Add external link", () => { links.push({ href: "https://", label: "New link" }); draw(); dialog.select("Links"); list.lastElementChild?.querySelector<HTMLInputElement>("input")?.focus(); }, "site-settings__link"));
       applyButton(dialog, "Apply navigation", () => handlers.applyNavigation(options.path, options.source, links));
       dialog.show();
     },
   };
 }
 
-function addImageChoices(input: HTMLInputElement, images: string[]) {
+function addImageChoices(input: HTMLInputElement | HTMLTextAreaElement, images: string[]) {
   const list = node("datalist");
   list.id = `site-images-${++serial}`;
   for (const path of images) { const option = node("option"); option.value = `/${path}`; list.append(option); }
