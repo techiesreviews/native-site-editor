@@ -40,6 +40,13 @@
   --semantic-success-surface: oklch(from var(--color-success) 96% 0.03 h);
   --semantic-success-text: oklch(from var(--color-success) 38% 0.07 h);
 
+  /* Components (instances, chips, structure icons) share one violet accent,
+     like Figma's and Framer's, apart from the brand blue of selection. */
+  --color-component: oklch(55% 0.2 300);
+  --component: var(--color-component);
+  --component-surface: oklch(from var(--color-component) 96% 0.03 h);
+  --component-text: oklch(from var(--color-component) 42% 0.17 h);
+
   /* Compatibility aliases keep all component styling on one palette. */
   --surface: var(--semantic-surface);
   --background: var(--semantic-background);
@@ -154,6 +161,9 @@
     --semantic-warning-text: oklch(from var(--color-warning) 87% 0.08 h);
     --semantic-success-surface: oklch(from var(--color-success) 28% 0.03 h);
     --semantic-success-text: oklch(from var(--color-success) 87% 0.08 h);
+    --component: oklch(from var(--color-component) 72% 0.16 h);
+    --component-surface: oklch(from var(--color-component) 28% 0.05 h);
+    --component-text: oklch(from var(--color-component) 85% 0.1 h);
   }
   /* The action colour is too dark for a pressed toggle on dark panels. */
   :root {
