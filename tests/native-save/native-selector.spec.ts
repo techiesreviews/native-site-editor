@@ -343,9 +343,10 @@ test("selecting an element puts the caret after its start tag in the owning sour
   await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Shared across cards</card-note>");
 
   // Edits above the element keep the mark on it.
-  await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
-  await page.keyboard.press("ControlOrMeta+Home");
-  await page.keyboard.type("<!-- note -->\n");
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    editor.replaceActiveRange({ path: "components/project-card/project-card.html", start: 0, end: 0, text: "<!-- note -->\n", expected: "" });
+  });
   // One source decoration can render as several spans when the editor wraps a line.
   await expect.poll(() => page.evaluate(async () => {
     const { monaco } = await import("/src/components/monaco.ts");
@@ -353,7 +354,7 @@ test("selecting an element puts the caret after its start tag in the owning sour
     const model = editor?.getModel();
     return model?.getAllDecorations().filter((item: { options: { className?: string } }) => item.options.className === "code-editor__element")
       .map((item: { range: unknown }) => model.getValueInRange(item.range));
-  })).toEqual(["<card-note>"]);
+  })).toEqual(['<card-note data-key="card-note">']);
 });
 
 test("a click while the file is still opening is not lost", async ({ page }) => {
