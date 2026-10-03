@@ -31,7 +31,10 @@
   // being edited (see startEditing) shows the selection box, not the
   // browser's focus ring.
   var runtimeSheet = new CSSStyleSheet();
-  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}");
+  // A <main> with nothing in it yet keeps some height, so the editor's
+  // "Start with a section" (src/page-builder/canvas-overlays.ts) has room
+  // over it; preview only, like the selection boxes.
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}");
   // Each constructed sheet's source: `{ path, wrappers, importer, kind }`. A
   // shared sheet expanded from an `@import` carries the imported file's path,
   // the chain of import wrappers (outermost first; each may have `layer`,
@@ -587,7 +590,8 @@
           top: prev && next ? (prev.bottom + next.top) / 2 : next ? next.top : prev.bottom,
           left: left,
           width: right - left,
-          before: next ? itemLabel(children[i]) : ""
+          before: next ? itemLabel(children[i]) : "",
+          tag: container === pageEl ? "" : container.localName
         });
       }
     });
@@ -606,7 +610,11 @@
         top: rect ? rect.bottom + 13 : box.top,
         left: wide ? rect.left : box.left,
         width: wide ? rect.width : box.width,
-        before: ""
+        before: "",
+        tag: "main",
+        // Nothing in it at all: the editor shows its empty state over it.
+        empty: main.children.length === 0 && !main.textContent.trim(),
+        height: box.height
       });
     }
     return out;
@@ -2054,6 +2062,15 @@
     if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
       dragMessage(msg);
+      return;
+    }
+    // The Add panel's drag scrolls the page near the frame's edges
+    // (src/page-builder/insert-drag.ts), and a section just added is
+    // brought into view (src/page-builder/page-builder.ts).
+    if (msg.type === "scroll-by") {
+      var dy = Number(msg.dy);
+      var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (isFinite(dy)) window.scrollBy({ top: dy, behavior: msg.smooth && !calm ? "smooth" : "auto" });
       return;
     }
     if (msg.type === "theme") {

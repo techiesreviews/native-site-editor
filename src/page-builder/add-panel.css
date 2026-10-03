@@ -1,0 +1,504 @@
+/* The Add panel (add-panel.ts), live thumbnails (thumbnail.ts), dragging
+   onto the canvas (insert-drag.ts) and the canvas overlays
+   (canvas-overlays.ts). Tokens from src/theme.css; components carry the
+   --component accent. */
+
+.pb-add-panel {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid var(--control-line);
+  border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--type-base);
+  box-shadow: var(--shadow);
+  animation: pb-panel-in 160ms ease-out;
+}
+.pb-add-panel[hidden] {
+  display: none;
+}
+.pb-add-panel:focus {
+  outline: none;
+}
+@keyframes pb-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+.pb-add-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px 0 16px;
+}
+.pb-add-panel__title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+.pb-add-panel__code-toggle,
+.pb-add-panel__close {
+  display: grid;
+  place-items: center;
+  min-width: var(--size-compact);
+  height: var(--size-compact);
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 var(--type-small) / 1 var(--font-mono);
+}
+.pb-add-panel__code-toggle:hover,
+.pb-add-panel__close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.pb-add-panel__code-toggle[aria-pressed="true"] {
+  background: var(--pressed);
+  color: var(--on-pressed);
+}
+.pb-add-panel__position {
+  margin: 2px 16px 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--type-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-add-panel.has-no-place .pb-add-panel__position {
+  color: var(--warning-fg);
+}
+.pb-add-panel__search {
+  flex: none;
+  height: var(--size-control);
+  margin: 10px 16px 0;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 0 10px;
+  background: var(--surface-input);
+  color: inherit;
+  font: inherit;
+}
+.pb-add-panel__search[hidden],
+.pb-add-panel__hint[hidden],
+.pb-add-panel__list[hidden],
+.pb-add-panel__message[hidden],
+.pb-add-panel__peek[hidden],
+.pb-add-group[hidden],
+.pb-add-item[hidden],
+.pb-add-item__code[hidden] {
+  display: none;
+}
+.pb-add-panel__hint {
+  margin: 8px 16px 0;
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.pb-add-panel__body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 8px 16px;
+  scrollbar-gutter: stable;
+}
+.pb-add-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+}
+.pb-add-group__title {
+  margin: 4px 8px 2px;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pb-add-item {
+  display: flex;
+  flex-direction: column;
+}
+.pb-add-item__option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-panel);
+  padding: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: grab;
+  /* A swipe up or down scrolls the list; one sideways drags onto the canvas. */
+  touch-action: pan-y;
+  user-select: none;
+}
+.pb-add-item__option:hover {
+  background: var(--hover);
+}
+.pb-add-item__option:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.pb-add-item__option.is-dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+.pb-add-panel.has-no-place .pb-add-item__option {
+  cursor: default;
+}
+.pb-add-item__option:hover .pb-thumb,
+.pb-add-item__option:focus-visible .pb-thumb {
+  border-color: var(--component);
+}
+.pb-add-item__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px;
+}
+.pb-add-item__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-add-item__tag,
+.pb-empty__tag {
+  flex: none;
+  color: var(--component-text);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+}
+.pb-add-item__code,
+.pb-add-panel__peek-code {
+  margin: 0;
+  overflow: auto;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: var(--type-small) / 1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.pb-add-item__code {
+  max-height: 160px;
+  margin: -2px 8px 6px;
+}
+.pb-add-panel__message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+}
+.pb-add-panel__message p {
+  margin: 0;
+  color: var(--muted);
+}
+.pb-add-panel__clear {
+  min-height: var(--size-compact);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 0 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.pb-add-panel__clear:hover {
+  background: var(--hover);
+}
+.pb-add-panel__peek {
+  flex: none;
+  border-top: 1px solid var(--control-line);
+  padding: 10px 16px 14px;
+}
+.pb-add-panel__peek-title {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.pb-add-panel__peek-code {
+  max-height: 168px;
+}
+.pb-add-panel :is(.pb-add-panel__search, .pb-add-panel__clear, .pb-add-panel__code-toggle, .pb-add-panel__close):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+
+/* A live thumbnail: the section at the canvas's width, scaled down. */
+.pb-thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: #fff;
+  transition: border-color 120ms ease-out;
+}
+.pb-thumb__frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.pb-thumb.is-ready .pb-thumb__frame {
+  opacity: 1;
+}
+
+/* Dragging from the panel. */
+.pb-is-dragging,
+.pb-is-dragging * {
+  cursor: grabbing !important;
+}
+.pb-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 12px 6px 8px;
+  background: var(--component);
+  color: var(--component-surface);
+  font-size: var(--type-base);
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* Over the canvas. */
+.pb-canvas-layer {
+  position: absolute;
+  z-index: 19;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pb-empty {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  pointer-events: auto;
+}
+.pb-empty[hidden] {
+  display: none;
+}
+.pb-empty__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  border: 2px dashed color-mix(in oklch, var(--component) 45%, transparent);
+  border-radius: var(--radius-dialog);
+  padding: 28px 24px 24px;
+  background: color-mix(in oklch, var(--surface) 88%, transparent);
+  color: var(--text);
+  font-size: var(--type-base);
+  text-align: center;
+  backdrop-filter: blur(2px);
+  transition: border-color 120ms ease-out, background-color 120ms ease-out;
+}
+.pb-empty.is-drop .pb-empty__inner {
+  border-color: var(--component);
+  border-style: solid;
+  background: var(--component-surface);
+}
+.pb-empty__badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.pb-empty__title {
+  margin: 0;
+  font-size: var(--type-heading);
+  font-weight: 700;
+}
+.pb-empty__text {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--muted);
+}
+.pb-empty__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-empty__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-panel);
+  padding: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.pb-empty__pick:hover {
+  border-color: var(--component);
+  box-shadow: var(--shadow-small);
+}
+.pb-empty__pick:focus-visible,
+.pb-empty__browse:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.pb-empty__name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+.pb-empty__browse {
+  min-height: var(--size-control);
+  margin-top: 4px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.pb-empty__browse:hover {
+  background: var(--hover);
+}
+
+/* A section just added: a component-violet ring that fades. */
+.pb-flash {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px var(--component), 0 0 0 9px color-mix(in oklch, var(--component) 22%, transparent);
+  background: color-mix(in oklch, var(--component) 10%, transparent);
+  opacity: 0;
+}
+.pb-flash[hidden] {
+  display: none;
+}
+.pb-flash.is-on {
+  animation: pb-flash 1400ms ease-out forwards;
+}
+@keyframes pb-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-add-panel {
+    animation: none;
+  }
+  .pb-thumb__frame,
+  .pb-thumb,
+  .pb-empty__inner,
+  .pb-empty__pick {
+    transition: none;
+  }
+  /* Still marked, without the fade: on, then off. */
+  .pb-flash.is-on {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* The top bar's "+ Add": at the end of the first column, beside the page
+   picker, sharing that cell with the project menu (so every item is placed). */
+.topbar > #repository-menu {
+  grid-area: 1 / 1;
+}
+.topbar > .explorer-toggle {
+  grid-area: 1 / 2;
+}
+.topbar > .topbar-actions {
+  grid-area: 1 / 3;
+}
+.topbar > .topbar-add {
+  grid-area: 1 / 1;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--size-control);
+  margin: 0 12px 0 0;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0 12px 0 10px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: var(--type-base);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.topbar > .topbar-add[hidden] {
+  display: none;
+}
+.topbar > .topbar-add:hover {
+  background: var(--hover);
+}
+.topbar > .topbar-add.is-open {
+  background: var(--pressed);
+  color: var(--on-pressed);
+}
+.topbar > .topbar-add:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.pb-thumb:not(.is-ready) {
+  background: var(--surface-subtle);
+}

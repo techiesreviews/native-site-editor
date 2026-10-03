@@ -16,6 +16,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../sha
 import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
+import { createPageBuilder } from "../page-builder/page-builder";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -177,6 +178,8 @@ interface NativePreviewHandlers {
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
+  // Where the Add panel docks (src/page-builder/add-panel.ts).
+  addPanelDock?: () => { left: number; top: number; bottom: number; width: number } | undefined;
   // A request to agents dismissed from its pin, and the user's answer to an agent's question.
   onDismissRequest?: (id: string) => void;
   onAnswerRequest?: (id: string, text: string) => Promise<void>;
@@ -301,8 +304,24 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     cancel: () => toRuntime("drag-cancel"),
   }, (rect) => pins.row(rect));
   const insertControls = createInsertControls(pane, frame, {
+    onOpen: (point) => pageBuilder.openFor(point),
+    onClose: () => pageBuilder.closeGap(),
+  });
+  // The Add panel, dragging onto the canvas, the empty page and the
+  // highlight on a section just added (src/page-builder/).
+  const pageBuilder = createPageBuilder({
+    pane,
+    frame,
+    insertControls: () => insertControls,
+    inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
     choices: () => handlers.insertChoices?.() ?? [],
-    onInsert: (point, choice) => handlers.onInsert?.(point, choice),
+    insert: (point, choice) => handlers.onInsert?.(point, choice),
+    prepare: (tags) => {
+      const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
+      if (wanted.length) handlers.onComponentStyles?.(wanted);
+    },
+    scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
+    dock: handlers.addPanelDock,
   });
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
@@ -522,9 +541,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           left: point.left as number,
           width: point.width as number,
           before: typeof point.before === "string" ? point.before.slice(0, 60) : "",
+          tag: typeof point.tag === "string" ? point.tag.slice(0, 100) : undefined,
+          empty: point.empty === true || undefined,
+          height: typeof point.height === "number" && Number.isFinite(point.height) ? point.height : undefined,
         }];
       });
       insertControls.update(points);
+      pageBuilder.points(points);
       return;
     }
     if (data.type === "section-hover") {
@@ -559,7 +582,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "selection-rect") {
       const rect = readRect((data as { rect?: unknown }).rect);
-      if (rect) editBar.move(rect);
+      if (rect) {
+        editBar.move(rect);
+        pageBuilder.selectionRect(rect);
+      }
       return;
     }
     // An earlier version on show (History): nothing on it can be selected or edited.
@@ -587,11 +613,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // removed or replaced) and nothing was requested in its place.
       if (raw.path === "" && reason === "refresh") {
         editBar.hide();
+        pageBuilder.selected("", undefined, undefined);
         handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
         return;
       }
       if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
+      const selectedNode = indexes(raw.node) ? raw.node : undefined;
+      pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect));
       handlers.onSelect?.({
         path: raw.path,
         tag: typeof raw.tag === "string" ? raw.tag : "",
@@ -659,6 +688,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       route = candidate;
       alone = undefined;
       insertControls.clear();
+      pageBuilder.clear();
       clearSelection();
     }
     // A fragment on the page on show scrolls there too.
@@ -671,6 +701,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function clearSelection() {
     staleClick = false;
     editBar.hide();
+    pageBuilder.selected("", undefined, undefined);
     postClearSelection();
     handlers.onSelect?.({ path: "", tag: "", text: "", reason: "click", selectors: [] });
   }
@@ -687,6 +718,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         mounted = true;
         host.classList.add("has-preview");
         host.prepend(pane);
+        pageBuilder.setActive(true);
       }
       schedule();
     },
@@ -704,6 +736,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         if (next !== route) {
           route = next;
           insertControls.clear();
+          pageBuilder.clear();
           // Quietly: the runtime reports the lost selection after the render,
           // and a click here would cancel the file open that led to this.
           staleClick = false;
@@ -715,8 +748,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         route = input.route;
         alone = undefined;
         insertControls.clear();
+        pageBuilder.clear();
       }
       schedule();
+      pageBuilder.sourcesChanged();
     },
     /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
     selectNode(request: NativeNodeRequest) {
@@ -789,8 +824,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         pane.insertBefore(bar, frameHost);
         editBar.hide();
         insertControls.clear();
+        pageBuilder.clear();
         postClearSelection();
       }
+    },
+    /** The top bar's "+ Add" opens the Add panel (src/page-builder/add-panel.ts). */
+    attachAddButton(addButton: HTMLButtonElement) {
+      pageBuilder.attachAddButton(addButton);
+      pageBuilder.setActive(mounted);
     },
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect) {
@@ -828,6 +869,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       componentStyles = {};
       loadError = false;
       insertControls.clear();
+      pageBuilder.clear();
+      pageBuilder.setActive(false);
       clearSelection();
       handlers.onStructure?.(undefined);
       pane.remove();
@@ -846,6 +889,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pins.destroy();
       stopTheme();
       insertControls.destroy();
+      pageBuilder.destroy();
       pane.remove();
       host.classList.remove("has-preview");
     },
