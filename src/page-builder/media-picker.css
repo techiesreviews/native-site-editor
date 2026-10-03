@@ -133,4 +133,7 @@
 .media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
 .media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay::before,
 .media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay > * > * { opacity: 1; transform: none; }
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay :is(*, ::before) { transition: none; }
+/* Keyboard focus anywhere in the card (thumbnail, checkbox) shows them at once. */
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay::before,
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay > *,
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay > * > * { transition: none; }

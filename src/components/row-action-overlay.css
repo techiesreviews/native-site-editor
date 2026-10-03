@@ -38,7 +38,11 @@
 .row-action-host:focus-within > .row-action-overlay > * > * { transition: none; }
 .row-action-host > .row-action-overlay > button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 @media (hover: none), (pointer: coarse) {
+  /* No hover to reveal them: actions take their own room in the row, so they
+     never sit over a name or URL. */
   .row-action-host { min-height: 44px; }
+  .row-action-host > .row-action-overlay { position: static; flex-shrink: 0; padding: 0; }
+  .row-action-host > .row-action-overlay::before { display: none; }
   .row-action-host > .row-action-overlay > button { min-width: 44px; min-height: 44px; }
   .row-action-host > .row-action-overlay::before,
   .row-action-host > .row-action-overlay > *,

@@ -11,14 +11,9 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
 }
-.file-row-line:hover > .file-more,
-.file-row-line:focus-within > .file-more,
-.file-more[aria-expanded="true"] { opacity: 1; }
 .file-more:hover { background: var(--hover); color: var(--text); }
-.file-more:focus-visible { outline: var(--focus-ring); outline-offset: -2px; opacity: 1; }
-@media (hover: none) { .file-more { opacity: 1; } }
+.file-more:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .file-row-line:has(> .file-row:focus-visible) { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
 .file-row:focus-visible { outline: none; }
 
@@ -72,8 +67,6 @@
 .file-rename__input[aria-invalid="true"] { border-color: var(--warning-fg); }
 .file-rename__message { margin: 0; font-size: var(--type-small); line-height: 1.4; color: var(--warning-fg); overflow-wrap: anywhere; }
 .file-rename__message:empty { display: none; }
-.file-row-line.is-renaming > .file-more,
-.file-row-line.is-renaming > .file-add { display: none; }
 
 /* Drag and drop. */
 .file-row-line.is-dragging { opacity: 0.5; }
@@ -82,8 +75,12 @@
 .files-heading.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 .file-row[hidden] { display: none; }
 
-.file-row-line.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); background: var(--row-action-background); }
-.file-row-line.row-action-host:hover, .file-row-line.row-action-host:focus-within { --row-action-background: var(--hover); }
-.file-row-line.row-action-host:has(> .file-row.selected), .file-row-line.row-action-host.is-drop-target { --row-action-background: var(--current); }
+/* The fade matches what the line paints: panel at rest, hover or keyboard
+   focus, then the open file's tint and the drop target over both. */
+.file-row-line.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); }
+.file-row-line.row-action-host:hover,
+.file-row-line.row-action-host:has(> .file-row:focus-visible) { --row-action-background: var(--hover); }
+.file-row-line.row-action-host:has(> .file-row.selected),
+.file-row-line.row-action-host.is-drop-target { --row-action-background: var(--current); }
 .file-row-line .row-action-overlay > :is(.file-more, .file-add) { margin-right: 0; }
 .file-row-line.is-renaming > .row-action-overlay { display: none; }

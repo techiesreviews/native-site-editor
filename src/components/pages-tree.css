@@ -59,7 +59,6 @@
   font-weight: 400;
 }
 .pages-row.is-current .pages-url { color: inherit; opacity: 0.8; }
-.pages-more-space { width: var(--size-icon); flex-shrink: 0; }
 .pages-more, .pages-add {
   display: inline-grid;
   place-items: center;
@@ -71,13 +70,9 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
 }
-.pages-more:focus-visible, .pages-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; opacity: 1; }
-.pages-row:hover > .pages-more, .pages-item:focus-visible > .pages-row > .pages-more, .pages-more[aria-expanded="true"],
-.pages-row:hover > .pages-add, .pages-item:focus-visible > .pages-row > .pages-add { opacity: 1; }
+.pages-more:focus-visible, .pages-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .pages-more:hover, .pages-add:hover { background: var(--hover); color: var(--text); }
-@media (hover: none) { .pages-more, .pages-add { opacity: 1; } }
 .pages-url--button {
   border: 0;
   border-radius: var(--radius-small);
@@ -212,6 +207,8 @@
 .pages-row.row-action-host.is-current { --row-action-background: var(--current); }
 .pages-item:focus-visible > .pages-row.row-action-host { --row-action-background: var(--hover); }
 .pages-row.row-action-host.is-drop-target { --row-action-background: var(--current); }
+/* Renaming in place: the title field gets the whole row, including its end. */
+.pages-row:has(> .pages-rename) > .row-action-overlay { display: none; }
 /* The focused tree item owns the row's actions, revealed immediately. */
 .pages-item:focus-visible > .pages-row > .row-action-overlay > * { opacity: 1; pointer-events: auto; transition: none; }
 .pages-item:focus-visible > .pages-row > .row-action-overlay::before,
