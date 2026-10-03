@@ -37,6 +37,34 @@ test("metadata Undo and Redo refresh open detail fields while preserving query",
   await expect(pane(page).getByLabel("Default alt text", { exact: true })).toHaveValue("Host refresh portrait");
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
 });
+test("unsaved image metadata survives hidden-page source edits and visible refresh without losing focus", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await pane(page).getByLabel("Default alt text", { exact: true }).fill("Unfinished alt");
+  await pane(page).getByLabel("Image tags", { exact: true }).fill("unfinished, tags");
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const model = editor.getMountedSource("index.html");
+    if (model === undefined) throw new Error("Missing source model");
+    editor.replaceActiveRange({path:"index.html", start:model.length, end:model.length, expected:"", text:"\n<!-- unrelated page edit -->"});
+  });
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  const alt = pane(page).getByLabel("Default alt text", { exact: true });
+  await expect(alt).toHaveValue("Unfinished alt");
+  await expect(pane(page).getByLabel("Image tags", { exact: true })).toHaveValue("unfinished, tags");
+  await alt.focus();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const text = editor.getMountedSource("index.html");
+    if (text === undefined) throw new Error("Missing source model");
+    editor.replaceActiveRange({path:"index.html", start:text.length, end:text.length, expected:"", text:"\n<!-- visible unrelated edit -->"});
+  });
+  await expect(alt).toBeFocused();
+  await expect(alt).toHaveValue("Unfinished alt");
+  await pane(page).getByRole("button", { name: "Save metadata", exact: true }).click();
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Unfinished alt");
+});
 test("scope change disposes old controls and remounts clean image query state", async ({ page, baseURL }) => {
   await open(page, baseURL); await pane(page).getByLabel("Search images", { exact: true }).fill("studio-desk");
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
@@ -55,6 +83,11 @@ for (const colorScheme of ["light", "dark"] as const) {
   test(`Images pane stays within a narrow viewport in ${colorScheme}`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 390, height: 780 }); await page.emulateMedia({ colorScheme }); await open(page, baseURL);
     await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    for (const selector of ["#explorer-images", ".media-library--pane"]) {
+      const geometry = await page.locator(selector).evaluate(element => ({ right: element.getBoundingClientRect().right, width: element.scrollWidth, client: element.clientWidth }));
+      expect(geometry.right).toBeLessThanOrEqual(390);
+      expect(geometry.width).toBeLessThanOrEqual(geometry.client);
+    }
     const width = await page.evaluate(() => document.documentElement.scrollWidth);; expect(width).toBeLessThanOrEqual(390);
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeVisible();

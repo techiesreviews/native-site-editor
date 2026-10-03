@@ -10,6 +10,7 @@ import type { MediaLibrary, MediaPickerHost, MediaPickerOptions, MediaImportRequ
 export interface MediaLibraryView {
   element: HTMLElement;
   ready: Promise<void>;
+  readonly refreshedKey: string | undefined;
   refresh(): Promise<void>;
   dispose(): void;
 }
@@ -24,7 +25,7 @@ function accepts(path: string, accept?: string) {
   });
 }
 
-export function createMediaLibraryView(container: HTMLElement, adapter: MediaPickerHost, options: MediaPickerOptions = {}, modal?: HTMLDialogElement): MediaLibraryView {
+export function createMediaLibraryView(container: HTMLElement, adapter: MediaPickerHost, options: MediaPickerOptions & { refreshKey?: () => string } = {}, modal?: HTMLDialogElement): MediaLibraryView {
   adapter.begin?.();
   const dialog = modal ?? node("section", "media-library media-library--pane");
   const close = () => { if (modal) modal.close(); };
@@ -97,6 +98,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   let busy = false;
   let refreshVersion = 0;
   let loadingLibrary = false;
+  let refreshedKey: string | undefined;
   const observers = new Set<IntersectionObserver>();
   function dispose() {
     if (!alive) return;
@@ -133,7 +135,15 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   async function refresh() {
     if (!alive) return;
     const request = ++refreshVersion;
-    if (detailPath) { detailVersion++; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…")); }
+    const inputKey = options.refreshKey?.();
+    // Refreshing repository sources must not erase an unfinished metadata form.
+    const previous = library;
+    const previousPath = detailPath;
+    const detailIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify([
+      value?.metadata[path] ?? { tags: [], alt: "" }, value?.usage[path],
+      value?.items.find(item => item.path === path)?.version,
+    ]);
+    const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
     loadingLibrary = true;
     let next: MediaLibrary;
     try { next = await adapter.load(); }
@@ -143,6 +153,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       if (library?.items.find((old) => old.path === item.path)?.version !== item.version) assets.delete(item.path);
     }
     library = next;
+    refreshedKey = inputKey;
     for (const path of [...selected]) if (!library.items.some((item) => item.path === path)) selected.delete(path);
     const folder = folders.value;
     folders.replaceChildren(new Option("All folders", ""), ...[...new Set(library.items.map((item) => parent(item.path)))].sort().map((path) => new Option(path || "Repository root", path || "/")));
@@ -150,7 +161,27 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     if (folders.selectedIndex < 0) folders.selectedIndex = 0;
     draw();
     if (detailPath) {
-      if (library.items.some((item) => item.path === detailPath)) await showDetail(detailPath);
+      if (library.items.some((item) => item.path === detailPath)) {
+        const path = detailPath;
+        const rendered = sheet.querySelector<HTMLInputElement>('input[aria-label="Default alt text"]');
+        if (path !== previousPath || !rendered || detailIdentity(previous, path) !== detailIdentity(library, path)) {
+          const preserve = path === previousPath && rendered && metadataIdentity(previous, path) === metadataIdentity(library, path);
+          const inputs = preserve ? [...sheet.querySelectorAll<HTMLInputElement>("input")].map(input => ({
+            label: input.getAttribute("aria-label"), value: input.value,
+            focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
+          })) : [];
+          const active = document.activeElement;
+          await showDetail(path, false, true);
+          if (alive && detailPath === path) for (const saved of inputs) {
+            const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
+            if (!input) continue;
+            input.value = saved.value;
+            if (saved.focused && (!active?.isConnected || document.activeElement === document.body)) {
+              input.focus(); if (saved.start !== null && saved.end !== null) input.setSelectionRange(saved.start, saved.end);
+            }
+          }
+        }
+      }
       else { detailPath = undefined; sheet.hidden = true; sheet.replaceChildren(); }
     }
   }
@@ -209,7 +240,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       observers.add(observer); observer.observe(card);
     }
   }
-  async function showDetail(path: string, focusUsage = false) {
+  async function showDetail(path: string, focusUsage = false, background = false) {
     if (!alive) return;
     optimisation?.abort();
     detailPath = path;
@@ -251,7 +282,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         await options.onPick!(image); close();
       }), "button"));
     }
-    if (focusUsage) usageTitle.focus(); else sheet.querySelector<HTMLElement>("button")?.focus();
+    if (focusUsage) usageTitle.focus(); else if (!background) sheet.querySelector<HTMLElement>("button")?.focus();
   }
   function confirmDelete(paths: string[], unusedOnly = false) {
     if (!alive) return;
@@ -342,7 +373,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     if (library && !busy) showOptimise([...event.dataTransfer.files]);
   }, { signal: listeners.signal });
   const ready = task(async () => { summary.textContent = "Reading repository images and references…"; await refresh(); if (options.files?.length && alive) showOptimise(options.files); });
-  return { element: dialog, ready, refresh: () => task(refresh), dispose };
+  return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh), dispose };
 }
 
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));

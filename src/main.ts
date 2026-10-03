@@ -3670,19 +3670,20 @@ function ensureExplorerImages() {
   if (explorerImages && explorerImagesScope === scope) { requestExplorerImagesRefresh(); return; }
   disposeExplorerImages(); explorerImagesScope = scope;
   explorerImagesSignature = imagesSignature();
-  explorerImages = mountMediaLibrary(element("explorer-images"));
+  explorerImages = mountMediaLibrary(element("explorer-images"), { refreshKey: imagesSignature });
 }
 function requestExplorerImagesRefresh() {
   if (!explorerImages) return;
   if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
+  if (element("explorer-images").hidden) { explorerImagesRefreshNeeded = true; return; }
   const signature = imagesSignature();
-  if (signature === explorerImagesSignature) return;
+  if (signature === explorerImagesSignature) { if (explorerImagesRefreshNeeded) queueMicrotask(flushExplorerImagesRefresh); return; }
   explorerImagesSignature = signature; explorerImagesRefreshNeeded = true;
   queueMicrotask(flushExplorerImagesRefresh);
 }
 function flushExplorerImagesRefresh() {
   const view = explorerImages;
-  if (!view || !explorerImagesRefreshNeeded) return;
+  if (!view || !explorerImagesRefreshNeeded || element("explorer-images").hidden) return;
   if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
   if (view.element.getAttribute("aria-busy") === "true") {
     if (!explorerImagesObserver) {
@@ -3696,6 +3697,8 @@ function flushExplorerImagesRefresh() {
     return;
   }
   explorerImagesRefreshNeeded = false;
+  // A successful operation may already have loaded this exact source revision.
+  if (view.refreshedKey === imagesSignature()) return;
   void view.refresh();
 }
 

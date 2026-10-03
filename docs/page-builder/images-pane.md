@@ -17,3 +17,7 @@ draft. The manager's saved query remains available when returning to Images.
 
 The pane uses the explorer and shared media-library surfaces in both themes. Its
 width follows the explorer; details replace browsing at small container widths.
+
+Switching to Pages or Files keeps unfinished metadata fields. Repository changes mark a hidden Images pane for refresh when it is shown again. A refresh keeps the current detail form when its image, metadata and references are unchanged; changed references or image bytes retain unfinished metadata, while metadata Undo and Redo show the restored source values. A completed image operation and the host draft listener share an exact source revision so they do not reload the same revision twice.
+
+The pane keeps its own vertical scrolling space for image details and actions. At narrow widths its controls and content stay within the tab panel, including when details are open.

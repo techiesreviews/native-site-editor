@@ -45,7 +45,7 @@ export function configureMediaPicker(value: MediaPickerHost) {
 export function closeMediaPicker() { closeActive?.(); }
 
 /** Mount a persistent manager directly into the explorer's host. Hiding is safe. */
-export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost } = {}): MediaLibraryView {
+export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost; refreshKey?: () => string } = {}): MediaLibraryView {
   const adapter = options.adapter ?? host;
   if (!adapter) throw new Error("Open a repository before choosing an image.");
   const view = createMediaLibraryView(container, adapter, options);
