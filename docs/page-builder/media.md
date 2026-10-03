@@ -154,3 +154,15 @@ pending-worker cancellation. Run on free port 5366 or 5367, for example:
 ```sh
 ASE_TEST_PORT=5366 npm run test:browser -- tests/native-save/native-media-pane.spec.ts tests/native-save/native-media-library.spec.ts tests/native-save/native-media-transaction.spec.ts
 ```
+
+Background loads and host refreshes expose `aria-busy` without locking Search,
+Folder, Sort or image details. Repository mutations lock controls without removing
+keyboard focus; unavailable controls are visibly dimmed. A metadata form remains
+visible during a refresh, but Save waits for the fresh repository snapshot. Cancel
+can abort browser optimisation previews and is unavailable once
+a transaction starts. Modal Close dismisses the picker without rolling back an
+already started transaction. Uploads attempted during a mutation show feedback.
+
+The persistent Images tab uses a bounded `min(55dvh, 560px)` height and one scroll
+area for its toolbar, grid and details. Narrow details replace the grid, with Back
+to grid reachable in that same scroll area. The modal retains its two-column layout.

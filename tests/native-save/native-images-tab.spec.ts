@@ -99,6 +99,19 @@ for (const colorScheme of ["light", "dark"] as const) {
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    const bounds = await pane(page).evaluate(element => {
+      const box = element.getBoundingClientRect();
+      return { height: box.height, scrollHeight: element.scrollHeight, nestedScrollers: [...element.querySelectorAll("*")].filter(child => ["auto", "scroll"].includes(getComputedStyle(child).overflowY) && child.scrollHeight > child.clientHeight).length };
+    });
+    await test.info().attach("pane-geometry", { body: JSON.stringify(bounds), contentType: "application/json" });
+    expect(bounds.height).toBeLessThanOrEqual(429);
+    expect(bounds.scrollHeight).toBeGreaterThan(bounds.height);
+    expect(bounds.nestedScrollers).toBe(0);
+    await pane(page).getByRole("button", { name: "Delete image…", exact: true }).scrollIntoViewIfNeeded();
+    await expect(pane(page).getByRole("button", { name: "Delete image…", exact: true })).toBeInViewport();
+    await pane(page).getByRole("button", { name: "Back to grid", exact: true }).scrollIntoViewIfNeeded();
+    await expect(pane(page).getByRole("button", { name: "Back to grid", exact: true })).toBeInViewport();
+    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-narrow-${colorScheme}.png` });
   });
 }
 
@@ -172,3 +185,57 @@ test("closed Images explorer defers repository refresh until reopened", async ({
   await expect.poll(() => page.evaluate(() => !(window as any).closedImageCard.isConnected)).toBe(true);
   await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
 });
+
+test("background image loads preserve typing, folders and details", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    let delay = true;
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
+    document.body.append(host);
+    const view = createMediaLibraryView(host, {
+      async load() {
+        if (delay) await new Promise<void>(resolve => { (window as any).releaseImageLoad = resolve; });
+        return { key: "load", items: [{ path: "images/a.svg", version: "A" }], metadata: {}, usage: {} };
+      },
+      async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
+      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+    });
+    Object.assign(window, { loadImageProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); }, instant: () => { delay = false; } } });
+  });
+  const library = pane(page), search = library.getByLabel("Search images", { exact: true });
+  await expect(library).toHaveAttribute("aria-busy", "true");
+  await search.pressSequentially("a.svg"); await expect(search).toHaveValue("a.svg");
+  await expect(search).not.toHaveAttribute("readonly", "");
+  await page.evaluate(() => (window as any).releaseImageLoad());
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() => { void (window as any).loadImageProbe.refresh(); });
+  await expect(library).toHaveAttribute("aria-busy", "true");
+  await library.getByLabel("Folder", { exact: true }).selectOption("images");
+  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+  await search.fill("a"); await expect(search).toHaveValue("a");
+  await expect(library.locator(".media-library__sheet")).toContainText("Loading image");
+  await page.evaluate(() => (window as any).releaseImageLoad());
+  await expect(library.getByLabel("Default alt text", { exact: true })).toBeVisible();
+  await expect(library.getByLabel("Folder", { exact: true })).toHaveValue("images");
+  await expect(library.locator(".media-library__message")).toBeEmpty();
+  await page.evaluate(() => (window as any).loadImageProbe.dispose());
+});
+
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`Images leaves canvas and code visible on desktop in ${colorScheme}`, async ({ page, baseURL }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ colorScheme }); await open(page, baseURL);
+    await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    const box = await page.locator("#explorer-images").boundingBox();
+    await test.info().attach("pane-geometry", { body: JSON.stringify(box), contentType: "application/json" });
+    expect(box?.height).toBeLessThanOrEqual(495);
+    expect((box?.y ?? 900) + (box?.height ?? 900)).toBeLessThan(700);
+    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
+    await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+    await pane(page).getByRole("button", { name: "Back to grid", exact: true }).focus();
+    await expect(pane(page).getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
+    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-details-desktop-${colorScheme}.png` });
+  });
+}

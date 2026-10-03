@@ -10,7 +10,7 @@
 .media-library h3 { font-size: var(--type-base); font-weight: 600; }
 .media-library button, .media-library input, .media-library select { font: inherit; }
 .media-library button { cursor: pointer; min-height: var(--size-control); border-radius: var(--radius); }
-.media-library button:disabled { cursor: default; opacity: .5; }
+.media-library :is(:disabled, [aria-disabled="true"]) { cursor: default; opacity: .55; }
 .media-library :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .media-library input:focus-visible, .media-library select:focus-visible { outline-offset: -1px; }
 .media-library__header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
@@ -90,3 +90,19 @@
   .media-library--pane .media-library__sheet { width: 100%; border-left: none; }
   .media-library--pane .media-library__grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
+
+/* A persistent explorer tab uses one scroll area for browsing and details. */
+.media-library--pane { overflow: auto; overscroll-behavior: contain; }
+.media-library--pane > * { flex-shrink: 0; }
+.media-library--pane .media-library__header { align-items: start; gap: 10px; padding: 16px 12px 12px; }
+.media-library--pane .media-library__header > div { flex-basis: 100%; gap: 6px; }
+.media-library--pane h2 { font-size: var(--type-base); }
+.media-library--pane .media-library__toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding-top: 4px; }
+.media-library--pane .media-library__toolbar input { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
+.media-library--pane .media-library__toolbar select { width: 100%; }
+.media-library--pane .media-library__body { flex: none; min-height: 0; }
+.media-library--pane .media-library__browse, .media-library--pane .media-library__sheet { overflow: visible; }
+.media-library--pane .media-library__grid { gap: 16px 12px; }
+.media-library--pane .media-library__sheet { box-sizing: border-box; gap: 14px; padding: 16px 12px; }
+.media-library--pane .media-library__preview { width: 100%; height: 150px; }
+.media-library--pane .media-library__footer { line-height: 1.5; }

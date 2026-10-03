@@ -164,7 +164,7 @@ for (const removed of [false, true]) {
   });
 }
 
-test("refresh removes the stale form and rejects its detached Save while metadata reload waits", async ({ page, baseURL }) => {
+test("refresh preserves the visible form but rejects Save while metadata reload waits", async ({ page, baseURL }) => {
   await mount(page, baseURL);
   const result = await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -202,5 +202,5 @@ test("refresh removes the stale form and rejects its detached Save while metadat
     view.dispose(); host.remove();
     return { hasStaleForm, hasFormAfterReopen, mutations, alt };
   });
-  expect(result).toEqual({ hasStaleForm: false, hasFormAfterReopen: false, mutations: 0, alt: "Restored alt" });
+  expect(result).toEqual({ hasStaleForm: true, hasFormAfterReopen: false, mutations: 0, alt: "Restored alt" });
 });

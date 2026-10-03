@@ -96,6 +96,8 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   let detailPath: string | undefined;
   let optimisation: AbortController | undefined;
   let busy = false;
+  let pendingTasks = 0;
+  let cancellableTask = false;
   let refreshVersion = 0;
   let loadingLibrary = false;
   let refreshedKey: string | undefined;
@@ -110,30 +112,40 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   }
   modal?.addEventListener("close", dispose, { once: true });
   function tell(text: string) { if (alive) message.textContent = text; }
-  async function task(work: () => Promise<void>) {
+  async function task(work: () => Promise<void>, lock = true, canCancel = false) {
     if (!alive) return;
+    if (lock && loadingLibrary) { tell("Repository images are refreshing. Wait for them to finish before making a change."); return; }
     if (busy) { tell("An image change is in progress. Wait for it to finish before making another change."); return; }
-    busy = true; dialog.setAttribute("aria-busy", "true");
+    if (lock) { busy = true; cancellableTask = canCancel; }
+    pendingTasks++; dialog.setAttribute("aria-busy", "true");
     setBusyControls();
     try { await work(); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) tell(error instanceof Error ? error.message : "The image change could not be made."); }
-    finally { busy = false; dialog.removeAttribute("aria-busy"); setBusyControls(); }
+    finally {
+      if (lock) { busy = false; cancellableTask = false; }
+      pendingTasks--;
+      if (!pendingTasks) dialog.removeAttribute("aria-busy");
+      setBusyControls();
+    }
   }
   function cancellation(label: string, action: () => void) {
-    const control = button(label, action); control.dataset.mediaCancel = "true"; return control;
+    const control = button(label, action); control.dataset.mediaCancel = label === "Close" ? "close" : "cancel"; return control;
+  }
+  function canUseCancellation(control: Element) {
+    return control.getAttribute("data-media-cancel") === "close" || cancellableTask && control.hasAttribute("data-media-cancel");
   }
   function setBusyControls() {
     for (const control of dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input,button,select")) {
-      if (busy && control.dataset.mediaCancel !== "true") control.setAttribute("aria-disabled", "true"); else control.removeAttribute("aria-disabled");
+      if (busy && !canUseCancellation(control)) control.setAttribute("aria-disabled", "true"); else control.removeAttribute("aria-disabled");
       if (control instanceof HTMLInputElement && control.type !== "checkbox" && control.type !== "file") control.readOnly = busy;
     }
   }
   dialog.addEventListener("click", event => {
-    if (!busy || !(event.target instanceof Element) || event.target.closest("[data-media-cancel]") || !event.target.closest("button,input,select")) return;
+    if (!busy || !(event.target instanceof Element) || canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !event.target.closest("button,input,select")) return;
     event.preventDefault(); event.stopImmediatePropagation();
     tell("An image change is in progress. Wait for it to finish before making another change.");
   }, { capture: true, signal: listeners.signal });
   dialog.addEventListener("keydown", event => {
-    if (!busy || event.target instanceof Element && event.target.closest("[data-media-cancel]") || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (!busy || event.target instanceof Element && canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault(); event.stopImmediatePropagation();
     tell("An image change is in progress. Wait for it to finish before making another change.");
   }, { capture: true, signal: listeners.signal });
@@ -269,19 +281,20 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
           meta.textContent = `${data.width ? `${data.width} × ${data.height} · ` : "Dimensions unavailable · "}${formatBytes(data.blob.size)}`;
           if (data.blob.size >= WARN_IMAGE_BYTES) { meta.classList.add("media-library__heavy"); meta.append(node("span", "", " · Heavy")); }
         }).catch(() => { if (alive && card.isConnected) meta.textContent = "Image unavailable"; });
-      }, { root: browse, rootMargin: "200px" });
+      }, { root: modal ? browse : dialog, rootMargin: "200px" });
       observers.add(observer); observer.observe(card);
     }
   }
   async function showDetail(path: string, focusUsage = false, background = false) {
     if (!alive) return;
+    const initiatingFocus = document.activeElement;
     optimisation?.abort();
     detailPath = path;
     const version = ++detailVersion;
     sheet.hidden = false; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…"));
     if (loadingLibrary) return;
     const data = await asset(path).catch((error) => { tell(String(error)); return undefined; });
-    if (!alive || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) return;
+    if (!alive || loadingLibrary || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) return;
     const meta = library.metadata[path] ?? { tags: [], alt: "" };
     sheet.replaceChildren();
     sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); }));
@@ -316,7 +329,9 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       }), "button"));
     }
     setBusyControls();
-    if (focusUsage) usageTitle.focus(); else if (!background) sheet.querySelector<HTMLElement>("button")?.focus();
+    if (!background && document.activeElement === initiatingFocus) {
+      if (focusUsage) usageTitle.focus(); else sheet.querySelector<HTMLElement>("button")?.focus();
+    }
   }
   function confirmDelete(paths: string[], unusedOnly = false) {
     if (!alive) return;
@@ -384,7 +399,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         results.append(preview, node("p", "", `${basename(file.name)} · ${formatBytes(result.before)} → ${formatBytes(result.after)}, ${savings >= 0 ? "−" : "+"}${Math.abs(savings)}%`), node("p", "media-library__hint", `${result.outputs.length - 1} responsive variants · ${formatBytes(result.outputs.reduce((sum, output) => sum + output.blob.size, 0))} total${result.note ? ` · ${result.note}` : " · Metadata stripped"}`));
       }
       add.disabled = false;
-    }));
+    }, true, true));
     for (const control of [width, quality, format, responsive, original]) control.addEventListener("input", () => { prepareVersion++; optimisation?.abort(); prepared = []; add.disabled = true; results.replaceChildren(); });
     sheet.append(prepare, results, add, cancellation("Cancel", () => { detailVersion++; optimisation?.abort(); sheet.hidden = true; }));
     width.focus();
@@ -400,14 +415,14 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const jump = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
     if (jump !== undefined) { event.preventDefault(); buttons[Math.max(0, Math.min(buttons.length - 1, at + jump))]?.focus(); }
   }, { signal: listeners.signal });
-  uploadInput.addEventListener("change", () => { const files = [...(uploadInput.files ?? [])]; uploadInput.value = ""; if (files.length && library && !busy) showOptimise(files); }, { signal: listeners.signal });
+  uploadInput.addEventListener("change", () => { const files = [...(uploadInput.files ?? [])]; uploadInput.value = ""; if (files.length && busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (files.length && library) showOptimise(files); }, { signal: listeners.signal });
   dialog.addEventListener("dragover", (event) => { if (event.dataTransfer?.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }, { signal: listeners.signal });
   dialog.addEventListener("drop", (event) => {
     if (!event.dataTransfer?.files.length) return; event.preventDefault();
-    if (library && !busy) showOptimise([...event.dataTransfer.files]);
+    if (busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (library) showOptimise([...event.dataTransfer.files]);
   }, { signal: listeners.signal });
-  const ready = task(async () => { summary.textContent = "Reading repository images and references…"; await refresh(); if (options.files?.length && alive) showOptimise(options.files); });
-  return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh), dispose };
+  const ready = task(async () => { summary.textContent = "Reading repository images and references…"; await refresh(); if (options.files?.length && alive) showOptimise(options.files); }, false);
+  return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };
 }
 
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
