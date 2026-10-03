@@ -183,3 +183,16 @@ keeping their focus and captured source context. The catalogue includes position
 flex and grid sizing, overflow, typography and image positioning. Numeric defaults
 add pixels only to individual length properties; ratios, line height, order and
 flex growth remain unitless. Every edit still passes native CSS validation.
+
+Right-click a property, or press Shift+F10 while it has focus, to choose a compatible
+site variable. Candidates retain their authored value and stylesheet path; duplicate
+names remain separate entries. Compatibility uses native CSS validation and only
+unambiguous variable chains. This list does not predict the cascade. Choosing writes
+`var(--name)` as one undoable CSS edit; it does not convert colours to hex.
+Arrow keys move through the menu, Escape restores field focus, and leaving the menu
+closes it. A captured choice cannot write after its source or selection changes.
+
+Variable definitions share a fresh workspace with both code panes. Opening a
+definition validates the repository, page, component graph, complete source snapshot
+and original requester model around asynchronous work, then reveals the actual CSS
+source offset. Code completion and hover use the same definitions and provenance.

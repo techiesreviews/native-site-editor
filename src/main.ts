@@ -70,6 +70,7 @@ import { mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
+import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
 import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
@@ -918,8 +919,8 @@ function findEntry(path: string) {
   return currentRepo && snapshot ? repositoryIndex.find(api, currentRepo, snapshot, path) : Promise.resolve(undefined);
 }
 // Opens `css` in the secondary pane (or keeps it if already there), then resolves.
-async function openSecondary(css: string) {
-  if (!currentRepo || !snapshot || !info.user) return false;
+async function openSecondary(css: string, guard: () => boolean = () => true) {
+  if (!currentRepo || !snapshot || !info.user || !guard()) return false;
   const request = ++secondaryRequest;
   const historyScope = currentPath ? draftKey({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, currentPath) : undefined;
   if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
@@ -934,19 +935,20 @@ async function openSecondary(css: string) {
     const draft = draftStore().get(scope, css);
     const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
     const entry = created ? undefined : await findEntry(css);
+    if (!guard() || request !== secondaryRequest) return false;
     if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
     const [source, editor] = await Promise.all([
       entry ? readFile(scope.repo, entry.sha) : "",
       loadEditorModule(),
     ]);
-    if (request !== secondaryRequest) return false;
+    if (request !== secondaryRequest || !guard()) return false;
     disposeSecondary?.();
     element("secondary-pane").hidden = false;
     element("main").classList.add("has-secondary");
     codeWidthResize?.apply();
     disposeSecondary = editor.mountCodeEditor(
       element("content-secondary"),
-      { key: draftKey(scope, css), historyScope, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
+      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
         onContextChange: (value) => {
           if (value) {
             syncLinkedStyles(value.path, value.content);
@@ -1140,7 +1142,31 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
     key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
     tag: selection?.tag ?? "", className, classes,
     target: className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined,
-    files: sources, computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
+    files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
+  };
+}
+
+/** A fresh source snapshot shared by code intelligence and Style variable controls. */
+function nativeCssWorkspace(): CssWorkspace | undefined {
+  const scope = draftScope(), requester = currentPath;
+  if (!nativeSite || !scope || !requester || versionView || !editorModule?.isMounted(requester)) return;
+  const epoch = generation, scopeKey = setupScope(), sources = nativeSources();
+  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, sources]);
+  const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
+  return {
+    revision, sources, orderedPaths,
+    async openDefinition(path, start, end, expectedRevision) {
+      if (expectedRevision !== revision || !/\.css$/i.test(path) || sources[path] === undefined || start < 0 || end < start || end > sources[path].length) return false;
+      const requesterProof = editorModule!.captureFileModelState(scope, requester);
+      const targetProof = editorModule!.captureFileModelState(scope, path);
+      const current = () => generation === epoch && setupScope() === scopeKey && currentPath === requester && !versionView &&
+        requesterProof.isCurrent() && nativeCssWorkspace()?.revision === revision;
+      if (!current() || !targetProof.isCurrent()) return false;
+      if (path !== requester && !(await openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
+      if (!current() || editorModule?.getMountedSource(path) !== sources[path] || !editorModule.isMounted(path)) return false;
+      editorModule.revealRange(path, start, end);
+      return true;
+    },
   };
 }
 
@@ -5582,6 +5608,7 @@ async function mountSource(
     onDiscardChange: discardFileChange,
     deletedUpstream: (path) => deletedUpstream.has(path),
     onSettleDeleted: settleDeletedDraft,
+    cssWorkspace: nativeCssWorkspace,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();

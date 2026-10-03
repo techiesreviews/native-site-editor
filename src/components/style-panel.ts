@@ -1,3 +1,5 @@
+import { cssVariableDeclarations, type CssWorkspace } from "../page-builder/css-intelligence";
+import { relevantVariables } from "./style-variables";
 import { sections, sectionTitles, matchesStyleSearch, type Field } from "./style-fields";
 import "./style-panel.css";
 import { mountStylePanelResize } from "./style-panel-resize";
@@ -9,7 +11,7 @@ import { writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVa
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
   key: string; selectionKey?: string; tag: string; className?: string; classes?: string[]; target?: CssTarget;
-  files: Record<string, string>; computed: Record<string, string>; readOnly?: boolean;
+  files: Record<string, string>; workspace?: CssWorkspace; computed: Record<string, string>; readOnly?: boolean;
 }
 export interface StylePanelHandlers {
   context: () => StylePanelContext | undefined;
@@ -35,6 +37,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const opened = new Set(["Spacing"]);
   let pending = false, interacting = false;
   let searchQuery = "";
+  let variableMenu: HTMLElement | undefined;
+  function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   root.addEventListener("pointerup", () => setTimeout(() => {
     interacting = false;
@@ -182,6 +186,50 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     control.dataset.property = field.property; control.value = own; control.classList.toggle("is-computed", !own);
     control.addEventListener("focus", () => { if (handlers.context()?.key === snapshot.expected?.key) snapshot.expected = handlers.context(); });
     control.addEventListener("change", () => apply(control.value.trim()));
+    function openVariableMenu(x: number, y: number) {
+      closeVariableMenu();
+      const expected = currentContext(control.isConnected && snapshot.expected?.key === renderContext?.key ? renderContext : snapshot.expected), workspace = expected?.workspace;
+      if (!expected || !workspace) return;
+      const declarations = cssVariableDeclarations(workspace);
+      const offered = relevantVariables(field.property, declarations, (property, value) => CSS.supports(property, value));
+      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu;
+      menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
+      menu.style.left = `${Math.max(0, Math.min(x, innerWidth - 260))}px`; menu.style.top = `${Math.max(0, Math.min(y, innerHeight - 240))}px`;
+      if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
+      for (const declaration of offered) {
+        const row = node("div", "style-panel__variable-choice");
+        const choose = button(`${declaration.name} · ${declaration.value} · ${declaration.path}`, () => {
+          if (currentContext(expected)) {
+            const value = `var(${declaration.name})`;
+            if (onChange) void onChange(value, expected); else void write({ [field.property]: value }, expected);
+          }
+          closeVariableMenu(); if (control.isConnected) control.focus();
+        }); choose.setAttribute("role", "menuitem");
+        const definition = button("↗", () => {
+          const current = currentContext(expected); closeVariableMenu();
+          if (current) void workspace.openDefinition(declaration.path, declaration.start, declaration.end, workspace.revision).then(ok => { if (!ok) report("The variable source changed. Open its definition again."); }).catch(report);
+        }); definition.setAttribute("role", "menuitem"); definition.setAttribute("aria-label", `Go to ${declaration.name} in ${declaration.path}`);
+        row.append(choose, definition); menu.append(row);
+      }
+      menu.addEventListener("keydown", event => {
+        const buttons = [...menu.querySelectorAll<HTMLButtonElement>("button")];
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); if (control.isConnected) control.focus(); }
+        else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && buttons.length) {
+          event.preventDefault(); const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+          buttons[index].focus();
+        } else if (event.key === "Tab") closeVariableMenu();
+      });
+      menu.addEventListener("focusout", event => {
+        if (event.relatedTarget instanceof Node && menu.contains(event.relatedTarget)) return;
+        setTimeout(() => { if (variableMenu === menu && !menu.contains(document.activeElement)) closeVariableMenu(); }, 0);
+      });
+      menu.tabIndex = -1; root.append(menu); (menu.querySelector<HTMLButtonElement>("button") ?? menu).focus();
+    }
+    control.addEventListener("contextmenu", event => { event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
+    control.addEventListener("keydown", event => {
+      if (event instanceof KeyboardEvent && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom); }
+    });
     wrapper.append(control);
     const offered = presets(field, variables);
     if (offered.length) {
@@ -244,6 +292,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
   function render() {
+    closeVariableMenu();
     applyFold();
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
@@ -345,5 +394,5 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (changed) render(); else applyFold();
   });
   render();
-  return { root, update, dispose() { unsubscribe(); resize.dispose(); root.remove(); } };
+  return { root, update, dispose() { closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
 }
