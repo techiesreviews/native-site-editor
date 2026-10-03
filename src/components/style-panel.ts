@@ -1,3 +1,5 @@
+import { findStyleRulesInSources } from "../styles-index";
+import type { NativeSelectedRule } from "../style-cascade";
 import { mountGridEditor } from "./grid-editor";
 import { mountImageFocalPoint, type FocalPreviewAsset } from "./image-focal-point";
 import "./grid-editor.css";
@@ -15,7 +17,7 @@ import { cssClassSelector, writeCssProperties, validateCssSource, locateWriteRul
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
   key: string; selectionKey?: string; tag: string; className?: string; classes?: string[]; target?: CssTarget;
-  modelProof?: { isCurrent(): boolean }; assetRevision?: string; files: Record<string, string>; workspace?: CssWorkspace; computed: Record<string, string>; readOnly?: boolean;
+  matchedRules?: NativeSelectedRule[]; modelProof?: { isCurrent(): boolean }; assetRevision?: string; files: Record<string, string>; workspace?: CssWorkspace; computed: Record<string, string>; readOnly?: boolean;
 }
 export interface StylePanelHandlers {
   context: () => StylePanelContext | undefined;
@@ -257,7 +259,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         value = `repeat(${value}, minmax(0, 1fr))`;
       }
       if (value && !CSS.supports(field.property, value.replace(/\s*!important\s*$/, ""))) { report(`Enter a valid ${field.label.toLowerCase()} value.`); return; }
-      if (value === pendingValue || value === acceptedValue && (ownValues()[field.property] ?? "") === value) return;
+      if (value === pendingValue || value === acceptedValue && (ownValues()[field.property] ?? "") === value.replace(/\s*!important\s*$/i, "")) return;
       if (!currentContext(snapshot.expected)) return;
       pendingValue = value;
       try {
@@ -574,12 +576,22 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
               if (!proof.isCurrent(true)) throw new Error("The image or style source changed. Retry with the current preview.");
               const target = proof.captured.expected.target;
               const rule = target && locateWriteRule(proof.captured.expected.files[target.path] ?? "", options());
-              // The panel cannot prove selector matching or the complete cascade.
-              // Refuse competing important positions rather than claim a visible edit.
-              const competingPriority = Object.entries(proof.captured.expected.files).some(([path, source]) => /\.css$/i.test(path) &&
-                scanCss(source).some(block => !(path === target?.path && block.start === rule?.start) &&
-                  block.declarations.some(item => (item.property === result.mode || result.mode === "background-position" && item.property === "background") && /!important\s*$/i.test(item.value))));
-              if (competingPriority) throw new Error("Another CSS rule has an important image position. Edit that rule in code before changing image focus.");
+              // The runtime reports selectors matching this element in active media.
+              // Inactive user-action states do not compete with the current edit.
+              const matched = (proof.captured.expected.matchedRules ?? []).filter(item =>
+                !item.state?.length || item.current || !!state && item.state.includes(state));
+              const located = findStyleRulesInSources(proof.captured.expected.files, matched);
+              const competingPriority = matched.some((item, index) => {
+                const important = item.declarations?.some(declaration => declaration.important &&
+                  (declaration.property === result.mode || result.mode === "background-position" && /^(?:background|background-position-[xy])$/.test(declaration.property)));
+                if (!important) return false;
+                // Container queries may match conditionally. Do not pretend that
+                // a write to such a scope has a verified visible result.
+                if (item.possible) return true;
+                const sources = located.filter(source => source.match === index);
+                return !sources.length || sources.some(source => source.path !== target?.path || source.start !== rule?.start);
+              });
+              if (competingPriority) throw new Error("Another matching CSS rule has an important image position. Edit that rule in code before changing image focus.");
               const declaration = document.createElement("div").style;
               declaration.cssText = (rule?.declarations ?? []).map(item => `${item.property}:${item.value};`).join("");
               const prioritized = Object.fromEntries(Object.entries(properties).map(([property, value]) => [property, value && declaration.getPropertyPriority(property) === "important" ? `${value} !important` : value]));

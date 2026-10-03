@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, baseURL }) => {
     const host = document.createElement("main");
     host.style.cssText = "position:fixed;inset:0;background:white;z-index:1000;display:grid";
     host.className = "has-preview"; host.id = "retry-host"; document.body.append(host);
-    const context = () => ({ key: "retry", selectionKey: "item", tag: "img", className: "item", classes: ["item"], target: { path: "test.css", selector: ".item", start: 0 }, files: { "test.css": source }, computed: {} });
+    const context = () => ({ key: "retry", selectionKey: "item", tag: "img", className: "item", classes: ["item"], target: { path: "test.css", selector: ".item", start: 0 }, files: { "test.css": source, "unused.css": ".item { object-position: 5% 5% !important; }" }, matchedRules: [{ path: "test.css", selector: ".item", ruleIndex: 0, declarations: [{ property: "object-position", value: "50% 50%", important: false }] }], computed: {} });
     const view = createStylePanel({ context,
       async write(properties) {
         undo.push(source); writes++;
@@ -99,4 +99,23 @@ test("an external edit during asynchronous Undo cannot refresh the captured focu
   await field.fill("27"); await field.press("Enter");
   await expect(page.locator("#retry-host")).toHaveAttribute("data-error", /style target changed/);
   expect(await page.evaluate(() => (window as any).retry.source())).not.toContain("padding-top: 27px");
+});
+
+test("an unlinked important stylesheet in the source map does not block focal edits", async ({ page }) => {
+  const panel = page.locator("#retry-host .style-panel");
+  await panel.getByRole("searchbox").fill("image focus");
+  const x = panel.getByLabel("X (%)", { exact: true });
+  await x.fill("42"); await x.press("Enter");
+  await expect.poll(() => page.evaluate(() => (window as any).retry.source())).toContain("object-position: 42% 50%");
+  await expect(page.locator("#retry-host")).not.toHaveAttribute("data-error", /important image position/);
+});
+
+test("Enter then blur deduplicates the same accepted important value", async ({ page }) => {
+  const panel = page.locator("#retry-host .style-panel");
+  await panel.getByRole("searchbox").fill("padding top");
+  const field = panel.getByRole("textbox", { name: "Padding top", exact: true });
+  await field.fill("19px !important"); await field.press("Enter");
+  await expect.poll(() => page.evaluate(() => (window as any).retry.source())).toContain("padding-top: 19px !important");
+  await field.press("Tab");
+  await expect.poll(() => page.evaluate(() => (window as any).retry.writes())).toBe(1);
 });

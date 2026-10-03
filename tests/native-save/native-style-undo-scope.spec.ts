@@ -43,8 +43,19 @@ for (const breakpoint of ["all", "tablet"] as const) {
     const x = style(page).getByLabel("X (%)", { exact: true }); await expect(x).toBeEnabled();
     const before = await source(page);
     await x.fill("42"); await x.press("Enter");
-    await expect(page.locator("#notice")).toContainText("Another CSS rule has an important image position");
+    await expect(page.locator("#notice")).toContainText("Another matching CSS rule has an important image position");
     expect(await source(page)).toBe(before);
     await expect(page.frameLocator(".native-preview-frame").locator(".lead")).toHaveCSS("background-position", "10% 15%");
   });
 }
+
+test("print and unrelated selectors do not block a native focal edit", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await append(page, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.other { background-position: center !important; }\n@media print { *, *::before, *::after { background: #fff !important; } }\n.lead:hover { background-position: 5% 5% !important; }\n');
+  await style(page).getByRole("searchbox").fill("image focus");
+  const x = style(page).getByLabel("X (%)", { exact: true }); await expect(x).toBeEnabled();
+  await x.fill("42"); await x.press("Enter");
+  await expect.poll(() => source(page)).toContain("background-position: 42% 30%");
+  await expect(page.frameLocator(".native-preview-frame").locator(".lead")).toHaveCSS("background-position", "42% 30%");
+  await expect(page.locator("#notice")).not.toContainText("important image position");
+});
