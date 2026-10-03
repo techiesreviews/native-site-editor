@@ -21,7 +21,7 @@ import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
-import { createNativePreview, routeStylesheets, type NativeFormat, type NativePreviewSelection, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
+import { createNativePreview, routeStylesheets, type NativeFormat, type NativePreviewSelection, type NativeStructureItem, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
@@ -57,6 +57,7 @@ import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
+import { nativeElementMoveChoices, nativeElementMovePlan, nativeElementSiblingMove, type NativeElementMoveResult } from "./page-builder/native-move-choices";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
@@ -375,8 +376,26 @@ function mountWorkspace() {
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
-    onStructure: (structure) => pageStructure?.update(structure),
-    onMove: (direction) => { if (lastNativeSelection && !moveNativeSection(lastNativeSelection, direction)) cards?.move(lastNativeSelection, direction); },
+    onStructure: (structure) => {
+      if (!structure) { pageStructure?.update(undefined); return; }
+      const path = structure.path, source = nativeEffectiveSource(path), scope = draftScope(), epoch = generation, scopeKey = setupScope();
+      const proof = scope && editorModule?.captureFileModelState(scope, path);
+      const capture = (item: NativeStructureItem) => {
+        nativeStructureMoveActions.set(item, direction => {
+          if (source === undefined || !proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || currentPath !== path || !editorModule?.isMounted(path) || nativeEffectiveSource(path) !== source) {
+            announce("The source changed or its editor is not open. Select the element again before moving it."); return;
+          }
+          const result = nativeElementSiblingMove(source, item.node, direction);
+          if (result.status === "refused") { announce(result.error); return; }
+          if (result.status === "stayed") return "stayed";
+          return applyNativeChange(path, source, [result.edit], result.selection, "Element moved") ? "moved" : undefined;
+        });
+        item.children.forEach(capture);
+      };
+      structure.items.forEach(capture);
+      pageStructure?.update(structure);
+    },
+    onMove: (direction) => nativeElementMoveAction?.(direction),
     onSectionDrag: (gap) => {
       const outcome = gap && lastNativeSelection ? moveNativeSectionTo(lastNativeSelection, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
@@ -413,7 +432,7 @@ function mountWorkspace() {
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     onMove: (path, item, direction) => {
-      if (!isNativeSectionTag(item.tag)) return undefined;
+      if (!isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
       if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction) ?? "stayed";
       void moveNativeSectionAfterOpening(target, direction);
@@ -1301,6 +1320,9 @@ let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
 
+let nativeElementMoveAction: EditBarModel["onMove"];
+const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down") => "moved" | "stayed" | undefined>();
+
 // One native field keeps the snapshot captured when its popover opened. The
 // edit bar may replace a live callback while retaining that same input node.
 let nativeAttributeFieldSession: { key: string; path: string; source: string; model: { isCurrent(): boolean }; epoch: number; scope: string } | undefined;
@@ -1309,6 +1331,7 @@ let nativeAttributeFieldSession: { key: string; path: string; source: string; mo
 // exact outer source range; when that cannot be told (implied end tags,
 // stray markup) they stay out rather than edit the wrong HTML.
 function renderNativeEditBar(selection: NativePreviewSelection) {
+  nativeElementMoveAction = undefined;
   const preview = nativePreview;
   const editor = editorModule;
   const { path, node, rect } = selection;
@@ -1733,6 +1756,30 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     if (!onMove && items.some((control) => control.kind === "button" && control.icon === "duplicate"))
       onMove = (direction) => { cards?.move(selection, direction); };
   }
+  if (range && node && !selection.host && !onMove && !isNativeSectionTag(selection.tag)) {
+    const scope = draftScope(), epoch = generation, scopeKey = setupScope();
+    const proof = scope && editor.captureFileModelState(scope, path);
+    const applyMove = (result: NativeElementMoveResult) => {
+      if (!proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || currentPath !== path ||
+          lastNativeSelection?.path !== path || lastNativeSelection.node?.join(".") !== node.join(".") || nativeEffectiveSource(path) !== source) {
+        announce("The source or selection changed. Select the element again before moving it."); return;
+      }
+      if (result.status === "refused") { announce(result.error); return; }
+      if (result.status === "stayed") { announce("The element stayed in place."); return; }
+      applyNativeChange(path, source, [result.edit], result.selection, "Element moved");
+    };
+    onMove = direction => applyMove(nativeElementSiblingMove(source, node, direction));
+    for (const direction of ["up", "down"] as const) {
+      const result = nativeElementSiblingMove(source, node, direction);
+      controls.push({ kind: "button", icon: direction, label: `Move ${direction}`, disabled: result.status !== "moved",
+        title: result.status === "refused" ? result.error : result.status === "stayed" ? `Already at the ${direction === "up" ? "start" : "end"} of this container` : `Move ${direction}`,
+        onPress: () => applyMove(result) });
+    }
+    const choices = nativeElementMoveChoices(source, node);
+    if (choices.length) controls.push({ kind: "menu", label: "Move to", items: choices.map(choice => ({ label: choice.label,
+      onSelect: () => applyMove(nativeElementMovePlan(source, node, choice.destination)) })) });
+  }
+  nativeElementMoveAction = onMove;
   // Edit component, Make component… (src/page-builder/components.ts).
   if (componentTools) controls.push(...componentTools.controls(selection));
   // Ask agent: a request about this element for a connected agent, pinned on it.
@@ -1993,6 +2040,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   if (reveal) updateAgentContext();
   pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
   if (!selection.path) {
+    nativeElementMoveAction = undefined;
     nativePreview?.hideEditBar();
     componentTools?.show(undefined);
   }

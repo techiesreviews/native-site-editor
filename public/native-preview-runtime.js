@@ -1979,14 +1979,11 @@
   // ---- End of editor shortcuts ----
 
   document.addEventListener("keydown", function (e) {
-    // Alt+Up/Down moves the selected section; the editor does the move. Other
-    // elements, and typing in a text element, keep the browser's own behaviour.
+    // Alt+Up/Down asks the editor to move the selected source element. Its
+    // guarded native planner decides whether that element can move.
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-      var active = document.activeElement;
-      if (!selected || !selected.isConnected || editing || (active && active.isContentEditable)) return;
-      // A section, or an item of a grid (a card): the editor moves it among its siblings.
-      var gridItem = sectionLike(selected) ? null : gridItemOf(selected);
-      if (!sectionLike(selected) && !(gridItem && gridItem.item === selected)) return;
+      // Text carets, including nested shadow form fields, retain native keys.
+      if (!selected || !selected.isConnected || typingHere(e)) return;
       e.preventDefault();
       emit("move", { direction: e.key === "ArrowUp" ? "up" : "down" });
       return;
