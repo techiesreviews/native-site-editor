@@ -56,10 +56,18 @@ function cssUrls(text: string, add: (value: string, start: number, end: number, 
     }
     return undefined;
   };
-  let at = 0;
+  let at = 0, depth = 0;
+  const imageSets: { depth: number; candidate: boolean }[] = [];
   while (at < text.length) {
     if (text.startsWith("/*", at)) { at = whitespace(at); continue; }
-    if (text[at] === '"' || text[at] === "'") { at = quoted(at)?.after ?? text.length; continue; }
+    if (text[at] === '"' || text[at] === "'") {
+      const value = quoted(at), imageSet = imageSets.at(-1);
+      if (value && imageSet?.depth === depth && imageSet.candidate) {
+        add(cssDecode(text.slice(value.start, value.end)), value.start, value.end, text[at]);
+        imageSet.candidate = false;
+      }
+      at = value?.after ?? text.length; continue;
+    }
     if (text[at] === "@" && /^@import\b/i.test(text.slice(at))) {
       const begin = whitespace(at + 7);
       if (text[begin] === '"' || text[begin] === "'") {
@@ -67,15 +75,22 @@ function cssUrls(text: string, add: (value: string, start: number, end: number, 
         if (value) { add(cssDecode(text.slice(value.start, value.end)), value.start, value.end, text[begin]); at = value.after; continue; }
       }
     }
-    if (/[a-z_-]/i.test(text[at])) {
-      const token = /^[\w-]+/.exec(text.slice(at))![0];
+    if (/[a-z_\\-]/i.test(text[at])) {
+      const token = /^(?:[\w-]|\\(?:[\da-f]{1,6}\s?|[^\r\n\f]))+/i.exec(text.slice(at))?.[0];
+      if (!token) { at++; continue; }
+      const name = cssDecode(token).toLowerCase();
       const after = whitespace(at + token.length);
-      if (token.toLowerCase() === "url" && text[after] === "(") {
+      if (["image-set", "-webkit-image-set"].includes(name) && text[after] === "(") {
+        imageSets.push({ depth: ++depth, candidate: true }); at = after + 1; continue;
+      }
+      if (name === "url" && text[after] === "(") {
+        const imageSet = imageSets.at(-1);
+        if (imageSet?.depth === depth) imageSet.candidate = false;
         const begin = whitespace(after + 1);
         if (text[begin] === '"' || text[begin] === "'") {
           const value = quoted(begin);
           if (value && text[whitespace(value.after)] === ")") add(cssDecode(text.slice(value.start, value.end)), value.start, value.end, text[begin]);
-          at = value?.after ?? text.length; continue;
+          at = value ? whitespace(value.after) + 1 : text.length; continue;
         }
         let end = begin;
         while (end < text.length && text[end] !== ")") { if (text[end] === "\\") end++; end++; }
@@ -85,6 +100,9 @@ function cssUrls(text: string, add: (value: string, start: number, end: number, 
       }
       at += token.length; continue;
     }
+    if (text[at] === "(") depth++;
+    else if (text[at] === ")") { if (imageSets.at(-1)?.depth === depth) imageSets.pop(); depth = Math.max(0, depth - 1); }
+    else if (text[at] === "," && imageSets.at(-1)?.depth === depth) imageSets.at(-1)!.candidate = true;
     at++;
   }
 }
@@ -116,7 +134,9 @@ export function scanMediaReferences(file: string, source: string): MediaReferenc
     if (path) out.push({ file, start, end, value, path, alt, attributeQuote, cssQuote });
   };
   if (/\.css$/i.test(file)) { cssUrls(source, (value, start, end, quote) => add(value, start, end, undefined, undefined, quote)); return out; }
+  let styleEnd = 0;
   for (const tag of startTags(source)) {
+    if (tag.start < styleEnd) continue;
     const rawAlt = startTagAttribute(source, tag, "alt")?.value;
     const alt = rawAlt === undefined ? undefined : decodeHtmlEntities(rawAlt, true);
     for (const name of ["src", "href", "poster", "content", "srcset"]) {
@@ -139,7 +159,9 @@ export function scanMediaReferences(file: string, source: string): MediaReferenc
       cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote));
     }
     if (tag.name === "style") {
-      const end = source.toLowerCase().indexOf("</style", tag.end);
+      const closing = /<\/style(?=[\s/>])/i.exec(source.slice(tag.end));
+      const end = closing ? tag.end + closing.index : -1;
+      styleEnd = end >= 0 ? end + closing![0].length : source.length;
       if (end >= 0) cssUrls(source.slice(tag.end, end), (value, start, finish, quote) => add(value, tag.end + start, tag.end + finish, undefined, undefined, quote));
     }
   }

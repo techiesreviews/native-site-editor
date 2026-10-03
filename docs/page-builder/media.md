@@ -28,6 +28,8 @@ Each batch contains:
 - `expectedPaths`: the effective repository path list captured before asynchronous reads.
 - `expectedSources`: original HTML/CSS and metadata values, including absent metadata.
 - `expectedAssets`: effective binary revisions captured before asynchronous reads.
+  Reference replacements from optimisation use the earlier blob/preview receipt,
+  not the current revision at Add time.
 - `edits`: all prepared text drafts, including `.editor/media.json`.
 - `moves`, `deletes` and `uploads`: binary file mutations and output blobs.
 - `label`: one user-visible history action.
@@ -71,7 +73,8 @@ the full HTML5 character-reference decoder supplied by the site-control commit
 `e3cfcd7` (`src/page-builder/html-entities.ts`). This media commit does not duplicate
 ownership of that module. Srcset scanning handles data-URL commas and descriptors.
 CSS scanning skips comments and ordinary string lookalikes, recognises `url()` and
-quoted `@import`, and decodes CSS escapes. Inline style attributes retain raw offsets
+quoted `@import` and `image-set()` image strings, and decodes CSS identifiers and
+URL escapes (including escaped `url` function names). Inline style attributes retain raw offsets
 through HTML entity decoding. Rewrites preserve query/fragment values and escape
 according to HTML attribute and CSS string context. Descriptive meta content is not
 an image reference; social-image metadata is.
@@ -92,6 +95,16 @@ Worker and invalidates prepared results. Late work cannot reactivate Add using s
 options. Encoding itself does not mutate repository state. Adding all prepared
 families is one host transaction; originals remain when optimised copies replace
 references.
+
+The workspace's library items expose `version` from the host's `assetVersion`.
+The picker captures that revision before reading a thumbnail/detail/bulk blob and
+keeps it with the cached preview bytes. Existing-image optimisation carries the
+same receipt through preparation into `MediaImportRequest.expectedAssetVersion`.
+An import with `replaceFrom` rejects a missing receipt or a changed current binary
+revision. Its final batch retains the preview receipt so the host's final guard
+also rejects replacement during byte staging. Uploads of newly selected local files
+do not require a repository binary receipt. The host must return a stable nonempty
+revision that changes for every effective binary replacement or draft state change.
 
 ## Checks
 

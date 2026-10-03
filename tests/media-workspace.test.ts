@@ -99,7 +99,7 @@ test("upload families, copied metadata and reference replacement share one trans
   const f = fixture(); await f.host.load();
   const output = (value: string, variantWidth?: number) => ({ blob: new Blob([value], { type: "image/webp" }), extension: "webp", variantWidth });
   await f.host.import!([
-    { file: new File(["original"], "images/a.png"), result: { outputs: [output("primary"), output("small", 480)], before: 8, after: 7 }, folder: "images", replaceFrom: "images/a.png", metadata: { alt: "Default", tags: ["hero"] } },
+    { file: new File(["original"], "images/a.png"), result: { outputs: [output("primary"), output("small", 480)], before: 8, after: 7 }, folder: "images", replaceFrom: "images/a.png", expectedAssetVersion: "a-v1", metadata: { alt: "Default", tags: ["hero"] } },
     { file: new File(["second"], "a.png"), result: { outputs: [output("second")], before: 6, after: 6 }, folder: "images" },
   ]);
   assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
@@ -130,9 +130,34 @@ test("used images cannot pass Delete unused and unread sources cannot be called 
   await assert.rejects(f.host.remove(["images/unused.png"], true), /usage is incomplete/);
   assert.equal(f.batches.length, 0);
 });
+test("Delete unused refuses image-set strings and escaped url references", async () => {
+  for (const css of ['.x{background:image-set("/images/unused.png" 1x)}', '.x{background:u\\72l(/images/unused.png)}']) {
+    const f = fixture(); f.text.set("styles/site.css", css); await f.host.load();
+    await assert.rejects(f.host.remove(["images/unused.png"], true), /now referenced/);
+    assert.equal(f.batches.length, 0); assert.equal(f.paths.has("images/unused.png"), true);
+  }
+});
 test("missing atomic host fails closed and scope changes reject before mutation", async () => {
   const f = fixture(); await f.host.load(); f.context.applyBatch = undefined;
   await assert.rejects(f.host.metadata({ "images/a.png": { alt: "Changed" } }), /Atomic image changes are unavailable/);
   f.setLive(false); await assert.rejects(f.host.rename("images/a.png", "garden.png"), /scope changed/);
   assert.equal(f.batches.length, 0);
+});
+test("encoded old bytes cannot replace a newer image; missing preview receipts fail closed", async () => {
+  for (const receipt of [undefined, "a-v1"]) {
+    const f = fixture(); await f.host.load();
+    f.bytes.set("images/a.png", new Blob(["newer bytes B"])); f.versions.set("images/a.png", "a-v2");
+    await assert.rejects(f.host.import!([{ file: new File(["original bytes A"], "images/a.png"), result: { outputs: [{ blob: new Blob(["encoded A"]), extension: "webp" }], before: 16, after: 9 }, folder: "images", replaceFrom: "images/a.png", expectedAssetVersion: receipt }]), /revision was not captured|changed since its optimisation preview/);
+    assert.equal(f.batches.length, 0); assert.equal(f.paths.has("images/a.webp"), false);
+    assert.equal(await f.bytes.get("images/a.png")!.text(), "newer bytes B");
+    assert.ok(f.text.get("index.html")!.includes("/images/a.png"));
+  }
+});
+test("preview revision stays in the final batch even when a read races later", async () => {
+  const f = fixture(); const library = await f.host.load();
+  assert.equal(library.items.find((item) => item.path === "images/a.png")?.version, "a-v1");
+  f.afterStage(() => f.versions.set("images/a.png", "a-v2"));
+  await assert.rejects(f.host.import!([{ file: new File(["original"], "images/a.png"), result: { outputs: [{ blob: new Blob(["encoded"]), extension: "webp" }], before: 8, after: 7 }, folder: "images", replaceFrom: "images/a.png", expectedAssetVersion: "a-v1" }]), /changed while preparing/);
+  assert.equal(f.batches[0].expectedAssets.get("images/a.png"), "a-v1");
+  assert.equal(f.paths.has("images/a.webp"), false); assert.equal(f.bytes.has("images/a.webp"), false);
 });

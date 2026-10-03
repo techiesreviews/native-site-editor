@@ -6,7 +6,7 @@ import { DEFAULT_MEDIA_OPTIMISE, mediaSavings, optimiseMedia, type MediaOptimise
 import type { MediaUsage } from "./media-references";
 import "./media-picker.css";
 
-export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean }
+export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
   key: string; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
 }
@@ -24,7 +24,7 @@ export interface MediaPickerHost {
 }
 export interface MediaImportRequest {
   file: File; result: MediaOptimiseResult; folder: string;
-  replaceFrom?: string; metadata?: MediaMetadata;
+  replaceFrom?: string; metadata?: MediaMetadata; expectedAssetVersion?: string;
 }
 export interface MediaPickerOptions {
   onPick?: (image: MediaImage) => void | Promise<void>;
@@ -86,12 +86,14 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   }));
   const optimiseButton = button("Optimise heavy", () => void task(async () => {
     const files: File[] = [];
+    const receipts = new Map<string, string | undefined>();
     for (const item of library.items.filter((item) => selected.has(item.path))) {
+      const version = item.version;
       const blob = await adapter.blob(item.path);
-      if (blob.size >= WARN_IMAGE_BYTES) files.push(new File([blob], item.path, { type: blob.type || uploadImageType(item.path) }));
+      if (blob.size >= WARN_IMAGE_BYTES) { files.push(new File([blob], item.path, { type: blob.type || uploadImageType(item.path) })); receipts.set(item.path, version); }
     }
     if (!files.length) { tell("No selected images are above 2 MB."); return; }
-    showOptimise(files, true);
+    showOptimise(files, true, receipts);
   }));
   const deleteButton = button("Delete unused", () => confirmDelete([...selected].filter((path) => !library.usage[path]?.files.length), true));
   bulk.append(bulkCount, bulkTags, tagButton, optimiseButton, deleteButton, button("Clear", () => { selected.clear(); draw(); }));
@@ -107,7 +109,7 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   let tag = "";
   const selected = new Set<string>();
   const urls = new Set<string>();
-  const assets = new Map<string, Promise<{ url: string; blob: Blob; width?: number; height?: number }>>();
+  const assets = new Map<string, Promise<{ url: string; blob: Blob; width?: number; height?: number; version?: string }>>();
   let detailVersion = 0;
   let optimisation: AbortController | undefined;
   let busy = false;
@@ -128,12 +130,13 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   function asset(path: string) {
     let pending = assets.get(path);
     if (!pending) {
+      const version = library.items.find((item) => item.path === path)?.version;
       pending = adapter!.blob(path).then(async (blob) => {
         if (!alive) throw new Error("Image library closed.");
         const url = objectUrl(blob);
         const image = new Image(); image.src = url;
         await image.decode().catch(() => undefined);
-        return { url, blob, width: image.naturalWidth || undefined, height: image.naturalHeight || undefined };
+        return { url, blob, width: image.naturalWidth || undefined, height: image.naturalHeight || undefined, version };
       });
       assets.set(path, pending);
     }
@@ -232,7 +235,7 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
     const name = input("New image filename", "text"); name.value = basename(path);
     sheet.append(field("Filename", name), button("Rename", () => void task(async () => {
       await adapter.rename(path, name.value); assets.clear(); await refresh(); sheet.hidden = true; tell("Image renamed and references updated as drafts.");
-    })), button("Copy path", () => void task(async () => { await navigator.clipboard.writeText(`/${path}`); tell("Image path copied."); })), button("Optimise image…", () => showOptimise([new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true)), button("Delete image…", () => confirmDelete([path])));
+    })), button("Copy path", () => void task(async () => { await navigator.clipboard.writeText(`/${path}`); tell("Image path copied."); })), button("Optimise image…", () => showOptimise([new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]))), button("Delete image…", () => confirmDelete([path])));
     if (options.onPick) {
       const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
       const image: MediaImage = { path, width: data.width, height: data.height, alt: insertionAlt.value, variants: mediaVariants(path, library.items.map((item) => item.path)) };
@@ -253,7 +256,7 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
     for (const path of paths) sheet.append(node("p", "media-library__hint", `${path}${library.usage[path]?.files.length ? ` · Referenced by ${library.usage[path].files.join(", ")}` : " · No source references"}`));
     sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), button("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
   }
-  function showOptimise(files: File[], existing = false) {
+  function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     optimisation?.abort();
     detailVersion++; sheet.hidden = false; sheet.replaceChildren();
     const key = `native-site-editor:media-optimise:${library.key}`;
@@ -278,7 +281,7 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
       for (const item of prepared) {
         const folder = existing ? parent(item.file.name) : destination.value.trim().replace(/^\/+|\/+$/g, "");
         if (folder.split("/").some((part) => part === "." || part === "..") || folder.includes("\\")) throw new Error("Choose a repository folder without . or .. segments.");
-        requests.push({ ...item, folder, metadata: existing ? library.metadata[item.file.name] : undefined, replaceFrom: existing && update.checked ? item.file.name : undefined });
+        requests.push({ ...item, folder, metadata: existing ? library.metadata[item.file.name] : undefined, replaceFrom: existing && update.checked ? item.file.name : undefined, expectedAssetVersion: receipts.get(item.file.name) });
       }
       if (!adapter.import) throw new Error("Atomic image imports are unavailable. Refresh the editor and try again.");
       await adapter.import(requests);

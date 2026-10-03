@@ -73,3 +73,58 @@ test("real optimisation worker resizes images and retains SVG and explicit origi
   expect(result.width).toBe(64); expect(result.height).toBe(32); expect(result.type).toBe("image/webp");
   expect(result.svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"'); expect(result.original).toBe("original unsupported bytes");
 });
+
+test("optimisation preview cannot replace a newer binary revision", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await page.evaluate(async (modulePaths) => {
+    const { configureMediaPicker, openMediaPicker } = await import(modulePaths.picker) as typeof import("../../src/page-builder/media-picker");
+    const { createMediaWorkspace } = await import(modulePaths.workspace) as typeof import("../../src/page-builder/media-workspace");
+    let version = "binary-A", commits = 0;
+    let bytes = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>'], { type: "image/svg+xml" });
+    configureMediaPicker(createMediaWorkspace(async () => ({
+      key: "receipt-browser", scope: { account: "test", repoId: 1, repo: "test/repo", branch: "main" },
+      drafts: { get() { return undefined; }, save() { throw new Error("Legacy mutation"); }, remove() { throw new Error("Legacy mutation"); } },
+      paths: ["index.html", "images/a.svg"], items: [{ path: "images/a.svg" }], pages: ["index.html"], components: {},
+      assertLive() {}, async read(path) { return path === "index.html" ? '<img src="/images/a.svg">' : undefined; },
+      async blob() { return bytes; }, assetVersion() { return version; }, async applyBatch() { commits++; },
+      async write() { throw new Error("Legacy mutation"); }, changed() { throw new Error("Legacy mutation"); }, async rename() { throw new Error("Legacy mutation"); }, async remove() { throw new Error("Legacy mutation"); }, async openPage() {},
+    })));
+    Object.assign(window, { mediaReceiptProbe: {
+      replace() { version = "binary-B"; bytes = new Blob(["newer binary B"], { type: "image/svg+xml" }); },
+      state() { return { version, commits }; },
+    } });
+    await openMediaPicker();
+  }, { picker: "/src/page-builder/media-picker.ts", workspace: "/src/page-builder/media-workspace.ts" });
+  const panel = library(page);
+  await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+  await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Add optimised copies", exact: true })).toBeEnabled();
+  await page.evaluate(() => (window as unknown as { mediaReceiptProbe: { replace(): void } }).mediaReceiptProbe.replace());
+  await panel.getByRole("button", { name: "Add optimised copies", exact: true }).click();
+  await expect(panel.locator(".media-library__message")).toContainText("changed since its optimisation preview");
+  const state = await page.evaluate(() => (window as unknown as { mediaReceiptProbe: { state(): { version: string; commits: number } } }).mediaReceiptProbe.state());
+  expect(state).toEqual({ version: "binary-B", commits: 0 });
+});
+
+test("cancelling optimisation aborts pending worker work and keeps Add disabled", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const panel = library(page);
+  const errors: string[] = []; page.on("pageerror", (error) => errors.push(error.message));
+  let release: (() => void) | undefined;
+  await page.route("**/src/page-builder/image-optimise.worker.ts*", async (route) => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.continue().catch(() => undefined);
+  });
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
+  await expect.poll(() => Boolean(release)).toBe(true);
+  await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+  release!();
+  await expect(panel.getByRole("button", { name: "Add optimised copies", exact: true })).not.toBeVisible();
+  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(panel).not.toBeVisible();
+  expect(errors).toEqual([]);
+});

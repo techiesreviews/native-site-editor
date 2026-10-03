@@ -154,6 +154,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (request.metadata) changes[primary] = request.metadata;
       if (replaceFrom) {
         assetGuard(ctx, batch, [replaceFrom]);
+        if (!request.expectedAssetVersion) throw new Error("The original image revision was not captured. Reopen its optimisation preview.");
+        if (ctx.assetVersion!(replaceFrom) !== request.expectedAssetVersion) throw new Error(`${replaceFrom} changed since its optimisation preview. Reopen the preview before adding copies.`);
+        batch.expectedAssets.set(replaceFrom, request.expectedAssetVersion);
         rewriteInto(batch, text, replaceFrom, primary);
       }
       paths.push(primary);
@@ -170,7 +173,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const ctx = active();
       const text = await sources(ctx);
       const metadata = parseMediaMetadata(await ctx.read(MEDIA_METADATA_PATH)); ctx.assertLive();
-      return { key: ctx.key, items: ctx.items, metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
+      return { key: ctx.key, items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion?.(item.path) })), metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
     },
     async blob(path) { return active().blob(path); },
     async metadata(changes) {

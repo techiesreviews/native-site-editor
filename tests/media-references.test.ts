@@ -45,6 +45,27 @@ test("CSS string quote escapes survive URL rewriting", () => {
   const next = rewriteMediaReferences("styles/site.css", source, "images/a.png", "images/b.png");
   assert.equal(next, `.x { background:url('/images/b.png?label=it\\'s'); }`);
 });
+test("image-set quoted images and escaped url function names count as references", () => {
+  const source = '.x{background:image-set("/images/a.png" type("image/png") 1x, url(/images/b.png) 2x)} .y{background:u\\72l(/images/a.png)}';
+  assert.deepEqual(scanMediaReferences("styles/site.css", source).map((ref) => ref.path), ["images/a.png", "images/b.png", "images/a.png"]);
+  const usage = mediaUsageIndex(["images/a.png"], { "index.html": '<link rel="stylesheet" href="/styles/site.css">', "styles/site.css": source }, ["index.html"]);
+  assert.deepEqual(usage["images/a.png"].pages, ["index.html"]);
+  const next = rewriteMediaReferences("styles/site.css", source, "images/a.png", "images/new.png");
+  assert.ok(next.includes('image-set("/images/new.png" type("image/png")'));
+  assert.ok(next.includes('u\\72l(/images/new.png)'));
+});
+test("style closing tags need an exact boundary and cannot expose fake HTML image tags", () => {
+  const source = '<style>.x{content:"</styleish><img src=\'/images/fake.png\'>";background:url(/images/a.png)}</style><img src="/images/b.png">';
+  assert.deepEqual(scanMediaReferences("index.html", source).map((ref) => ref.path), ["images/a.png", "images/b.png"]);
+  const next = rewriteMediaReferences("index.html", source, "images/a.png", "images/new.png");
+  assert.ok(next.includes('background:url(/images/new.png)'));
+  assert.ok(next.includes('</styleish><img src=\'/images/fake.png\'>'));
+});
+test("script close-name lookalikes keep fake images inside raw script text", () => {
+  const source = '<script>const html = "</scriptish><img src=\'/images/fake.png\'>";</script><img src="/images/real.png">';
+  assert.deepEqual(scanMediaReferences("index.html", source).map((ref) => ref.path), ["images/real.png"]);
+  assert.equal(rewriteMediaReferences("index.html", source, "images/fake.png", "images/new.png"), source);
+});
 test("usage traverses nested components and cyclic CSS imports once per page", () => {
   const sources = {
     "index.html": '<site-header></site-header><site-header></site-header>',
