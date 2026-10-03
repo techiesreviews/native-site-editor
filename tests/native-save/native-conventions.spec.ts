@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // A site read from its files (shared/native-project.ts) over
 // `fixtures/native-conventions`, served as the `native-conventions`
@@ -120,7 +121,10 @@ test("the Pages tab labels pages by their titles, and a new page is a folder of 
   await expect(frame(page).locator("site-header .brand")).toHaveText("Conventions");
   await expect(frame(page).locator("main")).toBeEmpty();
   await expect(block(page).getByLabel("Title")).toHaveValue("Second note");
-  await expect(page.locator("#content .view-lines")).toContainText("<title>Second note</title>");
+  // The title is in the file; the code pane shows the page's <head> folded on first view.
+  await expect.poll(async () => (await storedDraft(page, "notes/second-note/index.html"))?.content).toContain("<title>Second note</title>");
+  await expect(page.locator("#content .view-lines")).toContainText("<head>");
+  await expect(page.locator("#content .view-lines")).not.toContainText("<title>");
   await openPages(page);
   await expect(item(page, "Second note")).toBeVisible();
 });

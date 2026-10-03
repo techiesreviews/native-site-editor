@@ -71,6 +71,7 @@ test("in Save to GitHub, a draft of a deleted file says so and is discarded or k
   await expect(panel(page).locator(".publish-menu__note", { hasText: "Deleted on GitHub" })).toHaveCount(2);
 
   await panel(page).getByRole("button", { name: `Discard the draft of ${stalePath}` }).click();
+  await showPublish(page);
   await expect(row(page, stalePath)).toHaveCount(0);
   await panel(page).getByRole("button", { name: `Keep ${notesPath} as a new file` }).click();
   await expect(panel(page).getByRole("button", { name: `Show changes in ${notesPath}` })).toHaveText(/New file, 4 lines/);
