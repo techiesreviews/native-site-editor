@@ -69,7 +69,13 @@ async function expandRow(page: Page, name: string) {
   if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
   await expect(treeRow).toHaveAttribute("aria-expanded", "true");
 }
-const pageTitle = (page: Page) => page.getByRole("group", { name: "Page" }).getByLabel("Title");
+async function expectPageTitle(page: Page, title: string) {
+  await openPages(page);
+  await explorer(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
+  await expect(panel.getByLabel("Title", { exact: true })).toHaveValue(title);
+  await panel.locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
+}
 
 // Opens the folders along `path` in the tree.
 async function expand(page: Page, path: string) {
@@ -262,7 +268,7 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(page.locator("#status")).toHaveText("Created the page Videos at /videos/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "videos/index.html");
   await expect(frame(page).locator("main")).toBeEmpty();
-  await expect(pageTitle(page)).toHaveValue("Videos");
+  await expectPageTitle(page, "Videos");
 
   // Its + adds a subpage in its folder.
   await openPages(page);
@@ -278,7 +284,7 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(explorer(page)).toBeHidden();
   await expect(page.locator("#status")).toHaveText("Created the page My first video at /videos/my-first-video/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "videos/my-first-video/index.html");
-  await expect(pageTitle(page)).toHaveValue("My first video");
+  await expectPageTitle(page, "My first video");
 
   // The same title again is refused; the URL can be changed by hand, and
   // then no longer follows the title. Escape cancels.
@@ -288,7 +294,9 @@ test("a page, a subpage under it and another are made in place as folders of the
   await item(page, "Videos").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Page settings…", "Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
+  await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add subpage" })).toBeFocused();
   await page.keyboard.press("Enter");
   await title.pressSequentially("My first video");
@@ -307,6 +315,9 @@ test("a page, a subpage under it and another are made in place as folders of the
 
   // Another subpage, from the keyboard.
   await page.keyboard.press("Shift+F10");
+  await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Add subpage", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await page.keyboard.type("Tutorials");
   await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/tutorials/");
@@ -339,7 +350,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
     await explorer(page).getByRole("textbox", { name: "New page title" }).fill(text);
     await page.keyboard.press("Enter");
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", `${text.toLowerCase().replace(/ /g, "-")}/index.html`);
-    await expect(pageTitle(page)).toHaveValue(text);
+    await expectPageTitle(page, text);
   };
   const gone = async (text: string) => {
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
@@ -373,7 +384,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(page.locator("#status")).toHaveText("Undid creating the page Intro.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "videos/index.html");
-  await expect(pageTitle(page)).toHaveValue("Videos");
+  await expectPageTitle(page, "Videos");
   await openPages(page);
   await expect(item(page, "Intro")).toHaveCount(0);
   await expect(item(page, "Videos")).not.toHaveAttribute("aria-expanded");

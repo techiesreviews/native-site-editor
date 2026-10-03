@@ -5,6 +5,7 @@ interface Proof { isCurrent(): boolean }
 interface Sources extends Proof { dispose?(): void; apply(): boolean; undo(): boolean; redo(): boolean }
 export interface NativeTextHistoryHost {
   persistentModels?: boolean;
+  retainModel?(path: string): () => void;
   scope: DraftScope;
   store: DraftAccess & { error: string | null };
   isLive(): boolean;
@@ -15,6 +16,7 @@ export interface NativeTextHistoryHost {
   prepareSources(edits: { path: string; expectedSource: string; text: string }[]): Sources | undefined;
 }
 export interface NativeTextHistoryPlan {
+  retainPaths?: readonly string[];
   before: Map<string, SavedDraft | undefined>;
   after: Map<string, SavedDraft | undefined>;
   beforeSources: Map<string, string | undefined>;
@@ -27,11 +29,13 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   const proofs = new Map(paths.map(path => [path, host.modelState(path)]));
   const mounted = new Map(paths.map(path => [path, host.mounted(path)]));
   const edited = paths.filter(path => plan.beforeSources.get(path) !== plan.afterSources.get(path));
-  const modelEdits = edited.filter(path => mounted.get(path)).map(path => ({ path, expectedSource: plan.beforeSources.get(path), text: plan.afterSources.get(path) }));
+  const retained = new Set(plan.retainPaths ?? []);
+  const modelEdits = paths.filter(path => mounted.get(path) && (edited.includes(path) || retained.has(path))).map(path => ({ path, expectedSource: plan.beforeSources.get(path), text: plan.afterSources.get(path) ?? (retained.has(path) ? plan.beforeSources.get(path) : undefined) }));
   if (modelEdits.some(edit => edit.expectedSource === undefined || edit.text === undefined)) return;
   const preparedSources = host.prepareSources(modelEdits as { path: string; expectedSource: string; text: string }[]);
   if (!preparedSources) return;
   const sources: Sources = preparedSources;
+  const leases = host.persistentModels ? paths.map(path => host.retainModel?.(path)).filter((dispose): dispose is () => void => !!dispose) : [];
   let lastError: string | undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
   const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
@@ -124,5 +128,36 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       return false;
     }
   }
-  return { dispose: () => { state = "failed"; sources.dispose?.(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+  function beginOwnUITransition(changing: readonly string[]) {
+    if (!current(state === "applied") || state === "prepared" || state === "failed") {
+      const records = state === "applied" ? plan.after : plan.before, texts = state === "applied" ? plan.afterSources : plan.beforeSources;
+      const draft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
+      const source = [...texts].find(([path, text]) => host.source(path) !== text);
+      const model = [...proofs].find(([, proof]) => !proof.isCurrent());
+      lastError = !host.isLive() ? "The repository changed before opening the page." : draft ? `The draft for ${draft[0]} changed before opening the page.` : source ? `The source for ${source[0]} changed before opening the page.` : model ? `The model for ${model[0]} changed before opening the page.` : "The owned source step changed before opening the page.";
+      return;
+    }
+    if (changing.some(path => proofs.has(path) && !edited.includes(path) && !retained.has(path))) return;
+    const phase = state, changed = new Set(changing);
+    const records = phase === "applied" ? plan.after : plan.before;
+    const texts = phase === "applied" ? plan.afterSources : plan.beforeSources;
+    return (owned: ReadonlyMap<string, Proof>) => {
+      const draft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
+      const source = [...texts].find(([path, text]) => host.source(path) !== text);
+      const unrelated = [...proofs].find(([path, proof]) => !changed.has(path) && !proof.isCurrent());
+      const own = [...changed].find(path => proofs.has(path) && !owned.get(path)?.isCurrent());
+      if (state !== phase || !host.isLive() || draft || source || !sources.isCurrent() || unrelated || own) {
+        lastError = !host.isLive() ? "The repository changed while opening the page." : draft ? `The draft for ${draft[0]} changed while opening the page.` : source ? `The source for ${source[0]} changed while opening the page.` : unrelated ? `The editor for ${unrelated[0]} changed while opening the page.` : own ? `The new editor for ${own} changed while opening the page.` : "The owned source step changed while opening the page.";
+        return false;
+      }
+      // Proofs are captured synchronously at our mount/eviction boundary, never
+      // read afresh after an await. Unrelated model proofs stay untouched.
+      for (const path of changed) if (proofs.has(path)) {
+        proofs.set(path, owned.get(path)!);
+        if (host.mounted(path)) mounted.set(path, true);
+      }
+      return current(phase === "applied");
+    };
+  }
+  return { beginOwnUITransition, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases) dispose(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
 }

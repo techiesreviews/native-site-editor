@@ -94,3 +94,22 @@ test("rollback restores a writer replacement after real source persistence repla
   assert.equal(f.models.get("index.html")!.text, "before");
   assert.equal(f.records.get("index.html"), foreign);
 });
+
+test("own UI completion refuses unrelated model proof changes", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  const finish = receipt.beginOwnUITransition(["index.html"])!;
+  const owned = new Map([["index.html", f.host.modelState("index.html")]]);
+  f.models.get("untouched.css")!.version++;
+  assert.equal(finish(owned), false); assert.equal(receipt.undo(), false);
+});
+test("own UI completion refuses source changes after its exact mount proof", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  const finish = receipt.beginOwnUITransition(["index.html"])!;
+  const owned = new Map([["index.html", f.host.modelState("index.html")]]);
+  f.models.get("index.html")!.version++;
+  assert.equal(finish(owned), false); assert.equal(receipt.undo(), false);
+});
+test("an unrelated path cannot be declared as an owned UI transition", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  assert.equal(receipt.beginOwnUITransition(["untouched.css"]), undefined);
+});

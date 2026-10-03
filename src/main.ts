@@ -56,6 +56,7 @@ import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
+import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { nativeElementChoices, nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
@@ -133,6 +134,14 @@ let activeFileContext: EditorContext["file"] = null;
 let editorRequest = 0;
 let currentPath: string | undefined;
 
+// A compound operation binds only its own page paths to the originating journal.
+const nativeHistoryAliases = new Map<string, { epoch: number; scope: string; session: string }>();
+let nativeHistoryMountCapture: ((path: string) => void) | undefined;
+function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
+  const key = draftKey(scope, path), alias = nativeHistoryAliases.get(key);
+  return alias && alias.epoch === generation && alias.scope === setupScope() ? alias.session : key;
+}
+
 function closeEditor() {
   editorRequest++;
   disposeEditor?.();
@@ -150,9 +159,10 @@ async function openCodeEditor(
     if (request !== editorRequest || !info.user) return;
     disposeEditor = editorModule.mountCodeEditor(
       content,
-      file,
+      file.scope ? { ...file, historyScope: nativeHistorySession(file.scope, file.path) } : file,
       element("editor-toolbar-host"),
     );
+    nativeHistoryMountCapture?.(file.path);
   } catch (error) {
     if (request !== editorRequest) return;
     content.replaceChildren(
@@ -962,7 +972,7 @@ function findEntry(path: string) {
 async function openSecondary(css: string, guard: () => boolean = () => true) {
   if (!currentRepo || !snapshot || !info.user || !guard()) return false;
   const request = ++secondaryRequest;
-  const historyScope = currentPath ? draftKey({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, currentPath) : undefined;
+  const historyScope = currentPath ? nativeHistorySession({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, currentPath) : undefined;
   if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
   const scope = {
     account: info.user.login,
@@ -3870,14 +3880,6 @@ function nativePageLabelOf(file: string) {
   }) ?? file;
 }
 
-// A page created in the Pages tab, for its undo.
-interface NativeCreation {
-  kind: "page";
-  file: string;
-  route: string;
-  title: string;
-}
-
 // Creates a new page as a new draft; routes are found again, the tree drawn
 // and the page opened (the explorer closes). Undo in the editor right after
 // takes it back, as Discard changes on the new file does.
@@ -3935,27 +3937,9 @@ async function commitNativePage(page: {
   content: string;
   done: string;
 }): Promise<string | undefined> {
-  const scope = draftScope();
-  if (!scope) return "Open a repository first.";
-  const draft: SavedDraft = { ...scope, version: 1, path: page.file, baseSha: null, original: "", content: page.content, updatedAt: Date.now() };
-  draftStore().save(draft);
-  const failure = draftStore().error;
-  if (failure) {
-    draftStore().remove(scope, page.file);
-    return failure;
-  }
-  editorModule?.refreshDrafts();
-  commitHistory?.refresh();
-  refreshNativeRoutes();
-  renderFileTree();
-  updateAgentContext();
-  const creation: NativeCreation = { kind: "page", file: page.file, route: page.route, title: page.title };
-  const epoch = generation;
-  await openNewDraft(draft);
-  if (epoch === generation && currentPath === page.file)
-    editorModule?.recordHistoryAction(page.file, () => undoNativeCreation(creation));
-  element("status").textContent = page.done;
-  return undefined;
+  const expectedSources = new Map([...nativeSitePaths(nativeSite!)].map(path => [path, nativeEffectiveSource(path)] as const));
+  return applyNativeOperation({ expectedSources, creates: [{ path: page.file, content: page.content }], open: page.file,
+    done: page.done, undone: `Undid creating the page ${page.title}.` });
 }
 
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
@@ -4342,16 +4326,6 @@ interface NativeOperation {
   focus?: { file?: string; route?: string };
 }
 
-interface NativeOperationRecord {
-  scope: NonNullable<ReturnType<typeof draftScope>>;
-  epoch: number;
-  /** Every path it touched, as its draft was before (none: no draft). */
-  before: Map<string, SavedDraft | undefined>;
-  /** The file open before. */
-  opened?: string;
-  undone: string;
-}
-
 // A branch file's blob and text, for a draft of an edit to it.
 async function branchText(path: string): Promise<{ sha: string; text: string } | undefined> {
   if (!currentRepo) return undefined;
@@ -4453,6 +4427,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true,
       isLive: () => generation === epoch && setupScope() === scopeKey && !versionView,
       source: nativeEffectiveSource, mounted: editor.isMounted,
+      retainModel: path => editor.retainFileModel(scope, path),
       modelState: path => editor.captureFileModelState(scope, path, true),
       evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
       prepareSources: edits => editor.prepareHistorySources(edits, true),
@@ -4473,71 +4448,89 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     announce(done);
     return undefined;
   }
-  const record: NativeOperationRecord = { scope: { ...scope }, epoch, before, opened: currentPath, undone: op.undone };
-  const opened = releaseFiles(touched);
-
-  const now = Date.now();
-  for (const move of moves) moveFile(store, scope, movable.get(move.from)!, move.to, now);
-  for (const path of deletes) deleteFile(store, scope, movable.get(path)!, now);
-  for (const file of creates) store.save({ ...scope, version: 1, path: file.path, baseSha: null, original: "", content: file.content, updatedAt: now });
-  for (const [path, text] of edits) {
-    const draft = store.get(scope, path);
-    const base = bases.get(path);
-    // An edit back to GitHub's text leaves no draft.
-    if (draft && !draft.deleted && draft.baseSha !== null && !draft.movedFrom && text === draft.original) store.remove(scope, path);
-    else if (draft && !draft.deleted) store.save({ ...draft, content: text, updatedAt: now });
-    else if (base && text === base.text) continue;
-    else if (draft?.deleted) store.save({ ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content: text, updatedAt: now });
-    else if (base) store.save({ ...scope, version: 1, path, baseSha: base.sha, original: base.text, content: text, updatedAt: now });
-    else store.save({ ...scope, version: 1, path, baseSha: null, original: "", content: text, updatedAt: now });
+  const editor = editorModule, anchor = currentPath;
+  if (!editor || !anchor || !editor.isMounted(anchor)) return "Open an editable page before changing these files.";
+  if (!before.has(anchor)) before.set(anchor, store.get(scope, anchor));
+  const after = planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: Date.now() });
+  const beforeSources = new Map(expectedSources);
+  if (!beforeSources.has(anchor)) beforeSources.set(anchor, nativeEffectiveSource(anchor));
+  const baseSources = new Map(nativeBaseSources);
+  for (const [path, base] of bases) if (base) baseSources.set(path, base.text);
+  for (const [path, file] of movable) if (file.sha && file.text !== undefined) baseSources.set(path, file.text);
+  // Model proofs guard the currently displayed text separately. During a
+  // deferred page reload, stored drafts are the file graph's source truth.
+  const storedSource = (path: string) => {
+    const record = store.get(scope, path);
+    return record ? record.deleted || record.opaque ? undefined : record.content : baseSources.get(path);
+  };
+  for (const path of after.keys()) beforeSources.set(path, storedSource(path));
+  const afterSources = new Map(beforeSources);
+  for (const [path, record] of after) afterSources.set(path, record ? record.deleted || record.opaque ? undefined : record.content : baseSources.get(path));
+  const untouchedFiles = nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n");
+  const live = () => epoch === generation && scopeKey === setupScope() && !versionView &&
+    nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n") === untouchedFiles;
+  const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
+    source: storedSource, mounted: editor.isMounted,
+    retainModel: path => editor.retainFileModel(scope, path),
+      modelState: path => editor.captureFileModelState(scope, path, true),
+    evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
+    prepareSources: changes => editor.prepareHistorySources(changes, true),
+  }, { before, after, beforeSources, afterSources, retainPaths: [anchor] });
+  let releaseRefresh: (() => void) | undefined = editor.holdHistoryRefresh(anchor);
+  if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? changedOperation; receipt?.dispose(); releaseRefresh(); return error; }
+  const session = nativeHistorySession(scope, anchor);
+  const alias = { epoch, scope: scopeKey, session };
+  for (const path of [...creates.map(file => file.path), ...moves.map(move => move.to)]) nativeHistoryAliases.set(draftKey(scope, path), alias);
+  const moved = new Map(moves.map(move => [move.from, move.to]));
+  const next = op.open ?? moved.get(anchor) ?? (deletes.includes(anchor) ? undefined : anchor);
+  let refreshPending = false;
+  const dispose = () => {
+    receipt.dispose();
+    for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key);
+  };
+  const refresh = async (path: string | undefined, initial = false) => {
+    const changing = [...new Set([anchor, currentPath, next, path].filter((value): value is string => !!value))];
+    const complete = receipt.beginOwnUITransition(changing);
+    if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
+    const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));
+    const capture = (path: string) => { if (live() && changing.includes(path)) owned.set(path, editor.captureFileModelState(scope, path, true)); };
+    nativeHistoryMountCapture = capture;
+    try {
+      if (!live() || !receipt.isCurrent()) return false;
+      await openAfter(path, !initial || !op.open);
+      if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }
+      afterFileChanges();
+      if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(path ? { file: path } : undefined);
+      return true;
+    } finally {
+      if (nativeHistoryMountCapture === capture) nativeHistoryMountCapture = undefined;
+      refreshPending = false;
+      releaseRefresh?.(); releaseRefresh = undefined;
+    }
+  };
+  const transition = (direction: "undo" | "redo") => {
+    if (refreshPending) { announce("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
+    releaseRefresh = editor.holdHistoryRefresh(currentPath ?? anchor);
+    if (!receipt[direction]()) { releaseRefresh(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
+    refreshPending = true;
+    // runVisualHistory must first accept this exact initiating journal. A
+    // macrotask, rather than a microtask, closes it only after that acceptance.
+    setTimeout(() => {
+      void refresh(direction === "undo" ? anchor : next).then(accepted => {
+        if (accepted && live() && receipt.isCurrent()) announce(direction === "undo" ? op.undone : done);
+      }).catch(error => { refreshPending = false; errorMessage(error); });
+    }, 0);
+    announce(direction === "undo" ? op.undone : done);
+    return true;
+  };
+  if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"), dispose)) {
+    receipt.undo(); dispose(); releaseRefresh?.(); releaseRefresh = undefined; afterFileChanges(); return "The editor changed before this operation could be recorded.";
   }
-  const failure = store.error;
-  if (failure) {
-    for (const [path, draft] of before) draft ? store.save(draft) : store.remove(scope, path);
-    afterFileChanges();
-    await openAfter(opened, true);
-    return failure;
-  }
+  refreshPending = true;
   afterFileChanges();
-  const moved = new Map(moves.map((move) => [move.from, move.to]));
-  const next = op.open ?? (opened ? (moved.get(opened) ?? (deletes.includes(opened) ? undefined : opened)) : undefined);
-  if (op.open || opened) await openAfter(next, !op.open);
-  if (epoch !== generation || scopeKey !== setupScope()) return undefined;
-  // Undo in the open file's editor takes the whole operation back.
-  if (currentPath && editorModule?.isMounted(currentPath)) editorModule.recordHistoryAction(currentPath, () => undoNativeOperation(record));
-  if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(op.focus ?? {});
+  if (!await refresh(next, true)) return receipt.error() ?? "The files changed, but the editor changed while opening them. Review the current drafts.";
   announce(done);
   return undefined;
-}
-
-async function undoNativeOperation(record: NativeOperationRecord) {
-  const scope = record.scope;
-  const current = draftScope();
-  if (!current || record.epoch !== generation || current.account !== scope.account || current.repoId !== scope.repoId || current.branch !== scope.branch) return;
-  const store = draftStore();
-  releaseFiles(new Set(record.before.keys()));
-  if (currentPath && !record.before.has(currentPath)) releaseFiles(new Set([currentPath]));
-  for (const [path, draft] of record.before) draft ? store.save(draft) : store.remove(scope, path);
-  afterFileChanges();
-  await openAfter(record.opened, true);
-  if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(record.opened ? { file: record.opened } : undefined);
-  announce(record.undone);
-}
-
-// Undo right after a creation: the new file is discarded. Nothing is undone
-// once the page is on GitHub.
-function undoNativeCreation(creation: NativeCreation) {
-  const scope = draftScope();
-  const what = `${creation.kind} ${creation.title}`;
-  if (!scope || draftStore().get(scope, creation.file)?.baseSha !== null) {
-    element("status").textContent = `The ${what} is saved to GitHub; it is not undone.`;
-    return;
-  }
-  if (!editorModule?.discardNewFile(creation.file)) {
-    editorModule?.dropDraft(scope, creation.file);
-    discardedNewPages([creation.file]);
-  }
-  element("status").textContent = `Undid creating the ${what}.`;
 }
 
 // New page files discarded (Discard changes, an undo): routes are found
@@ -5808,8 +5801,11 @@ async function mountSource(
   }
   if (nativeModeActive() && !linkedStyle && options.linkDefaultStyle !== false) {
     // A component opens with its own stylesheet beside it; a page with the shared one.
-    if (nativeComponentTagForPath(path)) void openComponentLinkedStyle(path);
-    else void openDefaultLinkedStyle(path);
+    const release = editorModule?.holdHistoryRefresh(path);
+    try {
+      if (nativeComponentTagForPath(path)) await openComponentLinkedStyle(path);
+      else await openDefaultLinkedStyle(path);
+    } finally { release?.(); }
   }
 }
 

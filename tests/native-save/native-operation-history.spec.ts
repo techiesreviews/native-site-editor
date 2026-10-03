@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
 async function history(page: Page, direction: "undo" | "redo") {
-  expect(await page.evaluate(async direction => (await import("/src/components/code-editor.ts")).runVisualHistory(direction, "index.html"), direction)).toBe(true);
+  const accepted = await page.evaluate(async direction => (await import("/src/components/code-editor.ts")).runVisualHistory(direction, "index.html"), direction);
+  expect(accepted, await page.locator("#status").textContent() ?? "history status").toBe(true);
 }
 test("metadata compound history survives page remounts and preserves the earlier visual step through Undo and Redo", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -136,4 +137,31 @@ test("clearing a compound journal releases its retained clean Monaco model", asy
     return { retained, released: !proof.isCurrent() };
   });
   expect(result).toEqual({ retained: true, released: true });
+});
+
+test("new page and navigation cross their original history anchor through two Undo and Redo steps", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  const original = await source(page);
+  await frame(page).locator(".hero h1").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("combobox", { name: "Heading level" }).selectOption("h2");
+  await expect(frame(page).locator(".hero h2")).toBeVisible();
+  const heading = await source(page);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "+ New page", exact: true }).click();
+  const title = page.getByRole("textbox", { name: "New page title", exact: true });
+  await title.fill("Services");
+  await page.getByLabel("Add to navigation", { exact: true }).check();
+  await title.press("Enter");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "services/index.html");
+  await expect(page.locator("#status")).toContainText("Created Services and added it to navigation as drafts.");
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "services/index.html"))).toBe(true);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect.poll(() => source(page)).toBe(heading);
+  await history(page, "undo"); await expect.poll(() => source(page)).toBe(original);
+  await history(page, "redo"); await expect.poll(() => source(page)).toBe(heading);
+  await history(page, "redo");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "services/index.html");
+  await expect(frame(page).locator("site-header nav a[href='/services/']")).toHaveText("Services");
 });

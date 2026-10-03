@@ -110,6 +110,7 @@ export interface SourceFile {
 }
 
 interface Draft {
+  historySession?: string;
   original: string;
   model: monaco.editor.ITextModel;
   view: monaco.editor.ICodeEditorViewState | null;
@@ -144,7 +145,7 @@ type MountedEditor = {
   session: string;
   readOnly: boolean;
   ensureHistoryTarget?: (path: string) => Promise<boolean>;
-  refresh(): void;
+  refresh(persist?: boolean): void;
 };
 type VisualHistoryEntry = {
   model: monaco.editor.ITextModel;
@@ -171,12 +172,41 @@ export function refreshDrafts() {
 export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
 // Legacy actions run once on Undo; actions with Redo move between both stacks.
 type HistoryAction = { path: string; action: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
+const disposeAction = (entry: HistoryAction) => { try { entry.dispose?.(); } catch { /* Cleanup must not interrupt journal disposal. */ } };
 const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
 const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: (VisualHistoryEntry | HistoryAction)[] }>();
 const runningVisualHistory = new Set<string>();
+const refreshingVisualHistory = new Map<string, number>();
+/** Keep the shared journal unavailable while its accepted action remounts UI. */
+export function holdHistoryRefresh(path: string) {
+  const session = mounted.get(path)?.session;
+  if (!session) return () => {};
+  refreshingVisualHistory.set(session, (refreshingVisualHistory.get(session) ?? 0) + 1);
+  for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false);
+  let released = false;
+  return () => { if (released) return; released = true; const count = (refreshingVisualHistory.get(session) ?? 1) - 1; if (count) refreshingVisualHistory.set(session, count); else refreshingVisualHistory.delete(session); for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false); };
+}
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
 // A live compound receipt owns these exact Monaco steps across page mounts.
 const historyReceiptModels = new WeakMap<monaco.editor.ITextModel, number>();
+function retainHistoryModel(model: monaco.editor.ITextModel) {
+  historyReceiptModels.set(model, (historyReceiptModels.get(model) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return; released = true;
+    const count = (historyReceiptModels.get(model) ?? 1) - 1;
+    if (count) historyReceiptModels.set(model, count); else historyReceiptModels.delete(model);
+    for (const [key, draft] of drafts) if (!count && draft.model === model && !model.isDisposed() &&
+        ![...mounted.values()].some(editor => editor.model === model) && draft.baseSha !== null && model.getValue() === draft.original) {
+      model.dispose(); drafts.delete(key);
+    }
+  };
+}
+/** Lease the captured model identity, including clean inputs, until a receipt is disposed. */
+export function retainFileModel(scope: DraftScope, path: string) {
+  const model = drafts.get(draftKey(scope, path))?.model;
+  return model && !model.isDisposed() ? retainHistoryModel(model) : () => {};
+}
 // A companion of a single (ungrouped) edit runs whenever the model itself is undone to before
 // that edit or redone to after it, by the toolbar, the keyboard or Monaco's own stack once the
 // visual history has been cleared by typing, so the other file never drifts from the edit.
@@ -206,7 +236,7 @@ function recordVisualEdit(session: string, path: string, model: monaco.editor.IT
     last.after = model.getAlternativeVersionId();
     if (companion) (last.companions ??= []).push(companion);
   } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined });
-  for (const entry of history.redo) if (isAction(entry)) entry.dispose?.();
+  for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
   history.redo.length = 0;
   for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
 }
@@ -216,10 +246,10 @@ function closeVisualGroup(session: string, model: monaco.editor.ITextModel) {
 }
 function invalidateVisualHistory(session: string) {
   const history = visualHistory.get(session);
-  if (history) { for (const entry of [...history.undo, ...history.redo]) if (isAction(entry)) entry.dispose?.(); history.undo.length = 0; history.redo.length = 0; }
+  if (history) { for (const entry of [...history.undo, ...history.redo]) if (isAction(entry)) disposeAction(entry); history.undo.length = 0; history.redo.length = 0; }
 }
 function canRunVisualHistory(session: string, direction: "undo" | "redo", fallback: monaco.editor.ITextModel) {
-  if (runningVisualHistory.has(session)) return false;
+  if (runningVisualHistory.has(session) || refreshingVisualHistory.has(session)) return false;
   const entry = historyFor(session)[direction];
   const candidate = entry.at(-1);
   if (isAction(candidate)) return true;
@@ -239,7 +269,7 @@ export function recordHistoryAction(path: string, action: HistoryActionCallback,
   if (!editor) return false;
   const history = historyFor(editor.session);
   history.undo.push({ path, action, redo, dispose });
-  for (const entry of history.redo) if (isAction(entry)) entry.dispose?.();
+  for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
   history.redo.length = 0;
   for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
   return true;
@@ -269,19 +299,11 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
   const owned = steps.filter((step): step is NonNullable<typeof step> => Boolean(step));
   if (new Set(owned.map((step) => step.editor.session)).size > 1 || new Set(owned.map((step) => step.model)).size !== owned.length) return undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
-  if (persistent) for (const step of owned) historyReceiptModels.set(step.model, (historyReceiptModels.get(step.model) ?? 0) + 1);
+  const leases = persistent ? owned.map(step => retainHistoryModel(step.model)) : [];
   let released = false;
-  const release = () => {
-    if (!persistent || released) return;
-    released = true;
-    for (const step of owned) {
-      const count = (historyReceiptModels.get(step.model) ?? 1) - 1;
-      if (count) historyReceiptModels.set(step.model, count); else historyReceiptModels.delete(step.model);
-      for (const [key, draft] of drafts) if (!count && draft.model === step.model && ![...mounted.values()].some(editor => editor.model === step.model) && draft.baseSha !== null && draft.model.getValue() === draft.original) { draft.model.dispose(); drafts.delete(key); }
-    }
-  };
+  const release = () => { if (released) return; released = true; for (const dispose of leases) dispose(); };
   const matchesStep = (step: typeof owned[number], after: boolean) =>
-    (persistent ? [...drafts.values()].some(draft => draft.model === step.model) &&
+    (persistent ? [...drafts.values()].some(draft => draft.model === step.model && draft.historySession === step.session) &&
       (!mounted.has(step.path) || mounted.get(step.path)?.model === step.model && mounted.get(step.path)?.session === step.session && !mounted.get(step.path)?.readOnly)
       : mounted.get(step.path) === step.editor && !step.editor.readOnly && step.editor.session === step.session) && !step.model.isDisposed() && step.model.getAlternativeVersionId() === (after ? step.after : step.before) &&
     step.model.getValue() === (after ? step.text : step.expectedSource);
@@ -393,10 +415,10 @@ export function forgetDraftModel(scope: DraftScope, path: string) {
 export function captureFileModelState(scope: DraftScope, path: string, persistent = false) {
   const key = draftKey(scope, path), editor = mounted.get(path), cached = drafts.get(key);
   const model = editor?.model ?? cached?.model;
-  const session = editor?.session;
+  const session = editor?.session ?? cached?.historySession;
   const version = model?.getAlternativeVersionId(), source = model?.getValue();
   return { isCurrent: () => drafts.get(key) === cached &&
-    (persistent && editor ? (!mounted.has(path) || mounted.get(path)?.model === model && (!session || mounted.get(path)?.session === session))
+    (persistent && cached ? cached.historySession === session && (!mounted.has(path) || mounted.get(path)?.model === model && (!session || mounted.get(path)?.session === session))
       : mounted.get(path) === editor && (!editor || editor.session === session)) && (!model || !model.isDisposed() &&
       model.getAlternativeVersionId() === version && model.getValue() === source) };
 }
@@ -425,7 +447,7 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
   if (fallback?.readOnly) return false;
   const session = fallback?.session ?? [...mounted.values()].at(-1)?.session;
   if (!session) return false;
-  if (runningVisualHistory.has(session)) return false;
+  if (runningVisualHistory.has(session) || refreshingVisualHistory.has(session)) return false;
   runningVisualHistory.add(session);
   try {
     const history = historyFor(session);
@@ -445,7 +467,7 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
           !ownerPath || mounted.get(ownerPath) !== owner || owner.session !== session || owner.model.isDisposed()) return false;
       source.pop();
       if (last.redo) target.push(last);
-      else history.redo.length = 0;
+      else { disposeAction(last); for (const entry of history.redo) if (isAction(entry)) disposeAction(entry); history.redo.length = 0; }
       return true;
     }
     const entry = last;
@@ -662,6 +684,7 @@ export function mountCodeEditor(
     drafts.set(file.key, draft);
   }
   const current = draft;
+  current.historySession = session;
   // A successful publish whose response was lost is recognized on reopening.
   if (
     file.baseSha !== null &&
@@ -852,7 +875,7 @@ export function mountCodeEditor(
   const registration: MountedEditor = {
     apply, range, discardNew: () => discardNew(), model: current.model, session, readOnly: !!file.readOnly,
     ensureHistoryTarget: file.ensureHistoryTarget,
-    refresh: () => update(),
+    refresh: (persist = true) => update(undefined, persist),
   };
   mounted.set(file.path, registration);
   const cssProviders: monaco.IDisposable[] = [];
@@ -1097,7 +1120,7 @@ export function mountCodeEditor(
   host.replaceChildren(root);
   const workspace = host.closest(".workspace");
   workspace?.classList.add("workspace--code");
-  function update(changes?: { start: number; end: number; text: string }[]) {
+  function update(changes?: { start: number; end: number; text: string }[], persist = true) {
     // Back to GitHub's version as it is now: no change, whatever blob the
     // draft began from (a stale one, or none for a path GitHub has since).
     if (!file.readOnly && typeof file.baseSha === "string" && current.baseSha !== file.baseSha && current.model.getValue() === file.source) {
@@ -1108,7 +1131,8 @@ export function mountCodeEditor(
     }
     const changed =
       current.baseSha === null || current.model.getValue() !== current.original;
-    if (file.scope && current.baseSha !== undefined && !file.readOnly) {
+    if (persist && file.scope && current.baseSha !== undefined && !file.readOnly &&
+        (!refreshingVisualHistory.has(session) || !!changes && !routedModelChanges.has(current.model))) {
       // A renamed file keeps where it came from (src/file-changes.ts).
       const stored = current.baseSha === null ? store.get(file.scope, file.path) : undefined;
       const moved = stored && !stored.deleted
@@ -1130,7 +1154,7 @@ export function mountCodeEditor(
       // Refreshing controls is not a source edit. Preserve the exact persisted
       // record so compound history can distinguish its writes from other edits.
       // Failed persistence still retries, and a return to baseline still prunes.
-      current.persisted = current.persisted === true && unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(draft);
+      current.persisted = current.persisted === true && unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(unchanged && existing ? existing : draft);
     }
     conflictBar.hidden = !conflict && !deletedUpstream;
     publisher?.refresh();

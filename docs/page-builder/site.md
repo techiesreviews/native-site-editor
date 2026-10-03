@@ -99,9 +99,14 @@ journal, discarding it, or disposing the receipt releases that lease; an unused
 clean model is then disposed. A new model or a changed alternative version is
 never accepted as the old owned step. Foreign draft preservation covers the
 operation boundary; a later unrelated editor save remains a separate operation.
-Structural create,
-move and delete operations still use their existing host path; their compound
-Redo and page-switch handling are a separate integration step.
+Structural create, move and delete operations use the same guarded receipt.
+Their draft changes are planned in memory before any store write. The journal
+stays anchored to the originating page session while its own page switches run
+after the journal accepts Undo or Redo. Those switches retain exact cached input
+models and advance only captured own mount proofs; every other source, draft,
+model and scope proof must remain unchanged. Another history action is blocked
+until the owned editor transition settles. This does not accept an arbitrary new
+model or an external edit as an owned transition.
 
 ## Validation
 
@@ -115,3 +120,6 @@ the fake GitHub boundary. Set `ASE_TEST_PORT` for an isolated browser run.
 staleness, and mounted-record reanchoring boundaries. The production browser test
 `tests/native-save/native-operation-history.spec.ts` checks a visual edit and a
 metadata batch through two Undo and two Redo steps with exact source assertions.
+It also checks page creation plus navigation across the original page anchor,
+and metadata history after leaving and reopening a page.
+`tests/native-structural-history.test.ts` checks the draft-only structural planner.
