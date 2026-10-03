@@ -174,6 +174,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const socialPanel = dialog.category("Social", "link");
       const details = section(generalPanel, "Page details");
       const title = textField(details, "Title", values.title, "Shown in browser tabs and search results.");
+      title.placeholder = new DOMParser().parseFromString(options.source, "text/html").querySelector("h1")?.textContent?.trim() ?? "";
       const description = textField(details, "Description", values.description, "A short summary for search results.");
       const url = createUrlChange({
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,

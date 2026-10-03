@@ -233,8 +233,8 @@ function mountWorkspace() {
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
   const settingsPage = () => nativeSite?.routes[nativePreview?.route() ?? ""] ??
-    (currentPath && nativeRouteForPath(currentPath) ? currentPath : nativeSite?.routes["/"]);
-  element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); });
+    (currentPath && nativeRouteForPath(currentPath) ? currentPath : undefined);
+  element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); else announce("Open a page to edit its settings."); });
   element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); });
   disposeExplorerImages();
   configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
