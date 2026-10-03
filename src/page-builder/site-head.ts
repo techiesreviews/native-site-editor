@@ -42,6 +42,11 @@ function fieldOf(html: string, tag: StartTag): HeadField | undefined {
   return undefined;
 }
 
+/** Whether the head writer recognizes an authored field, including an empty value. */
+export function hasHeadField(html: string, field: HeadField): boolean {
+  return headTags(html).tags.some(tag => fieldOf(html, tag) === field);
+}
+
 export function readHeadSettings(html: string): Record<HeadField, string> {
   const out = Object.fromEntries(order.map((key) => [key, ""])) as Record<HeadField, string>;
   const { tags, end } = headTags(html);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeText, readHeadSettings, upsertHeadTag, withPageField, withSearchHidden } from "../src/page-builder/site-head";
+import { decodeText, hasHeadField, readHeadSettings, upsertHeadTag, withPageField, withSearchHidden } from "../src/page-builder/site-head";
 
 const page = `<!doctype html>\n<html><head>\n  <meta charset="utf-8">\n  <title>Home &amp; garden</title>\n  <meta name='description' content='Hello'>\n  <link rel="stylesheet" href="/styles/site.css">\n</head><body><p>Keep me</p></body></html>`;
 
@@ -96,4 +96,14 @@ test("unchanged named-entity metadata keeps original bytes", () => {
   assert.equal(values.description, "Café ≂̸");
   assert.equal(upsertHeadTag(upsertHeadTag(html, "title", values.title), "description", values.description), html);
   assert.ok(upsertHeadTag(html, "title", "Café & tea").includes("<title>Café &amp; tea</title>"));
+});
+
+
+test("authored field presence shares exact head-writer matching, including empty tags", () => {
+  const html = page.replace('</head>', `<meta title="property=og:title" property='og:title' content=''><meta property="og&#58;description" content="Literal encoded key"></head>`);
+  assert.equal(hasHeadField(html, 'og:title'), true);
+  assert.equal(readHeadSettings(html)['og:title'], '');
+  assert.equal(hasHeadField(html, 'og:description'), false);
+  assert.equal(hasHeadField(page.replace('<p>', '<meta property="og:title" content="Body"><p>'), 'og:title'), false);
+  assert.equal(hasHeadField(page.replace('</head>', '<meta title="property=og:title" name="other" content="Fake"></head>'), 'og:title'), false);
 });

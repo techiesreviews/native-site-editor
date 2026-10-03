@@ -1,9 +1,7 @@
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
-import { headTags, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
-import { startTagAttribute } from "../../shared/html-source";
-import { decodeHtmlEntities } from "../page-builder/html-entities";
+import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
 import type { NavigationLink } from "../page-builder/site-navigation";
 import "./site-settings.css";
 
@@ -170,8 +168,6 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
   return {
     page(options: { path: string; source: string; route: string; images: string[] }) {
       const values = readHeadSettings(options.source);
-      const authoredSocial = new Set(headTags(options.source).tags.filter(tag => tag.name === "meta").map(tag =>
-        decodeHtmlEntities((startTagAttribute(options.source, tag, "name") ?? startTagAttribute(options.source, tag, "property"))?.value ?? "", true).toLowerCase()));
       const dialog = settingsDialog("Page settings", `This page · ${options.route}`);
       const generalPanel = dialog.category("General", "file");
       const searchPanel = dialog.category("Search", "list-checks");
@@ -183,7 +179,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,
         plan: (value) => handlers.planUrl(options.path, value),
         apply: async (value, keep) => {
-          const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
+          const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
           if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";
           const error = await handlers.applyUrl(options.path, value, keep);
           if (!error) dialog.root.close();
@@ -249,16 +245,20 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       // URL changes with that initial UI state, rather than absent raw tags.
       const initialSocialTitle = socialTitle.value;
       const initialSocialDescription = socialDescription.value;
+      const initialTitleLink = titleLink.checked;
+      const initialDescriptionLink = descriptionLink.checked;
       applyButton(dialog, "Apply page settings", async () => {
         if (canonical.value && !/^https?:\/\//i.test(canonical.value.trim())) return "Canonical URL must start with https:// or http://.";
         if (theme.value && !CSS.supports("color", theme.value)) return "Enter a valid CSS colour for the theme colour.";
         const desired: Partial<Record<HeadField, string>> = { title: title.value, description: description.value, "og:image": image.value, canonical: canonical.value, robots: hidden.checked === /\b(noindex|none)\b/i.test(values.robots) ? values.robots : withSearchHidden(values.robots, hidden.checked), "theme-color": theme.value };
         const fields: Partial<Record<HeadField, string>> = {};
         for (const [field, value] of Object.entries(desired)) if (value !== values[field as HeadField]) fields[field as HeadField] = value;
-        // Linked fallbacks are preview values, not newly authored metadata.
-        // Existing linked tags follow changes; independent edits author/remove tags.
-        if (socialTitle.value !== initialSocialTitle && (!titleLink.checked || authoredSocial.has("og:title"))) fields["og:title"] = socialTitle.value;
-        if (socialDescription.value !== initialSocialDescription && (!descriptionLink.checked || authoredSocial.has("og:description"))) fields["og:description"] = socialDescription.value;
+        // Compare independent values with the resulting authored value or
+        // page fallback. Unlinking can preserve old social text without typing.
+        const effectiveTitle = hasHeadField(options.source, "og:title") ? values["og:title"] : title.value;
+        const effectiveDescription = hasHeadField(options.source, "og:description") ? values["og:description"] : description.value;
+        if ((title.value !== values.title || titleLink.checked !== initialTitleLink || socialTitle.value !== initialSocialTitle) && socialTitle.value !== effectiveTitle) fields["og:title"] = socialTitle.value;
+        if ((description.value !== values.description || descriptionLink.checked !== initialDescriptionLink || socialDescription.value !== initialSocialDescription) && socialDescription.value !== effectiveDescription) fields["og:description"] = socialDescription.value;
         const error = await handlers.applyPage(options.path, fields);
         if (!error) linkPreferences.set(options.path, { title: titleLink.checked, description: descriptionLink.checked });
         return error;

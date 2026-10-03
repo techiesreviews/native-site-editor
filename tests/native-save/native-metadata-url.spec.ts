@@ -105,3 +105,58 @@ test("authored linked social tags follow changed page details", async ({ page, b
   expect(source).toContain('property="og:title" content="Authored linked title"');
   expect(source).toContain('property="og:description" content="Authored linked description"');
 });
+
+test("unlinking untouched social text preserves its old title and description when page details change", async ({ page, baseURL }) => {
+  const path = "notes/first-note/index.html";
+  await page.goto(`${baseURL}/#repo=531&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  // Give this no-OG page an authored description so both independent values
+  // must survive a changed primary value, rather than only testing emptiness.
+  await page.evaluate(async path => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource(path)!;
+    const at = source.indexOf("</head>");
+    editor.replaceActiveRange({ path, start: at, end: at, expected: "", text: '<meta name="description" content="Original independent description">\n' });
+  }, path);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
+  const originalTitle = await panel.getByLabel("Title", { exact: true }).inputValue();
+  const originalDescription = await panel.getByLabel("Description", { exact: true }).inputValue();
+  expect(originalDescription).toBe("Original independent description");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
+  await panel.getByLabel("Use page title", { exact: true }).uncheck();
+  await panel.getByLabel("Use page description", { exact: true }).uncheck();
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
+  await panel.getByLabel("Title", { exact: true }).fill("Changed primary title");
+  await panel.getByLabel("Description", { exact: true }).fill("Changed primary description");
+  await panel.getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(panel).toBeHidden();
+  const result = await page.evaluate(async path => {
+    const source = (await import("/src/components/code-editor.ts")).getMountedSource(path)!;
+    return { source, values: (await import("/src/page-builder/site-head.ts")).readHeadSettings(source) };
+  }, path);
+  expect(result.values.title).toBe("Changed primary title");
+  expect(result.values.description).toBe("Changed primary description");
+  expect(result.values["og:title"]).toBe(originalTitle);
+  expect(result.values["og:description"]).toBe(originalDescription);
+  expect(result.source).toContain('property="og:title"');
+  expect(result.source).toContain('property="og:description"');
+});
+
+test("URL changes refuse an unsaved link preference", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=531&branch=main&file=notes/first-note/index.html`);
+  await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+  const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
+  await panel.getByLabel("Use page title", { exact: true }).uncheck();
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
+  const url = panel.getByRole("textbox", { name: "URL", exact: true });
+  await url.fill("/notes/unlinked/"); await url.press("Enter");
+  await expect(panel).toContainText("Apply page details before changing the URL");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "notes/first-note/index.html");
+});
