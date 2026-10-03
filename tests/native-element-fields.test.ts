@@ -115,3 +115,19 @@ test("default and ASCII-case methods remain honest while literal URL entities su
     assert.equal(src,'javascript:alert(1)'); assert.ok('error' in write(encoded,{src}));
   } finally { await browser.close(); }
 });
+
+test("an earlier malformed start tag cannot expose attribute text as a later input target", async () => {
+  const source = "<button title=a'b x='>' <input type=submit formaction=/x>'>Go</button>";
+  const apparent = startTags(source).find(tag => tag.name === 'input')!;
+  assert.ok(apparent);
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage(); await page.setContent(source);
+    assert.equal(await page.locator('input').count(), 0);
+    assert.equal(await page.locator('button').textContent(), "'>Go");
+    assert.ok('error' in locateNativeFieldElement(source, apparent));
+    assert.deepEqual(nativeElementFields(source, apparent), []);
+  } finally { await browser.close(); }
+  const valid = '<form method="POST"></form>';
+  assert.deepEqual(write(valid, {}), {expectedSource:valid,edits:[]});
+});

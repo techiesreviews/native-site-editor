@@ -47,7 +47,9 @@ function attributeNames(source: string, tag: StartTag): string[] | undefined {
 
 /** Capture the source snapshot with an exact parsed start tag; foreign/inert content is excluded. */
 export function locateNativeFieldElement(source: string, tag: StartTag): LocatedNativeFieldElement | { error: string } {
-  const actual = startTags(source).find((item) => item.start === tag.start);
+  const tags = startTags(source);
+  if (!tags.every((item) => source[item.end - 1] === ">" && attributeNames(source, item))) return { error: "The document has an ambiguous start-tag boundary. Repair it before editing fields." };
+  const actual = tags.find((item) => item.start === tag.start);
   if (!actual || actual.name !== tag.name || actual.end !== tag.end || actual.nameEnd !== tag.nameEnd || source[actual.end - 1] !== ">") return { error: "That element no longer matches the source." };
   if (!attributeNames(source, actual)) return { error: "That start tag has an incomplete attribute value." };
   let blocked = false;
