@@ -328,6 +328,7 @@ test("refresh refuses stale delete confirmations and requires fresh usage", asyn
   await expect(library).not.toHaveAttribute("aria-busy", "true");
   await library.getByRole("button", { name: "Delete image…", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("Used on 1 pages");
+  await library.getByRole("button", { name: "Cancel", exact: true }).focus();
   await page.evaluate(() => {
     (window as any).staleImageDelete = [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button => button.textContent === "Delete images");
     (window as any).focusProbe.refresh();
@@ -335,8 +336,43 @@ test("refresh refuses stale delete confirmations and requires fresh usage", asyn
   await expect(library.getByRole("button", { name: "Delete images", exact: true })).toBeHidden();
   await page.evaluate(() => (window as any).releaseFocusLoad());
   await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await expect(thumb).toBeFocused();
   await page.evaluate(() => (window as any).staleImageDelete.click());
-  await expect(library.locator(".media-library__message")).toContainText("Reopen Delete");
+  await expect(library.locator(".media-library__message")).toContainText("This delete confirmation has expired");
   expect(await page.evaluate(() => (window as any).focusProbe.removed())).toBe(0);
   await page.evaluate(() => (window as any).focusProbe.dispose());
+});
+
+test("cancelled delete stays dismissed without a reopen notice on refresh", async ({ page, baseURL }) => {
+  await mountDelayedReferences(page, baseURL);
+  const library = pane(page);
+  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+  await library.getByRole("button", { name: "Delete image…", exact: true }).click();
+  await library.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.evaluate(() => (window as any).focusProbe.refresh());
+  await expect(library.locator(".media-library__message")).toBeEmpty();
+  await page.evaluate(() => (window as any).releaseFocusLoad());
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await expect(library.locator(".media-library__message")).toBeEmpty();
+  await page.evaluate(() => (window as any).focusProbe.dispose());
+});
+test("a failed detail image clears its focus request and later refresh preserves grid focus", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const host = document.createElement("div"); host.style.cssText = "position:fixed;right:0;top:60px;width:440px;height:600px;z-index:1000;background:var(--surface)"; document.body.append(host);
+    const view = createMediaLibraryView(host, {
+      async load() { return { key: "failure", items: [{ path: "images/broken.svg", version: "A" }], metadata: {}, usage: {} }; },
+      async blob() { throw new Error("Image fetch failed"); }, async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+    });
+    Object.assign(window, { failedFocusProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); } } }); await view.ready;
+  });
+  const library = pane(page), thumb = library.getByRole("button", { name: "Details for images/broken.svg", exact: true });
+  await thumb.focus(); await page.keyboard.press("Enter");
+  await expect(library.locator(".media-library__sheet")).toBeHidden();
+  await expect(thumb).toBeFocused();
+  await page.evaluate(() => (window as any).failedFocusProbe.refresh());
+  await expect(thumb).toBeFocused();
+  await page.evaluate(() => (window as any).failedFocusProbe.dispose());
 });

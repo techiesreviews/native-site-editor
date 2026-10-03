@@ -179,12 +179,17 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     ]);
     const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
     loadingLibrary = true;
-    if (sheet.dataset.mode === "delete") {
+    if (!sheet.hidden && sheet.dataset.mode === "delete") {
+      const active = document.activeElement;
+      const returnPath = sheet.dataset.deletePath;
+      const restoreBrowseFocus = active instanceof Element && sheet.contains(active);
       detailVersion++; sheet.hidden = true; delete sheet.dataset.mode;
+      if (restoreBrowseFocus && (document.activeElement === active || document.activeElement === document.body)) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(returnPath ?? "")}"] button`)?.focus();
       tell("Repository images are refreshing. Reopen Delete after the refresh to check current references.");
     }
     let next: MediaLibrary;
     try { next = await adapter.load(); }
+    catch (error) { if (request === refreshVersion) pendingDetailFocus = undefined; throw error; }
     finally { if (request === refreshVersion) loadingLibrary = false; }
     if (!alive || request !== refreshVersion) return;
     for (const item of next.items) {
@@ -302,6 +307,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     if (!alive) return;
     const initiatingFocus = document.activeElement;
     if (!background) pendingDetailFocus = { path, active: initiatingFocus };
+    const focusRequest = pendingDetailFocus;
     delete sheet.dataset.mode;
     optimisation?.abort();
     detailPath = path;
@@ -310,10 +316,18 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     if (!modal && !background) dialog.scrollTop = 0;
     if (loadingLibrary) return;
     const data = await asset(path).catch((error) => { tell(String(error)); return undefined; });
-    if (!alive || loadingLibrary || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) return;
+    if (!alive || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) {
+      if (pendingDetailFocus === focusRequest) pendingDetailFocus = undefined;
+      if (alive && version === detailVersion && !data) {
+        assets.delete(path); sheet.hidden = true; detailPath = undefined;
+        if (document.activeElement === document.body || document.activeElement === initiatingFocus) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
+      }
+      return;
+    }
+    if (loadingLibrary) return;
     const meta = library.metadata[path] ?? { tags: [], alt: "" };
     sheet.replaceChildren();
-    sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); if (!modal) dialog.scrollTop = 0; }));
+    sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; pendingDetailFocus = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); if (!modal) dialog.scrollTop = 0; }));
     const preview = node("img", "media-library__preview"); preview.src = data.url; preview.alt = meta.alt;
     sheet.append(preview, node("h3", "media-library__detail-name", basename(path)), node("p", "media-library__muted", `${data.width ? `${data.width} × ${data.height} · ` : ""}${formatBytes(data.blob.size)} · ${path}`));
     const alt = input("Default alt text", "text"); alt.value = meta.alt;
@@ -354,18 +368,20 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   function confirmDelete(paths: string[], unusedOnly = false) {
     if (!alive) return;
     if (loadingLibrary) { tell("Repository images are refreshing. Wait for them to finish before deleting images."); return; }
+    pendingDetailFocus = undefined;
     optimisation?.abort();
     detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
     if (!paths.length) { sheet.append(node("p", "", "None of the selected images are unused. References in components and CSS also count.")); return; }
-    sheet.dataset.mode = "delete";
+    sheet.dataset.mode = "delete"; sheet.dataset.deletePath = paths[0];
     const confirmationVersion = detailVersion;
     const pages = new Set(paths.flatMap((path) => library.usage[path]?.pages ?? []));
     sheet.append(node("h3", "", `Delete ${paths.length} ${paths.length === 1 ? "image" : "images"}?`), node("p", "", pages.size ? `Used on ${pages.size} pages. Their references will break if you delete these images.` : "These images have no page usage. Check any component and CSS references below."));
     for (const path of paths) sheet.append(node("p", "media-library__hint", `${path}${library.usage[path]?.files.length ? ` · Referenced by ${library.usage[path].files.join(", ")}` : " · No source references"}`));
-    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { if (confirmationVersion !== detailVersion || sheet.dataset.mode !== "delete") { tell("Image references changed. Reopen Delete to check current references."); return; } await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
+    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { detailVersion++; sheet.hidden = true; delete sheet.dataset.mode; }), button("Delete images", () => void task(async () => { if (confirmationVersion !== detailVersion || sheet.dataset.mode !== "delete") { tell("This delete confirmation has expired. Open a new confirmation to review current image references."); return; } await adapter.remove(paths, unusedOnly); sheet.hidden = true; delete sheet.dataset.mode; await refresh(); tell("Images deleted as drafts."); })));
   }
   function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     if (!alive) return;
+    pendingDetailFocus = undefined;
     optimisation?.abort();
     detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
     delete sheet.dataset.mode;
