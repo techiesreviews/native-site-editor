@@ -78,9 +78,10 @@
 /* The fade matches what the line paints: panel at rest, hover or keyboard
    focus, then the open file's tint and the drop target over both. */
 .file-row-line.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); }
-.file-row-line.row-action-host:hover,
+/* Same order as the paint: keyboard focus shows over the open file's tint. */
+.file-row-line.row-action-host:hover { --row-action-background: var(--hover); }
+.file-row-line.row-action-host:has(> .file-row.selected) { --row-action-background: var(--current); }
 .file-row-line.row-action-host:has(> .file-row:focus-visible) { --row-action-background: var(--hover); }
-.file-row-line.row-action-host:has(> .file-row.selected),
 .file-row-line.row-action-host.is-drop-target { --row-action-background: var(--current); }
 .file-row-line .row-action-overlay > :is(.file-more, .file-add) { margin-right: 0; }
 .file-row-line.is-renaming > .row-action-overlay { display: none; }

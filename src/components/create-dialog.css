@@ -50,12 +50,9 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0;
 }
-.file-row-line:hover > .file-add, .file-add:focus-visible, .files-heading .file-add { opacity: 1; }
 .file-add:hover { background: var(--hover); color: var(--text); }
 .file-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-@media (hover: none) { .file-add { opacity: 1; } }
 .file-new { flex-shrink: 0; padding: 0 5px; border-radius: var(--radius-small); background: var(--success-bg); color: var(--success-fg); font-size: var(--type-badge); font-weight: 600; line-height: 16px; letter-spacing: 0.04em; }
 .files-heading__end { display: inline-flex; align-items: center; gap: 6px; }
 .confirm-dialog__notes { display: flex; flex-direction: column; gap: 6px; }

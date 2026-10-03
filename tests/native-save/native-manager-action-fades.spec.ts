@@ -225,3 +225,34 @@ test("a hidden Restore cannot be reached at rest; hovering its row reveals it an
   await expect(page.locator("#status")).toHaveText(`Restored ${path}.`);
   await expect(fileRow).not.toHaveClass(/is-deleted/);
 });
+
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`keyboard focus on the open file paints, and fades, in its focus colour in ${colorScheme}`, async ({ page, baseURL }) => {
+    await page.emulateMedia({ colorScheme });
+    await open(page, baseURL);
+    await page.locator("#explorer").getByRole("tab", { name: "Files", exact: true }).click();
+    const first = page.locator("#explorer .file-row-line.row-action-host:not(.is-folder)")
+      .filter({ visible: true }).filter({ hasNot: page.locator(".file-row.selected, .file-row[data-path=\"index.html\"]") }).first();
+    const path = (await first.locator(".file-row").getAttribute("data-path"))!;
+    const line = page.locator(`#explorer .file-row-line:has(> .file-row[data-path="${path}"])`);
+    await line.locator(".file-row").click();
+    await expect(line.locator(".file-row")).toHaveClass(/selected/);
+    // Opening the file closes the explorer; reopen it and reach the row from the keyboard.
+    await page.locator("#explorer-toggle").click();
+    await page.locator("#explorer").getByRole("tab", { name: "Files", exact: true }).click();
+    await expect(line.locator(".file-row")).toBeVisible();
+    await page.mouse.move(1400, 900);
+    const tint = await line.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.keyboard.press("Shift");
+    await line.locator(".file-row").focus();
+    await expect(line.locator(".file-row")).toBeFocused();
+    const paint = await line.evaluate((el) => ({
+      row: getComputedStyle(el).backgroundColor,
+      fade: getComputedStyle(el.querySelector(".row-action-overlay")!, "::before").backgroundImage,
+      keyboard: el.matches(":has(> .file-row:focus-visible)"),
+    }));
+    expect(paint.keyboard).toBe(true);
+    expect(paint.row).not.toBe(tint);
+    expect(paint.fade).toContain(paint.row);
+  });
+}
