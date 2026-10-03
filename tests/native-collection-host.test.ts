@@ -170,3 +170,44 @@ test('missing source folder reports the source rather than destination vacancy',
  const result=planNativeCollectionOperation({...snapshot(),origin:origin({folders:[{from:'empty/',to:'new/'}]})});
  assert.ok('error'in result);assert.match(result.error,/Source folder has no files: empty\//);assert.doesNotMatch(result.error,/destination/);
 });
+test('candidate identity bakes renamed titles once while guarding the before identity and graph',()=>{
+ const before=snapshot(),candidateIdentity={name:'New Studio'};
+ const edits=new Map([['work/a/index.html',page('Renamed | New Studio')],['news/b/index.html',page('News — New Studio')]]);
+ const result=planNativeCollectionOperation({...before,candidateIdentity,origin:origin({edits})});
+ if('error'in result)assert.fail(result.error);
+ assert.deepEqual(result.expectedIdentity,{name:'Studio'});
+ assert.equal(result.operation.edits!.size,4);
+ for(const path of ['index.html','other.html']){
+  const output=result.operation.edits!.get(path)!;
+  assert.ok(output.includes('href="/work/a/">Renamed</a>'));
+  assert.equal(output.includes('Renamed | New Studio</a>'),false);
+ }
+ assert.ok(result.operation.edits!.get('other.html')!.includes('href="/news/b/">News</a>'));
+ assert.equal(result.operation.edits!.get('work/a/index.html'),page('Renamed | New Studio'));
+ assert.equal(nativeCollectionPlanIsCurrent(result,before),true);
+ for(const changed of [
+  {...before,identity:{name:'New Studio'}},
+  {...before,sources:{...before.sources,'work/a/index.html':page('Changed')}},
+  {...before,routes:{...before.routes,'/added/':'added/index.html'}},
+  {...before,files:[...before.files,'unloaded.jpg']},
+  {...before,revision:'scope:2'},
+ ])assert.equal(nativeCollectionPlanIsCurrent(result,changed),false);
+ candidateIdentity.name='Mutated';before.identity.name='Mutated old';edits.set('work/a/index.html','Mutated');
+ assert.deepEqual(result.expectedIdentity,{name:'Studio'});
+ assert.ok(result.operation.edits!.get('index.html')!.includes('>Renamed</a>'));
+ assert.equal(result.operation.edits!.get('work/a/index.html'),page('Renamed | New Studio'));
+});
+test('omitting candidate identity keeps legacy suffix baking and an already baked no-op',()=>{
+ const before=snapshot();before.sources['work/a/index.html']=page('First | Studio');
+ const legacy=planNativeCollectionOperation({...before,origin:origin({})});
+ if('error'in legacy)assert.fail(legacy.error);
+ assert.ok(legacy.operation.edits!.get('index.html')!.includes('>First</a>'));
+ const explicit=planNativeCollectionOperation({...before,candidateIdentity:{name:'Studio'},origin:origin({})});
+ if('error'in explicit)assert.fail(explicit.error);
+ assert.deepEqual(explicit,legacy);
+ const baked={...before,sources:{...before.sources,...Object.fromEntries(legacy.operation.edits!)}};
+ const noop=planNativeCollectionOperation({...baked,origin:origin({})});
+ if('error'in noop)assert.fail(noop.error);
+ assert.equal(noop.operation.edits!.size,0);
+ assert.equal(nativeCollectionPlanIsCurrent(noop,baked),true);
+});

@@ -51,9 +51,12 @@ export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapsh
 /** Apply the origin to a candidate graph, bake once, and return one operation. */
 export function planNativeCollectionOperation(input: NativeCollectionSnapshot & {
   origin: NativeCollectionOrigin;
+  /** Identity read by the host from the post-origin candidate; defaults to before identity. */
+  candidateIdentity?: CollectionIdentity;
 }): NativeCollectionPlan | { error: string } {
   try {
     const { sources, routes, revision, identity, origin } = input;
+    const candidateIdentity = { name: (input.candidateIdentity ?? identity).name };
     const files = new Set(input.files);
     if (Object.keys(sources).some(path => !files.has(path))) throw Error("Loaded source is absent from the file graph.");
     if (!sameRoutes(routes, deriveNativeRoutes(files))) throw Error('Load the complete current route graph before planning collections.');
@@ -143,7 +146,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       candidate.set(path, source);
     }
     const candidateSources = Object.fromEntries(candidate);
-    const baked = planBake(candidateSources, afterRoutes, identity);
+    const baked = planBake(candidateSources, afterRoutes, candidateIdentity);
     if ('error' in baked) {
       const listings = Object.entries(afterRoutes).filter(([url, path]) => validCollectionRoute(url, path) && readCollections(candidateSources[path]).length).map(([, path]) => path);
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };

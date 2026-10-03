@@ -69,3 +69,12 @@ relocation is checked through existing `collectionFolders`; a destination such
 as `_archive/` is allowed for unrelated assets but refused with an explicit
 collection URL grammar error when a listing would need that scope. A source
 prefix with no files reports the missing source folder, not destination vacancy.
+
+An optional `candidateIdentity` supplies the identity for the single candidate
+bake, defaulting to the original `identity` for existing callers. For a site-name
+change, the host reads this identity from the actual post-origin candidate source
+with its existing identity reader; this planner does not parse configuration.
+Candidate titles can therefore lose the new site-name suffix in generated
+listings while their full source titles remain unchanged. The bake identity is
+copied. `expectedIdentity` and `nativeCollectionPlanIsCurrent` still compare the
+BEFORE identity, along with the original sources, routes, file set and revision.
