@@ -144,14 +144,15 @@ const KIND_MARK: Record<SlotValue["kind"], ComponentMark> = { text: "text", imag
 const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "nav", "figure", "div", "form"]);
 
 export type ComponentSlotPart = "text" | "src" | "alt" | "href";
+export type ComponentAttributeResult = { ok: true } | { error: string; stale?: boolean };
 export interface ComponentFieldSession { write(value: string): boolean; close(): void }
 export interface ComponentStructureModel {
   host: { path: string; node: readonly number[]; tag: string };
   slots: readonly { name: string; label: string; kind: SlotValue["kind"]; value: Readonly<SlotValue>; shown: boolean; filled: boolean; whenEmpty: SlotState["whenEmpty"]; assignedNodes: readonly number[][] }[];
   attributes: readonly { name: string; value: string }[];
   openAttribute(name: string): ComponentFieldSession | undefined;
-  addAttribute(name: string, value: string): { ok: true } | { error: string };
-  openAttributeAdd(): { add(name: string, value: string): { ok: true } | { error: string }; close(): void } | undefined;
+  addAttribute(name: string, value: string): ComponentAttributeResult;
+  openAttributeAdd(): { add(name: string, value: string): ComponentAttributeResult; close(): void } | undefined;
   removeAttribute(name: string): boolean;
   openField(name: string, part: ComponentSlotPart): ComponentFieldSession | undefined;
   images: readonly string[];
@@ -1271,9 +1272,9 @@ export function createComponentTools(deps: ComponentDeps) {
         close,
       };
     };
-    const addAttribute = (rawName: string, value: string, proof?: { isCurrent(): boolean }): { ok: true } | { error: string } => {
+    const addAttribute = (rawName: string, value: string, proof?: { isCurrent(): boolean }): ComponentAttributeResult => {
       const at = read(initial.source, proof);
-      if (!at) return { error: "The instance changed; reopen Attributes before adding it." };
+      if (!at) return { error: "The instance changed; reopen Attributes before adding it.", stale: true };
       if (!attributeSourceSafe(at)) return { error: "The attribute markup is ambiguous; edit its source directly." };
       const name = rawName.trim().toLowerCase();
       const problem = attributeNameProblem(name) ?? (at.instance.attributes.some(item => item.name === name) ? `${name} is set already: change it above.` : undefined);
@@ -1311,8 +1312,8 @@ export function createComponentTools(deps: ComponentDeps) {
         let closed = false;
         return {
           add(name, value) {
-            if (closed) return { error: "Reopen Attributes before adding it." };
-            if (!read(initial.source, proof)) { closed = true; proof.dispose?.(); return { error: "The instance changed; reopen Attributes before adding it." }; }
+            if (closed) return { error: "Reopen Attributes before adding it.", stale: true };
+            if (!read(initial.source, proof)) { closed = true; proof.dispose?.(); return { error: "The instance changed; reopen Attributes before adding it.", stale: true }; }
             const result = addAttribute(name, value, proof);
             if ("ok" in result) { closed = true; proof.dispose?.(); }
             return result;

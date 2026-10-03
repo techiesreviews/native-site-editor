@@ -196,5 +196,5 @@
 .page-structure__attribute-add input { min-width:0; width:100%; box-sizing:border-box; font:inherit; color:inherit; background:var(--panel-surface); border:1px solid var(--border); border-radius:4px; padding:6px; }
 .page-structure__attribute-error { grid-column:1/-1; margin:0; color:var(--danger); }
 
-.page-structure__slot.is-selected { background:var(--selected-surface, var(--panel-surface)); }
+.page-structure__slot.is-selected { background:var(--current); }
 .page-structure__slot-field > span { overflow-wrap:anywhere; }

@@ -360,7 +360,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         const result = origin?.add(name.value, value.value);
         if (!result || "error" in result) {
           problem.textContent = result && "error" in result ? result.error : "The instance changed; reopen Attributes before adding it.";
-          if (!result || result.error.includes("instance changed") || result.error.includes("Reopen Attributes")) { origin?.close(); origin = undefined; }
+          if (!result || result.stale) { origin?.close(); origin = undefined; }
           problem.hidden = false; return;
         }
         name.value = value.value = ""; origin?.close(); origin = undefined; problem.hidden = true;
@@ -420,7 +420,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           image.querySelector("input")?.setAttribute("list", suggestions.id);
           const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
           let pending: ReturnType<ComponentStructureModel["openImageUpload"]>;
-          uploadClosers.set(file, () => { pending?.close(); pending = undefined; });
+          uploadClosers.set(file, () => { if (pending) handlers.announce?.("The image picker changed; reopen Upload image… before choosing a file."); pending?.close(); pending = undefined; });
           const upload = button("Upload image…", () => {
             pending?.close();
             pending = handlers.componentSlots?.(model.host.path, model.host.node)?.openImageUpload(slot.name);
@@ -649,8 +649,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     renderingFields = false;
     cleanControls();
     if (focusSlotField) {
-      const input = [...fieldInputs].find(([id]) => id.startsWith(focusSlotField!))?.[1];
-      if (input && tree.contains(input)) { focusSlotField = undefined; input.focus(); input.select(); return; }
+      const wanted = focusSlotField; focusSlotField = undefined;
+      const input = [...fieldInputs].find(([id]) => id.startsWith(wanted))?.[1];
+      if (input && tree.contains(input)) { input.focus(); input.select(); return; }
     }
     if (activeField) fieldClosers.get(activeField)?.();
     if (focused && rows.has(focused)) {
