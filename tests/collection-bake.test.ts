@@ -225,3 +225,17 @@ test("secondary-source unsafe URLs abort the entire mixed plan; text remains esc
   fixture.sources["index.html"] = fixture.sources["index.html"].replace('</article>', '<img src="{image}" data-if="image"></article>');
   assert.deepEqual(Object.keys(planBake(fixture.sources, fixture.routes, identity)), ["error"]);
 });
+
+test("reapplying a collection preserves authoring template attributes and exact CRLF bytes", () => {
+  const template = '<template id="cards" data-note="a > b" class=authoring>\r\n  <p>{title}</p>\r\n</template>';
+  const source = `<!-- before --><div class="grid" data-each="/work/">${template}<p>Old</p></div><!-- after -->`;
+  const updated = makeGridCollection(source, source.indexOf("<div"), { folders: ["/work/"], template: '\r\n  <p>{title}</p>\r\n' });
+  assert.ok(updated.includes(template));
+  const plan = planCollectionChange({ ...sources, "index.html": source }, { ...sources, "index.html": updated }, routes, identity);
+  assert.ok(!("error" in plan));
+  if ("error" in plan) return;
+  const baked = applyCollectionEdits(source, plan.edits["index.html"] ?? []);
+  assert.ok(baked.includes(template));
+  assert.ok(baked.startsWith("<!-- before -->"));
+  assert.ok(baked.endsWith("</div><!-- after -->"));
+});

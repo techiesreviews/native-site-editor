@@ -53,15 +53,20 @@ style, srcdoc, srcset or raw script/style/textarea/title contents is rejected.
 Comments remain literal. `data-if="image"` tests nonblank field presence and omits
 the complete element when absent. Conditions outside loop templates remain intact;
 component conditions keep their existing meaning. Source outside collection
-contents and the retained template remains unchanged, including CRLF line endings.
+contents remains unchanged. Reapplying a collection retains template wrapper attributes
+and unchanged template body bytes, including CRLF line endings. Whitespace outside
+the template but inside the collection is replaced by the bake; changed template
+text follows textarea line-ending normalization.
 
 The panel distinguishes Page fields from Collection template scope. Make this grid
 a collection starts with the selected grid's first item as its editable design.
 Source checkboxes, sorting, exact filter and limit controls update a plain-HTML
-preview and visible result count before Apply. Sources are discovered from eligible folder
-routes with subpages; existing selected deeper folders remain available even
-without an index route. Zero selected sources clears preview and disables Apply
-with an explanation. Checkbox order determines serialized source order. Existing
+preview and visible result count before Apply. Sources are discovered from canonical parent and ancestor folders of eligible
+page routes, even without folder index pages. Root is not offered automatically.
+Existing configured folders remain available even when temporarily empty. Zero selected sources clears preview and disables Apply
+with an explanation. Existing selected folder order is retained, followed by discovered folders.
+Checkbox order determines serialized source order. Existing grids use Edit collection
+and Save collection controls; summaries separate folder URLs with commas. Existing
 collection items offer Edit page, separately from Edit card design in source. The panel keeps an immutable source,
 route, identity and repository revision snapshot; stale controls reject Apply.
 
@@ -80,7 +85,8 @@ space between URLs. Legacy single-folder serialization stays exactly `/work/`.
 `planBake(sources, routes, {name})` returns either `{error}` or:
 
 - `edits`: source range edits grouped by page path;
-- `expectedSources`: every readable route page used by the plan;
+- `expectedSources`: every eligible route page, including pages outside selected
+  folders; all must be loaded before planning succeeds;
 - `collections`: item records, retained template and generated output for previews.
 
 `planCollectionChange(before, after, routes, identity)` composes a page-field or grid

@@ -76,7 +76,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     if ("error" in baked) root.append(node("p", "", baked.error));
     else for (const collection of baked.collections.filter((item) => item.path === path)) {
       const block = node("div", "collections-panel__collection");
-      block.append(node("h3", "", `Pages from ${collection.folder}`), node("p", "", `${collection.records.length} matching pages`));
+      block.append(node("h3", "", `Pages from ${collection.folders.join(", ")}`), node("p", "", `${collection.records.length} matching ${collection.records.length === 1 ? "page" : "pages"}`));
       for (const record of collection.records) block.append(button(`Edit page: ${record.fields.title || record.url}`, () => deps.openPage(record.path)));
       block.append(button("Edit card design in source", () => deps.openPage(path)), node("pre", "collections-panel__preview", collection.template));
       root.append(block);
@@ -90,11 +90,16 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     const el = [...descendants(parseSource(source))].find((item) => item.start === sourceStart);
     if (!el?.close) { report("Choose a complete grid in the page source."); return; }
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
-    root.replaceChildren(node("h2", "", "Make this grid a collection"), node("p", "collections-panel__scope", "Collection template · repeated card design"));
     const form = node("form", "collections-panel__form");
     const existing = readCollections(source).find((collection) => collection.element.start === sourceStart);
+    root.replaceChildren(node("h2", "", existing ? "Edit collection" : "Make this grid a collection"), node("p", "collections-panel__scope", "Collection template · repeated card design"));
     const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
-    const discovered = urls.filter((url) => url.endsWith("/") && url !== "/" && urls.some((child) => child !== url && child.startsWith(url)));
+    // Parent folders need no index page of their own. Keep route order stable.
+    const discovered = [...new Set(urls.flatMap((url) => {
+      const segments = url.slice(1).split("/");
+      return segments.slice(0, -1).map((_, index) => `/${segments.slice(0, index + 1).join("/")}/`)
+        .filter((folder) => folder !== url && /^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)+$/.test(folder));
+    }))];
     const selected = existing?.spec.folders ?? (discovered.includes("/work/") ? ["/work/"] : []);
     const choices = [...new Set([...selected, ...discovered])];
     const sourceGroup = node("fieldset", "collections-panel__sources");
@@ -110,6 +115,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     const filter = control(form, "Exact filter (category=Pottery)", existing?.spec.filter ?? "");
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
     const template = control(form, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
+    const originalTemplate = existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : template.value;
+    const displayedTemplate = template.value;
     form.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
     const preview = node("pre", "collections-panel__preview");
     const result = node("p"); result.setAttribute("role", "status");
@@ -119,19 +126,19 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
       try {
         const folders = checks.filter((input) => input.checked).map((input) => input.value);
         if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
-        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value, filter: filter.value, limit: limit.value, template: template.value });
+        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value, filter: filter.value, limit: limit.value, template: template.value === displayedTemplate ? originalTemplate : template.value });
         plan = planCollectionChange(saved.sources, { ...saved.sources, [path]: converted }, saved.routes, saved.identity);
         if ("error" in plan) { result.textContent = plan.error; preview.textContent = ""; return; }
         const collection = plan.collections.find((item) => item.path === path && item.start === sourceStart);
-        result.textContent = `${collection?.records.length ?? 0} matching pages. Apply updates the grid and its dependent listings as one undo step.`;
+        result.textContent = `${collection?.records.length ?? 0} matching ${collection?.records.length === 1 ? "page" : "pages"}. Apply updates the grid and its dependent listings as one undo step.`;
         preview.textContent = collection?.output ?? "";
         apply.disabled = false;
       } catch (error) { plan = { error: error instanceof Error ? error.message : "The collection could not be previewed." }; result.textContent = plan.error; preview.textContent = ""; }
     };
     form.addEventListener("input", refresh);
-    const apply = node("button", "button primary", "Make collection"); apply.type = "submit";
+    const apply = node("button", "button primary", existing ? "Save collection" : "Make collection"); apply.type = "submit";
     form.append(result, preview, apply, button("Cancel", update));
-    form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, "Grid made into a collection"); });
+    form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, existing ? "Collection saved" : "Grid made into a collection"); });
     root.append(form, status); refresh();
   }
   update();

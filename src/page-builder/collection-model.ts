@@ -107,7 +107,9 @@ export function knownCollectionField(field: string, records: CollectionRecord[])
 export function makeGridCollection(source: string, start: number, input: CollectionInput & { template: string }): string {
   const el = [...descendants(parseSource(source))].find((item) => item.start === start);
   if (!el?.close || el.name === "template") throw new Error("Choose a complete grid in the page source.");
-  if (readCollections(source).some((collection) => collection.element.start < start && collection.element.end > start)) throw new Error("Edit the existing collection template instead of nesting a collection.");
+  const collections = readCollections(source);
+  const existing = collections.find((collection) => collection.element.start === start);
+  if (collections.some((collection) => collection.element.start < start && collection.element.end > start)) throw new Error("Edit the existing collection template instead of nesting a collection.");
   const spec = collectionSpec(input);
   const value = (text: string) => escapeText(text).replace(/"/g, "&quot;");
   let opening = source.slice(el.start, el.tag.end - 1);
@@ -117,5 +119,9 @@ export function makeGridCollection(source: string, start: number, input: Collect
   });
   for (const found of attributes.sort((a, b) => b.start - a.start)) opening = opening.slice(0, found.start - el.start) + opening.slice(found.end - el.start);
   const tag = opening + ` data-each="${value(spec.folder)}"${spec.sort ? ` data-sort="${value(spec.sort)}"` : ""}${spec.filter ? ` data-filter="${value(spec.filter)}"` : ""}${input.limit ? ` data-limit="${spec.limit}"` : ""}>`;
-  return source.slice(0, el.start) + tag + `<template>${input.template}</template>` + source.slice(el.close.start);
+  // Preserve the authoring wrapper exactly, including attributes and line endings.
+  const template = existing
+    ? source.slice(existing.template.start, existing.template.tag.end) + input.template + source.slice(existing.template.close!.start, existing.template.end)
+    : `<template>${input.template}</template>`;
+  return source.slice(0, el.start) + tag + template + source.slice(el.close.start);
 }

@@ -44,7 +44,7 @@ test("grid preview shows source, stable sort, count and plain HTML, then sends o
   await expect(preview).toContainText(`href="/work/two/">Two</a>`);
   await expect(preview).toContainText(`src="/two.jpg"`);
   await page.getByLabel("Maximum items (1–500)").fill("1");
-  await expect(panel(page)).toContainText("1 matching pages");
+  await expect(panel(page)).toContainText("1 matching page");
   await page.getByRole("button", { name: "Make collection", exact: true }).click();
   await expect(panel(page)).toContainText("Grid made into a collection");
   const state = await page.evaluate(() => (window as any).collectionTest.state);
@@ -130,9 +130,51 @@ test("existing selected deeper source remains visible without its folder route",
   });
   await expect(page.getByRole("checkbox", { name: "/work/deep/", exact: true })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "/work/", exact: true })).not.toBeChecked();
-  await expect(panel(page)).toContainText("1 matching pages");
-  await page.getByRole("button", { name: "Make collection", exact: true }).click();
+  await expect(panel(page)).toContainText("1 matching page");
+  await page.getByRole("button", { name: "Save collection", exact: true }).click();
   const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
   expect((source.match(/data-each=/g) ?? []).length).toBe(1);
   expect(source).toContain('data-each="/work/deep/"');
+});
+
+test("folders without index pages offer ancestors, exclude invalid routes, and bake a mixed union", async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as any).collectionTest;
+    for (const path of ["articles/one/index.html", "videos/series/one.html", ".hidden/one/index.html", "_private/one/index.html", "encoded%20/one/index.html", "wild*/one/index.html"]) {
+      h.state.routes[path.endsWith("index.html") ? `/${path.slice(0, -10)}` : `/${path}`] = path;
+      h.state.sources[path] = `<html><head><title>${path}</title></head><body></body></html>`;
+    }
+  });
+  await grid(page);
+  await expect(page.getByRole("checkbox", { name: "/articles/", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "/videos/series/", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox")).toHaveCount(4);
+  await page.getByRole("checkbox", { name: "/work/", exact: true }).uncheck();
+  await page.getByRole("checkbox", { name: "/articles/", exact: true }).check();
+  await page.getByRole("checkbox", { name: "/videos/", exact: true }).check();
+  await expect(panel(page)).toContainText("2 matching pages");
+  await page.getByRole("button", { name: "Make collection", exact: true }).click();
+  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
+  expect(source).toContain('data-each="/articles/ /videos/"');
+  expect(source).toContain('href="/articles/one/"');
+  expect(source).toContain('href="/videos/series/one.html"');
+  await expect(panel(page)).toContainText("Pages from /articles/, /videos/");
+});
+
+test("editing an empty legacy source preserves template attributes and native template bytes", async ({ page }) => {
+  const retained = '<template id="authoring" data-note="x > y" class=card>\r\n  <a href="{url}">{title}</a>\r\n</template>';
+  await page.evaluate((retained) => {
+    const h = (window as any).collectionTest;
+    h.state.sources["index.html"] = `<html><body><div class="cards" data-each="/empty/" data-sort="title">${retained}<b>Old</b></div><!-- outside --></body></html>`;
+    h.start = h.state.sources["index.html"].indexOf("<div");
+    h.panel.openGrid("index.html", h.start);
+  }, retained);
+  await expect(page.getByRole("heading", { name: "Edit collection", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "/empty/", exact: true })).toBeChecked();
+  await expect(panel(page)).toContainText("0 matching pages");
+  await page.getByRole("button", { name: "Save collection", exact: true }).click();
+  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
+  expect(source).toContain(retained);
+  expect(source).toContain('</div><!-- outside --></body></html>');
+  await expect(panel(page)).toContainText("Collection saved");
 });
