@@ -141,3 +141,24 @@ test("an unfinished stylesheet rejects edits without changing its CSS draft", as
   await expect(page.locator("#notice")).toContainText("unbalanced CSS delimiters");
   expect(await css(page)).toBe(before);
 });
+
+test("focused selects and presets accept repeated own edits", async ({ page, baseURL }) => {
+  await open(page, baseURL); await select(page);
+  await panel(page).getByText("Layout", { exact: true }).click();
+  const display = panel(page).getByRole("combobox", { name: "Display", exact: true });
+  await display.focus();
+  for (const value of ["block", "flex", "grid"]) {
+    await display.selectOption(value);
+    await expect.poll(() => css(page)).toContain(`display: ${value};`);
+    await expect(display).toBeFocused();
+    await expect(frame(page).locator(".lead")).toHaveCSS("display", value);
+  }
+  await panel(page).getByText("Typography", { exact: true }).click();
+  const preset = panel(page).getByRole("combobox", { name: "Text colour preset", exact: true });
+  await preset.focus();
+  for (const name of ["--accent", "--muted", "--accent"]) {
+    await preset.selectOption(name);
+    await expect.poll(() => css(page)).toContain(`color: var(${name});`);
+    await expect(preset).toBeFocused();
+  }
+});

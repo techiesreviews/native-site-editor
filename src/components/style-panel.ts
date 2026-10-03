@@ -2,7 +2,7 @@ import "./style-panel.css";
 import { node, button } from "../ui/dom";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint, type Breakpoint } from "../page-builder/breakpoints";
 import { breakpointWidths } from "../page-builder/breakpoints";
-import { validateCssSource, locateWriteRule, scanCss, siteVariables, resolveVariableValue, type CssTarget, type SiteVariable } from "../page-builder/css-write";
+import { writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVariables, resolveVariableValue, type CssTarget, type SiteVariable } from "../page-builder/css-write";
 
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
@@ -72,9 +72,9 @@ export function createStylePanel(handlers: StylePanelHandlers) {
   let renderOwn: Record<string, string> = {};
   function report(error: unknown) { handlers.error(error instanceof Error ? error.message : String(error)); }
   async function commit(action: () => Promise<void>) {
-    if (busy) return;
+    if (busy) return false;
     busy = true; root.setAttribute("aria-busy", "true");
-    try { await action(); } catch (error) { report(error); }
+    try { await action(); return true; } catch (error) { report(error); return false; }
     finally { busy = false; root.removeAttribute("aria-busy"); update(); }
   }
   function update() {
@@ -148,26 +148,44 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     }
     return expected;
   }
-  function write(properties: Record<string, string | null>, snapshot = renderContext) {
-    try { if (snapshot?.target) validateCssSource(snapshot.files[snapshot.target.path] ?? ""); } catch (error) { report(error); return Promise.resolve(); }
+  const controlSnapshots = new Set<{ expected?: StylePanelContext }>();
+  async function write(properties: Record<string, string | null>, snapshot = renderContext) {
+    try { if (snapshot?.target) validateCssSource(snapshot.files[snapshot.target.path] ?? ""); } catch (error) { report(error); return; }
     const breakpoint = getCurrentBreakpoint(), currentState = state;
     const expected = currentContext(snapshot);
-    if (!expected) return Promise.resolve();
-    return commit(() => handlers.write(properties, breakpoint, currentState, expected));
+    if (!expected?.target) return;
+    const target = expected.target;
+    let written: string;
+    try {
+      written = writeCssProperties(expected.files[target.path] ?? "", { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state: currentState }, properties);
+    } catch (error) { report(error); return; }
+    if (!(await commit(() => handlers.write(properties, breakpoint, currentState, expected)))) return;
+    const current = handlers.context();
+    // Advance focused controls only after our exact source edit is visible.
+    // An external edit, navigation or rejected host write cannot refresh them.
+    if (!current || current.key !== expected.key || current.target?.path !== target.path || current.target?.selector !== target.selector || current.readOnly ||
+      Object.keys(current.files).length !== Object.keys(expected.files).length ||
+      Object.keys(expected.files).some((path) => current.files[path] !== (path === target.path ? written : expected.files[path]))) return;
+    for (const snapshot of controlSnapshots) {
+      const before = snapshot.expected;
+      if (before?.key === expected.key && before.target?.path === target.path && before.target?.selector === target.selector &&
+        Object.keys(before.files).every((path) => before.files[path] === expected.files[path])) snapshot.expected = current;
+    }
   }
-  function fieldControl(field: Field, variables: SiteVariable[], onChange?: (value: string, expected?: StylePanelContext) => void) {
+  function fieldControl(field: Field, variables: SiteVariable[], onChange?: (value: string, expected?: StylePanelContext) => Promise<void>) {
     const wrapper = node("div", "style-panel__control");
-    let expected = renderContext;
+    const snapshot = { expected: renderContext };
+    controlSnapshots.add(snapshot);
     const own = renderOwn[field.property] ?? "", computed = renderContext?.computed[field.property] ?? "";
     const apply = (value: string) => {
-      if (!currentContext(expected)) return;
+      if (!currentContext(snapshot.expected)) return;
       if (field.unit && /^-?(?:\d+\.?\d*|\.\d+)$/.test(value)) value += "px";
       if (field.property === "grid-template-columns" && /^\d+$/.test(value)) {
         if (+value < 1 || +value > 24) { report("Choose 1–24 grid columns, or enter a CSS template."); return; }
         value = `repeat(${value}, minmax(0, 1fr))`;
       }
       if (value && !CSS.supports(field.property, value.replace(/\s*!important\s*$/, ""))) { report(`Enter a valid ${field.label.toLowerCase()} value.`); return; }
-      if (onChange) onChange(value, expected); else void write({ [field.property]: value }, expected);
+      if (onChange) void onChange(value, snapshot.expected); else void write({ [field.property]: value }, snapshot.expected);
     };
     let control: HTMLInputElement | HTMLSelectElement;
     if (field.options) {
@@ -189,7 +207,7 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     }
     control.name = field.property; control.setAttribute("aria-label", field.label);
     control.dataset.property = field.property; control.value = own; control.classList.toggle("is-computed", !own);
-    control.addEventListener("focus", () => { if (handlers.context()?.key === expected?.key) expected = handlers.context(); });
+    control.addEventListener("focus", () => { if (handlers.context()?.key === snapshot.expected?.key) snapshot.expected = handlers.context(); });
     control.addEventListener("change", () => apply(control.value.trim()));
     wrapper.append(control);
     const offered = presets(field, variables);
@@ -219,7 +237,7 @@ export function createStylePanel(handlers: StylePanelHandlers) {
       link.setAttribute("aria-label", `Link ${kind} sides`); link.setAttribute("aria-pressed", String(links[kind])); heading.append(link); host.append(heading);
       for (const side of sides) {
         const field: Field = { label: `${kind[0].toUpperCase() + kind.slice(1)} ${side}`, property: `${kind}-${side}`, unit: true };
-        const control = fieldControl(field, variables, (value, expected) => void write(Object.fromEntries((links[kind] ? sides : [side]).map((s) => [`${kind}-${s}`, value])), expected));
+        const control = fieldControl(field, variables, (value, expected) => write(Object.fromEntries((links[kind] ? sides : [side]).map((s) => [`${kind}-${s}`, value])), expected));
         control.classList.add(`style-panel__box-${side}`);
         const scrub = control.querySelector("input")!; scrub.title = "Drag to adjust pixels. Alt+arrow adjusts by 1px (Shift: 10px).";
         const fieldKey = renderContext?.key;
@@ -254,6 +272,7 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
     renderContext = handlers.context(); renderOwn = ownValues();
+    controlSnapshots.clear();
     body.replaceChildren();
     const header = node("div", "style-panel__header"); header.append(node("strong", "", "Style"));
     const close = button("×", () => { collapsed = true; render(); opener.focus(); }, "style-panel__close"); close.setAttribute("aria-label", "Collapse Style panel"); header.append(close); body.append(header);

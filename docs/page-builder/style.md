@@ -62,16 +62,16 @@ The chrome uses `src/theme.css` tokens in both colour schemes.
 
 ## Validation
 
-`tests/css-write.test.ts` covers 39 cases: comments, quoted punctuation and URLs,
+`tests/css-write.test.ts` covers 40 cases: comments, quoted punctuation and URLs,
 CRLF, spaces/tabs, missing semicolons, duplicate declarations, `!important`, nested
 rules/layers, condition isolation, state rules, rule indexes, class escaping,
 variable aliases and breakpoint subscriptions.
 
-`tests/native-save/native-style-panel.spec.ts` covers nine browser flows: padding
+`tests/native-save/native-style-panel.spec.ts` covers ten browser flows: padding
 source/preview/undo, a variable preset and global colour edit, tablet/state/hide
 rules, Add class without inline CSS, linked sides plus scrub undo, light/dark
 screenshots plus Escape, scoped transforms, stale detached controls, and malformed
-CSS rejection. Screenshots are `.scratch/style/panel-light.png` and
+CSS rejection, and repeated focused selects and presets. Screenshots are `.scratch/style/panel-light.png` and
 `.scratch/style/panel-dark.png`; both were viewed during implementation.
 
 The full validation results and inherited-suite failures, if any, are recorded in
@@ -140,3 +140,10 @@ punctuation within strings. The light and dark screenshots were regenerated and
 visually inspected. Shared `main.ts` and preview runtime changes are deliberately
 outside the leaf-module commit; their integration and the asynchronous host race
 must be verified separately.
+
+Focused controls advance their source snapshot after a successful edit only when
+its resulting CSS exactly matches the writer's expected text and all other site
+sources, selection identity and target remain unchanged. This permits repeated
+select/preset changes without accepting an intervening external source edit.
+Duplicate declarations retain the last important declaration when any declaration
+is important; otherwise the last declaration remains the editable one.

@@ -192,7 +192,7 @@ export function writeCssProperties(source: string, options: CssWriteOptions, pro
     for (const [property, raw] of Object.entries(properties)) {
       const value = raw?.trim();
       const declarations = rule.declarations.filter((d) => d.property === property);
-      const last = declarations.at(-1);
+      const last = lastWhere(declarations, (declaration) => /!important\s*$/i.test(withoutComments(declaration.value))) ?? declarations.at(-1);
       for (const d of declarations) {
         let start = d.start, end = d.end;
         const original = source.slice(d.start, d.end);

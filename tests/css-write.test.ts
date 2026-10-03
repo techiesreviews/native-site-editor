@@ -200,3 +200,9 @@ test("a valid stylesheet containing only directives retains quoted punctuation w
 test("important priority survives uppercase spelling and a trailing value comment", () => {
   assert.equal(write(`.card { color: red !IMPORTANT /* priority */; }`, { color: "blue" }), `.card { color: blue !important /* priority */; }`);
 });
+
+test("duplicate declarations retain the effective important priority regardless of order", () => {
+  assert.equal(write(`.card { color: red !important; color: blue; }`, { color: "green" }), `.card { color: green !important;  }`);
+  assert.equal(write(`.card { color: blue; color: red !important; }`, { color: "green" }), `.card {  color: green !important; }`);
+  assert.equal(write(`.card { color: red !important; color: blue !important; }`, { color: "green" }), `.card {  color: green !important; }`);
+});
