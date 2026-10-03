@@ -79,3 +79,9 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel__search input::-webkit-search-cancel-button { display: none; }
 .style-panel__variable-choice button:first-child { display: flex; flex-direction: column; gap: 2px; }
 .style-panel__variable-provenance { font-size: var(--type-small); color: var(--muted); font-weight: 400; }
+
+.style-panel__widget { padding: 4px 0 8px; min-width: 0; }
+.style-panel .grid-editor__field input { width: 64px; flex: 0 1 64px; }
+.style-panel .grid-editor button { border: 1px solid var(--control-line); background: var(--surface-input); padding: 4px 6px; }
+.style-panel .grid-editor__preview { background: var(--surface-input); }
+.style-panel .image-focal-point__preview { background: var(--surface); }

@@ -1,3 +1,7 @@
+import { mountGridEditor } from "./grid-editor";
+import { mountImageFocalPoint, type FocalPreviewAsset } from "./image-focal-point";
+import "./grid-editor.css";
+import "./image-focal-point.css";
 import { cssVariableDeclarations, type CssWorkspace } from "../page-builder/css-intelligence";
 import { relevantVariables } from "./style-variables";
 import { sections, sectionTitles, matchesStyleSearch, type Field } from "./style-fields";
@@ -11,7 +15,7 @@ import { cssClassSelector, writeCssProperties, validateCssSource, locateWriteRul
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
   key: string; selectionKey?: string; tag: string; className?: string; classes?: string[]; target?: CssTarget;
-  files: Record<string, string>; workspace?: CssWorkspace; computed: Record<string, string>; readOnly?: boolean;
+  modelProof?: { isCurrent(): boolean }; assetRevision?: string; files: Record<string, string>; workspace?: CssWorkspace; computed: Record<string, string>; readOnly?: boolean;
 }
 export interface StylePanelHandlers {
   context: () => StylePanelContext | undefined;
@@ -19,6 +23,7 @@ export interface StylePanelHandlers {
   variable: (variable: SiteVariable, value: string, expected?: StylePanelContext) => Promise<void>;
   selectClass: (name: string, expected: StylePanelContext) => void;
   addClass: (name: string, expected?: StylePanelContext) => Promise<void>;
+  focalAsset?: (expected: StylePanelContext) => Promise<{ mode: "object-position" | "background-position"; asset: FocalPreviewAsset } | undefined>;
   showCode: (expected: StylePanelContext) => Promise<void>;
   history: (direction: "undo" | "redo") => void;
   error: (message: string) => void;
@@ -38,6 +43,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const opened = new Set(["Spacing"]);
   let pending = false, interacting = false;
   let searchQuery = "";
+  let widgets: { dispose(): void; refresh(): void }[] = [];
+  let widgetRender = 0;
   let variableMenu: HTMLElement | undefined;
   let variableMenuOrigin: { key: string; property: string } | undefined;
   function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined; }
@@ -59,7 +66,9 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   function update() {
     const context = handlers.context();
     const nextKey = context?.key ?? "";
-    if (nextKey !== key) { key = nextKey; render(); return; }
+    if (nextKey !== key || context?.assetRevision !== renderContext?.assetRevision || context?.target?.start !== renderContext?.target?.start) { key = nextKey; render(); return; }
+    const widgetFocused = document.activeElement instanceof Element && document.activeElement.closest(".grid-editor, .image-focal-point");
+    if (!interacting && widgetFocused && renderContext && context && Object.entries(renderContext.files).some(([path, source]) => context.files[path] !== source)) { render(); return; }
     // Preview refreshes must not destroy the field under the user's pointer.
     if (interacting || root.contains(document.activeElement)) { pending = true; refreshValues(); }
     else render();
@@ -95,6 +104,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   function refreshValues() {
     const context = handlers.context(), own = ownValues();
     renderContext = context; renderOwn = own;
+    widgets.forEach(widget => widget.refresh());
     if (global && context) {
       const variables = siteVariables(context.files);
       for (const input of body.querySelectorAll<HTMLInputElement>(".style-panel__variable input")) {
@@ -241,7 +251,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     }
     control.addEventListener("contextmenu", event => { if (!handlers.context()?.workspace) return; event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
     control.addEventListener("keydown", event => {
-      if (handlers.context()?.workspace && event instanceof KeyboardEvent && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom); }
+      if (event instanceof KeyboardEvent && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") && handlers.context()?.workspace) { event.preventDefault(); const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom); }
     });
     wrapper.append(control);
     const offered = presets(field, variables);
@@ -305,6 +315,16 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
   function render() {
+    const previousFocus = document.activeElement instanceof HTMLElement && document.activeElement.closest(".grid-editor, .image-focal-point") ? document.activeElement : undefined;
+    const focusKey = renderContext?.key;
+    const focusLabel = previousFocus?.getAttribute("aria-label") ?? previousFocus?.closest("label")?.textContent;
+    const restoreWidgetFocus = () => {
+      if (!previousFocus || previousFocus.isConnected || !focusLabel || document.activeElement !== document.body || renderContext?.key !== focusKey) return;
+      const control = [...body.querySelectorAll<HTMLElement>(".grid-editor input, .grid-editor button, .image-focal-point input, .image-focal-point [tabindex]")].find(control => (control.getAttribute("aria-label") ?? control.closest("label")?.textContent) === focusLabel);
+      control?.focus();
+    };
+    const widgetRequest = ++widgetRender;
+    widgets.forEach(widget => widget.dispose()); widgets = [];
     const focusOrigin = variableMenu?.contains(document.activeElement) ? variableMenuOrigin : undefined;
     closeVariableMenu();
     if (focusOrigin) queueMicrotask(() => {
@@ -364,8 +384,9 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     body.append(chips);
     const target = node("div", "style-panel__target");
     target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected"));
-    if (context.target && context.workspace) target.append(button("Show in code", () => { const expected = currentContext(classSnapshot.expected); if (expected) void handlers.showCode(expected).catch(report); }, "style-panel__show-code"));
+    if (context.target?.start !== undefined && context.workspace) target.append(button("Show in code", () => { const expected = currentContext(classSnapshot.expected); if (expected) void handlers.showCode(expected).catch(report); }, "style-panel__show-code"));
     body.append(target);
+    if (context.target && context.target.start === undefined) body.append(node("p", "style-panel__hint", "No class rule yet. The first style edit creates it in this stylesheet."));
     if (context.className) body.append(node("p", "style-panel__shared-scope", context.target?.selector === cssClassSelector(context.className) ? `Edits apply to every element with class “${context.className}”.` : `Edits apply to every element matching “${context.target?.selector ?? cssClassSelector(context.className)}”.`));
     if (context.readOnly) { body.append(node("p", "style-panel__hint", "This version is read only.")); return; }
     {
@@ -386,6 +407,45 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         const row = node("div", "style-panel__field"); row.dataset.searchLabel = field.label; row.dataset.searchProperty = field.property; row.append(node("span", "", field.label), fieldControl(field, variables)); details.append(row);
       }
       content.append(details);
+    }
+    // Widget callbacks carry the same exact source snapshot as ordinary fields.
+    const widgetSnapshot = { expected: context }; controlSnapshots.add(widgetSnapshot);
+    const widgetBreakpoint = getCurrentBreakpoint(), widgetState = state;
+    const widgetCurrent = () => {
+      const before = widgetSnapshot.expected, current = handlers.context();
+      return !!current && !current.readOnly && before.modelProof?.isCurrent() !== false && current.key === before.key && current.assetRevision === before.assetRevision &&
+        getCurrentBreakpoint() === widgetBreakpoint && state === widgetState && current.target?.path === before.target?.path &&
+        current.target?.selector === before.target?.selector && current.target?.start === before.target?.start &&
+        Object.keys(current.files).length === Object.keys(before.files).length && Object.entries(before.files).every(([path, source]) => current.files[path] === source);
+    };
+    const changeWidget = async (properties: Record<string, string | null>) => {
+      if (!widgetCurrent()) { report("The style target changed. Select the element again."); return; }
+      await write(properties, widgetSnapshot.expected);
+    };
+    const section = (title: string, label: string, properties: string) => {
+      const details = node("details", "style-panel__section"); details.open = opened.has(title);
+      details.append(node("summary", "style-panel__section-title", title));
+      details.addEventListener("toggle", () => { if (!searchQuery) { if (details.open) opened.add(title); else opened.delete(title); } });
+      const host = node("div", "style-panel__widget"); host.dataset.searchLabel = label; host.dataset.searchProperty = properties;
+      details.append(host); content.append(details); return { details, host };
+    };
+    if (/^(?:inline-)?grid$/.test(renderOwn.display || context.computed.display || "")) {
+      const grid = section("Grid", "Grid columns rows tracks gaps", "grid-template-columns grid-template-rows gap column-gap row-gap");
+      widgets.push(mountGridEditor(grid.host, { authored: renderOwn, computed: context.computed, expected: widgetSnapshot,
+        readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: widgetCurrent, onChange: changeWidget, onError: report }));
+    }
+    if (handlers.focalAsset) {
+      const focal = section("Image focus", "Image focal point position", "object-position background-position");
+      focal.host.append(node("p", "style-panel__hint", "Loading native image…"));
+      void handlers.focalAsset(context).then(result => {
+        if (widgetRequest !== widgetRender || !focal.host.isConnected || !widgetCurrent()) return;
+        focal.host.replaceChildren();
+        if (!result) { focal.details.remove(); filter(); return; }
+        widgets.push(mountImageFocalPoint(focal.host, { mode: result.mode, previewAsset: result.asset,
+          authored: renderOwn[result.mode], computed: context.computed[result.mode], fit: context.computed["object-fit"], size: context.computed["background-size"],
+          expected: widgetSnapshot, readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: widgetCurrent, onChange: changeWidget, onError: report }));
+        filter(); restoreWidgetFocus();
+      }).catch(error => { if (widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); report(error); } });
     }
     const search = node("div", "style-panel__search");
     const input = node("input"); input.type = "search"; input.value = searchQuery; input.placeholder = "Search styles"; input.setAttribute("aria-label", "Search styles");
@@ -409,12 +469,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       clear.hidden = !searchQuery; empty.hidden = matches > 0;
     }
     input.addEventListener("input", () => { searchQuery = input.value; filter(); });
-    const searchIcon = node("span", "style-panel__search-icon"); searchIcon.setAttribute("aria-hidden", "true"); search.append(searchIcon, input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop;
+    const searchIcon = node("span", "style-panel__search-icon"); searchIcon.setAttribute("aria-hidden", "true"); search.append(searchIcon, input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop; restoreWidgetFocus();
   }
   const resize = mountStylePanelResize(workspace, root, value => {
     const changed = collapsed !== value; collapsed = value;
     if (changed) render(); else applyFold();
   });
   render();
-  return { root, update, dispose() { closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
+  return { root, update, dispose() { widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
 }

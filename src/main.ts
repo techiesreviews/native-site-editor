@@ -71,7 +71,8 @@ import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
-import { locateClassRule, locateWriteRule, writeCssProperties } from "./page-builder/css-write";
+import { locateClassRule, locateWriteRule, writeCssProperties, scanCss } from "./page-builder/css-write";
+import { nativeImageAsset, singleBackgroundAsset } from "./page-builder/style-image-source";
 import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
@@ -408,7 +409,7 @@ function mountWorkspace() {
   stylePanel?.dispose();
   const staleStyle = () => status("The style target or source changed. Select it again and make a fresh edit.");
   const styleContextMatches = (expected: StylePanelContext | undefined, current: StylePanelContext | undefined) =>
-    !!expected && !!current && expected.key === current.key &&
+    !!expected && !!current && expected.modelProof?.isCurrent() !== false && expected.key === current.key && expected.assetRevision === current.assetRevision &&
     expected.target?.path === current.target?.path && expected.target?.selector === current.target?.selector && expected.target?.start === current.target?.start &&
     Object.keys(expected.files).length === Object.keys(current.files).length &&
     Object.entries(expected.files).every(([path, source]) => current.files[path] === source);
@@ -418,8 +419,14 @@ function mountWorkspace() {
       const context = nativeStylePanelContext(), epoch = generation;
       const target = context?.target, source = target && context?.files[target.path];
       if (versionView || !target || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); return; }
-      if (!(await openSecondary(target.path))) return;
-      if (generation !== epoch || versionView || !styleContextMatches(context, nativeStylePanelContext())) { staleStyle(); return; }
+      const scope = draftScope(), requester = currentPath;
+      if (!scope || !editorModule || !requester) return;
+      const originProof = editorModule.captureFileModelState(scope, requester);
+      const targetProof = editorModule.captureFileModelState(scope, target.path);
+      const targetMounted = editorModule.isMounted(target.path);
+      const current = () => generation === epoch && !versionView && currentPath === requester && originProof.isCurrent() && styleContextMatches(context, nativeStylePanelContext());
+      if (!(await openSecondary(target.path, () => current() && targetProof.isCurrent()))) return;
+      if (!current() || targetMounted && !targetProof.isCurrent() || editorModule.getMountedSource(target.path) !== source) { staleStyle(); return; }
       const next = writeCssProperties(source, { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state, expectedSource: source }, properties);
       const edit = minimalTextEdit(source, next);
       if (edit) {
@@ -468,14 +475,32 @@ function mountWorkspace() {
         stylePanel?.update();
       }
     },
+    focalAsset: async expected => {
+      const context = nativeStylePanelContext(), selected = lastNativeSelection, scope = draftScope();
+      if (!scope || !selected || !styleContextMatches(expected, context)) return;
+      const epoch = generation, scopeKey = setupScope(), path = nativeStyleImageSource(selected, expected.files);
+      if (!path) return;
+      const proof = editorModule?.captureFileModelState(scope, selected.path);
+      const assetBefore = nativeAssets.get(path.path);
+      const current = () => generation === epoch && setupScope() === scopeKey && !versionView && proof?.isCurrent() &&
+        expected.modelProof?.isCurrent() !== false && nativeStylePanelContext()?.key === expected.key &&
+        Object.keys(nativeSources()).length === Object.keys(expected.files).length && Object.entries(expected.files).every(([file, source]) => nativeSources()[file] === source);
+      if (!current()) return;
+      await loadNativeAssets({ "index.html": `<img src="/${escapeText(path.path).replace(/"/g, "&quot;")}">` }, () => {});
+      if (!current()) return;
+      const dataURL = nativeAssets.get(path.path);
+      if (!dataURL) return;
+      if (assetBefore !== dataURL || nativeStylePanelContext()?.assetRevision !== expected.assetRevision) { stylePanel?.update(); return; }
+      return { mode: path.mode, asset: { dataURL, hostTrusted: true } };
+    },
     showCode: async expected => {
       const context = nativeStylePanelContext();
       if (!styleContextMatches(expected, context) || !context?.target || !context.workspace) { staleStyle(); return; }
       const target = context.target, source = context.files[target.path];
       if (source === undefined) { staleStyle(); return; }
       const rule = locateWriteRule(source, { selector: target.selector, baseStart: target.start });
-      const start = rule?.start ?? 0;
-      if (!(await context.workspace.openDefinition(target.path, start, rule?.open ?? start, context.workspace.revision))) staleStyle();
+      if (!rule || target.start === undefined) return;
+      if (!(await context.workspace.openDefinition(target.path, rule.start, rule.open, context.workspace.revision))) staleStyle();
     },
     history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
     error: (message) => errorMessage(new Error(message)),
@@ -1147,12 +1172,38 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
   const className = nativeStyleClass?.selectionKey === selectionKey && classes.includes(nativeStyleClass.name) ? nativeStyleClass.name : classes[0];
   const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
     ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
+  const target = className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined;
+  const scope = draftScope();
+  const proofs = scope && editorModule ? [...new Set([selection?.path, target?.path].filter((path): path is string => !!path && editorModule!.isMounted(path)))].map(path => editorModule!.captureFileModelState(scope, path)) : [];
   return {
     key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
     tag: selection?.tag ?? "", className, classes,
-    target: className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined,
-    files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
+    target, modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
+    assetRevision: JSON.stringify([...nativeAssets]), files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };
+}
+
+/** Resolve an authored asset; computed URLs alone do not identify repository provenance. */
+function nativeStyleImageSource(selection: NativePreviewSelection, sources: Record<string, string>): { path: string; mode: "object-position" | "background-position" } | undefined {
+  const source = sources[selection.path], tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
+  if (selection.tag.toLowerCase() === "img" && tag) {
+    const raw = startTagAttribute(source, tag, "src")?.value;
+    const path = raw && nativeImageAsset(nativePageRoute(selection.path) ? selection.path : "index.html", decodeHtmlEntities(raw, true));
+    return path ? { path, mode: "object-position" } : undefined;
+  }
+  const result = resolveSelectedRules(selection.selectors, selection.cascade);
+  const winner = result.winners["background-image"];
+  if (!winner) return;
+  const rule = selection.selectors[winner.rule];
+  if (rule.kind === "inline" || !/\.css$/i.test(rule.path)) return;
+  const declaration = rule.declarations?.[winner.declaration];
+  const located = findStyleRulesInSources(sources, [rule])[0];
+  const block = located && scanCss(sources[rule.path] ?? "").find(block => block.start === located.start);
+  const authored = block?.declarations.filter(item => item.property === (declaration?.shorthand ?? declaration?.property)).at(-1);
+  if (!authored) return;
+  const style = document.createElement("div").style; style.setProperty(authored.property, authored.value);
+  const path = singleBackgroundAsset(style.getPropertyValue("background-image"), rule.path);
+  return path ? { path, mode: "background-position" } : undefined;
 }
 
 /** A fresh source snapshot shared by code intelligence and Style variable controls. */

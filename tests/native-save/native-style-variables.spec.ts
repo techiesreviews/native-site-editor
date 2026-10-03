@@ -147,3 +147,30 @@ test("without a workspace Style does not suppress the browser context menu", asy
   });
   expect(prevented).toBe(false);
 });
+
+test("ordinary style field keydown does not request the variable workspace", async ({page,baseURL}) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  const reads = await page.evaluate(async () => {
+    const { createStylePanel } = await import("/src/components/style-panel.ts");
+    let workspaceReads = 0;
+    const context = {key:"test",tag:"p",className:"test",classes:["test"],target:{path:"test.css",selector:".test",start:0},files:{"test.css":".test { color:red; }"},computed:{},get workspace(){ workspaceReads++; return undefined; }};
+    const host = document.createElement("main"); document.body.append(host);
+    const view = createStylePanel({context:()=>context,write:async()=>{},variable:async()=>{},selectClass:()=>{},addClass:async()=>{},showCode:async()=>{},history:()=>{},error:()=>{}},host);
+    host.append(view.root); (view.root.querySelector('.style-panel__opener') as HTMLButtonElement).click();
+    workspaceReads=0;
+    view.root.querySelector('[data-property="margin-top"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"a",bubbles:true}));
+    view.dispose();host.remove(); return workspaceReads;
+  });
+  expect(reads).toBe(0);
+});
+test("new class has no misleading Show in code until its first native CSS rule exists", async ({page,baseURL}) => {
+  await open(page,baseURL);
+  await panel(page).getByRole("textbox",{name:"Class name",exact:true}).fill("new-unwritten-class");
+  await panel(page).getByRole("button",{name:"Add class",exact:true}).click();
+  await expect(panel(page).getByRole("button",{name:"Show in code",exact:true})).toHaveCount(0);
+  await expect(panel(page)).toContainText("No class rule yet. The first style edit creates it");
+  await panel(page).getByRole("textbox",{name:"Text colour",exact:true}).fill("purple");
+  await panel(page).getByRole("textbox",{name:"Text colour",exact:true}).press("Enter");
+  await expect.poll(async () => (await storedDraft(page,"styles/site.css"))?.content).toContain(".new-unwritten-class");
+  await expect(panel(page).getByRole("button",{name:"Show in code",exact:true})).toBeVisible();
+});
