@@ -16,6 +16,17 @@ test.beforeEach(async ({page,baseURL}) => {
       if(state.stale){state.revision='B:1';return true;}
       if(state.mutateSources){state.sources['other.css']=':root {--accent: orange}';}
       if(state.switchMount){dispose();api.mountCodeEditor(host,{key:'css-B',historyScope:'B',path:'current.css',source:state.sources['current.css']});return true;}
+      if(path==='other.css' && state.invalidateFirst){
+        await new Promise(resolve=>setTimeout(resolve,0));
+        if(state.invalidateFirst==='replace') {
+          const replacement=document.createElement('div');document.body.append(replacement);
+          api.mountCodeEditor(replacement,{key:'replacement-theme',historyScope:'A',path:'theme.css',source:state.sources['theme.css']});
+        } else {
+          const first=monaco.editor.getModels().find((model:any)=>model.uri.path.endsWith('/theme.css'))!;
+          first.setValue(':root {--accent: orange}');
+          first.setValue(state.sources['theme.css']);
+        }
+      }
       const target=document.createElement('div');target.style.height='200px';document.body.append(target);
       api.mountCodeEditor(target,{key:path,historyScope:'A',path,source:state.sources[path]});return true;
     }});
@@ -73,4 +84,16 @@ test('definition cannot return into a replacement mounted scope after the host a
 test('an in-place source change during definition is rejected even if revision was not advanced',async({page})=>{
   const result=await page.evaluate(async()=>{const h=(window as any).cssTest;h.editor.setPosition(h.model.getPositionAt(h.model.getValue().indexOf('--accent')+3));h.state.mutateSources=true;return h.definition();});
   expect(result).toBeUndefined();
+});
+
+test('completion rejects nested pseudo-selectors and whitespace inside masked tokens',async({page})=>{
+  for(const marked of ['.a { button:hover --ac| {} }','.a {color:var(/* | */)}','.a {color:var(" |")}', '.a {color:var(/* |']) {
+    const suggestions=await page.evaluate(marked=>{const h=(window as any).cssTest;const at=marked.indexOf('|');h.set(marked.replace('|',''),at);return h.completion().suggestions;},marked);
+    expect(suggestions).toEqual([]);
+  }
+});
+for(const invalidation of ['replace','edit-and-revert']) test(`definition revalidates an earlier target after a later host await: ${invalidation}`,async({page})=>{
+  const result=await page.evaluate(async(invalidation)=>{const h=(window as any).cssTest;h.state.invalidateFirst=invalidation;h.editor.setPosition(h.model.getPositionAt(h.model.getValue().indexOf('--accent')+3));const locations=await h.definition();return {locations,opened:h.state.opened.map((entry:any)=>entry.path)};},invalidation);
+  expect(result.opened).toEqual(['theme.css','other.css']);
+  expect(result.locations).toBeUndefined();
 });

@@ -36,3 +36,19 @@ test('SCSS and Less line comments are excluded and parent values after a nested 
   assert.equal(cssVariableReference(commented, commented.indexOf('--fake'), 'a.scss'), undefined);
   assert.equal(completion('.a { .b {color:red} color: --ac|}')?.wrap, true);
 });
+
+test('bare-element pseudo-selectors never offer value completions in a nested rule', () => {
+  for (const selector of ['button:hover --ac| {}', 'a:focus-visible --ac| {color:red}', 'button:not(.off) --ac| {}']) {
+    assert.equal(completion(`.a { ${selector} }`), undefined, selector);
+  }
+  assert.equal(completion('.a { color:red; button:hover { color: --ac|; } }')?.wrap, true);
+});
+test('empty-var suggestions reject the entire comment/string span including whitespace and open EOF', () => {
+  for (const value of ['var(/* | */)', 'var(" |")', "var(' |')", 'var(/* |', 'var(" |', 'var(/* x\n | */)']) {
+    assert.equal(completion(`.a {color: ${value}}`), undefined, value);
+  }
+  assert.equal(completion('.a {color: var(/* comment */ |)}')?.wrap, false);
+  const source = '.a {color: var(//  \n)}';
+  assert.equal(cssVariableCompletion(source, source.indexOf('\n'), 'a.scss'), undefined);
+  assert.equal(cssVariableCompletion(source, source.indexOf(')'), 'a.scss')?.wrap, false);
+});

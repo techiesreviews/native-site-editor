@@ -880,6 +880,13 @@ export function mountCodeEditor(
         const version = model.getVersionId();
         const definitions = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
         const locations: monaco.languages.Location[] = [];
+        const targets: { path: string; mounted: MountedEditor; model: monaco.editor.ITextModel; version: number; source: string }[] = [];
+        const requesterCurrent = () => {
+          const fresh = workspaceFor(model);
+          return !cancellation?.isCancellationRequested && !!fresh && fresh.revision === workspace.revision && model.getVersionId() === version &&
+            Object.keys(workspace.sources).every(path => fresh.sources[path] === workspace.sources[path]) &&
+            Object.keys(fresh.sources).length === Object.keys(workspace.sources).length;
+        };
         for (const definition of definitions) {
           let target = mounted.get(definition.path);
           if (!target || target.model.getValue() !== workspace.sources[definition.path]) {
@@ -888,13 +895,15 @@ export function mountCodeEditor(
             } catch { return; }
             target = mounted.get(definition.path);
           }
-          const fresh = workspaceFor(model);
-          if (cancellation?.isCancellationRequested || !fresh || fresh.revision !== workspace.revision || model.getVersionId() !== version ||
-            Object.keys(workspace.sources).some(path => fresh.sources[path] !== workspace.sources[path]) ||
-            Object.keys(fresh.sources).length !== Object.keys(workspace.sources).length) return;
+          if (!requesterCurrent()) return;
           if (!target || target.session !== session || target.model.isDisposed() || target.model.getValue() !== workspace.sources[definition.path]) return;
+          targets.push({ path: definition.path, mounted: target, model: target.model, version: target.model.getVersionId(), source: workspace.sources[definition.path] });
           locations.push({ uri: target.model.uri, range: range(target.model, definition.start, definition.end) });
         }
+        // A later host await may replace or edit a target already accumulated.
+        if (!requesterCurrent() || targets.some(target => mounted.get(target.path) !== target.mounted ||
+          target.mounted.model !== target.model || target.mounted.session !== session || target.model.isDisposed() ||
+          target.model.getVersionId() !== target.version || target.model.getValue() !== target.source)) return;
         return locations;
       },
     }));
