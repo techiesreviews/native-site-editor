@@ -16,7 +16,8 @@
     "deploy:techies": "wrangler deploy --config wrangler.techies.jsonc",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test -c playwright.native-save.config.ts",
-    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts"
+    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
+    "deploy:preview": "wrangler deploy --config wrangler.preview.jsonc"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",

@@ -1,0 +1,30 @@
+{
+  // The dev preview at https://preview-editor.techies.tools: the `dev` branch,
+  // deployed on every push by .github/workflows/deploy-preview.yml (or by hand
+  // with `npm run deploy:preview`). Production is `wrangler.techies.jsonc`.
+  //
+  // A Worker of its own, so dev builds never share production's Durable
+  // Object: its sessions, drafts and GitHub App are separate. The first visit
+  // runs owner setup, which creates the preview's GitHub App on OWNER_GITHUB.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "native-site-editor-preview",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "build": { "command": "npm run build:ui" },
+  "routes": [{ "pattern": "preview-editor.techies.tools", "custom_domain": true }],
+  "vars": {
+    "EDITOR_ORIGIN": "https://preview-editor.techies.tools",
+    "OWNER_GITHUB": "techiesreviews",
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/auth/*", "/mcp", "/.well-known/*"],
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SESSIONS", "class_name": "SessionStore" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionStore"] }],
+}
