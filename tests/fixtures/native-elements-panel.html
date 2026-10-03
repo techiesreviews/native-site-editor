@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Native elements leaf harness</title></head>
+<body><button id="open">Add</button><output id="result"></output>
+<script type="module">
+import { createAddPanel } from "/src/page-builder/add-panel.ts";
+import { nativeElementChoices, nativeChoiceMarkup } from "/src/page-builder/native-elements.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, applyGuardedSourceEdit } from "/src/page-builder/native-operations.ts";
+let source = '<main><section><p>Existing text</p></section></main>';
+const destination = () => nativeDestinations(source, 'index.html', [0, 0]).find(item => item.placement === 'inside');
+const panel = createAddPanel({
+  choices: () => [{ tag: 'feature-block', label: 'Feature block' }],
+  extraChoices: () => nativeElementChoices,
+  preview: key => {
+    const markup = nativeChoiceMarkup(key) ?? '<feature-block></feature-block>';
+    return { markup, doc: `<!doctype html><html><body>${markup}</body></html>` };
+  },
+  canvasWidth: () => 800,
+  points: () => [destination().point],
+  defaultPoint: () => destination().point,
+  pointFor: (choice, fallback) => choice.tag === 'native:form' ? undefined : fallback,
+  destinationText: () => destination().description,
+  prepare: () => {},
+  insert: (point, choice) => {
+    const markup = nativeChoiceMarkup(choice.tag);
+    if (!markup) return;
+    const edit = nativeMarkupInsertEdit(source, point.parent, point.index, markup);
+    if (edit) source = applyGuardedSourceEdit(source, edit);
+    document.querySelector('#result').textContent = source;
+  },
+  drag: () => undefined,
+  dock: () => ({ left: 20, top: 50, bottom: 750, width: 380 }),
+  onState: () => {},
+});
+document.querySelector('#open').addEventListener('click', () => panel.openDocked());
+window.leafPanel = panel;
+</script></body></html>

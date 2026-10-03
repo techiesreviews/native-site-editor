@@ -11,7 +11,7 @@
 import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
+import { addCatalog, matchesQuery, type AddItem, type AddChoice } from "./add-catalog";
 import { positionText } from "./insert-target";
 import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
@@ -19,6 +19,11 @@ import "./add-panel.css";
 
 export interface AddPanelHandlers {
   choices(): InsertChoice[];
+  // Optional native choices join the same searchable catalogue. Keys must be unique.
+  extraChoices?(): readonly AddChoice[];
+  // Native/container targets can differ from section-component targets.
+  pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined): InsertPoint | undefined;
+  destinationText?(point: InsertPoint | undefined): string;
   // The HTML adding `tag` writes, and its thumbnail document.
   preview(tag: string): { markup: string; doc: string } | undefined;
   // The canvas's width, at which thumbnails render before scaling down.
@@ -121,11 +126,17 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     return handlers.defaultPoint();
   }
 
+  function choicePoint(choice: InsertChoice) {
+    const fallback = target();
+    return handlers.pointFor ? handlers.pointFor(choice, fallback) : fallback;
+  }
+
   function renderPosition() {
-    const at = target();
-    position.textContent = positionText(at);
+    const entry = active ? entries.get(active) : undefined;
+    const at = entry ? choicePoint(entry.item) : target();
+    position.textContent = handlers.destinationText?.(at) ?? positionText(at);
     panel.classList.toggle("has-no-place", !at);
-    for (const entry of entries.values()) entry.option.setAttribute("aria-disabled", String(!at));
+    for (const entry of entries.values()) entry.option.setAttribute("aria-disabled", String(!choicePoint(entry.item)));
   }
 
   function renderPeek() {
@@ -143,8 +154,12 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   // The list is built once per set of components, so thumbnails are not
   // reloaded as the search changes; a search hides what does not match.
   function build() {
-    const choices = handlers.choices();
-    const key = choices.map((choice) => `${choice.tag}:${choice.label}`).join("|");
+    const choices = [...handlers.choices(), ...(handlers.extraChoices?.() ?? [])];
+    const hasNative = choices.some((choice) => "kind" in choice && choice.kind === "native");
+    search.placeholder = hasNative ? "Search elements and components" : "Search components";
+    search.setAttribute("aria-label", search.placeholder);
+    list.setAttribute("aria-label", hasNative ? "Elements and components" : "Components");
+    const key = choices.map((choice) => `${choice.tag}:${choice.label}:${"group" in choice ? choice.group : ""}`).join("|");
     if (key !== builtFor) {
       builtFor = key;
       for (const entry of entries.values()) entry.thumb.destroy();
@@ -176,7 +191,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     option.setAttribute("role", "option");
     const thumb = createThumbnail("pb-add-item__thumb");
     const label = node("span", "pb-add-item__label");
-    label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", `<${item.tag}>`));
+    label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", item.kind === "native" ? "HTML" : `<${item.tag}>`));
     option.append(thumb.root, label);
     const code = node("pre", "pb-add-item__code");
     code.id = `${id}-code-${entries.size}`;
@@ -189,13 +204,16 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         ...canvas,
         announce: (text: string) => { live.textContent = text; },
         drop: (point: InsertPoint) => {
+          const at = handlers.pointFor ? handlers.pointFor(item, point) : point;
+          if (!at) return;
           if (gapKey) close(false);
-          handlers.insert(point, { tag: item.tag, label: item.label });
+          handlers.insert(at, { tag: item.tag, label: item.label });
         },
       };
     });
     const activate = () => {
       active = item.tag;
+      renderPosition();
       renderPeek();
     };
     option.addEventListener("pointerenter", activate);
@@ -231,7 +249,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       message.replaceChildren(node("p", "", "No components fit here yet. A component fits between sections when its template is one <section> element."));
     } else if (!shown) {
       message.replaceChildren(
-        node("p", "", `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
+        node("p", "", `No items match “${query.trim()}”.`),
         button("Clear search", () => {
           query = "";
           search.value = "";
@@ -245,10 +263,10 @@ export function createAddPanel(handlers: AddPanelHandlers) {
 
   function choose(tag: string) {
     const entry = entries.get(tag);
-    const at = target();
+    const at = entry ? choicePoint(entry.item) : undefined;
     if (!entry) return;
     if (!at) {
-      live.textContent = "This page has no place for a section.";
+      live.textContent = "This destination cannot accept this item.";
       return;
     }
     const choice = { tag, label: entry.item.label };

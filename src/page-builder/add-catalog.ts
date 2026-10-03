@@ -8,6 +8,8 @@ import { componentLabel } from "../native-insert";
 export interface AddChoice {
   tag: string;
   label: string;
+  group?: string;
+  kind?: "native" | "component";
 }
 
 export interface AddItem {
@@ -17,6 +19,7 @@ export interface AddItem {
   // The component's full name ("Section hero"), for search and announcements.
   label: string;
   group: string;
+  kind?: "native" | "component";
 }
 
 export interface AddGroup {
@@ -65,12 +68,18 @@ function pageOrder(items: AddItem[]) {
 export function addCatalog(choices: readonly AddChoice[]): AddGroup[] {
   const counts = new Map<string, number>();
   for (const choice of choices) {
+    if (choice.group) continue;
     const [word, ...rest] = choice.tag.split("-");
     if (rest.length) counts.set(word, (counts.get(word) ?? 0) + 1);
   }
   const groups = new Map<string, AddItem[]>();
   const loose: AddItem[] = [];
   for (const choice of choices) {
+    if (choice.group) {
+      if (!groups.has(choice.group)) groups.set(choice.group, []);
+      groups.get(choice.group)!.push({ tag: choice.tag, name: choice.label, label: choice.label, group: choice.group, kind: choice.kind });
+      continue;
+    }
     const [word, ...rest] = choice.tag.split("-");
     if (rest.length && (counts.get(word) ?? 0) >= 2) {
       const name = groupName(word);
