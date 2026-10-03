@@ -32,7 +32,7 @@ function startTagTail(text: string): { selfClosing: boolean } | undefined {
   let at = 0;
   while (at < text.length) {
     const before = at;
-    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    while (/[\t\n\f\r ]/.test(text[at] ?? "") && at < text.length) at++;
     if (at === text.length) return { selfClosing: false };
     if (text[at] === "/") return at === text.length - 1 ? { selfClosing: true } : undefined;
     if (at === before) return;
@@ -40,16 +40,16 @@ function startTagTail(text: string): { selfClosing: boolean } | undefined {
     if (!name) return;
     at += name[0].length;
     const afterName = at;
-    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    while (/[\t\n\f\r ]/.test(text[at] ?? "") && at < text.length) at++;
     if (text[at] !== "=") { at = afterName; continue; }
     at++;
-    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    while (/[\t\n\f\r ]/.test(text[at] ?? "") && at < text.length) at++;
     if (text[at] === '"' || text[at] === "'") {
       const quote = text[at++], end = text.indexOf(quote, at);
       if (end < 0 || /[<>]/.test(text.slice(at, end))) return;
       at = end + 1;
     } else {
-      const value = /^[^\s"'=<>`]+/.exec(text.slice(at));
+      const value = /^[^\t\n\f\r "'=<>`]+/.exec(text.slice(at));
       if (!value) return;
       // In an unquoted value, `/` is a value character, including just before `>`.
       at += value[0].length;
@@ -71,7 +71,7 @@ function tree(source: string): SourceNode | undefined {
       close.lastIndex = at;
       const match = close.exec(source);
       if (!match) return undefined;
-      const closing = new RegExp(`^</${parent.name}\\s*>`, "i").exec(source.slice(match.index));
+      const closing = new RegExp(`^</${parent.name}[\\t\\n\\f\\r ]*>`, "i").exec(source.slice(match.index));
       if (!closing) return undefined;
       parent.closeStart = match.index; parent.end = match.index + closing[0].length;
       stack.pop(); at = parent.end; continue;
@@ -82,9 +82,9 @@ function tree(source: string): SourceNode | undefined {
       at = end + 3; continue;
     }
     const tail = source.slice(lt);
-    const doctype = /^<!doctype\s+html\s*>/i.exec(tail);
+    const doctype = /^<!doctype[\t\n\f\r ]+html[\t\n\f\r ]*>/i.exec(tail);
     if (doctype && stack.length === 1) { at = lt + doctype[0].length; continue; }
-    const close = /^<\/([a-z][\w:-]*)\s*>/i.exec(tail);
+    const close = /^<\/([a-z][\w:-]*)[\t\n\f\r ]*>/i.exec(tail);
     if (close) {
       if (stack.length === 1 || parent.name !== close[1].toLowerCase()) return undefined;
       parent.closeStart = lt; parent.end = lt + close[0].length;
@@ -92,6 +92,8 @@ function tree(source: string): SourceNode | undefined {
     }
     const tag = startTags(tail)[0];
     if (!tag || tag.start !== 0 || tail[tag.end - 1] !== ">" || !/^[a-z][\w:-]*$/i.test(tag.name)) return undefined;
+    // Shared scanners may split names on JS whitespace; HTML recognizes only ASCII spaces.
+    if (!/[\t\n\f\r />]/.test(tail[tag.nameEnd] ?? "")) return undefined;
     const namespace = namespaceFor(parent, tag.name, source);
     if (namespace === "html" && !htmlNames.has(tag.name) && !["svg", "math"].includes(tag.name) && !customName(tag.name)) return undefined;
     // HTML breakouts escape a foreign island and change the page's child paths.
@@ -237,7 +239,7 @@ function structuralIndent(markup: string, newline: string, indent: string, remov
   if (parsed) for (const node of all(parsed)) if (node.opaque) protectedRanges.push([node.start, node.end]);
   for (const tag of startTags(markup)) {
     if (!raw.has(tag.name) && tag.name !== "pre") continue;
-    const close = new RegExp(`</${tag.name}\\s*>`, "ig");
+    const close = new RegExp(`</${tag.name}[\\t\\n\\f\\r ]*>`, "ig");
     close.lastIndex = tag.end;
     const match = close.exec(markup);
     if (match) protectedRanges.push([tag.end, match.index]);

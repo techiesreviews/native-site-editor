@@ -96,3 +96,19 @@ test('valid inline SVG foreignObject block content leaves the following section 
   await expect(page.frameLocator('.native-preview-frame').locator('#target #outside-proof')).toHaveCount(1);
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain('<p><svg><foreignObject><div>Label</div></foreignObject></svg></p>');
 });
+
+for(const [name,char] of [['NBSP','\u00a0'],['VT','\u000b'],['BOM','\ufeff']]) test(`HTML token whitespace excludes ${name} in unquoted values and tag names`,async({page})=>{
+  const frame=page.frameLocator('.native-preview-frame');
+  for(const opening of [`<svg data-x=x${char}/>`,`<svg${char}/>`]) {
+    const malformed=`<main>${opening}<section id="island">Island</section><div id="target">Target</div></main>`;
+    await page.evaluate(malformed=>{const h=(window as any).elementCompat;const before=h.state.source;h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:malformed});},malformed);
+    await expect(frame.locator('#target')).toHaveCount(1);
+    await expect.poll(()=>frame.locator('#page > main > :first-child').evaluate(el=>el.localName)).toBe(opening.startsWith('<svg data-')?'svg':`svg${char}`);
+    const live=await page.evaluate(()=>(window as any).elementCompat.state.source);
+    // Monaco preserves these value/name characters; the operation must fail closed.
+    expect(live).toBe(malformed);
+    expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<hr id="wrong-edit">'))).toBe(false);
+    expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(malformed);
+    await expect(frame.locator('#wrong-edit')).toHaveCount(0);
+  }
+});

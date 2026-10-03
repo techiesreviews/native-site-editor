@@ -229,3 +229,17 @@ test('foreign integration content has local semantic validation without crossing
   const malformed='<p><svg><foreignObject><p><div>Repair</div></p></foreignObject></svg></p>';
   assert.equal(apply('<main>'+malformed+'<section></section></main>',[0,1],0,'<hr>'),undefined);
 });
+
+test('non-HTML Unicode whitespace cannot turn an unquoted value or tag name into a self-closing flag', () => {
+  for(const char of ['\u00a0','\u000b','\ufeff']) {
+    for(const opening of [`<svg data-x=x${char}/>`,`<svg${char}/>`]) {
+      const source=`<main>${opening}<section id="island"></section><div id="target"></div></main>`;
+      assert.equal(apply(source,[0,1],0,'<hr>'),undefined,JSON.stringify(opening));
+      assert.deepEqual(nativeDestinations(source,'index.html',[0,1]),[]);
+    }
+    const quoted=`<svg data-x="x${char}"/>`;
+    assert.ok(apply(`<main>${quoted}<section id="target"></section></main>`,[0,1],0,'<hr>')?.includes(quoted));
+    assert.equal(apply(`<main><svg></svg${char}><section></section></main>`,[0,1],0,'<hr>'),undefined);
+  }
+  for(const char of ['\t','\n','\f','\r',' ']) assert.ok(apply(`<main><svg data-x=x${char}/><section></section></main>`,[0,1],0,'<hr>'));
+});
