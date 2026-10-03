@@ -459,7 +459,7 @@ function mountWorkspace() {
         const escaped = name.replace(/&/g, "&amp;").replace(quoted && quote === "'" ? /'/g : /"/g, quoted && quote === "'" ? "&#39;" : "&quot;");
         const raw = source.slice(attribute.valueStart, attribute.valueEnd);
         if (quoted) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: (raw ? " " : "") + escaped };
-        else if (!raw) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: `="${escaped}"` };
+        else if (!raw) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: `${source.slice(attribute.start, attribute.valueStart).includes("=") ? "" : "="}"${escaped}"` };
         else edit = { start: attribute.valueStart, end: attribute.valueEnd, text: `"${raw.replace(/"/g, "&quot;")} ${escaped}"` };
       }
       if (applyNativeChange(selected.path, source, [edit], selected.node, "Class added")) {

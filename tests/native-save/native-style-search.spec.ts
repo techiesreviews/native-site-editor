@@ -23,6 +23,10 @@ test("search filters existing controls without losing focus and restores section
   const search = panel(page).getByRole("searchbox", { name: "Search styles" });
   const spacing = panel(page).locator("details").filter({ has: page.locator("summary", { hasText: /^Spacing$/ }) });
   await expect(spacing).toHaveAttribute("open", "");
+  for (const [query, label] of [["margin-top", "Margin top"], ["padding left", "Padding left"]]) {
+    await search.fill(query); await expect(search).toBeFocused();
+    await expect(panel(page).getByRole("textbox", { name: label, exact: true })).toBeVisible();
+  }
   await search.fill("round corners"); await expect(search).toBeFocused();
   await expect(panel(page).getByRole("textbox", { name: "top left radius", exact: true })).toBeVisible();
   await expect(spacing).toBeHidden();

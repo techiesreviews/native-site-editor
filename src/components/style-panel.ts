@@ -325,7 +325,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       for (const details of content.querySelectorAll<HTMLDetailsElement>("details")) {
         const title = details.querySelector("summary")!.textContent!;
         if (title === "Spacing") {
-          const visible = matchesStyleSearch(searchQuery, "margin padding spacing box model", "margin padding", title); details.hidden = !visible; if (visible) matches++;
+          const visible = matchesStyleSearch(searchQuery, "margin padding spacing box model", "margin padding", title) || ["margin", "padding"].some(kind => sides.some(side => matchesStyleSearch(searchQuery, `${kind} ${side}`, `${kind}-${side}`, title))); details.hidden = !visible; if (visible) matches++;
         } else {
           let count = 0;
           for (const row of details.querySelectorAll<HTMLElement>("[data-search-property]")) {

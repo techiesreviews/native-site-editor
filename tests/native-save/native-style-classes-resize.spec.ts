@@ -118,3 +118,28 @@ test("narrow widths clamp the dock and preserve canvas space without page overfl
     await expect(panel(page).locator(".style-panel__selector")).toBeVisible();
   }
 });
+
+for (const attribute of ["class=", "class", "class = "]) {
+  test(`adding a class safely fills empty ${JSON.stringify(attribute)} without changing other source`, async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const before = await page.evaluate(async attribute => {
+      const api = await import("/src/components/code-editor.ts");
+      const source = api.getMountedSource("index.html") as string;
+      const expected = '<p class="lead" data-key="hero-lead">', start = source.indexOf(expected);
+      const text = `<p data-key="hero-lead" ${attribute}>`;
+      api.replaceActiveRange({ path: "index.html", start, end: start + expected.length, expected, text });
+      const after = source.replace(expected, text);
+      if (api.getMountedSource("index.html") !== after) throw new Error("Fixture edit failed");
+      return after;
+    }, attribute);
+    await frame(page).locator('.hero p').click();
+    await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+    await panel(page).getByRole("textbox", { name: "Class name" }).fill("new");
+    await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
+    const expected = attribute.includes("=") ? `${attribute}"new"` : `${attribute}="new"`;
+    await expect.poll(() => source(page)).toBe(before.replace(`<p data-key="hero-lead" ${attribute}>`, `<p data-key="hero-lead" ${expected}>`));
+    await expect(chip(page, "new")).toHaveAttribute("aria-pressed", "true");
+    await panel(page).getByRole("textbox", { name: "Class name" }).press("ControlOrMeta+Z");
+    await expect.poll(() => source(page)).toBe(before);
+  });
+}
