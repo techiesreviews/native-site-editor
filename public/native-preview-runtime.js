@@ -856,14 +856,19 @@
       ghost: { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) }
     };
   }
+  var trackedGrid = null;
+  var recentGrid = null;
   var gridFrame = 0;
   var lastGrids = "";
   function scheduleItemGrids() {
     if (gridFrame || !state) return;
     gridFrame = requestAnimationFrame(function () {
       gridFrame = 0;
+      var underPointer = hovered && hovered.isConnected ? gridItemOf(hovered) : null;
+      if (underPointer) recentGrid = underPointer;
+      if (trackedGrid && (!trackedGrid.container.isConnected || !pageEl.contains(trackedGrid.container))) trackedGrid = null;
       var report = {
-        hover: gridReport(hovered && hovered.isConnected ? gridItemOf(hovered) : null),
+        hover: gridReport(trackedGrid || underPointer),
         selected: gridReport(selected && selected.isConnected ? gridItemOf(selected) : null)
       };
       // A new render has a new context: its report goes out even when it is the same.
@@ -873,6 +878,11 @@
       emit("item-grids", report);
     });
   }
+  document.addEventListener("pointerdown", function () {
+    if (!trackedGrid) return;
+    trackedGrid = null;
+    scheduleItemGrids();
+  }, true);
   // ---- End of repeated items ----
 
   // The page's own elements as a tree of index paths, for the editor's page
@@ -2582,8 +2592,8 @@
   });
   // ---- End of canvas ----
 
-  window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); }, true);
-  window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); });
+  window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); }, true);
+  window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); });
   document.addEventListener("submit", function (e) { e.preventDefault(); });
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;
@@ -2591,6 +2601,21 @@
     if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
       dragMessage(msg);
+      return;
+    }
+    // Keep the popup's grid geometry live while the pointer is in host controls.
+    if (msg.type === "item-grid-track") {
+      trackedGrid = null;
+      var candidate = recentGrid && gridReport(recentGrid);
+      if (msg.grid && candidate && msg.grid.path === candidate.path &&
+          JSON.stringify(msg.grid.parent) === JSON.stringify(candidate.parent)) trackedGrid = recentGrid;
+      if (!trackedGrid && msg.grid && selected) {
+        var selectedGrid = gridItemOf(selected);
+        var selectedReport = gridReport(selectedGrid);
+        if (selectedReport && msg.grid.path === selectedReport.path &&
+            JSON.stringify(msg.grid.parent) === JSON.stringify(selectedReport.parent)) trackedGrid = selectedGrid;
+      }
+      scheduleItemGrids();
       return;
     }
     // The Add panel's drag scrolls the page near the frame's edges
@@ -2656,6 +2681,6 @@
   });
   pageEl = document.getElementById("page");
   // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); }).observe(pageEl);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); }).observe(pageEl);
   parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
 })();

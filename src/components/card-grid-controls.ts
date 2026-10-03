@@ -88,7 +88,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   // The grid on show and what the editor says it is.
   let shown: { grid: ItemGridReport; about: GridDescription } | undefined;
   // The grid the popover is open for.
-  let open: { grid: ItemGridReport; about: GridDescription } | undefined;
+  let open: { grid: ItemGridReport; about: GridDescription; live: boolean } | undefined;
   let pointerOnAdd = false;
   let leaveTimer = 0;
   let hoverGone = false;
@@ -169,8 +169,14 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     openPopover(grid, about);
   }
 
+  function trackGrid(grid?: ItemGridReport) {
+    if (!(frame instanceof HTMLIFrameElement)) return;
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "item-grid-track", grid }, "*");
+  }
+
   function openPopover(grid: ItemGridReport, about: GridDescription) {
-    open = { grid, about };
+    open = { grid, about, live: false };
+    trackGrid(grid);
     add.setAttribute("aria-expanded", "true");
     ghost.classList.add("is-open");
     const titleId = "card-add-title";
@@ -250,19 +256,25 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const anchor = add.getBoundingClientRect();
     const width = Math.min(320, frameRect.width - 24);
     popover.style.width = `${width}px`;
+    popover.style.maxHeight = `${Math.max(120, frameRect.height - 24)}px`;
     const height = popover.offsetHeight;
     const below = anchor.bottom - paneRect.top + 8;
     const above = anchor.top - paneRect.top - 8 - height;
     const bottom = top + frameRect.height - 12;
     const y = below + height <= bottom || above < top + 12 ? Math.min(below, bottom - height) : above;
-    const x = anchor.left - paneRect.left + anchor.width / 2 - width / 2;
-    popover.style.top = `${Math.max(top + 12, y)}px`;
+    const right = anchor.right - paneRect.left + 12;
+    const before = anchor.left - paneRect.left - width - 12;
+    const side = right + width <= left + frameRect.width - 12 ? right : before >= left + 12 ? before : undefined;
+    const x = side ?? anchor.left - paneRect.left + anchor.width / 2 - width / 2;
+    const placedY = side === undefined ? y : Math.min(anchor.top - paneRect.top, bottom - height);
+    popover.style.top = `${Math.max(top + 12, placedY)}px`;
     popover.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
   }
 
   function close(restoreFocus: boolean) {
     if (!open) return;
     open = undefined;
+    trackGrid();
     popover.hidden = true;
     popover.replaceChildren();
     add.setAttribute("aria-expanded", "false");
@@ -288,9 +300,15 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     /** The runtime reported the grids under the pointer and around the selection. */
     update(next: ItemGridsReport) {
       const hoverLeft = Boolean(reports.hover) && !next.hover;
+      const latest = open ? [next.hover, next.selected].find((grid) => grid && gridKey(grid) === gridKey(open!.grid)) : undefined;
+      if (open && latest) {
+        open.grid = latest;
+        open.live = true;
+      }
       if (sameReport(reports.hover, next.hover) && sameReport(reports.selected, next.selected)) return;
       if (hoverLeft) lastHover = reports.hover ?? undefined;
       reports = next;
+      if (open?.live && !latest) close(false);
       if (next.hover) {
         hoverGone = false;
         clearTimeout(leaveTimer);
@@ -325,6 +343,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     },
     destroy() {
       clearTimeout(leaveTimer);
+      trackGrid();
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();

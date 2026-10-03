@@ -114,9 +114,16 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
   the Pages tab offer, delete) behind a small dependency object.
 - `src/components/card-grid-controls.ts` (+ `.css`): the ghost, its button and
   the popover over the preview frame; created by `native-preview.ts`, fed by
-  the runtime's `item-grids` message.
+  the runtime's `item-grids` message. Only the Add button accepts pointer
+  events over the canvas; it sits above overlapping section insertion buttons.
+  The popup prefers available space beside its anchor and scrolls internally
+  when the frame cannot fit its height.
 - `public/native-preview-runtime.js`, block "Repeated items": reports the grid
   under the pointer and around the selection, with where the ghost goes.
+  `item-grid-track` keeps the open popup's grid live while the pointer is in
+  host controls. Scroll, resize, and layout changes refresh its viewport
+  geometry; canvas pointerdown releases tracking so selection still reaches
+  the clicked element. Closing or destroying the controls releases it too.
 - `src/main.ts`: `mountCards()` (the dependencies), one call in
   `renderNativeEditBar`, the Pages tab's `cardOffer`, `createNativeNew` and
   `removeNativePagesTarget`.
@@ -134,7 +141,10 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
   and card (the popover, a taken URL, the card and page written, selected,
   Open page, one undo and redo for both); Select card, Move left/right,
   Duplicate, Remove, Card only; the Pages tab checkbox, delete with the card,
-  and Change URL rewriting the card's link.
+  and Change URL rewriting the card's link. Regressions cover overlapping
+  section controls with `elementFromPoint`, popup and ghost geometry after
+  iframe scroll, outside selection and dismissal, Escape focus, and rejected
+  reports from an earlier source context.
 
 `fixtures/native-starter` was not changed: its cards link to no subpages, and
 adding pages to it would change page counts other suites assert. The new

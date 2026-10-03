@@ -2,7 +2,8 @@
    would go, and the popover that names a new page. */
 .card-grid-layer {
   position: absolute;
-  z-index: 19;
+  /* Above section insertion controls; only the Add button accepts pointers. */
+  z-index: 21;
   overflow: hidden;
   pointer-events: none;
 }
@@ -80,6 +81,7 @@
 .card-add {
   position: absolute;
   z-index: 31;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;

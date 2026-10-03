@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 
@@ -285,4 +286,96 @@ test("review: a card holding a grid of its own is its grid's card; Alt+arrows mo
   await item(page, "Work").hover();
   await explorer(page).getByRole("button", { name: "Add subpage to Work" }).click();
   await expect(explorer(page).getByRole("checkbox", { name: "Add a card to “Recent work” on Home" })).toBeChecked();
+});
+
+test("card Add wins overlapping section controls; open popup follows iframe scroll and canvas clicks dismiss it", async ({ page, baseURL }) => {
+  // A two-column grid's next row occupies the gap before the adjacent section.
+  // Its centred Add button and the section plus share pixels deliberately.
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source
+    .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr));width:200%"')
+    .replace('id="services"', 'id="services" style="margin-top:112px"')
+    .replace('class="page"', 'class="page" style="padding-bottom:700px"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  await frame(page).locator("html").evaluate(() => window.scrollTo(0, 220));
+  await frame(page).locator("#work .cards").click({ position: { x: 2, y: 2 } });
+  await expect(addCard(page)).toBeVisible();
+  const button = (await addCard(page).boundingBox())!;
+  const sectionPlus = page.getByRole("button", { name: /Add a section before “What we do/ });
+  await expect(sectionPlus).toBeVisible();
+  const plus = (await sectionPlus.boundingBox())!;
+  expect(Math.abs(button.y + button.height / 2 - plus.y - plus.height / 2)).toBeLessThan(20);
+  expect(plus.x).toBeGreaterThan(button.x);
+  expect(plus.x + plus.width).toBeLessThan(button.x + button.width);
+  const hitAdd = () => addCard(page).evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  });
+  expect(await hitAdd()).toBe(true);
+  expect(await page.locator(".card-ghost").evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return document.elementFromPoint(rect.x + 4, rect.bottom - 4)?.matches(".native-preview-frame");
+  })).toBe(true);
+  await addCard(page).click();
+  await expect(popover(page)).toBeVisible();
+  const before = (await page.locator(".card-ghost").boundingBox())!;
+  const beforePopup = (await popover(page).boundingBox())!;
+  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 80));
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 80, 0);
+  expect(await hitAdd()).toBe(true);
+  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeLessThan(beforePopup.y);
+  await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(popover(page)).toBeHidden();
+  await expect(addCard(page)).toBeFocused();
+  await addCard(page).click();
+  await expect(popover(page)).toBeVisible();
+  await frame(page).locator("#services h2").click();
+  await expect(popover(page)).toBeHidden();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  await expect(page.getByRole("treeitem", { name: "Heading What we do", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(frame(page).locator("card-project")).toHaveCount(2);
+  expect(await homeDraft(page)).toBe(fixture);
+  await frame(page).locator("card-project").first().hover();
+  await addCard(page).click();
+  await popover(page).getByRole("button", { name: "Card only", exact: true }).click();
+  await expect(frame(page).locator("card-project")).toHaveCount(3);
+  await page.locator(".code-editor__undo").click();
+  await expect(frame(page).locator("card-project")).toHaveCount(2);
+});
+
+test("a stale grid report cannot restore controls or edit the previous source", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.evaluate(() => {
+    window.addEventListener("message", (event) => {
+      if (event.data?.source === "astro-native-preview" && event.data.type === "item-grids" && event.data.hover) {
+        (window as unknown as { savedGridReport: unknown }).savedGridReport = event.data;
+      }
+    });
+  });
+  await frame(page).locator("card-project").first().hover();
+  await expect(addCard(page)).toBeVisible();
+  const old = await page.evaluate(() => (window as unknown as { savedGridReport: unknown }).savedGridReport);
+  expect(old).toBeTruthy();
+  await addCard(page).click();
+  await expect(popover(page)).toBeVisible();
+  const replacement = nestedHome.replace('<div class="cards">', '<div class="spacer">Different source</div><div class="cards">');
+  await pasteInto(page, replacement);
+  await expect(frame(page).locator("article.card")).toHaveCount(2);
+  await expect(popover(page)).toBeHidden();
+  await page.evaluate((data) => {
+    const frame = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!;
+    window.dispatchEvent(new MessageEvent("message", { data, source: frame.contentWindow }));
+  }, old);
+  await expect(addCard(page)).toBeHidden();
+  expect(await homeDraft(page)).toBe(replacement);
+  await frame(page).locator("article.card").first().hover();
+  await addCard(page).click();
+  await popover(page).getByRole("button", { name: "Card only", exact: true }).click();
+  await expect(frame(page).locator("article.card")).toHaveCount(3);
+  expect(await homeDraft(page)).toContain('<div class="spacer">Different source</div>');
+  await page.locator(".code-editor__undo").click();
+  await expect.poll(() => homeDraft(page)).toBe(replacement);
 });
