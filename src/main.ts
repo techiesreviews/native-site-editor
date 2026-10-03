@@ -372,6 +372,7 @@ function mountPalette() {
       return Object.entries(nativeSite.components).map(([tag, file]) => ({ tag, file, label: componentLabel(tag), section: isSectionTemplate(sources[file] ?? "") }));
     },
     currentPath: () => currentPath,
+    revision: () => `${setupScope()}:${generation}`,
     open: (path) => {
       if (path === currentPath && editorModule?.isMounted(path)) return;
       void restoreFile(path, generation);
@@ -389,9 +390,12 @@ function mountPalette() {
     codeHidden: () => element("main").classList.contains("code-collapsed"),
     toggleStructure: () => sidebarResize?.toggle(),
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
-    newPage: () => {
+    newPage: async () => {
       openExplorer();
       selectExplorerTab("pages");
+      // Opening the popover queues a toggle that renders its pages tree.
+      // Start the title field after that render, so it keeps focus.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       pagesTree?.startNew("/");
     },
     newFile: () => {
@@ -2535,6 +2539,8 @@ let cancelAutoSignIn: (() => void) | undefined;
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
+  editorPalette?.dispose();
+  editorPalette = undefined;
   agentMenu?.destroy();
   agentMenu = undefined;
   activeFileContext = null;

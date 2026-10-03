@@ -41,6 +41,8 @@ export interface EditorPaletteDeps {
   files: () => string[];
   components: () => PaletteComponent[];
   currentPath: () => string | undefined;
+  /** Site and mount revision, changed when an editor session is replaced. */
+  revision?: () => string;
   /** Opens a file (a page in the preview and the code pane, any other file in the code pane). */
   open: (path: string) => void | Promise<void>;
   /** A file's text as drafted. */
@@ -145,10 +147,11 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
   if (!model || !selection) return [];
+  const revision = deps.revision?.();
   const source = deps.source(selection.path);
   const identity = JSON.stringify(selection);
   const guard = (run: () => void | Promise<void>) => guardCommand(run,
-    () => deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
+    () => deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
     () => deps.announce("The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
@@ -304,6 +307,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
   // Components: add a section component where the selection is, or open any component's template.
   const selection = deps.selection();
   const pagePath = current && pageFiles.has(current) ? current : undefined;
+  const revision = deps.revision?.();
   const listedSource = pagePath ? deps.source(pagePath) : undefined;
   const listedSelection = JSON.stringify(selection);
   for (const component of deps.components()) {
@@ -318,7 +322,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
         suggested: true,
         keywords: ["insert", "section", "component", component.tag],
         run: async () => {
-          if (deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || JSON.stringify(deps.selection()) !== listedSelection) {
+          if (deps.revision?.() !== revision || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || JSON.stringify(deps.selection()) !== listedSelection) {
             deps.announce("The page changed. Reopen the command palette and try again.");
             return;
           }
@@ -413,6 +417,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       const model = deps.editBar();
       const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
       if (!prompt || text.length < 3) return [];
+      const revision = deps.revision?.();
       const selection = deps.selection();
       const source = selection && deps.source(selection.path);
       const identity = JSON.stringify(selection);
@@ -425,7 +430,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
         run: guardCommand(async () => {
           const problem = await prompt.onSend(text);
           if (problem) deps.onError(new Error(problem));
-        }, () => deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+        }, () => deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
         () => deps.announce("The selection changed. Reopen the command palette and try again.")),
       }];
     },

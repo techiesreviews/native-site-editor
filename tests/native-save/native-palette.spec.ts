@@ -286,3 +286,31 @@ test("a source edit while the palette is open rejects a stale Duplicate", async 
   await expect.poll(() => editorText(page)).toBe(changed);
   await expect(frame.locator("section.filler")).toHaveCount(1);
 });
+
+
+test("session expiry disposes palette listeners before editor remount", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/snapshot?**", (route) => route.fulfill({
+    status: 401,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "Session expired for palette test" }),
+  }));
+  await page.locator("#refresh").evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(page.locator("#app")).toHaveClass(/login-page/);
+  await expect(palette(page)).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.keyboard.press("ControlOrMeta+P");
+  await page.keyboard.press("?");
+  await expect(palette(page)).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await page.unroute("**/api/snapshot?**");
+  await page.goto(`/?palette-remount=1${nativeHash}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
+  await page.locator("#explorer-toggle").focus();
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(palette(page)).toBeVisible();
+  await expect(search(page)).toBeFocused();
+  await expect(palette(page)).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
