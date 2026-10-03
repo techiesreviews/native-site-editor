@@ -182,3 +182,48 @@ test("a section move waiting for its page editor refuses a foreign draft written
   expect(await source(page)).toContain('data-agent="during-open"');
   await undo(page); await expect.poll(() => source(page)).toBe(raced.changed);
 });
+
+test("a never-saved page's section move preserves a foreign draft written while its editor opens", async ({ page }) => {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "+ New page", exact: true }).click();
+  const title = page.getByRole("textbox", { name: "New page title", exact: true });
+  await title.fill("Waiting page"); await title.press("Enter");
+  const path = "waiting-page/index.html";
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+  await page.evaluate(async path => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource(path)!;
+    const text = before.replace(/(<main[^>]*>)[\s\S]*?<\/main>/, '$1<section id="new-first"><p>First draft section</p></section><section id="new-target"><p>Second draft section</p></section></main>');
+    editor.replaceActiveRange({ path, start: 0, end: before.length, expected: before, text });
+  }, path);
+  await expect(frame(page).locator("#new-first")).toBeVisible();
+  const record = await storedDraft(page, path);
+  expect(record?.baseSha).toBeNull();
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
+  const styles = page.locator("#explorer").getByRole("button", { name: "styles", exact: true });
+  if (await styles.getAttribute("aria-expanded") !== "true") await styles.click();
+  await page.locator("#explorer").getByRole("button", { name: "site.css", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  await expect(frame(page).locator("#new-first")).toBeVisible();
+  const row = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first();
+  const raced = await row.evaluate(async (element, { record, path }) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const { draftStore } = await import("/src/drafts.ts");
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
+    const awaiting = document.querySelector("#current-page")?.getAttribute("data-path") === path && editor.getMountedSource(path) === undefined;
+    const changed = record!.content.replace('<section id="new-first">', '<section id="new-first" data-agent="during-new-open">');
+    draftStore().save({ ...record!, content: changed, updatedAt: Date.now() } as import("../../src/drafts").SavedDraft);
+    return { awaiting, changed };
+  }, { record, path });
+  expect(raced.awaiting).toBe(true);
+  await expect(page.locator("#status")).toHaveText("The source changed while its editor opened. Select the section again before moving it.");
+  expect((await storedDraft(page, path))?.content).toBe(raced.changed);
+  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "new-first");
+  await expect(frame(page).locator("#new-first")).toHaveAttribute("data-agent", "during-new-open");
+  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first().press("Alt+ArrowDown");
+  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "new-target");
+  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), path)).toBe(true);
+  await expect.poll(() => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path)).toBe(raced.changed);
+});

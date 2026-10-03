@@ -1897,7 +1897,7 @@ async function moveNativeSectionAfterOpening(target: { path: string; node: numbe
   await restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === generation && scope === setupScope() && nativeEffectiveSource(target.path) === paintedSource });
   if (epoch !== generation || scope !== setupScope() || currentPath !== target.path || nativeEffectiveSource(target.path) !== paintedSource) {
     if (epoch !== generation || scope !== setupScope()) return;
-    if (draft && cachedModel?.isCurrent() && !editorModule?.isMounted(target.path)) editorModule?.forgetDraftModel(draft, target.path);
+    if (draft && nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !editorModule?.isMounted(target.path)) editorModule?.forgetDraftModel(draft, target.path);
     updateNativePreviewSources();
     announce("The source changed while its editor opened. Select the section again before moving it."); return;
   }
@@ -6160,7 +6160,7 @@ function nativeFallbackPage(path: string) {
   return nativeSite.routes["/"];
 }
 
-async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean } = {}) {
+async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean; linkDefaultStyle?: boolean; beforeMount?: () => boolean } = {}) {
   if (
     !snapshot ||
     !currentRepo ||
@@ -6182,7 +6182,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     status(`Selected ${draft.path}.`);
     return;
   }
-  await mountSource(draft.path, "", null, false, epoch, selection);
+  await mountSource(draft.path, "", null, false, epoch, selection, options);
 }
 
 // An uploaded file, opened: the image itself when it is one, and Discard.
@@ -6311,7 +6311,7 @@ async function restoreFile(
     if (!entry) {
       const saved = savedDraft();
       if (saved?.baseSha === null) {
-        await openNewDraft(saved, { keepExplorer: options.keepExplorer });
+        await openNewDraft(saved, options);
         return;
       }
       // An edit of a file GitHub deleted: opened to be settled.
