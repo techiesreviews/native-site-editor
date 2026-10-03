@@ -9,7 +9,8 @@
 .grid-editor :is(input, button) { box-sizing: border-box; font: inherit; color: inherit; min-height: var(--size-control, 28px); padding: 4px 6px; border: 1px solid var(--control-line, #bbb); border-radius: var(--radius, 4px); background: var(--surface-input, #fff); }
 .grid-editor button { cursor: pointer; max-width: 155px; }
 .grid-editor :is(input, button):focus-visible { outline: var(--focus-ring, 2px solid #2463eb); outline-offset: 2px; }
-.grid-editor :disabled { opacity: .55; cursor: default; }
+.grid-editor :is(:disabled, [aria-disabled="true"]) { opacity: .55; cursor: default; }
+.grid-editor[aria-busy="true"] :is(input, button) { cursor: progress; }
 
 .grid-editor__error { grid-column: 1 / -1; margin: 0; color: var(--error, #b42318); }
 .grid-editor [hidden] { display: none; }
