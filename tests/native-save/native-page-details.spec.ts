@@ -106,21 +106,24 @@ test("Page settings shows the page head and keeps metadata fields out of the str
   const componentPath = "components/feature-block/feature-block.html";
   const before = await page.evaluate(async path => {
     const { getMountedSource } = await import('/src/components/code-editor.ts');
-    return { component: getMountedSource(path), home: getMountedSource('index.html') };
+    return getMountedSource(path);
   }, componentPath);
+  expect(before).toBe(readFileSync(resolve('fixtures/native-starter', componentPath), 'utf8'));
   const homeDraft = await draft(page, 'index.html');
   const componentDraft = await draft(page, componentPath);
   await openExplorer(page, "Pages");
   const gear = page.locator("#page-settings-toggle");
-  // A component alone has no page metadata target. An enabled trigger must
-  // refuse to open a fallback Home dialog; a disabled trigger is also valid.
-  if (await gear.isEnabled()) await gear.click();
+  // The refusal status is the completed handler outcome, so this negative
+  // dialog assertion cannot pass before asynchronous settings work finishes.
+  await expect(gear).toBeEnabled();
+  await gear.click();
+  await expect(status(page)).toHaveText("Open a page to edit its settings.");
   await expect(settingsDialog(page)).toBeHidden();
   expect(await draft(page, 'index.html')).toEqual(homeDraft);
   expect(await draft(page, componentPath)).toEqual(componentDraft);
   expect(await page.evaluate(async path => {
     const { getMountedSource } = await import('/src/components/code-editor.ts');
-    return { component: getMountedSource(path), home: getMountedSource('index.html') };
+    return getMountedSource(path);
   }, componentPath)).toEqual(before);
 });
 
