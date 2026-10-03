@@ -468,7 +468,8 @@
 .topbar > .topbar-actions {
   grid-area: 1 / 3;
 }
-.topbar > .topbar-add {
+.topbar > .topbar-add,
+.structure-add {
   grid-area: 1 / 1;
   justify-self: end;
   display: inline-flex;
@@ -485,20 +486,26 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.topbar > .topbar-add[hidden] {
+.topbar > .topbar-add[hidden],
+.structure-add[hidden] {
   display: none;
 }
-.topbar > .topbar-add:hover {
+.topbar > .topbar-add:hover,
+.structure-add:hover {
   background: var(--hover);
 }
-.topbar > .topbar-add.is-open {
+.topbar > .topbar-add.is-open,
+.structure-add.is-open {
   background: var(--pressed);
   color: var(--on-pressed);
 }
-.topbar > .topbar-add:focus-visible {
+.topbar > .topbar-add:focus-visible,
+.structure-add:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
 }
 .pb-thumb:not(.is-ready) {
   background: var(--surface-subtle);
 }
+
+.structure-add { margin: 0; min-height: 30px; padding: 0 8px; font-size: var(--type-small); }

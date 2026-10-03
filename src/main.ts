@@ -158,7 +158,6 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
-      <button type="button" id="add-panel-toggle" class="topbar-add" title="Add a section to the page" hidden>${iconMarkup("plus")} Add</button>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
         <div id="setup-checklist"></div>
@@ -181,7 +180,7 @@ function mountWorkspace() {
     </div>
     <div class="workspace">
       <aside class="sidebar" aria-label="Page structure">
-        <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span></div>
+        <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span><button type="button" id="add-panel-toggle" class="structure-add" title="Add to the page" hidden>${iconMarkup("plus")} Add</button></div>
         <div id="structure" class="page-structure"></div>
       </aside>
       <main id="main">

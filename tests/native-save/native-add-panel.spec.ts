@@ -28,7 +28,7 @@ test.afterEach(() => {
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const panel = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
-const addButton = (page: Page) => page.getByRole("button", { name: "Add", exact: true });
+const addButton = (page: Page) => page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true });
 const feature = (page: Page) => panel(page).getByRole("option", { name: /^Feature block/ });
 
 async function editorText(page: Page) {
@@ -42,6 +42,7 @@ async function editorText(page: Page) {
 }
 
 test("the Add panel shows live thumbnails and their HTML, and a click adds after the selected section", async ({ page }) => {
+  await expect(page.locator(".topbar").getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "false");
   await addButton(page).click();
   await expect(panel(page)).toBeVisible();
