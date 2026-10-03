@@ -6,7 +6,7 @@ import { decodeHtmlEntities } from "./html-entities";
 import { escapeText } from "./site-head";
 
 export interface CollectionEdit { start: number; end: number; text: string }
-export interface CollectionPreview { path: string; start: number; folder: string; records: CollectionRecord[]; template: string; output: string }
+export interface CollectionPreview { path: string; start: number; folder: string; folders: string[]; records: CollectionRecord[]; template: string; output: string }
 export interface BakePlan {
   edits: Record<string, CollectionEdit[]>;
   expectedSources: Record<string, string>;
@@ -172,7 +172,7 @@ export function planBake(sources: Record<string, string>, routes: Record<string,
         const text = source.slice(template.start, template.end) + output;
         const edit = { start: element.tag.end, end: element.close!.start, text };
         if (source.slice(edit.start, edit.end) !== text) (edits[path] ??= []).push(edit);
-        collections.push({ path, start: element.start, folder: spec.folder, records, template: markup, output });
+        collections.push({ path, start: element.start, folder: spec.folder, folders: spec.folders, records, template: markup, output });
       }
     }
     return { edits, expectedSources, collections };

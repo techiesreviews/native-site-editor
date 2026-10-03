@@ -7,6 +7,7 @@ import { fieldName, ownPageField, readPageFields, type CollectionIdentity, type 
 
 export interface CollectionSpec {
   folder: string;
+  folders: string[];
   sort: string;
   filter: string;
   limit: number;
@@ -22,16 +23,23 @@ export function attribute(source: string, el: SourceElement, name: string): stri
   const found = startTagAttribute(source, el.tag, name);
   return found ? decodeHtmlEntities(found.value, true) : undefined;
 }
-export function collectionSpec(input: { folder: string; sort?: string; filter?: string; limit?: string }): CollectionSpec {
-  const { folder } = input;
-  if (!/^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)*$/.test(folder) || folder.split("/").some((part) => part === "." || part === "..")) throw new Error("Collection source must be an absolute folder URL ending in /.");
+export interface CollectionInput { folder?: string; folders?: readonly string[]; sort?: string; filter?: string; limit?: string }
+/** HTML token lists split only on ASCII whitespace; each token remains a canonical URL. */
+export function collectionFolders(input: Pick<CollectionInput, "folder" | "folders">): string[] {
+  const tokens = input.folders ?? (input.folder ?? "").split(/[\t\n\f\r ]+/).filter(Boolean);
+  if (!tokens.length || tokens.some((folder) => !/^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)*$/.test(folder))) throw new Error("Collection sources must be nonempty absolute folder URLs ending in /.");
+  return [...new Set(tokens)];
+}
+export function collectionSpec(input: CollectionInput): CollectionSpec {
+  const folders = collectionFolders(input);
+  const folder = folders.join(" ");
   const sort = input.sort ?? "";
   if (sort && !/^-?[a-z][a-z0-9_-]*$/.test(sort)) throw new Error("Sort by a field, optionally prefixed with -.");
   const filter = input.filter ?? "";
   if (filter && !/^[a-z][a-z0-9_-]*=[^\r\n]*$/.test(filter)) throw new Error("Filter must be an exact field=value match.");
   const rawLimit = input.limit ?? "";
   if (rawLimit && (!/^\d+$/.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > MAX_COLLECTION_ITEMS)) throw new Error(`Limit must be between 1 and ${MAX_COLLECTION_ITEMS}.`);
-  return { folder, sort, filter, limit: rawLimit ? Number(rawLimit) : MAX_COLLECTION_ITEMS };
+  return { folder, folders, sort, filter, limit: rawLimit ? Number(rawLimit) : MAX_COLLECTION_ITEMS };
 }
 export function readCollections(source: string): SourceCollection[] {
   const result: SourceCollection[] = [];
@@ -60,9 +68,15 @@ export function validCollectionRoute(url: string, path: string): boolean {
     return nativePageRoute(path) === url;
   } catch { return false; }
 }
-/** Stable route order breaks equal sort values; self and the folder index are excluded. */
-export function collectionRecords(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, spec: CollectionSpec, self: string): CollectionRecord[] {
-  let records = Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path) && path !== NATIVE_NOT_FOUND_PAGE && url.startsWith(spec.folder) && url !== spec.folder && path !== self).map(([url, path]) => {
+/** Stable route order breaks equal sort values; self and every selected folder index are excluded. */
+export function collectionRecords(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, spec: Omit<CollectionSpec, "folders"> & { folders?: readonly string[] }, self: string): CollectionRecord[] {
+  const folders = collectionFolders(spec);
+  const paths = new Set<string>();
+  let records = Object.entries(routes).filter(([url, path]) => {
+    if (!validCollectionRoute(url, path) || path === NATIVE_NOT_FOUND_PAGE || path === self || folders.includes(url) || !folders.some((folder) => url.startsWith(folder)) || paths.has(path)) return false;
+    paths.add(path);
+    return true;
+  }).map(([url, path]) => {
     if (sources[path] === undefined) throw new Error(`Load ${path} before baking its collection.`);
     return { path, url, fields: readPageFields(sources[path], url, identity) };
   });
@@ -90,12 +104,18 @@ export function knownCollectionField(field: string, records: CollectionRecord[])
   return fieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
 }
 
-export function makeGridCollection(source: string, start: number, input: { folder: string; sort: string; filter: string; limit: string; template: string }): string {
+export function makeGridCollection(source: string, start: number, input: CollectionInput & { template: string }): string {
   const el = [...descendants(parseSource(source))].find((item) => item.start === start);
   if (!el?.close || el.name === "template") throw new Error("Choose a complete grid in the page source.");
-  if (readCollections(source).some((collection) => collection.element.start <= start && collection.element.end > start)) throw new Error("Edit the existing collection template instead of nesting a collection.");
+  if (readCollections(source).some((collection) => collection.element.start < start && collection.element.end > start)) throw new Error("Edit the existing collection template instead of nesting a collection.");
   const spec = collectionSpec(input);
   const value = (text: string) => escapeText(text).replace(/"/g, "&quot;");
-  const tag = source.slice(el.start, el.tag.end - 1) + ` data-each="${value(spec.folder)}"${spec.sort ? ` data-sort="${value(spec.sort)}"` : ""}${spec.filter ? ` data-filter="${value(spec.filter)}"` : ""}${input.limit ? ` data-limit="${spec.limit}"` : ""}>`;
+  let opening = source.slice(el.start, el.tag.end - 1);
+  const attributes = ["data-each", "data-sort", "data-filter", "data-limit"].flatMap((name) => {
+    const found = startTagAttribute(source, el.tag, name);
+    return found ? [found] : [];
+  });
+  for (const found of attributes.sort((a, b) => b.start - a.start)) opening = opening.slice(0, found.start - el.start) + opening.slice(found.end - el.start);
+  const tag = opening + ` data-each="${value(spec.folder)}"${spec.sort ? ` data-sort="${value(spec.sort)}"` : ""}${spec.filter ? ` data-filter="${value(spec.filter)}"` : ""}${input.limit ? ` data-limit="${spec.limit}"` : ""}>`;
   return source.slice(0, el.start) + tag + `<template>${input.template}</template>` + source.slice(el.close.start);
 }

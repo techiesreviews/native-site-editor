@@ -1,11 +1,16 @@
 # Collections and page fields
 
 A collection lives in a page's HTML. `data-each="/work/"` selects pages strictly
-below that folder, excluding the folder index, the listing page itself, the root
-not-found page and hidden routes. Nested descendants count. The container must
+below that folder. A mixed collection uses an HTML ASCII whitespace token list,
+for example `data-each="/work/ /services/ /portfolio/ /articles/ /videos/"`.
+Every token must be a canonical absolute folder URL ending in `/`; empty lists,
+encoded segments, hidden segments, wildcards and expressions are rejected. Duplicate
+folders retain their first position. The union excludes every selected folder
+index, the listing page itself, the root not-found page and hidden routes. Nested descendants count. The container must
 have exactly one direct-child `<template>`. The editor retains that template and
 replaces the container's other content with ordinary HTML for the matching pages.
-The published site needs no collection script, editor attributes or data file.
+The published site needs no collection script or data file. The native authoring
+attribute and template remain alongside ordinary baked cards.
 
 ```html
 <div class="cards" data-each="/work/" data-sort="-date" data-limit="3">
@@ -28,6 +33,13 @@ then includes dependent listing edits in the same plan. Changing an address stay
 in the Pages flow. Custom field names use lowercase letters, digits, underscores
 and hyphens, starting with a letter; built-in names are reserved.
 
+All page types share the canonical fields `title`, `description`, `image`, `date`
+and `url`, plus custom metadata fields. A field defined only in a secondary source
+is known throughout the union; `data-if` can omit wrappers where it is missing.
+Overlapping roots produce one card per page. Every selected folder index is
+excluded, including a selected nested index beneath another selected root.
+Filtering, stable sorting and the limit run once across the complete union.
+
 Sorting accepts a field name or `-date` for descending order. Equal values retain
 route order. Filters are exact, case-sensitive `field=value` matches. Limits range
 from 1 to 500; omitted limits cap output at 500 items. Missing optional fields bind
@@ -45,9 +57,12 @@ contents and the retained template remains unchanged, including CRLF line ending
 
 The panel distinguishes Page fields from Collection template scope. Make this grid
 a collection starts with the selected grid's first item as its editable design.
-Folder, sorting, exact filter and limit controls update a plain-HTML preview and
-visible result count before Apply. Existing collection items offer Edit page,
-separately from Edit card design in source. The panel keeps an immutable source,
+Source checkboxes, sorting, exact filter and limit controls update a plain-HTML
+preview and visible result count before Apply. Sources are discovered from eligible folder
+routes with subpages; existing selected deeper folders remain available even
+without an index route. Zero selected sources clears preview and disables Apply
+with an explanation. Checkbox order determines serialized source order. Existing
+collection items offer Edit page, separately from Edit card design in source. The panel keeps an immutable source,
 route, identity and repository revision snapshot; stale controls reject Apply.
 
 ## Host integration contract
@@ -56,6 +71,11 @@ route, identity and repository revision snapshot; stale controls reject Apply.
 `openGrid(pagePath, sourceStart)` and `destroy()`. The host supplies sources, routes,
 site identity, a scope/generation revision, the open page, navigation, announcements
 and `apply(plan, expectedRevision, label)`. The panel never writes drafts or models.
+
+`collectionSpec` accepts a compatible `folder` string or an ordered `folders`
+array. The result exposes `folders` and a `folder` string serialized with one ASCII
+space between URLs. Legacy single-folder serialization stays exactly `/work/`.
+`makeGridCollection` accepts either form and safely serializes native `data-each`.
 
 `planBake(sources, routes, {name})` returns either `{error}` or:
 

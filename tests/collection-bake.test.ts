@@ -149,3 +149,79 @@ test("a datetime name inside another attribute does not hide the first dated tim
   const html = page("Time", "", `<time title="no datetime here">Today</time><time datetime="2026-10-03">Dated</time>`);
   assert.equal(readPageFields(html, "/", identity).date, "2026-10-03");
 });
+
+const mixedFolders = ["/work/", "/services/", "/portfolio/", "/articles/", "/videos/"];
+function mixedFixture(settings = "") {
+  const sources: Record<string, string> = { "index.html": page("Home", "", `<div data-each="${mixedFolders.join(" ")}" ${settings}><template><article><a href="{url}" title="{title}">{title}</a><p data-if="description">{description}</p><p data-if="constructor">{constructor}</p></article></template></div>`) };
+  const routes: Record<string, string> = { "/": "index.html" };
+  mixedFolders.forEach((folder, index) => {
+    const root = folder.slice(1);
+    sources[`${root}index.html`] = page("Folder index"); routes[folder] = `${root}index.html`;
+    const path = `${root}item/index.html`;
+    sources[path] = page(`Page ${index}`, `<meta name="date" content="${index < 2 ? '2026' : '2025'}"><meta name="field:category" content="Yes">${index === 1 ? '<meta name="field:secondary" content="Only"><meta name="field:constructor" content="Own">' : ''}`);
+    routes[`${folder}item/`] = path;
+  });
+  return { sources, routes };
+}
+test("five sources produce one card per page with global stable sort, filter and limit", () => {
+  const fixture = mixedFixture('data-sort="-date" data-filter="category=Yes" data-limit="3"');
+  const collection = good(planBake(fixture.sources, fixture.routes, identity)).collections[0];
+  assert.deepEqual(collection.folders, mixedFolders);
+  assert.deepEqual(collection.records.map((record) => record.fields.title), ["Page 0", "Page 1", "Page 2"]);
+  assert.equal((collection.output.match(/<article>/g) ?? []).length, 3);
+  const all = mixedFixture();
+  assert.equal(good(planBake(all.sources, all.routes, identity)).collections[0].records.length, 5);
+});
+test("root and nested overlaps deduplicate and exclude every selected folder index", () => {
+  const fixture = mixedFixture();
+  fixture.sources["work/deep/index.html"] = page("Nested index");
+  fixture.sources["work/deep/item/index.html"] = page("Nested item");
+  fixture.routes["/work/deep/"] = "work/deep/index.html";
+  fixture.routes["/work/deep/item/"] = "work/deep/item/index.html";
+  fixture.routes["/alias/"] = "work/item/index.html"; // Noncanonical aliases never add another card.
+  fixture.sources["index.html"] = fixture.sources["index.html"].replace(mixedFolders.join(" "), "/ /work/ /work/deep/ /work/");
+  const collection = good(planBake(fixture.sources, fixture.routes, identity)).collections[0];
+  assert.deepEqual(collection.folders, ["/", "/work/", "/work/deep/"]);
+  assert.equal(collection.records.filter((record) => record.path === "work/item/index.html").length, 1);
+  assert.ok(!collection.records.some((record) => ["index.html", "work/index.html", "work/deep/index.html"].includes(record.path)));
+  assert.ok(collection.records.some((record) => record.path === "work/deep/item/index.html"));
+});
+test("fields known only in secondary sources validate across the union, including own constructor", () => {
+  const fixture = mixedFixture('data-sort="secondary" data-filter="secondary=Only"');
+  const collection = good(planBake(fixture.sources, fixture.routes, identity)).collections[0];
+  assert.deepEqual(collection.records.map((record) => record.path), ["services/item/index.html"]);
+  assert.ok(collection.output.includes("<p data-if=\"constructor\">Own</p>"));
+  assert.ok(!good(planBake(mixedFixture().sources, mixedFixture().routes, identity)).collections[0].output.includes("[object"));
+});
+test("folder tokenization uses only HTML ASCII whitespace and preserves first occurrence order", () => {
+  assert.deepEqual(collectionSpec({ folder: " \t/work/\n/services/\f/work/\r " }).folders, ["/work/", "/services/"]);
+  assert.equal(collectionSpec({ folders: ["/videos/", "/work/", "/videos/"] }).folder, "/videos/ /work/");
+  for (const folder of ["", " \t\n", "/work/ /bad", "/work/\u00a0/services/", "/work/\v/services/", "/work/ //bad/", "/work/ /../", "/work/ /_hidden/", "/work/ /%61/", "/work/ /articles/*", "/work/ {tag}"]) {
+    assert.throws(() => collectionSpec({ folder }));
+    const fixture = mixedFixture();
+    fixture.sources["services/index.html"] = page("Invalid", "", `<div data-each="${folder}"><template><p>{title}</p></template></div>`);
+    assert.deepEqual(Object.keys(planBake(fixture.sources, fixture.routes, identity)), ["error"]);
+  }
+  assert.throws(() => collectionSpec({ folders: [] }));
+  assert.throws(() => collectionSpec({ folders: ["/work/", ""] }));
+});
+test("multi-source conversion serializes native tokens safely and existing collection can be updated", () => {
+  const source = '<div class="grid"><p>Old</p></div>';
+  const input = { folders: mixedFolders, sort: "", filter: 'category=A & "B"', limit: "", template: '<a href="{url}">{title}</a>' };
+  const converted = makeGridCollection(source, 0, input);
+  assert.ok(converted.includes(`data-each="${mixedFolders.join(" ")}"`));
+  assert.ok(converted.includes('data-filter="category=A &amp; &quot;B&quot;"'));
+  const updated = makeGridCollection(converted, 0, { ...input, folders: ["/work/"] });
+  assert.equal((updated.match(/data-each=/g) ?? []).length, 1);
+  assert.ok(updated.includes('data-each="/work/"'));
+  assert.equal(makeGridCollection(source, 0, { folder: "/work/", sort: "", filter: "", limit: "", template: "<p>{title}</p>" }), '<div class="grid" data-each="/work/"><template><p>{title}</p></template></div>');
+});
+test("secondary-source unsafe URLs abort the entire mixed plan; text remains escaped", () => {
+  const fixture = mixedFixture();
+  fixture.sources["services/item/index.html"] = page('A &lt;b&gt; &quot;quoted&quot;', '<meta property="og:image" content="javascript:bad"><meta name="field:constructor" content="Own">');
+  const collection = good(planBake(fixture.sources, fixture.routes, identity)).collections[0];
+  assert.ok(collection.output.includes('title="A &lt;b&gt; &quot;quoted&quot;"'));
+  assert.ok(collection.output.includes('>A &lt;b&gt; "quoted"</a>'));
+  fixture.sources["index.html"] = fixture.sources["index.html"].replace('</article>', '<img src="{image}" data-if="image"></article>');
+  assert.deepEqual(Object.keys(planBake(fixture.sources, fixture.routes, identity)), ["error"]);
+});

@@ -68,7 +68,7 @@ test("collection controls reject malformed bindings and unsafe URLs without host
   await grid(page);
   await page.getByLabel("Card template HTML").fill(`<a href="{unknown}">{title}</a>`);
   await expect(panel(page)).toContainText("Unknown collection field: unknown.");
-  await page.getByRole("button", { name: "Make collection", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Make collection", exact: true })).toBeDisabled();
   expect(await page.evaluate(() => (window as any).collectionTest.state.applied.length)).toBe(0);
   await page.getByLabel("Card template HTML").fill(`<a href="javascript:{title}">Link</a>`);
   await expect(panel(page)).toContainText("Unsafe collection URL in href.");
@@ -84,4 +84,55 @@ for (const change of ["source", "scope", "routes"] as const) test(`open grid ref
   await page.getByRole("button", { name: "Make collection", exact: true }).click();
   await expect(panel(page)).toContainText("The page or repository changed. Reopen the collection panel before applying.");
   expect(await page.evaluate(() => (window as any).collectionTest.state.applied.length)).toBe(0);
+});
+
+test("new custom field refuses reserved title without applying", async ({ page }) => {
+  await page.getByLabel("New custom field name").fill("title");
+  await page.getByLabel("New custom field value").fill("Oops");
+  await page.getByRole("button", { name: "Apply page fields" }).click();
+  await expect(panel(page)).toContainText("title is a built-in field. Edit its own control above.");
+  expect(await page.evaluate(() => (window as any).collectionTest.state.applied.length)).toBe(0);
+});
+
+test("five source checkboxes preview the union, disable empty selection, and serialize native data-each", async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as any).collectionTest;
+    for (const folder of ["services", "portfolio", "articles", "videos"]) {
+      h.state.routes[`/${folder}/`] = `${folder}/index.html`;
+      h.state.routes[`/${folder}/one/`] = `${folder}/one/index.html`;
+      h.state.sources[`${folder}/index.html`] = '<html><head><title>Index</title></head><body></body></html>';
+      h.state.sources[`${folder}/one/index.html`] = `<html><head><title>${folder}</title></head><body></body></html>`;
+    }
+  });
+  await grid(page);
+  await expect(page.getByRole("checkbox")).toHaveCount(5);
+  await expect(page.getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
+  await page.getByRole("checkbox", { name: "/work/", exact: true }).uncheck();
+  await expect(panel(page)).toContainText("Select at least one source folder to preview or apply.");
+  await expect(page.getByRole("button", { name: "Make collection", exact: true })).toBeDisabled();
+  await expect(panel(page).locator("pre")).toHaveText("");
+  for (const folder of ["work", "services", "portfolio", "articles", "videos"]) await page.getByRole("checkbox", { name: `/${folder}/`, exact: true }).check();
+  await expect(panel(page)).toContainText("6 matching pages");
+  await expect(panel(page).locator("pre")).toContainText('href="/videos/one/">videos</a>');
+  await page.getByRole("button", { name: "Make collection", exact: true }).click();
+  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
+  expect(source).toContain('data-each="/work/ /services/ /portfolio/ /articles/ /videos/"');
+  expect((source.match(/<article>/g) ?? []).length).toBe(7); // retained template plus six cards
+});
+
+test("existing selected deeper source remains visible without its folder route", async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as any).collectionTest;
+    h.state.sources["index.html"] = h.state.sources["index.html"].replace('<div class="cards">', '<div class="cards" data-each="/work/deep/" data-sort="title"><template><a href="{url}">{title}</a></template>');
+    h.state.sources["work/deep/one/index.html"] = '<html><head><title>Deep</title></head><body></body></html>';
+    h.state.routes["/work/deep/one/"] = "work/deep/one/index.html";
+    h.panel.openGrid("index.html", h.start);
+  });
+  await expect(page.getByRole("checkbox", { name: "/work/deep/", exact: true })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "/work/", exact: true })).not.toBeChecked();
+  await expect(panel(page)).toContainText("1 matching pages");
+  await page.getByRole("button", { name: "Make collection", exact: true }).click();
+  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
+  expect((source.match(/data-each=/g) ?? []).length).toBe(1);
+  expect(source).toContain('data-each="/work/deep/"');
 });

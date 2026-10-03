@@ -7,3 +7,6 @@
 .collections-panel__scope { font-size: .875rem; }
 .collections-panel__preview { overflow: auto; max-height: 18rem; margin: 0; padding: .75rem; white-space: pre-wrap; background: var(--surface); font-size: .8125rem; }
 .collections-panel__status:empty { display: none; }
+.collections-panel__sources { display: grid; gap: .5rem; margin: 0; padding: .75rem; border: 1px solid var(--border); }
+.collections-panel__source { display: flex; align-items: center; gap: .5rem; }
+.collections-panel__source input { width: auto; }

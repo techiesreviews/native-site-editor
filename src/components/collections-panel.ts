@@ -1,8 +1,8 @@
 import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
-import { readPageFields, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
-import { makeGridCollection } from "../page-builder/collection-model";
+import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
+import { makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -67,7 +67,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
       try {
         let source = saved.sources[path];
         for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
-        if (customName.value.trim()) source = withPageField(source, customName.value.trim(), customValue.value, saved.identity);
+        if (customName.value.trim()) source = withCustomPageField(source, customName.value.trim(), customValue.value, saved.identity);
         void submit(saved, planCollectionChange(saved.sources, { ...saved.sources, [path]: source }, saved.routes, saved.identity), "Page fields and collections updated");
       } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
     });
@@ -92,23 +92,40 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
     root.replaceChildren(node("h2", "", "Make this grid a collection"), node("p", "collections-panel__scope", "Collection template · repeated card design"));
     const form = node("form", "collections-panel__form");
-    const folder = control(form, "Pages from folder", "/work/");
-    const sort = control(form, "Sort by field (-date for newest first)", "-date");
-    const filter = control(form, "Exact filter (category=Pottery)", "");
-    const limit = control(form, "Maximum items (1–500)", "6");
-    const template = control(form, "Card template HTML", first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
+    const existing = readCollections(source).find((collection) => collection.element.start === sourceStart);
+    const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
+    const discovered = urls.filter((url) => url.endsWith("/") && url !== "/" && urls.some((child) => child !== url && child.startsWith(url)));
+    const selected = existing?.spec.folders ?? (discovered.includes("/work/") ? ["/work/"] : []);
+    const choices = [...new Set([...selected, ...discovered])];
+    const sourceGroup = node("fieldset", "collections-panel__sources");
+    sourceGroup.append(node("legend", "", "Pages from folders"));
+    const checks = choices.map((url) => {
+      const label = node("label", "collections-panel__source");
+      const input = node("input"); input.type = "checkbox"; input.value = url; input.checked = selected.includes(url);
+      label.append(input, document.createTextNode(url)); sourceGroup.append(label);
+      return input;
+    });
+    form.append(sourceGroup);
+    const sort = control(form, "Sort by field (-date for newest first)", existing?.spec.sort ?? "-date");
+    const filter = control(form, "Exact filter (category=Pottery)", existing?.spec.filter ?? "");
+    const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
+    const template = control(form, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
     form.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
     const preview = node("pre", "collections-panel__preview");
     const result = node("p"); result.setAttribute("role", "status");
     let plan: BakeResult = { error: "Preview the collection first." };
     const refresh = () => {
+      apply.disabled = true;
       try {
-        const converted = makeGridCollection(source, sourceStart, { folder: folder.value, sort: sort.value, filter: filter.value, limit: limit.value, template: template.value });
+        const folders = checks.filter((input) => input.checked).map((input) => input.value);
+        if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
+        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value, filter: filter.value, limit: limit.value, template: template.value });
         plan = planCollectionChange(saved.sources, { ...saved.sources, [path]: converted }, saved.routes, saved.identity);
         if ("error" in plan) { result.textContent = plan.error; preview.textContent = ""; return; }
         const collection = plan.collections.find((item) => item.path === path && item.start === sourceStart);
         result.textContent = `${collection?.records.length ?? 0} matching pages. Apply updates the grid and its dependent listings as one undo step.`;
         preview.textContent = collection?.output ?? "";
+        apply.disabled = false;
       } catch (error) { plan = { error: error instanceof Error ? error.message : "The collection could not be previewed." }; result.textContent = plan.error; preview.textContent = ""; }
     };
     form.addEventListener("input", refresh);
