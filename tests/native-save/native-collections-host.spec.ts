@@ -105,6 +105,21 @@ test("an invalid staged field refuses the whole apply without writing", async ({
   expect(await storedDraft(page, "index.html")).toBeUndefined();
 });
 
+test("a custom field value without a name refuses the whole apply", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await open(page, baseURL, "work/one/index.html");
+  const panel = await openPageSettings(page);
+  await panel.getByLabel("Title", { exact: true }).fill("Not applied");
+  await panel.getByRole("tab", { name: "Fields", exact: true }).click();
+  await panel.getByLabel("New custom field value", { exact: true }).fill("orphan");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel.locator(".site-settings__status")).toHaveText("Name the new custom field, or clear its value.");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("New custom field value", { exact: true })).toHaveValue("orphan");
+  expect(await storedDraft(page, "work/one/index.html")).toBeUndefined();
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
+});
+
 const explorerRow = (page: Page, name: string) => page.locator("#explorer").getByRole("button", { name, exact: true });
 async function openFiles(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();

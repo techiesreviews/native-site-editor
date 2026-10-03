@@ -39,7 +39,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   const dirty = () => Boolean(activeForm && stamp(activeForm) !== cleanStamp);
   const track = (form: HTMLElement, saved: ReturnType<typeof snapshot>) => { activeForm = form; activeSnapshot = saved; cleanStamp = stamp(form); };
   const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision(), page: deps.page() });
-  const current = (saved: ReturnType<typeof snapshot>) => saved.page === deps.page() && saved.revision === deps.revision() && Object.keys(saved.sources).length === Object.keys(deps.sources()).length && JSON.stringify(saved.routes) === JSON.stringify(deps.routes()) && JSON.stringify(saved.identity) === JSON.stringify(deps.identity()) && Object.entries(saved.sources).every(([path, source]) => deps.sources()[path] === source);
+  // Each dependency is read once per check: the host builds them from the whole file graph.
+  const current = (saved: ReturnType<typeof snapshot>) => {
+    if (saved.page !== deps.page() || saved.revision !== deps.revision()) return false;
+    if (JSON.stringify(saved.routes) !== JSON.stringify(deps.routes()) || JSON.stringify(saved.identity) !== JSON.stringify(deps.identity())) return false;
+    const sources = deps.sources();
+    return Object.keys(saved.sources).length === Object.keys(sources).length && Object.entries(saved.sources).every(([path, source]) => sources[path] === source);
+  };
   const status = node("p", "collections-panel__status");
   status.setAttribute("role", "status");
   const report = (message: string) => { status.textContent = message; deps.announce(message); };
@@ -90,6 +96,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
       for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
       const name = customName.value.trim();
+      if (!name && customValue.value !== "") throw new Error("Name the new custom field, or clear its value.");
       if (name) {
         const changed = withCustomPageField(source, name, customValue.value, saved.identity);
         if (Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
