@@ -1,6 +1,6 @@
 // CSS owns the palette. Consumers that cannot use CSS variables (Monaco and
 // the cross-origin preview overlay) receive resolved sRGB colors from it.
-const tokens = ["surface", "text", "muted", "selected", "surface-raised", "focus", "preview-focus"] as const;
+const tokens = ["surface", "text", "muted", "selected", "surface-raised", "focus", "preview-focus", "component"] as const;
 type ThemeColors = Record<(typeof tokens)[number], string>;
 type Theme = { dark: boolean; colors: ThemeColors };
 const preference = matchMedia("(prefers-color-scheme: dark)");

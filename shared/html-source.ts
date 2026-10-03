@@ -123,7 +123,7 @@ const NAMED_ENTITIES: Record<string, string> = {
   euro: "\u20ac", pound: "\u00a3", yen: "\u00a5", deg: "\u00b0", times: "\u00d7", shy: "\u00ad",
 };
 
-function decodeEntity(source: string, at: number): { text: string; length: number } | undefined {
+export function decodeEntity(source: string, at: number): { text: string; length: number } | undefined {
   const match = /^&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z][a-zA-Z0-9]*));/.exec(source.slice(at, at + 12));
   if (!match) return undefined;
   if (match[3] !== undefined) {

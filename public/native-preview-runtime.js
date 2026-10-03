@@ -544,8 +544,81 @@
     ensureBoxes();
     drawBox(hoverBox, hovered);
     drawBox(selectBox, selected);
+    drawComponentBoxes();
     scheduleRect();
     schedulePins();
+  }
+
+  // ---- Components (docs/page-builder/components.md) ----
+  // Instances wear the editor's component accent: the hover and selection
+  // boxes on an instance are drawn in it; an element inside an instance
+  // (what the page slots in, or the template's own) shows that instance's
+  // outline dashed around it; and while a component's template is open in
+  // the editor (`component-focus`), every instance of it on the page shows
+  // that dashed outline, since an edit there changes them all.
+  var componentColor = "#7c3aed";
+  var contextBox = null;
+  var focusTag = "";
+  var focusBoxes = [];
+  function isInstance(el) {
+    return !!(el && state && el.localName && Object.prototype.hasOwnProperty.call(state.components, el.localName) && instances.has(el));
+  }
+  // The nearest instance `el` sits in: its light-DOM parent chain, then the host of its shadow root.
+  function enclosingInstance(el) {
+    for (var n = el && parentOrHost(el); n; n = parentOrHost(n)) if (isInstance(n)) return n;
+    return null;
+  }
+  // The instance of `tag` the selection is, or sits in, so a template's
+  // element is found in the instance the user was working on.
+  function selectedInstanceOf(tag) {
+    for (var n = selected && selected.isConnected ? selected : null; n; n = parentOrHost(n)) {
+      if (n.localName === tag && n.shadowRoot && instances.has(n)) return n;
+    }
+    return null;
+  }
+  function componentBox(dashed) {
+    var el = document.createElement("div");
+    el.setAttribute("data-native-selection-box", dashed ? "instance" : "component");
+    el.style.position = "absolute";
+    el.style.display = "none";
+    el.style.pointerEvents = "none";
+    el.style.zIndex = "2147483646";
+    el.style.boxSizing = "border-box";
+    el.style.borderRadius = "2px";
+    document.documentElement.appendChild(el);
+    return el;
+  }
+  function tint(box, on, width, alpha) {
+    var color = on ? componentColor : boxColor;
+    var key = color + width + alpha;
+    if (box.__tint === key) return;
+    box.__tint = key;
+    box.style.border = width + "px solid " + color;
+    box.style.background = "color-mix(in srgb, " + color + " " + alpha + "%, transparent)";
+  }
+  function outline(box) {
+    box.style.border = "1px dashed " + componentColor;
+    box.style.background = "transparent";
+  }
+  function drawComponentBoxes() {
+    if (!selectBox) return;
+    tint(selectBox, isInstance(selected), 2, 10);
+    tint(hoverBox, isInstance(hovered), 1, 4);
+    if (!contextBox) contextBox = componentBox(true);
+    outline(contextBox);
+    var around = selected && selected.isConnected ? enclosingInstance(selected) : null;
+    drawBox(contextBox, around);
+    var shown = [];
+    if (focusTag && pageEl) {
+      Array.from(instances).forEach(function (el) {
+        if (el.localName === focusTag && el.isConnected && el !== around && el !== selected) shown.push(el);
+      });
+    }
+    while (focusBoxes.length < shown.length) focusBoxes.push(componentBox(true));
+    focusBoxes.forEach(function (box, index) {
+      outline(box);
+      drawBox(box, shown[index] || null);
+    });
   }
 
   // Places a section can be inserted: every gap between the children of a
@@ -818,7 +891,15 @@
   function elementLocator(el) {
     var out = { selector: uniqueSelector(el) };
     var root = el.getRootNode();
-    if (root instanceof ShadowRoot && root.host) out.host = { tag: root.host.localName, selector: uniqueSelector(root.host) };
+    if (root instanceof ShadowRoot && root.host) {
+      out.host = { tag: root.host.localName, selector: uniqueSelector(root.host) };
+      // Where the instance itself is written, so the editor can select it.
+      var hostNode = elementIndexPath(root.host);
+      if (hostNode) {
+        out.host.path = ownerPath(root.host);
+        out.host.node = hostNode;
+      }
+    }
     return out;
   }
 
@@ -889,7 +970,7 @@
       var current = selected && selected.getRootNode && selected.getRootNode();
       if (current instanceof ShadowRoot && current.host && current.host.localName === tag) root = current;
       else {
-        var host = Array.from(instances).find(function (el) { return el.localName === tag && el.isConnected && el.shadowRoot; });
+        var host = selectedInstanceOf(tag) || Array.from(instances).find(function (el) { return el.localName === tag && el.isConnected && el.shadowRoot; });
         root = host ? host.shadowRoot : null;
       }
     }
@@ -2058,7 +2139,15 @@
     }
     if (msg.type === "theme") {
       if (typeof msg.focus === "string" && msg.focus) boxColor = msg.focus;
+      if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
       paintBoxes();
+      if (selectBox) { selectBox.__tint = hoverBox.__tint = ""; }
+      updateBoxes();
+      return;
+    }
+    if (msg.type === "component-focus") {
+      focusTag = typeof msg.tag === "string" ? msg.tag : "";
+      updateBoxes();
       return;
     }
     if (msg.type === "clear-selection") {

@@ -1,6 +1,7 @@
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pins";
+import { componentIcon } from "../page-builder/component-icon";
 import "./edit-bar.css";
 
 // The edit bar: contextual controls anchored to the element selected in the
@@ -126,6 +127,12 @@ export interface EditBarModel {
   onMove?: (direction: "up" | "down") => void;
   // A whole section: the bar's name is a grip that drags it in the page.
   draggable?: boolean;
+  // The selection is a component instance: its name wears the component
+  // mark and accent (src/page-builder/components.ts), `tag` in its tooltip.
+  component?: { tag: string };
+  // The selection sits inside an instance (what the page slots in, or the
+  // template's own): a chip before the name selects that instance.
+  context?: { label: string; title: string; onSelect: () => void };
 }
 
 // A point in the frame's viewport, as the page inside it measures it.
@@ -765,10 +772,25 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     else closeNote(false);
     onFormat = model.onFormat;
     onMove = model.onMove;
+    let kindName: HTMLElement;
     if (model.draggable && drag) {
       gripName.textContent = model.kind;
+      kindName = gripName;
       bar.replaceChildren(grip);
-    } else bar.replaceChildren(node("span", "edit-bar__kind", model.kind));
+    } else bar.replaceChildren(kindName = node("span", "edit-bar__kind", model.kind));
+    kindName.classList.toggle("edit-bar__kind--component", Boolean(model.component));
+    if (model.component) {
+      kindName.prepend(componentIcon(12));
+      kindName.title = `<${model.component.tag}>`;
+    } else kindName.removeAttribute("title");
+    if (model.context) {
+      const { onSelect } = model.context;
+      const chip = button("", () => onSelect(), "edit-bar__button edit-bar__context");
+      chip.append(componentIcon(12), node("span", "edit-bar__context-name", model.context.label), node("span", "edit-bar__context-caret", "›"));
+      chip.setAttribute("aria-label", model.context.title);
+      chip.title = model.context.title;
+      bar.prepend(chip);
+    }
     for (const control of model.controls) {
       if (control.kind === "button") {
         const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
