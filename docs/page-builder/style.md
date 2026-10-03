@@ -213,3 +213,7 @@ Grid controls appear when the selected element has native `display: grid` or `in
 Image focus shows the full repository image and edits `object-position` for an `<img>`, or `background-position` for a single authored background URL. The background URL resolves relative to its winning stylesheet. Gradients, layered backgrounds and external image URLs do not receive a focus widget. The image bytes stay unchanged. Dragging previews locally and commits once on release; arrow keys move one percent, or ten with Shift. The resulting crop still depends on the native container, object fit or background size.
 
 A new class without a CSS rule shows where its first edit will create the rule. “Show in code” appears once a real rule exists.
+
+A widget accepts a change only after the expected CSS is visible in the source. A rejected write keeps the current controls available for retry. Enter commits a typed style field while keeping its focus and unfinished value if the write fails. Grid Replace and Undo retain keyboard focus on the same control. Setting Display to grid adds its controls immediately.
+
+Image updates refresh the focal section using a small version number for that asset. Other image loads do not invalidate ordinary CSS fields. A source change during a focal gesture cancels the edit, explains the refusal, and restores current controls for an immediate retry.

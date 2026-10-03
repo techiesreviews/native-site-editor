@@ -43,17 +43,28 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const opened = new Set(["Spacing"]);
   let pending = false, interacting = false;
   let searchQuery = "";
-  let widgets: { dispose(): void; refresh(): void }[] = [];
+  let widgets: { kind: "grid" | "focal"; isCurrent(): boolean; dispose(): void; refresh(): void }[] = [];
+  let writing = false;
   let widgetRender = 0;
+  let rebuildWidgets: ((focalOnly?: boolean) => void) | undefined;
+  let widgetsPending = false;
+  let gridShown = false;
+  let restoringWidgetFocus = false, focusRestoreToken = 0;
   let variableMenu: HTMLElement | undefined;
   let variableMenuOrigin: { key: string; property: string } | undefined;
   function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined; }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
-  root.addEventListener("pointerup", () => setTimeout(() => {
-    interacting = false;
-    if (pending && !root.contains(document.activeElement)) { pending = false; render(); }
-  }, 0));
-  root.addEventListener("pointercancel", () => { interacting = false; });
+  const gestureEvents = new AbortController();
+  const finishGesture = () => {
+    if (!interacting) return;
+    setTimeout(() => {
+      interacting = false;
+      if (widgetsPending) { widgetsPending = false; report("The style source changed during the gesture. Review the current values and retry."); rebuildWidgets?.(); }
+      else if (pending && !root.contains(document.activeElement)) { pending = false; render(); }
+    }, 0);
+  };
+  document.addEventListener("pointerup", finishGesture, { capture: true, signal: gestureEvents.signal });
+  document.addEventListener("pointercancel", finishGesture, { capture: true, signal: gestureEvents.signal });
   let renderContext: StylePanelContext | undefined;
   let renderOwn: Record<string, string> = {};
   function report(error: unknown) { handlers.error(error instanceof Error ? error.message : String(error)); }
@@ -66,15 +77,20 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   function update() {
     const context = handlers.context();
     const nextKey = context?.key ?? "";
-    if (nextKey !== key || context?.assetRevision !== renderContext?.assetRevision || context?.target?.start !== renderContext?.target?.start) { key = nextKey; render(); return; }
+    if (nextKey !== key) { key = nextKey; render(); return; }
+    const own = ownValues();
+    const nextGrid = /^(?:inline-)?grid$/.test(own.display || context?.computed.display || "");
     const widgetFocused = document.activeElement instanceof Element && document.activeElement.closest(".grid-editor, .image-focal-point");
-    if (!interacting && widgetFocused && renderContext && context && Object.entries(renderContext.files).some(([path, source]) => context.files[path] !== source)) { render(); return; }
+    const staleWidget = widgetFocused && widgets.some(widget => !widget.isCurrent());
+    if (!writing && interacting && staleWidget) widgetsPending = true;
+    else if (nextGrid !== gridShown || !writing && staleWidget) rebuildWidgets?.();
+    else if (context?.assetRevision !== renderContext?.assetRevision) rebuildWidgets?.(true);
     // Preview refreshes must not destroy the field under the user's pointer.
     if (interacting || root.contains(document.activeElement)) { pending = true; refreshValues(); }
     else render();
   }
   root.addEventListener("focusout", () => queueMicrotask(() => {
-    if (pending && !interacting && !root.contains(document.activeElement)) { pending = false; render(); }
+    if (pending && !interacting && !restoringWidgetFocus && !root.contains(document.activeElement)) { pending = false; render(); }
   }));
   root.addEventListener("keydown", (event) => {
     if (event.key === "Escape") { resize.collapse(); opener.focus(); }
@@ -94,10 +110,16 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const style = document.createElement("div").style;
     for (const declaration of rule?.declarations ?? []) {
       out[declaration.property] = declaration.value;
-      style.setProperty(declaration.property, declaration.value.replace(/\s*!important\s*$/, ""));
+
     }
-    for (const field of [...sections.flatMap((s) => s.fields), ...["margin", "padding"].flatMap((p) => sides.map((s) => ({ property: `${p}-${s}` })))]) {
-      out[field.property] ||= style.getPropertyValue(field.property);
+    style.cssText = (rule?.declarations ?? []).map(declaration => `${declaration.property}:${declaration.value};`).join("");
+    for (const field of [...["grid-template-rows", "column-gap", "row-gap", "object-position", "background-position", "background-size"].map(property => ({ property })), ...sections.flatMap((s) => s.fields), ...["margin", "padding"].flatMap((p) => sides.map((s) => ({ property: `${p}-${s}` })))]) {
+      const value = style.getPropertyValue(field.property);
+      const priority = style.getPropertyPriority(field.property);
+      const raw = (rule?.declarations ?? []).filter(declaration => declaration.property === field.property && /!important\s*$/i.test(declaration.value) === (priority === "important")).at(-1)?.value.replace(/\s*!important\s*$/, "");
+      const probe = document.createElement("div").style;
+      if (raw) probe.setProperty(field.property, raw);
+      out[field.property] = raw && probe.getPropertyValue(field.property) === value ? raw : value || out[field.property] || "";
     }
     return out;
   }
@@ -139,29 +161,34 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   }
   const controlSnapshots = new Set<{ expected?: StylePanelContext }>();
   async function write(properties: Record<string, string | null>, snapshot = renderContext) {
-    try { if (snapshot?.target) validateCssSource(snapshot.files[snapshot.target.path] ?? ""); } catch (error) { report(error); return; }
+    try { if (snapshot?.target) validateCssSource(snapshot.files[snapshot.target.path] ?? ""); } catch (error) { report(error); return false; }
     const breakpoint = getCurrentBreakpoint(), currentState = state;
     const expected = currentContext(snapshot);
-    if (!expected?.target) return;
+    if (!expected?.target) return false;
     const target = expected.target;
     let written: string;
     try {
       written = writeCssProperties(expected.files[target.path] ?? "", { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state: currentState }, properties);
-    } catch (error) { report(error); return; }
-    if (!(await commit(() => handlers.write(properties, breakpoint, currentState, expected)))) return;
+    } catch (error) { report(error); return false; }
+    writing = true;
+    const accepted = await commit(() => handlers.write(properties, breakpoint, currentState, expected));
+    writing = false;
+    if (!accepted) { update(); return false; }
     const current = handlers.context();
     // Advance focused controls only after our exact source edit is visible.
     // An external edit, navigation or rejected host write cannot refresh them.
     if (!current || current.key !== expected.key || current.target?.path !== target.path || current.target?.selector !== target.selector || current.readOnly ||
       Object.keys(current.files).length !== Object.keys(expected.files).length ||
-      Object.keys(expected.files).some((path) => current.files[path] !== (path === target.path ? written : expected.files[path]))) return;
+      Object.keys(expected.files).some((path) => current.files[path] !== (path === target.path ? written : expected.files[path]))) { report("The CSS change did not land. Retry the style change."); return false; }
     for (const snapshot of controlSnapshots) {
       const before = snapshot.expected;
       if (before?.key === expected.key && before.target?.path === target.path && before.target?.selector === target.selector &&
         Object.keys(before.files).every((path) => before.files[path] === expected.files[path])) snapshot.expected = current;
     }
+    widgetsPending = false; widgets.forEach(widget => widget.refresh());
+    return true;
   }
-  function fieldControl(field: Field, variables: SiteVariable[], onChange?: (value: string, expected?: StylePanelContext) => Promise<void>) {
+  function fieldControl(field: Field, variables: SiteVariable[], onChange?: (value: string, expected?: StylePanelContext) => Promise<void | boolean>) {
     const wrapper = node("div", "style-panel__control");
     const snapshot = { expected: renderContext };
     controlSnapshots.add(snapshot);
@@ -191,7 +218,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         for (const value of new Set(fonts)) { const option = node("option"); option.value = value; list.append(option); }
         input.setAttribute("list", list.id); wrapper.append(list);
       }
-      input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } });
+      input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); input.dispatchEvent(new Event("change", { bubbles: true })); } });
       control = input;
     }
     control.name = field.property; control.setAttribute("aria-label", field.label);
@@ -314,17 +341,24 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     root.classList.toggle("is-collapsed", collapsed); root.parentElement?.classList.toggle("has-style-panel", !collapsed);
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
-  function render() {
-    const previousFocus = document.activeElement instanceof HTMLElement && document.activeElement.closest(".grid-editor, .image-focal-point") ? document.activeElement : undefined;
+  function captureWidgetFocus() {
+    const previous = document.activeElement instanceof HTMLElement && document.activeElement.closest(".grid-editor, .image-focal-point") ? document.activeElement : undefined;
     const focusKey = renderContext?.key;
-    const focusLabel = previousFocus?.getAttribute("aria-label") ?? previousFocus?.closest("label")?.textContent;
-    const restoreWidgetFocus = () => {
-      if (!previousFocus || previousFocus.isConnected || !focusLabel || document.activeElement !== document.body || renderContext?.key !== focusKey) return;
-      const control = [...body.querySelectorAll<HTMLElement>(".grid-editor input, .grid-editor button, .image-focal-point input, .image-focal-point [tabindex]")].find(control => (control.getAttribute("aria-label") ?? control.closest("label")?.textContent) === focusLabel);
-      control?.focus();
+    const identity = (control: HTMLElement) => control.dataset.styleControl ?? control.getAttribute("aria-label") ?? control.closest("label")?.textContent ?? (control instanceof HTMLButtonElement ? control.textContent : undefined);
+    const label = previous && identity(previous), token = ++focusRestoreToken;
+    restoringWidgetFocus = !!previous;
+    return (final = false) => {
+      if (token !== focusRestoreToken) return;
+      if (!previous || previous.isConnected || !label || document.activeElement !== document.body || handlers.context()?.key !== focusKey) { restoringWidgetFocus = false; return; }
+      const control = [...body.querySelectorAll<HTMLElement>(".grid-editor input, .grid-editor button, .image-focal-point input, .image-focal-point [tabindex]")].find(control => identity(control) === label);
+      if (control) { control.focus(); restoringWidgetFocus = false; }
+      else if (final) restoringWidgetFocus = false;
     };
+  }
+  function render() {
+    const restoreWidgetFocus = captureWidgetFocus();
     const widgetRequest = ++widgetRender;
-    widgets.forEach(widget => widget.dispose()); widgets = [];
+    widgets.forEach(widget => widget.dispose()); widgets = []; rebuildWidgets = undefined; gridShown = false; widgetsPending = false;
     const focusOrigin = variableMenu?.contains(document.activeElement) ? variableMenuOrigin : undefined;
     closeVariableMenu();
     if (focusOrigin) queueMicrotask(() => {
@@ -334,7 +368,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     applyFold();
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
-    renderContext = handlers.context(); renderOwn = ownValues();
+    renderContext = handlers.context(); key = renderContext?.key ?? ""; renderOwn = ownValues();
     controlSnapshots.clear();
     body.replaceChildren();
     const header = node("div", "style-panel__header"); header.append(node("strong", "", "Style"));
@@ -408,45 +442,69 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       }
       content.append(details);
     }
-    // Widget callbacks carry the same exact source snapshot as ordinary fields.
-    const widgetSnapshot = { expected: context }; controlSnapshots.add(widgetSnapshot);
-    const widgetBreakpoint = getCurrentBreakpoint(), widgetState = state;
-    const widgetCurrent = () => {
-      const before = widgetSnapshot.expected, current = handlers.context();
-      return !!current && !current.readOnly && before.modelProof?.isCurrent() !== false && current.key === before.key && current.assetRevision === before.assetRevision &&
-        getCurrentBreakpoint() === widgetBreakpoint && state === widgetState && current.target?.path === before.target?.path &&
-        current.target?.selector === before.target?.selector && current.target?.start === before.target?.start &&
-        Object.keys(current.files).length === Object.keys(before.files).length && Object.entries(before.files).every(([path, source]) => current.files[path] === source);
+    const widgetSections: { kind: "grid" | "focal"; details: HTMLDetailsElement }[] = [];
+    let focalRequest = 0;
+    rebuildWidgets = (focalOnly = false) => {
+      const restore = captureWidgetFocus();
+      const widgetContext = handlers.context();
+      if (!widgetContext || widgetContext.key !== context.key || collapsed) return;
+      const own = ownValues();
+      widgets = widgets.filter(widget => { if (!focalOnly || widget.kind === "focal") { widget.dispose(); return false; } return true; });
+      for (let index = widgetSections.length - 1; index >= 0; index--) if (!focalOnly || widgetSections[index].kind === "focal") { widgetSections[index].details.remove(); widgetSections.splice(index, 1); }
+      const section = (kind: "grid" | "focal", title: string, label: string, properties: string) => {
+        const details = node("details", "style-panel__section"); details.open = opened.has(title);
+        details.append(node("summary", "style-panel__section-title", title));
+        details.addEventListener("toggle", () => { if (!searchQuery) { if (details.open) opened.add(title); else opened.delete(title); } });
+        const host = node("div", "style-panel__widget"); host.dataset.searchLabel = label; host.dataset.searchProperty = properties;
+        details.append(host); content.append(details); widgetSections.push({ kind, details }); return { details, host };
+      };
+      const snapshot = () => {
+        const captured = { expected: widgetContext }; controlSnapshots.add(captured);
+        const breakpoint = getCurrentBreakpoint(), currentState = state;
+        const isCurrent = (asset = false) => {
+          const before = captured.expected, current = handlers.context();
+          return !!current && !current.readOnly && before.modelProof?.isCurrent() !== false && current.key === before.key &&
+            (!asset || current.assetRevision === before.assetRevision) && getCurrentBreakpoint() === breakpoint && state === currentState &&
+            current.target?.path === before.target?.path && current.target?.selector === before.target?.selector && current.target?.start === before.target?.start &&
+            Object.keys(current.files).length === Object.keys(before.files).length && Object.entries(before.files).every(([path, source]) => current.files[path] === source);
+        };
+        const change = async (properties: Record<string, string | null>) => {
+          if (!isCurrent() || !(await write(properties, captured.expected))) throw new Error("The style change was not applied. Review the current values and retry.");
+        };
+        return { captured, isCurrent, change };
+      };
+      if (!focalOnly) {
+        gridShown = /^(?:inline-)?grid$/.test(own.display || widgetContext.computed.display || "");
+        if (gridShown) {
+          const grid = section("grid", "Grid", "Grid layout columns rows tracks gaps", "grid-template-columns grid-template-rows gap column-gap row-gap");
+          const proof = snapshot();
+          const view = mountGridEditor(grid.host, { authored: own, computed: widgetContext.computed, expected: proof.captured,
+            readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: () => proof.isCurrent(), onChange: proof.change, onError: report });
+          [...view.element.querySelectorAll<HTMLButtonElement>("button")].forEach((button, index) => button.dataset.styleControl = `grid-replace-${index === 0 ? "columns" : "rows"}`);
+          widgets.push({ ...view, kind: "grid", isCurrent: () => proof.isCurrent() });
+        }
+      }
+      const request = ++focalRequest;
+      if (handlers.focalAsset) {
+        const focal = section("focal", "Image focus", "Image focal point position", "object-position background-position");
+        focal.host.append(node("p", "style-panel__hint", "Loading native image…"));
+        const proof = snapshot();
+        void handlers.focalAsset(widgetContext).then(result => {
+          if (request !== focalRequest || widgetRequest !== widgetRender || !focal.host.isConnected || !proof.isCurrent(true)) return;
+          focal.host.replaceChildren();
+          if (!result) { focal.details.remove(); filter(); restore(true); return; }
+          const view = mountImageFocalPoint(focal.host, { mode: result.mode, previewAsset: result.asset,
+            authored: own[result.mode], computed: widgetContext.computed[result.mode], fit: widgetContext.computed["object-fit"], size: widgetContext.computed["background-size"],
+            expected: proof.captured, readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: () => proof.isCurrent(true),
+            onChange: async properties => { if (!proof.isCurrent(true)) throw new Error("The image or style source changed. Retry with the current preview."); await proof.change(properties); }, onError: report });
+          widgets.push({ ...view, kind: "focal", isCurrent: () => proof.isCurrent(true) });
+          filter(); restore(true);
+        }).catch(error => { if (request === focalRequest && widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); restore(true); report(error); } });
+      }
+      // Grid owns these controls while present; they still remain searchable there.
+      for (const row of content.querySelectorAll<HTMLElement>(".style-panel__field[data-search-property]")) row.dataset.gridDuplicate = String(gridShown && ["grid-template-columns", "grid-template-rows", "gap", "column-gap", "row-gap"].includes(row.dataset.searchProperty!));
+      filter(); restore();
     };
-    const changeWidget = async (properties: Record<string, string | null>) => {
-      if (!widgetCurrent()) { report("The style target changed. Select the element again."); return; }
-      await write(properties, widgetSnapshot.expected);
-    };
-    const section = (title: string, label: string, properties: string) => {
-      const details = node("details", "style-panel__section"); details.open = opened.has(title);
-      details.append(node("summary", "style-panel__section-title", title));
-      details.addEventListener("toggle", () => { if (!searchQuery) { if (details.open) opened.add(title); else opened.delete(title); } });
-      const host = node("div", "style-panel__widget"); host.dataset.searchLabel = label; host.dataset.searchProperty = properties;
-      details.append(host); content.append(details); return { details, host };
-    };
-    if (/^(?:inline-)?grid$/.test(renderOwn.display || context.computed.display || "")) {
-      const grid = section("Grid", "Grid columns rows tracks gaps", "grid-template-columns grid-template-rows gap column-gap row-gap");
-      widgets.push(mountGridEditor(grid.host, { authored: renderOwn, computed: context.computed, expected: widgetSnapshot,
-        readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: widgetCurrent, onChange: changeWidget, onError: report }));
-    }
-    if (handlers.focalAsset) {
-      const focal = section("Image focus", "Image focal point position", "object-position background-position");
-      focal.host.append(node("p", "style-panel__hint", "Loading native image…"));
-      void handlers.focalAsset(context).then(result => {
-        if (widgetRequest !== widgetRender || !focal.host.isConnected || !widgetCurrent()) return;
-        focal.host.replaceChildren();
-        if (!result) { focal.details.remove(); filter(); return; }
-        widgets.push(mountImageFocalPoint(focal.host, { mode: result.mode, previewAsset: result.asset,
-          authored: renderOwn[result.mode], computed: context.computed[result.mode], fit: context.computed["object-fit"], size: context.computed["background-size"],
-          expected: widgetSnapshot, readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: widgetCurrent, onChange: changeWidget, onError: report }));
-        filter(); restoreWidgetFocus();
-      }).catch(error => { if (widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); report(error); } });
-    }
     const search = node("div", "style-panel__search");
     const input = node("input"); input.type = "search"; input.value = searchQuery; input.placeholder = "Search styles"; input.setAttribute("aria-label", "Search styles");
     const clear = button("Clear", () => { input.value = ""; searchQuery = ""; filter(); input.focus(); }); clear.setAttribute("aria-label", "Clear style search");
@@ -460,7 +518,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         } else {
           let count = 0;
           for (const row of details.querySelectorAll<HTMLElement>("[data-search-property]")) {
-            row.hidden = !matchesStyleSearch(searchQuery, row.dataset.searchLabel!, row.dataset.searchProperty!, title); if (!row.hidden) count++;
+            row.hidden = row.dataset.gridDuplicate === "true" || !matchesStyleSearch(searchQuery, row.dataset.searchLabel!, row.dataset.searchProperty!, title); if (!row.hidden) count++;
           }
           details.hidden = count === 0; matches += count;
         }
@@ -469,12 +527,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       clear.hidden = !searchQuery; empty.hidden = matches > 0;
     }
     input.addEventListener("input", () => { searchQuery = input.value; filter(); });
-    const searchIcon = node("span", "style-panel__search-icon"); searchIcon.setAttribute("aria-hidden", "true"); search.append(searchIcon, input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop; restoreWidgetFocus();
+    const searchIcon = node("span", "style-panel__search-icon"); searchIcon.setAttribute("aria-hidden", "true"); search.append(searchIcon, input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop; rebuildWidgets(); restoreWidgetFocus();
   }
   const resize = mountStylePanelResize(workspace, root, value => {
     const changed = collapsed !== value; collapsed = value;
     if (changed) render(); else applyFold();
   });
   render();
-  return { root, update, dispose() { widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
+  return { root, update, dispose() { gestureEvents.abort(); widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
 }

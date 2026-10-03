@@ -409,7 +409,7 @@ function mountWorkspace() {
   stylePanel?.dispose();
   const staleStyle = () => status("The style target or source changed. Select it again and make a fresh edit.");
   const styleContextMatches = (expected: StylePanelContext | undefined, current: StylePanelContext | undefined) =>
-    !!expected && !!current && expected.modelProof?.isCurrent() !== false && expected.key === current.key && expected.assetRevision === current.assetRevision &&
+    !!expected && !!current && expected.modelProof?.isCurrent() !== false && expected.key === current.key &&
     expected.target?.path === current.target?.path && expected.target?.selector === current.target?.selector && expected.target?.start === current.target?.start &&
     Object.keys(expected.files).length === Object.keys(current.files).length &&
     Object.entries(expected.files).every(([path, source]) => current.files[path] === source);
@@ -418,19 +418,19 @@ function mountWorkspace() {
     write: async (properties, breakpoint, state, expected) => {
       const context = nativeStylePanelContext(), epoch = generation;
       const target = context?.target, source = target && context?.files[target.path];
-      if (versionView || !target || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); return; }
+      if (versionView || !target || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); throw new Error("The style target or source changed. Select it again and retry."); }
       const scope = draftScope(), requester = currentPath;
-      if (!scope || !editorModule || !requester) return;
+      if (!scope || !editorModule || !requester) throw new Error("The style editor is unavailable. Retry after opening the source.");
       const originProof = editorModule.captureFileModelState(scope, requester);
       const targetProof = editorModule.captureFileModelState(scope, target.path);
       const targetMounted = editorModule.isMounted(target.path);
       const current = () => generation === epoch && !versionView && currentPath === requester && originProof.isCurrent() && styleContextMatches(context, nativeStylePanelContext());
-      if (!(await openSecondary(target.path, () => current() && targetProof.isCurrent()))) return;
-      if (!current() || targetMounted && !targetProof.isCurrent() || editorModule.getMountedSource(target.path) !== source) { staleStyle(); return; }
+      if (!(await openSecondary(target.path, () => current() && targetProof.isCurrent()))) throw new Error("The CSS source could not be opened. Retry the style change.");
+      if (!current() || targetMounted && !targetProof.isCurrent() || editorModule.getMountedSource(target.path) !== source) { staleStyle(); throw new Error("The style target or source changed. Select it again and retry."); }
       const next = writeCssProperties(source, { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state, expectedSource: source }, properties);
       const edit = minimalTextEdit(source, next);
       if (edit) {
-        applyNativeChange(target.path, source, [edit], undefined, "Style updated");
+        if (!applyNativeChange(target.path, source, [edit], undefined, "Style updated")) throw new Error("The CSS change was not applied. Retry the style change.");
         editorModule?.revealRange(target.path, edit.start, edit.start + edit.text.length);
       }
     },
@@ -499,7 +499,7 @@ function mountWorkspace() {
       const target = context.target, source = context.files[target.path];
       if (source === undefined) { staleStyle(); return; }
       const rule = locateWriteRule(source, { selector: target.selector, baseStart: target.start });
-      if (!rule || target.start === undefined) return;
+      if (!rule || target.start === undefined) { staleStyle(); return; }
       if (!(await context.workspace.openDefinition(target.path, rule.start, rule.open, context.workspace.revision))) staleStyle();
     },
     history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
@@ -1173,13 +1173,14 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
   const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
     ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
   const target = className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined;
+  const focalPath = selection ? nativeStyleImageSource(selection, sources)?.path : undefined;
   const scope = draftScope();
   const proofs = scope && editorModule ? [...new Set([selection?.path, target?.path].filter((path): path is string => !!path && editorModule!.isMounted(path)))].map(path => editorModule!.captureFileModelState(scope, path)) : [];
   return {
     key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
     tag: selection?.tag ?? "", className, classes,
     target, modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
-    assetRevision: JSON.stringify([...nativeAssets]), files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
+    assetRevision: focalPath ? String(nativeAssetVersions.get(focalPath) ?? 0) : "0", files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };
 }
 
@@ -1196,12 +1197,12 @@ function nativeStyleImageSource(selection: NativePreviewSelection, sources: Reco
   if (!winner) return;
   const rule = selection.selectors[winner.rule];
   if (rule.kind === "inline" || !/\.css$/i.test(rule.path)) return;
-  const declaration = rule.declarations?.[winner.declaration];
   const located = findStyleRulesInSources(sources, [rule])[0];
   const block = located && scanCss(sources[rule.path] ?? "").find(block => block.start === located.start);
-  const authored = block?.declarations.filter(item => item.property === (declaration?.shorthand ?? declaration?.property)).at(-1);
-  if (!authored) return;
-  const style = document.createElement("div").style; style.setProperty(authored.property, authored.value);
+  if (!block) return;
+  // The native parser keeps earlier !important declarations over later normal ones.
+  const style = document.createElement("div").style;
+  style.cssText = block.declarations.map(item => `${item.property}:${item.value};`).join("");
   const path = singleBackgroundAsset(style.getPropertyValue("background-image"), rule.path);
   return path ? { path, mode: "background-position" } : undefined;
 }
@@ -2408,7 +2409,19 @@ async function loadNativeStyleFiles() {
 // per path as data URLs so the sandboxed frame can show them; a path that is
 // not in the branch (or not an image or font) is remembered as missing and
 // left as written.
-const nativeAssets = new Map<string, string>();
+const nativeAssetVersions = new Map<string, number>();
+const nativeAssets = new class extends Map<string, string> {
+  override set(path: string, value: string) {
+    if (this.get(path) !== value) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1);
+    return super.set(path, value);
+  }
+  override delete(path: string) {
+    const deleted = super.delete(path);
+    if (deleted) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1);
+    return deleted;
+  }
+  override clear() { for (const path of this.keys()) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1); super.clear(); }
+}();
 const nativeMissingAssets = new Set<string>();
 const nativeAssetRequests = new Map<string, number>();
 let nativeAssetRequestId = 0;
