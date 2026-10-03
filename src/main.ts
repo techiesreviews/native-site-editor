@@ -347,6 +347,7 @@ function mountWorkspace() {
     onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
     announce: (text) => { element("status").textContent = text; },
   });
+  componentTools?.destroy();
   componentTools = mountComponentTools();
 }
 

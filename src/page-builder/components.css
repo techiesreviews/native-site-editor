@@ -107,11 +107,18 @@
     from { opacity: 0; transform: translateY(6px); }
   }
 }
+/* The name and actions stay in view while the slots scroll under them. */
 .component-panel__head {
+  position: sticky;
+  z-index: 1;
+  top: -12px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  margin: -12px -20px 0;
+  padding: 12px 20px 6px;
+  background: var(--panel-surface);
 }
 .component-panel__title {
   display: flex;
@@ -567,7 +574,7 @@
 }
 
 /* ---- Make component and Detach: the files, shown before anything is written. ---- */
-.component-dialog {
+.create-dialog.component-dialog {
   width: min(560px, calc(100vw - 32px));
 }
 .component-dialog__files,

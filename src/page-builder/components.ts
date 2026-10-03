@@ -161,6 +161,14 @@ export function createComponentTools(deps: ComponentDeps) {
     };
   }
 
+  // The last source parsed for a selection: the bar, the panel and the
+  // chip all ask about the same one after each render.
+  let parsed: { source: string; root: DocumentFragment } | undefined;
+  function parsedRoot(source: string) {
+    if (parsed?.source !== source) parsed = { source, root: parseMarked(source).root };
+    return parsed.root;
+  }
+
   /**
    * The instance a selection is, or sits in as the page's own content
    * (`within` names the slot), in the selection's own file. An element of
@@ -170,7 +178,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!selection?.path || !selection.node?.length || !site()) return undefined;
     const source = deps.sources()[selection.path];
     if (source === undefined) return undefined;
-    const { root } = parseMarked(source);
+    const root = parsedRoot(source);
     const chain: Element[] = [];
     let parent: ParentNode = root;
     for (const index of selection.node) {
@@ -262,7 +270,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const label = componentLabel(host.tag);
       out.context = {
         label,
-        title: host.path && host.node ? `Select the ${label} instance on the page` : `Inside the ${label} component`,
+        title: host.path && host.node ? `Select this ${label} instance` : `Inside the ${label} component`,
         onSelect: () => void selectHost(host),
       };
     }
@@ -311,8 +319,15 @@ export function createComponentTools(deps: ComponentDeps) {
     // The element that shows the slot: its nearest ancestor that is not a slot.
     let element = target?.element.parent;
     while (element?.name === "slot") element = element.parent;
-    const nodePath = element ? elementPathAt(source, element.start) : [0];
+    // A slot shows no box of its own: a template that is one slot (`<slot><p>…</p></slot>`)
+    // has nothing to select in the preview, only its code to mark.
+    const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
+    const nodePath = element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0];
     if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
+    else if (target && deps.currentPath() === template.path) {
+      deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
+      return;
+    }
     deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
     if (!target) return;
     // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
@@ -427,6 +442,8 @@ export function createComponentTools(deps: ComponentDeps) {
   let shape = "";
   // The field typed in, so a render keeps it and the undo step ends when it is left.
   let typing: { path: string; key: string } | undefined;
+  // The field to focus once a change has rendered (a slot switched on).
+  let focusNext: string | undefined;
   function stopTyping(input: HTMLInputElement) {
     const was = typing;
     if (!was || was.key !== input.dataset.field) return;
@@ -456,12 +473,23 @@ export function createComponentTools(deps: ComponentDeps) {
       const caret = active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : undefined;
       shape = key;
       render(at, values);
-      const again = field ? panel.querySelector<HTMLElement>(`[data-field="${CSS.escape(field)}"]`) : undefined;
+      // The focus stays on the same control, else on the slot it belonged to
+      // (a Reset that went away leaves it on the slot's field, then its name).
+      const slotOf = field?.slice(field.indexOf(":") + 1);
+      const again = field === undefined ? undefined : [field, `text:${slotOf}`, `name:${slotOf}`]
+        .map((key) => panel.querySelector<HTMLElement>(`[data-field="${CSS.escape(key)}"]`)).find(Boolean);
       if (again) {
         again.focus();
-        if (again instanceof HTMLInputElement && caret && caret[0] !== null) again.setSelectionRange(caret[0], caret[1]);
+        if (again instanceof HTMLInputElement && caret && caret[0] !== null && again.dataset.field === field) again.setSelectionRange(caret[0], caret[1]);
       }
     } else patch(at, values);
+    // A slot just switched on: its first field, ready to type in.
+    const wanted = focusNext && panel.querySelector<HTMLInputElement>(`[data-field="${CSS.escape(focusNext)}"]`);
+    if (wanted) {
+      focusNext = undefined;
+      wanted.focus();
+      wanted.select();
+    }
     if (panel.hidden) {
       panel.hidden = false;
       // The panel takes room from the page structure: its selected row stays in view.
@@ -535,6 +563,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!state.shown) row.classList.add("is-off");
     const head = node("div", "component-slot__head");
     const pick = button("", () => selectSlot(slot.name), "component-slot__name");
+    pick.dataset.field = `name:${slot.name}`;
     pick.append(mark(KIND_MARK[value.kind], 14, "component-slot__kind"), node("span", "", slotLabel(slot.name)));
     pick.title = state.filled ? `Select what this page puts in the ${slotLabel(slot.name).toLowerCase()} slot` : "Select the instance";
     pick.setAttribute("aria-label", `${slotLabel(slot.name)}, ${KIND_LABEL[value.kind].toLowerCase()} slot${state.filled ? "" : state.whenEmpty === "hidden" ? ", off" : ", default"}`);
@@ -547,10 +576,13 @@ export function createComponentTools(deps: ComponentDeps) {
       toggle.setAttribute("aria-checked", String(state.filled));
       toggle.setAttribute("aria-label", `Show ${slotLabel(slot.name).toLowerCase()}`);
       toggle.title = state.filled ? `Hide ${slotLabel(slot.name).toLowerCase()} on this instance` : `Show ${slotLabel(slot.name).toLowerCase()} on this instance`;
+      toggle.dataset.field = `switch:${slot.name}`;
       toggle.addEventListener("click", () => setSlotOn(slot.name, !state.filled));
       head.append(toggle);
     } else if (state.filled) {
-      head.append(iconButton(`Reset ${slotLabel(slot.name).toLowerCase()} to the component's default`, "reset", () => setSlotOn(slot.name, false), "component-slot__reset"));
+      const reset = iconButton(`Reset ${slotLabel(slot.name).toLowerCase()} to the component's default`, "reset", () => setSlotOn(slot.name, false), "component-slot__reset");
+      reset.dataset.field = `reset:${slot.name}`;
+      head.append(reset);
     } else head.append(node("span", "component-slot__badge", "Default"));
     row.append(head);
     // An optional slot that is off has nothing to edit.
@@ -682,7 +714,8 @@ export function createComponentTools(deps: ComponentDeps) {
     if (on) {
       const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot));
       if (!edit) { deps.announce("The instance's end tag could not be found in the source."); return; }
-      change(at.path, [edit], `${label} shown`, at.node);
+      const kind = slotValue(at.source, at.template, at.instance, slot).kind;
+      if (change(at.path, [edit], `${label} shown`, at.node)) focusNext = `${kind === "image" ? "src" : kind === "link" ? "href" : "text"}:${slotName}`;
     } else {
       const edits = fillRemoveEdits(at.source, at.instance, slotName);
       const reset = at.states.get(slotName)?.whenEmpty === "fallback";
@@ -796,9 +829,17 @@ export function createComponentTools(deps: ComponentDeps) {
     });
   }
 
-  function codeBlock(label: string, text: string) {
+  // A file's (or a page part's) markup as it will read; markup for a place
+  // in a page has its later lines indented for that place, which comes off.
+  function codeBlock(label: string, text: string, place?: { source: string; at: number }) {
     const figure = node("figure", "component-dialog__file");
-    figure.append(node("figcaption", "component-dialog__file-name", label), node("pre", "component-dialog__code", text));
+    let shown = text;
+    if (place) {
+      const lead = place.source.slice(place.source.lastIndexOf("\n", place.at - 1) + 1, place.at);
+      const indent = /^[ \t]*$/.test(lead) ? lead : "";
+      shown = text.split(/\r?\n/).map((line, index) => (index && line.startsWith(indent) ? line.slice(indent.length) : line)).join("\n");
+    }
+    figure.append(node("figcaption", "component-dialog__file-name", label), node("pre", "component-dialog__code", shown));
     return figure;
   }
 
@@ -807,7 +848,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const label = componentLabel(at.tag);
     const notes: HTMLElement[] = [
       node("p", "create-dialog__result", `This ${label} becomes plain markup in ${at.path}: later changes to the component no longer reach it. Undo brings the instance back.`),
-      codeBlock(at.path, result.markup),
+      codeBlock(at.path, result.markup, { source: at.source, at: at.range.start }),
     ];
     const css = deps.sources()[at.templatePath.replace(/\.html$/, ".css")];
     if (css?.trim()) notes.push(node("p", "create-dialog__result", `The component's own styles (${at.templatePath.replace(/\.html$/, ".css")}) apply inside the component only, so they stop styling this copy; the site's stylesheets still do.`));
@@ -867,7 +908,7 @@ export function createComponentTools(deps: ComponentDeps) {
       files.replaceChildren(
         codeBlock(`components/${tag}/${tag}.html (new)`, made.template),
         codeBlock(`components/${tag}/${tag}.css (new)`, made.css),
-        codeBlock(`${path} (replaces the <${range.tag.name}>)`, made.instance),
+        codeBlock(`${path} (replaces the <${range.tag.name}>)`, made.instance, { source, at: range.start }),
       );
     };
     input.addEventListener("input", update);

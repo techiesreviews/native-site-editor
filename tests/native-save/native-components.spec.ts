@@ -101,8 +101,8 @@ test("an instance wears the component accent in the bar, the page structure and 
   await frame(page).locator("project-card").nth(1).locator("card-note").evaluate((el) => (el as HTMLElement).click());
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card note");
-  await expect(bar(page).getByRole("button", { name: "Select the Project card instance on the page" })).toBeVisible();
-  await bar(page).getByRole("button", { name: "Select the Project card instance on the page" }).click();
+  await expect(bar(page).getByRole("button", { name: "Select this Project card instance" })).toBeVisible();
+  await bar(page).getByRole("button", { name: "Select this Project card instance" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
   await expect(row(page, "Project card Shared chrome")).toHaveAttribute("aria-selected", "true");
@@ -130,7 +130,9 @@ test("the properties panel edits an instance's slots and attributes as page sour
   await link.click();
   await expect(link).toHaveAttribute("aria-checked", "true");
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
+  // Switched on, the slot's address is ready to type in.
   const address = panel(page).locator(".component-slot[data-slot='link']").getByRole("combobox", { name: "Address" });
+  await expect(address).toBeFocused();
   await address.fill("/about/");
   await address.press("Enter");
   await panel(page).locator(".component-slot[data-slot='link']").getByRole("textbox", { name: "Text" }).fill("About the studio");
