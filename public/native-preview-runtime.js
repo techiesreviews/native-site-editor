@@ -1750,6 +1750,45 @@
     sel.addRange(range);
   }
   document.addEventListener("selectionchange", function () { reportTextSelection(false); });
+
+  // ---- Editor shortcuts (command palette slice, docs/page-builder/palette.md) ----
+  // Keys pressed here never reach the editor's document, so the ones it
+  // answers go to it as `shortcut` messages: ⌘K / Ctrl+K (the command
+  // palette, unless text is selected while typing, which ⌘K links), ⌘P / Ctrl+P
+  // (go to a page or file), and, when not typing, ? (keyboard shortcuts),
+  // ⌘Z / ⇧⌘Z / Ctrl+Y (undo, redo), and for a selected section ⌘D
+  // (duplicate), Delete or Backspace (remove); Shift+Enter selects the parent.
+  function typingHere() {
+    var active = document.activeElement;
+    return !!(active && (active.isContentEditable || /^(input|textarea|select)$/.test(active.localName)));
+  }
+  function textSelectedForLink() {
+    var sel = document.getSelection();
+    return !!(editing && sel && !sel.isCollapsed && editing.contains(sel.anchorNode));
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.isComposing) return;
+    var mod = e.ctrlKey || e.metaKey;
+    var key = (e.key || "").toLowerCase();
+    var plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+    var section = selected && selected.isConnected && sectionLike(selected);
+    var name = null;
+    if (mod && !e.altKey && !e.shiftKey && key === "k" && !textSelectedForLink()) name = "palette";
+    else if (mod && !e.altKey && !e.shiftKey && key === "p") name = "go";
+    else if (typingHere()) return;
+    else if (e.key === "?" && !mod && !e.altKey) name = "shortcuts";
+    else if (mod && !e.altKey && key === "z") name = e.shiftKey ? "redo" : "undo";
+    else if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === "y") name = "redo";
+    else if (mod && !e.altKey && !e.shiftKey && key === "d" && section) name = "duplicate";
+    else if (plain && (e.key === "Delete" || e.key === "Backspace") && section) name = "remove";
+    else if (e.shiftKey && !mod && !e.altKey && e.key === "Enter" && selected) name = "parent";
+    if (!name) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    emit("shortcut", { name: name });
+  }, true);
+  // ---- End of editor shortcuts ----
+
   document.addEventListener("keydown", function (e) {
     // Alt+Up/Down moves the selected section; the editor does the move. Other
     // elements, and typing in a text element, keep the browser's own behaviour.

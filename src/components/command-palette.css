@@ -1,0 +1,261 @@
+/* The command palette (⌘K) and the keyboard shortcuts sheet (?). Tokens
+   from src/theme.css; rules in docs/editor-colors.md. */
+
+/* Key caps, here and in the shortcuts sheet. */
+.palette-keys { display: inline-flex; flex: none; gap: 3px; }
+.palette-key {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--control-line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--muted);
+  font: 600 var(--type-badge) / 1 system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.palette-key--symbol { font-size: var(--type-base); font-weight: 400; }
+
+.command-palette {
+  position: fixed;
+  inset: 12vh 0 auto;
+  margin: 0 auto;
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(560px, 76dvh);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px var(--semantic-shadow), 0 2px 8px var(--semantic-shadow);
+  overflow: hidden;
+}
+.command-palette[open] { display: flex; flex-direction: column; }
+.command-palette::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.28); }
+
+.command-palette__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+/* The field always has focus: its row shows it with an accent underline. */
+.command-palette__search:focus-within { box-shadow: inset 0 -2px 0 var(--focus); }
+.command-palette__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-title);
+  outline: none;
+}
+.command-palette__input::placeholder { color: var(--muted); opacity: 1; }
+.command-palette__scope {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-small);
+  background: var(--current);
+  color: var(--text);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.command-palette__scope[hidden] { display: none; }
+
+.command-palette__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px var(--panel-padding) var(--panel-padding);
+  scroll-padding: 28px 0 6px;
+}
+.command-palette__list[hidden] { display: none; }
+.command-palette__group + .command-palette__group { margin-top: 4px; }
+.command-palette__heading {
+  padding: 8px 8px 4px;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.command-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  font-size: var(--type-base);
+  cursor: pointer;
+  user-select: none;
+}
+.command-palette__item + .command-palette__item { margin-top: 2px; }
+.command-palette__item.is-active { background: var(--current); }
+.command-palette__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--size-icon);
+  height: var(--size-icon);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+.command-palette__item.is-active .command-palette__icon { color: var(--text); }
+.command-palette__item.is-component .command-palette__icon { background: var(--component-surface); color: var(--component-text); }
+.command-palette__text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
+.command-palette__title { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command-palette__item-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--type-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-palette mark {
+  background: none;
+  color: var(--link);
+  font-weight: 700;
+}
+.command-palette__item-hint mark { font-weight: 600; }
+.command-palette__empty {
+  margin: 0;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: var(--type-base);
+  text-align: center;
+}
+.command-palette__empty[hidden] { display: none; }
+
+.command-palette__footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  padding: 7px 10px 7px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.command-palette__hint { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.command-palette__hint .palette-key { margin-right: 1px; }
+.command-palette__shortcuts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  height: var(--size-icon);
+  padding: 0 4px 0 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.command-palette__shortcuts .icon { margin: 0; }
+.command-palette__shortcuts:hover { background: var(--hover); color: var(--text); }
+.command-palette__shortcuts:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (max-width: 560px) {
+  .command-palette__hint:nth-child(n + 3) { display: none; }
+}
+
+/* Keyboard shortcuts sheet. */
+.shortcut-sheet {
+  position: fixed;
+  inset: 8vh 0 auto;
+  margin: 0 auto;
+  width: min(820px, calc(100vw - 32px));
+  max-height: 84dvh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px var(--semantic-shadow), 0 2px 8px var(--semantic-shadow);
+  overflow: hidden;
+}
+.shortcut-sheet[open] { display: flex; flex-direction: column; }
+.shortcut-sheet::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.28); }
+.shortcut-sheet__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.shortcut-sheet__header > .icon { margin: 0; color: var(--muted); }
+.shortcut-sheet__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.shortcut-sheet__subtitle { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.shortcut-sheet__close {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  width: var(--size-compact);
+  height: var(--size-compact);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.shortcut-sheet__close:hover { background: var(--hover); color: var(--text); }
+.shortcut-sheet__close:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.shortcut-sheet__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 16px 16px;
+  columns: 2 300px;
+  column-gap: 28px;
+}
+.shortcut-sheet__area { break-inside: avoid; padding-top: 10px; }
+.shortcut-sheet__area-title {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.shortcut-sheet__list { margin: 0; padding: 0; }
+.shortcut-sheet__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  border-bottom: 1px solid color-mix(in oklch, var(--line) 60%, transparent);
+  font-size: var(--type-base);
+}
+.shortcut-sheet__row:last-child { border-bottom: 0; }
+.shortcut-sheet__label { flex: 1; min-width: 0; margin: 0; }
+.shortcut-sheet__note { display: block; color: var(--muted); font-size: var(--type-small); }
+.shortcut-sheet__keys { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; margin: 0; color: var(--muted); font-size: var(--type-small); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .command-palette[open], .shortcut-sheet[open] { animation: palette-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .command-palette[open]::backdrop, .shortcut-sheet[open]::backdrop { animation: palette-fade 160ms ease-out; }
+}
+@keyframes palette-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+}
+@keyframes palette-fade {
+  from { opacity: 0; }
+}

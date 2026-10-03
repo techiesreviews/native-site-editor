@@ -2,6 +2,8 @@ import "./sidebar-resize.css";
 import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 
 export interface SidebarResize {
+  /** Hides or shows the sidebar, as a click on the handle does. */
+  toggle(): void;
   dispose(): void;
 }
 
@@ -124,6 +126,7 @@ export function mountSidebarResize(
   observer.observe(workspace);
   apply(width);
   return {
+    toggle,
     dispose() {
       observer.disconnect();
       handle.remove();

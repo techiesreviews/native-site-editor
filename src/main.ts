@@ -66,6 +66,7 @@ import { loadNativeAssetRequests } from "./native-assets";
 import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
+import { mountEditorPalette } from "./page-builder/palette";
 import type {
   EditorContext,
   Directory,
@@ -367,6 +368,72 @@ function mountWorkspace() {
     canDrag: (item) => isNativeSectionTag(item.tag),
     onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
     announce: (text) => { element("status").textContent = text; },
+  });
+  mountPalette();
+}
+
+// The command palette (⌘K, ⌘P) and the keyboard shortcuts sheet (?), with
+// the editor's commands calling what its own controls call
+// (src/page-builder/palette.ts, docs/page-builder/palette.md).
+let editorPalette: ReturnType<typeof mountEditorPalette> | undefined;
+function mountPalette() {
+  editorPalette?.dispose();
+  editorPalette = mountEditorPalette(app, {
+    pages: () => {
+      const site = nativeSite;
+      if (!site) return [];
+      const routes = Object.entries(site.routes);
+      const titles = Object.fromEntries(routes.map(([route]) => [route, nativeRouteInfo(route).title]));
+      return routes.map(([route, file]) => ({
+        file,
+        route,
+        label: nativePageLabel(file, { routes: site.routes, titles, heading: (path) => firstHeadingText(nativeEffectiveSource(path)) }) ?? route,
+      }));
+    },
+    files: () => (nativeSite ? nativeFiles() : []),
+    components: () => {
+      if (!nativeSite) return [];
+      const sources = nativeSources();
+      return Object.entries(nativeSite.components).map(([tag, file]) => ({ tag, file, label: componentLabel(tag), section: isSectionTemplate(sources[file] ?? "") }));
+    },
+    currentPath: () => currentPath,
+    revision: () => `${setupScope()}:${generation}`,
+    open: (path) => {
+      if (path === currentPath && editorModule?.isMounted(path)) return;
+      void restoreFile(path, generation);
+    },
+    source: (path) => nativeSources()[path],
+    isSectionTag: isNativeSectionTag,
+    insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
+    selection: () => (lastNativeSelection && lastNativeSelection.path === currentPath ? lastNativeSelection : undefined),
+    editBar: () => (document.querySelector(".edit-bar[data-model]") ? nativeEditBarModel : undefined),
+    select: (path, node) => nativePreview?.selectNode({ path, node }),
+    textSelected: () => Boolean(nativeTextSelection && !nativeTextSelection.caret && nativeTextSelection.text),
+    history: (direction) => void editorModule?.runVisualHistory(direction, currentPath),
+    editing: () => Boolean(currentPath && editorModule?.isMounted(currentPath)),
+    toggleCode: () => codeResize?.toggle(),
+    codeHidden: () => element("main").classList.contains("code-collapsed"),
+    toggleStructure: () => sidebarResize?.toggle(),
+    structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
+    newPage: async () => {
+      openExplorer();
+      selectExplorerTab("pages");
+      // Opening the popover queues a toggle that renders its pages tree.
+      // Start the title field after that render, so it keeps focus.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      pagesTree?.startNew("/");
+    },
+    newFile: () => {
+      openExplorer();
+      if (nativeSite) selectExplorerTab("files");
+      openCreate("", element("new-at-root"));
+    },
+    showPagesAndFiles: () => {
+      openExplorer();
+      element("explorer").querySelector<HTMLElement>("[role='tab'][aria-selected='true'], [role='treeitem'][tabindex='0']")?.focus();
+    },
+    announce,
+    onError: errorMessage,
   });
 }
 
@@ -942,6 +1009,8 @@ let lastNativeSelection: NativePreviewSelection | undefined;
 let nativeTextSelection: (NativeTextSelection & { path: string; node: number[] }) | undefined;
 // What B, I and Link do for the current selection, for the keyboard shortcuts.
 let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
+// The edit bar last shown, whose controls the command palette offers while it shows.
+let nativeEditBarModel: EditBarModel | undefined;
 // A link just made from the bar around selected text (`node` is the text
 // element, `link` the new link's index path): its Address opens at once
 // (`shown` once asked), and closing it with the address still empty takes
@@ -1376,7 +1445,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const model: EditBarModel = { kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
+  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable };
+  nativeEditBarModel = model;
   preview.showEditBar(model, rect);
 }
 
@@ -1402,6 +1472,10 @@ function applyNativeChange(path: string, source: string, edits: { start: number;
   const preview = nativePreview;
   const editor = editorModule;
   if (!preview || !editor) return false;
+  if (nativeSources()[path] !== source) {
+    announce("The source changed. Select the element again and try again.");
+    return false;
+  }
   preview.selectAfterUpdate(next ? { path, node: next } : undefined);
   try {
     editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
@@ -2503,6 +2577,8 @@ let cancelAutoSignIn: (() => void) | undefined;
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
+  editorPalette?.dispose();
+  editorPalette = undefined;
   agentMenu?.destroy();
   agentMenu = undefined;
   activeFileContext = null;
