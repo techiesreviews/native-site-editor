@@ -1,13 +1,11 @@
 import { elementEnd, startTagAttribute, startTags, type StartTag } from "../../shared/html-source";
+import { decodeHtmlEntities } from "./html-entities";
 
 export type HeadField = "title" | "description" | "og:title" | "og:description" | "og:image" | "og:site_name" | "canonical" | "robots" | "theme-color" | "icon";
 const order: HeadField[] = ["title", "description", "robots", "canonical", "theme-color", "icon", "og:site_name", "og:title", "og:description", "og:image"];
 export const escapeText = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeValue = (value: string, quote = '"') => escapeText(value).replace(quote === "'" ? /'/g : /"/g, quote === "'" ? "&#39;" : "&quot;");
-export const decodeText = (value: string) => value.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (all, key: string) => {
-  if (key[0] === "#") { const n = parseInt(key.slice(key[1].toLowerCase() === "x" ? 2 : 1), key[1].toLowerCase() === "x" ? 16 : 10); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : all; }
-  return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as Record<string, string>)[key.toLowerCase()] ?? all;
-});
+export const decodeText = decodeHtmlEntities;
 
 /** Changes only an attribute's value, retaining quote style and surrounding source. */
 export function withAttribute(html: string, tag: StartTag, name: string, value: string): string {
@@ -51,7 +49,7 @@ export function readHeadSettings(html: string): Record<HeadField, string> {
     const field = fieldOf(html, tag);
     if (!field) continue;
     const range = field === "title" ? elementEnd(html, tags, tags.indexOf(tag), end) : undefined;
-    out[field] = decodeText(field === "title" ? html.slice(tag.end, range?.close?.start ?? tag.end) : startTagAttribute(html, tag, field === "icon" || field === "canonical" ? "href" : "content")?.value ?? "");
+    out[field] = decodeText(field === "title" ? html.slice(tag.end, range?.close?.start ?? tag.end) : startTagAttribute(html, tag, field === "icon" || field === "canonical" ? "href" : "content")?.value ?? "", field !== "title");
   }
   return out;
 }
@@ -66,6 +64,8 @@ export function upsertHeadTag(html: string, field: HeadField, value: string): st
     for (const tag of existing.reverse()) {
       const range = field === "title" ? elementEnd(html, tags, tags.indexOf(tag), end) : undefined;
       if (field === "title" && !range?.close) throw new Error("The title tag is incomplete.");
+      const current = field === "title" ? html.slice(tag.end, range!.close!.start) : startTagAttribute(html, tag, field === "icon" || field === "canonical" ? "href" : "content")?.value ?? "";
+      if (wanted && decodeText(current, field !== "title") === wanted) continue;
       if (wanted || field === "title") {
         html = field === "title" ? html.slice(0, tag.end) + escapeText(wanted) + html.slice(range!.close!.start) : withAttribute(html, tag, field === "icon" || field === "canonical" ? "href" : "content", wanted);
         // Changing an icon's format must not retain a stale MIME type.

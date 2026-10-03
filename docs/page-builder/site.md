@@ -38,6 +38,26 @@ Malformed configuration is refused when applying. Head edits require an explicit
 unambiguous closing head tag. Ambiguous closing text inside comments or scripts
 is refused rather than guessing an insertion point.
 
+HTML character references use the complete 2,231-name HTML5 table generated from
+Python's `html.entities.html5` in `src/page-builder/html-entities.ts`. The decoder
+is DOM-free and supports longest named matches, legacy semicolonless references,
+attribute ambiguity, multi-codepoint values, and HTML numeric replacement rules.
+Unchanged metadata and navigation text retain their original entity spelling.
+
+## Host integration
+
+Each settings controller captures the repository scope and generation when its
+panel opens. Its apply handlers must also compare the relevant source against
+the opening snapshot; page settings cannot overwrite changes made while open.
+Site settings must compare the config, page sources and route list before building
+one atomic draft operation. Upload handlers must retain their captured repository
+scope across picking and writing files.
+
+`createSiteSettings(handlers, linkPreferences)` accepts an external
+`Map<string, SiteLinkPreference>`. The host must reuse that map across controllers
+within one repository/branch session, and replace it when the repository scope
+changes. Without an external map, preferences last only for that controller.
+
 ## Navigation
 
 Navigation edits the shared header component used by the current page, or a

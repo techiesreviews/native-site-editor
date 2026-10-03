@@ -6,6 +6,7 @@ import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string }
 export interface SitePageChoice { route: string; label: string; file: string }
+export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
   applyPage: (path: string, fields: Partial<Record<HeadField, string>>) => Promise<string | undefined>;
   planUrl: (path: string, value: string) => UrlPlan;
@@ -98,10 +99,9 @@ async function uploadInto(input: HTMLInputElement, dialog: ReturnType<typeof set
   }
 }
 
-export function createSiteSettings(handlers: SiteSettingsHandlers) {
+export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferences = new Map<string, SiteLinkPreference>()) {
   // Link preferences persist while this editor session stays open. On a new session,
   // equal/missing social values follow the page; distinct values remain independent.
-  const linkPreferences = new Map<string, { title: boolean; description: boolean }>();
   return {
     page(options: { path: string; source: string; route: string; images: string[] }) {
       const values = readHeadSettings(options.source);

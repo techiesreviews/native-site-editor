@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readHeadSettings, upsertHeadTag, withPageField, withSearchHidden } from "../src/page-builder/site-head";
+import { decodeText, readHeadSettings, upsertHeadTag, withPageField, withSearchHidden } from "../src/page-builder/site-head";
 
 const page = `<!doctype html>\n<html><head>\n  <meta charset="utf-8">\n  <title>Home &amp; garden</title>\n  <meta name='description' content='Hello'>\n  <link rel="stylesheet" href="/styles/site.css">\n</head><body><p>Keep me</p></body></html>`;
 
@@ -71,4 +71,29 @@ test("unrelated meta names do not impersonate title or link fields", () => {
   assert.ok(next.includes('<meta name="canonical" content="Custom canonical">'));
   assert.equal(readHeadSettings(next).title, "Changed");
   assert.equal(readHeadSettings(next).icon, "/favicon.svg");
+});
+test("HTML5 named references include non-ASCII and multi-codepoint values", () => {
+  assert.equal(decodeText("Caf&eacute; &copy; &Afr; &NotEqualTilde; &acE;"), "Café © 𝔄 ≂̸ ∾̳");
+  assert.equal(decodeText("&Eacute; &eacute; &EACUTE;"), "É é &EACUTE;");
+  assert.equal(decodeText("&constructor; &toString; &unknown;"), "&constructor; &toString; &unknown;");
+  assert.equal(decodeText("&CounterClockwiseContourIntegral;"), "∳");
+});
+test("HTML5 numeric references handle astral, invalid and C1 values", () => {
+  assert.equal(decodeText("&#x1F600; &#128512;"), "😀 😀");
+  assert.equal(decodeText("&#0; &#xD800; &#1114112;"), "� � �");
+  assert.equal(decodeText("&#128; &#x82; &#159;"), "€ ‚ Ÿ");
+  assert.equal(decodeText("&#233 &#xE9 rest"), "é é rest");
+});
+test("semicolonless named references follow text and attribute ambiguity rules", () => {
+  assert.equal(decodeText("&notit; &copy= &copycat &copy!"), "¬it; ©= ©cat ©!");
+  assert.equal(decodeText("&notit; &copy= &copycat &copy!", true), "&notit; &copy= &copycat ©!");
+  assert.equal(decodeText("&notin; &copy;=", true), "∉ ©=");
+});
+test("unchanged named-entity metadata keeps original bytes", () => {
+  const html = '<head><title>Caf&eacute; &copy;</title><meta name="description" content="Caf&eacute; &NotEqualTilde;"></head>';
+  const values = readHeadSettings(html);
+  assert.equal(values.title, "Café ©");
+  assert.equal(values.description, "Café ≂̸");
+  assert.equal(upsertHeadTag(upsertHeadTag(html, "title", values.title), "description", values.description), html);
+  assert.ok(upsertHeadTag(html, "title", "Café & tea").includes("<title>Café &amp; tea</title>"));
 });

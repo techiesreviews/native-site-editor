@@ -40,7 +40,7 @@ export function readNavigation(html: string, component = false): NavigationList 
     if (tag.name === "li" && (html.slice(tag.end, anchor.start).trim() || html.slice(anchorRange.end, range.close.start).trim())) return undefined;
     const href = startTagAttribute(html, anchor, "href");
     if (!href) return undefined;
-    links.push({ href: decodeText(href.value), label: decodeText(label), source: html.slice(tag.start, range.end) });
+    links.push({ href: decodeText(href.value, true), label: decodeText(label), source: html.slice(tag.start, range.end) });
     cursor = range.end;
   }
   if (html.slice(cursor, list.close.start).trim()) return undefined;
@@ -58,8 +58,11 @@ export function editNavigation(html: string, list: NavigationList, links: Naviga
     const index = tags.findIndex((tag) => tag.name === "a");
     const anchor = elementEnd(source, tags, index, source.length);
     if (!anchor?.close) throw new Error("This navigation item is incomplete.");
-    source = source.slice(0, anchor.tag.end) + escapeText(link.label.trim()) + source.slice(anchor.close.start);
-    source = withAttribute(source, startTags(source)[index], "href", link.href.trim());
+    if (decodeText(source.slice(anchor.tag.end, anchor.close.start)) !== link.label.trim())
+      source = source.slice(0, anchor.tag.end) + escapeText(link.label.trim()) + source.slice(anchor.close.start);
+    const originalHref = startTagAttribute(source, startTags(source)[index], "href")?.value ?? "";
+    if (decodeText(originalHref, true) !== link.href.trim())
+      source = withAttribute(source, startTags(source)[index], "href", link.href.trim());
     // Current-page state belongs to each page, never copied into a new shared link.
     if (!link.source) {
       const tag = startTags(source)[index];

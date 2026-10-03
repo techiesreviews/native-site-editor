@@ -122,3 +122,26 @@ test("effects create CSS once, link every page, toggle classes and leave reduced
   await expect(frame(page).locator(".reveal-fade")).toHaveCount(0);
   expect(((await storedDraft(page, "styles/effects.css"))!.content.match(/Effect: reveal-fade/g) ?? [])).toHaveLength(1);
 });
+
+test("page settings preserve named entities when changing another field", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.evaluate(async (modulePath) => {
+    const { monaco } = await import(modulePath) as typeof import("../../src/components/monaco");
+    const model = monaco.editor.getModels().find((item) => item.uri.path.endsWith("/index.html"));
+    if (!model) throw new Error("The page source model was not mounted.");
+    model.setValue(model.getValue().replace(/<title>[\s\S]*?<\/title>/i, "<title>Caf&eacute; &copy;</title>"));
+  }, "/src/components/monaco.ts");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("<title>Caf&eacute; &copy;</title>");
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const panel = dialog(page, "Page settings");
+  await expect(panel.getByLabel("Title", { exact: true })).toHaveValue("Café ©");
+  await panel.getByLabel("Description", { exact: true }).fill("A changed description");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel).not.toBeVisible();
+  const source = (await storedDraft(page, "index.html"))!.content;
+  expect(source).toContain("<title>Caf&eacute; &copy;</title>");
+  expect(source).not.toContain("&amp;eacute;");
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await expect(dialog(page, "Page settings").getByLabel("Title", { exact: true })).toHaveValue("Café ©");
+  await expect(dialog(page, "Page settings").getByLabel("Description", { exact: true })).toHaveValue("A changed description");
+});

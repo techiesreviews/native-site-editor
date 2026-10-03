@@ -52,3 +52,13 @@ test("new items do not clone wrapper or anchor IDs or current-page state", () =>
   assert.equal((next.match(/data-key="home-link"/g) ?? []).length, 1);
   assert.ok(next.includes('<li class="item"><a href="/about/">About</a></li>'));
 });
+test("reordering named-entity links preserves source and decoded labels", () => {
+  const html = '<header><nav>\n    <a href="/caf&eacute;/?x=1&amp;y=2">Caf&eacute; &copy;</a>\n    <a href="/about/">About &NotEqualTilde;</a>\n  </nav></header>';
+  const nav = readNavigation(html)!;
+  assert.equal(nav.links[0].label, "Café ©");
+  assert.equal(nav.links[0].href, "/café/?x=1&y=2");
+  const next = editNavigation(html, nav, [...nav.links].reverse());
+  assert.ok(next.includes('<a href="/caf&eacute;/?x=1&amp;y=2">Caf&eacute; &copy;</a>'));
+  assert.ok(next.includes('<a href="/about/">About &NotEqualTilde;</a>'));
+  assert.equal(next.includes("&amp;eacute;"), false);
+});
