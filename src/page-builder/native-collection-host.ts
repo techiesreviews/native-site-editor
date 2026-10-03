@@ -1,5 +1,5 @@
 import { deriveNativeRoutes, nativePageRoute } from '../../shared/native-routes';
-import { groupRouteChanges, isRouteWithin, type FileMove } from '../native-page-moves';
+import { type FileMove } from '../native-page-moves';
 import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { readCollections, validCollectionRoute } from './collection-model';
@@ -21,10 +21,14 @@ export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
   routes: Readonly<Record<string, string>>;
   revision: string;
+  files: readonly string[];
+  identity: CollectionIdentity;
 }
 export interface NativeCollectionPlan {
   operation: NativeCollectionOrigin & { expectedSources: Map<string, string | undefined> };
   expectedRevision: string;
+  expectedFiles: readonly string[];
+  expectedIdentity: CollectionIdentity;
   expectedRoutes: Readonly<Record<string, string>>;
   afterRoutes: Readonly<Record<string, string>>;
   collections: CollectionPreview[];
@@ -35,20 +39,25 @@ const sameRoutes = (a: Readonly<Record<string, string>>, b: Readonly<Record<stri
 
 /** No writes or async work: call again immediately before the atomic host apply. */
 export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapshot: NativeCollectionSnapshot): boolean {
-  return snapshot.revision === plan.expectedRevision && sameRoutes(plan.expectedRoutes, snapshot.routes) &&
+  const files = [...new Set(snapshot.files)].sort();
+  return snapshot.revision === plan.expectedRevision && snapshot.identity.name === plan.expectedIdentity.name &&
+    files.length === plan.expectedFiles.length && files.every((path, index) => path === plan.expectedFiles[index]) &&
+    sameRoutes(snapshot.routes, deriveNativeRoutes(files)) && sameRoutes(plan.expectedRoutes, snapshot.routes) &&
     [...plan.operation.expectedSources].every(([path, expected]) => own(snapshot.sources, path) === expected);
 }
 
 /** Apply the origin to a candidate graph, bake once, and return one operation. */
 export function planNativeCollectionOperation(input: NativeCollectionSnapshot & {
-  identity: CollectionIdentity;
   origin: NativeCollectionOrigin;
 }): NativeCollectionPlan | { error: string } {
   try {
     const { sources, routes, revision, identity, origin } = input;
-    if (!sameRoutes(routes, deriveNativeRoutes(Object.keys(sources)))) throw Error('Load the complete current route graph before planning collections.');
+    const files = new Set(input.files);
+    if (Object.keys(sources).some(path => !files.has(path))) throw Error("Loaded source is absent from the file graph.");
+    if (!sameRoutes(routes, deriveNativeRoutes(files))) throw Error('Load the complete current route graph before planning collections.');
     const before = new Map(Object.entries(sources));
     const candidate = new Map(before);
+    const afterFiles = new Set(files);
     const expected = new Map<string, string | undefined>();
     const guard = (path: string) => expected.set(path, own(sources, path));
     for (const [path, value] of origin.expectedSources ?? []) {
@@ -66,40 +75,58 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     };
     for (const move of moves) {
       claim(move.from); claim(move.to);
-      if (!before.has(move.from) || before.has(move.to)) throw Error(`Cannot move ${move.from} to ${move.to}.`);
-      candidate.delete(move.from); candidate.set(move.to, before.get(move.from)!);
+      if (!files.has(move.from) || files.has(move.to)) throw Error(`Cannot move ${move.from} to ${move.to}.`);
+      candidate.delete(move.from);
+      if (before.has(move.from)) candidate.set(move.to, before.get(move.from)!);
+      afterFiles.delete(move.from); afterFiles.add(move.to);
     }
     for (const path of deletes) {
       claim(path);
-      if (!before.has(path)) throw Error(`Cannot delete missing source: ${path}.`);
-      candidate.delete(path);
+      if (!files.has(path)) throw Error(`Cannot delete missing file: ${path}.`);
+      candidate.delete(path); afterFiles.delete(path);
     }
     for (const create of creates) {
       claim(create.path);
-      if (before.has(create.path)) throw Error(`Source already exists: ${create.path}.`);
-      candidate.set(create.path, create.content);
+      if (files.has(create.path)) throw Error(`Source already exists: ${create.path}.`);
+      candidate.set(create.path, create.content); afterFiles.add(create.path);
     }
     for (const [path, text] of edits) {
       guard(path);
-      if (!candidate.has(path)) throw Error(`Cannot edit missing source: ${path}.`);
+      if (used.has(path) && !afterFiles.has(path)) throw Error(`Cannot edit removed source: ${path}.`);
+      if (afterFiles.has(path) && !candidate.has(path)) throw Error(`Load ${path} before editing it.`);
+      afterFiles.add(path);
       candidate.set(path, text);
     }
-    const afterRoutes = deriveNativeRoutes(candidate.keys());
+    const afterRoutes = deriveNativeRoutes(afterFiles);
     for (const path of new Set([...Object.values(routes), ...Object.values(afterRoutes)])) guard(path);
-    const routeChanges = groupRouteChanges(Object.keys(routes), moves.flatMap(move => {
-      const from = nativePageRoute(move.from), to = nativePageRoute(move.to);
-      return from && to ? [[from, to] as [string, string]] : [];
-    }));
+    const movedFiles = new Map(moves.map(move => [move.from, move.to]));
+    const relocatedFolder = (folder: string) => {
+      if (folder === "/") return folder;
+      const under = Object.entries(routes).filter(([route]) => route.startsWith(folder));
+      if (!under.length) return folder;
+      let destination: string | undefined;
+      for (const [route, path] of under) {
+        const to = movedFiles.get(path);
+        const target = to && nativePageRoute(to);
+        const suffix = route.slice(folder.length);
+        if (!target || !target.endsWith(suffix)) return folder;
+        const base = suffix ? target.slice(0, -suffix.length) : target;
+        if (!base.startsWith("/") || !base.endsWith("/") || (destination && destination !== base)) return folder;
+        destination = base;
+      }
+      return destination ?? folder;
+    };
     // Rewrite exact parsed collection scope tokens with the existing route mover.
     // No href/metadata rewriting is invented here: those belong to the origin.
     for (const [url, path] of Object.entries(afterRoutes)) {
       if (!validCollectionRoute(url, path)) continue;
-      let source = candidate.get(path)!;
-      const changes = readCollections(source).flatMap(collection => {
-        const folders = collection.spec.folders.map(folder => {
-          const change = routeChanges.find(change => folder === change.from || (change.subtree && isRouteWithin(folder, change.from)));
-          return change ? change.to + folder.slice(change.from.length) : folder;
-        });
+      const loaded = candidate.get(path);
+      if (loaded === undefined) throw Error(`Load ${path} before baking collections.`);
+      let source: string = loaded;
+      let parsed: ReturnType<typeof readCollections>;
+      try { parsed = readCollections(source); } catch (error) { throw Error(`${path}: ${error instanceof Error ? error.message : "Invalid listing."}`); }
+      const changes = parsed.flatMap(collection => {
+        const folders = collection.spec.folders.map(relocatedFolder);
         return folders.some((folder, index) => folder !== collection.spec.folders[index])
           ? [attributeEdit(source, collection.element.tag, 'data-each', folders.join(' '))] : [];
       });
@@ -108,7 +135,10 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     }
     const candidateSources = Object.fromEntries(candidate);
     const baked = planBake(candidateSources, afterRoutes, identity);
-    if ('error' in baked) return baked;
+    if ('error' in baked) {
+      const listings = Object.entries(afterRoutes).filter(([url, path]) => validCollectionRoute(url, path) && readCollections(candidateSources[path]).length).map(([, path]) => path);
+      return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };
+    }
     for (const [path, ranges] of Object.entries(baked.edits)) candidate.set(path, applyCollectionEdits(candidate.get(path)!, ranges));
     const finalEdits = new Map<string, string>();
     const createdPaths = new Set(creates.map(create => create.path));
@@ -119,7 +149,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     }
     const operation = { ...origin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
-    return { operation, expectedRevision: revision, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };
+    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Collection operation could not be planned.' };
   }
