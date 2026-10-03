@@ -4,9 +4,7 @@
 // "+ Add" (where a click inserts after the selected section, or at the end
 // of <main>, and the panel stays open) or by a plus between sections (where
 // a click inserts at that gap and the panel closes, like the picker it
-// replaces). An item can also be dragged onto the canvas. Code is never
-// hidden: the HTML an item adds shows under the list for the item under the
-// pointer or focus, and under every item with "</>" pressed.
+// replaces). An item can also be dragged onto the canvas.
 
 import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
@@ -42,7 +40,6 @@ export interface AddPanelHandlers {
   onState(state: { open: boolean; gap?: string; restoreFocus: boolean }): void;
 }
 
-const CODE_KEY = "native-site-editor:add-panel-code";
 /** The key a plus between sections has for its point (insert-controls.ts). */
 export const insertPointKey = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
 const keyOf = insertPointKey;
@@ -58,16 +55,12 @@ export function createAddPanel(handlers: AddPanelHandlers) {
 
   const title = node("h2", "pb-add-panel__title", "Add to the page");
   title.id = `${id}-title`;
-  let showCode = localStorage.getItem(CODE_KEY) === "1";
-  const codeToggle = button("</>", () => setShowCode(!showCode), "pb-add-panel__code-toggle");
-  codeToggle.title = "Show the HTML each section adds";
-  codeToggle.setAttribute("aria-label", "Show HTML");
   const closeButton = button("", () => close(true), "pb-add-panel__close");
   closeButton.append(icon("x"));
   closeButton.setAttribute("aria-label", "Close");
   closeButton.title = "Close (Esc)";
   const head = node("div", "pb-add-panel__head");
-  head.append(title, codeToggle, closeButton);
+  head.append(title, closeButton);
   const position = node("p", "pb-add-panel__position");
   const search = document.createElement("input");
   search.type = "search";
@@ -83,14 +76,9 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   message.hidden = true;
   const body = node("div", "pb-add-panel__body");
   body.append(list, message);
-  const peek = node("div", "pb-add-panel__peek");
-  peek.hidden = true;
-  const peekTitle = node("p", "pb-add-panel__peek-title");
-  const peekCode = node("pre", "pb-add-panel__peek-code");
-  peek.append(peekTitle, peekCode);
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
-  panel.append(head, position, search, hint, body, peek, live);
+  panel.append(head, position, search, hint, body, live);
   document.body.append(panel);
 
   let open = false;
@@ -98,28 +86,16 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   let gapKey: string | undefined;
   let query = "";
   let builtFor = "";
-  // The item whose HTML shows below the list: last hovered or focused.
+  // Hover/focus updates the insertion destination for native element choices.
   let active: string | undefined;
   interface Entry {
     item: AddItem;
     root: HTMLElement;
     option: HTMLButtonElement;
-    code: HTMLElement;
     thumb: Thumbnail;
-    markup: string;
   }
   const entries = new Map<string, Entry>();
   const groups: { root: HTMLElement; tags: string[] }[] = [];
-
-  function setShowCode(on: boolean) {
-    showCode = on;
-    localStorage.setItem(CODE_KEY, on ? "1" : "0");
-    codeToggle.setAttribute("aria-pressed", String(on));
-    panel.classList.toggle("shows-code", on);
-    for (const entry of entries.values()) entry.code.hidden = !on;
-    renderPeek();
-  }
-  setShowCode(showCode);
 
   function target() {
     if (gapKey) return handlers.points().find((point) => keyOf(point) === gapKey);
@@ -137,14 +113,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     position.textContent = handlers.destinationText?.(at) ?? positionText(at);
     panel.classList.toggle("has-no-place", !at);
     for (const entry of entries.values()) entry.option.setAttribute("aria-disabled", String(!choicePoint(entry.item)));
-  }
-
-  function renderPeek() {
-    const entry = active ? entries.get(active) : undefined;
-    peek.hidden = showCode || !entry || entry.root.hidden;
-    if (!entry) return;
-    peekTitle.textContent = `${entry.item.name} adds this HTML`;
-    peekCode.textContent = entry.markup;
   }
 
   function options() {
@@ -193,11 +161,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const label = node("span", "pb-add-item__label");
     label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", item.kind === "native" ? "HTML" : `<${item.tag}>`));
     option.append(thumb.root, label);
-    const code = node("pre", "pb-add-item__code");
-    code.id = `${id}-code-${entries.size}`;
-    code.hidden = !showCode;
-    option.setAttribute("aria-describedby", code.id);
-    root.append(option, code);
+    root.append(option);
     const drag = makeInsertDraggable(option, () => item.name, () => {
       const canvas = handlers.points().length ? handlers.drag() : undefined;
       return canvas && {
@@ -214,11 +178,10 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const activate = () => {
       active = item.tag;
       renderPosition();
-      renderPeek();
     };
     option.addEventListener("pointerenter", activate);
     option.addEventListener("focus", activate);
-    entries.set(item.tag, { item, root, option, code, thumb, markup: "" });
+    entries.set(item.tag, { item, root, option, thumb });
     return root;
   }
 
@@ -226,11 +189,8 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const width = handlers.canvasWidth();
     for (const entry of entries.values()) {
       const shown = handlers.preview(entry.item.tag);
-      entry.markup = shown?.markup ?? `<${entry.item.tag}></${entry.item.tag}>`;
-      entry.code.textContent = entry.markup;
       if (shown) entry.thumb.render(shown.doc, width);
     }
-    renderPeek();
   }
 
   function filter() {
@@ -258,7 +218,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         }, "pb-add-panel__clear"),
       );
     }
-    renderPeek();
   }
 
   function choose(tag: string) {
@@ -358,7 +317,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     panel.classList.toggle("is-gap", Boolean(gap));
     query = "";
     search.value = "";
-    active = undefined;
     if (!open) {
       open = true;
       panel.hidden = false;
@@ -398,7 +356,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     isDocked() {
       return open && !gapKey;
     },
-    /** The sources changed: thumbnails and HTML again, when shown. */
+    /** The sources changed: thumbnails again, when shown. */
     refresh() {
       if (!open) return;
       build();

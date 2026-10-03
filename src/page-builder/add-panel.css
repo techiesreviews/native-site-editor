@@ -41,7 +41,6 @@
   font-size: var(--type-title);
   font-weight: 600;
 }
-.pb-add-panel__code-toggle,
 .pb-add-panel__close {
   display: grid;
   place-items: center;
@@ -55,14 +54,9 @@
   color: var(--muted);
   font: 600 var(--type-small) / 1 var(--font-mono);
 }
-.pb-add-panel__code-toggle:hover,
 .pb-add-panel__close:hover {
   background: var(--hover);
   color: var(--text);
-}
-.pb-add-panel__code-toggle[aria-pressed="true"] {
-  background: var(--pressed);
-  color: var(--on-pressed);
 }
 .pb-add-panel__position {
   margin: 2px 16px 0;
@@ -90,10 +84,8 @@
 .pb-add-panel__hint[hidden],
 .pb-add-panel__list[hidden],
 .pb-add-panel__message[hidden],
-.pb-add-panel__peek[hidden],
 .pb-add-group[hidden],
-.pb-add-item[hidden],
-.pb-add-item__code[hidden] {
+.pb-add-item[hidden] {
   display: none;
 }
 .pb-add-panel__hint {
@@ -185,23 +177,6 @@
   font-family: var(--font-mono);
   font-size: var(--type-small);
 }
-.pb-add-item__code,
-.pb-add-panel__peek-code {
-  margin: 0;
-  overflow: auto;
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  background: var(--surface-subtle);
-  color: var(--text);
-  font: var(--type-small) / 1.5 var(--font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  tab-size: 2;
-}
-.pb-add-item__code {
-  max-height: 160px;
-  margin: -2px 8px 6px;
-}
 .pb-add-panel__message {
   display: flex;
   flex-direction: column;
@@ -225,21 +200,7 @@
 .pb-add-panel__clear:hover {
   background: var(--hover);
 }
-.pb-add-panel__peek {
-  flex: none;
-  border-top: 1px solid var(--control-line);
-  padding: 10px 16px 14px;
-}
-.pb-add-panel__peek-title {
-  margin: 0 0 6px;
-  color: var(--muted);
-  font-size: var(--type-small);
-  font-weight: 600;
-}
-.pb-add-panel__peek-code {
-  max-height: 168px;
-}
-.pb-add-panel :is(.pb-add-panel__search, .pb-add-panel__clear, .pb-add-panel__code-toggle, .pb-add-panel__close):focus-visible {
+.pb-add-panel :is(.pb-add-panel__search, .pb-add-panel__clear, .pb-add-panel__close):focus-visible {
   outline: var(--focus-ring);
   outline-offset: -1px;
 }

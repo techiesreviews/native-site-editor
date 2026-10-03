@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // The Add panel (src/page-builder/add-panel.ts): the top bar's "+ Add" docks
 // it over the page structure, listing each section component as a live
-// thumbnail with the HTML it adds; a click inserts after the selected
+// thumbnail; a click inserts after the selected
 // section (or at the end of <main>) and the panel stays; an item dragged
 // onto the canvas goes into the gap under the pointer; Escape cancels a
 // drag. Each insert is the same source edit as a plus between sections,
@@ -41,7 +41,7 @@ async function editorText(page: Page) {
   return text;
 }
 
-test("the Add panel shows live thumbnails and their HTML, and a click adds after the selected section", async ({ page }) => {
+test("the Add panel shows live thumbnails without HTML previews, and a click adds after the selected section", async ({ page }) => {
   await expect(page.locator(".topbar").getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "false");
   await addButton(page).click();
@@ -57,18 +57,11 @@ test("the Add panel shows live thumbnails and their HTML, and a click adds after
   await expect(page.frameLocator(".pb-add-panel .pb-thumb__frame").first().getByRole("heading", { name: "A feature worth sharing" })).toBeAttached();
   await expect(panel(page).locator(".pb-thumb").first()).toHaveClass(/is-ready/);
 
-  // Code is never hidden: the HTML it adds shows for the item under the pointer, or under every item.
   await feature(page).hover();
-  const peek = panel(page).locator(".pb-add-panel__peek");
-  await expect(peek).toBeVisible();
-  await expect(peek.locator("pre")).toHaveText(instance.replaceAll("\n  ", "\n"));
-  const code = panel(page).getByRole("button", { name: "Show HTML" });
-  await code.click();
-  await expect(code).toHaveAttribute("aria-pressed", "true");
-  await expect(peek).toBeHidden();
-  await expect(panel(page).locator(".pb-add-item__code")).toHaveText(instance.replaceAll("\n  ", "\n"));
-  await code.click();
-  await expect(panel(page).locator(".pb-add-item__code")).toBeHidden();
+  await feature(page).focus();
+  await expect(panel(page).getByRole("button", { name: "Show HTML" })).toHaveCount(0);
+  await expect(panel(page).locator(".pb-add-panel__peek, .pb-add-item__code, .pb-add-panel__code-toggle")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Source editor", exact: true }).first()).toBeVisible();
 
   // With the hero selected, a click adds right after it; the panel stays.
   await frame(page).locator("section.hero").click({ position: { x: 5, y: 5 } });
