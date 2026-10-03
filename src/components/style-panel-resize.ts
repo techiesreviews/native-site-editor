@@ -18,9 +18,15 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
   const minimum = () => Math.min(160, maximum());
   const apply = (value: number, retain = true) => {
     if (disposed) return;
-    if (retain) requested = value;
     width = value < minimum() / 2 ? 0 : Math.round(Math.max(minimum(), Math.min(maximum(), value)));
-    workspace.style.setProperty("--style-panel-width", `${width || 32}px`);
+    if (!width && panel.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
+    if (retain) requested = width;
+    workspace.style.setProperty("--style-panel-width", `${width}px`);
+    for (const child of panel.children) {
+      if (!(child instanceof HTMLElement) || child === handle) continue;
+      child.inert = width === 0;
+      if (!width) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
+    }
     workspace.classList.toggle("has-style-panel", width > 0);
     handle.classList.toggle("is-collapsed", width === 0);
     handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(Math.round(maximum())));
@@ -47,5 +53,5 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
     if (!values[event.key]) collapse(); else { apply(values[event.key]); last = width; save(); }
   });
   const observer = new ResizeObserver(() => apply(requested, false)); observer.observe(workspace); apply(requested);
-  return { collapse, expand, toggle, dispose() { disposed = true; observer.disconnect(); handle.remove(); workspace.classList.remove("style-panel-resizing", "has-style-panel"); workspace.style.removeProperty("--style-panel-width"); } };
+  return { collapse, expand, toggle, dispose() { disposed = true; observer.disconnect(); handle.remove(); for (const child of panel.children) { if (child instanceof HTMLElement) { child.inert = false; child.removeAttribute("aria-hidden"); } } workspace.classList.remove("style-panel-resizing", "has-style-panel"); workspace.style.removeProperty("--style-panel-width"); } };
 }

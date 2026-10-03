@@ -5,7 +5,7 @@ main.has-preview {
   height: 100%;
 }
 main.has-preview.code-collapsed {
-  grid-template-rows: minmax(0, 1fr) var(--code-height, 128px);
+  grid-template-rows: minmax(0, 1fr) 0;
 }
 main.has-preview > .preview-pane {
   grid-row: 1;
@@ -136,3 +136,6 @@ main.has-preview .code-editor {
     padding-block: 4px;
   }
 }
+
+/* Keep the restore grip in the zero-height code row; hidden editors cannot tab. */
+main.has-preview.code-collapsed > .code-split > :not(.code-resize) { display: none; }

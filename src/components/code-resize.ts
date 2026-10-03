@@ -1,10 +1,8 @@
 import "./code-resize.css";
 import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 
-// Horizontal splitter above the code pane when the preview is open. Dragging
-// resizes it down to a readable source viewport. A click or Enter/Space
-// minimizes it and restores its previous height; source stays mounted and
-// visible. The legacy collapsed flag now means minimized.
+// Horizontal splitter above code. Click/keyboard toggles full collapse;
+// the edge grip remains available to restore the remembered height.
 export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   const key = "astro-editor.code-height";
   const handle = document.createElement("div");
@@ -24,12 +22,8 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     const frameStyle = frameHost && getComputedStyle(frameHost);
     const canvasReserve = 48 + (bar?.getBoundingClientRect().height ?? 0) +
       (Number.parseFloat(frameStyle?.paddingTop ?? "0") || 0) + (Number.parseFloat(frameStyle?.paddingBottom ?? "0") || 0);
-    // Tabs consume part of the row: even when canvas and source cannot both
-    // fit, retain 48px of source and let the containing layout scroll.
-    const tabs = pane.querySelector<HTMLElement>(".code-pane__title");
-    const sourceFloor = 48 + (tabs?.getBoundingClientRect().height ?? 32);
-    const minimum = Math.ceil(Math.max(sourceFloor, Math.min(128, Math.max(96, available - 120), Math.max(0, available - canvasReserve))));
-    return { minimum, maximum: Math.max(minimum, available - Math.max(120, canvasReserve)), canvasReserve, cramped: available < minimum + canvasReserve };
+    const maximum = Math.max(0, available - Math.max(120, canvasReserve));
+    return { minimum: Math.min(96, maximum), maximum };
   };
   let height = 0.4;
   let collapsed = false;
@@ -40,20 +34,24 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   } catch {}
 
   function apply() {
+    if (collapsed && pane.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
     main.classList.toggle("code-collapsed", collapsed);
-    const { minimum, maximum, canvasReserve, cramped } = bounds();
-    const px = Math.round(collapsed ? minimum : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
+    const { minimum, maximum } = bounds();
+    const px = Math.round(collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
     main.style.setProperty("--code-height", `${px}px`);
-    main.style.gridTemplateRows = cramped ? `minmax(${canvasReserve}px, 1fr) ${px}px` : "";
-    main.style.overflowY = cramped ? "auto" : "";
-    handle.setAttribute("aria-valuemin", String(Math.round(minimum)));
+    for (const child of pane.children) {
+      if (!(child instanceof HTMLElement) || child === handle) continue;
+      child.inert = collapsed;
+      if (collapsed) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
+    }
+    handle.setAttribute("aria-valuemin", "0");
     handle.setAttribute("aria-valuemax", String(Math.round(maximum)));
     handle.setAttribute("aria-valuenow", String(px));
     // `aria-expanded` is not allowed on a separator, so the value text
     // carries the state.
-    handle.setAttribute("aria-valuetext", collapsed ? `Code minimized, ${px} pixels; source remains visible` : `Code shown, ${px} pixels`);
+    handle.setAttribute("aria-valuetext", collapsed ? "Code hidden" : `Code shown, ${px} pixels`);
     handle.classList.toggle("is-collapsed", collapsed);
-    handle.title = `Drag to resize, click to ${collapsed ? "restore" : "minimize"} the code`;
+    handle.title = `Drag to resize, click to ${collapsed ? "restore" : "hide"} the code`;
   }
   const save = () => {
     try {
@@ -69,7 +67,7 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   trackPress(handle, {
     start(event) {
       const { minimum, maximum } = bounds();
-      drag = { y: event.clientY, px: collapsed ? minimum : Math.max(minimum, Math.min(maximum, height * main.clientHeight)), height };
+      drag = { y: event.clientY, px: collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)), height };
       main.classList.add("code-resizing");
       return true;
     },
@@ -77,8 +75,8 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
       if (!drag) return;
       const px = drag.px - (event.clientY - drag.y);
       const { minimum, maximum } = bounds();
-      collapsed = px <= minimum;
-      // Minimizing by dragging keeps the height the pane had, for the click
+      collapsed = px < minimum / 2 || px <= 0;
+      // Collapsing by dragging keeps the height the pane had, for the click
       // that brings it back.
       height = collapsed ? drag.height : Math.max(minimum, Math.min(maximum, px)) / main.clientHeight;
       apply();
@@ -94,10 +92,10 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     const { minimum, maximum } = bounds();
     if (main.clientHeight <= 0) return;
     const step = event.shiftKey ? 40 : 10;
-    let px = collapsed ? minimum : Math.max(minimum, Math.min(maximum, height * main.clientHeight));
-    if (event.key === "ArrowUp") px = Math.min(maximum, px + step);
-    else if (event.key === "ArrowDown") px = Math.max(minimum, px - step);
-    else if (event.key === "Home") px = minimum;
+    let px = collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight));
+    if (event.key === "ArrowUp") px = collapsed ? minimum : Math.min(maximum, px + step);
+    else if (event.key === "ArrowDown") px = px - step >= minimum ? px - step : 0;
+    else if (event.key === "Home") px = 0;
     else if (event.key === "End") px = maximum;
     else if (isToggleKey(event)) {
       event.preventDefault();
@@ -105,7 +103,7 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
       return;
     } else return;
     event.preventDefault();
-    collapsed = px <= minimum;
+    collapsed = px <= 0;
     if (!collapsed) height = px / main.clientHeight;
     apply();
     save();
@@ -120,8 +118,10 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
       handle.remove();
       main.classList.remove("code-collapsed", "code-resizing");
       main.style.removeProperty("--code-height");
-      main.style.gridTemplateRows = "";
-      main.style.overflowY = "";
+      for (const child of pane.children) {
+        if (!(child instanceof HTMLElement)) continue;
+        child.inert = false; child.removeAttribute("aria-hidden");
+      }
     },
   };
 }

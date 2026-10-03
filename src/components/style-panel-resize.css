@@ -7,3 +7,12 @@
 .style-panel-resize:is(:hover, :focus-visible) > .resize-grip, .style-panel-resizing .resize-grip { width: 16px; height: 44px; opacity: 1; background: var(--primary); }
 .style-panel-resize:is(:hover, :focus-visible) svg, .style-panel-resizing .resize-grip svg { opacity: 1; }
 .style-panel-resize:not(.is-collapsed) { --chevron-turn: 180deg; }
+
+/* A collapsed dock occupies no rail; its restore grip stays inside the canvas. */
+main.has-preview:not(.has-style-panel) { grid-template-columns: minmax(0, 1fr) 0; }
+main.has-preview > .style-panel.is-collapsed { border-left: 0; }
+.style-panel.is-collapsed > :not(.style-panel-resize) { display: none !important; }
+.style-panel.is-collapsed > .style-panel-resize { left: -10px; }
+.style-panel.is-collapsed > .style-panel-resize:is(:hover, :focus-visible),
+.style-panel-resizing .style-panel.is-collapsed > .style-panel-resize { left: -18px; }
+@media (prefers-reduced-motion: reduce) { .style-panel-resize { transition: none !important; } }

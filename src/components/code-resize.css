@@ -1,7 +1,6 @@
 @import "./resize-handle.css";
 
-/* Along the code split's top edge; taller on hover or focus. While the code
-   is minimized it stays above the visible source viewport. */
+/* Along the code split edge; the collapsed restore grip sits inside the canvas. */
 .code-resize {
   position: absolute;
   top: -5px;
@@ -72,3 +71,7 @@ main:not(.has-preview) .code-resize {
   cursor: col-resize;
   user-select: none;
 }
+
+main.has-preview.code-collapsed .code-resize { top: -10px; }
+main.has-preview.code-collapsed .code-resize:is(:hover, :focus-visible),
+main.has-preview.code-collapsed.code-resizing .code-resize { top: -18px; }

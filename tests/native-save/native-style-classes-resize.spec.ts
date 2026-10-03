@@ -24,7 +24,7 @@ async function setClasses(page: Page, value: string) {
 async function source(page: Page) { return page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html") as string); }
 async function select(page: Page) {
   await frame(page).locator(".lead").click();
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
 }
 
 test("all decoded classes select one escaped CSS rule; add preserves tokens and attributes with one Undo", async ({ page, baseURL }) => {
@@ -98,7 +98,7 @@ test("Style splitter drags, folds, restores and persists one width through keybo
   await handle.press("ArrowRight"); await expect(handle).toHaveAttribute("aria-valuenow", "330");
   await handle.press("Shift+ArrowLeft"); await expect(handle).toHaveAttribute("aria-valuenow", "370");
   await handle.press("Home"); await expect(handle).toHaveAttribute("aria-valuenow", "0");
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click(); await expect(handle).toHaveAttribute("aria-valuenow", "370");
+  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click(); await expect(handle).toHaveAttribute("aria-valuenow", "370");
   await panel(page).getByRole("textbox", { name: "Padding top", exact: true }).focus(); await page.keyboard.press("Escape");
   await expect(handle).toHaveAttribute("aria-valuenow", "0");
   await handle.press("Space"); await expect(handle).toHaveAttribute("aria-valuenow", "370");
@@ -133,7 +133,7 @@ for (const attribute of ["class=", "class", "class = "]) {
       return after;
     }, attribute);
     await frame(page).locator('.hero p').click();
-    await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+    await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
     await panel(page).getByRole("textbox", { name: "Class name" }).fill("new");
     await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
     const expected = attribute.includes("=") ? `${attribute}"new"` : `${attribute}="new"`;
