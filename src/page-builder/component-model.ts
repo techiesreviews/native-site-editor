@@ -839,7 +839,7 @@ export function detachMarkup(source: string, template: string, instance: Instanc
         let out = "";
         fill.forEach((part, index) => {
           const before = index ? source.slice(fill[index - 1].end, part.start) : "";
-          if (index && !before.trim()) out += before;
+          if (index && !before.replace(/<!--[\s\S]*?-->/g, "").trim()) out += before;
           out += fillText(part, pass, node);
         });
         return out;

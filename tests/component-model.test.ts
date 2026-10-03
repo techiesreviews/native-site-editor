@@ -369,3 +369,10 @@ test("review: detach merges class tokens without corrupting named or numeric ref
   const source = `<x-card class='caf&eacute; caf&#233; caf&#xE9;'></x-card>`;
   assert.equal(detachMarkup(source, `<p class="base"></p>`, readInstance(source, rangeOf(source, "x-card"))).markup, `<p class="base caf&eacute; caf&#233; caf&#xE9;"></p>`);
 });
+
+test("review: detach retains whitespace and comments between fills, without copying another slot", () => {
+  const source = `<x-card><b>Hello</b> <!-- note --> <i>world</i></x-card>`;
+  assert.equal(detachMarkup(source, `<p><slot></slot></p>`, readInstance(source, rangeOf(source, "x-card"))).markup, `<p><b>Hello</b> <!-- note --> <i>world</i></p>`);
+  const named = `<x-card><b>Hello</b> <span slot="other">Other</span> <i>world</i></x-card>`;
+  assert.equal(detachMarkup(named, `<p><slot></slot></p>`, readInstance(named, rangeOf(named, "x-card"))).markup, `<p><b>Hello</b><i>world</i></p>`);
+});
