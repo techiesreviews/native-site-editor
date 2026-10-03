@@ -178,6 +178,14 @@ function semanticTree(root: SourceNode) {
     if (node.name === "button" && node.children.flatMap(scopedDescendants).some((child) => !isPhrasing(child))) return false;
     if (textNodes.has(node.name) && !["pre", "button", "option"].includes(node.name) && node.children.flatMap(scopedDescendants).some((child) => !isPhrasing(child))) return false;
     if (["ul", "ol"].includes(node.name) && node.children.some((child) => !["li", "template", "script"].includes(child.name))) return false;
+    if (["dt", "dd"].includes(node.name)) {
+      // A new definition item closes an earlier item in the same list scope.
+      // A nested dl establishes its own scope and remains valid.
+      for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor.name === "dl" || ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
+        if (["dt", "dd"].includes(ancestor.name)) return false;
+      }
+    }
     if (node.name === "dl" && node.children.some((child) => !["dt", "dd"].includes(child.name))) return false;
     if (["select", "optgroup"].includes(node.name) && node.children.some((child) => child.name !== "option" && !(node.name === "select" && child.name === "optgroup"))) return false;
     for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
