@@ -152,3 +152,21 @@ test('explicit folder intent is required, validates all opaque members and is no
   assert.ok('error'in planNativeCollectionOperation({...before,origin:origin({folders:[{from:'work/',to}],moves})}));
  }
 });
+test('legal Unicode and space filesystem folders move without collection URL restrictions',()=>{
+ const before=snapshot();before.files.push('My Photos/picture.jpg');
+ const plan=good({folders:[{from:'My Photos/',to:'Über/'}],moves:[{from:'My Photos/picture.jpg',to:'Über/picture.jpg'}]},before);
+ assert.deepEqual(plan.operation.moves,[{from:'My Photos/picture.jpg',to:'Über/picture.jpg'}]);
+ assert.equal(plan.operation.edits!.has('Über/picture.jpg'),false);
+ assert.equal(plan.operation.expectedSources.get('My Photos/picture.jpg'),undefined);
+ assert.equal(nativeCollectionPlanIsCurrent(plan,before),true);
+});
+test('noncollection hidden destination is legal but an actual collection relocation reports URL grammar',()=>{
+ const before=snapshot();before.files.push('Photos/photo.jpg');
+ good({folders:[{from:'Photos/',to:'_archive/'}],moves:[{from:'Photos/photo.jpg',to:'_archive/photo.jpg'}]},before);
+ const result=planNativeCollectionOperation({...snapshot(),origin:origin({folders:[{from:'work/',to:'_archive/'}],moves:[{from:'work/index.html',to:'_archive/index.html'},{from:'work/a/index.html',to:'_archive/a/index.html'}]})});
+ assert.ok('error'in result);assert.match(result.error,/Cannot relocate collection source \/work\/ to \/_archive\//);assert.match(result.error,/collection URLs/);
+});
+test('missing source folder reports the source rather than destination vacancy',()=>{
+ const result=planNativeCollectionOperation({...snapshot(),origin:origin({folders:[{from:'empty/',to:'new/'}]})});
+ assert.ok('error'in result);assert.match(result.error,/Source folder has no files: empty\//);assert.doesNotMatch(result.error,/destination/);
+});

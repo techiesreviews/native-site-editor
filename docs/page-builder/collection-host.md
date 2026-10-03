@@ -61,3 +61,11 @@ All bake errors still abort the origin. Parser failures name their exact page;
 errors returned by the bake API name the complete listing-input page set rather
 than guessing one culprit or rebaking generated output. The host must surface
 that error and must not filter out any operation edits before atomic apply.
+
+Filesystem folder intent accepts Unicode and spaces when the prefixes are safe
+relative paths. Its existence, full-member mapping and destination-vacancy
+checks remain independent of URL syntax. Only an actual collection-token
+relocation is checked through existing `collectionFolders`; a destination such
+as `_archive/` is allowed for unrelated assets but refused with an explicit
+collection URL grammar error when a listing would need that scope. A source
+prefix with no files reports the missing source folder, not destination vacancy.

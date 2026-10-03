@@ -2,7 +2,7 @@ import { deriveNativeRoutes, nativePageRoute } from '../../shared/native-routes'
 import { type FileMove } from '../native-page-moves';
 import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
-import { readCollections, validCollectionRoute } from './collection-model';
+import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
@@ -103,21 +103,27 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     for (const path of new Set([...Object.values(routes), ...Object.values(afterRoutes)])) guard(path);
     const movedFiles = new Map(moves.map(move => [move.from, move.to]));
     const folders = (origin.folders ?? []).map(folder => ({ ...folder }));
-    const folderPrefix = /^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+$/;
+    const folderPrefix = (path: string) => path.endsWith("/") && !/[\\\x00-\x1f\x7f]/.test(path) &&
+      path.slice(0, -1).split("/").every(segment => segment.length > 0 && segment !== "." && segment !== "..");
     for (const [index, folder] of folders.entries()) {
-      if (!folderPrefix.test(folder.from) || !folderPrefix.test(folder.to) ||
+      if (!folderPrefix(folder.from) || !folderPrefix(folder.to) ||
           folder.to.startsWith(folder.from) || folder.from.startsWith(folder.to)) throw Error('Invalid folder relocation intent.');
       if (folders.slice(0, index).some(other => [other.from, other.to].some(prefix =>
         [folder.from, folder.to].some(value => value.startsWith(prefix) || prefix.startsWith(value))))) throw Error('Overlapping folder relocation intents.');
       const members = [...files].filter(path => path.startsWith(folder.from));
-      if (!members.length || files.has(folder.to.slice(0, -1)) || [...files].some(path => path.startsWith(folder.to))) throw Error(`Folder destination must be vacant: ${folder.to}.`);
+      if (!members.length) throw Error(`Source folder has no files: ${folder.from}.`);
+      if (files.has(folder.to.slice(0, -1)) || [...files].some(path => path.startsWith(folder.to))) throw Error(`Folder destination must be vacant: ${folder.to}.`);
       for (const path of members) {
         if (movedFiles.get(path) !== folder.to + path.slice(folder.from.length)) throw Error(`Incomplete folder relocation: ${path}.`);
       }
     }
     const relocatedFolder = (folder: string) => {
       const intent = folders.find(intent => folder.startsWith(`/${intent.from}`));
-      return intent ? `/${intent.to}${folder.slice(intent.from.length + 1)}` : folder;
+      if (!intent) return folder;
+      const destination = `/${intent.to}${folder.slice(intent.from.length + 1)}`;
+      try { collectionFolders({ folders: [destination] }); }
+      catch { throw Error(`Cannot relocate collection source ${folder} to ${destination}: collection URLs require folder segments starting with an ASCII letter or digit and containing only ASCII letters, digits, _, . or -.`); }
+      return destination;
     };
     // Rewrite exact parsed collection scope tokens with the existing route mover.
     // No href/metadata rewriting is invented here: those belong to the origin.
