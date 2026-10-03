@@ -211,3 +211,21 @@ test('legal inline islands and collection templates do not reject unrelated ordi
   }
   assert.equal(apply('<main><p><x-label><div>Repair</div></x-label></p><section></section></main>',[0,1],0,'<hr>'),undefined);
 });
+
+test('foreign self-closing syntax follows attribute state rather than trailing slash appearance', () => {
+  const wrongPath='<main><svg data-x=x/><section id="island"></section><div id="target"></div></main>';
+  assert.equal(apply(wrongPath,[0,1],0,'<hr>'),undefined);
+  assert.deepEqual(nativeDestinations(wrongPath,'index.html',[0,1]),[]);
+  for(const markup of ['<svg / >','<svg data-x="x"/ >','<svg data-x=x/>']) assert.equal(apply('<main>'+markup+'<section></section></main>',[0,1],0,'<hr>'),undefined,markup);
+  for(const markup of ['<svg/>','<svg data-x="x"/>','<svg data-x=x />','<svg data-x=x/><g/></svg>']) {
+    const out=apply('<main>'+markup+'<section id="target"></section></main>',[0,1],0,'<hr>');
+    assert.ok(out?.includes('<section id="target">\n  <hr>'),markup);
+    assert.ok(out?.includes(markup));
+  }
+});
+test('foreign integration content has local semantic validation without crossing outer phrasing boundaries', () => {
+  const island='<p><svg><foreignObject><div>Label</div></foreignObject></svg></p>';
+  assert.ok(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>')?.includes(island));
+  const malformed='<p><svg><foreignObject><p><div>Repair</div></p></foreignObject></svg></p>';
+  assert.equal(apply('<main>'+malformed+'<section></section></main>',[0,1],0,'<hr>'),undefined);
+});

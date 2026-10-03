@@ -75,3 +75,24 @@ test('inline custom/foreign islands and list collection templates preserve real 
   await expect(frame.locator('#inline-proof')).toBeVisible();
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain(inline);
 });
+
+test('a slash consumed by an unquoted foreign attribute cannot cause a wrong-path source edit',async({page})=>{
+  const malformed='<main><svg data-x=x/><section id="island"></section><div id="target">Target</div></main>';
+  await page.evaluate(malformed=>{const h=(window as any).elementCompat;const before=h.state.source;h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:malformed});},malformed);
+  await expect(page.frameLocator('.native-preview-frame').locator('#target')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items[0].children.map((item:any)=>item.tag))).toEqual(['svg','div']);
+  const actualPath=await page.evaluate(()=>(window as any).elementCompat.state.structure.items[0].children[1].node);
+  expect(actualPath).toEqual([0,1]);
+  expect(await page.evaluate(path=>(window as any).elementCompat.insert(path,0,'<hr>'),actualPath)).toBe(false);
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(malformed);
+  await expect(page.frameLocator('.native-preview-frame').locator('#island hr')).toHaveCount(0);
+});
+test('valid inline SVG foreignObject block content leaves the following section editable',async({page})=>{
+  const valid='<main><p><svg><foreignObject><div>Label</div></foreignObject></svg></p><section id="target">Target</section></main>';
+  await page.evaluate(valid=>{const h=(window as any).elementCompat;const before=h.state.source;h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:valid});},valid);
+  await expect(page.frameLocator('.native-preview-frame').locator('#target')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items[0].children.map((item:any)=>item.tag))).toEqual(['p','section']);
+  expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<hr id="outside-proof">'))).toBe(true);
+  await expect(page.frameLocator('.native-preview-frame').locator('#target #outside-proof')).toHaveCount(1);
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain('<p><svg><foreignObject><div>Label</div></foreignObject></svg></p>');
+});

@@ -27,6 +27,36 @@ function namespaceFor(parent: SourceNode, name: string, source: string): "html" 
   }
   return namespace === "html" && (name === "svg" || name === "math") ? name : namespace;
 }
+/** Read attribute states before interpreting a trailing slash as syntax. */
+function startTagTail(text: string): { selfClosing: boolean } | undefined {
+  let at = 0;
+  while (at < text.length) {
+    const before = at;
+    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    if (at === text.length) return { selfClosing: false };
+    if (text[at] === "/") return at === text.length - 1 ? { selfClosing: true } : undefined;
+    if (at === before) return;
+    const name = /^[a-z_:][\w:.-]*/i.exec(text.slice(at));
+    if (!name) return;
+    at += name[0].length;
+    const afterName = at;
+    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    if (text[at] !== "=") { at = afterName; continue; }
+    at++;
+    while (/\s/.test(text[at] ?? "") && at < text.length) at++;
+    if (text[at] === '"' || text[at] === "'") {
+      const quote = text[at++], end = text.indexOf(quote, at);
+      if (end < 0 || /[<>]/.test(text.slice(at, end))) return;
+      at = end + 1;
+    } else {
+      const value = /^[^\s"'=<>`]+/.exec(text.slice(at));
+      if (!value) return;
+      // In an unquoted value, `/` is a value character, including just before `>`.
+      at += value[0].length;
+    }
+  }
+  return { selfClosing: false };
+}
 /** A strict tokenizer uses quoted start-tag bounds; comments never become nodes. */
 function tree(source: string): SourceNode | undefined {
   const root: SourceNode = { name: "", start: 0, openEnd: 0, closeStart: source.length, end: source.length, children: [] };
@@ -66,10 +96,10 @@ function tree(source: string): SourceNode | undefined {
     if (namespace === "html" && !htmlNames.has(tag.name) && !["svg", "math"].includes(tag.name) && !customName(tag.name)) return undefined;
     // HTML breakouts escape a foreign island and change the page's child paths.
     if (namespace !== "html" && (foreignBreakouts.has(tag.name) || tag.name === "font" && ["color", "face", "size"].some(name => !!startTagAttribute(tail, tag, name)))) return undefined;
-    const selfClosing = /\/\s*>$/.test(tail.slice(0, tag.end));
+    const parsedTail = startTagTail(tail.slice(tag.nameEnd, tag.end - 1));
+    if (!parsedTail) return undefined;
+    const { selfClosing } = parsedTail;
     if (namespace === "html" && selfClosing && !VOID_ELEMENTS.has(tag.name)) return undefined;
-    const attributes = tail.slice(tag.nameEnd, tag.end - 1).replace(/\/\s*$/, "");
-    if (!/^(?:\s+[a-z_:][\w:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'|[^\s"'=<>`]+))?)*\s*$/i.test(attributes)) return undefined;
     const child: SourceNode = { namespace, opaque: namespace !== "html" || customName(tag.name) || ["template", "noscript", "xmp", "noembed", "noframes"].includes(tag.name), name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
     parent.children.push(child);
     if (!(namespace === "html" ? VOID_ELEMENTS.has(child.name) : selfClosing)) stack.push(child);
@@ -111,15 +141,17 @@ function atPath(root: SourceNode, path: readonly number[]) {
   return node;
 }
 function all(node: SourceNode): SourceNode[] { return [node, ...node.children.flatMap(all)]; }
-// HTML template content has its own parsing scope, not the host's descendants.
+// Template content and foreign trees have their own outer phrasing scope.
 function scopedDescendants(node: SourceNode): SourceNode[] {
-  return [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(scopedDescendants))];
+  if (node.name === "template" || (node.namespace ?? "html") !== "html") return [node];
+  return [node, ...node.children.flatMap(scopedDescendants)];
 }
 const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template"].includes(node.name);
 function canContain(parent: SourceNode, children: SourceNode[]) {
   if (parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
   const names = children.map((child) => child.name);
-  const descendants = children.flatMap(scopedDescendants);
+  const movingDescendants = (node: SourceNode): SourceNode[] => [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(movingDescendants))];
+  const descendants = children.flatMap(movingDescendants);
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     if (ancestor.name === "form" && descendants.some((node) => node.name === "form")) return false;
     if (["a", "button"].includes(ancestor.name) && descendants.some((node) => node.interactive)) return false;
