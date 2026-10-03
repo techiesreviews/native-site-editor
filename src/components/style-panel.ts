@@ -577,9 +577,13 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
               const target = proof.captured.expected.target;
               const rule = target && locateWriteRule(proof.captured.expected.files[target.path] ?? "", options());
               // The runtime reports selectors matching this element in active media.
-              // Inactive user-action states do not compete with the current edit.
-              const matched = (proof.captured.expected.matchedRules ?? []).filter(item =>
-                !item.state?.length || item.current || !!state && item.state.includes(state));
+              // Selection can capture hover/focus while the user clicks the canvas.
+              // The editor's selected state, not that captured interaction, owns
+              // this write. Structural states such as checked remain applicable.
+              const matched = (proof.captured.expected.matchedRules ?? []).filter(item => {
+                const userStates = item.state?.filter(name => /^:(?:hover|active|focus-visible|focus-within|focus)$/.test(name)) ?? [];
+                return !userStates.length || !!state && userStates.includes(state);
+              });
               const located = findStyleRulesInSources(proof.captured.expected.files, matched);
               const competingPriority = matched.some((item, index) => {
                 const important = item.declarations?.some(declaration => declaration.important &&

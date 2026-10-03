@@ -50,12 +50,56 @@ for (const breakpoint of ["all", "tablet"] as const) {
 }
 
 test("print and unrelated selectors do not block a native focal edit", async ({ page, baseURL }) => {
-  await open(page, baseURL);
-  await append(page, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.other { background-position: center !important; }\n@media print { *, *::before, *::after { background: #fff !important; } }\n.lead:hover { background-position: 5% 5% !important; }\n');
+  await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.other { background-position: center !important; }\n@media print { *, *::before, *::after { background: #fff !important; } }\n.lead:hover { background-position: 5% 5% !important; }\n');
   await style(page).getByRole("searchbox").fill("image focus");
   const x = style(page).getByLabel("X (%)", { exact: true }); await expect(x).toBeEnabled();
   await x.fill("42"); await x.press("Enter");
   await expect.poll(() => source(page)).toContain("background-position: 42% 30%");
   await expect(page.frameLocator(".native-preview-frame").locator(".lead")).toHaveCSS("background-position", "42% 30%");
+  await expect(page.locator("#notice")).not.toContainText("important image position");
+});
+
+async function openPreloadedFocus(page: Page, baseURL: string | undefined, rules: string) {
+  // Seed the real worker's fake GitHub before the editor loads this page.
+  await page.request.get(`${baseURL}/`, { headers: { accept: "text/html" } });
+  const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+  const seeded = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/site.css", content: css + rules } });
+  expect(seeded.status()).toBe(204);
+  await page.addInitScript(() => {
+    window.addEventListener("message", event => {
+      if (event.data?.source === "astro-native-preview" && event.data.type === "select" && event.data.reason === "click")
+        (window as any).clickedStyleRules = event.data.selectors;
+    });
+  });
+  await open(page, baseURL);
+  await style(page).getByRole("searchbox").fill("image focus");
+  await expect(style(page).getByLabel("X (%)", { exact: true })).toBeEnabled();
+}
+
+test("the initial canvas click's current hover does not block a rest-state focal edit", async ({ page, baseURL }) => {
+  await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.lead:hover { background-position: 5% 5% !important; }\n');
+  expect(await page.evaluate(() => (window as any).clickedStyleRules.some((rule: any) => rule.state?.includes(":hover") && rule.current))).toBe(true);
+  const x = style(page).getByLabel("X (%)", { exact: true });
+  await x.fill("42"); await x.press("Enter");
+  await expect.poll(() => source(page)).toContain("background-position: 42% 30%");
+  await expect(page.locator("#notice")).not.toContainText("important image position");
+  await expect(page.frameLocator(".native-preview-frame").locator(".lead")).toHaveCSS("background-position", "42% 30%");
+});
+
+test("explicit hover still refuses an important competing focal rule", async ({ page, baseURL }) => {
+  await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.hero .lead:hover { background-position: 5% 5% !important; }\n');
+  await style(page).getByRole("combobox", { name: "Style state" }).selectOption(":hover");
+  const before = await source(page), x = style(page).getByLabel("X (%)", { exact: true });
+  await x.fill("42"); await x.press("Enter");
+  await expect(page.locator("#notice")).toContainText("Another matching CSS rule has an important image position");
+  expect(await source(page)).toBe(before);
+});
+
+test("explicit hover preserves important priority in its own focal rule", async ({ page, baseURL }) => {
+  await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.lead:hover { background-position: 5% 5% !important; }\n');
+  await style(page).getByRole("combobox", { name: "Style state" }).selectOption(":hover");
+  const x = style(page).getByLabel("X (%)", { exact: true });
+  await x.fill("42"); await x.press("Enter");
+  await expect.poll(() => source(page)).toMatch(/\.lead:hover \{[^}]*background-position: 42% 5% !important/);
   await expect(page.locator("#notice")).not.toContainText("important image position");
 });
