@@ -35,7 +35,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   title.id = `media-library-title-${++viewId}`;
   dialog.setAttribute("aria-labelledby", title.id);
   if (!modal) dialog.setAttribute("role", "region");
-  heading.append(title, node("p", "media-library__muted", "Repository images · Changes stay as drafts until Save."));
+  heading.append(title, node("p", "media-library__muted", modal ? "Repository images · Changes stay as drafts until Save." : "Changes stay as drafts until Save."));
   const uploadInput = node("input");
   uploadInput.type = "file"; uploadInput.name = "media-upload"; uploadInput.accept = "image/*,.heic,.heif"; uploadInput.multiple = true; uploadInput.hidden = true;
   uploadInput.className = "media-library__upload-input";
@@ -292,17 +292,18 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     detailPath = path;
     const version = ++detailVersion;
     sheet.hidden = false; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…"));
+    if (!modal && !background) dialog.scrollTop = 0;
     if (loadingLibrary) return;
     const data = await asset(path).catch((error) => { tell(String(error)); return undefined; });
     if (!alive || loadingLibrary || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) return;
     const meta = library.metadata[path] ?? { tags: [], alt: "" };
     sheet.replaceChildren();
-    sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); }));
+    sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); if (!modal) dialog.scrollTop = 0; }));
     const preview = node("img", "media-library__preview"); preview.src = data.url; preview.alt = meta.alt;
     sheet.append(preview, node("h3", "media-library__detail-name", basename(path)), node("p", "media-library__muted", `${data.width ? `${data.width} × ${data.height} · ` : ""}${formatBytes(data.blob.size)} · ${path}`));
     const alt = input("Default alt text", "text"); alt.value = meta.alt;
     const tags = input("Image tags", "text"); tags.value = meta.tags.join(", ");
-    sheet.append(field("Default alt text", alt), node("p", "media-library__hint", "Offered on insertion. Empty alt text marks a decorative image. Existing page alt text stays independent."), field("Tags", tags), button("Save metadata", () => void task(async () => {
+    sheet.append(node("h3", "media-library__metadata-title", "Image metadata"), field("Default alt text", alt), node("p", "media-library__hint", "Offered on insertion. Empty alt text marks a decorative image. Existing page alt text stays independent."), field("Tags", tags), button("Save metadata", () => void task(async () => {
       if (version !== detailVersion || detailPath !== path) return;
       await adapter.metadata({ [path]: { alt: alt.value, tags: tags.value.split(",") } }); await refresh(); tell("Tags and default alt text saved as a draft.");
     })));

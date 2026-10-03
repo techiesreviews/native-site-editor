@@ -166,3 +166,10 @@ already started transaction. Uploads attempted during a mutation show feedback.
 The persistent Images tab uses a bounded `min(55dvh, 560px)` height and one scroll
 area for its toolbar, grid and details. Narrow details replace the grid, with Back
 to grid reachable in that same scroll area. The modal retains its two-column layout.
+
+In explorer panes narrower than 600px, opening details hides the browse-only
+Search, Folder, Sort, tag filters and upload action. Back to grid restores those
+controls with their query, folder, sort and selection intact. A compact image
+preview leaves the metadata heading and default alt field visible immediately;
+remaining metadata and file actions share the pane's single scroll area. The
+modal keeps its browsing tools and two-column layout.

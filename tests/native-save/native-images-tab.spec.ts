@@ -97,7 +97,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     }
     const width = await page.evaluate(() => document.documentElement.scrollWidth); expect(width).toBeLessThanOrEqual(390);
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-    await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeVisible();
+    await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeInViewport();
+    await expect(pane(page).getByRole("heading", { name: "Image metadata", exact: true })).toBeInViewport();
+    await expect(pane(page).getByLabel("Search images", { exact: true })).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     const bounds = await pane(page).evaluate(element => {
       const box = element.getBoundingClientRect();
@@ -214,8 +216,8 @@ test("background image loads preserve typing, folders and details", async ({ pag
   await page.evaluate(() => { void (window as any).loadImageProbe.refresh(); });
   await expect(library).toHaveAttribute("aria-busy", "true");
   await library.getByLabel("Folder", { exact: true }).selectOption("images");
-  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await search.fill("a"); await expect(search).toHaveValue("a");
+  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("Loading image");
   await page.evaluate(() => (window as any).releaseImageLoad());
   await expect(library.getByLabel("Default alt text", { exact: true })).toBeVisible();
@@ -239,3 +241,27 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-details-desktop-${colorScheme}.png` });
   });
 }
+
+test("compact details reveal metadata and return to the same browse filters", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page);
+  await library.getByLabel("Search images", { exact: true }).fill("studio-desk");
+  await library.getByLabel("Folder", { exact: true }).selectOption("images");
+  await library.getByLabel("Sort images", { exact: true }).selectOption("size");
+  await library.getByLabel("Select images/studio-desk.svg", { exact: true }).check();
+  const details = library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true });
+  await details.focus(); await page.keyboard.press("Enter");
+  const back = library.getByRole("button", { name: "Back to grid", exact: true });
+  await expect(back).toBeFocused();
+  await expect(library.getByLabel("Default alt text", { exact: true })).toBeInViewport();
+  await expect(library.getByRole("heading", { name: "Image metadata", exact: true })).toBeInViewport();
+  await expect(library.getByLabel("Search images", { exact: true })).toBeHidden();
+  await page.keyboard.press("Enter");
+  await expect(details).toBeFocused();
+  await expect(library.getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
+  await expect(library.getByLabel("Folder", { exact: true })).toHaveValue("images");
+  await expect(library.getByLabel("Sort images", { exact: true })).toHaveValue("size");
+  await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).toBeChecked();
+  await library.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).not.toBeChecked();
+});
