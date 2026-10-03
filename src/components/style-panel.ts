@@ -1,4 +1,5 @@
 import "./style-panel.css";
+import { mountStylePanelResize } from "./style-panel-resize";
 import { node, button } from "../ui/dom";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint, type Breakpoint } from "../page-builder/breakpoints";
 import { breakpointWidths } from "../page-builder/breakpoints";
@@ -6,13 +7,14 @@ import { writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVa
 
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
-  key: string; tag: string; className?: string; target?: CssTarget;
+  key: string; selectionKey?: string; tag: string; className?: string; classes?: string[]; target?: CssTarget;
   files: Record<string, string>; computed: Record<string, string>; readOnly?: boolean;
 }
 export interface StylePanelHandlers {
   context: () => StylePanelContext | undefined;
   write: (properties: Record<string, string | null>, breakpoint: Breakpoint, state: StyleState, expected?: StylePanelContext) => Promise<void>;
   variable: (variable: SiteVariable, value: string, expected?: StylePanelContext) => Promise<void>;
+  selectClass: (name: string, expected: StylePanelContext) => void;
   addClass: (name: string, expected?: StylePanelContext) => Promise<void>;
   history: (direction: "undo" | "redo") => void;
   error: (message: string) => void;
@@ -51,10 +53,10 @@ const sections: { title: string; fields: Field[] }[] = [
 ];
 
 /** A native controls panel. Commits on change; scrubs commit once on release. */
-export function createStylePanel(handlers: StylePanelHandlers) {
+export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLElement) {
   const root = node("aside", "style-panel");
   root.setAttribute("aria-label", "Style panel");
-  const opener = button("Style", () => { collapsed = false; render(); }, "style-panel__opener");
+  const opener = button("Style", () => resize.expand(), "style-panel__opener");
   opener.setAttribute("aria-label", "Open Style panel");
   const body = node("div", "style-panel__body");
   root.append(opener, body);
@@ -89,7 +91,7 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     if (pending && !interacting && !root.contains(document.activeElement)) { pending = false; render(); }
   }));
   root.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { collapsed = true; render(); opener.focus(); }
+    if (event.key === "Escape") { resize.collapse(); opener.focus(); }
     const modifier = event.ctrlKey || event.metaKey;
     const direction = modifier && event.key.toLowerCase() === "z" ? (event.shiftKey ? "redo" : "undo")
       : event.ctrlKey && event.key.toLowerCase() === "y" ? "redo" : undefined;
@@ -142,7 +144,7 @@ export function createStylePanel(handlers: StylePanelHandlers) {
   function currentContext(expected = renderContext) {
     const current = handlers.context();
     if (!expected || !current || current.readOnly || expected.key !== current.key || expected.target?.path !== current.target?.path || expected.target?.selector !== current.target?.selector || expected.target?.start !== current.target?.start ||
-      Object.keys(expected.files).some((path) => expected.files[path] !== current.files[path])) {
+      Object.keys(expected.files).length !== Object.keys(current.files).length || Object.keys(expected.files).some((path) => expected.files[path] !== current.files[path])) {
       report("The style target changed. Select the element again.");
       return undefined;
     }
@@ -266,16 +268,19 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     }
     return group;
   }
-  function render() {
+  function applyFold() {
     root.classList.toggle("is-collapsed", collapsed); root.parentElement?.classList.toggle("has-style-panel", !collapsed);
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
+  }
+  function render() {
+    applyFold();
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
     renderContext = handlers.context(); renderOwn = ownValues();
     controlSnapshots.clear();
     body.replaceChildren();
     const header = node("div", "style-panel__header"); header.append(node("strong", "", "Style"));
-    const close = button("×", () => { collapsed = true; render(); opener.focus(); }, "style-panel__close"); close.setAttribute("aria-label", "Collapse Style panel"); header.append(close); body.append(header);
+    const close = button("×", () => { resize.collapse(); opener.focus(); }, "style-panel__close"); close.setAttribute("aria-label", "Collapse Style panel"); header.append(close); body.append(header);
     const tabs = node("div", "style-panel__tabs");
     for (const [label, value] of [["Element", false], ["Global styles", true]] as const) {
       const tab = button(label, () => { global = value; render(); }, ""); tab.setAttribute("aria-pressed", String(global === value)); tabs.append(tab);
@@ -312,13 +317,22 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     const states = node("select"); states.name = "style-state"; states.setAttribute("aria-label", "Style state");
     for (const [value, label] of [["", "State: none"], [":hover", ":hover"], [":focus-visible", ":focus-visible"]]) { const option = node("option", "", label); option.value = value; states.append(option); }
     states.value = state; states.addEventListener("change", () => { state = states.value as StyleState; render(); }); scope.append(bp, states); body.append(scope);
-    const target = node("div", "style-panel__target", context.target?.selector ?? context.tag); target.title = context.target?.path ?? context.tag; body.append(target);
+    const classSnapshot = { expected: context }; controlSnapshots.add(classSnapshot);
+    const chips = node("div", "style-panel__classes"); chips.setAttribute("role", "group"); chips.setAttribute("aria-label", "Element classes");
+    for (const name of context.classes ?? (context.className ? [context.className] : [])) {
+      const chip = button(name, () => { const expected = currentContext(classSnapshot.expected); if (expected) { handlers.selectClass(name, expected); render(); [...root.querySelectorAll<HTMLButtonElement>(".style-panel__class")].find(button => button.getAttribute("aria-label") === `Style class ${name}`)?.focus(); } }, "style-panel__class");
+      chip.setAttribute("aria-label", `Style class ${name}`); chip.setAttribute("aria-pressed", String(name === context.className)); chips.append(chip);
+    }
+    body.append(chips);
+    const target = node("div", "style-panel__target");
+    target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected")); body.append(target);
     if (context.readOnly) { body.append(node("p", "style-panel__hint", "This version is read only.")); return; }
-    if (!context.className) {
+    {
       const form = node("form", "style-panel__add-class"); const input = node("input"); input.type = "text"; input.name = "class"; input.placeholder = "e.g. hero-title"; input.setAttribute("aria-label", "Class name"); const add = button("Add class", () => {}, ""); add.type = "submit";
       form.append(node("p", "style-panel__hint", "Add a class to style this element in the site's CSS."), input, add);
-      form.addEventListener("submit", (event) => { event.preventDefault(); if (currentContext(context)) void commit(() => handlers.addClass(input.value.trim(), context)); }); body.append(form); return;
+      form.addEventListener("submit", (event) => { event.preventDefault(); const expected = currentContext(classSnapshot.expected); if (expected) void commit(() => handlers.addClass(input.value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""), expected)); }); body.append(form);
     }
+    if (!context.className) return;
     if (getCurrentBreakpoint() !== "all") body.append(button("Hide on this size", () => void write({ display: "none" }, context), "style-panel__hide"));
     const content = node("div", "style-panel__scroll");
     content.append(node("p", "style-panel__hint", "Muted values are computed. Clear a field to remove its declaration."));
@@ -333,6 +347,10 @@ export function createStylePanel(handlers: StylePanelHandlers) {
     }
     body.append(content); content.scrollTop = scrollTop;
   }
+  const resize = mountStylePanelResize(workspace, root, value => {
+    const changed = collapsed !== value; collapsed = value;
+    if (changed) render(); else applyFold();
+  });
   render();
-  return { root, update, dispose: unsubscribe };
+  return { root, update, dispose() { unsubscribe(); resize.dispose(); root.remove(); } };
 }

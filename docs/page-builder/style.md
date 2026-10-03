@@ -1,8 +1,11 @@
 # Style panel
 
 The Style tab at the right edge of the canvas opens a docked panel. Select an
-instance on the canvas or in Page structure. Its first class identifies the rule
-being edited. The code panes stay underneath the canvas and panel.
+instance on the canvas or in Page structure. Every native HTML class appears as a
+chip. The pressed chip identifies the one class rule being edited; choosing
+another chip keeps the selected breakpoint, state and open sections. The selector
+and stylesheet path are visible below the chips. The code panes stay underneath
+the canvas and panel.
 
 The panel covers Layout, Spacing, Size, Typography, Background, Border and Effects, including transform and transform origin.
 Spacing opens first. Click a side of the box model to type a CSS value; bare numbers
@@ -18,12 +21,29 @@ Columns accepts either an integer from 1 to 24 or a CSS grid template. Clear a
 field to remove its explicit declaration. CSS shorthand values are expanded for
 display; removing a longhand does not erase an existing shorthand.
 
-An element without a class first offers Add class, a source edit to its HTML.
+Add class is available for every selected element. It appends one token to the
+native HTML class attribute, preserving the other tokens in their original order
+and leaving other attributes intact. An existing token is a no-op: even its
+source quotes and entity spelling remain unchanged. A new token becomes active
+and its HTML edit is one Undo step. Class chips do not remove classes.
+
+HTML character references are decoded before tokenising the attribute on HTML
+ASCII whitespace. A non-breaking space remains part of a single token. Writing
+the attribute escapes its decoded values once. Unicode and punctuation in class
+names remain native class names; CSS selectors escape them where required.
 Styling never writes an inline `style` attribute. The writer prefers a matched
-local CSS rule whose selector is exactly `.firstclass` or `.parent .firstclass`,
+local CSS rule whose selector is exactly `.activeclass` or `.parent .activeclass`,
 choosing the most specific matched parent rule and then source order. Other
 selectors remain available in the existing cascade pane. Without such a rule,
-the panel appends `.firstclass` to a local stylesheet linked by the page.
+the panel appends `.activeclass` to a local stylesheet linked by the page.
+
+The dock starts folded and restores its saved width when opened. Its default
+width is 280 pixels. Drag its left grip to resize, or click it to fold and restore.
+Enter and Space toggle the grip; Left grows the dock and Right shrinks it in
+10-pixel steps, or 40 pixels with Shift. Home folds and End uses the available
+maximum. Width and the last open width persist in local storage. The dock clamps
+to its parent width and reserves canvas space on narrow screens. Escape, the
+header close control and the original Style opener use the same fold state.
 
 All sizes edits the base rule. Tablet ≤768 and Mobile ≤390 write inside a matching
 `@media (max-width: …px)` block. Existing matching blocks are reused; compound
@@ -45,7 +65,9 @@ The chrome uses `src/theme.css` tokens in both colour schemes.
 ## Integration
 
 - `src/components/style-panel.ts` and `.css`: dock, controls, variable presets,
-  global styles, box model and keyboard/pointer handling.
+  global styles, class chips, box model and keyboard/pointer handling.
+- `src/components/style-panel-resize.ts` and `.css`: shared grip/press behaviour,
+  width persistence, accessible keyboard sizing and observer cleanup.
 - `src/page-builder/css-write.ts`: source-only rule scanning, class-rule location,
   declaration edits, media/state insertion, indentation/CRLF preservation and
   variable discovery/resolution.

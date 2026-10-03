@@ -54,6 +54,8 @@ function commentRanges(source: string) {
   }
   return ranges;
 }
+const trimCssWhitespace = (value: string) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+
 function withoutComments(source: string) {
   for (const range of commentRanges(source).reverse()) source = source.slice(0, range.start) + " " + source.slice(range.end);
   return source;
@@ -97,7 +99,7 @@ function checkedCss(source: string): CssBlock[] | undefined {
         const prelude = clean.slice(boundary, i);
         if (!prelude.trim()) invalid = true;
         const start = boundary + prelude.search(/\S/);
-        const block: CssBlock = { selector: withoutComments(source.slice(start, i)).trim(), start, open: i, close: i, end: i, parent, children: [], declarations: [] };
+        const block: CssBlock = { selector: trimCssWhitespace(withoutComments(source.slice(start, i))), start, open: i, close: i, end: i, parent, children: [], declarations: [] };
         blocks.push(block);
         parent?.children.push(block);
         i = scan(i + 1, block);
@@ -113,7 +115,7 @@ function checkedCss(source: string): CssBlock[] | undefined {
 }
 export function scanCss(source: string): CssBlock[] { return checkedCss(source) ?? []; }
 const lastWhere = <T>(items: T[], predicate: (item: T) => boolean) => [...items].reverse().find(predicate);
-const normalized = (value: string) => value.replace(/\s+/g, " ").trim();
+const normalized = (value: string) => trimCssWhitespace(value.replace(/[\t\n\f\r ]+/g, " "));
 const ancestors = (rule: CssBlock) => {
   const out: CssBlock[] = [];
   for (let parent = rule.parent; parent; parent = parent.parent) out.unshift(parent);
@@ -130,8 +132,8 @@ export interface CssTarget { path: string; selector: string; start?: number }
 export function locateClassRule(files: Readonly<Record<string, string>>, matches: readonly { path: string; selector: string; ruleIndex?: number; conditions?: string[]; state?: string[] }[], className: string, fallbackPath: string): CssTarget {
   const selector = cssClassSelector(className);
   const candidates = matches.filter((m) => /\.css$/i.test(m.path) && !m.state?.length && !m.conditions?.some((c) => /^@?media\b/i.test(c)) &&
-    (normalized(m.selector) === selector || /^\.[\w-]+\s+$/.test(normalized(m.selector).slice(0, -selector.length)) && normalized(m.selector).endsWith(selector)));
-  candidates.sort((a, b) => b.selector.split(/\s+/).length - a.selector.split(/\s+/).length || matches.indexOf(b) - matches.indexOf(a));
+    (normalized(m.selector) === selector || /^\.[\w-]+[\t\n\f\r ]+$/.test(normalized(m.selector).slice(0, -selector.length)) && normalized(m.selector).endsWith(selector)));
+  candidates.sort((a, b) => b.selector.split(/[\t\n\f\r ]+/).length - a.selector.split(/[\t\n\f\r ]+/).length || matches.indexOf(b) - matches.indexOf(a));
   for (const match of candidates) {
     const rules = scanCss(files[match.path] ?? "").filter(isRule);
     const rule = match.ruleIndex === undefined ? lastWhere(rules, (r) => normalized(r.selector) === normalized(match.selector)) : rules[match.ruleIndex];

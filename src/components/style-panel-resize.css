@@ -1,0 +1,9 @@
+@import "./resize-handle.css";
+.style-panel { position: relative; }
+.style-panel-resize { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; z-index: 3; cursor: col-resize; touch-action: none; }
+.style-panel-resize:is(:hover, :focus-visible), .style-panel-resizing .style-panel-resize { left: -9px; width: 18px; }
+.style-panel-resize:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.style-panel-resizing { cursor: col-resize; user-select: none; }
+.style-panel-resize:is(:hover, :focus-visible) > .resize-grip, .style-panel-resizing .resize-grip { width: 16px; height: 44px; opacity: 1; background: var(--primary); }
+.style-panel-resize:is(:hover, :focus-visible) svg, .style-panel-resizing .resize-grip svg { opacity: 1; }
+.style-panel-resize:not(.is-collapsed) { --chevron-turn: 180deg; }

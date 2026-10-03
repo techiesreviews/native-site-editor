@@ -68,6 +68,7 @@ import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceCont
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
+import { decodeHtmlEntities } from "./page-builder/html-entities";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
 import { breakpointWidths } from "./page-builder/breakpoints";
@@ -434,19 +435,30 @@ function mountWorkspace() {
       const edit = minimalTextEdit(source, next);
       if (edit) applyNativeChange(variable.path, source, [edit], undefined, "Global style updated");
     },
+    selectClass: (name, expected) => {
+      const context = nativeStylePanelContext();
+      if (!context || !styleContextMatches(expected, context) || !context.classes?.includes(name)) { staleStyle(); return; }
+      nativeStyleClass = { selectionKey: context.selectionKey!, name };
+      stylePanel?.update();
+    },
     addClass: async (name, expected) => {
-      if (!name || /[\s\x00-\x1f]/.test(name)) throw new Error("Enter one class name without spaces.");
+      if (!name || /[\t\n\f\r \x00-\x1f]/.test(name)) throw new Error("Enter one class name without spaces.");
       const selected = lastNativeSelection, context = nativeStylePanelContext();
       if (!selected?.node || versionView || currentPath !== selected.path || !styleContextMatches(expected, context)) { staleStyle(); return; }
       const source = context!.files[selected.path];
       const range = locateNativeElementRange(source, selected.node);
       if (!range) return;
-      const edit = setAttributeEdit(source, range.tag, "class", name);
-      if (edit) applyNativeChange(selected.path, source, [edit], selected.node, "Class added");
+      const classes = context?.classes ?? [];
+      if (classes.includes(name)) return;
+      const edit = setAttributeEdit(source, range.tag, "class", [...classes, name].join(" "));
+      if (applyNativeChange(selected.path, source, [edit], selected.node, "Class added")) {
+        nativeStyleClass = { selectionKey: context!.selectionKey!, name };
+        stylePanel?.update();
+      }
     },
     history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
     error: (message) => errorMessage(new Error(message)),
-  });
+  }, element("main"));
   element("main").append(stylePanel.root);
   componentTools?.destroy();
   componentTools = mountComponentTools();
@@ -1100,18 +1112,22 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   editorModule?.markElement(selection.path, tag, reveal);
 }
 
+let nativeStyleClass: { selectionKey: string; name: string } | undefined;
+
 // The Style panel reads the same source and matched rules as the CSS pane.
 function nativeStylePanelContext(): StylePanelContext | undefined {
   if (!nativeSite) return undefined;
   const selection = lastNativeSelection, sources = nativeSources();
   const source = selection ? sources[selection.path] : undefined;
   const tag = selection?.node && source !== undefined ? locateNativeElement(source, selection.node) : undefined;
-  const className = tag && source !== undefined ? startTagAttribute(source, tag, "class")?.value.trim().split(/\s+/)[0] : undefined;
+  const classes = tag && source !== undefined ? [...new Set(decodeHtmlEntities(startTagAttribute(source, tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean))] : [];
+  const selectionKey = selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}` : `${generation}:${setupScope()}`;
+  const className = nativeStyleClass?.selectionKey === selectionKey && classes.includes(nativeStyleClass.name) ? nativeStyleClass.name : classes[0];
   const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
     ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
   return {
-    key: selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}:${className ?? ""}` : `${generation}:${setupScope()}`,
-    tag: selection?.tag ?? "", className,
+    key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
+    tag: selection?.tag ?? "", className, classes,
     target: className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined,
     files: sources, computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };

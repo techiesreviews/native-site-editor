@@ -120,7 +120,7 @@ test("a detached field cannot write after the selected element changes", async (
     (window as typeof window & { staleStyleInput?: HTMLInputElement }).staleStyleInput = input as HTMLInputElement;
   });
   await frame(page).locator("section.cards").evaluate((element) => (element as HTMLElement).click());
-  await expect(panel(page).locator(".style-panel__target")).toHaveText(".cards");
+  await expect(panel(page).locator(".style-panel__selector")).toHaveText(".cards");
   await page.evaluate(() => {
     const input = (window as typeof window & { staleStyleInput?: HTMLInputElement }).staleStyleInput!;
     input.value = "33px";
