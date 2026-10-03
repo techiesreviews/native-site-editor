@@ -451,3 +451,5 @@
     transition: none;
   }
 }
+
+.edit-bar__grip.edit-bar__component-name { cursor:grab; padding:4px 2px; }

@@ -511,7 +511,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     return matches;
   }
   function openAddressField(item: HTMLButtonElement, control: AddressControl) {
-    control.onOpen?.();
     const label = node("label", "edit-bar__field-label", control.label);
     const input = document.createElement("input");
     input.type = "text";
@@ -600,6 +599,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (control.upload) content.push(uploadRow(address));
     openPopover(item, content, "dialog");
     openAddress = address;
+    control.onOpen?.();
     renderSuggestions(address);
     input.focus();
     input.select();

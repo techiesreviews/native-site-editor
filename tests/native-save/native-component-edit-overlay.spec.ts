@@ -84,3 +84,17 @@ test('address opening captures once across retained renders and captures again a
  await input.press('Escape');await expect(output).toHaveText('open0 close ');
  await address.click();await expect(output).toHaveText('open0 close open1 ');
 });
+
+test('programmatic address switch closes the old context before opening the new one', async ({page}) => {
+ await page.evaluate(async()=>{
+  const modulePath='/src/components/edit-bar.ts'; const {createEditBar}=await import(modulePath);
+  const pane=document.createElement('div');pane.id='address-order';pane.style.cssText='position:fixed;inset:100px;z-index:1000';document.body.append(pane);
+  const output=document.createElement('output');output.id='address-order-output';pane.append(output);
+  const bar=createEditBar(pane,pane), rect={top:100,left:100,width:200,height:50,right:300,bottom:150};
+  const record=(text:string)=>{output.textContent+=text+' ';};
+  bar.show({kind:'Link',controls:[{kind:'address',label:'A',value:'/a',open:true,onInput:()=>{},onOpen:()=>record('openA'),onClose:()=>record('closeA')}]},rect);
+  bar.show({kind:'Link',controls:[{kind:'address',label:'B',value:'/b',open:true,onInput:()=>{},onOpen:()=>record('openB'),onClose:()=>record('closeB')}]},rect);
+ });
+ await expect(page.locator('#address-order-output')).toHaveText('openA closeA openB ');
+ await expect(page.locator('#address-order .edit-bar__field-input')).toHaveValue('/b');
+});

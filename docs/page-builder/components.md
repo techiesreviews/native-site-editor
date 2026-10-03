@@ -71,10 +71,7 @@ row in view above it.
 
 ## Edit component
 
-The complete component-root name button in the edit bar (or *Edit component* in the panel) opens the template in the code pane and
-selects, in the instance being worked on, the template element that shows the
-selected slot (the root element when the instance itself was selected); the
-slot's own tag is then selected in the code. A violet strip over the preview
+The complete component-root name button in the edit bar (or *Edit component* in the panel for a directly selected instance) opens its template and selects the template root in the code pane. A violet strip over the preview
 says **Editing component `<project-card>` · changes apply to 3 instances on 1
 page** while any component's template is open (it shows even with the code
 pane collapsed; the code pane's title is tinted too). *Used on* lists the pages

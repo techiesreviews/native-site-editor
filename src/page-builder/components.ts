@@ -697,10 +697,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const found = usage(at.tag);
     title.append(name, node("span", "component-panel__tag", `<${at.tag}>`));
     const actions = node("div", "component-panel__actions");
-    actions.append(
-      iconButton(`Edit component (${usageSummary(found)})`, "edit", () => void editComponent(at.tag, at.within)),
-      iconButton("Detach instance…", "detach", () => void openDetach(at)),
-    );
+    const selected = deps.selection();
+    const edit = selected?.path === at.path && JSON.stringify(selected.node) === JSON.stringify(at.node)
+      ? identity(selected).component?.onEdit : undefined;
+    if (edit) actions.append(iconButton(`Edit component (${usageSummary(found)})`, "edit", edit));
+    actions.append(iconButton("Detach instance…", "detach", () => void openDetach(at)));
     head.append(title, actions);
     const meta = node("p", "component-panel__meta", found.instances > 1 ? `One of ${usageSummary(found)}` : `Used once on this site`);
     const body = node("div", "component-panel__body");

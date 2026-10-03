@@ -196,6 +196,7 @@ test("the properties panel edits an instance's slots and attributes as page sour
 test("Edit component from its root opens the template, says what an edit changes, and goes back", async ({ page }) => {
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
+  await expect(panel(page).getByRole("button", { name: /^Edit component/ })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Edit enclosing Project card component", exact: true })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "In the title slot of Project card: select the instance", exact: true }).click();
   await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).focus();
@@ -511,6 +512,8 @@ test("editable component names keep their drag pixels and disable nested actions
   const output = page.locator("#affordance-actions");
   const caret = chip.locator(".edit-bar__context-caret");
   await expect(direct).toHaveText("Project card");
+  await expect(direct).toHaveCSS("cursor", "grab");
+  await expect(direct).toHaveCSS("padding", "4px 2px");
   await caret.click();
   await expect(output).toHaveText("select ");
   await direct.click();
