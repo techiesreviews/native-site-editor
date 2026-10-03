@@ -1108,7 +1108,7 @@ export function mountCodeEditor(
       // Refreshing controls is not a source edit. Preserve the exact persisted
       // record so compound history can distinguish its writes from other edits.
       // Failed persistence still retries, and a return to baseline still prunes.
-      current.persisted = unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(draft);
+      current.persisted = current.persisted === true && unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(draft);
     }
     conflictBar.hidden = !conflict && !deletedUpstream;
     publisher?.refresh();

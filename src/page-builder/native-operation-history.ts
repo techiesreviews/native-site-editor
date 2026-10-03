@@ -38,6 +38,14 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   const sourceCurrent = (expected: Map<string, string | undefined>) => [...expected].every(([path, text]) => host.source(path) === text);
   const current = (after: boolean) => host.isLive() && recordsCurrent(after ? plan.after : plan.before) && modelsCurrent() && sources.isCurrent() && sourceCurrent(after ? plan.afterSources : plan.beforeSources);
   const save = (path: string, record: SavedDraft | undefined) => record ? host.store.save(record) : host.store.remove(scope, path);
+  function sameFields(expected: SavedDraft | undefined, actual: SavedDraft | undefined) {
+    if (!expected || !actual) return expected === actual;
+    const fields = Object.keys(expected).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
+    return fields.length === Object.keys(actual).filter(key => key !== "updatedAt").length && fields.every(key => {
+      const before = expected[key], after = actual[key];
+      return before === after || typeof before === "object" && typeof after === "object" && JSON.stringify(before) === JSON.stringify(after);
+    });
+  }
   function reanchorMountedRecords(records: Map<string, SavedDraft | undefined>, texts: Map<string, string | undefined>) {
     if (!host.isLive() || !modelsCurrent() || !sources.isCurrent() || !sourceCurrent(texts)) return;
     for (const edit of modelEdits) {
@@ -45,11 +53,7 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       // A preceding, proven Monaco Undo/Redo may persist an identical existing
       // file again. New files and every unmounted record retain exact identity.
       if (!expected || expected.baseSha === null || !actual || expected === actual) continue;
-      const fields = Object.keys(expected).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
-      if (fields.length === Object.keys(actual).filter(key => key !== "updatedAt").length && fields.every(key => {
-        const before = expected[key], after = actual[key];
-        return before === after || typeof before === "object" && typeof after === "object" && JSON.stringify(before) === JSON.stringify(after);
-      })) records.set(edit.path, actual);
+      if (sameFields(expected, actual)) records.set(edit.path, actual);
     }
   }
   function transition(direction: "apply" | "undo" | "redo") {
@@ -75,24 +79,25 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     if (!sources[direction]()) return false;
     for (const edit of modelEdits) proofs.set(edit.path, host.modelState(edit.path));
     const expected = new Map(after ? plan.before : plan.after), desired = after ? plan.after : plan.before;
-    // Monaco's own synchronous persistence creates new draft objects. Advance
-    // only proven source steps, never unrelated records touched by listeners.
-    for (const edit of modelEdits) {
-      const record = host.store.get(scope, edit.path);
-      const text = after ? edit.text : edit.expectedSource;
-      if (record !== expected.get(edit.path) && record && (record.deleted || record.opaque || record.content !== text)) {
-        state = "failed"; return false;
-      }
-      expected.set(edit.path, record);
-    }
     const written = new Map<string, SavedDraft | undefined>();
+    const foreign = new Map<string, SavedDraft | undefined>();
     try {
+      // Advance only exact owned persistence, including its base and flags.
+      // A synchronous listener's same-text replacement is still another draft.
+      for (const edit of modelEdits) {
+        const record = host.store.get(scope, edit.path);
+        if (record !== expected.get(edit.path) && !sameFields(desired.get(edit.path), record)) {
+          foreign.set(edit.path, record);
+          throw new Error(`The draft for ${edit.path} changed during its source edit.`);
+        }
+        expected.set(edit.path, record);
+      }
       if (!host.isLive() || !recordsCurrent(expected) || !modelsCurrent() || !sources.isCurrent()) throw new Error("The operation source changed.");
       for (const [path, record] of desired) {
         if (!host.isLive() || !modelsCurrent() || host.store.get(scope, path) !== expected.get(path)) throw new Error("The operation changed during its draft write.");
         let saved = false;
         try { saved = save(path, record); }
-        finally { written.set(path, host.store.get(scope, path)); }
+        finally { written.set(path, record); }
         if (!saved) throw new Error(host.store.error ?? `Could not update ${path}.`);
       }
       if (!host.isLive() || !recordsCurrent(desired) || !modelsCurrent() || !sourceCurrent(after ? plan.afterSources : plan.beforeSources)) throw new Error("The operation changed during its draft write.");
@@ -103,12 +108,13 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       // Never overwrite a draft or model changed by a synchronous listener.
       const reverse = after ? "undo" : "redo";
       const restored = sources.isCurrent() && sources[reverse]();
+      const original = after ? plan.before : plan.after;
       if (restored) for (const edit of modelEdits) {
         proofs.set(edit.path, host.modelState(edit.path));
-        written.set(edit.path, host.store.get(scope, edit.path));
+        const record = host.store.get(scope, edit.path);
+        if (sameFields(original.get(edit.path), record)) written.set(edit.path, record);
       }
-      const original = after ? plan.before : plan.after;
-      for (const [path, record] of written) if (host.store.get(scope, path) === record && (!modelEdits.some(edit => edit.path === path) || restored)) save(path, original.get(path));
+      for (const [path, record] of written) if (host.store.get(scope, path) === record && (!modelEdits.some(edit => edit.path === path) || restored)) save(path, foreign.has(path) ? foreign.get(path) : original.get(path));
       if (!current(!after)) state = "failed";
       return false;
     }

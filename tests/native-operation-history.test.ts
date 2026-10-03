@@ -7,6 +7,7 @@ function fixture() {
   const records = new Map<string, SavedDraft>();
   const models = new Map<string, { text: string; version: number }>([["index.html", { text: "before", version: 1 }], ["untouched.css", { text: "same", version: 1 }]]);
   const record: SavedDraft = { ...scope, version: 1, path: "index.html", baseSha: "base", original: "before", content: "after", updatedAt: 1 };
+  let sourceListener: ((after: boolean) => void) | undefined;
   let live = true, fail = false, listener: (() => void) | undefined;
   const host = {
     scope, store: { error: null, get: (_scope: unknown, path: string) => records.get(path), save: (draft: SavedDraft) => { if (fail) return false; records.set(draft.path, draft); listener?.(); return true; }, remove: (_scope: unknown, path: string) => { records.delete(path); return true; } },
@@ -16,12 +17,12 @@ function fixture() {
     prepareSources(edits: { path: string; expectedSource: string; text: string }[]) {
       let after = false;
       const current = () => edits.every(edit => models.get(edit.path)?.text === (after ? edit.text : edit.expectedSource));
-      const change = (next: boolean) => { if (!current()) return false; for (const edit of edits) { const model = models.get(edit.path)!; model.text = next ? edit.text : edit.expectedSource; model.version++; } after = next; return true; };
+      const change = (next: boolean) => { if (!current()) return false; for (const edit of edits) { const model = models.get(edit.path)!; model.text = next ? edit.text : edit.expectedSource; model.version++; } sourceListener?.(next); after = next; return true; };
       return { isCurrent: current, apply: () => change(true), undo: () => change(false), redo: () => change(true) };
     },
   };
   const plan = { before: new Map<string, SavedDraft | undefined>([["index.html", undefined]]), after: new Map([["index.html", record]]), beforeSources: new Map([["index.html", "before"], ["untouched.css", "same"]]), afterSources: new Map([["index.html", "after"], ["untouched.css", "same"]]) };
-  return { records, models, record, host, plan, stale: () => { live = false; }, fail: () => { fail = true; }, listen: (callback: () => void) => { listener = callback; } };
+  return { records, models, record, host, plan, stale: () => { live = false; }, fail: () => { fail = true; }, listen: (callback: () => void) => { listener = callback; }, sourceListen: (callback: (after: boolean) => void) => { sourceListener = callback; } };
 }
 test("text and draft transition together through one guarded Undo and Redo", () => {
   const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!;
@@ -67,4 +68,18 @@ test("unmounted equal records are never reanchored", () => {
   const receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
   const external = { ...f.record, updatedAt: 99 }; f.records.set("index.html", external);
   assert.equal(receipt.undo(), false); assert.equal(f.records.get("index.html"), external);
+});
+
+for (const change of [{ baseSha: "external-base" }, { mode: "100755" }, { movedFrom: "foreign.html" }]) test(`source notification draft race keeps external fields ${Object.keys(change)} and rolls back its owned text`, () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!;
+  const external = { ...f.record, ...change };
+  f.sourceListen(after => { if (after) f.records.set("index.html", external); else f.records.delete("index.html"); });
+  assert.equal(receipt.apply(), false); assert.equal(f.models.get("index.html")!.text, "before");
+  assert.equal(f.records.get("index.html"), external); assert.equal(receipt.isCurrent(), false);
+});
+test("a draft writer's synchronous replacement is never treated as an owned saved record", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!;
+  const external = { ...f.record, baseSha: "external-base" };
+  f.listen(() => { f.records.set("index.html", external); });
+  assert.equal(receipt.apply(), false); assert.equal(f.records.get("index.html"), external);
 });
