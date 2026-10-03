@@ -75,22 +75,17 @@ New links inherit the first item's style while dropping IDs, source keys and
 current-page state. Labels and URLs are escaped before entering source. Applying a panel whose
 navigation source changed must fail and require reopening it.
 
-## Effects
+## Native CSS effects
 
-Effects add ordinary classes and readable rules in `styles/effects.css`, linked
-from every page. Rules are inserted once per preset. Removing an effect changes
-its selected instance while leaving shared rules available for other instances.
-
-Fade and slide use CSS view timelines behind feature support and
-`prefers-reduced-motion: no-preference` checks. Unsupported browsers and reduced
-motion preferences retain visible content. Hover lift applies only to precise
-hover pointers with motion permitted. Underline also responds to keyboard focus.
-No animation runtime or package is added.
+The Edit bar does not generate effect classes or stylesheets. Existing authored
+CSS, including `styles/effects.css`, remains part of the native site. Use the
+Style panel's Effects controls to edit shadow, transform and transition in the
+selected class rule.
 
 ## Validation
 
 `tests/site-head.test.ts`, `tests/site-identity.test.ts`,
-`tests/site-navigation.test.ts` and `tests/site-effects.test.ts` exercise source
+`tests/site-navigation.test.ts` exercise source
 preservation, escaping, idempotence and refusal cases. Browser coverage lives in
 `tests/native-save/native-site-settings.spec.ts` and uses the real worker through
 the fake GitHub boundary. Set `ASE_TEST_PORT` for an isolated browser run.

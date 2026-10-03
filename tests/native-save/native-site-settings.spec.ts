@@ -123,20 +123,20 @@ test("new top-level page can join navigation; one undo removes both drafts", asy
   await expect.poll(() => storedDraft(page, "components/site-header/site-header.html")).toBeUndefined();
 });
 
-test("effects create CSS once, link every page, toggle classes and leave reduced-motion content visible", async ({ page, baseURL }) => {
+test("Edit bar has no Effects generator and preserves authored effects CSS", async ({ page, baseURL }) => {
   await open(page, baseURL);
+  const authored = '.authored-motion { transition: opacity 200ms; }\n';
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/effects.css", content: authored } });
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   await frame(page).locator(".hero h1").click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();
-  await page.getByRole("button", { name: "Effects", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Fade in on scroll", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, "styles/effects.css"))?.content).toContain("animation-timeline: view()");
-  await expect.poll(async () => (await storedDraft(page, "about/index.html"))?.content).toContain('href="/styles/effects.css"');
-  await expect(frame(page).locator(".reveal-fade")).toBeVisible();
-  await expect(frame(page).locator(".reveal-fade")).toHaveCSS("opacity", "1");
-  await page.getByRole("button", { name: "Effects", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Fade in on scroll", exact: true }).click();
-  await expect(frame(page).locator(".reveal-fade")).toHaveCount(0);
-  expect(((await storedDraft(page, "styles/effects.css"))!.content.match(/Effect: reveal-fade/g) ?? [])).toHaveLength(1);
+  await expect(page.getByRole("button", { name: "Effects", exact: true })).toHaveCount(0);
+  expect(await storedDraft(page, "styles/effects.css")).toBeUndefined();
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(before);
+  expect(await (await page.request.get(`${baseURL}/__demo/file?path=styles/effects.css`)).text()).toBe(authored);
 });
 
 test("page settings preserve named entities when changing another field", async ({ page, baseURL }) => {
@@ -209,7 +209,7 @@ test("an explicitly unlinked equal social title survives reopening the controlle
   await expect(dialog(page, "Page settings").getByLabel("Use page title", { exact: true })).not.toBeChecked();
 });
 
-test("repeated unchanged native selection and text-selection reports preserve the Effects menu", async ({ page, baseURL }) => {
+test("repeated unchanged native selection and text-selection reports preserve the focused Heading level control", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.evaluate(() => {
     window.addEventListener("message", (event) => {
@@ -220,9 +220,10 @@ test("repeated unchanged native selection and text-selection reports preserve th
     });
   });
   await frame(page).locator(".hero h1").click();
-  await page.getByRole("button", { name: "Effects", exact: true }).click();
-  const item = page.getByRole("menuitem", { name: "Fade in on scroll", exact: true });
+  const item = page.getByRole("combobox", { name: "Heading level", exact: true });
   await expect(item).toBeVisible();
+  await item.focus();
+  await item.evaluate(control => { (window as any).unchangedHeadingControl = control; });
   expect(await page.evaluate(() => (window as typeof window & { selectionContext?: string }).selectionContext)).toBeTruthy();
   await page.evaluate(() => {
     const source = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!.contentWindow!;
@@ -234,8 +235,11 @@ test("repeated unchanged native selection and text-selection reports preserve th
     }
   });
   await expect(item).toBeVisible();
-  await item.click();
-  await expect.poll(async () => (await storedDraft(page, "styles/effects.css"))?.content).toContain("Effect: reveal-fade");
+  await expect(item).toBeFocused();
+  expect(await item.evaluate(control => control === (window as any).unchangedHeadingControl)).toBe(true);
+  await item.selectOption("h2");
+  await expect(frame(page).locator(".hero h2")).toBeVisible();
+  expect(await storedDraft(page, "styles/effects.css")).toBeUndefined();
 });
 
 test("batch source checks reject an edit arriving during the first async file lookup", async ({ page, baseURL }) => {

@@ -27,7 +27,6 @@ import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } 
 import { escapeText, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
-import { EFFECTS_PATH, effectPresets, insertEffectsCss, linkEffectsStylesheet, type EffectPreset } from "./page-builder/site-effects";
 import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
@@ -1309,11 +1308,6 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     applyNativeChange(path, source, edits, next, message);
   const controls: EditBarControl[] = [];
   if (range && node && nativeSite) {
-    const classes = startTagAttribute(source, range.tag, "class")?.value.split(/\s+/) ?? [];
-    controls.push({ kind: "menu", label: "Effects", title: "CSS effects on this element; shared rules in styles/effects.css", items: effectPresets.map((preset) => ({
-      label: preset.label, current: classes.includes(preset.value),
-      onSelect: () => void applyNativeEffect(path, node, preset.value, source).then((error) => { if (error) errorMessage(new Error(error)); }),
-    })) });
     if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
       controls.push({ kind: "button", label: "Navigation", onPress: () => void openNativeNavigation(path) });
   }
@@ -2209,51 +2203,6 @@ async function openNativeNavigation(pagePath: string) {
   const target = nativeNavigationTarget(pagePath);
   if (!target) { announce("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
   nativeSettingsController().navigation({ path: target.path, source: target.source, links: target.list.links, pages: nativeSitePageChoices(), shared: target.shared });
-}
-
-async function applyNativeEffect(path: string, node: number[], preset: EffectPreset, expectedSource: string): Promise<string | undefined> {
-  const scope = setupScope(), epoch = generation;
-  const selected = lastNativeSelection;
-  const sameSelection = () => lastNativeSelection?.path === path && JSON.stringify(lastNativeSelection?.node) === JSON.stringify(node);
-  if (!sameSelection() || nativeEffectiveSource(path) !== expectedSource) return "The effect target or source changed. Select it again.";
-  const problem = await ensureNativeTextIndex();
-  if (problem) return problem;
-  if (!nativeSite || scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
-  if (!sameSelection() || selected?.path !== path || nativeEffectiveSource(path) !== expectedSource) return "The effect target or source changed. Select it again.";
-  const source = expectedSource;
-  const range = locateNativeElementRange(source, node);
-  if (source === undefined || !range) return "This element's source could not be found.";
-  const classes = startTagAttribute(source, range.tag, "class")?.value.split(/\s+/).filter(Boolean) ?? [];
-  const remove = classes.includes(preset);
-  const nextClasses = remove ? classes.filter((name) => name !== preset) : [...classes.filter((name) => !preset.startsWith("reveal-") || !name.startsWith("reveal-")), preset];
-  const edit = setAttributeEdit(source, range.tag, "class", nextClasses.join(" "));
-  if (!edit) return undefined;
-  let next = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-  // Removing affects only this instance and uses Monaco's ordinary source undo.
-  if (remove) { applyNativeChange(path, source, [edit], node, `Removed ${preset}`); return undefined; }
-  const edits = new Map<string, string>();
-  try {
-    for (const page of new Set(Object.values(nativeSite.routes))) {
-      const original = page === path ? next : nativeEffectiveSource(page);
-      if (original === undefined) return `${page} could not be read. No effect was applied.`;
-      const linked = linkEffectsStylesheet(original);
-      if (page === path) next = linked;
-      if (linked !== nativeEffectiveSource(page)) edits.set(page, linked);
-    }
-    const css = nativeEffectiveSource(EFFECTS_PATH) ?? "";
-    const nextCss = insertEffectsCss(css, preset);
-    if (nextCss !== css) edits.set(EFFECTS_PATH, nextCss);
-  } catch (error) { return error instanceof Error ? error.message : "Effects could not be linked."; }
-  if (!edits.has(path)) edits.set(path, next);
-  const expectedSources = new Map([...new Set([path, EFFECTS_PATH, ...Object.values(nativeSite.routes)])].map((file) => [file, nativeEffectiveSource(file)] as const));
-  const error = await applyNativeOperation({ expectedSources, edits, done: `${preset} applied to this element; shared CSS linked from all pages as drafts.`, undone: `Undid applying ${preset}.` });
-  if (!error && epoch === generation && scope === setupScope()) {
-    nativeStyleFiles.add(EFFECTS_PATH); nativeMissingStyleFiles.delete(EFFECTS_PATH);
-    updateNativePreviewSources();
-    if (sameSelection() && lastNativeSelection) renderNativeEditBar(lastNativeSelection);
-    if (sameSelection()) nativePreview?.selectNode({ path, node });
-  }
-  return error;
 }
 
 // Pages and components are found from the files when the project loads. A
