@@ -68,3 +68,26 @@ test('new pages keep exact Unicode header/footer bytes and genuine closing bound
     assert.ok(nativePageTemplate(source.replace('</main>',`</main${char}>bad</main>`),'New').includes('<main>\n</main><footer>'));
   }
 });
+test('data-key cleanup removes actual attributes while preserving quoted and Unicode unquoted lookalikes',async()=>{
+  const {withoutDataKeys}=await import('../src/page-builder/component-model');
+  for(const char of ['\u00a0','\u000b','\ufeff']){
+    const html=`<div data-x=a${char}data-key=1 data-key="real" title=" data-key='fake' > text">Value</div><script>"<b data-key='fake'>"</script>`;
+    assert.equal(withoutDataKeys(html),html.replace(' data-key="real"',''));
+  }
+});
+test('native document bounds and structured data recognize real end-tag delimiters only',async()=>{
+  const {nativePageBody,nativePageWithDetails}=await import('../shared/native-project');
+  const {nativePageTemplate,withoutStructuredData}=await import('../src/native-create');
+  for(const suffix of ['/>',' foo>','\t>']){
+    const html=`<html><head><title>İstanbul</title${suffix}</head${suffix}<body><header>Keep</header><main>old</main><footer>Keep</footer></body${suffix}</html${suffix}`;
+    assert.equal(html.slice(nativePageBody(html).start,nativePageBody(html).end),'<header>Keep</header><main>old</main><footer>Keep</footer>');
+    assert.ok(nativePageTemplate(html,'New').includes('<main>\n</main><footer>Keep</footer>'));
+    assert.equal(withoutStructuredData(`<script type="application/ld+json">İ</script${suffix}<p>keep</p>`),'<p>keep</p>');
+  }
+  for(const char of ['\u00a0','\u000b','\ufeff']){
+    const html=`<head><title>İ</title${char}>still title</title></head><body>body</body${char}>still body</body>`;
+    assert.equal(html.slice(nativePageBody(html).start,nativePageBody(html).end),`body</body${char}>still body`);
+    const updated=nativePageWithDetails(html,{title:'New',description:''});
+    assert.ok(updated.includes('<title>New</title></head>'));
+  }
+});

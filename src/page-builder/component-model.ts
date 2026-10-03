@@ -547,8 +547,10 @@ function withSlot(markup: string, name: string | undefined) {
 }
 
 /** `html` without the `data-key` attributes older templates carry. */
-function withoutDataKeys(html: string) {
-  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\sdata-key(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?(?=[\s/>])/gi, ""));
+export function withoutDataKeys(html: string) {
+  const ranges = startTags(html).flatMap(tag => startTagAttributes(html, tag).filter(attribute => attribute.name === "data-key"));
+  for (const range of ranges.reverse()) html = html.slice(0, range.start) + html.slice(range.end);
+  return html;
 }
 
 /**
@@ -711,7 +713,7 @@ export interface ComponentUsage {
 // Elements named `tag` as parsed: comments and raw text (a script's string,
 // a textarea's content) are not elements.
 function tagCount(html: string, tag: string) {
-  if (!html.toLowerCase().includes(`<${tag}`)) return 0;
+  if (!asciiLower(html).includes(`<${tag}`)) return 0;
   let count = 0;
   for (const el of descendants(parseSource(html))) if (el.name === tag) count++;
   return count;

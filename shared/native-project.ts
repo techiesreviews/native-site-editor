@@ -165,7 +165,7 @@ export function nativePageBody(html: string): { start: number; end: number } {
     return { start: body.end, end: close >= body.end ? close : htmlClose >= body.end ? htmlClose : html.length };
   }
   // `</head>`, not `</header>`.
-  const head = /<\/head\s*>/i.exec(html);
+  const head = /<\/head(?=[\t\n\f\r />])[^>]*>/i.exec(html);
   const start = head ? head.index + head[0].length : 0;
   return { start, end: htmlClose >= start ? htmlClose : html.length };
 }
@@ -173,7 +173,7 @@ export function nativePageBody(html: string): { start: number; end: number } {
 /** Where the last `</name>` end tag starts, or -1. */
 function lastEndTag(html: string, name: string) {
   let at = -1;
-  for (const match of html.matchAll(new RegExp(`</${name}\\s*>`, "gi"))) at = match.index;
+  for (const match of html.matchAll(new RegExp(`</${name}(?=[\\t\\n\\f\\r />])[^>]*>`, "gi"))) at = match.index;
   return at;
 }
 
@@ -232,7 +232,8 @@ function headParts(html: string): HeadParts {
   for (const tag of tags) {
     if (tag.name === "head" && !parts.head) parts.head = tag;
     if (tag.name === "title" && !parts.title) {
-      const close = asciiLower(html).indexOf("</title", tag.end);
+      const match = /<\/title(?=[\t\n\f\r />])[^>]*>/.exec(asciiLower(html).slice(tag.end));
+      const close = match ? tag.end + match.index : -1;
       if (close >= 0 && close <= end) parts.title = { tag, inner: { start: tag.end, end: close } };
     }
     if (tag.name === "link" && !parts.canonical && startTagAttribute(html, tag, "rel")?.value.toLowerCase().split(/\s+/).includes("canonical"))

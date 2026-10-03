@@ -29,3 +29,10 @@ longer or Unicode-suffixed closing names. Page creation and page-title rewriting
 use the same offset-preserving fold, so `İstanbul` in titles, headers or footers
 does not shift an edit into adjacent source. This is a lexical correction, not
 a tree-repair or namespace-parser replacement.
+
+Legacy `data-key` cleanup now removes parsed attribute ranges only, leaving
+lookalikes inside quoted values or Unicode-containing unquoted values intact.
+Native document closing searches recognize HTML ASCII delimiters, including
+legal slash or attributed end tags. Existing fallback text compaction remains
+separate and unchanged; this correction does not promise preservation through
+that normalization or general HTML tree repair.

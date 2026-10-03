@@ -51,3 +51,21 @@ test('component ranges and new page output match real Unicode DOM parsing',async
   expect(result.names).toEqual(result.domNames);expect(result.attributes).toEqual([['data-İ',result.domValue]]);expect(result.domValue).toBe('x\u00a0/');expect(result.raw).toBe(result.domRaw);
   expect(result.title).toBe('New');expect(result.header).toBe('İstanbul');expect(result.footer).toBe('İstanbul');expect(result.main).toBe('\n');expect(result.output).toContain('</main><footer>İstanbul</footer></body></html>');
 });
+test('attribute cleanup and native end tags agree with actual DOM source values',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const {withoutDataKeys}=await import('/src/page-builder/component-model.ts');
+    const {nativePageBody,nativePageWithDetails}=await import('/shared/native-project.ts');
+    const {nativePageTemplate,withoutStructuredData}=await import('/src/native-create.ts');
+    const html='<div data-x=a\u00a0data-key=1 data-key="real" title=" data-key=quoted > still">Value</div>';
+    const cleaned=withoutDataKeys(html);const parse=(s:string)=>new DOMParser().parseFromString(s,'text/html');
+    const before=parse(html).querySelector('div')!,after=parse(cleaned).querySelector('div')!;
+    const home='<html><head><title>İstanbul</title/><meta name="keep" content="Exact"></head foo><body><header>İstanbul</header><main>old</main><footer>Exact</footer></body/><html>';
+    const output=nativePageTemplate(home,'New');const doc=parse(output);
+    const fake='<head><title>Old</title\u00a0>still title</title></head><body>body</body\u00a0>still body</body>';
+    const range=nativePageBody(fake),updated=nativePageWithDetails(fake,{title:'New',description:''});
+    return{cleaned,values:[before.getAttribute('data-x'),after.getAttribute('data-x')],titles:[before.title,after.title],key:after.hasAttribute('data-key'),title:doc.title,meta:doc.querySelector('meta[name="keep"]')!.getAttribute('content'),header:doc.querySelector('header')!.textContent,footer:doc.querySelector('footer')!.textContent,main:doc.querySelector('main')!.textContent,body:fake.slice(range.start,range.end),domBody:parse(fake).body.textContent,updatedTitle:parse(updated).title,json:withoutStructuredData('<script type="application/ld+json">İ</script foo><p>keep</p>')};
+  });
+  expect(result.values).toEqual(['a\u00a0data-key=1','a\u00a0data-key=1']);expect(result.titles[0]).toBe(result.titles[1]);expect(result.key).toBe(false);
+  expect(result.title).toBe('New');expect(result.meta).toBe('Exact');expect(result.header).toBe('İstanbul');expect(result.footer).toBe('Exact');expect(result.main).toBe('\n');
+  expect(result.body).toBe('body</body\u00a0>still body');expect(result.domBody).toBe('bodystill body');expect(result.updatedTitle).toBe('New');expect(result.json).toBe('<p>keep</p>');
+});

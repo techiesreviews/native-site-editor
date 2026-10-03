@@ -132,7 +132,7 @@ export function withoutStructuredData(html: string): string {
   for (;;) {
     const tag = startTags(text).find((item) => item.name === "script" && startTagAttribute(text, item, "type")?.value.trim().toLowerCase() === "application/ld+json");
     if (!tag) return text;
-    const close = /<\/script[\t\n\f\r ]*>/i.exec(text.slice(tag.end));
+    const close = /<\/script(?=[\t\n\f\r />])[^>]*>/i.exec(text.slice(tag.end));
     const end = close ? tag.end + close.index + close[0].length : text.length;
     const lineStart = text.lastIndexOf("\n", tag.start - 1) + 1;
     const own = /^[ \t]*$/.test(text.slice(lineStart, tag.start)) && /^[ \t]*(?:\r?\n|$)/.exec(text.slice(end));
