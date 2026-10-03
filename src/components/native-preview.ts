@@ -63,6 +63,8 @@ interface UpdateInput {
   // The component whose template is open: the preview shows a page that uses
   // it, or the component alone when no page does.
   component?: string;
+  /** A template explicitly opened through Files or Edit component. */
+  editableTemplatePath?: string;
 }
 
 // The home page's `<main …>` start tag, or a plain one when it has none.
@@ -120,7 +122,11 @@ export interface NativePreviewSelection {
   selector?: string;
   // For an element of a component's template, the instance it renders in
   // (with where that instance is written, when the runtime can tell).
-  host?: { tag: string; selector: string; path?: string; node?: number[] };
+  host?: { tag: string; selector: string; path?: string; node?: number[]; rect?: SelectionRect; paintedSource?: string };
+  /** Actual shadow-root owners, nearest first, bounded to sixteen tiers. */
+  hostChain?: NonNullable<NativePreviewSelection["host"]>[];
+  /** Source bytes from this selection's sent render snapshot. */
+  paintedSource?: string;
 }
 
 // A text selection inside the selected element: offsets into its DOM text
@@ -243,6 +249,7 @@ function composePayload(
   selectNode: NativeNodeRequest | undefined,
   selectText: { start: number; end: number } | undefined,
   hash?: string,
+  editableTemplatePath?: string,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -284,7 +291,7 @@ function composePayload(
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
-  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText, hash };
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath };
 }
 
 export function createNativePreview(host: HTMLElement, handlers: NativePreviewHandlers = {}) {
@@ -394,6 +401,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let route = "/";
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
+  let editableTemplatePath: string | undefined;
   let context = "";
   let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
   let renderVersion = 0;
@@ -437,7 +445,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!site || !ready || !mounted) return;
-    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText, scrollHash);
+    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath);
     selectNode = undefined;
     selectText = undefined;
     scrollHash = undefined;
@@ -702,6 +710,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         pageNode?: unknown;
         selector?: unknown;
         host?: unknown;
+        hostChain?: unknown;
         crumbs?: unknown;
       };
       slotSelection = undefined;
@@ -733,6 +742,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       canvas.setCrumbs(readCrumbs(raw.crumbs));
       handlers.onSelect?.({
         path: raw.path,
+        paintedSource: sentStructureSnapshot && sentStructureSnapshot.context === data.context ? sentStructureSnapshot.sources[raw.path] : undefined,
         tag: typeof raw.tag === "string" ? raw.tag : "",
         text: typeof raw.text === "string" ? raw.text : "",
         reason,
@@ -746,6 +756,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         rect: readRect(raw.rect),
         selector: typeof raw.selector === "string" ? raw.selector.slice(0, 2000) : undefined,
         host: readHost(raw.host),
+        hostChain: readHostChain(raw.hostChain),
       });
       return;
     }
@@ -789,14 +800,21 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function readHost(raw: unknown) {
     if (!raw || typeof raw !== "object") return undefined;
-    const { tag, selector, path, node } = raw as Record<string, unknown>;
+    const { tag, selector, path, node, rect } = raw as Record<string, unknown>;
     if (typeof tag !== "string" || typeof selector !== "string") return undefined;
     const host: NonNullable<NativePreviewSelection["host"]> = { tag: tag.slice(0, 100), selector: selector.slice(0, 2000) };
     if (typeof path === "string" && site && nativeSitePaths(site).includes(path) && indexes(node)) {
       host.path = path;
       host.node = node;
+      host.rect = readRect(rect);
+      host.paintedSource = sentStructureSnapshot && sentStructureSnapshot.context === context ? sentStructureSnapshot.sources[path] : undefined;
     }
     return host;
+  }
+  function readHostChain(raw: unknown) {
+    if (!Array.isArray(raw) || !raw.length || raw.length > 16) return undefined;
+    const chain = raw.map(readHost);
+    return chain.every((host): host is NonNullable<NativePreviewSelection["host"]> => Boolean(host?.path && host.node)) ? chain : undefined;
   }
   function readTextSelection(raw: unknown): NativeTextSelection | undefined {
     if (!raw || typeof raw !== "object") return undefined;
@@ -890,6 +908,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       schedule();
     },
     update(input: UpdateInput) {
+      if (Object.hasOwn(input, "editableTemplatePath")) editableTemplatePath = input.editableTemplatePath;
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
       if (input.assets) assets = input.assets;

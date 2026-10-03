@@ -1618,6 +1618,14 @@
     var locator = elementLocator(el);
     payload.selector = locator.selector;
     if (locator.host) payload.host = locator.host;
+    var hostChain = [], owner = el;
+    while (owner && owner.getRootNode && owner.getRootNode() instanceof ShadowRoot && hostChain.length < 16) {
+      owner = owner.getRootNode().host;
+      var hostNode = elementIndexPath(owner), hostPath = ownerPath(owner);
+      if (!hostNode || !hostPath) break;
+      hostChain.push({ tag: owner.localName, selector: elementLocator(owner).selector, path: hostPath, node: hostNode, rect: rectOf(owner) });
+    }
+    if (hostChain.length) payload.hostChain = hostChain;
     payload.rect = rectOf(el);
     // Inside a component's template (or a template inside that): the page
     // element it renders in, which the Add panel inserts after.
@@ -2006,7 +2014,8 @@
   var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
   var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
   function editableText(el) {
-    if (!el || !(TEXT_TAGS.test(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
+    if (!el || !state || (ownerPath(el) !== state.pagePaths[state.route] && ownerPath(el) !== state.editableTemplatePath)) return false;
+    if (!(TEXT_TAGS.test(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
     var all = el.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
       if (!INLINE_TAGS.test(all[i].localName)) return false;
@@ -2025,6 +2034,7 @@
     });
   }
   function startEditing(el) {
+    if (!editableText(el)) { stopEditing(false); return; }
     if (editing === el) return;
     stopEditing(true);
     if (!editableText(el)) return;

@@ -57,6 +57,7 @@ import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
+import { nativeComponentScopeSelection } from "./page-builder/native-component-selection";
 import { nativeElementMoveChoices, nativeElementMovePlan, nativeElementSiblingMove, type NativeElementMoveResult } from "./page-builder/native-move-choices";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
@@ -420,6 +421,8 @@ function mountWorkspace() {
       return { ...structureLabel(item, component), component };
     },
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
+    componentSlots: (path, node) => componentTools?.structure(path, node),
+    componentFieldsRevision: nativeComponentFieldsRevision,
     pageMeta: nativePageMeta,
     onPageSettings: (path) => void openNativePageSettings(path),
     onNavigation: (path) => void openNativeNavigation(path),
@@ -440,7 +443,7 @@ function mountWorkspace() {
       if (!isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
       if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction) ?? "stayed";
-      void moveNativeSectionAfterOpening(target, direction);
+      void moveNativeSectionAfterOpening(target, direction, paintedSource);
       return "pending";
     },
     canDrag: (item) => isNativeSectionTag(item.tag),
@@ -580,6 +583,7 @@ function mountPalette() {
     revision: () => `${setupScope()}:${generation}`,
     open: (path) => {
       if (path === currentPath && editorModule?.isMounted(path)) return;
+      recordNativeSourceIntent(path);
       void restoreFile(path, generation);
     },
     source: (path) => nativeSources()[path],
@@ -623,6 +627,7 @@ function mountComponentTools() {
   return createComponentTools({
     site: () => nativeSite,
     sources: () => nativeSources(),
+    structureFields: true,
     editor: () => editorModule,
     preview: () => nativePreview,
     currentPath: () => currentPath,
@@ -630,6 +635,7 @@ function mountComponentTools() {
     revision: () => `${generation}:${setupScope()}`,
     openFile: async (path) => {
       const epoch = generation;
+      recordNativeSourceIntent(path);
       if (currentPath !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch);
       return epoch === generation && currentPath === path && Boolean(editorModule?.isMounted(path));
     },
@@ -1883,10 +1889,12 @@ function moveNativeSection(target: { path: string; node?: number[]; tag: string 
 // file opens first, as an insert does, then the section moves. A move that
 // still cannot be made is said so rather than passed off as the end of the
 // list.
-async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down") {
-  const epoch = generation;
+async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
+  const epoch = generation, scope = setupScope();
   await restoreFile(target.path, epoch, { linkDefaultStyle: false });
-  if (epoch !== generation) return;
+  if (epoch !== generation || scope !== setupScope() || currentPath !== target.path || nativeEffectiveSource(target.path) !== paintedSource) {
+    announce("The source changed while its editor opened. Select the section again before moving it."); return;
+  }
   if (!moveNativeSection(target, direction)) element("status").textContent = "The section could not be moved";
 }
 
@@ -1920,6 +1928,10 @@ function moveNativeSectionTo(target: { path: string; node?: number[]; tag: strin
 // dropped and the preview shows the source again.
 async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
   if (!nativePreview) return;
+  const openingEpoch = generation, openingScope = setupScope();
+  const allowed = () => openingEpoch === generation && openingScope === setupScope() &&
+    (path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath());
+  if (!allowed()) { announce("Edit the page instance in Structure, or choose Edit for its shared template."); updateNativePreviewSources(); return; }
   // The click that selected the element may still be opening its file.
   for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000; waited += 50)
     await new Promise((done) => setTimeout(done, 50));
@@ -1930,7 +1942,7 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   }
   const editor = editorModule;
   const preview = nativePreview;
-  if (!editor || !preview) return;
+  if (!editor || !preview || !allowed()) return;
   const source = nativeSources()[path] ?? "";
   const range = locateNativeElementRange(source, node);
   // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
@@ -2040,6 +2052,32 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 
 async function selectNativeSource(selection: NativePreviewSelection) {
   nativeElementMoveAction = undefined;
+  const sources = nativeSources();
+  if (pendingNativeInstanceSelection) {
+    const pending = pendingNativeInstanceSelection;
+    pendingNativeInstanceSelection = undefined;
+    if (selection.path === pending.path && selection.node?.join(".") === pending.node.join(".") &&
+        (pending.epoch !== generation || pending.scope !== setupScope() || JSON.stringify(nativeSite?.components) !== pending.components || Object.entries(pending.sources).some(([path, source]) => sources[path] !== source))) {
+      announce("The instance changed before it could be selected. Select it again."); return;
+    }
+  }
+  if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== sources[selection.path]) {
+    announce("The source changed. Wait for the preview before selecting this element."); return;
+  }
+  const scopePath = nativeEditableTemplatePath() ?? nativeSite?.routes[nativePreview?.route() ?? ""];
+  if (selection.path && scopePath && nativeSite) {
+    const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name);
+    if (!mapped) { announce("Select the page instance, or choose Edit to edit its shared template."); return; }
+    if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
+      if (!mapped.node || sources[mapped.path] === undefined) return;
+      pendingNativeInstanceSelection = { path: mapped.path, node: [...mapped.node],
+        sources: Object.fromEntries([selection.path, mapped.path, ...(selection.hostChain ?? (selection.host ? [selection.host] : [])).map(host => host.path)].filter((path): path is string => !!path).map(path => [path, sources[path]])),
+        components: JSON.stringify(nativeSite.components), epoch: generation, scope: setupScope() };
+      // Request the real host's own rect, matching rules and computed values.
+      nativePreview?.selectNode({ path: mapped.path, node: mapped.node });
+      return;
+    }
+  }
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
   stylePanel?.update();
@@ -2081,6 +2119,27 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   markNativeElement(selection, true);
   renderNativeEditBar(selection);
   void linkNativeStyles(selection, reveal);
+}
+
+let nativeSourceIntent: { path: string; epoch: number; scope: string } | undefined;
+let pendingNativeInstanceSelection: { path: string; node: number[]; sources: Record<string, string>; components: string; epoch: number; scope: string } | undefined;
+function recordNativeSourceIntent(path: string) {
+  nativeSourceIntent = nativeComponentTagForPath(path) ? { path, epoch: generation, scope: setupScope() } : undefined;
+}
+function nativeEditableTemplatePath() {
+  const intent = nativeSourceIntent;
+  return intent && intent.epoch === generation && intent.scope === setupScope() && currentPath === intent.path && editorModule?.isMounted(intent.path)
+    ? intent.path : componentTools?.editingScope()?.path;
+}
+let nativeComponentFieldToken = 0;
+let nativeComponentFieldSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
+function nativeComponentFieldsRevision() {
+  const scope = draftScope();
+  const sources = nativeSources();
+  const key = JSON.stringify([generation, setupScope(), currentPath, nativeSite?.components, sources]);
+  if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
+  nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
+  return String(++nativeComponentFieldToken);
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
@@ -2412,6 +2471,7 @@ function updateNativePreview() {
     componentStyles: Object.fromEntries(nativeComponentStyles),
     route: nativeRouteForPath(currentPath),
     component: currentPath ? nativeComponentTagForPath(currentPath) : undefined,
+    editableTemplatePath: nativeEditableTemplatePath(),
   });
 }
 
@@ -2419,7 +2479,7 @@ function updateNativePreview() {
 // the preview is on About (with a different file open) does not snap it Home.
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets) });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
 }
@@ -5649,6 +5709,7 @@ function renderEntries(
           .querySelectorAll(".selected")
           .forEach((el) => el.classList.remove("selected"));
         row.classList.add("selected");
+        recordNativeSourceIntent(path);
         const scope = draftScope();
         const draft = entry.isNew && scope ? draftStore().get(scope, path) : undefined;
         if (draft) await openNewDraft(draft);
@@ -6386,7 +6447,7 @@ async function loadSnapshot(
         branch,
         path: open,
       });
-    if (open) await restoreFile(open, epoch);
+    if (open) { recordNativeSourceIntent(open); await restoreFile(open, epoch); }
     if (epoch !== generation) return;
     if (result.empty) {
       settleStatus(`${repo.name} is empty. Choose how to start your site.`);
