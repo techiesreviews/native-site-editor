@@ -143,7 +143,9 @@ function formStamp(root: HTMLElement) {
   return JSON.stringify([...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")]
     .map((input) => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
 }
-function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, run: () => Promise<string | undefined>, unchanged: () => boolean = () => true) {
+// `rebase`, when given, moves the dialog's baseline to what was just applied,
+// so newer typing kept after a successful Apply can be applied in turn.
+function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, run: () => Promise<string | undefined>, unchanged: () => boolean = () => true, rebase?: () => void) {
   const apply = button(label, async () => {
     if (apply.disabled) return;
     apply.disabled = true;
@@ -156,11 +158,51 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
       if (error) dialog.status.textContent = error;
       else if (!dialog.root.isConnected) return;
       else if (formStamp(dialog.root) === submitted && unchanged()) dialog.root.close();
-      else dialog.status.textContent = "Applied the earlier values as drafts. Your newer changes are kept here; close and reopen to apply them.";
+      else if (rebase) {
+        rebase();
+        dialog.status.textContent = "Applied the earlier values as drafts. Your newer changes are not applied yet; Apply again to add them.";
+      } else dialog.status.textContent = "Applied the earlier values as drafts. Your newer changes are not applied, and closing this dialog discards them.";
     } catch (error) { dialog.status.textContent = error instanceof Error ? error.message : "The change could not be applied."; }
     finally { apply.disabled = false; }
   }, "button");
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
+}
+
+// Remounts the page Fields panel on the source as it is now, carrying over
+// values the user typed after the last Apply was submitted.
+function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined, mount: () => CollectionsPanel) {
+  const previous = host.querySelector(".collections-panel");
+  const typed = new Map<string, string>();
+  let focusLabel: string | undefined, caret: [number | null, number | null] | undefined;
+  for (const wrap of previous?.querySelectorAll("label") ?? []) {
+    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    const text = wrap.querySelector("span")?.textContent ?? "";
+    if (!input) continue;
+    typed.set(text, input.value);
+    if (document.activeElement === input) { focusLabel = text; caret = [input.selectionStart, input.selectionEnd]; }
+  }
+  old?.destroy();
+  const panel = mount();
+  const inputs = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
+  for (const wrap of host.querySelectorAll(".collections-panel label")) {
+    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    if (input) inputs.set(wrap.querySelector("span")?.textContent ?? "", input);
+  }
+  // A custom field the earlier Apply added is now a field of its own.
+  const customName = typed.get("New custom field name")?.trim() ?? "";
+  const added = customName ? inputs.get(customName[0].toUpperCase() + customName.slice(1)) : undefined;
+  if (added) {
+    typed.set(customName[0].toUpperCase() + customName.slice(1), typed.get("New custom field value") ?? "");
+    typed.set("New custom field name", ""); typed.set("New custom field value", "");
+    if (focusLabel === "New custom field value") focusLabel = customName[0].toUpperCase() + customName.slice(1);
+  }
+  for (const [text, value] of typed) {
+    const input = inputs.get(text);
+    if (input && input.value !== value) input.value = value;
+  }
+  const focus = focusLabel ? inputs.get(focusLabel) : undefined;
+  if (focus) { focus.focus(); if (caret) focus.setSelectionRange(caret[0], caret[1]); }
+  return panel;
 }
 
 async function uploadInto(input: HTMLInputElement | HTMLTextAreaElement, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
@@ -205,9 +247,14 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         apply: async (value, keep) => {
           const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
           if (fieldsChanged || pageFields?.pageFieldsDirty()) return "Apply page details before changing the URL, so those edits are kept.";
+          const submitted = formStamp(dialog.root), fieldsStamp = pageFields?.pageFieldsStamp();
           const error = await handlers.applyUrl(options.path, value, keep);
-          if (!error) dialog.root.close();
-          return error;
+          if (error || !dialog.root.isConnected) return error;
+          // Close only when nothing was typed while the URL change waited.
+          // The page moved, so newer details can't be applied from here.
+          if (formStamp(dialog.root) === submitted && pageFields?.pageFieldsStamp() === fieldsStamp) dialog.root.close();
+          else dialog.status.textContent = "The URL changed. Edits typed meanwhile were not applied, and closing this dialog discards them. Reopen Page settings to apply them to the moved page.";
+          return undefined;
         }, cancel: () => {},
       });
       if (options.route === "/") { url.input.readOnly = true; details.append(node("p", "site-settings__hint", "The home page's URL is always /.")); }
@@ -267,10 +314,12 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       refresh();
       // Missing social metadata follows the displayed page details. Compare
       // URL changes with that initial UI state, rather than absent raw tags.
-      const initialSocialTitle = socialTitle.value;
-      const initialSocialDescription = socialDescription.value;
-      const initialTitleLink = titleLink.checked;
-      const initialDescriptionLink = descriptionLink.checked;
+      let initialSocialTitle = socialTitle.value;
+      let initialSocialDescription = socialDescription.value;
+      let initialTitleLink = titleLink.checked;
+      let initialDescriptionLink = descriptionLink.checked;
+      let authoredTitle = hasHeadField(options.source, "og:title"), authoredDescription = hasHeadField(options.source, "og:description");
+      let applied: { fields: Partial<Record<HeadField, string>>; socialTitle: string; socialDescription: string; titleLink: boolean; descriptionLink: boolean } | undefined;
       applyButton(dialog, "Apply page settings", async () => {
         if (canonical.value && !/^https?:\/\//i.test(canonical.value.trim())) return "Canonical URL must start with https:// or http://.";
         if (theme.value && !CSS.supports("color", theme.value)) return "Enter a valid CSS colour for the theme colour.";
@@ -279,17 +328,28 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         for (const [field, value] of Object.entries(desired)) if (value !== values[field as HeadField]) fields[field as HeadField] = value;
         // Compare independent values with the resulting authored value or
         // page fallback. Unlinking can preserve old social text without typing.
-        const effectiveTitle = hasHeadField(options.source, "og:title") ? values["og:title"] : title.value;
-        const effectiveDescription = hasHeadField(options.source, "og:description") ? values["og:description"] : description.value;
+        const effectiveTitle = authoredTitle ? values["og:title"] : title.value;
+        const effectiveDescription = authoredDescription ? values["og:description"] : description.value;
         if ((title.value !== values.title || titleLink.checked !== initialTitleLink || socialTitle.value !== initialSocialTitle) && socialTitle.value !== effectiveTitle) fields["og:title"] = socialTitle.value;
         if ((description.value !== values.description || descriptionLink.checked !== initialDescriptionLink || socialDescription.value !== initialSocialDescription) && socialDescription.value !== effectiveDescription) fields["og:description"] = socialDescription.value;
         const linked = { title: titleLink.checked, description: descriptionLink.checked };
         const panel = pageFields;
         stampAtApply = panel?.pageFieldsStamp();
+        const submitted = { fields, socialTitle: socialTitle.value, socialDescription: socialDescription.value, titleLink: titleLink.checked, descriptionLink: descriptionLink.checked };
         const error = await handlers.applyPage(options.path, fields, panel ? (source) => panel.pageFieldSource(source) : undefined);
-        if (!error) linkPreferences.set(options.path, linked);
+        if (!error) { linkPreferences.set(options.path, linked); applied = submitted; }
         return error;
-      }, () => pageFields?.pageFieldsStamp() === stampAtApply);
+      }, () => pageFields?.pageFieldsStamp() === stampAtApply, () => {
+        // The page now holds what was applied: compare newer typing with that.
+        if (!applied) return;
+        Object.assign(values, applied.fields);
+        if (applied.fields["og:title"] !== undefined) authoredTitle = true;
+        if (applied.fields["og:description"] !== undefined) authoredDescription = true;
+        initialSocialTitle = applied.socialTitle; initialSocialDescription = applied.socialDescription;
+        initialTitleLink = applied.titleLink; initialDescriptionLink = applied.descriptionLink;
+        applied = undefined;
+        if (fieldsPanel && handlers.pageFields) pageFields = remountPageFields(fieldsPanel, pageFields, () => handlers.pageFields!(fieldsPanel, options.path));
+      });
       dialog.show();
     },
     site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {

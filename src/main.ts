@@ -2300,7 +2300,17 @@ function nativeSettingsController() {
   const scope = setupScope(), epoch = generation;
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
   const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
-  const routes = JSON.stringify(nativeSite?.routes);
+  let routes = JSON.stringify(nativeSite?.routes);
+  // After this dialog's own Apply succeeds, its result is the new baseline,
+  // so input kept from meanwhile can be applied on top of it. The operation
+  // itself refused any other change; no await separates it from this.
+  const applied = (error: string | undefined) => {
+    if (error === undefined && !stale()) {
+      for (const path of expectedSources.keys()) expectedSources.set(path, nativeEffectiveSource(path));
+      routes = JSON.stringify(nativeSite?.routes);
+    }
+    return error;
+  };
   const sourcesChanged = () => routes !== JSON.stringify(nativeSite?.routes) || [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
   const stale = () => scope !== setupScope() || epoch !== generation;
   const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
@@ -2317,7 +2327,7 @@ function nativeSettingsController() {
         if (pageFields) next = pageFields(next);
       } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
       if (next === source) return undefined;
-      return applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." });
+      return applied(await applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
     },
     pageFields(host, path) {
       // Date and custom fields, staged against this dialog's own snapshot.
@@ -2337,7 +2347,7 @@ function nativeSettingsController() {
     applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep, expectedSources),
     async applySite(values) {
       if (stale() || sourcesChanged()) return changed;
-      return applyNativeSiteSettings(values, expectedSources);
+      return applied(await applyNativeSiteSettings(values, expectedSources));
     },
     async open404() {
       if (stale() || sourcesChanged() || !nativeSite) return changed;

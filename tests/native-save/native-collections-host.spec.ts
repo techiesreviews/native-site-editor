@@ -226,3 +226,144 @@ test("an asset delete is not blocked by an invalid listing elsewhere and writes 
   expect(fetched.length).toBeLessThanOrEqual(1);
   for (const url of fetched) expect(new URL(url).searchParams.get("shas")?.split(",")).toHaveLength(1);
 });
+
+test("dirty Fields refuse Apply after the branch changes, writing nothing", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "work/one/index.html", content: record("One feature", "2025-01-01") } });
+  await open(page, baseURL, "work/one/index.html");
+  const panel = await openPageSettings(page);
+  await panel.getByRole("tab", { name: "Fields", exact: true }).click();
+  await panel.getByLabel("Date", { exact: true }).fill("2027-05-01");
+  await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=work%2Fone%2Findex.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+  await expect(panel.getByLabel("Date", { exact: true })).toHaveValue("2027-05-01");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel.getByRole("status")).toHaveText("The repository or source changed meanwhile. Reopen settings and try again.");
+  await expect(panel).toBeVisible();
+  for (const path of ["work/one/index.html", "index.html"]) expect(await storedDraft(page, path)).toBeUndefined();
+  expect(await mounted(page, "work/one/index.html")).toContain("<title>One feature</title>");
+});
+
+
+// In the host, Settings opens only once every page's text is read, and its
+// Apply and URL change then make no request: nothing real can be held while
+// they wait. These cases mount the dialog in the browser with the real Fields
+// panel and hold the handler's promise instead, to prove the dialog's guards.
+async function mountSettings(page: Page) {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    const { createSiteSettings } = await import("/src/components/site-settings.ts");
+    const { mountCollectionsPanel } = await import("/src/components/collections-panel.ts");
+    const { upsertHeadTag } = await import("/src/page-builder/site-head.ts");
+    const path = "work/one/index.html";
+    const state = {
+      sources: { [path]: '<!doctype html>\n<html>\n<head>\n  <title>One</title>\n  <meta name="date" content="2025-01-01">\n</head>\n<body><h1>One</h1></body>\n</html>\n' } as Record<string, string>,
+      calls: [] as string[], release: undefined as undefined | (() => void),
+    };
+    const hold = () => new Promise<void>((resolve) => { state.release = resolve; });
+    const settings = createSiteSettings({
+      async applyPage(file, fields, pageFields) {
+        let next = state.sources[file];
+        for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as never, value as string);
+        if (pageFields) next = pageFields(next);
+        state.calls.push(`page ${JSON.stringify(fields)}`);
+        await hold();
+        state.sources[file] = next;
+        return undefined;
+      },
+      pageFields: (host, file) => {
+        const saved = state.sources[file];
+        return mountCollectionsPanel(host, {
+          sources: () => state.sources, routes: () => ({ "/work/one/": path }), identity: () => ({ name: "Studio" }), revision: () => "r",
+          page: () => saved === undefined ? undefined : file, apply: () => false, openPage: () => {}, announce: () => {},
+        }, { settings: true });
+      },
+      planUrl: (_file, value) => ({ ok: true, route: value, message: "Moves the page." }),
+      async applyUrl(_file, value) { state.calls.push(`url ${value}`); await hold(); return undefined; },
+      applySite: async () => undefined, open404: async () => undefined, applyNavigation: async () => undefined,
+      uploadImage: async () => undefined, imageUrl: async () => undefined,
+    });
+    settings.page({ path, source: state.sources[path], route: "/work/one/", images: [] });
+    Object.assign(window, { settingsHarness: state });
+  });
+  const panel = dialog(page, "Page settings");
+  await expect(panel).toBeVisible();
+  return panel;
+}
+const harness = (page: Page) => page.evaluate(() => (window as unknown as { settingsHarness: { sources: Record<string, string>; calls: string[] } }).settingsHarness);
+const release = (page: Page) => page.evaluate(() => (window as unknown as { settingsHarness: { release(): void } }).settingsHarness.release());
+
+test("General and Date typed while Apply waits are kept, and Apply again writes them over the earlier values", async ({ page }) => {
+  const panel = await mountSettings(page);
+  await panel.getByRole("tab", { name: "Fields", exact: true }).click();
+  await panel.getByLabel("Date", { exact: true }).fill("2027-05-01");
+  await panel.getByLabel("New custom field name", { exact: true }).fill("category");
+  await panel.getByLabel("New custom field value", { exact: true }).fill("Clay");
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
+  await panel.getByLabel("Title", { exact: true }).fill("One first");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel.getByRole("status")).toHaveText("Applying drafts…");
+  await expect.poll(async () => (await harness(page)).calls.length).toBe(1);
+  // The Apply waits: type newer values on both tabs.
+  await panel.getByLabel("Title", { exact: true }).fill("One second");
+  await panel.getByRole("tab", { name: "Fields", exact: true }).click();
+  await panel.getByLabel("New custom field value", { exact: true }).fill("Glaze");
+  await panel.getByLabel("Date", { exact: true }).fill("2028-02-02");
+  await release(page);
+
+  await expect(panel.getByRole("status")).toHaveText("Applied the earlier values as drafts. Your newer changes are not applied yet; Apply again to add them.");
+  await expect(panel).toBeVisible();
+  const first = (await harness(page)).sources["work/one/index.html"];
+  expect(first).toContain("<title>One first</title>");
+  expect(first).toContain('<meta name="date" content="2027-05-01">');
+  expect(first).toContain('content="Clay"');
+  // The Fields panel now reads the applied page: the added field is its own, holding the newer value.
+  await expect(panel.getByLabel("Date", { exact: true })).toHaveValue("2028-02-02");
+  await expect(panel.getByLabel("Date", { exact: true })).toBeFocused();
+  await expect(panel.getByLabel("Category", { exact: true })).toHaveValue("Glaze");
+  await expect(panel.getByLabel("New custom field name", { exact: true })).toHaveValue("");
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
+  await expect(panel.getByLabel("Title", { exact: true })).toHaveValue("One second");
+
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect.poll(async () => (await harness(page)).calls.length).toBe(2);
+  expect((await harness(page)).calls[1]).toBe('page {"title":"One second"}');
+  await release(page);
+  await expect(panel).not.toBeVisible();
+  const second = (await harness(page)).sources["work/one/index.html"];
+  expect(second).toContain("<title>One second</title>");
+  expect(second).toContain('<meta name="date" content="2028-02-02">');
+  expect(second).toContain('content="Glaze"');
+  expect(second).not.toContain("One first");
+  expect(second).not.toContain('content="Clay"');
+});
+
+test("an untouched dialog closes after its waiting Apply", async ({ page }) => {
+  const panel = await mountSettings(page);
+  await panel.getByLabel("Title", { exact: true }).fill("One first");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect.poll(async () => (await harness(page)).calls.length).toBe(1);
+  await release(page);
+  await expect(panel).not.toBeVisible();
+});
+
+test("typing while a URL change waits keeps the dialog open and says the typing was not applied", async ({ page }) => {
+  const panel = await mountSettings(page);
+  await panel.getByLabel("URL", { exact: true }).fill("/work/uno/");
+  await panel.getByRole("button", { name: "Change URL", exact: true }).click();
+  await expect.poll(async () => (await harness(page)).calls).toEqual(["url /work/uno/"]);
+  await panel.getByLabel("Title", { exact: true }).fill("Typed meanwhile");
+  await release(page);
+  await expect(panel.getByRole("status")).toHaveText("The URL changed. Edits typed meanwhile were not applied, and closing this dialog discards them. Reopen Page settings to apply them to the moved page.");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Title", { exact: true })).toHaveValue("Typed meanwhile");
+});
+
+test("an untouched dialog closes after its waiting URL change", async ({ page }) => {
+  const panel = await mountSettings(page);
+  await panel.getByLabel("URL", { exact: true }).fill("/work/uno/");
+  await panel.getByRole("button", { name: "Change URL", exact: true }).click();
+  await expect.poll(async () => (await harness(page)).calls.length).toBe(1);
+  await release(page);
+  await expect(panel).not.toBeVisible();
+});

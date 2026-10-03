@@ -44,6 +44,16 @@ async function open(page: Page, baseURL: string | undefined, repo: number, file 
   await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
 }
 
+// Reloads, then waits until the workspace has opened `file` again: the page
+// is current, its preview shown and the repository status read, so the
+// explorer toggle acts on the loaded app rather than the loading shell.
+async function reloaded(page: Page, file: string) {
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
+  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+  await expect(status(page)).toContainText(/ with main/, { timeout: 30_000 });
+}
+
 // The browser draft of `path`, parsed.
 const draft = storedDraft;
 
@@ -199,13 +209,14 @@ test("a typed title survives a reload, and saving commits it in the page", async
   await readSetting(page, "Title", "Fern & Kettle");
   await writeSetting(page, "Title", "Fern & Kettle café");
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
-  await page.reload();
+  await reloaded(page, fernPath);
   await readSetting(page, "Title", "Fern & Kettle café");
   await saveAll(page);
   expect(await branchFile(page, routingRepo, fernPath)).toContain("<title>Fern &amp; Kettle café</title>");
   await expect(saveTrigger(page)).toBeDisabled();
   // Saved on the branch: a fresh load reads it from GitHub, with no draft left.
-  await page.reload();
+  await reloaded(page, fernPath);
+  await expect(status(page)).toContainText("Up to date with main");
   await readSetting(page, "Title", "Fern & Kettle café");
   await expect(page.locator("#current-page")).toHaveText("Fern & Kettle café");
   await expect(saveTrigger(page)).toBeDisabled();
