@@ -342,3 +342,31 @@ test("searching again after a source edit cannot bless old edit bar closures", a
   await expect.poll(() => editorText(page)).toBe(changed);
   await expect(frame.locator("section.filler")).toHaveCount(1);
 });
+
+test("typing in a nested component keeps question mark, undo and Shift+Enter inside the text", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  const text = frame.locator("project-card").first().locator("card-note").locator("p.card-note");
+  await text.click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
+  // A template-owned text node (rather than assigned slot text) is editable inside both shadow roots.
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.insertText('<p class="card-note" data-key="card-note">Nested editable note</p>');
+  await expect(text).toHaveText("Nested editable note");
+  await text.click();
+  await expect(text).toHaveAttribute("contenteditable", /true|plaintext-only/);
+  await expect(page.locator(".canvas-crumb[aria-current=true]")).toHaveText("p.card-note");
+  const before = await text.textContent();
+  await page.keyboard.press("End");
+  await page.keyboard.type("?");
+  await expect(text).toHaveText(`${before}?`);
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden();
+  await expect(palette(page)).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(text).toHaveText(before!);
+  await expect(page.locator(".canvas-crumb[aria-current=true]")).toHaveText("p.card-note");
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.locator(".canvas-crumb[aria-current=true]")).toHaveText("p.card-note");
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden();
+  await expect(palette(page)).toBeHidden();
+});

@@ -1758,8 +1758,13 @@
   // (go to a page or file), and, when not typing, ? (keyboard shortcuts),
   // ⌘Z / ⇧⌘Z / Ctrl+Y (undo, redo), and for a selected section ⌘D
   // (duplicate), Delete or Backspace (remove); Shift+Enter selects the parent.
-  function typingHere() {
+  function typingHere(event) {
     var active = document.activeElement;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+    // A committed element can remain connected after blur; only its live caret is typing.
+    if (editing && editing.isConnected && (active === editing || editing.contains(active))) return true;
+    var target = event && typeof event.composedPath === "function" ? event.composedPath()[0] : event && event.target;
+    if (target instanceof Element && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName))) return true;
     return !!(active && (active.isContentEditable || /^(input|textarea|select)$/.test(active.localName)));
   }
   function textSelectedForLink() {
@@ -1775,7 +1780,7 @@
     var name = null;
     if (mod && !e.altKey && !e.shiftKey && key === "k" && !textSelectedForLink()) name = "palette";
     else if (mod && !e.altKey && !e.shiftKey && key === "p") name = "go";
-    else if (typingHere()) return;
+    else if (typingHere(e)) return;
     else if (e.key === "?" && !mod && !e.altKey) name = "shortcuts";
     else if (mod && !e.altKey && key === "z") name = e.shiftKey ? "redo" : "undo";
     else if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === "y") name = "redo";
