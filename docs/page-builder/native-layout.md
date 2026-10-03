@@ -9,16 +9,23 @@ this leaf does not change Add, main, preview, editor models or drafts.
 
 Grid and Columns produce portable HTML with a shared class and plain CSS, with
 no inline layout or editor attributes. Grid uses responsive grid tracks;
-Columns uses wrapping flex with low-specificity child rules. New rules are
+Columns uses wrapping flex with zero-specificity `:where(.class > div)` child rules. New rules are
 unlayered and use no `!important`; the Style writer can locate and edit the
-class rule and child classes can override the flex default. Existing CSS bytes,
+class rule; ordinary unlayered child classes override the flex default.
+Unlayered defaults still outrank layered declarations, regardless of specificity;
+this leaf does not promise layered overrides. Existing CSS bytes,
 comments, layers and line endings stay before the appended rules.
 
 Insertion uses the existing conservative native HTML-boundary planner. A page
-must have an explicit complete head. An effective direct local stylesheet link
-is reused; conditional, alternate, disabled, named, non-CSS, external or
-query/hash/encoded-slash links are not relied upon. A fresh ordinary relative
-link is added when needed, verified by the existing import-path resolver.
+must have an explicit complete head. An effective direct local stylesheet link is reused with entity-decoded hrefs.
+Existing conditional, alternate, disabled, named, query or indirect import loads
+of the chosen file cause refusal instead of a second link that changes cascade
+order. CSS import chains and inline style imports use the existing import parser
+and resolver; unloaded/external roots or imports prevent a safe reachability
+proof and cause refusal. Base href also causes refusal. Integrity-protected
+references on any known page prevent modifying that sheet. Inert template and
+noscript links do not count as active. A fresh ordinary relative link is added
+only when no existing reachability exists, verified by the import resolver.
 `cssPath` must be a safe repository-local `.css` path; unsafe URL or HTML syntax
 is refused. HTML insertion, link addition and stylesheet text form one operation.
 
@@ -37,3 +44,9 @@ Pure regressions cover source/class collision, escaped class names, stylesheet
 link resolution, new CSS vacancy proof, opaque targets, malformed HTML/CSS,
 layer/CRLF preservation and native Style editing of generated rules. Browser
 layout, Add integration and compound Undo remain host integration checks.
+
+Relative links assume the native route's trailing-slash folder URL. The focused
+suite includes self-contained Chromium checks with routed fixture sources: a
+screen stylesheet followed by a blue theme remains blue when planning refuses,
+and inert head links receive exactly one real active sheet after insertion.
+No application server or host editor integration is involved.

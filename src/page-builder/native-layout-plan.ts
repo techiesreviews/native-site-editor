@@ -1,6 +1,7 @@
 import { asciiLower, startTagAttribute } from '../../shared/html-source';
-import { resolveImportPath } from '../../shared/css-imports';
+import { resolveImportPath, parseCssImports, isExternalImport } from '../../shared/css-imports';
 import type { InsertPoint } from '../components/insert-controls';
+import { parseSource, descendants, type SourceElement } from './component-model';
 import { nativeMarkupInsertEdit } from './native-operations';
 import { validateCssSource, writeCssProperties } from './css-write';
 import { headTags } from './site-head';
@@ -55,16 +56,65 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
     if (!insertion) throw Error('This layout cannot be safely inserted at the selected HTML boundary.');
     let nextPage = page.slice(0, insertion.start) + insertion.text + page.slice(insertion.end);
     const head = headTags(nextPage);
-    const linked = head.tags.some(tag => {
-      if (tag.name !== 'link') return false;
-      const rel = asciiLower(startTagAttribute(nextPage, tag, 'rel')?.value ?? '').split(/[\t\n\f\r ]+/);
-      const href = startTagAttribute(nextPage, tag, 'href')?.value;
-      const type = asciiLower(startTagAttribute(nextPage, tag, 'type')?.value.trim() ?? '');
-      const media = asciiLower(startTagAttribute(nextPage, tag, 'media')?.value.trim() ?? '');
-      return rel.includes('stylesheet') && !rel.includes('alternate') && !startTagAttribute(nextPage, tag, 'disabled') &&
-        (!media || media === 'all') && (!type || type === 'text/css') && !startTagAttribute(nextPage, tag, 'title') && href !== undefined && !/[?#]/.test(href) && !/%(?:2f|5c)/i.test(href) &&
-        resolveImportPath(point.path, href) === cssPath;
-    });
+    const activeElements = (source: string) => {
+      return [...descendants(parseSource(source))].filter(element => {
+        for (let parent = element.parent; parent; parent = parent.parent) if (parent.name === "template" || parent.name === "noscript") return false;
+        return true;
+      });
+    };
+    const attr = (source: string, element: SourceElement, name: string) => {
+      const value = startTagAttribute(source, element.tag, name);
+      return value && decodeHtmlEntities(source.slice(value.valueStart, value.valueEnd), true);
+    };
+    const active = activeElements(nextPage);
+    if (active.some(element => element.name === "base" && attr(nextPage, element, "href") !== undefined)) throw Error('A base href prevents safe stylesheet linking.');
+    for (const [path, source] of Object.entries(sources)) {
+      if (!/\.html$/i.test(path)) continue;
+      const elements = activeElements(source);
+      for (const element of elements) {
+        if (element.name !== "link" || attr(source, element, "integrity") === undefined) continue;
+        const href = attr(source, element, "href");
+        if (href !== undefined && resolveImportPath(path, href) === cssPath) throw Error(`${path} protects ${cssPath} with integrity. Choose another stylesheet.`);
+      }
+    }
+    let linked = false, indirect = false, unknown = false;
+    const visited = new Set<string>();
+    const visit = (path: string) => {
+      if (path === cssPath) { indirect = true; return; }
+      if (visited.has(path)) return;
+      visited.add(path);
+      const source = own(sources, path);
+      if (source === undefined) { unknown = true; return; }
+      for (const item of parseCssImports(source).imports) {
+        const target = resolveImportPath(path, item.url);
+        if (target) visit(target); else unknown = true;
+      }
+    };
+    for (const element of active) {
+      if (element.name === "style") {
+        for (const item of parseCssImports(nextPage.slice(element.tag.end, element.close?.start ?? element.tag.end)).imports) {
+          const target = resolveImportPath(point.path, item.url);
+          if (target) visit(target); else unknown = true;
+        }
+        continue;
+      }
+      if (element.name !== "link") continue;
+      const rel = asciiLower(attr(nextPage, element, "rel") ?? "").split(/[\t\n\f\r ]+/);
+      if (!rel.includes("stylesheet")) continue;
+      const href = attr(nextPage, element, "href");
+      if (href === undefined) continue;
+      const resolved = resolveImportPath(point.path, href);
+      const media = asciiLower((attr(nextPage, element, "media") ?? "").trim());
+      const type = asciiLower((attr(nextPage, element, "type") ?? "").trim());
+      if (resolved === cssPath) {
+        if (rel.includes("alternate") || attr(nextPage, element, "disabled") !== undefined ||
+            (media && media !== "all") || (type && type !== "text/css") || attr(nextPage, element, "title") !== undefined ||
+            /[?#]/.test(href) || /%(?:2f|5c)/i.test(href)) indirect = true;
+        else linked = true;
+      } else if (resolved) visit(resolved);
+      else if (isExternalImport(href)) unknown = true;
+    }
+    if (indirect || unknown) throw Error('This stylesheet is loaded conditionally, indirectly, or cannot be verified. Choose another stylesheet.');
     if (!linked) {
       const from = point.path.split('/').slice(0, -1), to = cssPath.split('/');
       while (from.length && to.length && from[0] === to[0]) { from.shift(); to.shift(); }
@@ -77,7 +127,7 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
     let nextCss = writeCssProperties(css, { selector: `.${className}`, expectedSource: css }, kind === 'grid'
       ? { display: 'grid', 'grid-template-columns': 'repeat(auto-fit, minmax(min(100%, 16rem), 1fr))', gap: '1rem' }
       : { display: 'flex', 'flex-wrap': 'wrap', gap: '1rem' });
-    if (kind === 'columns') nextCss = writeCssProperties(nextCss, { selector: `.${className} > :where(div)`, expectedSource: nextCss }, { flex: '1 1 16rem' });
+    if (kind === 'columns') nextCss = writeCssProperties(nextCss, { selector: `:where(.${className} > div)`, expectedSource: nextCss }, { flex: '1 1 16rem' });
     const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
     expectedSources.set(cssPath, existingCss);
     return { operation: { edits: new Map([[point.path, nextPage], [cssPath, nextCss]]), expectedSources }, className,
