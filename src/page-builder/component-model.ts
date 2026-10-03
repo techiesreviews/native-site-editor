@@ -839,7 +839,14 @@ export function detachMarkup(source: string, template: string, instance: Instanc
         let out = "";
         fill.forEach((part, index) => {
           const before = index ? source.slice(fill[index - 1].end, part.start) : "";
-          if (index && !before.replace(/<!--[\s\S]*?-->/g, "").trim()) out += before;
+          if (index && !name) {
+            // Other named fills are not in this slot, but the text and comments
+            // around them are still assigned to the unnamed slot.
+            let gap = before;
+            for (const element of elements(parseSource(before)).reverse())
+              gap = gap.slice(0, element.start) + gap.slice(element.end);
+            out += gap;
+          }
           out += fillText(part, pass, node);
         });
         return out;

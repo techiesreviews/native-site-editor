@@ -373,3 +373,17 @@ for (const action of ["delete", "reorder"] as const) {
     expect(await editorText(page)).toBe(beforeUpload);
   });
 }
+
+test("browser slot assignment keeps whitespace around an element assigned to another slot", async ({ page }) => {
+  const text = await page.evaluate(() => {
+    const host = document.createElement("x-slot-probe");
+    host.innerHTML = `<b>Hello</b> <span slot="other">Other</span> <i>world</i>`;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<p><slot></slot></p>`;
+    document.body.append(host);
+    const text = root.querySelector("slot")!.assignedNodes().map((node) => node.textContent).join("");
+    host.remove();
+    return text;
+  });
+  expect(text).toBe("Hello  world");
+});

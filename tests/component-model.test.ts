@@ -374,5 +374,7 @@ test("review: detach retains whitespace and comments between fills, without copy
   const source = `<x-card><b>Hello</b> <!-- note --> <i>world</i></x-card>`;
   assert.equal(detachMarkup(source, `<p><slot></slot></p>`, readInstance(source, rangeOf(source, "x-card"))).markup, `<p><b>Hello</b> <!-- note --> <i>world</i></p>`);
   const named = `<x-card><b>Hello</b> <span slot="other">Other</span> <i>world</i></x-card>`;
-  assert.equal(detachMarkup(named, `<p><slot></slot></p>`, readInstance(named, rangeOf(named, "x-card"))).markup, `<p><b>Hello</b><i>world</i></p>`);
+  assert.equal(detachMarkup(named, `<p><slot></slot></p>`, readInstance(named, rangeOf(named, "x-card"))).markup, `<p><b>Hello</b>  <i>world</i></p>`);
+  const slotted = `<x-card><b slot="body">Hello</b> <i slot="body">world</i></x-card>`;
+  assert.equal(detachMarkup(slotted, `<p><slot name="body"></slot></p>`, readInstance(slotted, rangeOf(slotted, "x-card"))).markup, `<p><b>Hello</b><i>world</i></p>`);
 });
