@@ -412,6 +412,7 @@
       pagePaths: payload.pagePaths || {},
       components: payload.components || {},
       componentPaths: payload.componentPaths || {},
+      editableTemplatePath: typeof payload.editableTemplatePath === "string" && Object.values(payload.componentPaths || {}).indexOf(payload.editableTemplatePath) !== -1 ? payload.editableTemplatePath : undefined,
       styles: Array.isArray(payload.styles) ? payload.styles : [],
       styleErrors: Array.isArray(payload.styleErrors) ? payload.styleErrors : [],
       componentStyles: payload.componentStyles || {},

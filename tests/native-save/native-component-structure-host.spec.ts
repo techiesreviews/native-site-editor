@@ -34,7 +34,9 @@ test("Structure edits the page's slotted text in one Undo and keeps shared templ
 test("clicking a nested shared fallback selects the real page instance with its own styles", async ({ page }) => {
   const before = await source(page);
   const fallback = frame(page).locator("project-card").first().locator("card-note p");
-  await fallback.click({ position: { x: 5, y: 5 } });
+  const sharedBefore = await storedDraft(page, "components/card-note/card-note.html");
+  await fallback.dblclick({ position: { x: 5, y: 5 } });
+  await fallback.press("x");
   await expect(fallback).not.toHaveAttribute("contenteditable", /.+/);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(firstCard(page)).toHaveAttribute("aria-selected", "true");
@@ -44,6 +46,7 @@ test("clicking a nested shared fallback selects the real page instance with its 
   await expect(page.locator(".style-panel__hint").filter({ hasText: "Add a class to style this element" })).toBeVisible();
   await expect(page.locator(".style-panel__target")).not.toContainText("card-note");
   expect(await source(page)).toBe(before);
+  expect(await storedDraft(page, "components/card-note/card-note.html")).toEqual(sharedBefore);
 });
 
 test("explicit Edit permits the outer template while nested clicks stay in that scope", async ({ page }) => {
@@ -87,4 +90,30 @@ test("a component selected while CSS is primary routes to its real page before a
   await title.fill("CSS-to-page instance edit"); await title.press("Enter");
   await expect(frame(page).locator("project-card").first().locator('[slot="title"]')).toHaveText("CSS-to-page instance edit");
   expect(await source(page)).toContain("CSS-to-page instance edit");
+});
+
+
+test("explicit Edit permits native typing in an outer template fallback and Undo restores it", async ({ page }) => {
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const match = /<p slot="body">[\s\S]*?<\/p>/.exec(before);
+    if (!match) throw new Error("The page body assignment was not found");
+    editor.replaceActiveRange({ path: "index.html", start: match.index, end: match.index + match[0].length, expected: match[0], text: "" });
+  });
+  await firstCard(page).getByRole("button", { name: "Edit component", exact: true }).click();
+  const path = "components/project-card/project-card.html";
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+  const before = await source(page, path);
+  const body = frame(page).locator("project-card").first().locator(".project-card__body");
+  await expect(body).toHaveText("No description yet.");
+  await body.click({ position: { x: 5, y: 5 } });
+  await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
+  await body.fill("Explicit shared inline edit"); await body.press("Enter");
+  await expect.poll(() => source(page, path)).toBe(before!.replace("No description yet.", "Explicit shared inline edit"));
+  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), path)).toBe(true);
+  await expect.poll(() => source(page, path)).toBe(before);
+  await expect(body).toHaveText("No description yet.");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
 });
