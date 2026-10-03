@@ -1,7 +1,7 @@
 import { asciiLower, startTagAttribute } from '../../shared/html-source';
 import { resolveImportPath, parseCssImports, isExternalImport } from '../../shared/css-imports';
 import type { InsertPoint } from '../components/insert-controls';
-import { parseSource, descendants, type SourceElement } from './component-model';
+import { parseSource, descendants, startTagAttributes, type SourceElement } from './component-model';
 import { nativeMarkupInsertEdit } from './native-operations';
 import { validateCssSource, writeCssProperties } from './css-write';
 import { headTags } from './site-head';
@@ -42,6 +42,10 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
     if (files && Object.keys(sources).some(path => !files.has(path))) throw Error('Loaded sources do not match the file graph.');
     const existingCss = own(sources, cssPath);
     if (existingCss === undefined && (!files || files.has(cssPath))) throw Error(`Load ${cssPath}, or provide the complete file graph proving it is new.`);
+    if (existingCss !== undefined) {
+      if (!files) throw Error('Provide the complete file graph before modifying an existing stylesheet.');
+      for (const path of files) if (/\.html?$/i.test(path) && own(sources, path) === undefined) throw Error(`Load ${path} before modifying ${cssPath}.`);
+    }
     const css = existingCss ?? '';
     validateCssSource(css);
     // Conservative collision search includes all text, decoded HTML entities
@@ -69,15 +73,15 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
     const active = activeElements(nextPage);
     if (active.some(element => element.name === "base" && attr(nextPage, element, "href") !== undefined)) throw Error('A base href prevents safe stylesheet linking.');
     for (const [path, source] of Object.entries(sources)) {
-      if (!/\.html$/i.test(path)) continue;
-      const elements = activeElements(source);
+      if (!/\.html?$/i.test(path)) continue;
+      const elements = [...descendants(parseSource(source))];
       for (const element of elements) {
         if (element.name !== "link" || attr(source, element, "integrity") === undefined) continue;
         const href = attr(source, element, "href");
         if (href !== undefined && resolveImportPath(path, href) === cssPath) throw Error(`${path} protects ${cssPath} with integrity. Choose another stylesheet.`);
       }
     }
-    let linked = false, indirect = false, unknown = false;
+    let linked = false, indirect = false, unknown = false, external = false;
     const visited = new Set<string>();
     const visit = (path: string) => {
       if (path === cssPath) { indirect = true; return; }
@@ -87,34 +91,36 @@ export function planNativeLayoutInsert(input: NativeLayoutInput): NativeLayoutPl
       if (source === undefined) { unknown = true; return; }
       for (const item of parseCssImports(source).imports) {
         const target = resolveImportPath(path, item.url);
-        if (target) visit(target); else unknown = true;
+        if (target) visit(target); else if (isExternalImport(item.url)) external = true; else unknown = true;
       }
     };
     for (const element of active) {
       if (element.name === "style") {
         for (const item of parseCssImports(nextPage.slice(element.tag.end, element.close?.start ?? element.tag.end)).imports) {
           const target = resolveImportPath(point.path, item.url);
-          if (target) visit(target); else unknown = true;
+          if (target) visit(target); else if (isExternalImport(item.url)) external = true; else unknown = true;
         }
         continue;
       }
       if (element.name !== "link") continue;
       const rel = asciiLower(attr(nextPage, element, "rel") ?? "").split(/[\t\n\f\r ]+/);
-      if (!rel.includes("stylesheet")) continue;
       const href = attr(nextPage, element, "href");
       if (href === undefined) continue;
       const resolved = resolveImportPath(point.path, href);
+      if (resolved === cssPath && (!rel.includes("stylesheet") || startTagAttributes(nextPage, element.tag).some(attribute => /^on/.test(attribute.name)))) indirect = true;
+      if (!rel.includes("stylesheet")) continue;
       const media = asciiLower((attr(nextPage, element, "media") ?? "").trim());
       const type = asciiLower((attr(nextPage, element, "type") ?? "").trim());
       if (resolved === cssPath) {
-        if (rel.includes("alternate") || attr(nextPage, element, "disabled") !== undefined ||
+        if (rel.length !== 1 || rel[0] !== "stylesheet" || attr(nextPage, element, "disabled") !== undefined ||
             (media && media !== "all") || (type && type !== "text/css") || attr(nextPage, element, "title") !== undefined ||
             /[?#]/.test(href) || /%(?:2f|5c)/i.test(href)) indirect = true;
         else linked = true;
       } else if (resolved) visit(resolved);
-      else if (isExternalImport(href)) unknown = true;
+      else if (isExternalImport(href)) external = true;
+      else unknown = true;
     }
-    if (indirect || unknown) throw Error('This stylesheet is loaded conditionally, indirectly, or cannot be verified. Choose another stylesheet.');
+    if (indirect || unknown || (external && existingCss !== undefined)) throw Error('This stylesheet is loaded conditionally, indirectly, or cannot be verified. Choose another stylesheet.');
     if (!linked) {
       const from = point.path.split('/').slice(0, -1), to = cssPath.split('/');
       while (from.length && to.length && from[0] === to[0]) { from.shift(); to.shift(); }

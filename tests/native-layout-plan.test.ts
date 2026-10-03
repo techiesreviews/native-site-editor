@@ -5,7 +5,7 @@ import { nativePageStylesheets } from '../shared/native-project';
 import { writeCssProperties, locateWriteRule } from '../src/page-builder/css-write';
 const page='<html><head><title>Page</title></head><body><main><section><p>Keep</p></section></main></body></html>';
 const point={path:'index.html',parent:[0],index:1,top:0,left:0,width:100,before:''};
-function input(extra:Partial<NativeLayoutInput>={}):NativeLayoutInput {return{sources:{'index.html':page,'styles/site.css':'/* keep */\n@layer base { body { color: red; } }\n'},point,kind:'grid',cssPath:'styles/site.css',...extra};}
+function input(extra:Partial<NativeLayoutInput>={}):NativeLayoutInput {const value:NativeLayoutInput={sources:{'index.html':page,'styles/site.css':'/* keep */\n@layer base { body { color: red; } }\n'},point,kind:'grid',cssPath:'styles/site.css',...extra};if(!Object.hasOwn(extra,'files'))value.files=Object.keys(value.sources);return value;}
 function good(value:NativeLayoutInput){const plan=planNativeLayoutInsert(value);if('error'in plan)assert.fail(plan.error);return plan;}
 test('grid produces one guarded HTML/CSS operation, working link, selection and portable class',()=>{
  const before=input(),plan=good(before),html=plan.operation.edits.get('index.html')!,css=plan.operation.edits.get('styles/site.css')!;
@@ -29,7 +29,7 @@ test('subpage existing direct stylesheet is retained and a new stylesheet links 
  assert.ok(fresh.operation.edits.get(sub)!.includes('href="../../styles/layout.css"'));assert.equal(fresh.operation.expectedSources.get('styles/layout.css'),undefined);assert.deepEqual(fresh.expectedFiles,[sub]);
 });
 test('class collisions include other pages, entity attributes and escaped CSS class names',()=>{
- const value=input();value.sources={...value.sources,'other.html':'<div class="native-grid-1 native-grid&#45;2">Other</div>','other.css':'.native-grid\\2d 3 { color: red; }'};
+ const value=input();value.sources={...value.sources,'other.html':'<div class="native-grid-1 native-grid&#45;2">Other</div>','other.css':'.native-grid\\2d 3 { color: red; }'};value.files=Object.keys(value.sources);
  const plan=good(value);assert.equal(plan.className,'native-grid-4');assert.equal(plan.operation.expectedSources.get('other.css'),value.sources['other.css']);
 });
 test('conditional or query loads refuse instead of duplicating a stylesheet after a blue theme',()=>{
@@ -65,7 +65,7 @@ test('inert template/noscript links require one active fresh link, entity hrefs 
  assert.ok('error'in planNativeLayoutInsert(input({sources:{'index.html':page.replace('</head>','<base href="https://cdn.example/"></head>'),'styles/site.css':''}})));
 });
 test('malformed CSS, unsafe paths, missing/opaque CSS and invalid HTML destinations fail whole plan',()=>{
- for(const value of [input({sources:{'index.html':page,'styles/site.css':'.x { color: "unfinished'}}),input({cssPath:'evil".css'}),input({cssPath:'../site.css'}),input({sources:{'index.html':page}}),input({sources:{'index.html':page},files:['index.html','styles/site.css']}),input({sources:{'index.html':page.replace('<head><title>Page</title></head>',''),'styles/site.css':''}}),input({point:{...point,parent:[0,0,0],index:0}})]){
+ for(const value of [input({sources:{'index.html':page,'styles/site.css':'.x { color: "unfinished'}}),input({cssPath:'evil".css'}),input({cssPath:'../site.css'}),input({sources:{'index.html':page},files:undefined}),input({sources:{'index.html':page},files:['index.html','styles/site.css']}),input({sources:{'index.html':page.replace('<head><title>Page</title></head>',''),'styles/site.css':''}}),input({point:{...point,parent:[0,0,0],index:0}})]){
   assert.ok('error'in planNativeLayoutInsert(value));
  }
 });
@@ -96,10 +96,39 @@ test('Chromium preserves blue link order on refusal and recognizes the fresh lin
   }
  }finally{await browser.close();}
 });
-test('unloaded and external import roots refuse unverifiable reachability even for fresh CSS',()=>{
- for(const head of ['<link rel="stylesheet" href="missing.css">','<link rel="stylesheet" href="https://cdn.example/styles.css">','<style>@import "https://cdn.example/styles.css";</style>']){
+test('unloaded local roots and unresolved relative roots refuse unverifiable reachability',()=>{
+ for(const head of ['<link rel="stylesheet" href="missing.css">','<link rel="stylesheet" href="../x.css">']){
   const html=page.replace('</head>',head+'</head>');
   const result=planNativeLayoutInsert(input({sources:{'index.html':html},files:['index.html'],cssPath:'styles/layouts.css'}));
   assert.ok('error'in result);assert.match(result.error,/cannot be verified/);
  }
+});
+test('fresh stylesheet permits external fonts without modifying existing CSS or font links',()=>{
+ const font='<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">';
+ const html=page.replace('</head>',font+'</head>');
+ const plan=good(input({sources:{'index.html':html},files:['index.html'],cssPath:'styles/layouts.css'}));
+ assert.ok(plan.operation.edits.get('index.html')!.includes(font));assert.ok(plan.operation.edits.get('styles/layouts.css')!.includes('display: grid'));
+ const result=planNativeLayoutInsert(input({sources:{'index.html':html,'styles/site.css':''}}));assert.ok('error'in result);
+});
+test('preload/onload and nonstylesheet references refuse adding another copy of the chosen sheet',()=>{
+ for(const rel of ['preload','modulepreload','icon','stylesheet']){
+  const html=page.replace('</head>',`<link rel="${rel}" as="style" href="styles/site.css" onload="this.rel='stylesheet'"><link rel="stylesheet" href="theme.css"></head>`);
+  const result=planNativeLayoutInsert(input({sources:{'index.html':html,'styles/site.css':'body{color:red}','theme.css':'body{color:blue}'}}));
+  assert.ok('error'in result);assert.match(result.error,/Choose another stylesheet/);
+ }
+});
+test('existing CSS modifications require every HTML/HTM loaded and conservatively reject noscript SRI',()=>{
+ const unloaded=planNativeLayoutInsert(input({files:['index.html','other.htm','styles/site.css']}));assert.ok('error'in unloaded);assert.match(unloaded.error,/Load other.htm/);
+ const sri='<noscript><link integrity="sha384-exact" rel="stylesheet" href="styles/site.css"></noscript>';
+ const result=planNativeLayoutInsert(input({sources:{'index.html':page,'other.htm':page.replace('</head>',sri+'</head>'),'styles/site.css':''}}));assert.ok('error'in result);assert.match(result.error,/other.htm.*integrity/);
+});
+test('published preload callback loads before blue theme and planner refuses a duplicate stylesheet',async()=>{
+ const {chromium}=await import('@playwright/test');const browser=await chromium.launch({headless:true});
+ try{
+  const tab=await browser.newPage();const html=page.replace('</head>',`<link id="preload" rel="preload" as="style" href="styles/site.css" onload="this.rel='stylesheet';this.onload=null"><link rel="stylesheet" href="theme.css"></head>`);
+  await tab.route('https://native-layout.test/**',route=>route.fulfill({contentType:route.request().url().endsWith('.css')?'text/css':'text/html',body:route.request().url().endsWith('site.css')?'body {color:rgb(255,0,0)}':route.request().url().endsWith('theme.css')?'body {color:rgb(0,0,255)}':html}));
+  await tab.goto('https://native-layout.test/');await tab.waitForFunction(()=>document.querySelector('#preload')!.getAttribute('rel')==='stylesheet');
+  assert.equal(await tab.evaluate(()=>getComputedStyle(document.body).color),'rgb(0, 0, 255)');assert.equal(await tab.evaluate(()=>document.styleSheets.length),2);
+  assert.ok('error'in planNativeLayoutInsert(input({sources:{'index.html':html,'styles/site.css':'body{color:red}','theme.css':'body{color:blue}'}})));
+ }finally{await browser.close();}
 });

@@ -21,9 +21,12 @@ must have an explicit complete head. An effective direct local stylesheet link i
 Existing conditional, alternate, disabled, named, query or indirect import loads
 of the chosen file cause refusal instead of a second link that changes cascade
 order. CSS import chains and inline style imports use the existing import parser
-and resolver; unloaded/external roots or imports prevent a safe reachability
-proof and cause refusal. Base href also causes refusal. Integrity-protected
-references on any known page prevent modifying that sheet. Inert template and
+and resolver; unloaded local roots and out-of-repository relative URLs prevent
+a safe reachability proof and cause refusal. Existing CSS modifications also
+refuse unknown external roots/imports. A proven new CSS file may coexist with
+external font links because no existing sheet bytes or load order are changed. Base href also causes refusal. Integrity-protected references, including conservative template/noscript scans,
+on loaded HTML/HTM pages prevent modifying that sheet. Existing CSS changes
+require a complete file graph and all HTML/HTM sources loaded first. Inert template and
 noscript links do not count as active. A fresh ordinary relative link is added
 only when no existing reachability exists, verified by the import resolver.
 `cssPath` must be a safe repository-local `.css` path; unsafe URL or HTML syntax
@@ -50,3 +53,10 @@ suite includes self-contained Chromium checks with routed fixture sources: a
 screen stylesheet followed by a blue theme remains blue when planning refuses,
 and inert head links receive exactly one real active sheet after insertion.
 No application server or host editor integration is involved.
+
+Any active link to the chosen CSS path is checked before filtering `rel`.
+Preload/modulepreload and scripted onload links cause refusal, including the
+published loadCSS pattern that turns a preload into a stylesheet. A Chromium
+regression runs that real callback, verifies blue theme order, and proves the
+planner refuses a duplicate. Complete-source and full-file guards remain
+required through any host async preparation and apply.
