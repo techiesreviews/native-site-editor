@@ -15,7 +15,7 @@ import type { NativePreview, NativePreviewSelection } from "../components/native
 import type { EditBarControl } from "../components/edit-bar";
 import type { GridDescription, ItemGridReport } from "../components/card-grid-controls";
 import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
-import { nativeNewPageTitle, nativePageTemplate, withoutStructuredData, type Checked } from "../native-create";
+import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
@@ -102,6 +102,9 @@ export function createCards(deps: CardsDeps) {
     const slug = slugify(title);
     if (!title.trim()) return { ok: false, error: "Enter the page's title." };
     if (!slug) return { ok: false, error: "The title gives no URL: add letters or digits." };
+    // Only a URL a page could have, never one that leaves the site's folders.
+    const parent = normalizeRoute(collection);
+    if (!parent.ok || parent.value !== collection) return { ok: false, error: `${collection} is not a URL a page can have.` };
     return nativeNewTarget(collection, slug, { route: (route) => site.routes[route], exists: deps.exists });
   }
 
@@ -317,7 +320,7 @@ export function createCards(deps: CardsDeps) {
     if (!site || parent === "/") return undefined;
     for (const [route, file] of Object.entries(site.routes)) {
       const source = deps.source(file);
-      if (source === undefined || !source.includes(parent)) continue;
+      if (source === undefined) continue;
       const grid = pageGrids(source, context(route)).find((item) => item.collection === parent);
       if (grid) return { file, route, source, grid };
     }
@@ -384,7 +387,7 @@ export function createCards(deps: CardsDeps) {
       for (const [pageRoute, file] of Object.entries(site.routes)) {
         if (except.has(file)) continue;
         const source = deps.source(file);
-        if (source === undefined || !source.includes(route.replace(/\/$/, ""))) continue;
+        if (source === undefined) continue;
         const removals: RangeEdit[] = [];
         for (const grid of pageGrids(source, context(pageRoute))) {
           if (!grid.collection) continue;

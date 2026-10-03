@@ -202,3 +202,87 @@ test("a subpage made in the Pages tab gets its card, deleting it takes the card 
   await expect(status(page)).toContainText("URL changed to /work/fern/");
   await expect.poll(() => homeDraft(page)).toContain(`<a slot="link" href="/work/fern/">Read about Fern &amp; Kettle</a>`);
 });
+
+async function pasteInto(page: Page, source: string) {
+  const textbox = page.locator(`#content [role="textbox"]`).first();
+  await expect(textbox).toBeAttached({ timeout: 20_000 });
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), source);
+  await textbox.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+}
+
+test("review: typing in the page's code between creating and undoing still undoes the card and its page together", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await frame(page).locator("card-project").first().hover();
+  await addCard(page).click();
+  await popover(page).getByRole("textbox", { name: "Page title" }).fill("Oak");
+  await page.keyboard.press("Enter");
+  await expect(frame(page).locator("card-project")).toHaveCount(3);
+  await expect.poll(async () => Boolean(await storedDraft(page, "work/oak/index.html"))).toBe(true);
+  // Typing in the source clears the visual history; Monaco's own undo now takes the steps back.
+  const textbox = page.locator(`#content [role="textbox"]`).first();
+  await textbox.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+Home");
+  await page.keyboard.type("x");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(frame(page).locator("card-project")).toHaveCount(2);
+  await expect.poll(async () => await storedDraft(page, "work/oak/index.html")).toBeUndefined();
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await expect(frame(page).locator("card-project")).toHaveCount(3);
+  await expect.poll(async () => Boolean(await storedDraft(page, "work/oak/index.html"))).toBe(true);
+});
+
+// Cards of plain HTML with relative links and a grid of facts inside each card.
+const nestedHome = `<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <title>Small websites · Larkspur Studio</title>
+  <link rel="stylesheet" href="/styles/site.css">
+</head>
+<body>
+  <main class="page" id="main">
+    <section class="flow" id="work">
+      <h2>Recent work</h2>
+      <div class="cards">
+        <article class="card">
+          <h3><a href="work/fern-and-kettle/">Fern &amp; Kettle</a></h3>
+          <div class="fact">Cafe</div>
+          <div class="fact">2025</div>
+        </article>
+        <article class="card">
+          <h3><a href="work/harbour-lane-pottery/">Harbour Lane Pottery</a></h3>
+          <div class="fact">Ceramics</div>
+          <div class="fact">2024</div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+`;
+
+test("review: a card holding a grid of its own is its grid's card; Alt+arrows move it from the canvas; relative links count in the Pages tab", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await pasteInto(page, nestedHome);
+  const cards = frame(page).locator("article.card");
+  await expect(cards).toHaveCount(2);
+  // Select the second card: the outer grid is its grid, a list of pages, so Add card asks for a page.
+  await cards.nth(1).locator(".fact").first().click();
+  await bar(page).getByRole("button", { name: "Select card" }).click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
+  await bar(page).getByRole("button", { name: "Add card" }).click();
+  await expect(popover(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  // Alt+Up pressed in the canvas moves the selected card.
+  await frame(page).locator("html").dispatchEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true });
+  await expect(status(page)).toHaveText("Card moved left");
+  await expect(cards.locator("h3")).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  // The Pages tab finds the grid through its relative links.
+  await openPages(page);
+  await item(page, "Work").hover();
+  await explorer(page).getByRole("button", { name: "Add subpage to Work" }).click();
+  await expect(explorer(page).getByRole("checkbox", { name: "Add a card to “Recent work” on Home" })).toBeChecked();
+});

@@ -116,6 +116,23 @@ type HistoryAction = { path: string; action: () => void | Promise<void> };
 const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
 const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: VisualHistoryEntry[] }>();
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
+// A companion of a single (ungrouped) edit runs whenever the model itself is undone to before
+// that edit or redone to after it, by the toolbar, the keyboard or Monaco's own stack once the
+// visual history has been cleared by typing, so the other file never drifts from the edit.
+type CompanionMark = { before: number; after: number; done: boolean; companion: HistoryCompanion };
+const companionMarks = new WeakMap<monaco.editor.ITextModel, CompanionMark[]>();
+function runCompanions(model: monaco.editor.ITextModel, undoing: boolean) {
+  const version = model.getAlternativeVersionId();
+  for (const mark of companionMarks.get(model) ?? []) {
+    if (undoing && mark.done && version === mark.before) {
+      mark.done = false;
+      mark.companion.undo();
+    } else if (!undoing && !mark.done && version === mark.after) {
+      mark.done = true;
+      mark.companion.redo();
+    }
+  }
+}
 const historyFor = (session: string) => {
   let history = visualHistory.get(session);
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
@@ -570,11 +587,19 @@ export function mountCodeEditor(
       const target = rangeOf(edit);
       if (edit.text === edit.expected) return;
       if (!group) current.model.pushStackElement();
+      const before = current.model.getAlternativeVersionId();
       routedModelChanges.add(current.model);
       try { current.model.pushEditOperations([], [{ range: target, text: edit.text }], () => null); }
       finally { routedModelChanges.delete(current.model); }
       if (!group) current.model.pushStackElement();
-      recordVisualEdit(session, file.path, current.model, group, companion);
+      // An ungrouped edit's companion follows the model's own undo and redo (`runCompanions`).
+      const marked = companion && !group;
+      if (marked) {
+        const marks = companionMarks.get(current.model) ?? [];
+        marks.push({ before, after: current.model.getAlternativeVersionId(), done: true, companion });
+        companionMarks.set(current.model, marks.slice(-50));
+      }
+      recordVisualEdit(session, file.path, current.model, group, marked ? undefined : companion);
       view?.setSelection(
         monaco.Range.fromPositions(
           current.model.getPositionAt(edit.start),
@@ -909,6 +934,7 @@ export function mountCodeEditor(
   });
   const subscription = current.model.onDidChangeContent((event) => {
     if (!routedModelChanges.has(current.model)) invalidateVisualHistory(session);
+    if (event.isUndoing || event.isRedoing) runCompanions(current.model, event.isUndoing);
     update(event.changes.map((change) => ({
       start: change.rangeOffset,
       end: change.rangeOffset + change.rangeLength,

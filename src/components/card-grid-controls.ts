@@ -222,17 +222,22 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       if (!planned?.ok) { input.focus(); return; }
       pending = true;
       create.disabled = true;
+      let error: string | undefined;
       try {
-        const error = await handlers.addPage(grid, input.value.trim());
-        if (error) {
-          message.textContent = error;
-          message.hidden = false;
-          input.focus();
-        } else close(false);
+        error = await handlers.addPage(grid, input.value.trim());
+      } catch (thrown) {
+        error = thrown instanceof Error ? thrown.message : "The page could not be created.";
       } finally {
         pending = false;
-        if (open) check();
       }
+      if (!error) { close(false); return; }
+      // The failure stays shown until the title changes; the button can try again.
+      if (!open) return;
+      check();
+      message.textContent = error;
+      message.hidden = false;
+      input.setAttribute("aria-invalid", "true");
+      input.focus();
     };
     check();
     popover.hidden = false;

@@ -6,6 +6,7 @@
 
 import { MARK, markedRange, parseMarked, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
+import { normalizeRoute } from "../native-create";
 import { collectionParent, elementTree, itemKind, itemNoun, NOT_GRIDS, repeatedRun, type SourceElement } from "./card-grid";
 
 /** A grid (or list) of repeated items in a page's source. */
@@ -48,10 +49,20 @@ function childAt(root: ParentNode, path: number[]): Element | ParentNode | undef
 export function linkRoute(href: string, context: GridContext): string | undefined {
   const known = nativeLinkTarget(href, context.route, context.routes);
   if (known) return known;
+  // A page that is not there (yet): the URL resolved as the browser would (`..` and all), and only a
+  // folder URL a page could have (`normalizeRoute`), so a link never names a path outside the site.
   const value = href.trim();
-  if (!value.startsWith("/") || value.startsWith("//")) return undefined;
-  const path = value.split(/[?#]/)[0];
-  return isFolderRoute(path) && path !== "/" ? path : undefined;
+  if (!value || value.startsWith("#") || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value)) return undefined;
+  let path: string;
+  try {
+    const url = new URL(value, `https://site.invalid${context.route.startsWith("/") ? context.route : `/${context.route}`}`);
+    if (url.origin !== "https://site.invalid") return undefined;
+    path = decodeURI(url.pathname);
+  } catch {
+    return undefined;
+  }
+  const route = normalizeRoute(path);
+  return route.ok && route.value === path && isFolderRoute(path) && path !== "/" ? path : undefined;
 }
 
 /** The route an item links to: its first link to a page below the top level. */

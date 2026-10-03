@@ -85,7 +85,8 @@ export function aOr(noun: string): string {
  */
 export function collectionParent(routes: (string | undefined)[]): string | undefined {
   const linked = routes.filter((route): route is string => Boolean(route));
-  if (linked.length < 2 || new Set(linked).size !== linked.length) return undefined;
+  // Two different pages at least; a duplicated card (two links to one page) does not undo that.
+  if (new Set(linked).size < 2) return undefined;
   const parents = new Set(linked.map((route) => (isFolderRoute(route) ? parentOf(route) : undefined)));
   if (parents.size !== 1) return undefined;
   const [parent] = parents;
@@ -203,7 +204,8 @@ export function textLeaves(source: string, elements: SourceElement[]): SourceEle
   const out: SourceElement[] = [];
   const inlineOnly = (element: SourceElement): boolean => element.children.every((child) => INLINE.has(child.name) && inlineOnly(child));
   const visit = (element: SourceElement) => {
-    if (VOID_ELEMENTS.has(element.name)) return;
+    // Scripts, styles and templates are not text to reset: they stay as written.
+    if (VOID_ELEMENTS.has(element.name) || RAW_TEXT.has(element.name) || element.name === "template") return;
     if (inlineOnly(element) && plainText(source.slice(element.innerStart, element.innerEnd))) {
       out.push(element);
       return;
@@ -361,13 +363,18 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
       if (element.name !== "a" || inRemoved(element.start)) continue;
       const href = startTagAttribute(source, element.tag, "href");
       if (!href || !source.slice(href.start, href.end).includes("=") || (options.isLinked && !options.isLinked(href.value))) continue;
-      edits.push({ start: href.valueStart, end: href.valueEnd, text: escapeAttribute(options.href) });
+      edits.push(hrefEdit(href, options.href));
     }
   for (const leaf of removed) edits.push({ ...ownLines(source, leaf), text: "" });
   // Applied to the item's own markup.
   const own = edits
     .map((edit) => ({ start: Math.max(edit.start, item.start) - item.start, end: Math.min(edit.end, item.end) - item.start, text: edit.text }));
   return applyEdits(source.slice(item.start, item.end), own);
+}
+
+/** The whole `href` attribute rewritten, quoted, so an unquoted or empty value cannot run into the next attribute. */
+function hrefEdit(href: { start: number; end: number }, value: string): Edit {
+  return { start: href.start, end: href.end, text: ` href="${escapeAttribute(value)}"` };
 }
 
 function escapeAttribute(value: string) {
@@ -465,7 +472,7 @@ export function pageBodyCopy(source: string, main: { start: number; end: number 
     if (!href || target === undefined || !source.slice(href.start, href.end).includes("=")) continue;
     const rest = href.value.trim().slice(target.length);
     if (target === options.from || target === options.from.replace(/\/$/, "") || target === `${options.from}index.html`)
-      edits.push({ start: href.valueStart, end: href.valueEnd, text: escapeAttribute(`${options.to}${rest}`) });
+      edits.push(hrefEdit(href, `${options.to}${rest}`));
   }
   return applyEdits(source, [...edits, ...replaced]);
 }

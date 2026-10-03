@@ -179,6 +179,28 @@ test("with one sibling, headings and paragraphs with links stay and self links f
   assert.match(copy, /<p>A sentence or two about Oak.<\/p>/);
 });
 
+test("review: a duplicated card still leaves a collection of two different pages", () => {
+  assert.equal(collectionParent(["/work/a/", "/work/b/", "/work/b/"]), "/work/");
+  assert.equal(collectionParent(["/work/a/", "/work/a/"]), undefined);
+});
+
+test("review: scripts and styles are not text to reset", () => {
+  const html = `<main><h1>Fern</h1><style>p { color: red }</style><p>Fern opened.</p><script>console.log("x")</script></main>`;
+  const copy = pageBodyCopy(html, { start: 6, end: html.length - 7 }, undefined, { title: "Oak", from: "/work/fern/", to: "/work/oak/" })!;
+  assert.match(copy, /<style>p \{ color: red \}<\/style>/);
+  assert.match(copy, /<script>console.log\("x"\)<\/script>/);
+  assert.match(copy, /<p>A sentence or two about Oak.<\/p>/);
+});
+
+test("review: an unquoted link address is rewritten as a whole quoted attribute", () => {
+  const html = `<div><article class=card><h3>Old</h3><a href=/work/old/ class=button>More</a></article><article class=card><h3>B</h3></article></div>`;
+  const item = elementTree(html)![0].children[0];
+  assert.equal(itemCopy(html, item, { noun: "card", href: "", isLinked: () => true }),
+    `<article class=card><h3>New card</h3><a href="" class=button>More</a></article>`);
+  const page = `<main><a href=/work/old/#x class=b>Self</a></main>`;
+  assert.match(pageBodyCopy(page, { start: 6, end: page.length - 7 }, undefined, { title: "N", from: "/work/old/", to: "/work/new/" })!, /<a href="\/work\/new\/#x" class=b>/);
+});
+
 test("a card's link follows its page's URL change", () => {
   const changed = rewriteRouteLinks(grid, "/work/harbour-lane/", "/projects/harbour-lane/");
   assert.equal(changed.count, 1);

@@ -721,7 +721,10 @@
   }
   function gridItemOf(el) {
     var current = el;
-    // The grid itself (the gap between its items) counts as its last item.
+    // An item itself first (a card holding a grid of its own is still its grid's card); then
+    // the grid itself (the gap between its items), which counts as its last item.
+    var mine = el && el.parentElement && el.parentElement !== pageEl && pageEl && pageEl.contains(el.parentElement) ? repeatedItems(el.parentElement) : null;
+    if (mine && mine.indexOf(el) >= 0) return { container: el.parentElement, item: el, items: mine };
     var own = el && el !== pageEl && pageEl && pageEl.contains(el) ? repeatedItems(el) : null;
     if (own) return { container: el, item: own[own.length - 1], items: own };
     while (pageEl && current && current !== pageEl) {
@@ -1750,7 +1753,10 @@
     // elements, and typing in a text element, keep the browser's own behaviour.
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       var active = document.activeElement;
-      if (!selected || !selected.isConnected || !sectionLike(selected) || editing || (active && active.isContentEditable)) return;
+      if (!selected || !selected.isConnected || editing || (active && active.isContentEditable)) return;
+      // A section, or an item of a grid (a card): the editor moves it among its siblings.
+      var gridItem = sectionLike(selected) ? null : gridItemOf(selected);
+      if (!sectionLike(selected) && !(gridItem && gridItem.item === selected)) return;
       e.preventDefault();
       emit("move", { direction: e.key === "ArrowUp" ? "up" : "down" });
       return;
