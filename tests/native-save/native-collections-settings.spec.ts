@@ -82,3 +82,21 @@ test('untouched Settings fields pass a changed metadata candidate through and of
  expect(proof.dirty).toBe(false);expect(proof.result).toBe(proof.candidate);
  await expect(page.getByRole('button',{name:/Edit page:|Edit card design in source/})).toHaveCount(0);
 });
+
+test('page field stamps are stable reads and include newer Date and custom-entry typing',async({page,baseURL})=>{
+ await mount(page,baseURL);
+ const initial=await page.evaluate(()=>{const panel=(window as any).collectionSettings.panel;return[panel.pageFieldsStamp(),panel.pageFieldsStamp()];});
+ expect(typeof initial[0]).toBe('string');expect(initial[1]).toBe(initial[0]);
+ await page.getByLabel('New custom field name').fill('price');
+ const named=await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp());expect(named).not.toBe(initial[0]);
+ await page.getByLabel('New custom field value').fill('10');
+ const valued=await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp());expect(valued).not.toBe(named);
+ await page.getByLabel('Date',{exact:true}).fill('2026-10-03');
+ const dated=await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp());expect(dated).not.toBe(valued);
+ expect(await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp())).toBe(dated);
+ await page.evaluate(()=>(window as any).collectionSettings.panel.destroy());
+ expect(await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp())).toBeUndefined();
+ await mount(page,baseURL,false);
+ await page.evaluate(()=>{const h=(window as any).collectionSettings;h.panel.openGrid('index.html',h.start);});
+ expect(await page.evaluate(()=>(window as any).collectionSettings.panel.pageFieldsStamp())).toBeUndefined();
+});

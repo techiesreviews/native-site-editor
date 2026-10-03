@@ -38,7 +38,11 @@ settings. New custom names must be unique; edit an existing row to change its va
 
 On successful parent Apply, the host may destroy/remount the Fields controller
 only if the captured submitted form and all its input values still match. Capture
-those values when starting Apply, before awaiting the host operation. If the user
+`pageFieldsStamp()` when starting Apply, before awaiting the host operation,
+and compare it on the same controller afterward. This readonly getter returns
+the actual field input stamp (including the new custom name/value), or
+`undefined` when no page-field form is active. Do not call `update()` after an own
+success before making that stamp comparison. If the user
 typed newer values during that wait, retain the controller and those values;
 its old proof refuses another write until the dialog is deliberately reopened.
 `update()` is a refresh, not a success-reset hook, and does not discard dirty input.

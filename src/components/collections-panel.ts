@@ -20,6 +20,7 @@ export interface CollectionsPanel {
   update(): void;
   openGrid(path: string, sourceStart: number): void;
   pageFieldsDirty(): boolean;
+  pageFieldsStamp(): string | undefined;
   pageFieldSource(source: string): string;
   destroy(): void;
 }
@@ -193,6 +194,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   update();
   return { update, openGrid,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
+    pageFieldsStamp: () => !destroyed && fieldForm && activeForm === fieldForm ? stamp(fieldForm) : undefined,
     pageFieldSource(source) {
       if (destroyed) throw new Error("Open a page to edit its fields.");
       if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return source;
