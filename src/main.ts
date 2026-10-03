@@ -144,6 +144,7 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
+      <button type="button" id="add-panel-toggle" class="topbar-add" title="Add a section to the page" hidden>${iconMarkup("plus")} Add</button>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
         <div id="setup-checklist"></div>
@@ -318,7 +319,14 @@ function mountWorkspace() {
       if (!agentMenu) throw new Error("No agent is connected.");
       await agentMenu.answer(id, text);
     },
+    // The Add panel docks over the page structure sidebar.
+    addPanelDock: () => {
+      const area = app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();
+      const side = app.querySelector<HTMLElement>(".workspace > .sidebar")?.getBoundingClientRect();
+      return area && { left: area.left, top: area.top, bottom: Math.min(area.bottom, innerHeight), width: side?.width ?? 320 };
+    },
   });
+  nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
   pageStructure = createPageStructure(element("structure"), {
     label: (item) => structureLabel(item, Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag))),
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),

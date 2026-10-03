@@ -2,15 +2,14 @@ import { node, button } from "../ui/dom";
 import { icon } from "../icons";
 import "./insert-controls.css";
 
-// Plus buttons between page sections and the picker they open. The preview
-// runtime reports each place a section can go (the gaps between the children
-// of a page element that holds sections); the buttons sit over the frame on
-// those gaps, shown only just above and below the item under the pointer
-// (or while focused or open). While a section is dragged in the preview,
-// every gap of its parent shows instead, the one under the pointer expanded
-// and labelled "Drop section here". The picker lists only components that
-// fit a section slot and follows the User Editor INSERT contract: title,
-// exact position, search, arrow keys, Enter, Escape back to the plus.
+// Plus buttons between page sections. The preview runtime reports each
+// place a section can go (the gaps between the children of a page element
+// that holds sections); the buttons sit over the frame on those gaps, shown
+// only just above and below the item under the pointer (or while focused or
+// open). A plus opens the Add panel (src/page-builder/add-panel.ts) for its
+// gap. While a section is dragged in the preview, or one is dragged from
+// the Add panel, every gap of the target's parent shows instead, the one
+// under the pointer expanded and labelled "Drop section here".
 
 export interface InsertPoint {
   // Page file the point belongs to.
@@ -25,6 +24,12 @@ export interface InsertPoint {
   width: number;
   // Label of the item the insertion goes before; empty at the end.
   before: string;
+  // The containing element's tag ("" for the page root).
+  tag?: string;
+  // The point is a <main> with no element and no text: the canvas shows its empty
+  // state there (src/page-builder/canvas-overlays.ts), `height` tall.
+  empty?: boolean;
+  height?: number;
 }
 
 export interface InsertChoice {
@@ -33,30 +38,29 @@ export interface InsertChoice {
 }
 
 interface InsertHandlers {
-  choices(): InsertChoice[];
-  onInsert(point: InsertPoint, choice: InsertChoice): void;
+  // A plus was pressed: open the Add panel for its point.
+  onOpen(point: InsertPoint, plus: HTMLElement): void;
+  // The plus of the point the panel is open for was pressed again.
+  onClose?(): void;
 }
 
 const keyOf = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
 
 export function createInsertControls(pane: HTMLElement, frame: HTMLElement, handlers: InsertHandlers) {
   const layer = node("div", "insert-layer");
-  const picker = node("div", "insert-picker");
-  picker.setAttribute("role", "dialog");
-  picker.tabIndex = -1;
-  picker.hidden = true;
-  pane.append(layer, picker);
+  pane.append(layer);
 
   let points: InsertPoint[] = [];
   const plusByKey = new Map<string, HTMLElement>();
   let openKey: string | undefined;
-  let query = "";
   // The hovered item in the preview: its container's path and its index there.
   let near: { parent: string; index: number } | undefined;
   let pointerOnPlus = false;
   let leaveTimer = 0;
-  // A section being dragged in the preview: its parent's gaps are the targets.
+  // A section being dragged in the preview, or one from the Add panel: its
+  // parent's gaps are the targets.
   let drag: { parent: string; index: number | undefined } | undefined;
+  let dropLabel = "Drop section here";
 
   function geometry() {
     const frameRect = frame.getBoundingClientRect();
@@ -102,7 +106,9 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       const where = point.before ? `before “${point.before}”` : "at the end";
       plus.setAttribute("aria-label", `Add a section ${where}`);
       plus.title = `Add a section ${where}`;
-      row.hidden = point.top < 0 || point.top > frameRect.height;
+      // An empty <main> shows the canvas's empty state in its place.
+      row.hidden = point.top < 0 || point.top > frameRect.height || Boolean(point.empty);
+      row.querySelector(".insert-point__drop")!.textContent = dropLabel;
       row.classList.toggle("is-near", Boolean(near && near.parent === point.parent.join(".") &&
         (point.index === near.index || point.index === near.index + 1)));
       const inDrag = Boolean(drag && drag.parent === point.parent.join("."));
@@ -115,33 +121,11 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       row.remove();
       plusByKey.delete(key);
     }
-    if (openKey && !plusByKey.has(openKey)) close(false);
-    else if (openKey) placePicker();
+    if (openKey && !plusByKey.has(openKey)) openKey = undefined;
   }
   const resize = new ResizeObserver(() => layout());
   resize.observe(frame);
   resize.observe(pane);
-
-  function placePicker() {
-    const row = openKey ? plusByKey.get(openKey) : undefined;
-    if (!row) return;
-    const { frameRect, left, top } = geometry();
-    const plus = row.querySelector<HTMLElement>(".insert-point__plus")!;
-    const anchor = plus.getBoundingClientRect();
-    const paneRect = pane.getBoundingClientRect();
-    const width = Math.min(320, frameRect.width - 24);
-    picker.style.width = `${width}px`;
-    const height = picker.offsetHeight;
-    const anchorTop = anchor.top - paneRect.top;
-    const anchorBottom = anchor.bottom - paneRect.top;
-    const below = anchorBottom + 6;
-    const above = anchorTop - 6 - height;
-    const fitsBelow = below + height <= top + frameRect.height - 12;
-    const y = fitsBelow || above < top + 12 ? Math.min(below, top + frameRect.height - 12 - height) : above;
-    const x = anchor.left - paneRect.left + anchor.width / 2 - width / 2;
-    picker.style.top = `${Math.max(top + 12, y)}px`;
-    picker.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
-  }
 
   function scheduleLeave() {
     clearTimeout(leaveTimer);
@@ -152,157 +136,29 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     }, 300);
   }
 
-  function point() {
-    return points.find((item) => keyOf(item) === openKey);
-  }
-
-  function options() {
-    return [...picker.querySelectorAll<HTMLButtonElement>(".insert-picker__option")];
-  }
-
-  function renderPicker(focusSearch: boolean) {
-    const at = point();
-    if (!at) return;
-    const all = handlers.choices();
-    const needle = query.trim().toLowerCase();
-    const matches = all.filter((choice) => !needle ||
-      choice.label.toLowerCase().includes(needle) || choice.tag.includes(needle));
-    const title = node("h2", "insert-picker__title", "Add to the page");
-    title.id = "insert-picker-title";
-    picker.setAttribute("aria-labelledby", title.id);
-    const position = node("p", "insert-picker__position", at.before ? `Goes before “${at.before}”` : "Goes at the end");
-    const scope = node("p", "insert-picker__scope", "Components whose template is a single section.");
-    const children: HTMLElement[] = [title, position];
-    if (!all.length) {
-      children.push(node("p", "insert-picker__empty",
-        "No components fit here yet. A component fits between sections when its template is one <section> element."));
-      picker.replaceChildren(...children);
-      return;
-    }
-    const search = document.createElement("input");
-    search.type = "search";
-    search.className = "insert-picker__search";
-    search.placeholder = "Search components";
-    search.setAttribute("aria-label", "Search components");
-    search.value = query;
-    search.addEventListener("input", () => {
-      query = search.value;
-      renderPicker(true);
-    });
-    search.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        options()[0]?.focus();
-      } else if (event.key === "Enter" && matches.length === 1) {
-        event.preventDefault();
-        choose(matches[0]);
-      }
-    });
-    children.push(search, scope);
-    if (!matches.length) {
-      const empty = node("div", "insert-picker__empty");
-      empty.append(
-        node("p", "", `No components match “${query.trim()}”. Only components that fit a section slot are listed.`),
-        button("Clear search", () => {
-          query = "";
-          renderPicker(true);
-        }, "insert-picker__clear"),
-      );
-      children.push(empty);
-    } else {
-      const list = node("div", "insert-picker__list");
-      list.setAttribute("role", "listbox");
-      list.setAttribute("aria-label", "Components");
-      for (const choice of matches) {
-        const option = button("", () => choose(choice), "insert-picker__option");
-        option.setAttribute("role", "option");
-        option.append(node("span", "insert-picker__name", choice.label), node("code", "insert-picker__tag", `<${choice.tag}>`));
-        list.append(option);
-      }
-      children.push(list);
-    }
-    picker.replaceChildren(...children);
-    if (focusSearch) {
-      search.focus();
-      search.setSelectionRange(search.value.length, search.value.length);
-    }
-  }
-
-  picker.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close(true);
-      return;
-    }
-    const target = event.target as HTMLElement;
-    if (!target.classList.contains("insert-picker__option")) return;
-    const items = options();
-    const index = items.indexOf(target as HTMLButtonElement);
-    let next: number | undefined;
-    if (event.key === "ArrowDown") next = Math.min(index + 1, items.length - 1);
-    else if (event.key === "ArrowUp") next = index - 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = items.length - 1;
-    else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      // Typing on an option keeps refining the search.
-      event.preventDefault();
-      query += event.key;
-      renderPicker(true);
-      return;
-    }
-    if (next === undefined) return;
-    event.preventDefault();
-    if (next < 0) picker.querySelector<HTMLInputElement>(".insert-picker__search")?.focus();
-    else items[next]?.focus();
-  });
-  picker.addEventListener("focusout", (event) => {
-    const to = event.relatedTarget as Node | null;
-    if (to && (picker.contains(to) || plusByKey.get(openKey ?? "")?.contains(to))) return;
-    // Re-rendering the list moves focus inside the picker without a target.
-    queueMicrotask(() => {
-      if (!picker.contains(document.activeElement)) close(false);
-    });
-  });
-  function onPointerDown(event: PointerEvent) {
-    const target = event.target as Node;
-    if (!openKey || picker.contains(target) || plusByKey.get(openKey)?.contains(target)) return;
-    close(false);
-  }
-  document.addEventListener("pointerdown", onPointerDown, true);
-
   function toggle(key: string) {
     if (openKey === key) {
-      close(true);
+      handlers.onClose?.();
       return;
     }
-    close(false);
+    const at = points.find((item) => keyOf(item) === key);
+    const plus = plusByKey.get(key)?.querySelector<HTMLElement>(".insert-point__plus");
+    if (at && plus) handlers.onOpen(at, plus);
+  }
+
+  /** Marks the plus whose point the Add panel is open for (none: closed), and gives it focus back on close. */
+  function markOpen(key: string | undefined, restoreFocus = false) {
+    const previous = openKey ? plusByKey.get(openKey) : undefined;
     openKey = key;
-    query = "";
-    const row = plusByKey.get(key);
+    if (previous && previous !== (key ? plusByKey.get(key) : undefined)) {
+      previous.classList.remove("is-open");
+      const plus = previous.querySelector<HTMLElement>(".insert-point__plus");
+      plus?.setAttribute("aria-expanded", "false");
+      if (restoreFocus) plus?.focus();
+    }
+    const row = key ? plusByKey.get(key) : undefined;
     row?.classList.add("is-open");
     row?.querySelector(".insert-point__plus")?.setAttribute("aria-expanded", "true");
-    picker.hidden = false;
-    renderPicker(true);
-    placePicker();
-    if (!picker.contains(document.activeElement)) picker.focus();
-  }
-
-  function close(restoreFocus: boolean) {
-    const row = openKey ? plusByKey.get(openKey) : undefined;
-    openKey = undefined;
-    picker.hidden = true;
-    picker.replaceChildren();
-    row?.classList.remove("is-open");
-    const plus = row?.querySelector<HTMLElement>(".insert-point__plus");
-    plus?.setAttribute("aria-expanded", "false");
-    if (restoreFocus) plus?.focus();
-  }
-
-  function choose(choice: InsertChoice) {
-    const at = point();
-    close(false);
-    if (at) handlers.onInsert(at, choice);
   }
 
   return {
@@ -323,7 +179,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     },
     /** A section drag began in the preview: show its parent's gaps, no plus buttons. */
     dragStart(gap: { parent: number[]; index: number }) {
-      close(false);
+      if (openKey) handlers.onClose?.();
       clearTimeout(leaveTimer);
       near = undefined;
       drag = { parent: gap.parent.join("."), index: undefined };
@@ -339,10 +195,24 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     dragEnd() {
       if (!drag) return;
       drag = undefined;
+      dropLabel = "Drop section here";
       layout();
     },
+    /**
+     * A section dragged from the Add panel is over `gap` (none: off the
+     * canvas): its parent's gaps show, that one labelled `label`.
+     */
+    showDrop(gap: { parent: number[]; index: number } | undefined, label = "Drop section here") {
+      clearTimeout(leaveTimer);
+      near = undefined;
+      dropLabel = label;
+      drag = gap ? { parent: gap.parent.join("."), index: gap.index } : undefined;
+      layout();
+    },
+    markOpen,
     clear() {
-      close(false);
+      if (openKey) handlers.onClose?.();
+      openKey = undefined;
       near = undefined;
       drag = undefined;
       points = [];
@@ -351,9 +221,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     destroy() {
       clearTimeout(leaveTimer);
       resize.disconnect();
-      document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();
-      picker.remove();
     },
   };
 }

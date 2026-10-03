@@ -74,15 +74,16 @@ test("a new page starts with an empty <main>, and a section component goes in it
     .replace(/(<main[^>]*>)[\s\S]*<\/main>/, `$1\n${inner}</main>`);
   await expect.poll(() => editorText(page)).toBe(shell(""));
 
-  // One place, at the end of <main>, shown while the pointer is in it; it adds a feature block.
+  // One place, at the end of <main>: the empty page's "Start with a section"
+  // stands there instead of its plus, and adds a feature block.
   await expect(page.locator(".insert-point__plus")).toHaveCount(1);
-  await frame(page).locator("main").hover();
-  await expect(shown(page)).toHaveCount(1);
-  await plus(page, "Add a section at the end").click();
-  await expect(picker(page)).toContainText("Goes at the end");
-  await picker(page).getByRole("option", { name: /^Feature block/ }).click();
+  await expect(page.locator(".insert-point__plus")).toBeHidden();
+  const empty = page.getByRole("region", { name: "Empty page" });
+  await expect(empty).toContainText("Start with a section");
+  await empty.getByRole("button", { name: "Add Feature block" }).click();
   await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
   await expect(page.locator("#status")).toHaveText("Feature block added");
+  await expect(empty).toBeHidden();
   await expect.poll(() => editorText(page)).toBe(shell(
     `  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n`,
   ));
