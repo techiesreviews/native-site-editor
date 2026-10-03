@@ -55,6 +55,8 @@ export type EditBarControl =
       // applies its value and closes; Enter closes (or picks the one
       // suggestion left); Escape closes. `onClose` ends the undo group.
       kind: "address";
+      /** Stable field meaning when labels are shared by different controls. */
+      identity?: string;
       label: string;
       // Shown on the button instead of the label when the value needs attention.
       warning?: string;
@@ -201,7 +203,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   pane.append(popover);
   let popoverButton: HTMLButtonElement | undefined;
   // The open address field, kept across re-renders while its control persists.
-  let openAddress: { label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
+  let addressTarget = "";
+  const fieldMeaning = (control: AddressControl) => control.identity ?? control.label;
+  const targetIdentity = (model: EditBarModel) => JSON.stringify([model.kind, model.origin?.path, model.origin?.revision, model.origin?.node]);
+  let openAddress: { target: string; meaning: string; onClose?: () => void; label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
   // Ask agent's note, kept across re-renders with what is typed in it, and
   // a sent one shrinking away, which the bar keeps clear of until it is gone.
   let note: Note | undefined;
@@ -223,7 +228,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     popoverButton = undefined;
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
-    address?.control.onClose?.();
+    address?.onClose?.();
   }
   function openPopover(trigger: HTMLButtonElement, content: HTMLElement[], role: string) {
     closePopover(false);
@@ -497,6 +502,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       !typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed));
     address.list.replaceChildren(...matches.map((entry) => {
       const option = button(entry.label, () => {
+        if (openAddress !== address) return;
         address.input.value = entry.value;
         address.control.onInput(entry.value);
         closePopover(true);
@@ -530,13 +536,15 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     list.setAttribute("aria-label", "Pages of this site");
     list.id = "edit-bar-address-options";
     input.setAttribute("aria-controls", list.id);
-    const address = { label: control.label, opened: input.value.trim(), input, list, control };
+    const address = { target: addressTarget, meaning: fieldMeaning(control), onClose: control.onClose, label: control.label, opened: input.value.trim(), input, list, control };
     input.addEventListener("input", () => {
+      if (openAddress !== address) return;
       renderSuggestions(address);
       // Applied as typed, as one undo step until the field closes.
       address.control.onInput(input.value.trim());
     });
     input.addEventListener("keydown", (event) => {
+      if (openAddress !== address) return;
       if (event.key === "Enter") {
         event.preventDefault();
         const matches = renderSuggestions(address);
@@ -563,7 +571,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // The extras call the handlers of the control as it is now, since the
     // bar re-renders after each change and hands the field a new control.
     const extras = (control.extras ?? []).map((extra, index) => {
-      const current = () => address.control.extras?.[index];
+      const current = () => openAddress === address ? address.control.extras?.[index] : undefined;
       if (extra.kind === "checkbox") {
         const box = node("label", "edit-bar__check");
         const check = document.createElement("input");
@@ -626,7 +634,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   async function uploadInto(address: NonNullable<typeof openAddress>, files: File[]) {
     const upload = address.control.upload;
-    if (!upload || !files.length) return;
+    if (openAddress !== address || !upload || !files.length) return;
     popover.classList.add("is-uploading");
     let value: string | undefined;
     try {
@@ -634,7 +642,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     } finally {
       popover.classList.remove("is-uploading");
     }
-    if (value === undefined) return;
+    if (value === undefined || openAddress !== address) return;
     address.input.value = value;
     address.control.onInput(value);
     if (openAddress === address) closePopover(true);
@@ -783,10 +791,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
 
   function render(model: EditBarModel) {
     let opening: { item: HTMLButtonElement; control: AddressControl } | undefined;
-    // An open address field stays open while the new model still offers it
-    // (the source re-renders after each keystroke); its handlers move over.
+    // Own source changes retain the field, but a new target/session/field
+    // must close the old input before its callbacks can move to a new model.
+    addressTarget = targetIdentity(model);
     const kept = openAddress && model.controls.find((control): control is AddressControl =>
-      control.kind === "address" && control.label === openAddress?.label);
+      control.kind === "address" && openAddress?.target === addressTarget && fieldMeaning(control) === openAddress.meaning);
     // Ask agent's note stays open the same way, with its text.
     const keptPrompt = note && model.controls.find((control): control is PromptControl =>
       control.kind === "prompt" && control.label === note?.label);
