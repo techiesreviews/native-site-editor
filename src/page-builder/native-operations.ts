@@ -154,6 +154,14 @@ function canContain(parent: SourceNode, children: SourceNode[]) {
   const names = children.map((child) => child.name);
   const movingDescendants = (node: SourceNode): SourceNode[] => [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(movingDescendants))];
   const descendants = children.flatMap(movingDescendants);
+  const definitionItems = (node: SourceNode): boolean => {
+    if (node.name === "dl" || node.name === "template" || (node.namespace ?? "html") !== "html") return false;
+    return ["dt", "dd"].includes(node.name) || node.children.some(definitionItems);
+  };
+  for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
+    if (ancestor.name === "dl" || ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
+    if (["dt", "dd"].includes(ancestor.name) && children.some(definitionItems)) return false;
+  }
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     if (ancestor.name === "form" && descendants.some((node) => node.name === "form")) return false;
     if (["a", "button"].includes(ancestor.name) && descendants.some((node) => node.interactive)) return false;

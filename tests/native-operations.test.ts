@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -30,5 +30,31 @@ test("nested definition lists retain their separate item scope and exact surroun
     assert.equal(await page.locator('main > section').first().textContent(),'New');
     assert.equal(await page.locator('main > dl > dd > dl > dd').textContent(),'Inner value');
     assert.equal(await page.locator('main > section').last().textContent(),'After');
+  }finally{await browser.close();}
+});
+
+test("moving or inserting a wrapped definition item cannot auto-close the destination item", async () => {
+  const source='<main><dl><dt id="target"></dt></dl><div><dt>Moved term</dt></div></main>';
+  const browser=await chromium.launch();
+  try {
+    const page=await browser.newPage();await page.setContent(source);
+    assert.deepEqual(await page.locator('main').evaluate(el=>Array.from(el.children).map(child=>child.localName)),['dl','div']);
+    assert.equal(await page.locator('main > div > dt').textContent(),'Moved term');
+    // Show the repair that an unsafe accepted operation would cause.
+    await page.setContent('<main><dl><dt id="target"><div><dt>Moved term</dt></div></dt></dl></main>');
+    assert.equal(await page.locator('#target dt').count(),0);
+    assert.equal(await page.locator('dl > dt').count(),2);
+    assert.equal(nativeMoveEdit(source,[0,1],{parent:[0,0,0],index:0}),undefined);
+    assert.equal(nativeMarkupInsertEdit(source,[0,0,0],0,'<div><dt>Nested</dt></div>'),undefined);
+    const nested='<div><dl><dt>Inner term</dt><dd>Inner value</dd></dl></div>';
+    const inserted=nativeMarkupInsertEdit(source,[0,0,0],0,nested);assert.ok(inserted);
+    await page.setContent(applyGuardedSourceEdit(source,inserted)!);
+    assert.equal(await page.locator('#target > div > dl > dt').textContent(),'Inner term');
+    assert.equal(await page.locator('#target > div > dl > dd').textContent(),'Inner value');
+    const movable='<main><dl><dd id="target"><div></div></dd></dl>'+nested+'</main>';
+    const moved=nativeMoveEdit(movable,[0,1],{parent:[0,0,0,0],index:0});assert.ok(moved);
+    await page.setContent(applyGuardedSourceEdit(movable,moved)!);
+    assert.equal(await page.locator('#target > div > div > dl > dt').textContent(),'Inner term');
+    assert.equal(await page.locator('main > div').count(),0);
   }finally{await browser.close();}
 });
