@@ -112,7 +112,18 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const at = entry ? choicePoint(entry.item) : target();
     position.textContent = handlers.destinationText?.(at) ?? positionText(at);
     panel.classList.toggle("has-no-place", !at);
+    if (entry) entry.option.setAttribute("aria-disabled", String(!at));
+    if (entry && !at) position.textContent = `This destination cannot accept ${entry.item.name}.`;
+  }
+
+  function refreshAvailability() {
     for (const entry of entries.values()) entry.option.setAttribute("aria-disabled", String(!choicePoint(entry.item)));
+  }
+
+  function refuse(item: AddItem) {
+    const text = `This destination cannot accept ${item.name}.`;
+    position.textContent = text; live.textContent = text;
+    panel.classList.add("has-no-place");
   }
 
   function options() {
@@ -147,6 +158,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       }
     }
     renderThumbnails();
+    refreshAvailability();
     filter();
   }
 
@@ -157,7 +169,19 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       choose(item.tag);
     }, "pb-add-item__option") as HTMLButtonElement;
     option.setAttribute("role", "option");
-    const thumb = createThumbnail("pb-add-item__thumb");
+    const thumb = createThumbnail("pb-add-item__thumb", item.kind === "native" ? 0.45 : undefined, item.kind === "native" ? 320 : 640);
+    if (item.tag === "native:image") {
+      const fallback = node("span", "pb-add-item__image-fallback");
+      fallback.innerHTML = '<svg viewBox="0 0 48 40" fill="none" aria-hidden="true"><rect x="2" y="2" width="44" height="36" rx="3"/><circle cx="15" cy="13" r="4"/><path d="m3 32 12-12 8 8 9-13 13 17"/></svg>';
+      thumb.root.append(fallback);
+      const frame = thumb.root.querySelector("iframe")!;
+      frame.addEventListener("load", () => {
+        const image = frame.contentDocument?.querySelector("img");
+        fallback.hidden = Boolean(image?.naturalWidth);
+        thumb.root.classList.toggle("has-image-fallback", !fallback.hidden);
+      });
+      thumb.root.classList.add("has-image-fallback");
+    }
     const label = node("span", "pb-add-item__label");
     label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", item.kind === "native" ? "HTML" : `<${item.tag}>`));
     option.append(thumb.root, label);
@@ -169,7 +193,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         announce: (text: string) => { live.textContent = text; },
         drop: (point: InsertPoint) => {
           const at = handlers.pointFor ? handlers.pointFor(item, point, "drop") : point;
-          if (!at) return;
+          if (!at) { refuse(item); return; }
           if (gapKey) close(false);
           handlers.insert(at, { tag: item.tag, label: item.label });
         },
@@ -189,7 +213,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const width = handlers.canvasWidth();
     for (const entry of entries.values()) {
       const shown = handlers.preview(entry.item.tag);
-      if (shown) entry.thumb.render(shown.doc, width);
+      if (shown) entry.thumb.render(shown.doc, entry.item.kind === "native" ? 320 : width);
     }
   }
 
@@ -225,7 +249,8 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const at = entry ? choicePoint(entry.item) : undefined;
     if (!entry) return;
     if (!at) {
-      live.textContent = "This destination cannot accept this item.";
+      entry.option.setAttribute("aria-disabled", "true");
+      refuse(entry.item);
       return;
     }
     const choice = { tag, label: entry.item.label };
@@ -369,6 +394,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         close(false);
         return;
       }
+      refreshAvailability();
       renderPosition();
     },
     announce(text: string) {

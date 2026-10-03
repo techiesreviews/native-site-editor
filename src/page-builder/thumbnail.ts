@@ -14,7 +14,7 @@ const MIN_HEIGHT = 300;
  * A thumbnail; with `aspect` (height over width) it keeps that shape and
  * shows the middle of the section, else it is as tall as the section.
  */
-export function createThumbnail(className = "", aspect?: number) {
+export function createThumbnail(className = "", aspect?: number, minViewportWidth = 640) {
   const root = node("span", `pb-thumb ${className}`.trim());
   root.setAttribute("aria-hidden", "true");
   const frame = document.createElement("iframe");
@@ -84,7 +84,7 @@ export function createThumbnail(className = "", aspect?: number) {
     /** Show `next` (a thumbnail document) as if the canvas were `width` wide. */
     render(next: string, width: number) {
       const widthChanged = Math.round(width) !== canvasWidth;
-      canvasWidth = Math.max(640, Math.round(width));
+      canvasWidth = Math.max(minViewportWidth, Math.round(width));
       if (next === doc) {
         if (widthChanged) {
           frame.style.width = `${canvasWidth}px`;

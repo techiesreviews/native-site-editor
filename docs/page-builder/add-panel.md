@@ -1,12 +1,12 @@
 # Add panel
 
-The Add panel lists every section component the site has as a live thumbnail and adds one to
+The Add panel lists native HTML elements and section components as live thumbnails and adds one to
 the page by a click or by dragging it onto the canvas. It replaces the small picker that the
 plus buttons between sections used to open.
 
 ## What the user can do
 
-- **Open it** with **+ Add** in the top bar (next to the page picker). It docks at the left of
+- **Open it** with **Add** in Page Structure. It docks at the left of
   the workspace, over the page structure, and stays open while you work: click the canvas,
   select another section, add several sections in a row. Close it with **×**, **Esc** or
   **+ Add** again.
@@ -14,15 +14,11 @@ plus buttons between sections used to open.
   the title says exactly where the section goes ("Goes before “Work”"), the search has focus,
   arrows move through the items, Enter adds, Esc goes back to the plus, and the panel closes
   after adding.
-- **See what you get.** Each item is the component rendered at the canvas's width with the
+- **See what you get.** Components render at the canvas's width with the
   site's own stylesheets, the component's stylesheet and its fallback content, scaled down.
   Items are grouped by the first word of their tag when several share it (`section-hero`,
   `section-split` → **Sections**: Hero, Split) and put in the order a page usually has them
   (hero and intro first, contact last). Search matches the name, the tag and the group.
-- **See the code.** The HTML an item adds (the exact markup the insert writes, with its own
-  copy of each text slot) shows at the bottom of the panel for the item under the pointer or
-  keyboard focus. **</>** in the panel's header shows it under every item instead (remembered
-  in this browser).
 - **Click to add.** From **+ Add**, a click adds the section right after the selected section
   (or after the section around the selected element), else at the end of `<main>`. The panel
   says where before you click.
@@ -76,7 +72,7 @@ plus buttons between sections used to open.
   targets, and the thumbnail document (CSP, declarative shadow roots, CSS order and imports,
   `::slotted()` twins, data URLs, nothing that runs, a template that uses itself).
 - `tests/native-save/native-add-panel.spec.ts`: + Add, live thumbnail in a script-less frame,
-  the HTML peek and **</>**, click after the selected section with the panel staying and the
+  absence of HTML peeks and code toggles, click after the selected section with the panel staying and the
   highlight, drag onto a gap, Esc cancelling a drag, one undo step, a plus opening the panel for
   its gap with keyboard and closing after.
 - `tests/native-save/native-page-sections.spec.ts`: the new-page test now adds through the
@@ -85,8 +81,8 @@ plus buttons between sections used to open.
 
 ## Known gaps
 
-- Only section components are listed (templates that are one `<section>`), as before; plain
-  HTML snippets and smaller components are not offered.
+- Native elements share the catalogue with section components. Grid and Columns remain
+  unavailable until layout CSS integration is complete.
 - Thumbnails show the template's fallback content; a slot whose fallback is not text (a list,
   another component) shows what the template has.
 - Templates with `data-if` or slots that the preview hides when empty are shown as written.
@@ -100,3 +96,20 @@ plus buttons between sections used to open.
 - With an element of a component's template selected (the selection's file is the component),
   a click adds after the page element that instance renders in: the runtime's `select` message
   carries that element's page index path as `pageNode`.
+
+## Native preview and destination feedback
+
+Native thumbnails use a 320px viewport and a compact aspect ratio so text stays
+readable. Component thumbnails keep the full canvas viewport. An Image with no
+available thumbnail asset shows a picture icon in editor chrome. The supplied
+thumbnail document, page HTML and insertion markup stay unchanged.
+
+Unavailable items are dimmed and remain keyboard reachable. Focusing, clicking
+or dropping an item at a refused destination explains the refusal in the visible
+position text. Hover derives only the active item's destination. Opening, source
+refresh and selection/point changes update all availability states. Clicks and
+drops always derive a fresh point, so stale availability cannot permit insertion.
+
+`tests/native-save/native-add-panel-ux.spec.ts` checks native text readability,
+the Image fallback, disabled feedback, hover derivation counts, changed source
+availability and refused drops.

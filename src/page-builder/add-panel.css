@@ -470,3 +470,11 @@
 }
 
 .structure-add { margin: 0; min-height: 30px; padding: 0 8px; font-size: var(--type-small); }
+
+/* Refused choices remain keyboard reachable so their destination is explained. */
+.pb-add-item__option[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.pb-add-panel.has-no-place .pb-add-panel__position { white-space: normal; }
+.pb-add-item__image-fallback { position: absolute; inset: 0; display: grid; place-items: center; background: var(--surface-subtle); color: var(--muted); }
+.pb-add-item__image-fallback[hidden] { display: none; }
+.pb-add-item__image-fallback svg { width: 64px; height: 54px; stroke: currentColor; stroke-width: 2; }
+.pb-add-item__thumb.has-image-fallback .pb-thumb__frame { visibility: hidden; }
