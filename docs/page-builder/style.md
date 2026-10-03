@@ -196,3 +196,14 @@ Variable definitions share a fresh workspace with both code panes. Opening a
 definition validates the repository, page, component graph, complete source snapshot
 and original requester model around asynchronous work, then reveals the actual CSS
 source offset. Code completion and hover use the same definitions and provenance.
+
+The selected class is shared: edits apply to every matching element, rather than
+only the clicked element. The target card keeps its native selector and CSS path
+visible. Show in code reveals that target explicitly, without switching the code
+pane when a class chip is selected. A changed target refuses the captured link.
+
+Variable menus show names above their original values and source paths. Up/Down
+move between choices; Right opens the definition action, Left returns to its choice,
+and Tab or Escape returns to the field. Refresh restores field focus only for the
+same selection. When no workspace is available, the browser context menu remains
+available. Search has a separate icon and one explicit Clear control.

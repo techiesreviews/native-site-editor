@@ -71,7 +71,7 @@ import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
-import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
+import { locateClassRule, locateWriteRule, writeCssProperties } from "./page-builder/css-write";
 import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
@@ -467,6 +467,15 @@ function mountWorkspace() {
         nativeStyleClass = { selectionKey: context!.selectionKey!, name };
         stylePanel?.update();
       }
+    },
+    showCode: async expected => {
+      const context = nativeStylePanelContext();
+      if (!styleContextMatches(expected, context) || !context?.target || !context.workspace) { staleStyle(); return; }
+      const target = context.target, source = context.files[target.path];
+      if (source === undefined) { staleStyle(); return; }
+      const rule = locateWriteRule(source, { selector: target.selector, baseStart: target.start });
+      const start = rule?.start ?? 0;
+      if (!(await context.workspace.openDefinition(target.path, start, rule?.open ?? start, context.workspace.revision))) staleStyle();
     },
     history: (direction) => { void editorModule?.runVisualHistory(direction, currentPath); },
     error: (message) => errorMessage(new Error(message)),
@@ -1151,7 +1160,7 @@ function nativeCssWorkspace(): CssWorkspace | undefined {
   const scope = draftScope(), requester = currentPath;
   if (!nativeSite || !scope || !requester || versionView || !editorModule?.isMounted(requester)) return;
   const epoch = generation, scopeKey = setupScope(), sources = nativeSources();
-  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, sources]);
+  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, lastNativeSelection?.path, lastNativeSelection?.node, nativeStyleClass, sources]);
   const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
   return {
     revision, sources, orderedPaths,
@@ -1164,6 +1173,7 @@ function nativeCssWorkspace(): CssWorkspace | undefined {
       if (!current() || !targetProof.isCurrent()) return false;
       if (path !== requester && !(await openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
       if (!current() || editorModule?.getMountedSource(path) !== sources[path] || !editorModule.isMounted(path)) return false;
+      renderLinkedStyle();
       editorModule.revealRange(path, start, end);
       return true;
     },

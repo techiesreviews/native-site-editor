@@ -6,7 +6,7 @@ import { mountStylePanelResize } from "./style-panel-resize";
 import { node, button } from "../ui/dom";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint, type Breakpoint } from "../page-builder/breakpoints";
 import { breakpointWidths } from "../page-builder/breakpoints";
-import { writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVariables, resolveVariableValue, type CssTarget, type SiteVariable } from "../page-builder/css-write";
+import { cssClassSelector, writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVariables, resolveVariableValue, type CssTarget, type SiteVariable } from "../page-builder/css-write";
 
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
@@ -19,6 +19,7 @@ export interface StylePanelHandlers {
   variable: (variable: SiteVariable, value: string, expected?: StylePanelContext) => Promise<void>;
   selectClass: (name: string, expected: StylePanelContext) => void;
   addClass: (name: string, expected?: StylePanelContext) => Promise<void>;
+  showCode: (expected: StylePanelContext) => Promise<void>;
   history: (direction: "undo" | "redo") => void;
   error: (message: string) => void;
 }
@@ -38,7 +39,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   let pending = false, interacting = false;
   let searchQuery = "";
   let variableMenu: HTMLElement | undefined;
-  function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; }
+  let variableMenuOrigin: { key: string; property: string } | undefined;
+  function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined; }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   root.addEventListener("pointerup", () => setTimeout(() => {
     interacting = false;
@@ -190,45 +192,56 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       closeVariableMenu();
       const expected = currentContext(control.isConnected && snapshot.expected?.key === renderContext?.key ? renderContext : snapshot.expected), workspace = expected?.workspace;
       if (!expected || !workspace) return;
+      const menuBreakpoint = getCurrentBreakpoint(), menuState = state;
+      const menuCurrent = () => {
+        if (menuBreakpoint !== getCurrentBreakpoint() || menuState !== state) { report("The style target changed. Select the element again."); return false; }
+        return !!currentContext(expected);
+      };
       const declarations = cssVariableDeclarations(workspace);
       const offered = relevantVariables(field.property, declarations, (property, value) => CSS.supports(property, value));
-      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu;
+      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property };
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
       menu.style.left = `${Math.max(0, Math.min(x, innerWidth - 260))}px`; menu.style.top = `${Math.max(0, Math.min(y, innerHeight - 240))}px`;
       if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
       for (const declaration of offered) {
-        const row = node("div", "style-panel__variable-choice");
-        const choose = button(`${declaration.name} · ${declaration.value} · ${declaration.path}`, () => {
-          if (currentContext(expected)) {
+        const row = node("div", "style-panel__variable-choice"); row.setAttribute("role", "none");
+        const choose = button("", () => {
+          if (menuCurrent()) {
             const value = `var(${declaration.name})`;
             if (onChange) void onChange(value, expected); else void write({ [field.property]: value }, expected);
           }
           closeVariableMenu(); if (control.isConnected) control.focus();
-        }); choose.setAttribute("role", "menuitem");
+        }); choose.setAttribute("role", "menuitem"); choose.tabIndex = -1; choose.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
+        choose.append(node("strong", "", declaration.name), node("span", "style-panel__variable-provenance", `${declaration.value} · ${declaration.path}`));
         const definition = button("↗", () => {
-          const current = currentContext(expected); closeVariableMenu();
+          const current = menuCurrent(); closeVariableMenu();
           if (current) void workspace.openDefinition(declaration.path, declaration.start, declaration.end, workspace.revision).then(ok => { if (!ok) report("The variable source changed. Open its definition again."); }).catch(report);
-        }); definition.setAttribute("role", "menuitem"); definition.setAttribute("aria-label", `Go to ${declaration.name} in ${declaration.path}`);
+        }); definition.setAttribute("role", "menuitem"); definition.tabIndex = -1; definition.setAttribute("aria-label", `Go to ${declaration.name} in ${declaration.path}`);
         row.append(choose, definition); menu.append(row);
       }
       menu.addEventListener("keydown", event => {
-        const buttons = [...menu.querySelectorAll<HTMLButtonElement>("button")];
-        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); if (control.isConnected) control.focus(); }
+        const buttons = [...menu.querySelectorAll<HTMLButtonElement>(".style-panel__variable-choice button:first-child")];
+        const focus = (button: HTMLButtonElement | undefined) => { if (!button) return; menu.querySelectorAll<HTMLButtonElement>("button").forEach(item => item.tabIndex = -1); button.tabIndex = 0; button.focus(); };
+        if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); if (control.isConnected) control.focus(); }
         else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && buttons.length) {
-          event.preventDefault(); const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          event.preventDefault(); const activeRow = document.activeElement?.closest(".style-panel__variable-choice");
+          const current = buttons.findIndex(button => button.parentElement === activeRow);
           const index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
-          buttons[index].focus();
-        } else if (event.key === "Tab") closeVariableMenu();
+          focus(buttons[index]);
+        } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault(); const row = document.activeElement?.closest(".style-panel__variable-choice");
+          focus(row?.querySelector<HTMLButtonElement>(event.key === "ArrowRight" ? "button:last-child" : "button:first-child") ?? undefined);
+        }
       });
       menu.addEventListener("focusout", event => {
         if (event.relatedTarget instanceof Node && menu.contains(event.relatedTarget)) return;
         setTimeout(() => { if (variableMenu === menu && !menu.contains(document.activeElement)) closeVariableMenu(); }, 0);
       });
-      menu.tabIndex = -1; root.append(menu); (menu.querySelector<HTMLButtonElement>("button") ?? menu).focus();
+      menu.tabIndex = -1; root.append(menu); const first = menu.querySelector<HTMLButtonElement>("button"); if (first) first.tabIndex = 0; (first ?? menu).focus();
     }
-    control.addEventListener("contextmenu", event => { event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
+    control.addEventListener("contextmenu", event => { if (!handlers.context()?.workspace) return; event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
     control.addEventListener("keydown", event => {
-      if (event instanceof KeyboardEvent && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom); }
+      if (handlers.context()?.workspace && event instanceof KeyboardEvent && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom); }
     });
     wrapper.append(control);
     const offered = presets(field, variables);
@@ -292,7 +305,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
   function render() {
+    const focusOrigin = variableMenu?.contains(document.activeElement) ? variableMenuOrigin : undefined;
     closeVariableMenu();
+    if (focusOrigin) queueMicrotask(() => {
+      if (root.isConnected && !collapsed && document.activeElement === document.body && handlers.context()?.key === focusOrigin.key)
+        [...body.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-property]")].find(control => control.dataset.property === focusOrigin.property)?.focus();
+    });
     applyFold();
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
@@ -345,11 +363,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     }
     body.append(chips);
     const target = node("div", "style-panel__target");
-    target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected")); body.append(target);
+    target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected"));
+    if (context.target && context.workspace) target.append(button("Show in code", () => { const expected = currentContext(classSnapshot.expected); if (expected) void handlers.showCode(expected).catch(report); }, "style-panel__show-code"));
+    body.append(target);
+    if (context.className) body.append(node("p", "style-panel__shared-scope", context.target?.selector === cssClassSelector(context.className) ? `Edits apply to every element with class “${context.className}”.` : `Edits apply to every element matching “${context.target?.selector ?? cssClassSelector(context.className)}”.`));
     if (context.readOnly) { body.append(node("p", "style-panel__hint", "This version is read only.")); return; }
     {
       const form = node("form", "style-panel__add-class"); const input = node("input"); input.type = "text"; input.name = "class"; input.placeholder = "e.g. hero-title"; input.setAttribute("aria-label", "Class name"); const add = button("Add class", () => {}, ""); add.type = "submit";
-      form.append(node("p", "style-panel__hint", "Add a class to style this element in the site's CSS."), input, add);
+      if (!context.className) form.append(node("p", "style-panel__hint", "Add a class to style this element in the site's CSS."));
+      form.append(input, add);
       form.addEventListener("submit", (event) => { event.preventDefault(); const expected = currentContext(classSnapshot.expected); if (expected) void commit(() => handlers.addClass(input.value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""), expected)); }); body.append(form);
     }
     if (!context.className) return;
@@ -387,7 +409,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       clear.hidden = !searchQuery; empty.hidden = matches > 0;
     }
     input.addEventListener("input", () => { searchQuery = input.value; filter(); });
-    search.append(input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop;
+    const searchIcon = node("span", "style-panel__search-icon"); searchIcon.setAttribute("aria-hidden", "true"); search.append(searchIcon, input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop;
   }
   const resize = mountStylePanelResize(workspace, root, value => {
     const changed = collapsed !== value; collapsed = value;

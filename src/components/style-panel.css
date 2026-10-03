@@ -72,3 +72,10 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel__variable-menu { position: fixed; z-index: 1000; width: 260px; max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; background: var(--panel-surface); box-shadow: var(--shadow); }
 .style-panel__variable-choice { display: flex; align-items: center; }
 .style-panel__variable-choice button:first-child { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; padding: 6px; }
+.style-panel__shared-scope { margin: 0 12px 8px; font-size: var(--type-small); color: var(--muted); }
+.style-panel .style-panel__show-code { justify-self: start; font-family: system-ui, sans-serif; font-size: var(--type-small); text-decoration: underline; }
+.style-panel__search { align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-subtle); }
+.style-panel__search-icon { width: 16px; height: 16px; flex: none; background: var(--muted); mask: url("@phosphor-icons/core/regular/magnifying-glass.svg") center / contain no-repeat; }
+.style-panel__search input::-webkit-search-cancel-button { display: none; }
+.style-panel__variable-choice button:first-child { display: flex; flex-direction: column; gap: 2px; }
+.style-panel__variable-provenance { font-size: var(--type-small); color: var(--muted); font-weight: 400; }

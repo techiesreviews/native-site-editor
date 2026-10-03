@@ -34,12 +34,13 @@ test("variable definition opens the actual secondary CSS model at its native sou
     const editor = monaco.editor.getEditors().find(editor => editor.getModel() === model);
     return model && editor?.getPosition() ? model.getOffsetAt(editor.getPosition()!) : -1;
   })).toBe(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("styles/site.css")?.indexOf("--accent")));
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
   await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).isMounted("index.html"))).toBe(true);
 });
 test("a detached variable choice cannot write after another source selection", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await panel(page).getByRole("textbox", { name: "Text colour", exact: true }).click({ button: "right" });
-  await page.evaluate(() => { (window as any).detachedVariable = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent?.includes("--accent ·")); });
+  await page.evaluate(() => { (window as any).detachedVariable = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.getAttribute("aria-label")?.startsWith("--accent ·")); });
   await page.frameLocator(".native-preview-frame").locator("section.cards").evaluate(element => (element as HTMLElement).click());
   await page.evaluate(() => (window as any).detachedVariable.click());
   await expect(page.locator("#notice")).toContainText("style target changed");
@@ -83,6 +84,7 @@ test("real primary and secondary CSS models share workspace completion hover and
     const definitions = await Promise.all(providers.definition.map((provider: any) => provider.provideDefinition(model, model.getPositionAt(offset), { isCancellationRequested: false })));
     return { refused, names: completions.flatMap(result => result?.suggestions?.map((suggestion: any) => suggestion.label) ?? []), hover: JSON.stringify(hovers), definitions: definitions.flat().filter(Boolean).map((definition: any) => ({ path: definition.uri.path, range: definition.range })) };
   });
+  await expect(page.locator("#secondary-title")).toHaveText("components/card-note/card-note.css");
   expect(result.refused).toBe(0); expect(result.names).toContain("--remote-accent"); expect(result.hover).toContain("components/card-note/card-note.css"); expect(result.definitions.some(definition => definition.path.endsWith("/components/card-note/card-note.css"))).toBe(true);
   const secondary = await page.evaluate(async () => {
     const api = await import("/src/components/code-editor.ts"); const { monaco } = await import("/src/components/monaco.ts");
@@ -97,4 +99,51 @@ test("real primary and secondary CSS models share workspace completion hover and
     return { mounted: api.isMounted("components/project-card/project-card.css"), names: completions.flatMap(result => result?.suggestions?.map((suggestion: any) => suggestion.label) ?? []), hover: JSON.stringify(hovers), definitions: definitions.flat().filter(Boolean).length };
   });
   expect(secondary.mounted).toBe(true); expect(secondary.names).toContain("--local-space"); expect(secondary.hover).toContain("components/card-note/card-note.css"); expect(secondary.definitions).toBeGreaterThan(0);
+});
+
+test("menu refresh restores its same-context field, rejects old scope choices and supports roving keys", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const color = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
+  await color.click({ button: "right" });
+  await page.evaluate(() => { (window as any).oldMenuChoice = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.getAttribute("aria-label")?.startsWith("--accent ·")); });
+  await page.evaluate(async () => { (await import("/src/page-builder/breakpoints.ts")).setCurrentBreakpoint("tablet"); });
+  await expect(color).toBeFocused();
+  await page.evaluate(() => (window as any).oldMenuChoice.click());
+  await expect(page.locator("#notice")).toContainText("style target changed");
+  expect((await storedDraft(page, "styles/site.css"))?.content ?? "").not.toContain("color: var(--accent);");
+  await color.press("Shift+F10"); await page.keyboard.press("ArrowRight");
+  await expect(panel(page).getByRole("menuitem", { name: "Go to --ink in styles/site.css" })).toBeFocused();
+  await page.keyboard.press("ArrowLeft"); await page.keyboard.press("ArrowDown");
+  await expect(panel(page).getByRole("menuitem", { name: /--muted ·/ })).toBeFocused();
+  await page.keyboard.press("Tab"); await expect(color).toBeFocused();
+  await expect(panel(page).getByRole("menu")).toHaveCount(0);
+  await expect(panel(page).locator(".style-panel__shared-scope")).toHaveText('Edits apply to every element with class “lead”.');
+  await expect(panel(page).getByText("Add a class to style this element in the site's CSS.", { exact: true })).toHaveCount(0);
+});
+test("Show in code reveals the active target and refuses a detached target after selection changes", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await panel(page).getByRole("button", { name: "Show in code", exact: true }).click();
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  await expect.poll(() => page.evaluate(async () => {
+    const { monaco } = await import("/src/components/monaco.ts"); const model = monaco.editor.getModels().find(model => model.uri.path.endsWith("/styles/site.css"));
+    const editor = monaco.editor.getEditors().find(editor => editor.getModel() === model); return model && editor?.getPosition() ? model.getOffsetAt(editor.getPosition()!) : -1;
+  })).toBe(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("styles/site.css")?.indexOf(".lead {")));
+  await page.evaluate(() => { (window as any).oldShowCode = [...document.querySelectorAll<HTMLButtonElement>(".style-panel button")].find(button => button.textContent === "Show in code"); });
+  await page.frameLocator(".native-preview-frame").locator("section.cards").evaluate(element => (element as HTMLElement).click());
+  await page.evaluate(() => (window as any).oldShowCode.click());
+  await expect(page.locator("#notice")).toContainText("style target changed");
+});
+test("without a workspace Style does not suppress the browser context menu", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const prevented = await page.evaluate(async () => {
+    const { createStylePanel } = await import("/src/components/style-panel.ts");
+    const workspace = document.createElement("main"); workspace.className = "has-preview"; workspace.style.height = "500px"; document.body.append(workspace);
+    const context = { key: "native-a", className: "a", classes: ["a"], files: { "site.css": ".a {}" }, computed: {}, target: { path: "site.css", selector: ".a" } };
+    const view = createStylePanel({ context: () => context, write: async () => {}, variable: async () => {}, addClass: async () => {}, selectClass: () => {}, showCode: async () => {}, history: () => {}, error: () => {} }, workspace);
+    workspace.append(view.root); view.root.querySelector<HTMLButtonElement>(".style-panel__opener")!.click();
+    const input = view.root.querySelector<HTMLInputElement>('[data-property="color"]')!;
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); input.dispatchEvent(event);
+    const prevented = event.defaultPrevented; view.dispose(); workspace.remove(); return prevented;
+  });
+  expect(prevented).toBe(false);
 });
