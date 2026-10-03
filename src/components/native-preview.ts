@@ -1,3 +1,5 @@
+import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
+export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
 import { button, node } from "../ui/dom";
 import {
   nativeDefaultRoute,
@@ -165,7 +167,9 @@ export interface NativeTextEdit {
   after: string;
 }
 
-interface NativePreviewHandlers {
+export interface NativePreviewHandlers {
+  /** Caller must check current source and revision before filling the page instance. */
+  onSlotGhostFill?: (target: SlotGhostFillTarget) => void;
   onSelect?: (selection: NativePreviewSelection) => void;
   onComponentStyles?: (tags: string[]) => void;
   // The rules styling the page's <body>, whenever they change.
@@ -349,6 +353,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
     dock: handlers.addPanelDock,
   });
+  let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
+  const slotGhosts = mountSlotGhosts(pane, frame, {
+    onFill: target => handlers.onSlotGhostFill?.(target),
+    expectedIsCurrent: report => Boolean(mounted && !viewing && site && report.context === context &&
+      report.pagePath === site.routes[route] && report.templatePath === site.components[report.tag] &&
+      slotSelection?.path === report.pagePath && report.hostNode.every((index, i) => slotSelection!.node[i] === index) &&
+      (!slotSelection.exact || (slotSelection.node.length === report.hostNode.length && slotSelection.tag === report.tag))),
+  });
   const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards) : undefined;
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
@@ -426,6 +438,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function schedule() {
     if (!site) return;
+    slotGhosts.clear();
+    slotSelection = undefined;
     renderVersion++;
     context = [
       renderVersion,
@@ -544,6 +558,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type !== "ready" && data.context !== context) {
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
+      return;
+    }
+    if (data.type === "slot-ghosts") {
+      const report = site && mounted && !viewing && readSlotGhostReport((data as { report?: unknown }).report,
+        { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
+      if (report) slotGhosts.update(report); else slotGhosts.clear();
       return;
     }
     if (data.type === "inspect-result") {
@@ -671,6 +691,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         host?: unknown;
         crumbs?: unknown;
       };
+      slotSelection = undefined;
       const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
       if (reason === "click") codeLink.cancel();
@@ -688,6 +709,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const selectedNode = indexes(raw.node) ? raw.node : undefined;
       // Inside a component's template: the page's instance it renders in.
       const pagePath = site.routes[route];
+      const slotHost = readHost(raw.host);
+      if (raw.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
+        tag: typeof raw.tag === "string" ? raw.tag : undefined, exact: typeof raw.tag === "string" && Object.hasOwn(site.components, raw.tag) };
+      else if (slotHost?.path === pagePath && slotHost.node) slotSelection = { path: pagePath, node: [...slotHost.node], tag: slotHost.tag, exact: true };
       const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
       pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
       canvas.setCrumbs(readCrumbs(raw.crumbs));
@@ -790,6 +815,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     return true;
   }
   function postClearSelection() {
+    slotSelection = undefined;
+    slotGhosts.clear();
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "clear-selection" }, "*");
   }
   function clearSelection() {
@@ -1041,6 +1068,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       insertControls.destroy();
       pageBuilder.destroy();
       cardGrids?.destroy();
+      slotGhosts.destroy();
       pane.remove();
       host.classList.remove("has-preview");
     },

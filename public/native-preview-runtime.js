@@ -552,6 +552,7 @@
     scheduleRect();
     schedulePins();
     scheduleItemGrids();
+    reportSlotGhosts();
   }
 
   // ---- Components (docs/page-builder/components.md) ----
@@ -1629,6 +1630,7 @@
     payload.crumbs = canvasCrumbs(el);
     lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
+    reportSlotGhosts();
   }
 
   // Styles the runtime itself once injected as elements; shared and component
@@ -1655,6 +1657,64 @@
       return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
     });
   }
+  // Only page-authored instances can be filled. Nested template instances
+  // have no unambiguous page-source node and deliberately produce no target.
+  var lastSlotGhosts = "";
+  var slotGhostHost = null;
+  var slotGhostResize = typeof ResizeObserver !== "undefined" ? new ResizeObserver(function () { reportSlotGhosts(); }) : null;
+  function slotGhostVisible(el) {
+    for (var current = el; current instanceof Element; current = current.parentElement ||
+        (current.getRootNode() instanceof ShadowRoot ? current.getRootNode().host : null)) {
+      var computed = getComputedStyle(current);
+      if (computed.display === "none" || computed.visibility === "hidden" || computed.visibility === "collapse" || Number(computed.opacity) === 0) return false;
+    }
+    return true;
+  }
+  function reportSlotGhosts() {
+    var report = null;
+    var host = selected;
+    while (host instanceof Element && !(host.shadowRoot && state && state.components[host.localName])) {
+      host = host.parentElement || (host.getRootNode() instanceof ShadowRoot ? host.getRootNode().host : null);
+    }
+    if (host !== slotGhostHost) {
+      if (slotGhostResize) {
+        slotGhostResize.disconnect();
+        if (host instanceof Element && host.isConnected) slotGhostResize.observe(host);
+      }
+      slotGhostHost = host;
+    }
+    if (host && host.isConnected && pageEl.contains(host) && ownerPath(host) === state.pagePaths[state.route]) {
+      var hostNode = elementIndexPath(host);
+      var hostRect = rectOf(host);
+      if (hostNode && hostNode.length <= 64 && hostRect.width > 0 && hostRect.height > 0 &&
+          hostRect.bottom > 0 && hostRect.right > 0 && hostRect.top < innerHeight && hostRect.left < innerWidth &&
+          slotGhostVisible(host)) {
+        var slots = Array.from(host.shadowRoot.querySelectorAll("slot"));
+        if (slots.length <= 100) {
+          var occurrences = Object.create(null);
+          var assigned = Object.create(null);
+          slots.forEach(function (slot) { if (slotAssigned(slot)) assigned[slot.name] = true; });
+          var entries = slots.map(function (slot) {
+            var name = slot.name;
+            var occurrence = occurrences[name] || 0;
+            occurrences[name] = occurrence + 1;
+            var rect = rectOf(slot);
+            var hidden = !slot.getClientRects().length || !slotGhostVisible(slot);
+            var entry = { name: name, occurrence: occurrence, slotNode: elementIndexPath(slot), assigned: !!assigned[name], hidden: hidden };
+            if (!hidden && rect.width > 0 && rect.height > 0) entry.rect = rect;
+            return entry;
+          });
+          if (entries.every(function (entry) { return entry.name.length <= 256 && entry.slotNode && entry.slotNode.length <= 64; })) {
+            report = { context: state.context, pagePath: state.pagePaths[state.route], tag: host.localName,
+              templatePath: state.componentPaths[host.localName], hostNode: hostNode, hostRect: hostRect, entries: entries };
+          }
+        }
+      }
+    }
+    var key = String(state && state.context) + JSON.stringify(report);
+    if (key !== lastSlotGhosts) { lastSlotGhosts = key; emit("slot-ghosts", { report: report }); }
+  }
+
   function slotHasContent(slot) {
     if (slotAssigned(slot)) return true;
     if (slotConditionUnmet(slot)) return false;
@@ -2680,7 +2740,8 @@
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");
+  new MutationObserver(function () { reportSlotGhosts(); }).observe(pageEl, { childList: true, subtree: true, attributes: true });
   // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); }).observe(pageEl);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); reportSlotGhosts(); }).observe(pageEl);
   parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
 })();
