@@ -7,6 +7,7 @@ import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
+import "./row-action-overlay.css";
 
 /** A new page, as typed in the tree. */
 export interface NativeNewRequest {
@@ -553,7 +554,7 @@ export function createPagesTree(options: {
       count ? `${count} ${count === 1 ? "subpage" : "subpages"}` : undefined,
       page.isNew && page.file ? "new, not saved to GitHub yet" : undefined,
     ].filter(Boolean).join(", "));
-    const row = node("div", `pages-row${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
+    const row = node("div", `pages-row row-action-host${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
     row.style.setProperty("--level", String(level));
     row.title = page.file ?? `${page.route.slice(1)} has pages but no page of its own`;
     const twisty = node("span", "pages-twisty");
@@ -582,6 +583,7 @@ export function createPagesTree(options: {
       });
       row.append(url);
     } else row.append(node("span", "pages-url", page.route));
+    const actions = node("span", "row-action-overlay");
     if (isFolderRoute(page.route)) {
       const add = node("button", "pages-add");
       setIcon(add, "plus");
@@ -594,8 +596,8 @@ export function createPagesTree(options: {
         setActive(item);
         startEditing(page.special === "home" ? "/" : page.route, item.dataset.key!);
       });
-      row.append(add);
-    } else row.append(node("span", "pages-more-space"));
+      actions.append(add);
+    }
     if (items(page).length) {
       const more = moreButton(`Actions for ${page.label}`);
       more.addEventListener("click", (event) => {
@@ -604,8 +606,9 @@ export function createPagesTree(options: {
         if (menu.isOpen() && menu.opener === more) { menu.close(false); item.focus(); return; }
         menu.open(more, items(page));
       });
-      row.append(more);
-    } else row.append(node("span", "pages-more-space"));
+      actions.append(more);
+    }
+    if (actions.childElementCount) row.append(actions);
     item.append(row);
     item.addEventListener("click", (event) => {
       if (!ownEvent(event, item)) return;

@@ -81,3 +81,9 @@
 #files.is-drop-target,
 .files-heading.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 .file-row[hidden] { display: none; }
+
+.file-row-line.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); background: var(--row-action-background); }
+.file-row-line.row-action-host:hover, .file-row-line.row-action-host:focus-within { --row-action-background: var(--hover); }
+.file-row-line.row-action-host:has(> .file-row.selected), .file-row-line.row-action-host.is-drop-target { --row-action-background: var(--current); }
+.file-row-line .row-action-overlay > :is(.file-more, .file-add) { opacity: 1; margin-right: 0; }
+.file-row-line.is-renaming > .row-action-overlay { display: none; }

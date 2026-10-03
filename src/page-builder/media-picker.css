@@ -122,3 +122,13 @@
   .media-library--pane .media-library__sheet { gap: 10px; padding-top: 12px; }
   .media-library--pane .media-library__preview { height: 120px; max-height: 120px; }
 }
+
+/* Browse actions belong to the filename row, away from image and metadata. */
+.media-library__name-line { min-width: 0; min-height: var(--size-icon); display: flex; align-items: center; overflow: hidden; }
+.media-library__name-line .media-library__name { flex: 1; }
+.media-library__card:has(input:checked) .media-library__name-line { --row-action-background: var(--current); }
+.media-library__name-line .media-library__usage { width: var(--size-icon); height: var(--size-icon); padding: 0; display: inline-grid; place-items: center; }
+.media-library__usage-count { color: var(--muted); font-size: var(--type-small); }
+.media-library__card:hover .media-library__name-line > .row-action-overlay,
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay { opacity: 1; transform: none; pointer-events: auto; }
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay { transition: none; }

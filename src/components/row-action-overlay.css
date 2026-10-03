@@ -1,0 +1,32 @@
+/* Shared row affordance: names keep their full resting width. Hosts supply
+   their painted background so the reveal blends into hover/selection states. */
+.row-action-host { position: relative; --row-action-background: var(--surface); }
+.row-action-overlay {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 20px;
+  border-radius: inherit;
+  background: linear-gradient(to right, transparent, var(--row-action-background) 20px);
+  opacity: 0;
+  transform: translateX(40%);
+  pointer-events: none;
+  transition: transform 140ms ease-out, opacity 140ms ease-out;
+}
+.row-action-host:hover > .row-action-overlay,
+.row-action-host:focus-within > .row-action-overlay,
+.row-action-host:has(> .row-action-overlay [aria-expanded="true"]) > .row-action-overlay {
+  opacity: 1; transform: translateX(0); pointer-events: auto;
+}
+.row-action-host:focus-within > .row-action-overlay { transition: none; }
+.row-action-overlay > button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (hover: none), (pointer: coarse) {
+  .row-action-host { min-height: 44px; }
+  .row-action-overlay > button { min-width: 44px; min-height: 44px; }
+  .row-action-overlay { opacity: 1; transform: none; pointer-events: auto; transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-action-overlay { transition: none; }
+}
