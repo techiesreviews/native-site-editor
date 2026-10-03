@@ -9,12 +9,14 @@ Current scope comes from Lex's authorized continuation in destination T3 thread 
 - [ ] Complete and review true persistent Images tab beside Pages/Files.
 - [ ] Integrate reviewed grid and image focal-point widgets with native CSS and Undo.
 - [ ] Finish native element source-boundary review, integrate catalogue into Add, resolve inline grid CSS compatibility.
-- [ ] Extend collections to mixed page sources (work/services/portfolio/articles/videos); union deduplication, global filter/sort/limit and source chooser.
+- [x] Extend the collection model to mixed page sources (work/services/portfolio/articles/videos); union deduplication, global filter/sort/limit and source chooser. Host integration remains below.
 - [ ] Integrate collection fields/bake/history/page-operation hooks and distinguish automatic collections from manual cards.
 - [ ] Fix card placeholder/popup scroll geometry and overlapping Add controls, with real click tests.
-- [ ] Remove `pb-add-panel__code-toggle` and its per-item/hover HTML peek functionality. Keep actual code panes.
+- [x] Remove `pb-add-panel__code-toggle` and its per-item/hover HTML peek functionality. Keep actual code panes.
 - [ ] Remove Effects from the edit bar **and its associated functionality** (queued by Lex; no immediate interruption requested). Keep native Style settings such as shadow/transform/transition.
-- [ ] Keep actual code visible in minimized panes; preserve remembered drag/keyboard restore.
+- [ ] Remove the separate Edit component button from the edit bar. Show a faded edit-icon overlay on the component name on hover and keyboard focus; preserve smooth component editing and an accessible action name.
+- [ ] Refactor the image/media manager layout: reduce visual clutter, give controls and metadata room, and keep browsing, search, details, and repository changes clearly separated. Review the real starter at desktop and narrow widths.
+- [x] Keep actual code visible in minimized panes; preserve remembered drag/keyboard restore. Very short layouts retain a scrollable source floor.
 - [ ] Finish template conditions and optional-slot canvas affordances without mutating site DOM for editor overlays.
 - [ ] Final consistency/accessibility/source/Undo checks, fresh real-starter feature screenshots displayed in this thread, exact-candidate preview release and verified version.
 

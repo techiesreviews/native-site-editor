@@ -38,3 +38,10 @@ Real starter after screenshots, captured from that exact checkout and displayed 
 The native T3 browser disconnected with an explicit unavailable-host error during capture. The screenshots therefore use the project Playwright browser against the actual starter harness on 5215, not a substitute page or fixture. The original starter checkout is unchanged. The first screenshot shows directional search with component controls and native source visible together.
 
 CSS-variable host integration and context menus are in progress. Grid/focal-point leaf controls, persistent Images host tab, collections/elements host wiring, optional-slot ghosts and code-visible policy remain separate completion work. None of this resumed work has been pushed or deployed yet.
+
+
+## Mobbin inspector references — 2026-10-03
+
+Fresh Mobbin MCP screen search, web platform, returned existing builder inspectors. Downloaded and inspected Webflow, Framer and Figma references (temporary local images under `.scratch/t3-continuation/*-reference.webp`). References: [Webflow](https://mobbin.com/screens/c69d200c-61d9-442e-8dae-5b29aada46fd), [Framer](https://mobbin.com/screens/437d5030-772d-46b7-8ba3-bfc75064b0c5), [Figma](https://mobbin.com/screens/6f26ce58-d438-4e67-a4db-84d493b94789).
+
+Applied design decisions: keep classes/selector at the top of the inspector, group native properties under clear collapsible categories, show source and shared editing scope, make search narrow existing controls, and mount grid/focal widgets within the same inspector and theme. Keep the existing editor's Page structure/resize/visible-code behavior as the baseline. The references guide grouping and density; changes remain native HTML/CSS and preserve the editor's own layout. Grid uses familiar columns/rows plus an explicit replacement action for advanced authored tracks; image focus uses the actual image and a keyboard-accessible marker. Final actual-starter screenshots still required after host wiring and review.
