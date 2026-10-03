@@ -21,14 +21,14 @@ Lex's authorized continuation is active in T3 thread `da5eb845-2cdf-4f84-8736-27
 - [x] Style panel fully hides to the right, with the same drag/click/keyboard/restore behavior as Page structure; no leftover content or rail. Exact corrected panel slice reviewed and integrated.
 - [x] Remove the image SRC Address/link icon from the edit bar; keep Choose image, Alt text, image focus and actual hyperlink editing. Five field/image/link host browser checks pass; independent host review approved.
 - [x] Close final structural review findings: binary file operations and repeated renames must refresh after accepted history; a renamed stylesheet must not remain editable at its deleted path; canvas edits during a history hold must still save. Combined independent review approved the fixes; residual low-priority cleanup remains in the final consistency review.
-- [ ] Preserve untouched metadata and source absence: changing a URL must not be blocked by displayed OG defaults; changing and restoring only a title must not create unrequested social metadata or leave a dirty draft.
+- [x] Preserve untouched metadata and source absence, roundtrip/no-change behavior, independent social values and checkbox-only URL guards. Corrected metadata slice independently approved at 4de155d; 17 units, 8 focused browser cases and 14 settings regressions pass (separate runs).
 - [ ] Preserve moved-page expansion/selection in Pages, including the existing nested-page assertion. Confirm the diagnosed test failure against the current host.
 - [ ] Finish native fields and ordinary element Move for existing HTML, with guarded source edits and one Undo. Individual HTML Add stays removed.
 - [ ] Integrate collection fields, template bake, page create/move/delete/identity hooks and history. Automatic collections choose source folders and create source pages; manual cards keep their own workflow.
 - [ ] Reassess optional-slot canvas fill against the new Structure-based controls; remove the requested Empty slots UI and avoid adding duplicate controls. Finish native conditions and empty-field behavior without editor overlays entering published DOM.
-- [ ] Close known source-parser guard cases, update honest supported-source boundaries, and review final Move helpers before enabling their host.
+- [x] Close known source-parser guard cases and review the bounded Move helpers, including colgroup/ruby and comment repair refusals. Final b76b30d slice approved and integrated as 8942ff5. This is not a complete HTML parser; actual Move host remains pending above.
 - [ ] Update old browser helpers for relocated settings and section-only Add without weakening source, published output, keyboard or history assertions; rerun actual product failures after fixes.
-- [ ] Final consistency/accessibility/source/Undo review and exact-candidate checks/build.
+- [ ] Final consistency/accessibility/source/Undo review and exact-candidate checks/build. Include open Address popup identity across selection changes, baseline accessible field warnings, social-link toggle restoration/hints and retained-model cleanup.
 - [ ] Fresh real-starter screenshots displayed in this T3 thread before every push or preview deploy; release only to dev/preview-editor.techies.tools and verify the resulting version.
 
 Checkpoint commits, paths, worker ownership, servers, tests, failed checks, screenshot paths and the next action are recorded in `memory/handoffs/t3-page-builder-2026-10-03.md`. A checked slice is not a claim that the whole builder is finished or released.
