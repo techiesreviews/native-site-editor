@@ -23,6 +23,8 @@ test("image library searches repository images and shows transitive page usage",
 
 test("rename updates references and metadata in one Undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html") as string);
+  const before = await source();
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await panel.getByLabel("Default alt text", { exact: true }).fill("Studio portrait");
@@ -33,10 +35,17 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   await panel.getByRole("button", { name: "Rename", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/garden-desk.svg", exact: true })).toBeVisible();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/garden-desk.svg");
+  const renamed = await source();
+  expect(renamed).toEqual(before.replaceAll("studio-desk.svg", "garden-desk.svg"));
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/studio-desk.svg");
   await expect.poll(() => storedDraft(page, "images/garden-desk.svg")).toBeUndefined();
+  await expect.poll(source).toEqual(before);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(source).toEqual(renamed);
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/garden-desk.svg");
+  await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
 });
 
 test("delete keeps metadata and binary deletion together until Undo", async ({ page, baseURL }) => {

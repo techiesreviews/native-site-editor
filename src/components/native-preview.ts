@@ -176,6 +176,7 @@ interface NativePreviewHandlers {
   // Alt+Up or Alt+Down pressed inside the preview on a selected section.
   onMove?: (direction: "up" | "down") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
+  onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
   // A section dragged in the preview was released on a gap among its
   // siblings (`index` as the insert points count them), or the drag was cancelled.
   onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
@@ -455,6 +456,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (event.source !== frame.contentWindow) return;
     const data = event.data as { source?: string; type?: string; href?: string; context?: string } | undefined;
     if (data?.source !== "astro-native-preview") return;
+    // Desktop files dropped onto a source-owned canvas image, including shadow roots.
+    if (data.type === "image-drop" && site) {
+      const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown; files?: unknown };
+      if (data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
+      if (!Array.isArray(raw.node) || !raw.node.length || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
+      if (!Array.isArray(raw.files) || !raw.files.every((file) => file instanceof File)) return;
+      handlers.onImageDrop?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined }, raw.files);
+      return;
+    }
     // Typed text is checked against the current source, so it counts even
     // when a render was requested since.
     if (data.type === "text-edit" && site) {

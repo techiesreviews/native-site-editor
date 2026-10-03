@@ -1735,6 +1735,20 @@
     return null;
   }
 
+  // Media: desktop files stay in the editor; the site's own markup gains no runtime.
+  document.addEventListener("dragover", function (event) {
+    if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    var image = event.composedPath().find(function (node) { return node instanceof Element && node.localName === "img"; });
+    if (image && ownerPath(image)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }
+  });
+  document.addEventListener("drop", function (event) {
+    if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+    var image = event.composedPath().find(function (node) { return node instanceof Element && node.localName === "img"; });
+    if (!image || !ownerPath(image)) return;
+    event.preventDefault(); event.stopPropagation();
+    emit("image-drop", { path: ownerPath(image), node: elementIndexPath(image), width: image.getBoundingClientRect().width, files: Array.from(event.dataTransfer.files) });
+  });
+
   // Walks up through shadow hosts too, so a selection inside a component that
   // sits inside a page link still offers "Follow link".
   function nearestLinkHref(el) {

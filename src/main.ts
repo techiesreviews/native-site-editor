@@ -49,7 +49,7 @@ import type { UrlPlan } from "./components/url-change";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, movedRoute, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, pruneUnchanged, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
-import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType } from "./uploads";
+import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
@@ -63,6 +63,10 @@ import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
+import { configureMediaPicker, openMediaPicker, closeMediaPicker } from "./page-builder/media-picker";
+import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext } from "./page-builder/media-workspace";
+import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
+import { mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
@@ -158,6 +162,7 @@ function mountWorkspace() {
   app.innerHTML = `
     <header class="topbar">
       <div id="repository-menu"></div>
+      <button type="button" id="media-library-toggle" class="topbar-add" title="Manage repository images">Images</button>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
         <div id="setup-checklist"></div>
@@ -207,6 +212,9 @@ function mountWorkspace() {
     onSiteSettings: () => void openNativeSiteSettings(),
   });
   element("repository-menu").append(repositoryMenu.root);
+  configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
+  const showImages = () => { repositoryMenu?.close(); void openMediaPicker().catch(errorMessage); };
+  element("media-library-toggle").addEventListener("click", showImages);
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   mountSetupChecklist();
   repositorySelect = element<HTMLSelectElement>("repository");
@@ -339,6 +347,7 @@ function mountWorkspace() {
       if (lastNativeSelection) renderNativeEditBar(lastNativeSelection);
     },
     onFormat: (format) => nativeFormatActions[format]?.(),
+    onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
@@ -1453,6 +1462,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const tag = range.tag;
     const src = attribute("src");
     const alt = attribute("alt");
+    controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
     // Address: an image of this repository suggested as typed, or any address,
     // applied live. An alt that was never written or still equals the previous
     // file's name follows the new file's name; a written or empty one stays.
@@ -2431,6 +2441,92 @@ function discardUpload(path: string) {
   announce(`Discarded ${path}.`);
 }
 
+// Media's repository seam: binary uploads retain the existing IndexedDB/Save path.
+async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
+  const repo = currentRepo, scope = draftScope(), epoch = generation, workspace = setupScope();
+  if (!repo || !scope || !snapshot) throw new Error("Choose a repository before opening Images.");
+  const assertLive = () => { if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Close Images and open it again."); };
+  const branchPaths = nativeSite ? nativeFiles(scope) : await listRepositoryFiles(repo, snapshot);
+  assertLive();
+  const gone = new Set(draftStore().list(scope).filter((draft) => draft.deleted).map((draft) => draft.path));
+  const paths = [...new Set([...branchPaths, ...draftStore().list(scope).filter((draft) => !draft.deleted).map((draft) => draft.path)])].filter((path) => !gone.has(path));
+  const read = async (path: string) => {
+    assertLive();
+    const held = nativeEffectiveSource(path, scope);
+    if (held !== undefined) return held;
+    if (draftStore().get(scope, path)?.deleted) return undefined;
+    const entry = await findEntry(path); assertLive();
+    if (!entry) return undefined;
+    const text = await readFile(repo.full_name, entry.sha); assertLive();
+    nativeBaseSources.set(path, text); return text;
+  };
+  return {
+    key: `${scope.account}:${scope.repoId}`, scope, drafts: draftStore(), paths,
+    items: paths.filter(isImagePath).map((path) => {
+      const draft = draftStore().get(scope, path), entry = entryAt(path);
+      return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
+    }),
+    pages: nativeSite ? Object.values(nativeSite.routes) : paths.filter((path) => /(?:^|\/)index\.html$/i.test(path) && !path.startsWith("components/")),
+    components: nativeSite?.components ?? {}, assertLive, read,
+    blob: async (path) => {
+      assertLive();
+      const draft = draftStore().get(scope, path);
+      if (draft?.deleted) throw new Error(`${path} is deleted.`);
+      if (draft?.upload && draft.sourceSha) {
+        const blob = await uploadBytes().get(uploadKey(scope, draft.sourceSha)); assertLive();
+        if (!blob) throw new Error(`${path} is missing from this browser's storage. Upload it again.`);
+        return blob;
+      }
+      const entry = draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path); assertLive();
+      if (!entry) throw new Error(`${path} is unavailable.`);
+      const raw = await api<{ content: string }>("raw", { repo: repo.full_name, sha: entry.sha }); assertLive();
+      return new Blob([Uint8Array.from(atob(raw.content), (char) => char.charCodeAt(0))], { type: uploadImageType(path) });
+    },
+    assetVersion: path => {
+      const record = draftStore().get(scope, path);
+      return record ? JSON.stringify(record) : entryAt(path)?.sha;
+    },
+    applyBatch: async batch => {
+      const editor = editorModule;
+      if (!editor || !currentPath) throw new Error("Open a page before changing images.");
+      const historyPath = currentPath;
+      await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
+        scope, store: draftStore(), bytes: uploadBytes(), assertLive,
+        paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
+        assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
+        entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
+        mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
+        history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
+        refresh: () => { for (const path of batch.edits.keys()) editor.forgetDraftModel(scope, path); afterFileChanges(); updateNativePreviewSources(); },
+        announce,
+      }));
+    },
+    write: async () => { throw new Error("Use the atomic image transaction."); },
+    changed: () => {},
+    rename: async () => { throw new Error("Use the atomic image transaction."); },
+    remove: async () => { throw new Error("Use the atomic image transaction."); },
+    openPage: async (path) => { assertLive(); await openAfter(path); },
+  };
+}
+
+async function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
+  const epoch = generation, workspace = setupScope();
+  const source = nativeEffectiveSource(target.path);
+  const initial = source === undefined ? undefined : locateNativeElementRange(source, target.node);
+  if (!initial || initial.tag.name !== "img" || versionView) return;
+  const expected = source!.slice(initial.tag.start, initial.tag.end);
+  await openMediaPicker({ files, accept: "image/*", onPick: async (image: MediaImage) => {
+    if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Choose an image again.");
+    if (currentPath !== target.path) await restoreFile(target.path, epoch, { linkDefaultStyle: false });
+    const latest = nativeEffectiveSource(target.path);
+    const range = latest === undefined ? undefined : locateNativeElementRange(latest, target.node);
+    if (epoch !== generation || workspace !== setupScope() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
+    const markup = mediaImageMarkup(image, expected, target.width);
+    if (!applyNativeChange(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
+  } }).catch(errorMessage);
+}
+
+
 // After a successful save, the committed content becomes the new clean baseline.
 // Without this, `reconcilePublished` drops each committed browser draft (a draft
 // whose content equals its baseline is pruned), so a saved file that is not the
@@ -2465,6 +2561,7 @@ function adoptNativeBaseSources(
 }
 
 function deactivateNative() {
+  closeMediaPicker();
   nativeSite = undefined;
   updateExplorerTabs();
   nativeBaseFiles = [];
