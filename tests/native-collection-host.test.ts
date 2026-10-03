@@ -43,7 +43,7 @@ test('file move changes URL, retains source, and guards old and vacant new paths
  assert.equal(plan.operation.edits!.has('work/renamed/index.html'),false);
 });
 test('whole-folder rename updates mixed collection scopes while preserving unrelated scope',()=>{
- const plan=good({moves:[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'}]});
+ const plan=good({folders:[{from:'work/',to:'portfolio/'}],moves:[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'}]});
  assert.ok(plan.operation.edits!.get('other.html')!.includes('data-each="/portfolio/ /news/"'));
  assert.ok(plan.operation.edits!.get('other.html')!.includes('href="/portfolio/a/">First'));
  assert.ok(plan.operation.edits!.get('other.html')!.includes('href="/news/b/">News'));
@@ -91,7 +91,7 @@ test('root 404 remains guarded and is excluded from collection records',()=>{
 });
 test('opaque folder members move without invented text and occupied unloaded targets reject',()=>{
  const before=snapshot();before.files.push('work/a/photo.jpg');
- const plan=good({moves:[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'},{from:'work/a/photo.jpg',to:'portfolio/a/photo.jpg'}]},before);
+ const plan=good({folders:[{from:'work/',to:'portfolio/'}],moves:[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'},{from:'work/a/photo.jpg',to:'portfolio/a/photo.jpg'}]},before);
  assert.equal(plan.operation.expectedSources.get('work/a/photo.jpg'),undefined);
  assert.equal(plan.operation.edits!.has('portfolio/a/photo.jpg'),false);
  assert.ok(plan.operation.edits!.get('index.html')!.includes('/portfolio/a/'));
@@ -102,7 +102,7 @@ test('opaque folder members move without invented text and occupied unloaded tar
 test('no-index folder moves rewrite mixed and nested scopes from all descendant routes',()=>{
  const before=snapshot();delete (before.sources as Record<string,string>)['work/index.html'];before.files=before.files.filter(path=>path!=='work/index.html');
  Object.assign(before.sources,{'work/2024/a/index.html':page('Year'),'index.html':page('Home',list('/work/ /news/')+list('/work/2024/'))});before.files.push('work/2024/a/index.html');before.routes=deriveNativeRoutes(before.files);
- const plan=good({moves:[{from:'work/a/index.html',to:'portfolio/a/index.html'},{from:'work/2024/a/index.html',to:'portfolio/2024/a/index.html'}]},before);
+ const plan=good({folders:[{from:'work/',to:'portfolio/'}],moves:[{from:'work/a/index.html',to:'portfolio/a/index.html'},{from:'work/2024/a/index.html',to:'portfolio/2024/a/index.html'}]},before);
  assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/portfolio/ /news/"'));
  assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/portfolio/2024/"'));
  assert.ok(plan.operation.edits!.get('index.html')!.includes('/news/b/'));
@@ -132,4 +132,23 @@ test('deleting the last custom-field record aborts and names the listing inputs'
  const before=snapshot();before.sources['index.html']=page('Home',list().replace('{title}','{price}'));before.sources['work/a/index.html']=page('First').replace('</head>','<meta name="field:price" content="10"></head>');
  const result=planNativeCollectionOperation({...before,origin:origin({deletes:['work/a/index.html']})});
  assert.ok('error'in result);assert.match(result.error,/index\.html/);assert.match(result.error,/Unknown collection field/);
+});
+test('ordinary single-page moves keep scopes for occupied, deeper and empty destinations',()=>{
+ const before=snapshot();delete (before.sources as Record<string,string>)['work/index.html'];before.files=before.files.filter(path=>path!=='work/index.html');before.routes=deriveNativeRoutes(before.files);
+ for(const to of ['news/a/index.html','work/x/a/index.html','empty/a/index.html']){
+  const plan=good({moves:[{from:'work/a/index.html',to}]},before);
+  assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/work/"'));
+  assert.ok(plan.operation.edits!.get('other.html')!.includes('data-each="/work/ /news/"'));
+ }
+});
+test('explicit folder intent is required, validates all opaque members and is not passed to host apply',()=>{
+ const before=snapshot();before.files.push('work/photo.jpg');
+ const moves=[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'}];
+ const partial=planNativeCollectionOperation({...before,origin:origin({folders:[{from:'work/',to:'portfolio/'}],moves})});
+ assert.ok('error'in partial);assert.match(partial.error,/Incomplete folder relocation/);
+ const plan=good({folders:[{from:'work/',to:'portfolio/'}],moves:[...moves,{from:'work/photo.jpg',to:'portfolio/photo.jpg'}]},before);
+ assert.equal(Object.hasOwn(plan.operation,'folders'),false);
+ for(const to of ['work/nested/','news/']){
+  assert.ok('error'in planNativeCollectionOperation({...before,origin:origin({folders:[{from:'work/',to}],moves})}));
+ }
 });

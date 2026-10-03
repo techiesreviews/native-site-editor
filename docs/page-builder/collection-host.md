@@ -10,7 +10,7 @@ expectedRoutes, afterRoutes, collections}` or `{error}`. Nothing is written on f
 contains only actual loaded text, never invented binary placeholders. Route
 entries must match `deriveNativeRoutes(files)`; all routed pages must be loaded
 before baking. Include loaded nonpage text touched by the origin. The coordinator applies the origin to an isolated candidate graph,
-rewrites parsed `data-each` folder tokens for proven whole-route-folder moves, calls
+rewrites parsed `data-each` folder tokens only for explicit validated folder moves, calls
 existing `planBake` once, and combines final listing text with origin changes.
 It does not recursively bake generated output. Existing route, collection,
 field, binding, URL and malformed-template checks remain active.
@@ -44,13 +44,18 @@ existing transaction/history companion seam. Unit coverage exercises multiple
 listings, create/move/rename/delete, metadata/template edits, route graph and
 vacant-target staleness, exact source provenance and whole-plan failures.
 
-Collection scope relocation requires every before-route under a token to move
-to one shared destination folder plus its original suffix. This works without a
-folder index, including nested/mixed scopes. An index-only move with descendants
-left behind keeps the old scope; moving a folder page to a `.html` route never
-turns a collection token into a file URL. Opaque file moves/deletes remain in the
-operation without becoming text edits, and full file guards protect destination
-vacancy even when assets are unloaded.
+Collection scope relocation requires explicit planner-only
+`origin.folders: [{from: "work/", to: "portfolio/"}]` filesystem prefixes.
+Ordinary page moves and URL changes never infer a folder rename, even when the
+old scope has only one record and the destination is empty. A Files-tab folder
+rename/move must provide this intent and exact moves for every before-file under
+the old prefix, including opaque assets. Partial mapping rejects the plan.
+Destination prefixes must be wholly vacant; ancestor/descendant destinations
+and overlapping intents are refused. Valid intent rewrites the corresponding
+root and nested collection tokens, preserving mixed unrelated scopes, with or
+without a folder index. The metadata is removed from the returned host operation.
+Opaque file moves/deletes remain in the operation without becoming text edits,
+and full file guards protect destination vacancy when assets are unloaded.
 
 All bake errors still abort the origin. Parser failures name their exact page;
 errors returned by the bake API name the complete listing-input page set rather

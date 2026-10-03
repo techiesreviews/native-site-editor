@@ -9,6 +9,8 @@ import type { CollectionIdentity } from './collection-fields';
 export interface NativeCollectionOrigin {
   expectedSources?: Map<string, string | undefined>;
   moves?: FileMove[];
+  /** Explicit filesystem folder relocation intent; prefixes end in slash. */
+  folders?: { from: string; to: string }[];
   deletes?: string[];
   creates?: { path: string; content: string }[];
   edits?: Map<string, string>;
@@ -100,21 +102,22 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     const afterRoutes = deriveNativeRoutes(afterFiles);
     for (const path of new Set([...Object.values(routes), ...Object.values(afterRoutes)])) guard(path);
     const movedFiles = new Map(moves.map(move => [move.from, move.to]));
-    const relocatedFolder = (folder: string) => {
-      if (folder === "/") return folder;
-      const under = Object.entries(routes).filter(([route]) => route.startsWith(folder));
-      if (!under.length) return folder;
-      let destination: string | undefined;
-      for (const [route, path] of under) {
-        const to = movedFiles.get(path);
-        const target = to && nativePageRoute(to);
-        const suffix = route.slice(folder.length);
-        if (!target || !target.endsWith(suffix)) return folder;
-        const base = suffix ? target.slice(0, -suffix.length) : target;
-        if (!base.startsWith("/") || !base.endsWith("/") || (destination && destination !== base)) return folder;
-        destination = base;
+    const folders = (origin.folders ?? []).map(folder => ({ ...folder }));
+    const folderPrefix = /^(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*\/)+$/;
+    for (const [index, folder] of folders.entries()) {
+      if (!folderPrefix.test(folder.from) || !folderPrefix.test(folder.to) ||
+          folder.to.startsWith(folder.from) || folder.from.startsWith(folder.to)) throw Error('Invalid folder relocation intent.');
+      if (folders.slice(0, index).some(other => [other.from, other.to].some(prefix =>
+        [folder.from, folder.to].some(value => value.startsWith(prefix) || prefix.startsWith(value))))) throw Error('Overlapping folder relocation intents.');
+      const members = [...files].filter(path => path.startsWith(folder.from));
+      if (!members.length || files.has(folder.to.slice(0, -1)) || [...files].some(path => path.startsWith(folder.to))) throw Error(`Folder destination must be vacant: ${folder.to}.`);
+      for (const path of members) {
+        if (movedFiles.get(path) !== folder.to + path.slice(folder.from.length)) throw Error(`Incomplete folder relocation: ${path}.`);
       }
-      return destination ?? folder;
+    }
+    const relocatedFolder = (folder: string) => {
+      const intent = folders.find(intent => folder.startsWith(`/${intent.from}`));
+      return intent ? `/${intent.to}${folder.slice(intent.from.length + 1)}` : folder;
     };
     // Rewrite exact parsed collection scope tokens with the existing route mover.
     // No href/metadata rewriting is invented here: those belong to the origin.
@@ -147,7 +150,8 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const operation = { ...origin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
+    const { folders: _folderIntent, ...nativeOrigin } = origin;
+    const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
     return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };
   } catch (error) {
