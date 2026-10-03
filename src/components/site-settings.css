@@ -1,0 +1,50 @@
+.site-settings {
+  width: min(780px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: 20px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: var(--type-base);
+}
+.site-settings::backdrop { background: var(--semantic-shadow); }
+.site-settings__top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.site-settings__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.site-settings__scope { margin: 10px 0 20px; padding: 10px; background: var(--surface-subtle); border-radius: var(--radius); color: var(--muted); font-size: var(--type-small); line-height: 1.5; }
+.site-settings__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.site-settings__section { min-width: 0; margin: 0 0 20px; padding: 0; border: 0; }
+.site-settings__legend { margin-bottom: 12px; padding: 0; font-weight: 600; font-size: var(--type-small); text-transform: uppercase; letter-spacing: .04em; }
+.site-settings__field { display: grid; gap: 5px; margin-bottom: 12px; }
+.site-settings__label { font-weight: 600; font-size: var(--type-small); }
+.site-settings__input { min-width: 0; width: 100%; min-height: var(--size-control); padding: 6px 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font: inherit; }
+.site-settings__input[readonly] { color: var(--muted); background: var(--surface-subtle); }
+.site-settings__hint { color: var(--muted); font-size: var(--type-small); line-height: 1.5; }
+.site-settings__check { display: flex; align-items: center; gap: 8px; margin: 8px 0; min-height: var(--size-control); }
+.site-settings__check input { accent-color: var(--primary); }
+.site-settings__close, .site-settings__link, .site-settings__grip { min-height: var(--size-control); border: 0; border-radius: var(--radius); background: transparent; color: var(--link); padding: 4px 8px; font: inherit; cursor: pointer; }
+.site-settings__close:hover, .site-settings__link:hover, .site-settings__grip:hover { background: var(--hover); }
+.site-settings :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.site-settings__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.site-settings__status { color: var(--danger-fg); font-size: var(--type-small); }
+.site-settings__status:empty { display: none; }
+.site-settings__card { overflow: hidden; border: 1px solid var(--control-line); border-radius: var(--radius-panel); margin-top: 12px; background: var(--surface-input); }
+.site-settings__card-image { width: 100%; aspect-ratio: 1200 / 630; object-fit: cover; display: block; }
+.site-settings__card-placeholder { aspect-ratio: 1200 / 630; display: grid; place-items: center; padding: 16px; background: var(--surface-subtle); color: var(--muted); text-align: center; }
+.site-settings__card-image[hidden], .site-settings__card-placeholder[hidden] { display: none; }
+.site-settings__card-body { display: grid; gap: 6px; padding: 12px; overflow-wrap: anywhere; }
+.site-settings__card-body p { margin: 0; font-size: var(--type-small); color: var(--muted); }
+.site-settings__affected { max-height: 130px; overflow-y: auto; padding-left: 20px; color: var(--muted); font-size: var(--type-small); line-height: 1.8; }
+.site-settings__nav { list-style: none; padding: 0; }
+.site-settings__nav-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.site-settings__nav-fields { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+.site-settings__nav-fields .site-settings__field { margin: 0; }
+.site-settings__nav-controls { display: flex; align-items: center; }
+.site-settings__grip { color: var(--muted); cursor: grab; }
+.site-settings button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 640px) {
+  .site-settings { padding: 16px; }
+  .site-settings__columns, .site-settings__nav-fields { grid-template-columns: 1fr; }
+  .site-settings__nav-row { flex-wrap: wrap; }
+}
