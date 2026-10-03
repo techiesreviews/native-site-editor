@@ -1,0 +1,9 @@
+.collections-panel { display: grid; gap: 1rem; padding: 1rem; }
+.collections-panel h2, .collections-panel h3, .collections-panel p { margin: 0; }
+.collections-panel__form, .collections-panel__collection { display: grid; gap: .75rem; }
+.collections-panel__field { display: grid; gap: .35rem; }
+.collections-panel input, .collections-panel textarea { width: 100%; padding: .5rem; color: var(--text); background: var(--surface); font: inherit; box-sizing: border-box; }
+.collections-panel input:focus-visible, .collections-panel textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.collections-panel__scope { font-size: .875rem; }
+.collections-panel__preview { overflow: auto; max-height: 18rem; margin: 0; padding: .75rem; white-space: pre-wrap; background: var(--surface); font-size: .8125rem; }
+.collections-panel__status:empty { display: none; }

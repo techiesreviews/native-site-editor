@@ -1,0 +1,101 @@
+import { nativePageRoute, NATIVE_NOT_FOUND_PAGE } from "../../shared/native-routes";
+import { startTagAttribute, VOID_ELEMENTS } from "../../shared/html-source";
+import { descendants, parseSource, type SourceElement } from "./component-model";
+import { escapeText } from "./site-head";
+import { decodeHtmlEntities } from "./html-entities";
+import { fieldName, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+
+export interface CollectionSpec {
+  folder: string;
+  sort: string;
+  filter: string;
+  limit: number;
+}
+export interface CollectionRecord { path: string; url: string; fields: PageFields }
+export interface SourceCollection {
+  element: SourceElement;
+  template: SourceElement;
+  spec: CollectionSpec;
+}
+export const MAX_COLLECTION_ITEMS = 500;
+export function attribute(source: string, el: SourceElement, name: string): string | undefined {
+  const found = startTagAttribute(source, el.tag, name);
+  return found ? decodeHtmlEntities(found.value, true) : undefined;
+}
+export function collectionSpec(input: { folder: string; sort?: string; filter?: string; limit?: string }): CollectionSpec {
+  const { folder } = input;
+  if (!/^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)*$/.test(folder) || folder.split("/").some((part) => part === "." || part === "..")) throw new Error("Collection source must be an absolute folder URL ending in /.");
+  const sort = input.sort ?? "";
+  if (sort && !/^-?[a-z][a-z0-9_-]*$/.test(sort)) throw new Error("Sort by a field, optionally prefixed with -.");
+  const filter = input.filter ?? "";
+  if (filter && !/^[a-z][a-z0-9_-]*=[^\r\n]*$/.test(filter)) throw new Error("Filter must be an exact field=value match.");
+  const rawLimit = input.limit ?? "";
+  if (rawLimit && (!/^\d+$/.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > MAX_COLLECTION_ITEMS)) throw new Error(`Limit must be between 1 and ${MAX_COLLECTION_ITEMS}.`);
+  return { folder, sort, filter, limit: rawLimit ? Number(rawLimit) : MAX_COLLECTION_ITEMS };
+}
+export function readCollections(source: string): SourceCollection[] {
+  const result: SourceCollection[] = [];
+  for (const element of descendants(parseSource(source))) {
+    const folder = attribute(source, element, "data-each");
+    if (folder === undefined) continue;
+    for (let parent = element.parent; parent; parent = parent.parent) if (attribute(source, parent, "data-each") !== undefined) throw new Error("Nested collections are not supported.");
+    const children = element.children.filter((node): node is SourceElement => node.type === "element");
+    const templates = children.filter((node) => node.name === "template");
+    if (!element.close || templates.length !== 1 || !templates[0].close) throw new Error("A collection needs one complete direct-child template.");
+    const template = templates[0];
+    for (const el of descendants([template])) {
+      if ((!VOID_ELEMENTS.has(el.name) && !el.close) || source[el.tag.end - 1] !== ">") throw new Error("The collection template contains incomplete markup.");
+      if (el !== template && el.name === "template") throw new Error("Nested templates are not supported in collections.");
+    }
+    const spec = collectionSpec({ folder, sort: attribute(source, element, "data-sort"), filter: attribute(source, element, "data-filter"), limit: attribute(source, element, "data-limit") });
+    result.push({ element, template, spec });
+  }
+  return result;
+}
+/** Mirrors native route eligibility, also guarding hidden encoded route segments. */
+export function validCollectionRoute(url: string, path: string): boolean {
+  try {
+    const decoded = decodeURIComponent(url);
+    if (decoded.split("/").some((segment) => segment.startsWith(".") || segment.startsWith("_"))) return false;
+    return nativePageRoute(path) === url;
+  } catch { return false; }
+}
+/** Stable route order breaks equal sort values; self and the folder index are excluded. */
+export function collectionRecords(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, spec: CollectionSpec, self: string): CollectionRecord[] {
+  let records = Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path) && path !== NATIVE_NOT_FOUND_PAGE && url.startsWith(spec.folder) && url !== spec.folder && path !== self).map(([url, path]) => {
+    if (sources[path] === undefined) throw new Error(`Load ${path} before baking its collection.`);
+    return { path, url, fields: readPageFields(sources[path], url, identity) };
+  });
+  const knownRecords = records;
+  if (spec.filter) {
+    const at = spec.filter.indexOf("=");
+    const field = spec.filter.slice(0, at);
+    if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
+    const value = spec.filter.slice(at + 1);
+    records = records.filter((record) => record.fields[field] === value);
+  }
+  if (spec.sort) {
+    const descending = spec.sort.startsWith("-");
+    const field = descending ? spec.sort.slice(1) : spec.sort;
+    if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
+    records = records.map((record, index) => ({ record, index })).sort((a, b) => {
+      const av = a.record.fields[field] ?? "", bv = b.record.fields[field] ?? "";
+      const comparison = av < bv ? -1 : av > bv ? 1 : 0;
+      return comparison ? comparison * (descending ? -1 : 1) : a.index - b.index;
+    }).map(({ record }) => record);
+  }
+  return records.slice(0, spec.limit);
+}
+export function knownCollectionField(field: string, records: CollectionRecord[]): boolean {
+  return fieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
+}
+
+export function makeGridCollection(source: string, start: number, input: { folder: string; sort: string; filter: string; limit: string; template: string }): string {
+  const el = [...descendants(parseSource(source))].find((item) => item.start === start);
+  if (!el?.close || el.name === "template") throw new Error("Choose a complete grid in the page source.");
+  if (readCollections(source).some((collection) => collection.element.start <= start && collection.element.end > start)) throw new Error("Edit the existing collection template instead of nesting a collection.");
+  const spec = collectionSpec(input);
+  const value = (text: string) => escapeText(text).replace(/"/g, "&quot;");
+  const tag = source.slice(el.start, el.tag.end - 1) + ` data-each="${value(spec.folder)}"${spec.sort ? ` data-sort="${value(spec.sort)}"` : ""}${spec.filter ? ` data-filter="${value(spec.filter)}"` : ""}${input.limit ? ` data-limit="${spec.limit}"` : ""}>`;
+  return source.slice(0, el.start) + tag + `<template>${input.template}</template>` + source.slice(el.close.start);
+}
