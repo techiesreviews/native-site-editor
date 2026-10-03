@@ -89,7 +89,16 @@ own content and the site works without the editor. They are not editor bookkeepi
 - **elements**: inserting inside sections: heading, text, image, button, list, columns
   or grid, video or embed, divider, and native forms (`<form action>` with fields).
   Insertion inside sections was removed on 2026-09-25 at Lex's request, so this slice
-  waits for Lex to confirm it is wanted back.
+  is back on Lex's request for a complete page builder (2026-10-03), designed after
+  `ux-research.md`: the destination in words, one insertion system, `/` while typing,
+  Move before/after/inside.
 - **site**: navigation built from pages, page settings (SEO, social, favicon, 404), and
   CSS-first interactions (scroll reveal with `animation-timeline: view()`, hover
   presets).
+- **media**: an image manager: every image in the repository with thumbnails, search,
+  tags and default alt text (kept in `.editor/media.json`), "Used on N pages", and
+  uploads optimised in the browser (resize, WebP, metadata stripped, responsive
+  `srcset` variants) before they become drafts.
+- **component content on the canvas**: empty optional slots show as ghost placeholders
+  ("+ Add image", "+ Add text") where they would appear; click an image to replace it,
+  drop a file on it, remove an optional part with its ×, type into text in place.
