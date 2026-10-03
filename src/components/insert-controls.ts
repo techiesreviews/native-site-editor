@@ -61,6 +61,43 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   // parent's gaps are the targets.
   let drag: { parent: string; index: number | undefined } | undefined;
   let dropLabel = "Drop section here";
+  let collisionFrame = 0;
+
+  // Card controls report layout changes; measure only actual painted controls,
+  // rather than guessing where a ghost's button will land.
+  function scheduleCollisions() {
+    if (collisionFrame) return;
+    collisionFrame = requestAnimationFrame(() => {
+      collisionFrame = 0;
+      const bounds = layer.getBoundingClientRect();
+      const blockers = [...pane.querySelectorAll<HTMLElement>(".card-ghost__add, .card-add:not([hidden])")]
+        .filter(el => el.getClientRects().length).map(el => el.getBoundingClientRect());
+      const overlaps = (rect: DOMRect, left = rect.left) => blockers.some(other =>
+        left < other.right + 4 && left + rect.width > other.left - 4 && rect.top < other.bottom + 4 && rect.bottom > other.top - 4);
+      for (const row of plusByKey.values()) {
+        const plus = row.querySelector<HTMLElement>(".insert-point__plus")!;
+        plus.style.left = "50%";
+        row.classList.remove("is-occluded");
+        if (drag || row.hidden) continue;
+        const rect = plus.getBoundingClientRect();
+        if (!overlaps(rect)) continue;
+        const candidates = blockers.flatMap(other => [other.right + 8, other.left - rect.width - 8])
+          .sort((a, b) => Math.abs(a - rect.left) - Math.abs(b - rect.left));
+        const left = candidates.find(value => value >= bounds.left + 4 && value + rect.width <= bounds.right - 4 && !overlaps(rect, value));
+        if (left === undefined) row.classList.add("is-occluded");
+        else {
+          const rowRect = row.getBoundingClientRect();
+          const scale = row.offsetWidth ? rowRect.width / row.offsetWidth : 0;
+          if (scale <= 0) row.classList.add("is-occluded");
+          else plus.style.left = `${(left + rect.width / 2 - rowRect.left) / scale}px`;
+        }
+      }
+      layer.classList.toggle("has-occluded-focus", Boolean(layer.querySelector(".is-occluded:focus-within, .is-occluded.is-open")));
+    });
+  }
+  pane.addEventListener("card-controls-layout", scheduleCollisions);
+  layer.addEventListener("focusin", scheduleCollisions);
+  layer.addEventListener("focusout", scheduleCollisions);
 
   function geometry() {
     const frameRect = frame.getBoundingClientRect();
@@ -122,6 +159,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       plusByKey.delete(key);
     }
     if (openKey && !plusByKey.has(openKey)) openKey = undefined;
+    scheduleCollisions();
   }
   const resize = new ResizeObserver(() => layout());
   resize.observe(frame);
@@ -159,6 +197,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     const row = key ? plusByKey.get(key) : undefined;
     row?.classList.add("is-open");
     row?.querySelector(".insert-point__plus")?.setAttribute("aria-expanded", "true");
+    scheduleCollisions();
   }
 
   return {
@@ -221,6 +260,8 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     destroy() {
       clearTimeout(leaveTimer);
       resize.disconnect();
+      cancelAnimationFrame(collisionFrame);
+      pane.removeEventListener("card-controls-layout", scheduleCollisions);
       layer.remove();
     },
   };

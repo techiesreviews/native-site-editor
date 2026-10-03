@@ -116,6 +116,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   function layout() {
+    pane.dispatchEvent(new Event("card-controls-layout"));
     const { frameRect, left, top } = geometry();
     Object.assign(layer.style, { left: `${left}px`, top: `${top}px`, width: `${frameRect.width}px`, height: `${frameRect.height}px` });
     const grid = current();
@@ -269,6 +270,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const placedY = side === undefined ? y : Math.min(anchor.top - paneRect.top, bottom - height);
     popover.style.top = `${Math.max(top + 12, placedY)}px`;
     popover.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
+    pane.dispatchEvent(new Event("card-controls-layout"));
   }
 
   function close(restoreFocus: boolean) {
@@ -348,6 +350,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();
       popover.remove();
+      pane.dispatchEvent(new Event("card-controls-layout"));
     },
   };
 }

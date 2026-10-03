@@ -13,6 +13,13 @@
 .insert-point[hidden] {
   display: none;
 }
+/* Only controls with no free collision position disappear. They remain in the
+   tab order and reappear above the card button when focused or opened. */
+.insert-point.is-occluded:not(:focus-within, .is-open) .insert-point__plus {
+  opacity: 0;
+  pointer-events: none;
+}
+.insert-layer.has-occluded-focus { z-index: 32; }
 /* Only the pair around the hovered item shows; the rest stay out of the way
    but reachable by keyboard. */
 .insert-point:not(.is-near, .is-open, :focus-within) {

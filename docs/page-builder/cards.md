@@ -158,3 +158,12 @@ fixture repository is additive.
   template is the template's and is not offered.
 - Duplicate copies an item exactly, including its link; Add card is the clean copy.
 - Drag to reorder items is not done (Move and Alt+↑/↓ are).
+
+Section insertion controls measure the actual Add-card button and open popover
+rectangles after layout. Only a colliding section plus moves to the nearest
+available horizontal position; other gaps keep their normal placement. If no
+position fits, that plus stays out of pointer interaction until keyboard focus
+or its panel opens, when it is shown above the obstruction. Section drag targets
+retain their normal geometry. Layout notifications are coalesced into one
+animation frame and removed with the controls; scroll/runtime reports and resize
+updates refresh the measured positions.

@@ -288,9 +288,9 @@ test("review: a card holding a grid of its own is its grid's card; Alt+arrows mo
   await expect(explorer(page).getByRole("checkbox", { name: "Add a card to “Recent work” on Home" })).toBeChecked();
 });
 
-test("card Add wins overlapping section controls; open popup follows iframe scroll and canvas clicks dismiss it", async ({ page, baseURL }) => {
+test("overlapping card and section Add controls remain clickable; popup tracks scroll and Undo restores cards", async ({ page, baseURL }) => {
   // A two-column grid's next row occupies the gap before the adjacent section.
-  // Its centred Add button and the section plus share pixels deliberately.
+  // The section plus must move clear of the centred Add button.
   const source = readFileSync("fixtures/native-cards/index.html", "utf8");
   const fixture = source
     .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr));width:200%"')
@@ -305,10 +305,20 @@ test("card Add wins overlapping section controls; open popup follows iframe scro
   const button = (await addCard(page).boundingBox())!;
   const sectionPlus = page.getByRole("button", { name: /Add a section before “What we do/ });
   await expect(sectionPlus).toBeVisible();
+  await sectionPlus.focus();
+  const hitSection = () => sectionPlus.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  });
+  await expect.poll(hitSection).toBe(true);
   const plus = (await sectionPlus.boundingBox())!;
-  expect(Math.abs(button.y + button.height / 2 - plus.y - plus.height / 2)).toBeLessThan(20);
-  expect(plus.x).toBeGreaterThan(button.x);
-  expect(plus.x + plus.width).toBeLessThan(button.x + button.width);
+  expect(plus.x + plus.width <= button.x || plus.x >= button.x + button.width).toBe(true);
+  await sectionPlus.click();
+  await expect(page.getByRole("dialog", { name: "Add to the page" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add to the page" })).toBeHidden();
+  await expect(sectionPlus).toBeFocused();
+  await expect.poll(hitSection).toBe(true);
   const hitAdd = () => addCard(page).evaluate((el) => {
     const rect = el.getBoundingClientRect();
     return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
@@ -320,6 +330,9 @@ test("card Add wins overlapping section controls; open popup follows iframe scro
   })).toBe(true);
   await addCard(page).click();
   await expect(popover(page)).toBeVisible();
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect.poll(hitAdd).toBe(true);
+  await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
   const before = (await page.locator(".card-ghost").boundingBox())!;
   const beforePopup = (await popover(page).boundingBox())!;
   await frame(page).locator("html").evaluate(() => window.scrollBy(0, 80));
@@ -378,4 +391,40 @@ test("a stale grid report cannot restore controls or edit the previous source", 
   expect(await homeDraft(page)).toContain('<div class="spacer">Different source</div>');
   await page.locator(".code-editor__undo").click();
   await expect.poll(() => homeDraft(page)).toBe(replacement);
+});
+test('only a fully occluded section plus is hidden, remains keyboard reachable, and drag targets stay visible',async({page,baseURL})=>{
+  await open(page,baseURL);
+  await page.evaluate(async()=>{
+    const {createInsertControls}=await import('/src/components/insert-controls.ts');
+    const pane=document.createElement('div');pane.id='collision-fixture';Object.assign(pane.style,{position:'fixed',left:'20px',top:'100px',width:'100px',height:'160px',zIndex:'100',background:'white'});
+    const frame=document.createElement('div');Object.assign(frame.style,{width:'100px',height:'160px'});pane.append(frame);document.body.append(pane);
+    const blocker=document.createElement('button');blocker.className='card-ghost__add';blocker.textContent='Card';Object.assign(blocker.style,{position:'absolute',left:'0',top:'34px',width:'100px',height:'32px',zIndex:'21'});pane.append(blocker);
+    const controls=createInsertControls(pane,frame,{onOpen:()=>pane.dataset.open='true'});
+    controls.update([{path:'fixture',parent:[],index:0,top:50,left:0,width:100,before:'First'},{path:'fixture',parent:[],index:1,top:120,left:0,width:100,before:''}]);controls.hover({parent:[],index:0});
+    Object.assign(window,{collisionControls:controls});
+  });
+  const fixture=page.locator('#collision-fixture'),first=fixture.getByRole('button',{name:'Add a section before “First”'}),last=fixture.getByRole('button',{name:'Add a section at the end'});
+  await expect(first).toHaveCSS('opacity','0');await expect(last).toHaveCSS('opacity','1');
+  await first.focus();await expect(first).toHaveCSS('opacity','1');
+  expect(await first.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+  await page.keyboard.press('Enter');await expect(fixture).toHaveAttribute('data-open','true');
+  await page.evaluate(()=>(window as any).collisionControls.dragStart({parent:[],index:0}));
+  await page.evaluate(()=>(window as any).collisionControls.dragTarget({parent:[],index:0}));
+  await expect(first).toBeHidden();await expect(fixture.locator('.is-target .insert-point__drop')).toBeVisible();
+  await page.evaluate(()=>{(window as any).collisionControls.dragEnd();(window as any).collisionControls.destroy();document.querySelector('#collision-fixture')!.remove();});
+});
+test('collision placement uses real screen rectangles under a scaled preview pane',async({page,baseURL})=>{
+  await open(page,baseURL);
+  await page.evaluate(async()=>{
+    const {createInsertControls}=await import('/src/components/insert-controls.ts');
+    const pane=document.createElement('div');pane.id='scaled-collision';Object.assign(pane.style,{position:'fixed',left:'20px',top:'100px',width:'400px',height:'160px',zIndex:'100',transform:'scale(.9)',transformOrigin:'top left'});
+    const frame=document.createElement('div');Object.assign(frame.style,{width:'400px',height:'160px',transform:'scale(.75)',transformOrigin:'top left'});pane.append(frame);document.body.append(pane);
+    const blocker=document.createElement('button');blocker.className='card-ghost__add';blocker.textContent='Card';Object.assign(blocker.style,{position:'absolute',left:'0',top:'34px',width:'220px',height:'32px',zIndex:'21'});pane.append(blocker);
+    const controls=createInsertControls(pane,frame,{onOpen:()=>pane.dataset.open='true'});controls.update([{path:'scaled',parent:[],index:0,top:50,left:0,width:300,before:'Scaled'}]);controls.hover({parent:[],index:0});Object.assign(window,{scaledControls:controls});
+  });
+  const plus=page.locator('#scaled-collision .insert-point__plus');
+  await expect.poll(()=>plus.evaluate(el=>{const r=el.getBoundingClientRect();const other=document.querySelector('#scaled-collision .card-ghost__add')!.getBoundingClientRect();return r.left>=other.right||r.right<=other.left;})).toBe(true);
+  expect(await plus.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+  await plus.click();await expect(page.locator('#scaled-collision')).toHaveAttribute('data-open','true');
+  await page.evaluate(()=>{(window as any).scaledControls.destroy();document.querySelector('#scaled-collision')!.remove();});
 });
