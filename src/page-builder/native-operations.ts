@@ -170,13 +170,16 @@ function canContain(parent: SourceNode, children: SourceNode[]) {
   if (parent.name === "ul" || parent.name === "ol") return names.every((name) => name === "li");
   if (parent.name === "dl") return names.every((name) => name === "dt" || name === "dd");
   if (["select", "optgroup"].includes(parent.name)) return names.every((name) => name === "option" || parent.name === "select" && name === "optgroup");
-  return !names.some((name) => ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
+  return !names.some((name) => ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
 }
 const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd"]);
 function semanticTree(root: SourceNode) {
   return all(root).every((node) => {
     if (node.name === "plaintext") return false;
     if ((node.namespace ?? "html") !== "html") return true;
+    if (["caption", "colgroup", "thead", "tbody", "tfoot"].includes(node.name) && node.parent?.name !== "table") return false;
+    if (node.name === "col" && node.parent?.name !== "colgroup") return false;
+    if (node.name === "colgroup" && node.children.some((child) => child.name !== "col")) return false;
     if (node.name === "table" && node.children.some((child) => !["caption", "colgroup", "thead", "tbody", "tfoot"].includes(child.name))) return false;
     if (["thead", "tbody", "tfoot"].includes(node.name) && node.children.some((child) => child.name !== "tr")) return false;
     if (node.name === "tr" && (node.children.some((child) => !["td", "th"].includes(child.name)) || !["thead", "tbody", "tfoot"].includes(node.parent?.name ?? ""))) return false;

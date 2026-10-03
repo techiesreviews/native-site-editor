@@ -74,3 +74,38 @@ test("shared move destination gate distinguishes safe no-ops from metadata and i
   assert.equal(nativeMoveDestinationValid('<main><x-card></x-card></main>',[0,0],{parent:[0],index:0}),false);
   assert.equal(nativeMoveDestinationValid('<main><dl><dt></dt></dl><div><dt>Term</dt></div></main>',[0,1],{parent:[0,0,0],index:0}),false);
 });
+
+test("table parts outside their explicit table parents cannot misalign native paths",async()=>{
+ const browser=await chromium.launch();
+ try {
+  const page=await browser.newPage();
+  const source='<main><caption>c</caption><section></section></main>';
+  await page.setContent(source);
+  assert.equal(await page.locator('caption').count(),0);
+  assert.equal(await page.locator('main').evaluate(el=>el.children[0].localName),'section');
+  assert.deepEqual(nativeDestinations(source,'index.html',[0,0]),[]);
+  assert.equal(nativeMarkupInsertEdit(source,[0],1,'<section>New</section>'),undefined);
+  for(const part of ['caption','colgroup','col','thead','tbody','tfoot']) {
+   const invalid=`<main><${part}></${part}><section></section></main>`;
+   assert.equal(nativeMarkupInsertEdit(invalid,[0],1,'<section>New</section>'),undefined,part);
+  }
+ }finally{await browser.close();}
+});
+test("valid table parts cannot move into ordinary containers while adjacent native insertion remains valid",async()=>{
+ const source='<main><table><caption>Title</caption><colgroup><col></colgroup><thead><tr><th>Head</th></tr></thead><tbody><tr><td>Body</td></tr></tbody><tfoot><tr><td>Foot</td></tr></tfoot></table><div></div></main>';
+ for(const from of [[0,0,0],[0,0,1],[0,0,1,0],[0,0,2],[0,0,3],[0,0,4]]) {
+  assert.equal(nativeMoveDestinationValid(source,from,{parent:[0,1],index:0}),false);
+  assert.equal(nativeMoveEdit(source,from,{parent:[0,1],index:0}),undefined);
+ }
+ for(const markup of ['<caption>Bad</caption>','<colgroup><col></colgroup>','<col>']) assert.equal(nativeMarkupInsertEdit(source,[0,1],0,markup),undefined);
+ const inserted=nativeMarkupInsertEdit(source,[0],1,'<section>New</section>');assert.ok(inserted);
+ const browser=await chromium.launch();
+ try {
+  const page=await browser.newPage();await page.setContent(applyGuardedSourceEdit(source,inserted)!);
+  assert.deepEqual(await page.locator('main').evaluate(el=>Array.from(el.children).map(child=>child.localName)),['table','section','div']);
+  assert.equal(await page.locator('table > caption').textContent(),'Title');
+  assert.equal(await page.locator('table > tbody > tr > td').textContent(),'Body');
+  await page.setContent('<main><table></table><div><caption>Title</caption></div></main>');
+  assert.equal(await page.locator('div > caption').count(),0);
+ }finally{await browser.close();}
+});
