@@ -159,6 +159,8 @@ export interface NativeStructure {
   /** The page file the items belong to; empty for a component shown by itself. */
   path: string;
   items: NativeStructureItem[];
+  /** Exact page bytes in the update sent for this painted render. */
+  paintedSource?: string;
 }
 
 export interface NativeTextEdit {
@@ -393,6 +395,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
   let context = "";
+  let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
   let renderVersion = 0;
   // A click reported against an older render. The runtime re-reports its
   // selection as a refresh after the next update, and that refresh then counts
@@ -438,6 +441,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectNode = undefined;
     selectText = undefined;
     scrollHash = undefined;
+    sentStructureSnapshot = { context, sources: { ...sources } };
     frame.contentWindow?.postMessage(
       { source: "astro-native-preview-host", type: "update", id: ++messageId, payload },
       "*",
@@ -653,7 +657,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "structure" && site) {
       const raw = data as unknown as { path?: unknown; items?: unknown };
       const path = typeof raw.path === "string" && (raw.path === "" || site.routes[route] === raw.path) ? raw.path : undefined;
-      if (path === undefined) return;
+      if (path === undefined || !sentStructureSnapshot || sentStructureSnapshot.context !== data.context) return;
+      const paintedSource = sentStructureSnapshot.sources[path];
+      if (path && paintedSource === undefined) return;
       let count = 0;
       const readItems = (value: unknown, depth: number): NativeStructureItem[] => {
         if (!Array.isArray(value) || depth > 12) return [];
@@ -666,7 +672,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           return [{ tag: item.tag.slice(0, 100), node: item.node as number[], text: text("text"), heading: text("heading"), slot: text("slot"), children: readItems(item.children, depth + 1) }];
         });
       };
-      handlers.onStructure?.({ path, items: readItems(raw.items, 0) });
+      handlers.onStructure?.({ path, items: readItems(raw.items, 0), paintedSource });
       return;
     }
     if (data.type === "selection-rect") {

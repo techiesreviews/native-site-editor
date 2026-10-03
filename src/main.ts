@@ -378,17 +378,18 @@ function mountWorkspace() {
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
       if (!structure) { pageStructure?.update(undefined); return; }
-      const path = structure.path, source = nativeEffectiveSource(path), scope = draftScope(), epoch = generation, scopeKey = setupScope();
+      const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
       const proof = scope && editorModule?.captureFileModelState(scope, path);
       const capture = (item: NativeStructureItem) => {
+        nativeStructurePaintedSources.set(item, source);
         nativeStructureMoveActions.set(item, direction => {
           if (source === undefined || !proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || currentPath !== path || !editorModule?.isMounted(path) || nativeEffectiveSource(path) !== source) {
-            announce("The source changed or its editor is not open. Select the element again before moving it."); return;
+            announce("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
           }
           const result = nativeElementSiblingMove(source, item.node, direction);
-          if (result.status === "refused") { announce(result.error); return; }
+          if (result.status === "refused") { announce(result.error); return "stayed"; }
           if (result.status === "stayed") return "stayed";
-          return applyNativeChange(path, source, [result.edit], result.selection, "Element moved") ? "moved" : undefined;
+          return applyNativeChange(path, source, [result.edit], result.selection, "Element moved") ? "moved" : "stayed";
         });
         item.children.forEach(capture);
       };
@@ -432,6 +433,10 @@ function mountWorkspace() {
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     onMove: (path, item, direction) => {
+      const paintedSource = nativeStructurePaintedSources.get(item);
+      if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
+        announce("The source changed. Wait for the preview before moving this element."); return "stayed";
+      }
       if (!isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
       if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction) ?? "stayed";
@@ -1321,6 +1326,7 @@ let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start
 const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
 
 let nativeElementMoveAction: EditBarModel["onMove"];
+const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
 const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down") => "moved" | "stayed" | undefined>();
 
 // One native field keeps the snapshot captured when its popover opened. The
@@ -2033,6 +2039,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 }
 
 async function selectNativeSource(selection: NativePreviewSelection) {
+  nativeElementMoveAction = undefined;
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
   stylePanel?.update();

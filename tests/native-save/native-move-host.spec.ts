@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
@@ -88,4 +89,68 @@ test("Alt+Down while typing remains native and does not move the element", async
   expect(await frame(page).locator("#moving").evaluate(() => (window as unknown as { nativeMoveTypingPrevented: boolean }).nativeMoveTypingPrevented)).toBe(false);
   expect(await source(page)).toBe(before);
   await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "moving");
+});
+
+
+test("a refused stale Structure move consumes Alt+Down and keeps row focus", async ({ page }) => {
+  const row = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: "Paragraph Moving paragraph", exact: true });
+  await row.focus();
+  const result = await row.evaluate(async element => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const changed = `<!-- foreign change -->\n${before}`;
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: changed });
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return { prevented: event.defaultPrevented, focus: document.activeElement === element, changed, source: editor.getMountedSource("index.html") };
+  });
+  expect(result.prevented).toBe(true);
+  expect(result.focus).toBe(true);
+  expect(result.source).toBe(result.changed);
+  await expect(page.locator("#status")).toContainText("source changed");
+});
+
+test("a delayed painted Structure cannot bind reordered agent source", async ({ page }) => {
+  await page.evaluate(() => {
+    window.addEventListener("message", event => {
+      if (event.data?.source === "astro-native-preview" && event.data.type === "structure") Object.assign(window, { oldPaintedStructure: event.data });
+    });
+  });
+  // A real source update makes the runtime emit its complete painted tree.
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: `<!-- paint capture -->\n${before}` });
+  });
+  await expect.poll(() => page.evaluate(() => Boolean((window as any).oldPaintedStructure))).toBe(true);
+  const paintedRow = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: "Paragraph Moving paragraph", exact: true });
+  const changed = await paintedRow.evaluate(async row => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const changed = before.replace('<p id="moving">Moving paragraph</p><p id="second">Second paragraph</p>', '<p id="second">Second paragraph</p><p id="moving">Moving paragraph</p>');
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: changed });
+    const child = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!.contentWindow!;
+    window.dispatchEvent(new MessageEvent("message", { source: child, data: (window as any).oldPaintedStructure }));
+    const currentRow = document.querySelector<HTMLElement>(`#structure [role="treeitem"][data-node="${(row as HTMLElement).dataset.node}"]`)!;
+    currentRow.focus(); currentRow.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
+    return { changed, source: editor.getMountedSource("index.html") };
+  });
+  expect(changed.source).toBe(changed.changed);
+  await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "second");
+});
+
+test("a new shadow selection clears the previous section shortcut before its file opens", async ({ page }) => {
+  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first().click();
+  const before = await source(page);
+  await page.evaluate(() => {
+    window.addEventListener("message", event => {
+      if (event.data?.source !== "astro-native-preview" || event.data.type !== "select" || !event.data.path?.startsWith("components/")) return;
+      const child = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!.contentWindow!;
+      window.dispatchEvent(new MessageEvent("message", { source: child, data: { source: "astro-native-preview", type: "move", direction: "down", context: event.data.context } }));
+      Object.assign(window, { gapMoveChecked: true });
+    });
+  });
+  await frame(page).locator("site-header a").first().click({ position: { x: 5, y: 5 } });
+  await expect.poll(() => page.evaluate(() => Boolean((window as any).gapMoveChecked))).toBe(true);
+  expect((await storedDraft(page, "index.html")).content).toBe(before);
 });

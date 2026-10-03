@@ -66,9 +66,8 @@ export interface PageStructureHandlers {
   onSelect: (path: string, node: number[]) => void;
   /**
    * Alt+Up/Down on a row: move that element one sibling position. "moved",
-   * "stayed" (a section at its first or last position) or "pending" (the
-   * page file is opening first; the move follows) for a section; nothing
-   * for other elements, which do not move.
+   * "stayed" (an edge or refused move) or "pending" (the page file is
+   * opening first; the move follows). A handled refusal keeps row focus.
    */
   onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | "pending" | undefined;
   /** Whether this element's row can be dragged to another position (a whole section). */
@@ -556,8 +555,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       target.tabIndex = 0;
       target.focus();
     };
-    // Alt+Up/Down moves a section in the page; its row keeps focus. Other
-    // elements do not move and the keys keep walking the rows.
+    // Alt+Up/Down requests a source move; its row keeps focus on refusal.
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && structure?.path) {
       const direction = event.key === "ArrowUp" ? "up" : "down";
       const last = item.node.length - 1;
