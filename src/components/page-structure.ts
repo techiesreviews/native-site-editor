@@ -297,6 +297,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const fieldInputs = new Map<string, HTMLInputElement>();
   const fieldClosers = new Map<HTMLInputElement, () => void>();
   let renderingFields = false;
+  const detailOpen = new Map<string, boolean>();
   function slotControls(model: ComponentStructureModel, level: number) {
     const result: HTMLElement[] = [];
 
@@ -336,6 +337,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (slot.kind === "text" && slot.value.editable) block.append(field("text", "Text", slot.value.text));
       else if (slot.kind === "image" || slot.kind === "link") {
         const details = document.createElement("details");
+        const detailKey = `${model.host.path}:${key([...model.host.node])}:${slot.name}`;
+        details.dataset.detailKey = detailKey;
+        details.open = detailOpen.get(detailKey) ?? false;
+        details.addEventListener("toggle", () => detailOpen.set(detailKey, details.open));
         const summary = document.createElement("summary"); summary.textContent = slot.kind === "image" ? "Image" : "Link";
         details.append(summary);
         if (slot.kind === "image") details.append(field("src", "Image", slot.value.src ?? ""), field("alt", "Alt text", slot.value.alt ?? ""));
@@ -532,6 +537,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     tree.hidden = false;
     const activeField = document.activeElement instanceof HTMLInputElement && tree.contains(document.activeElement) ? document.activeElement : undefined;
     const caret = activeField ? [activeField.selectionStart, activeField.selectionEnd] : undefined;
+    for (const details of tree.querySelectorAll<HTMLDetailsElement>("details[data-detail-key]")) detailOpen.set(details.dataset.detailKey!, details.open);
     renderingFields = true;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
     setSelected(selected);
@@ -596,7 +602,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     },
     destroy() {
       for (const close of fieldClosers.values()) close();
-      fieldClosers.clear(); fieldInputs.clear();
+      fieldClosers.clear(); fieldInputs.clear(); detailOpen.clear();
       endDrag();
       hint.remove();
       meta.remove();

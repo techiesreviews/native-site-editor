@@ -26,19 +26,20 @@ test('slot fields live in Structure once, keep caret and own typing while refusi
  expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(0);
  await page.evaluate(()=>{(window as any).slotHarness.source+='<!-- external -->';});await text.press('!');
  await expect(text).toHaveAttribute('aria-invalid','true');expect(await page.evaluate(()=>(window as any).slotHarness.source)).toContain('First!');expect(await page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('First!!');
- await text.press('Tab');expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(1);
+ await text.press('Tab');expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(0);
 });
 test('link and image detail fields use exact instance sources and ordinary selection stays on the page',async({page})=>{
  await harness(page);await page.locator('.page-structure__slot[data-slot-name="image"] summary').click();
- await page.getByRole('textbox',{name:'Image: Alt text',exact:true}).fill('New & exact');await page.keyboard.press('Tab');
- await page.locator('.page-structure__slot[data-slot-name="cta"] summary').click();await page.getByRole('textbox',{name:'Cta: Link / URL',exact:true}).fill('/after?a=1&b=2');await page.keyboard.press('Tab');
+ await page.getByRole('textbox',{name:'Image: Alt text',exact:true}).fill('New & exact');await expect(page.getByRole('textbox',{name:'Image: Alt text',exact:true})).toBeFocused();await page.keyboard.press('Tab');
+ await page.locator('.page-structure__slot[data-slot-name="cta"] summary').click();await page.getByRole('textbox',{name:'Cta: Link / URL',exact:true}).fill('/after?a=1&b=2');await expect(page.getByRole('textbox',{name:'Cta: Link / URL',exact:true})).toBeFocused();await page.keyboard.press('Tab');
+ expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(2);
  const source=await page.evaluate(()=>(window as any).slotHarness.source);const values=await page.evaluate(()=>{const dom=new DOMParser().parseFromString((window as any).slotHarness.source,'text/html');return{alt:dom.querySelector('img')!.getAttribute('alt'),href:dom.querySelector('a')!.getAttribute('href')};});expect(values).toEqual({alt:'New & exact',href:'/after?a=1&b=2'});expect(source).toContain('alt="New &amp; exact"');expect(source).toContain('href="/after?a=1&amp;b=2"');
  await page.getByRole('button',{name:'Title',exact:true}).click();expect(await page.evaluate(()=>(window as any).slotHarness.selected.at(-1))).toEqual({path:'index.html',node:[0,0]});expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
 });
 test('field sessions reject scope and template changes, and shadow selections require true host proof',async({page})=>{
  await harness(page);
- const result=await page.evaluate(()=>{const state=(window as any).slotHarness,tools=state.tools;const field=tools.structure('index.html',[0]).openField('title','text');state.template+='<!-- new -->';const changedTemplate=field.write('Wrong');const replacement=tools.structure('index.html',[0]).openField('title','text');state.model++;const changedModel=replacement.write('Wrong');const second=tools.structure('index.html',[0]).openField('title','text');state.revision='B';const changedScope=second.write('Wrong');const shadow={path:'components/project-card.html',node:[0,0],tag:'h2',text:'',reason:'click',selectors:[],host:{path:'index.html',node:[0],tag:'project-card',selector:'project-card'}};return {changedTemplate,changedScope,changedModel,valid:tools.instanceSelection(shadow),invalid:tools.instanceSelection({...shadow,host:{...shadow.host,node:[9]}}),scope:tools.editingScope(),source:state.source};});
- expect(result.changedTemplate).toBe(false);expect(result.changedScope).toBe(false);expect(result.changedModel).toBe(false);expect(result.source).toContain('Original');expect(result.valid.path).toBe('index.html');expect(result.valid.node).toEqual([0]);expect(result.invalid).toBeUndefined();expect(result.scope).toBeUndefined();
+ const result=await page.evaluate(()=>{const state=(window as any).slotHarness,tools=state.tools;const field=tools.structure('index.html',[0]).openField('title','text');state.template+='<!-- new -->';const changedTemplate=field.write('Wrong');const replacement=tools.structure('index.html',[0]).openField('title','text');state.model++;const changedModel=replacement.write('Wrong');const second=tools.structure('index.html',[0]).openField('title','text');state.revision='B';const changedScope=second.write('Wrong');const shadow={path:'components/project-card.html',node:[0,0],tag:'h2',text:'',reason:'click',selectors:[],host:{path:'index.html',node:[0],tag:'project-card',selector:'project-card'}};return {changedTemplate,changedScope,changedModel,valid:tools.instanceSelection(shadow),invalid:tools.instanceSelection({...shadow,host:{...shadow.host,node:[9]}}),scope:tools.editingScope(),closed:state.closed,source:state.source};});
+ expect(result.closed).toBe(0);expect(result.changedTemplate).toBe(false);expect(result.changedScope).toBe(false);expect(result.changedModel).toBe(false);expect(result.source).toContain('Original');expect(result.valid.path).toBe('index.html');expect(result.valid.node).toEqual([0]);expect(result.invalid).toBeUndefined();expect(result.scope).toBeUndefined();
 });
 
 test('optional visibility and root actions remain explicit and keyboard reachable',async({page})=>{
@@ -62,4 +63,8 @@ test('390px Structure details stay within their sidebar',async({page})=>{
  await page.setViewportSize({width:390,height:760});await harness(page);
  await page.locator('.page-structure__slot[data-slot-name="image"] summary').click();await page.locator('.page-structure__slot[data-slot-name="cta"] summary').click();
  const dimensions=await page.locator('aside').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth}));expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width);
+});
+
+test('unchanged slot values do not create a typing group',async({page})=>{
+ await harness(page);const result=await page.evaluate(()=>{const state=(window as any).slotHarness,field=state.tools.structure('index.html',[0]).openField('title','text');const unchanged=field.write('Original');field.close();return{unchanged,closed:state.closed,version:state.version};});expect(result).toEqual({unchanged:true,closed:0,version:0});
 });

@@ -1183,9 +1183,15 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!read()) return;
         const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
         if (!initialProof) return;
-        let expected = initial.source, closed = false;
+        let expected = initial.source, closed = false, wrote = false;
         let proof = initialProof;
-        const close = () => { if (!closed) { closed = true; proof.dispose?.(); endTyping(path); } };
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+          proof.dispose?.();
+          if (ownsGroup) editor.closeActiveEditGroup(path);
+        };
         const reject = () => { close(); return false; };
         return {
           write(value) {
@@ -1203,6 +1209,7 @@ export function createComponentTools(deps: ComponentDeps) {
             if (!edit) return reject();
             if ("error" in edit) { deps.announce(edit.error); return reject(); }
             const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
+            if (next === at.source) return true;
             live(path, edit, `${slotLabel(name)} changed`, at.node);
             if (deps.sources()[path] !== next) return reject();
             if (!hostProof.isCurrent()) return reject();
@@ -1210,6 +1217,7 @@ export function createComponentTools(deps: ComponentDeps) {
             if (!nextProof) return reject();
             proof.dispose?.(); proof = nextProof;
             expected = next;
+            wrote = true;
             return true;
           },
           close,
