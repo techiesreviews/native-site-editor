@@ -2265,7 +2265,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
     element("status").textContent = done;
     return undefined;
   }
-  return applyNativeOperation({
+  return applyNativeCollectionOperation({
     edits: new Map([[path, next]]),
     done,
     undone: `Undid changing the ${field} of ${nativePageLabelOf(path)}.`,
@@ -2346,7 +2346,7 @@ function nativeSettingsController() {
       source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
       source = upsertHeadTag(source, "robots", "noindex");
       source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
-      return applyNativeOperation({ expectedSources, creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." });
+      return applyNativeCollectionOperation({ expectedSources, creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." });
     },
     async applyNavigation(path, original, links) {
       if (stale() || sourcesChanged()) return changed;
@@ -2357,7 +2357,7 @@ function nativeSettingsController() {
       let next: string;
       try { next = editNavigation(source, list, links); }
       catch (error) { return error instanceof Error ? error.message : "Navigation could not be changed."; }
-      return applyNativeOperation({ expectedSources, edits: new Map([[path, next]]), done: "Navigation applied as a draft. Save to GitHub to keep it.", undone: "Undid changing navigation." });
+      return applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Navigation applied as a draft. Save to GitHub to keep it.", undone: "Undid changing navigation." });
     },
     async uploadImage() {
       const picked = await pickFiles({ accept: "image/*", multiple: false });
@@ -2415,7 +2415,7 @@ async function applyNativeSiteSettings(values: SiteSettingsValues, expectedSourc
     }
   } catch (error) { return error instanceof Error ? error.message : "Site settings could not be changed."; }
   if (!edits.size) return undefined;
-  return applyNativeOperation({ expectedSources, edits, done: `Site settings applied to ${edits.size} files as drafts. Save to GitHub to keep them.`, undone: "Undid site settings on all affected pages." });
+  return applyNativeCollectionOperation({ expectedSources, edits, done: `Site settings applied to ${edits.size} files as drafts. Save to GitHub to keep them.`, undone: "Undid site settings on all affected pages." });
 }
 
 async function openNativeNavigation(pagePath: string) {
@@ -3600,7 +3600,7 @@ async function writeSiteSettings(change: { name?: string; url?: string }): Promi
   const next = withSiteSettings(text, change);
   if ("error" in next) return next.error;
   const what = change.name !== undefined ? "name" : "address";
-  return applyNativeOperation({
+  return applyNativeCollectionOperation({
     edits: new Map([[NATIVE_CONFIG_PATH, next.text]]),
     done: `Site ${what} set as a draft. Save to GitHub to keep it.`,
     undone: `Undid setting the site ${what}.`,
@@ -4088,7 +4088,7 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
       const list = readNavigation(page);
       if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
     }
-    return applyNativeOperation({ expectedSources, creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file, done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` });
+    return applyNativeCollectionOperation({ expectedSources, creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file, done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` });
   }
   return commitNativePage({ file: plan.file, route: plan.route, title: plan.title, content: plan.content, done: `Created the page ${plan.title} at ${plan.route}.` });
 }
@@ -4120,7 +4120,7 @@ async function commitNativePage(page: {
   done: string;
 }): Promise<string | undefined> {
   const expectedSources = new Map([...nativeSitePaths(nativeSite!)].map(path => [path, nativeEffectiveSource(path)] as const));
-  return applyNativeOperation({ expectedSources, creates: [{ path: page.file, content: page.content }], open: page.file,
+  return applyNativeCollectionOperation({ expectedSources, creates: [{ path: page.file, content: page.content }], open: page.file,
     done: page.done, undone: `Undid creating the page ${page.title}.` });
 }
 
@@ -4263,7 +4263,7 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
   const what = paths.length > 1 && target.subpages
     ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
     : `the page ${target.label}`;
-  const error = await applyNativeOperation({
+  const error = await applyNativeCollectionOperation({
     deletes: paths,
     ...(removeCard && card ? { edits: card.edits } : {}),
     done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
@@ -4420,7 +4420,7 @@ async function changeNativeUrl(file: string, value: string, keep: boolean, openi
     ? `${count} ${count === 1 ? "link" : "links"} updated in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
     : "no links to update";
   if (stale()) return changed;
-  return applyNativeOperation({
+  return applyNativeCollectionOperation({
     expectedSources,
     moves: change.move.moves,
     edits,
@@ -4533,7 +4533,16 @@ function nativeCollectionSnapshot(scope = draftScope()): NativeCollectionSnapsho
  */
 async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): Promise<string | undefined> {
   if (!nativeSite) return "Open a native site first.";
-  const snapshot = nativeCollectionSnapshot();
+  // Listings bake from every page: load the whole text index when any page
+  // source is missing, then plan from the fresh state.
+  const scope = setupScope(), epoch = generation;
+  let snapshot = nativeCollectionSnapshot();
+  if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) {
+    const error = await ensureNativeTextIndex();
+    if (error) return error;
+    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
+    snapshot = nativeCollectionSnapshot();
+  }
   // The site name may change in this very operation: read it from the result.
   const candidate = (path: string) => origin.edits?.get(path) ?? origin.creates?.find(file => file.path === path)?.content ?? snapshot.sources[path];
   const candidateIdentity = { name: readSiteIdentity(candidate(NATIVE_CONFIG_PATH), candidate(snapshot.routes["/"] ?? NATIVE_HOME_PAGE) ?? "").name };
@@ -5459,6 +5468,11 @@ async function dropFileTarget(source: FileRowTarget, folder: string) {
 
 // Renames or moves a file or folder to `to`: the pages among them that other
 // pages link to are named in a confirmation first.
+// A real folder relocation, so collection listings drawing from it follow.
+function folderIntent(source: FileRowTarget, to: string) {
+  return source.folder ? { folders: [{ from: `${source.path}/`, to: `${to}/` }] } : {};
+}
+
 async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move"): Promise<string | undefined> {
   const problem = moveProblem(source, to, operation);
   if (problem) return problem;
@@ -5493,7 +5507,7 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
   const what = source.folder ? `the folder ${source.path}` : source.path;
   const done = operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${parentOf(to) || "the top of the repository"}.`;
   const native = !!nativeSite;
-  const error = native ? await applyNativeOperation({ moves: ops.map(op => ({ from: op.file.path, to: op.to })), done,
+  const error = native ? await applyNativeCollectionOperation({ moves: ops.map(op => ({ from: op.file.path, to: op.to })), ...folderIntent(source, to), done,
     undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.` }) : await applyFileOperation(ops);
   if (error) return error;
   if (!native) announce(done);
@@ -5611,8 +5625,9 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
   }
   const what = source.folder ? `the folder ${source.path}` : source.path;
   const summary = count ? `${count} ${count === 1 ? "link" : "links"} updated in ${urls.links.length} ${urls.links.length === 1 ? "file" : "files"}` : "no links to update";
-  const error = await applyNativeOperation({
+  const error = await applyNativeCollectionOperation({
     moves: ops.map((op) => ({ from: op.file.path, to: op.to })),
+    ...folderIntent(source, to),
     edits,
     done: `${operation === "rename" ? "Renamed" : "Moved"} ${what} to ${to} — ${summary}${answer.option && redirected.length ? `; ${single ? `${first.from} redirects` : "the old URLs redirect"} there` : ""}.`,
     undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.`,
@@ -5661,7 +5676,7 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   if (!ok) { announce(`Cancelled deleting ${target.path}`); return "Cancelled."; }
   const done = target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`;
   const native = !!nativeSite;
-  const error = native ? await applyNativeOperation({ deletes: found.map(file => file.path), done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
+  const error = native ? await applyNativeCollectionOperation({ deletes: found.map(file => file.path), done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
   if (error) { errorMessage(new Error(error)); return error; }
   if (!native) announce(done);
   requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
@@ -6141,7 +6156,7 @@ const agentSiteActions: AgentSiteActions = {
     editorModule.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
   },
   writeDraft: async (path, content, create) => {
-    const error = await applyNativeOperation({
+    const error = await applyNativeCollectionOperation({
       ...(create ? { creates: [{ path, content }] } : { edits: new Map([[path, content]]) }),
       ...(nativePageRoute(path) ? { open: path } : {}),
       done: `An agent ${create ? "created" : "changed"} ${path}.`,

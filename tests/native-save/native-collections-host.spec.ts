@@ -104,3 +104,54 @@ test("an invalid staged field refuses the whole apply without writing", async ({
   expect(await storedDraft(page, "work/one/index.html")).toBeUndefined();
   expect(await storedDraft(page, "index.html")).toBeUndefined();
 });
+
+const explorerRow = (page: Page, name: string) => page.locator("#explorer").getByRole("button", { name, exact: true });
+async function openFiles(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
+}
+const listingOf = (home: string) => home.slice(home.indexOf('data-key="work-list"'), home.indexOf("</section>", home.indexOf('data-key="work-list"')));
+
+test("renaming the collection's folder rewrites its scope and card URLs in one Undo/Redo", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await open(page, baseURL, "index.html");
+  const before = await mounted(page, "index.html");
+  await openFiles(page);
+  await explorerRow(page, "work").focus();
+  await page.keyboard.press("F2");
+  await page.locator("#explorer").getByRole("textbox", { name: "New name for work" }).fill("projects");
+  await page.keyboard.press("Enter");
+  const confirm = page.getByRole("dialog", { name: "Rename work to projects?" });
+  await confirm.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator("#status")).toContainText("Renamed the folder work to projects");
+  const home = await homeDraft(page);
+  expect(home).toContain('data-each="/projects/"');
+  expect(listingOf(home)).toContain('href="/projects/one/"');
+  expect(listingOf(home)).not.toContain('href="/work/');
+  expect(await storedDraft(page, "projects/one/index.html")).toBeDefined();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "projects/one/index.html")).toBeUndefined();
+  expect(await mounted(page, "index.html")).toBe(before);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => homeDraft(page)).toBe(home);
+});
+
+test("deleting a collection page folder drops its card in the same Undo/Redo", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await open(page, baseURL, "index.html");
+  await openFiles(page);
+  const work = explorerRow(page, "work").first();
+  if ((await work.getAttribute("aria-expanded")) === "false") await work.click();
+  await explorerRow(page, "two").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for work/two" }).getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: /^Delete .*work\/two/ }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toContainText("Deleted the folder work/two");
+  const home = await homeDraft(page);
+  expect(listingOf(home)).toContain(">One</a>");
+  expect(listingOf(home)).not.toContain(">Two</a>");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => homeDraft(page)).toBe(home);
+});
