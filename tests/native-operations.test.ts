@@ -109,3 +109,29 @@ test("valid table parts cannot move into ordinary containers while adjacent nati
   assert.equal(await page.locator('div > caption').count(),0);
  }finally{await browser.close();}
 });
+
+test("ignored nested document wrappers cannot shift native preview selection paths",async()=>{
+ const source='<main><head><meta name=x></head><section></section></main>';
+ const browser=await chromium.launch();
+ try {
+  const page=await browser.newPage();await page.setContent(source);
+  assert.deepEqual(await page.locator('main').evaluate(el=>Array.from(el.children).map(child=>child.localName)),['meta','section']);
+  // Preview section path [0,1] formerly selected the same source section, but the preceding wrapper path disagreed.
+  assert.equal(await page.locator("main").evaluate(el=>el.children[0].localName), "meta");
+  assert.deepEqual(nativeDestinations(source,"index.html",[0,0]),[]);
+  assert.deepEqual(nativeDestinations(source,'index.html',[0,1]),[]);
+  assert.equal(nativeMarkupInsertEdit(source,[0],1,'<section>New</section>'),undefined);
+  for(const wrapper of ['html','head','body']) {
+   const invalid=`<main><${wrapper}><section>Inner</section></${wrapper}><section>After</section></main>`;
+   await page.setContent(invalid);
+   assert.deepEqual(await page.locator("main").evaluate(el=>Array.from(el.children).map(child=>child.localName)),["section","section"]);
+   assert.deepEqual(nativeDestinations(invalid,'index.html',[0,1]),[]);
+   assert.equal(nativeMarkupInsertEdit(invalid,[0],0,'<section>New</section>'),undefined);
+  }
+  const full='<!doctype html><html><head><title>Keep</title><meta name="x" content="y"></head><body><main><section>Old</section></main></body></html>';
+  const edit=nativeMarkupInsertEdit(full,[0],1,'<section>New</section>');assert.ok(edit);
+  const output=applyGuardedSourceEdit(full,edit)!;assert.ok(output.includes('<head><title>Keep</title><meta name="x" content="y"></head>'));
+  await page.setContent(output);
+  assert.deepEqual(await page.locator('main > section').allTextContents(),['Old','New']);
+ }finally{await browser.close();}
+});

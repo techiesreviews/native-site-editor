@@ -176,6 +176,8 @@ const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i
 function semanticTree(root: SourceNode) {
   return all(root).every((node) => {
     if (node.name === "plaintext") return false;
+    if (node.name === "html" && node.parent !== root) return false;
+    if (["head", "body"].includes(node.name) && node.parent?.name !== "html") return false;
     if ((node.namespace ?? "html") !== "html") return true;
     if (["caption", "colgroup", "thead", "tbody", "tfoot"].includes(node.name) && node.parent?.name !== "table") return false;
     if (node.name === "col" && node.parent?.name !== "colgroup") return false;
