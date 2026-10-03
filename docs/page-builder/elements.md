@@ -20,11 +20,12 @@ provide a backend. Configure a real endpoint before treating a form as operation
   have zero geometry; the host must supply real canvas geometry before drag/inline use.
 - `nativeMarkupInsertEdit(source, parent, index, markup)` returns one guarded range
   edit or `undefined`. It preserves existing text, comments, and neighbouring markup;
-  inserted lines match CRLF and neighbour indentation. Destinations are element-child
+  structural lines match CRLF and neighbour indentation; content bytes inside pre,
+  textarea, script, style, and other raw-text regions retain their original line endings. Destinations are element-child
   positions, not text offsets. A destination still needs validation for each choice.
 - `nativeMoveEdit(source, from, point)` and `nativeMoveToEdit(source, from, selected,
   placement)` return one guarded replacement, including cross-parent moves. Moving
-  source classes/content remain unchanged; line indentation is adjusted. Cycles and
+  source classes/content remain unchanged; only structural line indentation is adjusted. Cycles and
   moves to the current position are rejected.
 - Edits contain `source` (the exact original document) and `original` (the replaced
   slice). `applyGuardedSourceEdit(current, edit)` refuses stale documents. A host can
@@ -37,7 +38,14 @@ children cannot be inserted under custom elements. Edit a shared component's act
 native template/container instead. Foreign content, template-containing documents,
 legacy raw-text elements, implicit table sections, omitted end tags, and unsupported
 containers are conservatively unavailable rather than guessed. This leaf does not
-change the existing component-slot generation.
+change the existing component-slot generation. This whole-document restriction also
+applies when template/SVG content is outside the intended target: collection pages
+containing those regions remain unsupported by these native leaf operations. The
+existing collection/component operations retain their own contracts. Native fragment
+names use an HTML allowlist; unknown names, foreign names, and editor keys are rejected.
+URL attributes use the complete HTML5 attribute decoder before validation. URL-list
+attributes (`srcset`, `imagesrcset`, `ping`, `archive`) are conservatively rejected
+until a candidate parser is available.
 
 ## Root adapter next steps
 
@@ -74,3 +82,11 @@ port 5316, then closes Chromium and Vite in `finally`. It checks groups alongsid
 components, search, keyboard insertion into mock source, per-choice disabled targets,
 HTML preview, and Escape. It does not run or own a production browser tab. Type checks,
 the UI build, and the full unit suite were also run.
+
+The Astra review regressions cover encoded colons and semicolon-free numeric
+references, quoted fake sandbox/href/action/method attributes, decoded refresh-meta
+child indexes, nested phrasing repairs, controlled media in buttons, HTML-name
+rejection, and insertion/move content-byte preservation for LF and CRLF. Validation
+after these fixes: 28 focused tests, 551 full unit tests, both TypeScript checks, and
+`git diff --check` passed. No browser run was performed for this source-only fix;
+host integration and runtime geometry remain outside this leaf's validation.

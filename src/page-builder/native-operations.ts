@@ -1,15 +1,18 @@
 // Conservative source operations: explicit balanced HTML only, never parser repairs.
-import { VOID_ELEMENTS, startTags, startTagAttribute, decodeEntity } from "../../shared/html-source";
+import { VOID_ELEMENTS, startTags, startTagAttribute } from "../../shared/html-source";
+import { decodeHtmlEntities } from "./html-entities";
 import type { InsertPoint } from "../components/insert-controls";
 
 export interface SourceEdit { start: number; end: number; text: string }
 export interface GuardedSourceEdit extends SourceEdit { original: string; source: string }
-interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; parent?: SourceNode }
+interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; interactive?: boolean; parent?: SourceNode }
 const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext"]);
 const textNodes = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]);
 const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup"]);
 const interactive = new Set(["a", "button", "input", "select", "textarea", "label", "details"]);
 
+// Only actual HTML names; editor catalogue keys and foreign/custom names are not HTML.
+const htmlNames = new Set("a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strong style sub summary sup table tbody td template textarea tfoot th thead time title tr track u ul var video wbr".split(" "));
 /** A strict tokenizer uses quoted start-tag bounds; comments never become nodes. */
 function tree(source: string): SourceNode | undefined {
   const root: SourceNode = { name: "", start: 0, openEnd: 0, closeStart: source.length, end: source.length, children: [] };
@@ -20,11 +23,13 @@ function tree(source: string): SourceNode | undefined {
     const lt = source.indexOf("<", at);
     if (lt < 0) break;
     if (raw.has(parent.name)) {
-      const close = new RegExp(`</${parent.name}\\s*>`, "ig");
+      const close = new RegExp(`</${parent.name}(?=[\\t\\n\\f\\r />])`, "ig");
       close.lastIndex = at;
       const match = close.exec(source);
       if (!match) return undefined;
-      parent.closeStart = match.index; parent.end = match.index + match[0].length;
+      const closing = new RegExp(`^</${parent.name}\\s*>`, "i").exec(source.slice(match.index));
+      if (!closing) return undefined;
+      parent.closeStart = match.index; parent.end = match.index + closing[0].length;
       stack.pop(); at = parent.end; continue;
     }
     if (source.startsWith("<!--", lt)) {
@@ -42,12 +47,12 @@ function tree(source: string): SourceNode | undefined {
       stack.pop(); at = parent.end; continue;
     }
     const tag = startTags(tail)[0];
-    if (!tag || tag.start !== 0 || tail[tag.end - 1] !== ">" || !/^[a-z][\w:-]*$/i.test(tag.name)) return undefined;
+    if (!tag || !htmlNames.has(tag.name) || tag.start !== 0 || tail[tag.end - 1] !== ">" || !/^[a-z][\w:-]*$/i.test(tag.name)) return undefined;
     // Non-void HTML self-closing syntax is ambiguous in the browser.
     if (/\/\s*>$/.test(tail.slice(0, tag.end)) && !VOID_ELEMENTS.has(tag.name)) return undefined;
     const attributes = tail.slice(tag.nameEnd, tag.end - 1).replace(/\/\s*$/, "");
     if (!/^(?:\s+[a-z_:][\w:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'|[^\s"'=<>`]+))?)*\s*$/i.test(attributes)) return undefined;
-    const child: SourceNode = { name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], parent };
+    const child: SourceNode = { name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
     parent.children.push(child);
     if (!VOID_ELEMENTS.has(child.name)) stack.push(child);
     at = child.openEnd;
@@ -60,7 +65,7 @@ function tree(source: string): SourceNode | undefined {
       if (child.name !== "meta") return true;
       const tag = startTags(source.slice(child.start, child.openEnd))[0];
       const refresh = tag && startTagAttribute(source.slice(child.start, child.openEnd), tag, "http-equiv");
-      return refresh?.value.toLowerCase() !== "refresh";
+      return (refresh && decodeHtmlEntities(refresh.value, true).toLowerCase()) !== "refresh";
     });
     node.children.forEach(visible);
   };
@@ -91,7 +96,7 @@ function canContain(parent: SourceNode, children: SourceNode[]) {
   const descendants = children.flatMap(all);
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     if (ancestor.name === "form" && descendants.some((node) => node.name === "form")) return false;
-    if (["a", "button"].includes(ancestor.name) && descendants.some((node) => interactive.has(node.name))) return false;
+    if (["a", "button"].includes(ancestor.name) && descendants.some((node) => node.interactive)) return false;
     if (ancestor.name === "label" && descendants.some((node) => node.name === "label")) return false;
   }
   if (parent.name === "ul" || parent.name === "ol") return names.every((name) => name === "li");
@@ -109,14 +114,14 @@ function semanticTree(root: SourceNode) {
     if (["td", "th"].includes(node.name) && node.parent?.name !== "tr") return false;
     if (node.name === "li" && node.parent?.name && !["ul", "ol"].includes(node.parent.name)) return false;
     if (node.name === "option" && node.children.length) return false;
-    if (node.name === "button" && node.children.some((child) => !phrasing.has(child.name))) return false;
-    if (textNodes.has(node.name) && !["pre", "button", "option"].includes(node.name) && node.children.some((child) => !phrasing.has(child.name))) return false;
+    if (node.name === "button" && node.children.flatMap(all).some((child) => !phrasing.has(child.name))) return false;
+    if (textNodes.has(node.name) && !["pre", "button", "option"].includes(node.name) && node.children.flatMap(all).some((child) => !phrasing.has(child.name))) return false;
     if (["ul", "ol"].includes(node.name) && node.children.some((child) => child.name !== "li")) return false;
     if (node.name === "dl" && node.children.some((child) => !["dt", "dd"].includes(child.name))) return false;
     if (["select", "optgroup"].includes(node.name) && node.children.some((child) => child.name !== "option" && !(node.name === "select" && child.name === "optgroup"))) return false;
     for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
       if (node.name === "form" && ancestor.name === "form") return false;
-      if (interactive.has(node.name) && ["a", "button"].includes(ancestor.name)) return false;
+      if (node.interactive && ["a", "button"].includes(ancestor.name)) return false;
       if (node.name === "label" && ancestor.name === "label") return false;
     }
     return true;
@@ -129,15 +134,17 @@ function validFragment(root: SourceNode, source: string) {
     if (/\s+on[\w-]+\s*=/i.test(tag)) return true;
     const parsed = startTags(tag)[0];
     if (parsed) {
-      for (const attribute of ["href", "src", "action", "formaction"]) {
+      for (const attribute of ["href", "src", "action", "formaction", "poster", "cite", "data", "background", "longdesc", "manifest", "usemap"]) {
         const value = startTagAttribute(tag, parsed, attribute)?.value;
         if (!value) continue;
-        const decoded = value.replace(/&(?:#\d+|#[xX][0-9a-f]+|[a-z]+);/gi, (entity) => decodeEntity(entity, 0)?.text ?? entity).replace(/[\u0000-\u0020\u007f]/g, "");
+        const decoded = decodeHtmlEntities(value, true).replace(/[\u0000-\u0020\u007f]/g, "");
         if (/^(?:javascript|vbscript|data):/i.test(decoded)) return true;
       }
+      // URL lists require a separate candidate parser; fail closed rather than guess.
+      if (["srcset", "imagesrcset", "ping", "archive"].some((attribute) => startTagAttribute(tag, parsed, attribute))) return true;
       if (node.name === "iframe" && (!startTagAttribute(tag, parsed, "sandbox") || startTagAttribute(tag, parsed, "srcdoc"))) return true;
     }
-    if (node.name === "form" && (!/\saction\s*=/i.test(tag) || !/\smethod\s*=\s*["']?(?:get|post)["']?(?=[\s>])/i.test(tag))) return true;
+    if (node.name === "form" && (!parsed || !startTagAttribute(tag, parsed, "action") || !/^(?:get|post)$/i.test(decodeHtmlEntities(startTagAttribute(tag, parsed, "method")?.value ?? "", true)))) return true;
     return false;
   })) return false;
   return all(root).every((node) => !["script", "style", "html", "head", "body", "meta", "link", "base"].includes(node.name) && !node.name.includes("-"));
@@ -163,6 +170,21 @@ export function nativeDestinations(source: string, path: string, selection: read
   if (containers.has(selected.name) && !textNodes.has(selected.name)) destinations.push(make(selected, [...selection], selected.children.length, "inside"));
   return destinations;
 }
+/** Preserve all content bytes in whitespace-sensitive elements, including line endings. */
+function structuralIndent(markup: string, newline: string, indent: string, remove = "") {
+  const protectedRanges: [number, number][] = [];
+  for (const tag of startTags(markup)) {
+    if (!raw.has(tag.name) && tag.name !== "pre") continue;
+    const close = new RegExp(`</${tag.name}\\s*>`, "ig");
+    close.lastIndex = tag.end;
+    const match = close.exec(markup);
+    if (match) protectedRanges.push([tag.end, match.index]);
+  }
+  return markup.replace(/(\r\n?|\n)([ \t]*)/g, (match, linebreak: string, spaces: string, offset: number) => {
+    if (protectedRanges.some(([start, end]) => offset >= start && offset < end)) return match;
+    return `${newline}${indent}${remove && spaces.startsWith(remove) ? spaces.slice(remove.length) : spaces}`;
+  });
+}
 function insertion(source: string, parent: SourceNode, index: number, markup: string): SourceEdit {
   const next = parent.children[index];
   const previous = parent.children[index - 1];
@@ -172,7 +194,7 @@ function insertion(source: string, parent: SourceNode, index: number, markup: st
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
   const nl = source.includes("\r\n") ? "\r\n" : "\n";
   const childIndent = !next && !previous ? `${indent}  ` : indent;
-  const text = markup.replace(/\r\n?|\n/g, `${nl}${childIndent}`);
+  const text = structuralIndent(markup, nl, childIndent);
   if (next) return { start: next.start, end: next.start, text: `${text}${nl}${indent}` };
   if (previous) return { start: previous.end, end: previous.end, text: `${nl}${indent}${text}` };
   // Insert without deleting a single comment, text character, or whitespace.
@@ -200,7 +222,7 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   const lineStart = source.lastIndexOf("\n", moving.start - 1) + 1;
   const lead = source.slice(lineStart, moving.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
-  const markup = source.slice(moving.start, moving.end).split(/\r?\n/).map((line, index) => index && indent && line.startsWith(indent) ? line.slice(indent.length) : line).join("\n");
+  const markup = structuralIndent(source.slice(moving.start, moving.end), source.includes("\r\n") ? "\r\n" : "\n", "", indent);
   const insert = insertion(source, parent, destination.index, markup);
   const start = Math.min(moving.start, insert.start);
   const end = Math.max(moving.end, insert.end);

@@ -1,4 +1,5 @@
 // Static, portable HTML. Keys identify editor choices, never published attributes.
+import { decodeHtmlEntities } from "./html-entities";
 import type { AddChoice } from "./add-catalog";
 
 export type NativeElementKind = "heading" | "text" | "image" | "link-button" | "list" | "columns" | "grid" | "video" | "embed" | "divider" | "form" | "input" | "textarea" | "select" | "checkbox" | "submit";
@@ -19,9 +20,10 @@ export interface NativeElementOptions {
 }
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 function url(value: string) {
-  const normalized = value.replace(/[\u0000-\u0020\u007f]/g, "");
+  const decoded = decodeHtmlEntities(value, true);
+  const normalized = decoded.replace(/[\u0000-\u0020\u007f]/g, "");
   if (/^[a-z][a-z0-9+.-]*:/i.test(normalized) && !/^(?:https?:|mailto:|tel:|about:blank$)/i.test(normalized)) throw new Error("Use a relative URL or an HTTP(S) URL.");
-  return escape(value);
+  return escape(decoded);
 }
 export const nativeElementChoices: readonly AddChoice[] = [
   ["heading", "Heading", "Elements"], ["text", "Text", "Elements"], ["image", "Image", "Elements"],

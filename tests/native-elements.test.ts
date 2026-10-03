@@ -94,3 +94,82 @@ test("cross-parent moves reindent multiline CRLF without changing site strings",
   assert.ok(out.includes('<section>\r\n    <div class="site">\r\n      <p>A</p>\r\n    </div>\r\n  </section>'));
   assert.equal(/[^\r]\n/.test(out), false);
 });
+
+test("all native URL inputs decode HTML5 attributes before scheme validation", () => {
+  for (const value of ['javascript&colon;alert(1)', 'jav&#97script:alert(1)', 'jav&#x61script:alert(1)', 'java&Tab;script&colon;alert(1)']) {
+    for (const attribute of ['href', 'src', 'action', 'formaction']) {
+      assert.equal(apply('<main></main>', [0], 0, `<a ${attribute}="${value}">x</a>`), undefined, `${attribute}: ${value}`);
+    }
+    for (const kind of ['image', 'video', 'embed', 'link-button', 'form'] as const) {
+      assert.throws(() => nativeElementMarkup(kind, { src: value, href: value, action: value }), `${kind}: ${value}`);
+    }
+  }
+  assert.equal(nativeElementMarkup('link-button', { href: '/?a=1&amp;b=2' }), '<a href="/?a=1&amp;b=2">Learn more</a>');
+  assert.ok(apply('<main></main>', [0], 0, '<a href="/?x=&notit;">x</a>'));
+  assert.ok(apply('<main></main>', [0], 0, '<a href="/?x=&amp;colon;">x</a>'));
+});
+
+test("quoted fake attributes cannot satisfy sandbox, URL or form requirements", () => {
+  for (const markup of [
+    '<iframe title=" sandbox " src="https://example.com"></iframe>',
+    '<a title=" href=safe " href="javascript:alert(1)">x</a>',
+    "<a title=' href=safe ' href='javascript&colon;alert(1)'>x</a>",
+    '<form title=" action=x method=post "></form>',
+    '<form action="" title=" method=post "></form>',
+    '<form method="post" title=" action=x "></form>',
+    '<form action="" method="post extra"></form>',
+  ]) assert.equal(apply('<main></main>', [0], 0, markup), undefined, markup);
+  assert.ok(apply('<main></main>', [0], 0, '<form title=" action=x " action="" method="p&#111;st"></form>'));
+  assert.ok(apply('<main></main>', [0], 0, '<iframe title=" sandbox " sandbox="" src="https://example.com"></iframe>'));
+});
+
+test("entity refresh metadata preserves preview child indexes", () => {
+  for (const value of ['ref&#114;esh', 'ref&#114esh', 'ref&#x72;esh', 'REFRESH']) {
+    const source = `<main><meta http-equiv="${value}"><section id="a"></section><section id="b"></section></main>`;
+    const out = apply(source, [0, 1], 0, '<hr>')!;
+    assert.ok(out.includes('<section id="a"></section><section id="b">\n  <hr>'), value);
+    assert.ok(out.includes(`<meta http-equiv="${value}">`));
+  }
+  const source = '<main><meta title=" http-equiv=refresh " http-equiv="other"><section></section></main>';
+  assert.ok(apply(source, [0, 1], 0, '<hr>'));
+});
+
+test("transparent phrasing descendants and controlled media cannot trigger browser repairs", () => {
+  for (const markup of ['<p><small><div>x</div></small></p>', '<p><span><small><section>x</section></small></span></p>', '<button><small><video controls></video></small></button>', '<button><small><audio controls></audio></small></button>']) {
+    assert.equal(apply('<main></main>', [0], 0, markup), undefined, markup);
+    assert.equal(apply(`<main>${markup}</main>`, [0], 0, '<hr>'), undefined, markup);
+  }
+  assert.ok(apply('<main></main>', [0], 0, '<p><small><em>x</em></small></p>'));
+});
+
+test("native names exclude editor keys, foreign and unknown tags", () => {
+  for (const name of ['native:text', 'native:heading', 'svg', 'math', 'unknown', 'x-card']) {
+    assert.equal(apply('<main></main>', [0], 0, `<${name}></${name}>`), undefined, name);
+  }
+  for (const source of ['<main><template><p>x</p></template><section></section></main>', '<main><svg></svg><section></section></main>']) assert.equal(apply(source, [0, 1], 0, '<hr>'), undefined);
+});
+
+test("insertions and moves preserve pre and raw content bytes including CRLF", () => {
+  for (const content of ['A\nB', 'A\r\n  B\r\n\tC']) {
+    for (const tag of ['textarea', 'pre']) {
+      const markup = `<${tag}>${content}</${tag}>`;
+      assert.ok(apply('<main>\r\n</main>', [0], 0, markup)!.includes(markup));
+      const source = `<main>\r\n  <section>\r\n    <div>${markup}</div>\r\n  </section>\r\n  <section></section>\r\n</main>`;
+      const edit = nativeMoveEdit(source, [0, 0, 0], { parent: [0, 1], index: 0 })!;
+      assert.ok(applyGuardedSourceEdit(source, edit)!.includes(markup));
+    }
+  }
+  const source = '<main><section><div><script>A\r\n  B</script><style>A\n B</style><pre><code>A\n B</code></pre></div></section><section></section></main>';
+  const edit = nativeMoveEdit(source, [0, 0, 0], { parent: [0, 1], index: 0 })!;
+  const out = applyGuardedSourceEdit(source, edit)!;
+  for (const markup of ['<script>A\r\n  B</script>', '<style>A\n B</style>', '<pre><code>A\n B</code></pre>']) assert.ok(out.includes(markup));
+});
+
+test("raw closing delimiters fail closed and adjacent URL contexts use HTML5 decoding", () => {
+  assert.equal(apply('<main><script>A</script foo><section></section></script><section></section></main>', [0, 0], 0, '<hr>'), undefined);
+  assert.ok(apply('<main><script>A</scriptx>B</script><section></section></main>', [0, 0], 0, '<hr>'));
+  for (const attribute of ['poster', 'cite', 'data', 'background', 'longdesc', 'manifest', 'usemap']) {
+    assert.equal(apply('<main></main>', [0], 0, `<div ${attribute}="javascript&colon;x"></div>`), undefined, attribute);
+  }
+  for (const attribute of ['srcset', 'imagesrcset', 'ping', 'archive']) assert.equal(apply('<main></main>', [0], 0, `<img ${attribute}="safe.jpg, javascript&colon;x">`), undefined);
+});
