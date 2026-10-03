@@ -24,6 +24,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # One unit test (owner setup) drives a headless browser.
+      - run: npx playwright install chromium-headless-shell
       - run: npm run check
       - run: npm test
       - name: Deploy
