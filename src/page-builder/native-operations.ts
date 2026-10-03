@@ -77,6 +77,8 @@ function tree(source: string): SourceNode | undefined {
       stack.pop(); at = parent.end; continue;
     }
     if (source.startsWith("<!--", lt)) {
+      // Browsers abruptly close these empty comments; do not swallow following nodes.
+      if (source.startsWith("<!-->", lt) || source.startsWith("<!--->", lt)) return undefined;
       const end = source.indexOf("-->", lt + 4);
       if (end < 0) return undefined;
       at = end + 3; continue;

@@ -56,3 +56,10 @@ and comments in colgroup, ordinary sibling ruby annotations and a nested ruby's
 separate scope remain supported. This is a conservative balanced-source guard,
 not a complete HTML parser; unsupported or repaired sources are refused rather
 than assigned potentially different browser element paths.
+
+Abrupt empty structural comments (`<!-->` and `<!--->`) are also refused: browsers
+close them immediately, whereas treating them as ordinary comments can swallow
+source elements and shift paths. Ordinary comments remain supported, including
+inside colgroup. Literal comment markers in raw-text content are not structural comments and
+do not trigger this refusal. Quoted attribute angle brackets remain outside the
+existing strict tokenizer bounds.

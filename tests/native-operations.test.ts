@@ -165,3 +165,35 @@ test("colgroup character tokens and nested ruby annotations refuse repaired sour
     assert.equal(await page.locator('main > ruby').count(), 2);
   } finally { await browser.close(); }
 });
+
+test("abrupt structural comments refuse browser path shifts without rejecting literal markers", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    for (const marker of ['<!-->', '<!--->']) {
+      const source = `<main>${marker}<section>S</section>--><div>D</div></main>`;
+      await page.setContent(source);
+      assert.deepEqual(await page.locator('main').evaluate(el => Array.from(el.children).map(child => child.localName)), ['section','div']);
+      assert.deepEqual(nativeDestinations(source, 'index.html', [0,0]), []);
+      assert.equal(nativeMarkupInsertEdit(source, [0], 0, '<section>New</section>'), undefined);
+      assert.equal(nativeMoveDestinationValid(source, [0,0], {parent:[0],index:1}), false);
+      const table = `<main><table><colgroup>${marker}x--><col></colgroup><tbody><tr><td>A</td></tr></tbody></table></main>`;
+      await page.setContent(table);
+      assert.deepEqual(await page.locator('table').evaluate(el => Array.from(el.children).map(child => child.localName)), ['colgroup','colgroup','tbody']);
+      assert.equal(nativeMarkupInsertEdit(table, [0], 1, '<section>New</section>'), undefined);
+    }
+    const valid = '<main><!-- ordinary --><script>const marker = "<!--> <!--->";</script><div>D</div><textarea><!--> <!---></textarea><table><colgroup><!-- ordinary --><col></colgroup><tbody><tr><td>A</td></tr></tbody></table></main>';
+    const edit = nativeMarkupInsertEdit(valid, [0], 3, '<section>New</section>'); assert.ok(edit);
+    const output = applyGuardedSourceEdit(valid, edit)!;
+    assert.ok(output.includes('<script>const marker = "<!--> <!--->";</script>'));
+    await page.setContent(output);
+    assert.equal(await page.locator('main > section').textContent(), 'New');
+    // Quoted angle brackets are already outside this strict tokenizer's bounds.
+    // The structural-comment rule does not broaden that existing refusal.
+    for (const title of ['<', '<!-->', '<!--->']) {
+      assert.equal(nativeMarkupInsertEdit(`<main><div title="${title}">D</div></main>`, [0], 1, '<section>New</section>'), undefined);
+    }
+    assert.equal(await page.locator('textarea').textContent(), '<!--> <!--->');
+    assert.equal(await page.locator('colgroup > col').count(), 1);
+  } finally { await browser.close(); }
+});
