@@ -178,3 +178,15 @@
 }
 .page-structure__url-note { margin: -4px 0 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); }
 .page-structure__url-note[hidden] { display: none; }
+
+.page-structure__component-actions { position:absolute; right:4px; display:flex; gap:6px; background:var(--panel-surface); opacity:0; pointer-events:none; }
+.page-structure__row--component { position:relative; }
+.page-structure__row--component:is(:hover,:focus-within) .page-structure__component-actions { opacity:1; pointer-events:auto; }
+.page-structure__slot { padding:6px 12px 8px calc(12px + var(--depth) * 12px); border-bottom:1px solid var(--border); }
+.page-structure__slot-head { display:flex; align-items:center; gap:8px; }
+.page-structure__slot-name { flex:1; min-width:0; text-align:left; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.page-structure__slot-field { display:grid; grid-template-columns:64px minmax(0,1fr); align-items:center; gap:6px; margin-top:4px; font-size:12px; }
+.page-structure__slot-field input { min-width:0; width:100%; box-sizing:border-box; color:inherit; background:var(--panel-surface); border:1px solid var(--border); border-radius:4px; padding:6px; font:inherit; }
+.page-structure__slot-field input:focus-visible { outline:2px solid var(--focus-ring); outline-offset:1px; }
+.page-structure__slot-field input[aria-invalid=true] { border-color:var(--danger); }
+.page-structure__slot details { margin-top:6px; }

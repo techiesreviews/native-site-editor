@@ -4,7 +4,10 @@
 //
 // - Identity: an instance's name in the edit bar wears the component mark;
 //   an element inside an instance gets a chip that selects the instance.
-// - Properties: the instance's slots, listed in a panel docked at the foot
+// - Properties: the instance's slots are grouped beneath its Structure row;
+//   legacy field helpers below remain available to the guarded slot writers.
+//   The old panel is detached, rather than duplicating these controls.
+//   Previously slots were listed in a panel docked at the foot
 //   of the sidebar while an instance (or something inside one) is selected:
 //   each slot's text, image or link, editable in place; optional slots
 //   switched on and off; a filled slot reset to the template's fallback;
@@ -19,8 +22,8 @@
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { nativeElementUrlProblem } from "./native-elements";
 import { readSlotConditions, planSlotCondition } from "./component-conditions";
-import { mountComponentPanelResize } from "./component-panel-resize";
 import { button, node } from "../ui/dom";
 import { nativePageBody, type NativeSite } from "../../shared/native-project";
 import type { NativePreviewSelection } from "../components/native-preview";
@@ -141,12 +144,21 @@ const KIND_MARK: Record<SlotValue["kind"], ComponentMark> = { text: "text", imag
 // Elements a section of a page is made of, which Make component offers to turn into one.
 const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "nav", "figure", "div", "form"]);
 
+export type ComponentSlotPart = "text" | "src" | "alt" | "href";
+export interface ComponentStructureModel {
+  host: { path: string; node: readonly number[]; tag: string };
+  slots: readonly { name: string; label: string; kind: SlotValue["kind"]; value: Readonly<SlotValue>; shown: boolean; filled: boolean; whenEmpty: SlotState["whenEmpty"]; assignedNodes: readonly number[][] }[];
+  openField(name: string, part: ComponentSlotPart): { write(value: string): boolean; close(): void } | undefined;
+  setVisible(name: string, on: boolean): boolean;
+  selectSlot(name: string): void;
+  edit(): void;
+  disconnect(): void;
+}
+
 export function createComponentTools(deps: ComponentDeps) {
   const panel = node("section", "component-panel");
   panel.setAttribute("aria-label", "Component properties");
   panel.hidden = true;
-  deps.panelHost.append(panel);
-  const destroyResize = mountComponentPanelResize(deps.panelHost, panel);
   const banner = node("div", "component-banner");
   banner.setAttribute("role", "status");
   banner.hidden = true;
@@ -361,11 +373,15 @@ export function createComponentTools(deps: ComponentDeps) {
    * `slot` (the element holding that slot, its `<slot>` marked in the code)
    * in the instance on show, else the template's first element.
    */
+  let explicitTemplate: { path: string; revision: string } | undefined;
   async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }) {
     const template = templateOf(tag);
     if (!template) return;
     const from = deps.selection();
+    const openingRevision = deps.revision();
     if (!(await deps.openFile(template.path))) return;
+    if (deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) return;
+    explicitTemplate = { path: template.path, revision: deps.revision() };
     const source = deps.sources()[template.path] ?? template.source;
     const target = templateSlots(source).find((entry) => entry.name === slot);
     // The element that shows the slot: its nearest ancestor that is not a slot.
@@ -398,6 +414,7 @@ export function createComponentTools(deps: ComponentDeps) {
   // pane shows or not): what an edit changes, where, and the way back.
   let bannerKey = "";
   function renderBanner() {
+    if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
     const tag = tagOfFile(deps.currentPath());
     deps.codeTitle.classList.toggle("code-pane__title--component", Boolean(tag));
     if (!tag || !site()) {
@@ -515,6 +532,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const page = deps.previewPage() ?? Object.values(site()?.routes ?? {})[0];
     const host = deps.selection()?.host;
     if (!page || !(await deps.openFile(page))) return;
+    explicitTemplate = undefined;
     if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: host.node });
   }
 
@@ -620,40 +638,8 @@ export function createComponentTools(deps: ComponentDeps) {
       return;
     }
     shown = at;
-    const values = at.slots.map((slot) => slotValue(at.source, at.template, at.instance, slot));
-    const key = JSON.stringify([
-      at.path, at.node, at.tag, at.within ?? null,
-      at.slots.map((slot, index) => [slot.name, values[index].kind, values[index].editable, at.states.get(slot.name)]),
-      at.instance.attributes.map((item) => item.name),
-    ]);
-    if (key !== shape) {
-      const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : undefined;
-      const field = active?.dataset.field;
-      const caret = active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : undefined;
-      shape = key;
-      render(at, values);
-      // The focus stays on the same control, else on the slot it belonged to
-      // (a Reset that went away leaves it on the slot's field, then its name).
-      const slotOf = field?.slice(field.indexOf(":") + 1);
-      const again = field === undefined ? undefined : [field, `text:${slotOf}`, `name:${slotOf}`]
-        .map((key) => panel.querySelector<HTMLElement>(`[data-field="${CSS.escape(key)}"]`)).find(Boolean);
-      if (again) {
-        again.focus();
-        if (again instanceof HTMLInputElement && caret && caret[0] !== null && again.dataset.field === field) again.setSelectionRange(caret[0], caret[1]);
-      }
-    } else patch(at, values);
-    // A slot just switched on: its first field, ready to type in.
-    const wanted = focusNext && panel.querySelector<HTMLInputElement>(`[data-field="${CSS.escape(focusNext)}"]`);
-    if (wanted) {
-      focusNext = undefined;
-      wanted.focus();
-      wanted.select();
-    }
-    if (panel.hidden) {
-      panel.hidden = false;
-      // The panel takes room from the page structure: its selected row stays in view.
-      deps.panelHost.querySelector<HTMLElement>(".page-structure [aria-selected='true']")?.scrollIntoView({ block: "nearest" });
-    }
+    panel.hidden = true;
+    panel.replaceChildren();
   }
 
   // Values into the fields, except the one being typed in.
@@ -1165,8 +1151,108 @@ export function createComponentTools(deps: ComponentDeps) {
     }
   }
 
+  /** A true instance target, independent of the current canvas selection. */
+  function structure(path: string, nodePath: readonly number[]): ComponentStructureModel | undefined {
+    const initial = instanceAt(path, [...nodePath]);
+    const editor = deps.editor();
+    if (!initial || !editable(path) || !editor) return;
+    const revision = deps.revision();
+    const hostProof = editor.captureHistoryHost(path);
+    if (!hostProof) return;
+    const read = (expectedSource = initial.source, proof?: { isCurrent(): boolean }) => {
+      const at = instanceAt(path, [...initial.node]);
+      if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor || !editable(path)
+        || at.tag !== initial.tag || at.templatePath !== initial.templatePath || at.template !== initial.template || at.source !== expectedSource) {
+        deps.announce("The instance changed; reopen its field before editing.");
+        return;
+      }
+      return at;
+    };
+    return {
+      host: { path, node: [...nodePath], tag: initial.tag },
+      slots: initial.slots.map(slot => ({ name: slot.name, label: slotLabel(slot.name),
+        kind: slotValue(initial.source, initial.template, initial.instance, slot).kind,
+        value: Object.freeze(slotValue(initial.source, initial.template, initial.instance, slot)),
+        shown: initial.states.get(slot.name)?.shown ?? false, filled: initial.states.get(slot.name)?.filled ?? false, whenEmpty: initial.states.get(slot.name)?.whenEmpty ?? "hidden",
+        assignedNodes: (initial.instance.fills.get(slot.name) ?? []).flatMap(part => {
+          const node = part.type === "element" ? elementPathAt(initial.source, part.start) : undefined;
+          return node ? [node] : [];
+        }),
+      })),
+      openField(name, part) {
+        if (!read()) return;
+        const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
+        if (!initialProof) return;
+        let expected = initial.source, closed = false;
+        let proof = initialProof;
+        const close = () => { if (!closed) { closed = true; proof.dispose?.(); endTyping(path); } };
+        const reject = () => { close(); return false; };
+        return {
+          write(value) {
+            if (closed) return reject();
+            const at = read(expected, proof), slot = at?.slots.find(slot => slot.name === name);
+            if (!at || !slot) return reject();
+            if (part === "src" || part === "href") {
+              const problem = nativeElementUrlProblem(value, part === "src" ? ["http", "https"] : ["http", "https", "mailto", "tel"], false);
+              if (problem) { deps.announce(problem); return reject(); }
+            }
+            const descriptor = slotValue(at.source, at.template, at.instance, slot);
+            if ((part === "text" && !descriptor.editable) || (part === "src" || part === "alt") && descriptor.kind !== "image" || part === "href" && descriptor.kind !== "link") return reject();
+            const edit = part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
+              : slotAttributeEdit(at, slot, part, value);
+            if (!edit) return reject();
+            if ("error" in edit) { deps.announce(edit.error); return reject(); }
+            const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
+            live(path, edit, `${slotLabel(name)} changed`, at.node);
+            if (deps.sources()[path] !== next) return reject();
+            if (!hostProof.isCurrent()) return reject();
+            const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
+            if (!nextProof) return reject();
+            proof.dispose?.(); proof = nextProof;
+            expected = next;
+            return true;
+          },
+          close,
+        };
+      },
+      setVisible(name, on) {
+        const at = read(), slot = at?.slots.find(slot => slot.name === name);
+        if (!at || !slot) return false;
+        if (on) {
+          const edit = fillInsertEdit(at.source, at.instance, at.slots, name, fillMarkup(at.template, slot));
+          return !!edit && change(path, [edit], `${slotLabel(name)} shown`, at.node);
+        }
+        return change(path, fillRemoveEdits(at.source, at.instance, name), `${slotLabel(name)} ${at.states.get(name)?.whenEmpty === "fallback" ? "reset to the component’s default" : "hidden"}`, at.node);
+      },
+      selectSlot(name) {
+        const at = read(); if (!at) return;
+        const element = at.instance.fills.get(name)?.find(part => part.type === "element");
+        deps.preview()?.selectNode({ path, node: element ? elementPathAt(at.source, element.start) ?? at.node : at.node });
+      },
+      edit() { if (read()) void editComponent(initial.tag); },
+      disconnect() { const at = read(); if (at) void openDetach(at); },
+    };
+  }
+
   return {
     identity,
+    /** Only explicit template entry permits shared-template editing from a page preview. */
+    editingScope() {
+      if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
+      return explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()
+        ? { ...explicitTemplate } : undefined;
+    },
+    /** Map a reported shadow child to its verified real page instance; never guess selectors. */
+    instanceSelection(selection: NativePreviewSelection): NativePreviewSelection | undefined {
+      const host = selection.host;
+      if (!host) return selection;
+      if (explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()) return selection;
+      if (!host.path || !host.node || deps.previewPage() !== host.path) return;
+      const at = instanceAt(host.path, host.node);
+      if (!at || at.tag !== host.tag || templateOf(at.tag)?.path !== selection.path) return;
+      return { ...selection, path: at.path, node: [...at.node], tag: at.tag, host: undefined, selector: host.selector };
+    },
+    structure,
     controls,
     /** The selection changed or the page re-rendered: the panel follows. */
     show,
@@ -1177,7 +1263,6 @@ export function createComponentTools(deps: ComponentDeps) {
     editComponent,
     fillInstanceSlot,
     destroy() {
-      destroyResize();
       panel.remove();
       banner.remove();
       usedOn.remove();
