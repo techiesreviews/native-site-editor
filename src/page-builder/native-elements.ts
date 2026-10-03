@@ -20,8 +20,8 @@ export interface NativeElementOptions {
 }
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 /** Validate a raw attribute value without changing the value written to HTML. */
-export function nativeElementUrlProblem(raw: string, allowed: readonly string[] = ["http", "https", "mailto", "tel", "about:blank"]): string | undefined {
-  const decoded = decodeHtmlEntities(raw, true);
+export function nativeElementUrlProblem(raw: string, allowed: readonly string[] = ["http", "https", "mailto", "tel", "about:blank"], decodeSourceEntities = true): string | undefined {
+  const decoded = decodeSourceEntities ? decodeHtmlEntities(raw, true) : raw;
   if (/[\u0000-\u001f\u007f]/.test(decoded)) return "URLs cannot contain control characters.";
   const normalized = decoded.replace(/ /g, "");
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(normalized)?.[1].toLowerCase();

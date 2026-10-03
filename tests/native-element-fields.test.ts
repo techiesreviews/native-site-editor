@@ -44,7 +44,7 @@ test("patches are atomic, exact, removable and reject stale or forged source tag
   }
 });
 test("URL policies reject executable/entity/control schemes without partial edits", () => {
-  for (const src of ["javascript:alert(1)", "java&#x73;cript:alert(1)", "data:text/html,x", "vbscript:x", "java\nscript:x", "https://x\t/y"]) assert.ok("error" in write('<iframe></iframe>', { src, title: "good" }), src);
+  for (const src of ["javascript:alert(1)", "data:text/html,x", "vbscript:x", "java\nscript:x", "https://x\t/y"]) assert.ok("error" in write('<iframe></iframe>', { src, title: "good" }), src);
   assert.ok(!("error" in write('<iframe></iframe>', { src: "about:blank" })));
   assert.ok("error" in write('<video></video>', { src: "about:blank" }));
   for (const action of ["mailto:hello@example.com", "tel:+123", "/send?a=1&b=2"]) assert.ok(!("error" in write('<form></form>', { action })));
@@ -70,5 +70,48 @@ test("production attribute edits preserve browser values, Unicode and unquoted s
     assert.equal(field.value, "&#106;");
     await page.setContent(output(decoded, { title: field.value }));
     assert.equal(await page.locator("iframe").getAttribute("title"), "&#106;");
+  } finally { await browser.close(); }
+});
+
+test("malformed attribute names and mismatched inert boundaries refuse without any source edit", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const source = '<video a"b="x"></video><p title="y">hi</p>';
+    await page.setContent(source);
+    assert.equal(await page.locator('video').count(), 1);
+    const located = locateNativeFieldElement(source, startTags(source)[0]);
+    assert.ok('error' in located);
+    assert.equal(await page.locator('p').getAttribute('title'), 'y');
+    for (const name of ['a"b', "a'b", 'a<b']) {
+      const text = `<video ${name}="x"></video><p>hi</p>`;
+      assert.ok('error' in locateNativeFieldElement(text, startTags(text)[0]));
+    }
+    const inert = '<div><template></div><video src="a"></video></template>';
+    await page.setContent(inert);
+    assert.equal(await page.locator('video').count(), 0);
+    assert.equal(await page.locator('template').evaluate(el => (el as HTMLTemplateElement).content.querySelector('video')?.getAttribute('src')), 'a');
+    assert.ok('error' in locateNativeFieldElement(inert, startTags(inert).find(tag => tag.name === 'video')!));
+  } finally { await browser.close(); }
+});
+test("default and ASCII-case methods remain honest while literal URL entities survive once-escaping", async () => {
+  const source = '<form method="POST" action="/old"></form>';
+  const method = nativeElementFields(source, startTags(source)[0]).find(field => field.property === 'method')!;
+  assert.equal(method.value, 'post'); assert.equal(method.options?.some(option => option.disabled), false);
+  assert.equal(output(source, {method:''}), '<form action="/old"></form>');
+  assert.equal(output(source, {action:'/new',method:'dialog'}), '<form method="dialog" action="/new"></form>');
+  assert.equal(output('<video></video>', {title:null}), '<video></video>');
+  assert.ok('error' in write('<form></form>', {action:'about:blank'}));
+  assert.ok('error' in write('<button></button>', {formaction:'about:blank'}));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    for (const src of ['a&colon;b', '/a?x=1&NewLine;', 'java&#x73;cript:alert(1)']) {
+      await page.setContent(output('<video></video>', {src}));
+      assert.equal(await page.locator('video').getAttribute('src'), src);
+    }
+    const encoded = '<video src="java&#x73;cript:alert(1)"></video>';
+    const src = nativeElementFields(encoded, startTags(encoded)[0]).find(field=>field.property==='src')!.value;
+    assert.equal(src,'javascript:alert(1)'); assert.ok('error' in write(encoded,{src}));
   } finally { await browser.close(); }
 });

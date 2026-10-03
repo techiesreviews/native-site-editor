@@ -138,14 +138,18 @@ captions are not edited by this planner.
 
 `nativeElementAttributeEdits(source, located, patch)` validates every property
 before returning one start-tag edit and `expectedSource`. Unknown properties,
-invalid methods, duplicate patched attributes, or a changed source refuse the
-whole patch. Null removes an attribute. Existing custom method values remain
+invalid methods, ambiguous foreign/inert boundaries, malformed attribute names,
+duplicate patched attributes, or a changed source refuse the
+whole patch. Null removes an attribute; the empty Default (GET) method choice also removes
+`method`. Valid ASCII-case methods display canonical choices without changing
+authored bytes on read. Existing custom method values remain
 visible as a disabled current option; reading a page never resets them.
 
 Values decode HTML entities once when read and escape raw values once when written.
 URLs allow relative and HTTP(S) addresses; iframe source additionally permits
-`about:blank`, and form actions permit `mailto:` and `tel:`. Protocol checks reject
-control characters and executable schemes, including entity spellings, without
+`about:blank`, and form actions permit `mailto:` and `tel:`. Field URL checks operate on literal DOM values and reject
+control characters and executable schemes without decoding entity spellings again.
+The catalogue source-input path retains its one entity decode. Validation avoids
 rewriting emitted URL values. Other source bytes, including Unicode whitespace and
 slashes belonging to unquoted attribute values, remain intact. The host must
 capture selection, check `expectedSource`, and apply this edit through its existing
