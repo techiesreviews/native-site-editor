@@ -1,0 +1,208 @@
+# T3 Page Builder Handoff - 2026-10-03
+
+## Transfer
+
+- Source thread: `c50a9d9b-846d-4e67-9250-ae10a18bc7b4`, "Improve Visual Editor Experience".
+- Source stopped because Claude reached a usage limit.
+- Destination thread: `da5eb845-2cdf-4f84-8736-2704ec23f3ad`.
+- Destination should be ready for `dev`, provider `Codex`, session/provider id `01a10105-6b64-7222-a15d-68690a64c785`.
+- Continuation delivered through the official T3 `thread.turn.start` API and read back successfully at approximately `2026-10-03T09:16:27Z` (orchestration sequence `168989`).
+- Destination verified running with active turn `01a1010c-eed7-7d23-9b09-3e29710bb41b`; its assistant acknowledged recovery, delegated planning, fixes, and browser testing. The destination now owns implementation and checkpoint updates.
+- Transfer coordinator will make no application edits while the destination runs. Progress, feature screenshots, and handover should appear in the destination T3 thread.
+- Do not trust old source metadata that says `main`; the verified root branch is `dev`.
+
+## Verified Snapshot
+
+- Repo root: `/home/ubulex/Projects/native-site-editor`.
+- Root worktree: `dev...origin/dev`, clean by `git status --short --branch`.
+- Root HEAD: `9a541ed1fddafd04161267495dbe1de827a75ae6`.
+- `memory/` did not exist before this handoff. This file and `memory/INDEX.md` are the only root edits made for transfer.
+- Worktree lock metadata named PID `85810`, but `ps -p 85810 -o pid=,ppid=,stat=,etime=,command=` returned no process. Treat lock files as stale only after the destination rechecks process state.
+
+## User Goal
+
+Build a fully human-usable native visual page builder for the editor.
+
+Required properties:
+
+- Code is always visible while editing.
+- Collections and conditions are part of the requested full site builder; visual edits remain reliable and browser-verified.
+- Components support optional slots that remain editable on the canvas.
+- Image manager supports tags, browser selection, and optimisation.
+- Preview deploys automatically to `preview-editor.techies.tools`.
+- Every preview push must include real starter browser screenshots shown to the user.
+
+Requested checkpoint deadline: `2026-10-03T12:10:00Z`, `14:10 Europe/Amsterdam`. This deadline was included in the destination prompt; the transfer coordinator has not installed a timer or scheduled automatic switch back.
+
+## Prior Evidence
+
+- Cards work was deployed at `25270e0c`.
+- Historical related browser suite result: 18/18 pass. This has not been rerun in this handoff.
+- Components review found 8 Astra defects. P1: attribute editing can corrupt HTML and inject attributes.
+- Canvas review found 7 defects.
+- Palette review is pending.
+- Two flaky save tests remain:
+  - `tests/native-save/native-conventions.spec.ts:97`
+  - `tests/native-save/native-deleted-upstream.spec.ts:58`
+
+Useful docs and evidence to reread before acting:
+
+- `docs/page-builder/README.md`
+- `docs/page-builder/backlog.md`
+- `docs/page-builder/ux-research.md`
+- `docs/page-builder/cards.md`
+- `docs/page-builder/add-panel.md`
+- `docs/NATIVE-PROJECT.md`
+- `docs/adr/0001-the-repository-is-the-site.md`
+- `.scratch/review-2/`
+- `.scratch/review-2026-10-03/`
+
+## Active Worktrees
+
+Verified by `git worktree list --porcelain` from the root.
+
+- Root: `/home/ubulex/Projects/native-site-editor`, branch `dev`, HEAD `9a541ed1fddafd04161267495dbe1de827a75ae6`, clean.
+- Elements: `.claude/worktrees/agent-a189782dc58343348`, branch `pb/elements`, HEAD `aa2dce95642310501c3f7bca83f40fc4db2018fa`.
+- Palette: `.claude/worktrees/agent-a773a35aab5e43381`, branch `pb/palette`, HEAD `18f9a2781ad89e218f8ca140b96dee03ffcbb858`, clean by status.
+- Components: `.claude/worktrees/agent-a86e1b2f5a94bc717`, branch `pb/components`, HEAD `9e080110ae1b9f1937978ed9dc6c50b83bd8a6d3`, locked by stale-looking Claude lock metadata. Uncommitted files:
+  - `src/page-builder/component-model.ts`
+  - `src/page-builder/components.ts`
+  - `tests/component-model.test.ts`
+- Flaky tests: `.claude/worktrees/agent-a99739a74ade69a94`, branch `pb/flaky`, HEAD `d3ccbcf905a8e23cf25116a4d3a7ae2091e21c26`, locked by stale-looking Claude lock metadata. Uncommitted file:
+  - `tests/native-save/native-conventions.spec.ts`
+- Add panel: `.claude/worktrees/agent-ac607c2ba18cb6842`, branch `pb/add-panel`, HEAD `d1fdccafcd71b3db089a432af353672821d1b472`.
+- Canvas: `.claude/worktrees/agent-ae61d96e775fee820`, branch `pb/canvas`, HEAD `36f51a147fef49b7bd5257e143424438bf56770b`. Status is not clean despite earlier note; verified uncommitted files:
+  - `public/native-preview-runtime.js`
+  - `src/components/canvas-bar.ts`
+  - `src/components/code-editor.ts`
+  - `src/components/native-preview.ts`
+  - `src/page-builder/canvas-model.ts`
+  - `src/page-builder/canvas-source.ts`
+  - `src/page-builder/code-link.ts`
+- Media solution: `.claude/worktrees/sol-media`, branch `pb/media`, HEAD `aa2dce95642310501c3f7bca83f40fc4db2018fa`. Uncommitted files include runtime/native-preview/main edits plus media modules, picker CSS/TS, worker, references, metadata, and workspace files.
+- Site solution: `.claude/worktrees/sol-site`, branch `pb/site`, HEAD `aa2dce95642310501c3f7bca83f40fc4db2018fa`. Uncommitted files include page structure/tree/menu/main edits, site settings component/CSS, site model modules, and related tests.
+- Style solution: `.claude/worktrees/sol-style`, branch `pb/style`, HEAD `f89917514d667278142b4297f689308a58ec5081`. Uncommitted files include preview runtime/main edits, style docs, style panel component/CSS, `src/page-builder/`, and related tests.
+
+Do not infer process activity from `git worktree` lock lines. Recheck processes before cleanup or recovery. Preserve originals until reviewed. Avoid shared-file concurrency.
+
+## Destination Next Steps
+
+1. Recheck root and each worktree status before editing.
+2. Recover or close stale worker state only after process verification.
+3. Review existing worker diffs and review notes before merging anything.
+4. Fix the components P1 attribute edit corruption/injection defect before treating components as mergeable.
+5. Complete palette review.
+6. Review and fix canvas defects.
+7. Resolve the two flaky save tests.
+8. Merge into `dev` only after review and relevant verification.
+9. Run browser checks and collect real screenshots before any preview push.
+10. If dispatching to the destination thread through T3, use the official HTTP `thread.turn.start` path. Do not write directly to SQLite.
+
+## Lex Workflow Notes
+
+- Apply `/home/ubulex/.codex/skills/lex-coding/SKILL.md`.
+- Desired orchestrator: Astra medium. Current runtime may be Sol, so report mismatch if the model is not actually switchable.
+- Planner: `gpt-6-luna` medium (upgraded at Lex's request in destination).
+- Codex grunt: `gpt-6.1-sol` low (upgraded at Lex's request in destination).
+- Context budget target: 200k working context. Exact monitor is unavailable in this runtime; do not invent counts.
+- This handoff agent made no production edits, no commits, no pushes, and no external writes.
+
+## Destination checkpoint — 2026-10-03T09:20Z
+
+- Continuation accepted in destination `da5eb845-2cdf-4f84-8736-2704ec23f3ad`; root is `dev` at `9a541ed`, matching `origin/dev`. Only preexisting root change was untracked `memory/`.
+- All nine existing worktrees and their uncommitted application edits remain intact. PID `85810` is absent; locks do not signify running workers. No Vite/Wrangler/Playwright worker was running when ownership was checked. Other Codex/T3 processes are not this task's workers and were left alone.
+- Named `planner` (Luna medium) is recovering exact source review findings and planning integration, read-only. `grunt_flaky` (Codex GPT-5.5 low) exclusively owns tests in `agent-a99739a74ade69a94` (`pb/flaky`), using ports 5216/5217. `review_palette` (Astra medium) exclusively reviews `pb/palette`, read-only, optional test port 5226. Lead owns root integration, memory, and the shared T3 browser. No concurrent shared-file application editing is authorized.
+- Main runtime is GPT-6.1-Sol/high; requested Astra/medium review is delegated. Exact context occupancy is unavailable.
+- Root baseline: `npm run check` passed; `npm test` passed 419/419. Logs: `.scratch/t3-continuation-baseline-{check,unit}.log`.
+- Lead started local real-starter harness on port `5210`, exec session `6558`: `ASE_NATIVE_SAVE_PORT=5210 ASE_NATIVE_SAVE_FIXTURE=/home/ubulex/Projects/native-site-editor-starter npx tsx tests/native-save/server.ts`. Log `.scratch/t3-starter-5210.log`. It serves the real starter checkout (`main`, clean, `ea98c6e`) through the simulated GitHub boundary; edits remain local drafts.
+- T3 tab `tab_1` now opens `http://localhost:5210/#repo=501&branch=main&file=index.html`. Preview domain initially redirected to GitHub access confirmation, so no remote starter feature verification yet. No GitHub App setup was completed.
+- No application edit, commit, push, or deployment in destination yet. Preview deployed version remains unverified. Production untouched.
+- Next action: recover complete components/canvas findings, complete palette review, resume existing fixes in isolated owned worktrees, review and integrate to `dev`, capture current real-starter feature screenshots before any preview push.
+
+## Destination checkpoint — 2026-10-03T09:28Z
+
+- Full source review findings are recovered in [the review record](t3-page-builder-review-findings-2026-10-03.md): components 8, canvas 7, palette 6. Palette received an independent Astra medium review; two source-corruption risks require fixing before integration.
+- All original worktree tracked diffs and untracked files were additionally preserved under `.scratch/t3-continuation/originals/` before implementation resumed. Original worktrees remain present.
+- Lex requested model upgrades. Updated `/home/ubulex/.codex/skills/lex-coding/SKILL.md` and `/home/ubulex/.codex/agents/{planner,grunt}.toml`: planner `gpt-6-luna`/medium, Codex grunt `gpt-6.1-sol`/low. Astra review/lead and Claude alternative pins remain unchanged. Skill validator and TOML parsing passed. Running old-model grunts checkpointed and stopped editing before replacement. This runtime's cached named-role selectors still advertise old pins, so new workers use an explicit generic selector plus exact model/effort and named-role brief.
+- Current ownership: `grunt_components_current` owns component model/controller/tests and `native-structure.ts` plus its tests in `pb/components`; `grunt_workflow` now owns canvas fixes/tests and runtime/native-preview/code-editor in `pb/canvas`; `grunt_palette` owns palette modules/tests in `pb/palette`, excluding shared runtime and `main.ts`. All run GPT-6.1-Sol/low. Lead retains root integration and T3 browser ownership. `planner_current` (GPT-6-Luna/medium) completed a read-only Wave 2 plan. Other agents are idle with checkpoints.
+- Additional escaping defect discovered in existing `src/native-structure.ts:setAttributeEdit`: the same single-quote/unquoted-value corruption as components. Assigned to the components worker with regression coverage.
+- Root baseline browser checks passed: cards/Add panel 11/11; native-preview 15/15. Logs `.scratch/t3-continuation-baseline-{browser,preview}.log`.
+- Flaky tests recovered: conventions asserted a hidden folded `<title>` instead of source content; deleted-upstream clicked a Publish panel that closed after discarding. Worker fixes preserve the original conventions change and reopen Publish. Deleted-upstream passed 10 repeats after correction. Lead applied both test-only patches to root and is repeating both cases 10 times on port 5213; original flaky worktree remains dirty with its fixes.
+- No application slice merged, commit, push, or deployment yet. Root additionally has those two test changes. Preview version unverified; production untouched.
+- Current real-starter baseline screenshot displayed in destination: `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus6meid-59289fa6.png`. This is the actual starter checkout through local simulated GitHub, not a mocked HTML page. Local drafts are isolated from the starter checkout.
+- Active lead server: port 5210, session 6558. Focused root test process: port 5213, session 47816. Worker test ports: components 5236, canvas 5246, palette 5256. Tests stop their own servers when complete.
+- Wave 2 audit: style and site contain useful modules and tests but need integration and review; media has no regression tests yet and requires atomic source/draft operations. Elements and collections/conditions have no implementation. Do not describe these as completed.
+- Next action: finish and review components/canvas/palette fixes, commit verified test fixes, integrate those slices to `dev` sequentially, then resume Wave 2. Capture feature screenshots from the real starter and display them before any preview push.
+
+## Verified test checkpoint — 2026-10-03T09:31Z
+
+- Root `dev` commit `6da2a5b` records the two focused browser-test fixes. Both flaky cases passed 20/20 combined repeats on port 5213; both complete specs passed 7/7 on port 5214. Logs `.scratch/t3-continuation-flaky-{repeat,specs}.log`.
+- No push or deployment. The original flaky worktree retains its uncommitted fixes. Root server on 5210 remains active; test servers 5211–5214 have finished.
+
+## Review checkpoint — 2026-10-03T09:35Z
+
+- Components worker committed `7555457` on `pb/components`; its original fixes plus ordinary edit-bar attribute escaping and selection-before-structure repair passed types, 412 unit tests, and 12 components/structure browser tests. Astra review found four remaining P2 cases (recorded in the review file); integration is held while the same GPT-6.1-Sol worker fixes them. Do not merge `7555457` alone as complete.
+- Canvas worktree has all seven recovered fixes plus six browser regression tests; types, focused units 11/11, and canvas/selector browser 24/24 passed. The original caret test failed once, then passed alone and in subsequent full runs without weakening the assertion. Worker stopped writing; Astra is reviewing the stable eight-file diff. It is not committed yet.
+- Palette leaf fixes committed as `6ec5bb8` on `pb/palette`: stale command rejection, Go to navigation-only, close/focus handling, IME navigation, and browser readiness. Worker is now exclusively updating two `src/main.ts` hunks in that worktree: New page waits for queued explorer rendering, and login disposes the palette; a repository/generation revision token strengthens stale guards. Shared runtime remains unchanged there.
+- Canvas worker supplied `.scratch/t3-continuation/palette-shadow-typing.patch`, against committed palette runtime, for later sequential integration. It checks connected text editing, the composed target, and deepest shadow active element. This patch still needs a browser regression after integration.
+- Root stays `dev@6da2a5b`; only memory is uncommitted. No push/deploy; production untouched. Local real-starter server 5210 remains active. All lead browser test servers stopped after successful checks; current palette worker test uses 5256.
+- Next concrete action: finish components residual fixes and palette main fixes; review canvas, then integrate the three branches sequentially with exclusive ownership of shared file resolution. Verify root, capture/display feature screenshots, then push only `dev` for preview deployment.
+
+## Integration checkpoint — 2026-10-03T10:00Z
+
+- Root `dev` is `915e2e30317cd0915192cc08464e43e83fdf0f17`, ahead of `origin/dev` by 10 commits. Canvas merged as `7df18dd`; palette merged as `76f9a35`; `915e2e3` repairs shadow-root text shortcut detection. Root was clean except untracked memory before the next merge started. No push or deployment; production untouched.
+- Astra approved canvas and palette after the original reviews. Palette additionally required `EditBarModel.origin`, captured when controls are built, because re-searching after a source edit otherwise launders stale closures. `applyNativeChange` now checks the complete expected source before any write, including zero-length insertions.
+- Integrated validation: types, runtime syntax and diff checks pass; 431 unit tests and 36 palette/canvas/selector browser tests pass. Previous canvas/cards/Add run passed 35/35. Integration test servers on 5266/5267 stopped when those runs completed.
+- Components branch is clean at `21db1ee9878daaa933b7cca5e4f82d52fc2a8bcf`. Astra approved all eight original findings, four residuals, and final comment/mixed-slot whitespace probes. Latest focused component units pass 20/20 and Detach/Chrome-assignedNodes browser probes pass 2/2. `grunt_workflow` exclusively owns root application/shared-file integration of this branch now; lead owns memory and `docs/NATIVE-PROJECT.md`. It will run integrated checks before releasing ownership.
+- `grunt_components_current` (GPT-6.1-Sol/low) now owns style leaf modules/tests/docs in `sol-style`; existing dirty main/runtime edits remain preserved and excluded. 430 branch unit tests pass; expanded style browser checks are running on 5276. Async controller source/context validation still requires root wiring.
+- Site leaf work committed as `434c5bc` in `sol-site`, preserving the original four dirty wiring files. Types and 29 focused unit tests pass; browser 4/5 passes, with Effects isolated passing. The full-run failure is traced to repeated unchanged text-selection messages rebuilding and closing the edit-bar popover. Root wiring also needs panel source/routes snapshots before async writes. `review_palette` (Astra/medium) now reviews this slice read-only; site worker has released leaf ownership and stopped its 5286/5287 test servers.
+- Media, elements, and collections/conditions remain incomplete. No active media or elements worker. Shared root `main.ts`, runtime and native-preview have one integration owner at a time.
+- Real starter screenshot displayed in this destination thread: `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus7fy72-b1f6dbff.png` (390 px canvas, heading selection and source). Earlier baseline screenshot is recorded above. More feature screenshots are required before each preview push/deploy.
+- Persistent lead server remains 5210, session 6558, node PID 31218; T3 `tab_1` remains lead-owned. Actual starter checkout remains clean at `main@ea98c6e`; local simulated GitHub drafts are not real remote saves. Preview version still unverified.
+- Recovery notes refreshed after automatic context compaction; exact 200k occupancy monitoring is unavailable. Next concrete action: finish components integration and validation, capture/display real-starter palette/components screenshots, then review and integrate style/site leaf work with the identified wiring guards.
+
+## Browser/review checkpoint — 2026-10-03T10:06Z
+
+- Components integration is resolved and types/syntax checks pass; root units pass 452/452. Combined components/structure/page-structure/palette/canvas/selector checks pass 54/55; the inherited intermittent selector caret test is under diagnosis by the exclusive root integration worker, with its assertion preserved. Merge remains in progress until this mutation and verification are complete.
+- Real-starter screenshots displayed here: component instance slots/mobile canvas `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus83mtz-071aa042.png`; navigation-only Ctrl+P results `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus86ukm-693fdb2b.png`; shared component editing banner and source `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus88is9-e82faaa4.png`. No push/deploy yet.
+- Style leaf work is committed at `62d6aee05203f000ec8232a9137e1ea4b01da45e` in `pb/style`; original main/runtime dirty changes are preserved byte-for-byte. Focused CSS units 39/39, branch full units 433/433 and browser checks 9/9 pass; worker stopped its test servers. Astra now reviews this stable slice and has found an `!important` preservation defect requiring correction before integration.
+- Astra site review held integration for a reproduced P1: a concurrent source edit during `applyNativeOperation` asynchronous reads is overwritten by precomputed whole-file edits. Add an expected-source map to the operation and compare all inputs after awaits, before the first mutation; reject the entire batch on any mismatch. Also preserve page social-link preferences across newly created settings controllers, scoped to repository/session.
+- Site leaf entities are also P2: unchanged SEO or navigation text can double-escape arbitrary named entities. `grunt_site` exclusively owns the leaf fix using a full HTML5 entity table, DOM-free decoding, attribute/text semantics and raw preservation for unchanged values. Root application/shared files remain reserved to the integration worker. Media implementation has not yet resumed; no concurrent ownership was granted.
+
+## Wave 2 checkpoint — 2026-10-03T10:09Z
+
+- Site leaf entity/preference interface fixes committed as `e3cfcd7ffb738733cc28f270fa24f5abc7f597e3`, on top of `434c5bc`, with 34 focused units, types, UI build and one added entity browser regression passing. Full HTML5 references use a DOM-free table; unchanged values retain their original source. Original four shared wiring diffs are untouched. Astra final re-review and root guards remain required.
+- `grunt_site` now exclusively owns media leaf modules, worker, tests and documentation in `sol-media`; shared main/runtime/native-preview remain excluded. It is designing atomic batch operations and regression coverage before integration. `grunt_components_current` remains style leaf owner, fixing both Astra findings. `grunt_workflow` remains exclusive root application integrator and is diagnosing the selector caret failure before completing the components merge. Lead owns docs/memory/T3 tab.
+- Preview version verified read-only via `wrangler deployments list --config wrangler.preview.jsonc`: active latest version `25270e0c-d7ef-41e5-bbaf-1427dbd0a72f`, created `2026-10-03T08:53:24.773Z`. No deployment was performed. GitHub preview run for `9a541ed` reports success, but its log did not establish a newer Worker version; use the Worker version as the verified deployment evidence.
+
+## Native/component checkpoint — 2026-10-03T10:16Z
+
+- Lex reiterated smooth in-canvas component switching and runnable native files, with editor concerns isolated. Existing UI stays in the same canvas with instance properties, shared-edit impact banner, Used on and Done. Site output is ordinary HTML/CSS plus its own Web Component loader; editor preview code remains in the editor project, site editor metadata under `.editor/`.
+- Root integrator verified the real starter loader against a newly generated component and nested card template without changing the starter checkout. It fetched the new template/CSS through `components/components.js` and made no editor-runtime, `.editor` or editor `/src` requests. Log `.scratch/t3-continuation/native-runready-loader-audit.log`.
+- The inherited caret failure is a test-helper defect, not a production cursor defect: a read-only Monaco probe found the correct caret before Shift+End/ArrowLeft moved it to a folded line. The revised helper reads the existing Monaco model/position without keyboard mutation; decoration checks now assert the exact source range rather than count wrapped DOM spans. Integrated browser rerun is underway.
+- Further Astra review found a stale Make dialog plan and a cross-repository cleanup risk (details in review record). Components integration is held until fixed. `grunt_components_current` exclusively owns component controller/dependency contract/tests in `pb/components`; `grunt_workflow` owns its root host adapter and integration. Creation receipts must retain original scope and only remove the operation's own drafts.
+- Style `dfc7b89` and site `e3cfcd7` leaf fixes now pass final Astra review. Their shared host wiring remains unfinished. `grunt_site` exclusively works on media batch preparation/atomic transaction helper and tests in `sol-media`.
+- Root still has an in-progress components merge, plus lead docs/memory edits and test-helper changes. No push/deploy. Production and starter checkout untouched; persistent lead server remains 5210. Next action: complete components receipt/modal guards and verification, then integrate style and site with their documented source/session/breakpoint guards.
+
+## Merge checkpoint — 2026-10-03T10:21Z
+
+- Components merge completed as `bdd2876`; the first read-only caret helper change is `8a452f1`. Root is now `dev@8a452f1`, ahead of origin by 18 commits. The merge is finished. Lead docs/memory and the corrected exact-source mark regression are uncommitted; the integrator is finishing focused verification and the Make host guards before any push.
+- Test diagnosis distinguished the correct source caret from keyboard helper side effects, wrapped decoration spans, and a faulty follow-up expectation missing the fixture's `data-key`. Preserve the exact current regression expectation and use the final successful run, not the earlier 54/55 or interim 4/5, as acceptance evidence.
+- Make component leaf worker now uses the reviewed modal plan/source/revision and a creation receipt (`isCurrent`, `undo`, `redo`) instead of cleanup against current scope. Its browser regression changes the source through MCP while the modal is open and requires zero new files. Root adapter implementation is underway with original-scope and exact-draft guards.
+- Real T3 starter round trip verified: Done returned to `index.html`, retained the Section hero selection and 390 px frame width, with the code pane visible. T3 tab remains lead-owned.
+
+## Phase 1 verified checkpoint — 2026-10-03T10:30Z
+
+- Root `dev@36b6303459bd47a3e1dc19b57e71fbf0ade17814` completes the original cards/Add/components/canvas/palette review fixes, flaky-test repairs, and additional Make dialog/scope guards. Components follow-up leaf `0c71ed3` was cherry-picked as `d1a5895`; root creation receipt/adapter is `36b6303`; caret test corrections are `8a452f1` and `70de532`. All application mutations for this checkpoint are complete.
+- Final root validation: types, runtime syntax and diff checks pass; units 458/458; combined components/structure/page-structure/palette/canvas/selector browser checks 56/56; source-caret regression 10/10 repeats; runnable real-starter loader audit 1/1. Logs `.scratch/t3-continuation/components-receipt-{check,unit,browser}.log`, `cursor-caret-regression-ten.log`, `native-runready-loader-audit.log`. Earlier failed/interim logs are historical diagnosis, not the final result.
+- Astra approved both additional Make defects after reviewing the stable controller and transaction/host adapter. Normal Make/Undo/Redo works; stale dialog changes produce no component files; lookup failure, repository switching, partial storage failure and draft-identity cleanup have focused coverage.
+- Planner (GPT-6-Luna/medium) completed collection/element contracts. Elements must use the existing InsertPoint while adding a markup insertion API, preserving the original tag/template API. Collections bake ordinary siblings after a single authoring template; exact folder membership, fields/filter/sort/limit/conditions, fail-closed malformed markup and one-Undo dependencies remain to implement.
+- Canvas optional-slot ghost actions are not implemented. Existing optional slots are editable in the instance sidebar; the existing runtime's `ghost` refers to card-grid placement, not empty-slot controls. Do not claim canvas placeholders complete.
+- No push/deploy yet. Lead is preparing docs/memory plus a refreshed real-starter feature screenshot before the first immutable preview checkpoint push. Integrator is coordinating a temporary ownership pause if its style mutation permits a safe checkpoint. Production remains untouched.
+
+## Preview candidate — 2026-10-03T10:33Z
+
+- Root is `dev@b48faff`: two reviewed style leaf commits (`ea07a73`, `b48faff`) follow the verified Phase 1 checkpoint. Style has no host wiring yet and is not presented as a usable deployed feature. Root app/Git ownership is temporarily with lead; integrator paused at a clean application checkpoint.
+- Candidate validation passes types and 498/498 unit tests, with the prior integrated browser result 56/56. Logs `.scratch/t3-continuation/preview-checkpoint-{check,unit}.log`. Refreshed component feature screenshot displayed in this T3 thread before push: `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mus94gdv-729a140e.png`; palette and shared-edit screenshots are recorded above.
+- Lead will commit the docs/memory checkpoint and push that exact commit to `origin/dev`, triggering only the preview workflow. No production action is authorized or planned. Record the resulting commit, run and Worker version after verification; current deployed Worker remains `25270e0c-d7ef-41e5-bbaf-1427dbd0a72f` until confirmed otherwise.
+- Media leaf checkpoint is `e878467` in `pb/media`; it requires site entity module `e3cfcd7` first and the atomic host adapter. 25 focused units, types/build and two read-only library/real-worker browser checks pass. Mutation browser cases exist but have not run against the new adapter. Astra review is active.
