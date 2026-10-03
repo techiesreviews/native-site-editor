@@ -456,3 +456,9 @@
 }
 
 .edit-bar__grip.edit-bar__component-name { cursor:grab; padding:4px 2px; }
+
+/* Component names keep one surface while the grip changes cursor during drag. */
+.edit-bar.is-dragging .edit-bar__grip.edit-bar__component-name,
+.edit-bar__kind--component {
+  background: var(--component-surface);
+}
