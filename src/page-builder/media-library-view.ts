@@ -92,9 +92,11 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   const urls = new Set<string>();
   const assets = new Map<string, Promise<{ url: string; blob: Blob; width?: number; height?: number; version?: string }>>();
   let detailVersion = 0;
+  let detailPath: string | undefined;
   let optimisation: AbortController | undefined;
   let busy = false;
   let refreshVersion = 0;
+  let loadingLibrary = false;
   const observers = new Set<IntersectionObserver>();
   function dispose() {
     if (!alive) return;
@@ -131,7 +133,11 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   async function refresh() {
     if (!alive) return;
     const request = ++refreshVersion;
-    const next = await adapter.load();
+    if (detailPath) { detailVersion++; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…")); }
+    loadingLibrary = true;
+    let next: MediaLibrary;
+    try { next = await adapter.load(); }
+    finally { if (request === refreshVersion) loadingLibrary = false; }
     if (!alive || request !== refreshVersion) return;
     for (const item of next.items) {
       if (library?.items.find((old) => old.path === item.path)?.version !== item.version) assets.delete(item.path);
@@ -143,6 +149,10 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     folders.value = folder;
     if (folders.selectedIndex < 0) folders.selectedIndex = 0;
     draw();
+    if (detailPath) {
+      if (library.items.some((item) => item.path === detailPath)) await showDetail(detailPath);
+      else { detailPath = undefined; sheet.hidden = true; sheet.replaceChildren(); }
+    }
   }
   function draw() {
     if (!alive || !library) return;
@@ -202,18 +212,21 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   async function showDetail(path: string, focusUsage = false) {
     if (!alive) return;
     optimisation?.abort();
+    detailPath = path;
     const version = ++detailVersion;
     sheet.hidden = false; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…"));
+    if (loadingLibrary) return;
     const data = await asset(path).catch((error) => { tell(String(error)); return undefined; });
-    if (!alive || version !== detailVersion || !data) return;
+    if (!alive || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) return;
     const meta = library.metadata[path] ?? { tags: [], alt: "" };
     sheet.replaceChildren();
-    sheet.append(button("Back to grid", () => { detailVersion++; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); }));
+    sheet.append(button("Back to grid", () => { detailVersion++; detailPath = undefined; sheet.hidden = true; grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus(); }));
     const preview = node("img", "media-library__preview"); preview.src = data.url; preview.alt = meta.alt;
     sheet.append(preview, node("h3", "media-library__detail-name", basename(path)), node("p", "media-library__muted", `${data.width ? `${data.width} × ${data.height} · ` : ""}${formatBytes(data.blob.size)} · ${path}`));
     const alt = input("Default alt text", "text"); alt.value = meta.alt;
     const tags = input("Image tags", "text"); tags.value = meta.tags.join(", ");
     sheet.append(field("Default alt text", alt), node("p", "media-library__hint", "Offered on insertion. Empty alt text marks a decorative image. Existing page alt text stays independent."), field("Tags", tags), button("Save metadata", () => void task(async () => {
+      if (version !== detailVersion || detailPath !== path) return;
       await adapter.metadata({ [path]: { alt: alt.value, tags: tags.value.split(",") } }); await refresh(); tell("Tags and default alt text saved as a draft.");
     })));
     const usage = library.usage[path];
@@ -243,7 +256,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   function confirmDelete(paths: string[], unusedOnly = false) {
     if (!alive) return;
     optimisation?.abort();
-    detailVersion++; sheet.hidden = false; sheet.replaceChildren();
+    detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
     if (!paths.length) { sheet.append(node("p", "", "None of the selected images are unused. References in components and CSS also count.")); return; }
     const pages = new Set(paths.flatMap((path) => library.usage[path]?.pages ?? []));
     sheet.append(node("h3", "", `Delete ${paths.length} ${paths.length === 1 ? "image" : "images"}?`), node("p", "", pages.size ? `Used on ${pages.size} pages. Their references will break if you delete these images.` : "These images have no page usage. Check any component and CSS references below."));
@@ -253,7 +266,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     if (!alive) return;
     optimisation?.abort();
-    detailVersion++; sheet.hidden = false; sheet.replaceChildren();
+    detailVersion++; detailPath = undefined; sheet.hidden = false; sheet.replaceChildren();
     const key = `native-site-editor:media-optimise:${library.key}`;
     let defaults = { ...DEFAULT_MEDIA_OPTIMISE };
     try { defaults = { ...defaults, ...JSON.parse(localStorage.getItem(key) ?? "{}") }; } catch { /* Defaults work without storage. */ }
