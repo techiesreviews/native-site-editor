@@ -1168,7 +1168,7 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
 let nativeStyleClass: { selectionKey: string; name: string } | undefined;
 
 // The Style panel reads the same source and matched rules as the CSS pane.
-function nativeStylePanelContext(): (StylePanelContext & { matchedRules?: NativeSelectedRule[] }) | undefined {
+function nativeStylePanelContext(): StylePanelContext | undefined {
   if (!nativeSite) return undefined;
   const selection = lastNativeSelection, sources = nativeSources();
   const source = selection ? sources[selection.path] : undefined;
@@ -4450,22 +4450,23 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       else after.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: text, updatedAt: now });
     }
     if ([...afterSources].every(([path, source]) => source === beforeSources.get(path))) return undefined;
-    const receipt = prepareNativeTextHistory({ scope, store,
+    const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true,
       isLive: () => generation === epoch && setupScope() === scopeKey && !versionView,
       source: nativeEffectiveSource, mounted: editor.isMounted,
-      modelState: path => editor.captureFileModelState(scope, path),
+      modelState: path => editor.captureFileModelState(scope, path, true),
       evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
-      prepareSources: editor.prepareHistorySources,
+      prepareSources: edits => editor.prepareHistorySources(edits, true),
     }, { before, after, beforeSources, afterSources });
-    if (!receipt?.apply()) return store.error ?? receipt?.error() ?? changedOperation;
+    if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? changedOperation; receipt?.dispose(); return error; }
     const transition = (direction: "undo" | "redo") => {
       if (!receipt[direction]()) { announce(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
       announce(direction === "undo" ? op.undone : done);
       return true;
     };
-    if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"))) {
+    if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"), receipt.dispose)) {
       if (receipt.undo()) afterFileChanges();
+      receipt.dispose();
       return "The editor changed before this operation could be recorded. Review the current drafts.";
     }
     afterFileChanges();

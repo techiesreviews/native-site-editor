@@ -170,11 +170,13 @@ export function refreshDrafts() {
 /** Returning false refuses the operation and retains its history entry. */
 export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
 // Legacy actions run once on Undo; actions with Redo move between both stacks.
-type HistoryAction = { path: string; action: HistoryActionCallback; redo?: HistoryActionCallback };
+type HistoryAction = { path: string; action: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
 const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
 const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: (VisualHistoryEntry | HistoryAction)[] }>();
 const runningVisualHistory = new Set<string>();
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
+// A live compound receipt owns these exact Monaco steps across page mounts.
+const historyReceiptModels = new WeakMap<monaco.editor.ITextModel, number>();
 // A companion of a single (ungrouped) edit runs whenever the model itself is undone to before
 // that edit or redone to after it, by the toolbar, the keyboard or Monaco's own stack once the
 // visual history has been cleared by typing, so the other file never drifts from the edit.
@@ -204,6 +206,7 @@ function recordVisualEdit(session: string, path: string, model: monaco.editor.IT
     last.after = model.getAlternativeVersionId();
     if (companion) (last.companions ??= []).push(companion);
   } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined });
+  for (const entry of history.redo) if (isAction(entry)) entry.dispose?.();
   history.redo.length = 0;
   for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
 }
@@ -213,7 +216,7 @@ function closeVisualGroup(session: string, model: monaco.editor.ITextModel) {
 }
 function invalidateVisualHistory(session: string) {
   const history = visualHistory.get(session);
-  if (history) { history.undo.length = 0; history.redo.length = 0; }
+  if (history) { for (const entry of [...history.undo, ...history.redo]) if (isAction(entry)) entry.dispose?.(); history.undo.length = 0; history.redo.length = 0; }
 }
 function canRunVisualHistory(session: string, direction: "undo" | "redo", fallback: monaco.editor.ITextModel) {
   if (runningVisualHistory.has(session)) return false;
@@ -231,17 +234,19 @@ function canRunVisualHistory(session: string, direction: "undo" | "redo", fallba
  * Supply redo for a reversible action. False, throws and rejected promises keep
  * the entry in place. Callbacks own source/draft checks and any side-effect rollback.
  */
-export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback) {
+export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback, dispose?: () => void) {
   const editor = mounted.get(path);
   if (!editor) return false;
   const history = historyFor(editor.session);
-  history.undo.push({ path, action, redo });
+  history.undo.push({ path, action, redo, dispose });
+  for (const entry of history.redo) if (isAction(entry)) entry.dispose?.();
   history.redo.length = 0;
   for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
   return true;
 }
 export interface HistorySourceEdit { path: string; expectedSource: string; text: string }
 export interface HistorySourceReceipt {
+  dispose?(): void;
   apply(): boolean;
   undo(): boolean;
   redo(): boolean;
@@ -253,7 +258,7 @@ export interface HistorySourceReceipt {
  * callbacks as its single history action. No model notification is masked
  * across an await, and every source/model/session/version is checked first.
  */
-export function prepareHistorySources(edits: HistorySourceEdit[]): HistorySourceReceipt | undefined {
+export function prepareHistorySources(edits: HistorySourceEdit[], persistent = false): HistorySourceReceipt | undefined {
   if (new Set(edits.map((edit) => edit.path)).size !== edits.length) return undefined;
   const steps = edits.map((edit) => {
     const editor = mounted.get(edit.path);
@@ -264,10 +269,23 @@ export function prepareHistorySources(edits: HistorySourceEdit[]): HistorySource
   const owned = steps.filter((step): step is NonNullable<typeof step> => Boolean(step));
   if (new Set(owned.map((step) => step.editor.session)).size > 1 || new Set(owned.map((step) => step.model)).size !== owned.length) return undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
-  const matchesStep = (step: typeof owned[number], after: boolean) => mounted.get(step.path) === step.editor &&
-    !step.editor.readOnly && step.editor.session === step.session && !step.model.isDisposed() && step.model.getAlternativeVersionId() === (after ? step.after : step.before) &&
+  if (persistent) for (const step of owned) historyReceiptModels.set(step.model, (historyReceiptModels.get(step.model) ?? 0) + 1);
+  let released = false;
+  const release = () => {
+    if (!persistent || released) return;
+    released = true;
+    for (const step of owned) {
+      const count = (historyReceiptModels.get(step.model) ?? 1) - 1;
+      if (count) historyReceiptModels.set(step.model, count); else historyReceiptModels.delete(step.model);
+      for (const [key, draft] of drafts) if (!count && draft.model === step.model && ![...mounted.values()].some(editor => editor.model === step.model) && draft.baseSha !== null && draft.model.getValue() === draft.original) { draft.model.dispose(); drafts.delete(key); }
+    }
+  };
+  const matchesStep = (step: typeof owned[number], after: boolean) =>
+    (persistent ? [...drafts.values()].some(draft => draft.model === step.model) &&
+      (!mounted.has(step.path) || mounted.get(step.path)?.model === step.model && mounted.get(step.path)?.session === step.session && !mounted.get(step.path)?.readOnly)
+      : mounted.get(step.path) === step.editor && !step.editor.readOnly && step.editor.session === step.session) && !step.model.isDisposed() && step.model.getAlternativeVersionId() === (after ? step.after : step.before) &&
     step.model.getValue() === (after ? step.text : step.expectedSource);
-  const matches = (after: boolean) => owned.every((step) => matchesStep(step, after));
+  const matches = (after: boolean) => !released && owned.every((step) => matchesStep(step, after));
   const move = (direction: "undo" | "redo", expectedState: "applied" | "undone") => {
     if (state !== expectedState || !matches(direction === "undo")) return false;
     const moved: typeof owned = [];
@@ -303,7 +321,8 @@ export function prepareHistorySources(edits: HistorySourceEdit[]): HistorySource
     }
   };
   return {
-    isCurrent: () => state !== "failed" && matches(state === "applied"),
+    dispose: release,
+    isCurrent: () => !released && state !== "failed" && matches(state === "applied"),
     apply() {
       if (state !== "prepared" || !matches(false)) return false;
       const applied: typeof owned = [];
@@ -371,13 +390,14 @@ export function forgetDraftModel(scope: DraftScope, path: string) {
   return true;
 }
 /** Read-only proof of mounted and cached models for one originating scope/path. */
-export function captureFileModelState(scope: DraftScope, path: string) {
+export function captureFileModelState(scope: DraftScope, path: string, persistent = false) {
   const key = draftKey(scope, path), editor = mounted.get(path), cached = drafts.get(key);
   const model = editor?.model ?? cached?.model;
   const session = editor?.session;
   const version = model?.getAlternativeVersionId(), source = model?.getValue();
-  return { isCurrent: () => mounted.get(path) === editor && drafts.get(key) === cached &&
-    (!editor || editor.session === session) && (!model || !model.isDisposed() &&
+  return { isCurrent: () => drafts.get(key) === cached &&
+    (persistent && editor ? (!mounted.has(path) || mounted.get(path)?.model === model && (!session || mounted.get(path)?.session === session))
+      : mounted.get(path) === editor && (!editor || editor.session === session)) && (!model || !model.isDisposed() &&
       model.getAlternativeVersionId() === version && model.getValue() === source) };
 }
 /** Evicts only an unchanged, unmounted cached model and proves its absence. */
@@ -544,12 +564,14 @@ export function changedFiles() {
 }
 /** Forgets every Undo and Redo step: the drafts they changed are gone (Discard changes). */
 export function clearHistory() {
+  for (const session of visualHistory.keys()) invalidateVisualHistory(session);
   visualHistory.clear();
   for (const editor of mounted.values()) editor.refresh();
 }
 export function clearDrafts() {
   for (const draft of drafts.values()) draft.model.dispose();
   drafts.clear();
+  for (const session of visualHistory.keys()) invalidateVisualHistory(session);
   visualHistory.clear();
   draftStore().release();
 }
@@ -1249,7 +1271,7 @@ export function mountCodeEditor(
     workspace?.classList.remove("workspace--code");
     if (
       current.baseSha !== null &&
-      current.model.getValue() === current.original
+      current.model.getValue() === current.original && !historyReceiptModels.has(current.model)
     ) {
       current.model.dispose();
       drafts.delete(file.key);

@@ -93,7 +93,13 @@ only the exact records and source steps owned by that transition.
 
 A mounted, proven history state may reanchor an otherwise identical persisted
 record after an earlier Monaco Undo/Redo; only its timestamp may differ. Unmounted
-records and new files retain exact object identity guards. Structural create,
+records and new files retain exact object identity guards. Native compound text
+receipts retain their exact cached Monaco model across page mounts. Clearing the
+journal, discarding it, or disposing the receipt releases that lease; an unused
+clean model is then disposed. A new model or a changed alternative version is
+never accepted as the old owned step. Foreign draft preservation covers the
+operation boundary; a later unrelated editor save remains a separate operation.
+Structural create,
 move and delete operations still use their existing host path; their compound
 Redo and page-switch handling are a separate integration step.
 

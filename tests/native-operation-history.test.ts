@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prepareNativeTextHistory } from "../src/page-builder/native-operation-history";
 import type { SavedDraft } from "../src/drafts";
-const scope = { account: "a", repoId: 1, branch: "main" };
+const scope = { account: "a", repoId: 1, repo: "a/site", branch: "main" };
 function fixture() {
   const records = new Map<string, SavedDraft>();
   const models = new Map<string, { text: string; version: number }>([["index.html", { text: "before", version: 1 }], ["untouched.css", { text: "same", version: 1 }]]);
@@ -82,4 +82,15 @@ test("a draft writer's synchronous replacement is never treated as an owned save
   const external = { ...f.record, baseSha: "external-base" };
   f.listen(() => { f.records.set("index.html", external); });
   assert.equal(receipt.apply(), false); assert.equal(f.records.get("index.html"), external);
+});
+
+test("rollback restores a writer replacement after real source persistence replaces it again", () => {
+  const f = fixture(), foreign = { ...f.record, baseSha: "foreign-base", mode: "100755" };
+  f.sourceListen(after => { after ? f.records.set("index.html", { ...f.record }) : f.records.delete("index.html"); });
+  let replaced = false;
+  f.listen(() => { if (!replaced) { replaced = true; f.records.set("index.html", foreign); } });
+  const receipt = prepareNativeTextHistory(f.host, f.plan)!;
+  assert.equal(receipt.apply(), false);
+  assert.equal(f.models.get("index.html")!.text, "before");
+  assert.equal(f.records.get("index.html"), foreign);
 });

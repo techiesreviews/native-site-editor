@@ -2,8 +2,9 @@ import type { DraftScope, SavedDraft } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 
 interface Proof { isCurrent(): boolean }
-interface Sources extends Proof { apply(): boolean; undo(): boolean; redo(): boolean }
+interface Sources extends Proof { dispose?(): void; apply(): boolean; undo(): boolean; redo(): boolean }
 export interface NativeTextHistoryHost {
+  persistentModels?: boolean;
   scope: DraftScope;
   store: DraftAccess & { error: string | null };
   isLive(): boolean;
@@ -34,7 +35,7 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   let lastError: string | undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
   const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
-  const modelsCurrent = () => [...proofs].every(([path, proof]) => proof.isCurrent() && host.mounted(path) === mounted.get(path));
+  const modelsCurrent = () => [...proofs].every(([path, proof]) => proof.isCurrent() && (host.persistentModels || host.mounted(path) === mounted.get(path)));
   const sourceCurrent = (expected: Map<string, string | undefined>) => [...expected].every(([path, text]) => host.source(path) === text);
   const current = (after: boolean) => host.isLive() && recordsCurrent(after ? plan.after : plan.before) && modelsCurrent() && sources.isCurrent() && sourceCurrent(after ? plan.afterSources : plan.beforeSources);
   const save = (path: string, record: SavedDraft | undefined) => record ? host.store.save(record) : host.store.remove(scope, path);
@@ -63,7 +64,7 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     if (state !== (direction === "apply" ? "prepared" : after ? "undone" : "applied") || !current(!after)) {
       const records = after ? plan.before : plan.after, texts = after ? plan.beforeSources : plan.afterSources;
       const changedDraft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
-      const changedModel = [...proofs].find(([path, proof]) => !proof.isCurrent() || host.mounted(path) !== mounted.get(path));
+      const changedModel = [...proofs].find(([path, proof]) => !proof.isCurrent() || !host.persistentModels && host.mounted(path) !== mounted.get(path));
       const changedSource = [...texts].find(([path, text]) => host.source(path) !== text);
       lastError = !host.isLive() ? "The repository changed." : changedDraft ? `The draft for ${changedDraft[0]} changed.` : changedModel ? `The editor model for ${changedModel[0]} changed.` : changedSource ? `The source for ${changedSource[0]} changed.` : "The owned source history step changed.";
       return false;
@@ -106,6 +107,10 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     } catch (error) {
       lastError = error instanceof Error ? error.message : "The draft operation failed.";
       // Never overwrite a draft or model changed by a synchronous listener.
+      for (const edit of modelEdits) {
+        const record = host.store.get(scope, edit.path);
+        if (record !== expected.get(edit.path) && record !== written.get(edit.path)) foreign.set(edit.path, record);
+      }
       const reverse = after ? "undo" : "redo";
       const restored = sources.isCurrent() && sources[reverse]();
       const original = after ? plan.before : plan.after;
@@ -119,5 +124,5 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       return false;
     }
   }
-  return { error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+  return { dispose: () => { state = "failed"; sources.dispose?.(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
 }

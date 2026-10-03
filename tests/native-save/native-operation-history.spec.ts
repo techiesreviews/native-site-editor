@@ -4,7 +4,7 @@ const source = (page: Page) => page.evaluate(async () => (await import("/src/com
 async function history(page: Page, direction: "undo" | "redo") {
   expect(await page.evaluate(async direction => (await import("/src/components/code-editor.ts")).runVisualHistory(direction, "index.html"), direction)).toBe(true);
 }
-test("metadata compound history preserves the earlier visual step through Undo and Redo", async ({ page, baseURL }) => {
+test("metadata compound history survives page remounts and preserves the earlier visual step through Undo and Redo", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
   const original = await source(page);
@@ -21,6 +21,15 @@ test("metadata compound history preserves the earlier visual step through Undo a
   await expect(settings).toBeHidden();
   await expect.poll(() => source(page)).toContain("Guarded history title");
   const applied = await source(page);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator('#explorer [role="treeitem"][data-route="/about/"]').click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator('#explorer [role="treeitem"][data-route="/"]').click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect.poll(() => source(page)).toBe(applied);
   await history(page, "undo"); await expect.poll(() => source(page)).toBe(heading);
   await history(page, "undo"); await expect.poll(() => source(page)).toBe(original);
   await history(page, "redo"); await expect.poll(() => source(page)).toBe(heading);
@@ -97,4 +106,34 @@ test("a synchronous source-save listener cannot replace owned draft metadata", a
     return { exact: current === injected, baseSha: current?.baseSha, mode: current?.mode, movedFrom: current?.movedFrom, content: current?.content };
   });
   expect(foreign).toEqual({ exact: true, baseSha: "foreign-base", mode: "100755", movedFrom: "foreign.html", content: expect.stringContaining("Collision history title") });
+});
+
+test("clearing a compound journal releases its retained clean Monaco model", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const store = (await import("/src/drafts.ts")).draftStore();
+    const save = store.save.bind(store);
+    let scope: Parameters<typeof store.save>[0] | undefined;
+    store.save = draft => { scope = draft; return save(draft); };
+    try {
+      const source = editor.getMountedSource("index.html")!;
+      const receipt = editor.prepareHistorySources([{ path: "index.html", expectedSource: source, text: `<!-- owned clean model -->\n${source}` }], true)!;
+      if (!receipt.apply() || !scope || !editor.recordHistoryAction("index.html", receipt.undo, receipt.redo, receipt.dispose)) throw new Error("Could not prepare owned history");
+      if (!await editor.runVisualHistory("undo", "index.html")) throw new Error("Could not undo owned history");
+      Object.assign(window, { retainedModelProof: editor.captureFileModelState(scope, "index.html", true) });
+    } finally { store.save = save; }
+  });
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator('#explorer [role="treeitem"][data-route="/about/"]').click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  const result = await page.evaluate(async () => {
+    const proof = (window as unknown as { retainedModelProof: { isCurrent(): boolean } }).retainedModelProof;
+    const retained = proof.isCurrent();
+    (await import("/src/components/code-editor.ts")).clearHistory();
+    return { retained, released: !proof.isCurrent() };
+  });
+  expect(result).toEqual({ retained: true, released: true });
 });
