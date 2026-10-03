@@ -223,7 +223,7 @@ export function createCards(deps: CardsDeps) {
     if (automatic(source, grid)) return deps.operation({
       creates: [{ path: target.value.file, content }],
       edits: new Map(),
-      done: `Created the page ${title} at ${target.value.route}; ${grid.label} lists it.`,
+      done: `Created the page ${title} at ${target.value.route}; ${grid.label} updates from its listing settings.`,
       undone: `Undid creating the page ${title}.`,
     });
     const last = grid.items[grid.items.length - 1];
@@ -386,7 +386,7 @@ export function createCards(deps: CardsDeps) {
         creates: [{ path: target.value.file, content }],
         edits: new Map(),
         open: target.value.file,
-        done: `Created the page ${title} at ${target.value.route}; ${where} lists it.`,
+        done: `Created the page ${title} at ${target.value.route}; ${where} updates from its listing settings.`,
         undone: `Undid creating the page ${title}.`,
         focus: { file: target.value.file },
       });

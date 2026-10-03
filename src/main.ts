@@ -4237,6 +4237,10 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
   // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
   const card = cards?.cardsLinkingTo(target.route, new Set(everything));
   const cardOption = card ? { label: card.label, checked: true } : undefined;
+  // The card's edits and the deletes were computed from these sources: an
+  // agent or resync write while the dialog is open refuses, never overwritten.
+  const scope = setupScope(), epoch = generation;
+  const expectedSources = new Map([...everything, ...(card?.edits.keys() ?? [])].map((path) => [path, nativeEffectiveSource(path)] as const));
   let removeCard = false;
   if (target.subpages > 0) {
     const count = `${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`;
@@ -4273,7 +4277,9 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
   const what = paths.length > 1 && target.subpages
     ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
     : `the page ${target.label}`;
+  if (scope !== setupScope() || epoch !== generation) { errorMessage(new Error("The repository changed meanwhile. Try again.")); return; }
   const error = await applyNativeCollectionOperation({
+    expectedSources,
     deletes: paths,
     ...(removeCard && card ? { edits: card.edits } : {}),
     done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
