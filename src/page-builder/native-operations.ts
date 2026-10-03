@@ -5,14 +5,28 @@ import type { InsertPoint } from "../components/insert-controls";
 
 export interface SourceEdit { start: number; end: number; text: string }
 export interface GuardedSourceEdit extends SourceEdit { original: string; source: string }
-interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; interactive?: boolean; parent?: SourceNode }
-const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext"]);
+interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; namespace?: "html" | "svg" | "math"; opaque?: boolean; interactive?: boolean; parent?: SourceNode }
+const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext", "noscript"]);
 const textNodes = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]);
 const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup"]);
 const interactive = new Set(["a", "button", "input", "select", "textarea", "label", "details"]);
 
 // Only actual HTML names; editor catalogue keys and foreign/custom names are not HTML.
 const htmlNames = new Set("a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strong style sub summary sup table tbody td template textarea tfoot th thead time title tr track u ul var video wbr".split(" "));
+const foreignBreakouts = new Set("b big blockquote body br center code dd div dl dt em embed h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol p pre ruby s small span strong strike sub sup table tt u ul var".split(" "));
+const reservedCustom = new Set("annotation-xml color-profile font-face font-face-src font-face-uri font-face-format font-face-name missing-glyph".split(" "));
+const customName = (name: string) => /^[a-z][a-z0-9._-]*-[a-z0-9._-]*$/.test(name) && !reservedCustom.has(name);
+function namespaceFor(parent: SourceNode, name: string, source: string): "html" | "svg" | "math" {
+  let namespace = parent.namespace ?? "html";
+  if (namespace === "svg" && ["foreignobject", "desc", "title"].includes(parent.name)) namespace = "html";
+  if (namespace === "math" && ["mi", "mo", "mn", "ms", "mtext"].includes(parent.name) && !["mglyph", "malignmark"].includes(name)) namespace = "html";
+  if (namespace === "math" && parent.name === "annotation-xml") {
+    const text = source.slice(parent.start, parent.openEnd), tag = startTags(text)[0];
+    const encoding = tag && startTagAttribute(text, tag, "encoding");
+    if (encoding && /^(?:text\/html|application\/xhtml\+xml)$/i.test(decodeHtmlEntities(encoding.value, true))) namespace = "html";
+  }
+  return namespace === "html" && (name === "svg" || name === "math") ? name : namespace;
+}
 /** A strict tokenizer uses quoted start-tag bounds; comments never become nodes. */
 function tree(source: string): SourceNode | undefined {
   const root: SourceNode = { name: "", start: 0, openEnd: 0, closeStart: source.length, end: source.length, children: [] };
@@ -22,7 +36,7 @@ function tree(source: string): SourceNode | undefined {
     const parent = stack[stack.length - 1];
     const lt = source.indexOf("<", at);
     if (lt < 0) break;
-    if (raw.has(parent.name)) {
+    if ((parent.namespace ?? "html") === "html" && raw.has(parent.name)) {
       const close = new RegExp(`</${parent.name}(?=[\\t\\n\\f\\r />])`, "ig");
       close.lastIndex = at;
       const match = close.exec(source);
@@ -47,14 +61,18 @@ function tree(source: string): SourceNode | undefined {
       stack.pop(); at = parent.end; continue;
     }
     const tag = startTags(tail)[0];
-    if (!tag || !htmlNames.has(tag.name) || tag.start !== 0 || tail[tag.end - 1] !== ">" || !/^[a-z][\w:-]*$/i.test(tag.name)) return undefined;
-    // Non-void HTML self-closing syntax is ambiguous in the browser.
-    if (/\/\s*>$/.test(tail.slice(0, tag.end)) && !VOID_ELEMENTS.has(tag.name)) return undefined;
+    if (!tag || tag.start !== 0 || tail[tag.end - 1] !== ">" || !/^[a-z][\w:-]*$/i.test(tag.name)) return undefined;
+    const namespace = namespaceFor(parent, tag.name, source);
+    if (namespace === "html" && !htmlNames.has(tag.name) && !["svg", "math"].includes(tag.name) && !customName(tag.name)) return undefined;
+    // HTML breakouts escape a foreign island and change the page's child paths.
+    if (namespace !== "html" && (foreignBreakouts.has(tag.name) || tag.name === "font" && ["color", "face", "size"].some(name => !!startTagAttribute(tail, tag, name)))) return undefined;
+    const selfClosing = /\/\s*>$/.test(tail.slice(0, tag.end));
+    if (namespace === "html" && selfClosing && !VOID_ELEMENTS.has(tag.name)) return undefined;
     const attributes = tail.slice(tag.nameEnd, tag.end - 1).replace(/\/\s*$/, "");
     if (!/^(?:\s+[a-z_:][\w:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'|[^\s"'=<>`]+))?)*\s*$/i.test(attributes)) return undefined;
-    const child: SourceNode = { name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
+    const child: SourceNode = { namespace, opaque: namespace !== "html" || customName(tag.name) || ["template", "noscript", "xmp", "noembed", "noframes"].includes(tag.name), name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
     parent.children.push(child);
-    if (!VOID_ELEMENTS.has(child.name)) stack.push(child);
+    if (!(namespace === "html" ? VOID_ELEMENTS.has(child.name) : selfClosing)) stack.push(child);
     at = child.openEnd;
   }
   if (stack.length !== 1 || !semanticTree(root)) return undefined;
@@ -67,7 +85,9 @@ function tree(source: string): SourceNode | undefined {
       const refresh = tag && startTagAttribute(source.slice(child.start, child.openEnd), tag, "http-equiv");
       return (refresh && decodeHtmlEntities(refresh.value, true).toLowerCase()) !== "refresh";
     });
-    node.children.forEach(visible);
+    // Template content is a separate DocumentFragment, absent from element.children.
+    if (node.name === "template" && (node.namespace ?? "html") === "html") node.children = [];
+    else node.children.forEach(visible);
   };
   visible(root);
   // Body paths match native preview. Full documents must have explicit single roots.
@@ -85,15 +105,21 @@ function atPath(root: SourceNode, path: readonly number[]) {
   let node: SourceNode | undefined = root;
   for (const step of path) {
     if (!Number.isInteger(step) || step < 0) return undefined;
+    if (node?.opaque) return undefined;
     node = node?.children[step];
   }
   return node;
 }
 function all(node: SourceNode): SourceNode[] { return [node, ...node.children.flatMap(all)]; }
+// HTML template content has its own parsing scope, not the host's descendants.
+function scopedDescendants(node: SourceNode): SourceNode[] {
+  return [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(scopedDescendants))];
+}
+const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template"].includes(node.name);
 function canContain(parent: SourceNode, children: SourceNode[]) {
-  if (!containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
+  if (parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
   const names = children.map((child) => child.name);
-  const descendants = children.flatMap(all);
+  const descendants = children.flatMap(scopedDescendants);
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     if (ancestor.name === "form" && descendants.some((node) => node.name === "form")) return false;
     if (["a", "button"].includes(ancestor.name) && descendants.some((node) => node.interactive)) return false;
@@ -107,19 +133,21 @@ function canContain(parent: SourceNode, children: SourceNode[]) {
 const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd"]);
 function semanticTree(root: SourceNode) {
   return all(root).every((node) => {
-    if (["svg", "math", "template", "noscript", "plaintext", "xmp", "noembed", "noframes"].includes(node.name)) return false;
+    if (node.name === "plaintext") return false;
+    if ((node.namespace ?? "html") !== "html") return true;
     if (node.name === "table" && node.children.some((child) => !["caption", "colgroup", "thead", "tbody", "tfoot"].includes(child.name))) return false;
     if (["thead", "tbody", "tfoot"].includes(node.name) && node.children.some((child) => child.name !== "tr")) return false;
     if (node.name === "tr" && (node.children.some((child) => !["td", "th"].includes(child.name)) || !["thead", "tbody", "tfoot"].includes(node.parent?.name ?? ""))) return false;
     if (["td", "th"].includes(node.name) && node.parent?.name !== "tr") return false;
-    if (node.name === "li" && node.parent?.name && !["ul", "ol"].includes(node.parent.name)) return false;
+    if (node.name === "li" && node.parent?.name && !["ul", "ol", "template"].includes(node.parent.name)) return false;
     if (node.name === "option" && node.children.length) return false;
-    if (node.name === "button" && node.children.flatMap(all).some((child) => !phrasing.has(child.name))) return false;
-    if (textNodes.has(node.name) && !["pre", "button", "option"].includes(node.name) && node.children.flatMap(all).some((child) => !phrasing.has(child.name))) return false;
-    if (["ul", "ol"].includes(node.name) && node.children.some((child) => child.name !== "li")) return false;
+    if (node.name === "button" && node.children.flatMap(scopedDescendants).some((child) => !isPhrasing(child))) return false;
+    if (textNodes.has(node.name) && !["pre", "button", "option"].includes(node.name) && node.children.flatMap(scopedDescendants).some((child) => !isPhrasing(child))) return false;
+    if (["ul", "ol"].includes(node.name) && node.children.some((child) => !["li", "template", "script"].includes(child.name))) return false;
     if (node.name === "dl" && node.children.some((child) => !["dt", "dd"].includes(child.name))) return false;
     if (["select", "optgroup"].includes(node.name) && node.children.some((child) => child.name !== "option" && !(node.name === "select" && child.name === "optgroup"))) return false;
     for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+      if (ancestor.name === "template" && (ancestor.namespace ?? "html") === "html") break;
       if (node.name === "form" && ancestor.name === "form") return false;
       if (node.interactive && ["a", "button"].includes(ancestor.name)) return false;
       if (node.name === "label" && ancestor.name === "label") return false;
@@ -147,7 +175,7 @@ function validFragment(root: SourceNode, source: string) {
     if (node.name === "form" && (!parsed || !startTagAttribute(tag, parsed, "action") || !/^(?:get|post)$/i.test(decodeHtmlEntities(startTagAttribute(tag, parsed, "method")?.value ?? "", true)))) return true;
     return false;
   })) return false;
-  return all(root).every((node) => !["script", "style", "html", "head", "body", "meta", "link", "base"].includes(node.name) && !node.name.includes("-"));
+  return all(root).every((node) => !["script", "style", "html", "head", "body", "meta", "link", "base"].includes(node.name) && !node.opaque && !node.name.includes("-"));
 }
 export type NativePlacement = "before" | "after" | "inside";
 export interface NativeDestination { point: InsertPoint; description: string; placement: NativePlacement; selection: number[] }
@@ -167,12 +195,14 @@ export function nativeDestinations(source: string, path: string, selection: read
     const index = selection[selection.length - 1];
     destinations.push(make(parent, selection.slice(0, -1), index, "before"), make(parent, selection.slice(0, -1), index + 1, "after"));
   }
-  if (containers.has(selected.name) && !textNodes.has(selected.name)) destinations.push(make(selected, [...selection], selected.children.length, "inside"));
+  if (!selected.opaque && containers.has(selected.name) && !textNodes.has(selected.name)) destinations.push(make(selected, [...selection], selected.children.length, "inside"));
   return destinations;
 }
 /** Preserve all content bytes in whitespace-sensitive elements, including line endings. */
 function structuralIndent(markup: string, newline: string, indent: string, remove = "") {
   const protectedRanges: [number, number][] = [];
+  const parsed = tree(markup);
+  if (parsed) for (const node of all(parsed)) if (node.opaque) protectedRanges.push([node.start, node.end]);
   for (const tag of startTags(markup)) {
     if (!raw.has(tag.name) && tag.name !== "pre") continue;
     const close = new RegExp(`</${tag.name}\\s*>`, "ig");
@@ -214,7 +244,7 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   const root = tree(source);
   const moving = root && atPath(root, from);
   const parent = root && atPath(root, destination.parent);
-  if (!moving || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
+  if (!moving || moving.opaque || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
   if (!canContain(parent, [moving])) return undefined;
   const index = from[from.length - 1];

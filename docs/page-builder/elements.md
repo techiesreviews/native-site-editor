@@ -31,18 +31,27 @@ provide a backend. Configure a real endpoint before treating a form as operation
   slice). `applyGuardedSourceEdit(current, edit)` refuses stale documents. A host can
   use that check, then submit the range through its existing single-edit/Undo path.
 
-The parser deliberately requires explicit balanced tags and rejects semantic repairs,
+The parser requires explicit balanced tags and rejects semantic repairs,
 void/text/raw-text destinations, nested forms, and interactive nesting. Scripts and
-refresh metadata do not count in paths, matching preview sanitization. Arbitrary
-children cannot be inserted under custom elements. Edit a shared component's actual
-native template/container instead. Foreign content, template-containing documents,
-legacy raw-text elements, implicit table sections, omitted end tags, and unsupported
-containers are conservatively unavailable rather than guessed. This leaf does not
-change the existing component-slot generation. This whole-document restriction also
-applies when template/SVG content is outside the intended target: collection pages
-containing those regions remain unsupported by these native leaf operations. The
-existing collection/component operations retain their own contracts. Native fragment
-names use an HTML allowlist; unknown names, foreign names, and editor keys are rejected.
+refresh metadata do not count in paths, matching preview sanitization. Existing
+custom elements, SVG/MathML, templates, and noscript regions are opaque boundaries:
+they occupy one ordinary element-child position, and HTML operations can insert
+before/after them or edit ordinary HTML elsewhere in the page. Template content is
+not part of `element.children`. Custom-element light DOM still appears in the
+preview's structure, but source operations refuse any path crossing its host.
+Foreign self-closing tags and recognized HTML integration points are parsed in their
+namespace; HTML tokens that break out of foreign content are refused. Unsupported
+foreign syntax, mismatched tags, implicit table sections, omitted end tags, and
+unsafe repairs still fail closed. New fragments retain the HTML-name allowlist:
+custom, foreign, template, and editor catalogue names are not insertion fragments.
+
+Direct opaque-island moves and all partial-island edits are refused. An ordinary
+HTML wrapper containing islands may move to a valid HTML destination as one guarded
+range; the complete bytes of each nested island stay unchanged, including its
+internal whitespace and line endings. Shared component content should be edited in
+its actual template through the component editor. Existing collection/component
+operations retain their own contracts.
+
 URL attributes use the complete HTML5 attribute decoder before validation. URL-list
 attributes (`srcset`, `imagesrcset`, `ping`, `archive`) are conservatively rejected
 until a candidate parser is available.
@@ -90,3 +99,23 @@ rejection, and insertion/move content-byte preservation for LF and CRLF. Validat
 after these fixes: 28 focused tests, 551 full unit tests, both TypeScript checks, and
 `git diff --check` passed. No browser run was performed for this source-only fix;
 host integration and runtime geometry remain outside this leaf's validation.
+
+## Compatibility validation and layout preset contract
+
+`tests/native-save/native-elements-compat.spec.ts` mounts the real native starter,
+production Monaco, and production native preview with SVG, nested templates, and
+noscript siblings. It verifies sanitized element indexes (including custom light
+DOM), outside insertion, wrapper movement, exact Undo/Redo, and refused inside or
+partial-island operations. This is a leaf integration harness; repository menu/Add
+host wiring is not claimed. Mixed LF/CRLF preservation is checked by pure source
+operation tests; Monaco normalizes a newly mounted document to its chosen line
+ending before operations begin.
+
+Grid/columns presets currently declare layout properties in an inline `style`
+attribute. A normal class rule written by the Style panel cannot override those
+properties. A host adapter should either create a scoped class rule in the same
+source-and-stylesheet transaction as insertion, or explicitly remove the touched
+inline declarations while writing their replacement class rules. That migration
+must share one guarded Undo/Redo operation and must preserve unrelated inline
+properties. This leaf keeps the catalogue unchanged and does not claim to fix the
+Style host contract.

@@ -1,0 +1,77 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const fixture = resolve('fixtures/native-starter');
+const paths = ['index.html','styles/site.css','components/site-header/site-header.html','components/site-footer/site-footer.html','components/project-card/project-card.html'];
+const sources = Object.fromEntries(paths.map(path=>[path,readFileSync(resolve(fixture,path),'utf8')]));
+const islands = '<svg id="opaque-svg" viewBox="0 0 10 10"><path d="M 0 0"/><foreignObject><div>SVG label</div></foreignObject></svg>\n<template id="opaque-template" data-each="/notes/"><p>{title}</p><template><p>Nested</p></template></template>\n<noscript><p>No scripts</p></noscript>\n';
+const source = sources['index.html'].replace('<main class="page" data-key="main">','<main class="page" data-key="main">'+islands);
+test.beforeEach(async ({page})=>{
+  await page.goto('/tests/fixtures/native-elements-compat.html');
+  await page.evaluate(async ({sources,source})=>{
+    const ops = await import('/src/page-builder/native-operations.ts');
+    const code = await import('/src/components/code-editor.ts');
+    const {createNativePreview} = await import('/src/components/native-preview.ts');
+    const {resolveNativeProject} = await import('/shared/native-project.ts');
+    const state:any={source,structure:undefined};
+    const live={...sources,'index.html':source};
+    const preview=createNativePreview(document.querySelector('#preview') as HTMLElement,{onStructure:structure=>state.structure=structure});
+    const site=resolveNativeProject(Object.keys(live));if(!site.ok)throw new Error(site.error);
+    preview.activate(site.site);preview.update({sources:live});
+    code.mountCodeEditor(document.querySelector('#code') as HTMLElement,{key:'compat-editor',historyScope:'compat',path:'index.html',source,onContextChange:file=>{if(file){state.source=file.content;live['index.html']=file.content;preview.update({sources:live});}}});
+    code.clearHistory();
+    const harness={state,ops,code,
+      insert(parent:number[],index:number,markup:string){const edit=ops.nativeMarkupInsertEdit(state.source,parent,index,markup);if(!edit)return false;code.replaceActiveRange({path:'index.html',start:edit.start,end:edit.end,expected:edit.original,text:edit.text});return true;},
+      move(from:number[],parent:number[],index:number){const edit=ops.nativeMoveEdit(state.source,from,{parent,index});if(!edit)return false;code.replaceActiveRange({path:'index.html',start:edit.start,end:edit.end,expected:edit.original,text:edit.text});return true;},
+      history(direction:'undo'|'redo'){return code.runVisualHistory(direction,'index.html');},
+    };Object.assign(window,{elementCompat:harness});
+  },{sources,source});
+  await expect(page.frameLocator('.native-preview-frame').getByRole('heading',{name:'A native browser preview'})).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items.length)).toBe(3);
+});
+test('real starter indexes include islands while template content stays outside element children; outside insertion has one Undo/Redo',async({page})=>{
+  const structure=await page.evaluate(()=>(window as any).elementCompat.state.structure);
+  expect(structure.items.map((item:any)=>item.tag)).toEqual(['site-header','main','site-footer']);
+  const main=structure.items[1];
+  expect(main.children.map((item:any)=>item.tag)).toEqual(['svg','template','noscript','section','section','section']);
+  expect(main.children[1].children).toEqual([]);
+  expect(main.children[3].node).toEqual([1,3]);
+  expect(main.children[4].children[0].tag).toBe('project-card');
+  expect(main.children[4].children[0].children.map((item:any)=>item.node)).toEqual([[1,4,0,0],[1,4,0,1]]);
+  expect(await page.evaluate(()=>(window as any).elementCompat.insert([1,3],2,'<p id="added-native">Added outside islands</p>'))).toBe(true);
+  await expect(page.frameLocator('.native-preview-frame').locator('#added-native')).toBeVisible();
+  const changed=await page.evaluate(()=>(window as any).elementCompat.state.source);
+  expect(changed).toContain(islands);expect(changed).toContain('<site-header data-key="header"></site-header>');
+  expect(await page.evaluate(()=>(window as any).elementCompat.history('undo'))).toBe(true);
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(source);
+  await expect(page.frameLocator('.native-preview-frame').locator('#added-native')).toHaveCount(0);
+  expect(await page.evaluate(()=>(window as any).elementCompat.history('redo'))).toBe(true);
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(changed);
+});
+test('ordinary section containing components moves across islands without changing native bytes, then undoes exactly',async({page})=>{
+  const cardBytes=source.slice(source.indexOf('<section class="cards"'),source.indexOf('  <section class="filler"')).trimEnd();
+  expect(await page.evaluate(()=>(window as any).elementCompat.move([1,4],[1],0))).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items[1].children[0].children[0]?.tag)).toBe('project-card');
+  const changed=await page.evaluate(()=>(window as any).elementCompat.state.source);
+  for(const match of source.matchAll(/<project-card\b[^>]*>[\s\S]*?<\/project-card>/g)) expect(changed).toContain(match[0]);
+  expect(changed).toContain(islands);
+  expect(cardBytes).toContain('<project-card');
+  expect(await page.evaluate(()=>(window as any).elementCompat.history('undo'))).toBe(true);
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(source);
+});
+test('inside and partial island paths refuse insertion/move and leave source/history untouched',async({page})=>{
+  const result=await page.evaluate(()=>{const h=(window as any).elementCompat;return {insertions:[[1,0],[1,0,0],[1,1],[1,1,0],[1,4,0],[1,4,0,1]].map(path=>h.insert(path,0,'<hr>')),moves:[h.move([1,0],[1],6),h.move([1,4,0,1],[1,3],0),h.move([1,3,0],[1,4,0],0)],source:h.state.source};});
+  expect(result.insertions).toEqual([false,false,false,false,false,false]);expect(result.moves).toEqual([false,false,false]);expect(result.source).toBe(source);
+  expect(await page.evaluate(()=>(window as any).elementCompat.history('undo'))).toBe(false);
+});
+test('inline custom/foreign islands and list collection templates preserve real browser parent boundaries',async({page})=>{
+  const inline='<p id="inline-islands"><x-label><span>Inline</span></x-label><svg><path/></svg><math><mi>x</mi></math><template><div>Separate content</div></template></p><ul id="collection-list"><template data-each="/notes/"><li>{title}</li></template><li>Existing</li></ul>';
+  await page.evaluate(inline=>{const h=(window as any).elementCompat;const before=h.state.source;const after=before.replace('  <section class="hero"',inline+'  <section class="hero"');h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:after});},inline);
+  const frame=page.frameLocator('.native-preview-frame');
+  await expect(frame.locator('#inline-islands')).toBeVisible();
+  expect(await frame.locator('#inline-islands').evaluate(el=>({parent:el.parentElement?.tagName,children:[...el.children].map(child=>child.localName),templateChildren:el.querySelector('template')?.children.length}))).toEqual({parent:'MAIN',children:['x-label','svg','math','template'],templateChildren:0});
+  expect(await frame.locator('#collection-list').evaluate(el=>[...el.children].map(child=>child.localName))).toEqual(['template','li']);
+  expect(await page.evaluate(()=>(window as any).elementCompat.insert([1,5],0,'<p id="inline-proof">Outside remains editable</p>'))).toBe(true);
+  await expect(frame.locator('#inline-proof')).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain(inline);
+});

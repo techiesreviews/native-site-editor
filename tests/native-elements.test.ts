@@ -146,7 +146,10 @@ test("native names exclude editor keys, foreign and unknown tags", () => {
   for (const name of ['native:text', 'native:heading', 'svg', 'math', 'unknown', 'x-card']) {
     assert.equal(apply('<main></main>', [0], 0, `<${name}></${name}>`), undefined, name);
   }
-  for (const source of ['<main><template><p>x</p></template><section></section></main>', '<main><svg></svg><section></section></main>']) assert.equal(apply(source, [0, 1], 0, '<hr>'), undefined);
+  for (const source of ['<main><template><p>x</p></template><section></section></main>', '<main><svg></svg><section></section></main>']) {
+    assert.ok(apply(source, [0, 1], 0, '<hr>'));
+    assert.equal(apply(source, [0, 0], 0, '<hr>'), undefined);
+  }
 });
 
 test("insertions and moves preserve pre and raw content bytes including CRLF", () => {
@@ -172,4 +175,39 @@ test("raw closing delimiters fail closed and adjacent URL contexts use HTML5 dec
     assert.equal(apply('<main></main>', [0], 0, `<div ${attribute}="javascript&colon;x"></div>`), undefined, attribute);
   }
   for (const attribute of ['srcset', 'imagesrcset', 'ping', 'archive']) assert.equal(apply('<main></main>', [0], 0, `<img ${attribute}="safe.jpg, javascript&colon;x">`), undefined);
+});
+
+test('unrelated opaque islands retain bytes and count as one preview element each', () => {
+  const islands = ['<svg viewBox="0 0 10 10"><path d="M0 0"/><foreignObject><div><p>Label</p></div></foreignObject></svg>', '<math><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></math>', '<template data-each="/notes/"><p>{title}</p><template><p>Nested</p></template></template>', '<x-card><script>ignored()</script><span>Light</span><div><p>Text</p></div></x-card>', '<noscript><div>Fallback</div></noscript>'];
+  const source = '<main>' + islands.join('') + '<section id="outside"><p>Existing</p></section></main>';
+  const out = apply(source, [0, islands.length], 1, '<hr>')!;
+  assert.ok(out.includes('<p>Existing</p>\n<hr>'));
+  for (const island of islands) assert.ok(out.includes(island), island);
+  for (let index=0;index<islands.length;index++) {
+    assert.deepEqual(nativeDestinations(source,'index.html',[0,index]).map(d=>d.placement), ['before','after']);
+    assert.equal(apply(source,[0,index],0,'<hr>'),undefined);
+    assert.equal(apply(source,[0,index,0],0,'<hr>'),undefined);
+    assert.equal(nativeMoveEdit(source,[0,index],{parent:[0,islands.length],index:0}),undefined);
+  }
+});
+test('outside moves and moves of ordinary wrappers preserve entire opaque byte ranges', () => {
+  const opaque='<x-card>\r\n  <template><p>{title}</p></template>\n <svg><path d="M 1 2"/></svg>\r\n</x-card>';
+  const source='<main>\r\n  <section><div>'+opaque+'</div><p>A</p></section>\r\n  <section><p>B</p></section>\r\n</main>';
+  const edit=nativeMoveEdit(source,[0,0,0],{parent:[0,1],index:1})!;
+  assert.ok(edit); assert.ok(applyGuardedSourceEdit(source,edit)!.includes(opaque));
+  assert.equal(nativeMoveEdit(source,[0,0,0,0,0],{parent:[0,1],index:0}),undefined);
+  assert.equal(nativeMoveEdit(source,[0,0,1],{parent:[0,0,0,0],index:0}),undefined);
+});
+test('foreign namespace integration is bounded and escaping or malformed islands fail closed', () => {
+  for (const island of ['<svg><g><div>breakout</div></g></svg>', '<svg><font color="red">breakout</font></svg>', '<svg><path></svg>', '<svg><foreignObject><p><div>repair</div></p></foreignObject></svg>', '<x-card><p><div>repair</div></p></x-card>', '<x-card/>', '<template><p>x</template>', '<template><template></template>', '<math><mrow><p>breakout</p></mrow></math>']) {
+    assert.equal(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>'),undefined,island);
+  }
+  for(const island of ['<svg><foreignObject><div>HTML</div></foreignObject></svg>', '<math><mtext><span>HTML</span></mtext></math>', '<math><annotation-xml encoding="text/html"><div>HTML</div></annotation-xml></math>']) assert.ok(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>'),island);
+});
+
+test('legal inline islands and collection templates do not reject unrelated ordinary targets', () => {
+  for(const island of ['<p><x-label><span>Inline</span></x-label></p>', '<p><svg><path/></svg></p>', '<p><template><div>Separate content</div></template>Text</p>', '<ul><template data-each="/notes/"><li>{title}</li></template><li>Existing</li></ul>']) {
+    assert.ok(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>'),island);
+  }
+  assert.equal(apply('<main><p><x-label><div>Repair</div></x-label></p><section></section></main>',[0,1],0,'<hr>'),undefined);
 });
