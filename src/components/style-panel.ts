@@ -25,7 +25,7 @@ export interface StylePanelHandlers {
   addClass: (name: string, expected?: StylePanelContext) => Promise<void>;
   focalAsset?: (expected: StylePanelContext) => Promise<{ mode: "object-position" | "background-position"; asset: FocalPreviewAsset } | undefined>;
   showCode: (expected: StylePanelContext) => Promise<void>;
-  history: (direction: "undo" | "redo") => void;
+  history: (direction: "undo" | "redo") => void | Promise<unknown>;
   error: (message: string) => void;
 }
 const sides = ["top", "right", "bottom", "left"];
@@ -68,6 +68,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   };
   document.addEventListener("pointerup", finishGesture, { capture: true, signal: gestureEvents.signal });
   document.addEventListener("pointercancel", finishGesture, { capture: true, signal: gestureEvents.signal });
+  const ownHistorySources: StylePanelContext[] = [];
   let renderContext: StylePanelContext | undefined;
   let renderOwn: Record<string, string> = {};
   function report(error: unknown) { handlers.error(error instanceof Error ? error.message : String(error)); }
@@ -100,7 +101,25 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const modifier = event.ctrlKey || event.metaKey;
     const direction = modifier && event.key.toLowerCase() === "z" ? (event.shiftKey ? "redo" : "undo")
       : event.ctrlKey && event.key.toLowerCase() === "y" ? "redo" : undefined;
-    if (direction) { event.preventDefault(); event.stopPropagation(); handlers.history(direction); }
+    if (direction) {
+      event.preventDefault(); event.stopPropagation();
+      const before = handlers.context();
+      const snapshots = [...controlSnapshots].filter(snapshot => sameSource(snapshot.expected, before));
+      const advance = (accepted?: unknown) => {
+        const current = handlers.context();
+        if (!root.isConnected || accepted === false || !before || !current || current.readOnly || !sameTarget(before, current) ||
+          !ownHistorySources.some(source => sameSource(source, current))) return;
+        // Only controls current before this user history action may advance.
+        // A stale control from an earlier external edit remains stale.
+        for (const snapshot of snapshots) if (controlSnapshots.has(snapshot)) snapshot.expected = current;
+        update();
+      };
+      try {
+        const result = handlers.history(direction);
+        if (result) void result.then(advance, report);
+        else advance();
+      } catch (error) { report(error); }
+    }
   });
   const unsubscribe = subscribeBreakpoint(() => render());
   function options() { return { selector: handlers.context()?.target?.selector ?? "", baseStart: handlers.context()?.target?.start, breakpoint: breakpointWidths[getCurrentBreakpoint()], state }; }
@@ -138,7 +157,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const captured = context;
       const show = button("Show in code", () => {
         const fresh = handlers.context();
-        const expected = currentContext(show.isConnected && fresh?.key === captured.key ? fresh : captured);
+        const expected = currentContext(show.isConnected && fresh && sameTarget(captured, fresh) ? fresh : captured);
         if (expected) void handlers.showCode(expected).catch(report);
       }, "style-panel__show-code");
       target.append(show);
@@ -173,6 +192,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       : field.kind === "type" ? /^--(?:text|font-size|line)-/.test(v.name)
       : field.kind === "font" ? /^--font-/.test(v.name) && !/^--font-size-/.test(v.name)
       : field.kind === "color" ? CSS.supports("color", resolveVariableValue(v.value, variables)) && !resolveVariableValue(v.value, variables).includes("var(") || /(?:color|colour|ink|accent|surface|page|muted)/.test(v.name) : false);
+  }
+  function sameTarget(before: StylePanelContext, current: StylePanelContext) {
+    return before.key === current.key && before.selectionKey === current.selectionKey &&
+      before.target?.path === current.target?.path && before.target?.selector === current.target?.selector;
+  }
+  function sameSource(before: StylePanelContext | undefined, current: StylePanelContext | undefined) {
+    return !!before && !!current && sameTarget(before, current) && before.target?.start === current.target?.start &&
+      Object.keys(before.files).length === Object.keys(current.files).length &&
+      Object.entries(before.files).every(([path, source]) => current.files[path] === source);
   }
   function currentContext(expected = renderContext) {
     const current = handlers.context();
@@ -210,6 +238,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       if (before?.key === expected.key && before.target?.path === target.path && before.target?.selector === target.selector &&
         Object.keys(before.files).every((path) => before.files[path] === expected.files[path])) snapshot.expected = current;
     }
+    ownHistorySources.push(expected, current);
+    if (ownHistorySources.length > 100) ownHistorySources.splice(0, ownHistorySources.length - 100);
     widgetsPending = false; widgets.forEach(widget => widget.refresh());
     return true;
   }
@@ -227,7 +257,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         value = `repeat(${value}, minmax(0, 1fr))`;
       }
       if (value && !CSS.supports(field.property, value.replace(/\s*!important\s*$/, ""))) { report(`Enter a valid ${field.label.toLowerCase()} value.`); return; }
-      if (value === acceptedValue || value === pendingValue) return;
+      if (value === pendingValue || value === acceptedValue && (ownValues()[field.property] ?? "") === value) return;
       if (!currentContext(snapshot.expected)) return;
       pendingValue = value;
       try {
@@ -455,7 +485,14 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     body.append(chips);
     const target = node("div", "style-panel__target");
     target.append(node("span", "style-panel__selector", context.target?.selector ?? context.tag), node("span", "style-panel__path", context.target?.path ?? "No class rule selected"));
-    if (context.target?.start !== undefined && context.workspace) target.append(button("Show in code", () => { const expected = currentContext(classSnapshot.expected); if (expected) void handlers.showCode(expected).catch(report); }, "style-panel__show-code"));
+    if (context.target?.start !== undefined && context.workspace) {
+      const show = button("Show in code", () => {
+        const fresh = handlers.context();
+        const expected = currentContext(show.isConnected && fresh && sameTarget(context, fresh) ? fresh : classSnapshot.expected);
+        if (expected) void handlers.showCode(expected).catch(report);
+      }, "style-panel__show-code");
+      target.append(show);
+    }
     body.append(target);
     if (context.target && context.target.start === undefined) body.append(node("p", "style-panel__hint style-panel__new-rule-hint", "No class rule yet. The first style edit creates it in this stylesheet."));
     if (context.className) body.append(node("p", "style-panel__shared-scope", context.target?.selector === cssClassSelector(context.className) ? `Edits apply to every element with class “${context.className}”.` : `Edits apply to every element matching “${context.target?.selector ?? cssClassSelector(context.className)}”.`));
@@ -537,6 +574,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
               if (!proof.isCurrent(true)) throw new Error("The image or style source changed. Retry with the current preview.");
               const target = proof.captured.expected.target;
               const rule = target && locateWriteRule(proof.captured.expected.files[target.path] ?? "", options());
+              // The panel cannot prove selector matching or the complete cascade.
+              // Refuse competing important positions rather than claim a visible edit.
+              const competingPriority = Object.entries(proof.captured.expected.files).some(([path, source]) => /\.css$/i.test(path) &&
+                scanCss(source).some(block => !(path === target?.path && block.start === rule?.start) &&
+                  block.declarations.some(item => (item.property === result.mode || result.mode === "background-position" && item.property === "background") && /!important\s*$/i.test(item.value))));
+              if (competingPriority) throw new Error("Another CSS rule has an important image position. Edit that rule in code before changing image focus.");
               const declaration = document.createElement("div").style;
               declaration.cssText = (rule?.declarations ?? []).map(item => `${item.property}:${item.value};`).join("");
               const prioritized = Object.fromEntries(Object.entries(properties).map(([property, value]) => [property, value && declaration.getPropertyPriority(property) === "important" ? `${value} !important` : value]));

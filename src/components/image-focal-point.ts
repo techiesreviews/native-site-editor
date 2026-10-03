@@ -97,7 +97,7 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
     const version = ++writeVersion; pendingValue = value;
     const accepted = { ...next };
     const succeed = () => { if (allowed() && version === writeVersion) { committed = accepted; acceptedEdit = true; } };
-    const fail = (error: unknown) => { if (version === writeVersion) { point = committed && { ...committed }; draw(); options.onError?.(error); } };
+    const fail = (error: unknown) => { if (version === writeVersion) { point = committed && { ...committed }; draw(); if (!disposed) options.onError?.(error); } };
     const finish = () => { if (version === writeVersion) pendingValue = undefined; };
     try {
       const result = options.onChange({ [options.mode]: value }, expected);
