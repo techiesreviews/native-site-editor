@@ -236,3 +236,73 @@ test("batch source checks reject an edit arriving during the first async file lo
   expect(source).toContain("<!-- edit during lookup -->");
   expect(source).not.toContain("Racing title");
 });
+
+test("URL changes preserve an edit arriving while the redirects file is being read", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "_redirects", content: "/old /about/ 301\n" } });
+  await open(page, baseURL, 501, "about/index.html");
+  const snapshot = await (await page.request.get("/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main")).json();
+  const redirectSha = snapshot.tree.find((entry: { path: string }) => entry.path === "_redirects").sha;
+  let reading = false;
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/file?**", async route => {
+    if (new URL(route.request().url()).searchParams.get("sha") === redirectSha) { reading = true; await blocked; }
+    await route.continue();
+  });
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  const url = settings.getByRole("textbox", { name: "URL", exact: true });
+  await url.fill("/studio/"); await url.press("Enter");
+  await expect.poll(() => reading).toBe(true);
+  await page.evaluate(async modulePath => {
+    const { replaceActiveRange } = await import(modulePath) as typeof import("../../src/components/code-editor");
+    replaceActiveRange({ path: "about/index.html", start: 0, end: 0, text: "<!-- keep newer source -->\n", expected: "" });
+  }, "/src/components/code-editor.ts");
+  release();
+  await expect(settings.locator(".url-change__message")).toContainText("source changed");
+  expect((await storedDraft(page, "about/index.html"))!.content).toContain("<!-- keep newer source -->");
+  expect(await storedDraft(page, "studio/index.html")).toBeUndefined();
+  expect(await storedDraft(page, "_redirects")).toBeUndefined();
+});
+
+test("URL changes cannot carry old moves into another repository during redirects loading", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "_redirects", content: "/old /about/ 301\n" } });
+  await open(page, baseURL, 501, "about/index.html");
+  const snapshot = await (await page.request.get("/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main")).json();
+  const redirectSha = snapshot.tree.find((entry: { path: string }) => entry.path === "_redirects").sha;
+  let reading = false;
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/file?**", async route => {
+    if (new URL(route.request().url()).searchParams.get("sha") === redirectSha) { reading = true; await blocked; }
+    await route.continue();
+  });
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  const url = settings.getByRole("textbox", { name: "URL", exact: true });
+  await url.fill("/studio/"); await url.press("Enter");
+  await expect.poll(() => reading).toBe(true);
+  await page.evaluate(() => { location.hash = "#repo=530&branch=main&file=index.html"; });
+  await expect(page.locator(".repository-menu__trigger")).toContainText("native-routing");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  release();
+  await expect(settings.locator(".url-change__message")).toContainText(/repository.*changed/i);
+  expect(await storedDraft(page, "about/index.html")).toBeUndefined();
+  expect(await storedDraft(page, "studio/index.html")).toBeUndefined();
+  expect(await storedDraft(page, "_redirects")).toBeUndefined();
+});
+
+test("Page settings changes a URL and keeps its page and shared navigation together", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501, "about/index.html");
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  const url = settings.getByRole("textbox", { name: "URL", exact: true });
+  await url.fill("/studio/"); await url.press("Enter");
+  await expect(settings).not.toBeVisible();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "studio/index.html");
+  await expect.poll(async () => (await storedDraft(page, "components/site-header/site-header.html"))?.content).toContain('href="/studio/"');
+  expect((await storedDraft(page, "about/index.html"))?.deleted).toBe(true);
+  expect((await storedDraft(page, "_redirects"))?.content).toContain("/about/ /studio/ 301");
+});

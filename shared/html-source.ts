@@ -54,7 +54,7 @@ export function startTags(html: string): StartTag[] {
     i = end;
     if (RAW_TEXT.has(name)) {
       if (name === "plaintext") break;
-      const close = new RegExp(`</${name}(?=[\\s/>])`, "gi");
+      const close = new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi");
       close.lastIndex = i;
       const match = close.exec(html);
       i = match ? match.index : html.length;
@@ -223,16 +223,42 @@ export interface TagAttribute {
 
 // The named attribute inside a start tag, when present.
 export function startTagAttribute(html: string, tag: StartTag, name: string): TagAttribute | undefined {
-  const text = html.slice(tag.nameEnd, tag.end);
-  const pattern = new RegExp(`\\s+${name}(?:\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+)))?(?=[\\s/>])`, "i");
-  const match = pattern.exec(text);
-  if (!match) return undefined;
-  const value = match[1] ?? match[2] ?? match[3] ?? "";
-  const start = tag.nameEnd + match.index;
-  const end = start + match[0].length;
-  // The value ends just before its closing quote, or at the attribute's end when bare or absent.
-  const valueEnd = match[3] !== undefined || match[1] === undefined && match[2] === undefined ? end : end - 1;
-  return { start, end, valueStart: valueEnd - value.length, valueEnd, value };
+  const whitespace = (char: string) => /[\t\n\f\r ]/.test(char);
+  let cursor = tag.nameEnd;
+  while (cursor < tag.end) {
+    const start = cursor;
+    while (cursor < tag.end && whitespace(html[cursor])) cursor++;
+    if (html[cursor] === ">" || html[cursor] === "/" && html[cursor + 1] === ">") break;
+    const nameStart = cursor;
+    while (cursor < tag.end && !/[\t\n\f\r =/>]/.test(html[cursor])) cursor++;
+    if (cursor === nameStart) { cursor++; continue; }
+    const attributeName = html.slice(nameStart, cursor).toLowerCase();
+    const nameEnd = cursor;
+    while (cursor < tag.end && whitespace(html[cursor])) cursor++;
+    let valueStart = nameEnd;
+    let valueEnd = nameEnd;
+    let end = nameEnd;
+    if (html[cursor] === "=") {
+      cursor++;
+      while (cursor < tag.end && whitespace(html[cursor])) cursor++;
+      const quote = html[cursor];
+      if (quote === '"' || quote === "'") {
+        valueStart = ++cursor;
+        while (cursor < tag.end && html[cursor] !== quote) cursor++;
+        valueEnd = cursor;
+        if (cursor < tag.end) cursor++;
+      } else {
+        valueStart = cursor;
+        while (cursor < tag.end && !/[\t\n\f\r >]/.test(html[cursor])) cursor++;
+        valueEnd = cursor;
+      }
+      end = cursor;
+    } else cursor = nameEnd;
+    if (attributeName === name.toLowerCase()) {
+      return { start, end, valueStart, valueEnd, value: html.slice(valueStart, valueEnd) };
+    }
+  }
+  return undefined;
 }
 
 const blankSource = (text: string) => !text.replace(/<!--[\s\S]*?-->/g, "").trim();

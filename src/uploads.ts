@@ -141,7 +141,19 @@ export function uploadBytes(): UploadBytes {
 }
 
 /** Bytes being added whose draft is not saved yet. */
-const adding = new Set<string>();
+const adding = new Map<string, number>();
+/** Keep staged bytes from a sweep while any operation is still preparing them. */
+export function holdUploadKey(key: string) {
+  adding.set(key, (adding.get(key) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    const left = (adding.get(key) ?? 1) - 1;
+    if (left) adding.set(key, left); else adding.delete(key);
+  };
+}
+export const uploadKeyHeld = (key: string) => adding.has(key);
 
 export type UploadResult = { ok: true; path: string; warning?: string } | { ok: false; error: string };
 
@@ -170,11 +182,11 @@ export async function addUpload(options: {
   const type = file.type || uploadImageType(path) || "application/octet-stream";
   const key = uploadKey(scope, sha);
   // Kept from a sweep until its draft exists.
-  adding.add(key);
+  const release = holdUploadKey(key);
   try {
     await options.bytes.put(key, new Blob([data], { type }));
   } catch {
-    adding.delete(key);
+    release();
     return { ok: false, error: `${file.name} could not be kept in this browser. Free some browser storage and try again.` };
   }
   const draft: SavedDraft = {
@@ -182,8 +194,9 @@ export async function addUpload(options: {
     updatedAt: options.now ?? Date.now(), path, baseSha: null, original: "", content: "",
     sourceSha: sha, opaque: true, upload: { size: data.length, type },
   };
-  const saved = options.drafts.save(draft);
-  adding.delete(key);
+  let saved: boolean;
+  try { saved = options.drafts.save(draft); }
+  finally { release(); }
   if (!saved) {
     options.drafts.remove(scope, path);
     return { ok: false, error: `${file.name} could not be added to your drafts.` };

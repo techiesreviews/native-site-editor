@@ -63,6 +63,7 @@ import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
+import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import { locateClassRule, writeCssProperties } from "./page-builder/css-write";
 import { breakpointWidths } from "./page-builder/breakpoints";
@@ -1988,7 +1989,7 @@ function nativeSettingsController() {
       return applyNativeOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." });
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
-    applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep),
+    applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep, expectedSources),
     async applySite(values) {
       if (stale() || sourcesChanged()) return changed;
       return applyNativeSiteSettings(values, expectedSources);
@@ -2118,11 +2119,11 @@ async function applyNativeEffect(path: string, node: number[], preset: EffectPre
   if (!edits.has(path)) edits.set(path, next);
   const expectedSources = new Map([...new Set([path, EFFECTS_PATH, ...Object.values(nativeSite.routes)])].map((file) => [file, nativeEffectiveSource(file)] as const));
   const error = await applyNativeOperation({ expectedSources, edits, done: `${preset} applied to this element; shared CSS linked from all pages as drafts.`, undone: `Undid applying ${preset}.` });
-  if (!error) {
+  if (!error && epoch === generation && scope === setupScope()) {
     nativeStyleFiles.add(EFFECTS_PATH); nativeMissingStyleFiles.delete(EFFECTS_PATH);
     updateNativePreviewSources();
     if (sameSelection() && lastNativeSelection) renderNativeEditBar(lastNativeSelection);
-    nativePreview?.selectNode({ path, node });
+    if (sameSelection()) nativePreview?.selectNode({ path, node });
   }
   return error;
 }
@@ -2396,20 +2397,26 @@ function nativeImagePaths() {
 // Files from the computer as new-file drafts in `folder` (src/uploads.ts),
 // never over something that is there; resolves to the paths added.
 async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
-  const scope = draftScope();
-  if (!scope || !files.length) return [];
-  const added: string[] = [];
-  const errors: string[] = [];
-  const warnings: string[] = [];
+  const captured = draftScope();
+  if (!captured || !files.length) return [];
+  const scope = { ...captured }, epoch = generation, key = setupScope(), drafts = draftStore(), bytes = uploadBytes();
+  const isCurrent = () => epoch === generation && key === setupScope();
+  const receipts: { undo(): Promise<boolean> }[] = [];
+  const added: string[] = [], errors: string[] = [], warnings: string[] = [];
+  const cleanup = async () => { for (const receipt of receipts) await receipt.undo(); };
   for (const file of files) {
-    const result = await addUpload({
-      drafts: draftStore(), bytes: uploadBytes(), scope, folder, file,
-      taken: async (path) => added.includes(path) || pathNow(path) !== undefined || (await branchPathProblem(path).catch(() => "unknown")) !== undefined,
+    const result = await addGuardedUpload({
+      drafts, bytes, scope, folder, file, isCurrent,
+      exists: path => added.includes(path) || pathNow(path) !== undefined,
+      checkPath: branchPathProblem,
     });
-    if (!result.ok) { errors.push(result.error); continue; }
-    added.push(result.path);
+    if (!isCurrent()) { if (result.receipt) await result.receipt.undo(); await cleanup(); return []; }
+    if (result.error !== undefined) { errors.push(result.error); continue; }
+    receipts.push(result.receipt!);
+    added.push(result.path!);
     if (result.warning) warnings.push(result.warning);
   }
+  if (!isCurrent()) { await cleanup(); return []; }
   if (added.length) afterFileChanges();
   if (errors.length) errorMessage(new Error(errors.join(" ")));
   if (added.length) announce([`Uploaded ${added.join(", ")}.`, ...warnings].join(" "));
@@ -3924,12 +3931,14 @@ function nativeUrlPlan(file: string, value: string): UrlPlan {
 
 // `_redirects` as it is now: its draft, or the branch's file.
 async function readNativeRedirects(): Promise<string | undefined> {
+  const repo = currentRepo, epoch = generation, scopeKey = setupScope();
   const scope = draftScope();
   const draft = scope ? draftStore().get(scope, NATIVE_REDIRECTS_PATH) : undefined;
   if (draft) return draft.deleted ? undefined : draft.content;
   if (!nativeBaseFiles.includes(NATIVE_REDIRECTS_PATH) || !currentRepo) return undefined;
   const entry = await findEntry(NATIVE_REDIRECTS_PATH);
-  return entry ? readFile(currentRepo.full_name, entry.sha) : undefined;
+  if (epoch !== generation || scopeKey !== setupScope() || !repo) throw new Error("The repository changed while reading redirects.");
+  return entry ? readFile(repo.full_name, entry.sha) : undefined;
 }
 
 // Changes the URL of the page `file` to `value` as one operation, all as
@@ -3939,9 +3948,18 @@ async function readNativeRedirects(): Promise<string | undefined> {
 // (`_redirects`, which is also kept free of chains to the old URLs and of
 // redirects away from the new ones). The open page stays open where it
 // went. Undo right after takes it all back.
-async function changeNativeUrl(file: string, value: string, keep: boolean): Promise<string | undefined> {
+async function changeNativeUrl(file: string, value: string, keep: boolean, openingSources?: Map<string, string | undefined>): Promise<string | undefined> {
+  const epoch = generation, scope = setupScope(), paths = JSON.stringify(nativeFiles().sort()), routes = JSON.stringify(nativeSite?.routes);
+  const expectedSources = new Map(openingSources ?? Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
+  const stale = () => epoch !== generation || scope !== setupScope() || paths !== JSON.stringify(nativeFiles().sort()) || routes !== JSON.stringify(nativeSite?.routes) ||
+    [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
+  const changed = "The repository or source changed while preparing the URL change. Review it and try again.";
+  if (stale()) return changed;
   const indexed = await ensureNativeTextIndex();
+  if (stale()) return changed;
   if (indexed) return indexed;
+  for (const [path, source] of Object.entries(nativeLinkSources())) if (!expectedSources.has(path)) expectedSources.set(path, source);
+  expectedSources.set(NATIVE_REDIRECTS_PATH, nativeEffectiveSource(NATIVE_REDIRECTS_PATH));
   const planned = planNativeUrlChange(file, value);
   if (!planned.ok) return planned.error === UNCHANGED_URL ? undefined : planned.error;
   const change = planned.value;
@@ -3951,6 +3969,7 @@ async function changeNativeUrl(file: string, value: string, keep: boolean): Prom
   let redirects: string | undefined;
   try {
     redirects = await readNativeRedirects();
+    if (stale()) return changed;
   } catch (error) {
     return error instanceof Error ? error.message : `${NATIVE_REDIRECTS_PATH} could not be read.`;
   }
@@ -3963,7 +3982,9 @@ async function changeNativeUrl(file: string, value: string, keep: boolean): Prom
   const summary = count
     ? `${count} ${count === 1 ? "link" : "links"} updated in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
     : "no links to update";
+  if (stale()) return changed;
   return applyNativeOperation({
+    expectedSources,
     moves: change.move.moves,
     edits,
     done: `URL changed to ${change.to} — ${summary}${redirected.length ? `; ${change.from} redirects there` : ""}.`,

@@ -18,3 +18,14 @@ for (const name of ["script", "style"]) {
     }
   });
 }
+
+for (const name of ["script", "style"]) {
+  test(`${name} does not treat non-HTML whitespace as an end-tag delimiter`, () => {
+    for (const delimiter of ["\u00a0", "\v", "\u2003"]) {
+      const html = `<${name}>text </${name}${delimiter}><img src="fake.png"></${name}><img src="real.png">`;
+      const tags = startTags(html);
+      assert.deepEqual(tags.map((tag) => tag.name), [name, "img"]);
+      assert.equal(tags[1].start, html.indexOf('<img src="real.png">'));
+    }
+  });
+}
