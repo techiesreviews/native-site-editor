@@ -409,10 +409,13 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius);
-  background: transparent;
-  color: inherit;
+  background: var(--component-surface);
+  color: var(--component-text);
   font: inherit;
   cursor: pointer;
+}
+.edit-bar__component-name:is(:hover, :active, :focus-visible) {
+  background: var(--component-surface);
 }
 .edit-bar__component-edit {
   position: absolute;
@@ -422,8 +425,8 @@
   align-items: center;
   justify-content: flex-end;
   padding-right: 6px;
-  color: var(--component);
-  background: linear-gradient(to right, transparent, var(--panel-surface) 35%);
+  color: var(--component-text);
+  background: linear-gradient(to right, transparent, var(--component-surface) 35%);
   opacity: 0;
   transform: translateX(40%);
   pointer-events: none;
