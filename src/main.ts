@@ -58,6 +58,7 @@ import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
+import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
@@ -1299,6 +1300,10 @@ let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
 
+// One native field keeps the snapshot captured when its popover opened. The
+// edit bar may replace a live callback while retaining that same input node.
+let nativeAttributeFieldSession: { key: string; path: string; source: string; model: { isCurrent(): boolean }; epoch: number; scope: string } | undefined;
+
 // Controls for the selected element. Structural actions need the element's
 // exact outer source range; when that cannot be told (implied end tags,
 // stray markup) they stay out rather than edit the wrong HTML.
@@ -1569,6 +1574,51 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       });
     }
   }
+  // Native media and form attributes use the same guarded source controls.
+  if (range && node) {
+    const fields = nativeElementFields(source, range.tag);
+    const scope = draftScope(), epoch = generation, scopeKey = setupScope();
+    let expectedSource = source;
+    let model = scope && editor.captureFileModelState(scope, path);
+    const writeField = (property: string, value: string, grouped: boolean) => {
+      const key = `${path}:${node.join(".")}:${property}`;
+      const state = grouped ? nativeAttributeFieldSession : model && { key, path, source: expectedSource, model, epoch, scope: scopeKey };
+      if (!scope || !state || state.key !== key || !state.model.isCurrent() || generation !== state.epoch || setupScope() !== state.scope || versionView ||
+          lastNativeSelection?.path !== path || lastNativeSelection.node?.join(".") !== node.join(".") || nativeEffectiveSource(path) !== state.source) {
+        announce("The source or selection changed. Select the element again before editing its fields."); return;
+      }
+      const tag = locateNativeElementRange(state.source, node)?.tag;
+      if (!tag || tag.name !== range.tag.name) { announce("The selected element changed."); return; }
+      const located = locateNativeFieldElement(state.source, tag);
+      if ("error" in located) { announce(located.error); return; }
+      const result = nativeElementAttributeEdits(state.source, located, { [property]: value });
+      if ("error" in result) { announce(result.error); return; }
+      if (!result.edits.length) return;
+      const edit = result.edits[0];
+      const next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
+      preview.selectAfterUpdate({ path, node });
+      try {
+        editor.replaceActiveRange({ path, ...edit, expected: state.source.slice(edit.start, edit.end) }, grouped);
+        if (generation !== epoch || setupScope() !== scopeKey || nativeEffectiveSource(path) !== next) throw new Error("The source changed while applying this field.");
+        expectedSource = next;
+        model = editor.captureFileModelState(scope, path);
+        state.source = next;
+        state.model = model;
+        announce(`${fields.find(field => field.property === property)?.label ?? property} changed`);
+      } catch (error) { preview.selectAfterUpdate(undefined); errorMessage(error); }
+    };
+    for (const field of fields) {
+      if (field.kind === "choice") controls.push({ kind: "select", label: field.label, value: field.value,
+        options: [...(field.options ?? [])], onChange: value => writeField(field.property, value, false) });
+      else controls.push({ kind: "address", label: field.label, value: field.value,
+        placeholder: field.kind === "url" ? "Local path or web address" : field.label,
+        onOpen: () => { if (model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: expectedSource, model, epoch, scope: scopeKey }; },
+        onInput: value => writeField(field.property, value, true), onClose: () => {
+          editor.closeActiveEditGroup(nativeAttributeFieldSession?.path ?? path);
+          nativeAttributeFieldSession = undefined;
+        } });
+    }
+  }
   // Heading levels that skip (H2 to H4): one press puts the heading in order.
   if (range && /^h[2-6]$/.test(selection.tag) && range.close && range.tag.name === selection.tag) {
     const level = Number(selection.tag[1]);
@@ -1588,40 +1638,12 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       });
     }
   }
-  // Images: a live Address (images of the repository suggested) and alt text.
+  // Images use the media chooser and native alternative text.
   if (range && selection.tag === "img") {
     const tag = range.tag;
     const src = attribute("src");
     const alt = attribute("alt");
     controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
-    // Address: an image of this repository suggested as typed, or any address,
-    // applied live. An alt that was never written or still equals the previous
-    // file's name follows the new file's name; a written or empty one stays.
-    const images = nativeImagePaths();
-    controls.push({
-      kind: "address",
-      icon: "link",
-      label: "Address",
-      warning: src?.value.trim() ? undefined : "No image",
-      value: src?.value ?? "",
-      placeholder: "Image in this repository or web address",
-      // As root paths, which work from every page.
-      suggestions: images.map((image) => ({ label: `/${image}`, value: `/${image}` })),
-      // An image from the computer, uploaded beside the site's images.
-      upload: { label: "Upload image…", accept: "image/*", onFiles: async (files) => {
-        const [uploaded] = await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files);
-        return uploaded === undefined ? undefined : `/${uploaded}`;
-      } },
-      onInput: (value) => { if (node) live(node, "img", (latest, tag) => {
-        const before = startTagAttribute(latest, tag, "src");
-        const written = startTagAttribute(latest, tag, "alt");
-        const edits = [setAttributeEdit(latest, tag, "src", value)];
-        const previousName = altFromPath(before?.value ?? "");
-        if (!written || (written.value && written.value === previousName)) edits.push(setAttributeEdit(latest, tag, "alt", altFromPath(value)));
-        return edits;
-      }, "Image replaced"); },
-      onClose: () => editor.closeActiveEditGroup(path),
-    });
     // Alt text applies as typed; opening with no alt written applies the
     // file's name at once; emptied, the image is decorative (alt="").
     controls.push({
@@ -1635,8 +1657,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onClose: () => editor.closeActiveEditGroup(path),
     });
   }
-  // Links and buttons need a name; containers get a label when they carry no heading.
-  if (range && (selection.tag === "a" || selection.tag === "button") && !selection.text.trim() && !attribute("aria-label")) {
+  // Empty links need an accessible name. Buttons expose the native accessible
+  // label field above, alongside their separate form submission name.
+  if (range && selection.tag === "a" && !selection.text.trim() && !attribute("aria-label")) {
     controls.push({
       kind: "address",
       label: "Name",
