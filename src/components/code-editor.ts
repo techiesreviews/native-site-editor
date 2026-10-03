@@ -1092,7 +1092,7 @@ export function mountCodeEditor(
       const moved = stored && !stored.deleted
         ? { ...(stored.movedFrom ? { movedFrom: stored.movedFrom } : {}), ...(stored.sourceSha ? { sourceSha: stored.sourceSha } : {}), ...(stored.mode ? { mode: stored.mode } : {}) }
         : {};
-      current.persisted = store.save({
+      const draft: SavedDraft = {
         ...moved,
         ...file.scope,
         version: 1,
@@ -1101,7 +1101,14 @@ export function mountCodeEditor(
         original: current.original,
         content: current.model.getValue(),
         updatedAt: Date.now(),
-      });
+      };
+      const existing = store.get(file.scope, file.path);
+      const fields = Object.keys(draft).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
+      const unchanged = existing && fields.length === Object.keys(existing).filter(key => key !== "updatedAt").length && fields.every(key => existing[key] === draft[key]);
+      // Refreshing controls is not a source edit. Preserve the exact persisted
+      // record so compound history can distinguish its writes from other edits.
+      // Failed persistence still retries, and a return to baseline still prunes.
+      current.persisted = unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(draft);
     }
     conflictBar.hidden = !conflict && !deletedUpstream;
     publisher?.refresh();

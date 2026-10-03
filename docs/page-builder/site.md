@@ -82,6 +82,21 @@ CSS, including `styles/effects.css`, remains part of the native site. Use the
 Style panel's Effects controls to edit shadow, transform and transition in the
 selected class rule.
 
+## Compound text history
+
+Page settings, navigation and other text-only file batches use one source-checked
+history receipt. Mounted models keep their native Monaco history, so an earlier
+visual edit can still be undone and redone around the batch. Every transition
+checks the originating repository, all captured source bytes, model identities and
+versions, and affected draft records before writing. A storage failure rolls back
+only the exact records and source steps owned by that transition.
+
+A mounted, proven history state may reanchor an otherwise identical persisted
+record after an earlier Monaco Undo/Redo; only its timestamp may differ. Unmounted
+records and new files retain exact object identity guards. Structural create,
+move and delete operations still use their existing host path; their compound
+Redo and page-switch handling are a separate integration step.
+
 ## Validation
 
 `tests/site-head.test.ts`, `tests/site-identity.test.ts`,
@@ -89,3 +104,8 @@ selected class rule.
 preservation, escaping, idempotence and refusal cases. Browser coverage lives in
 `tests/native-save/native-site-settings.spec.ts` and uses the real worker through
 the fake GitHub boundary. Set `ASE_TEST_PORT` for an isolated browser run.
+
+`tests/native-operation-history.test.ts` checks exact rollback, scope and model
+staleness, and mounted-record reanchoring boundaries. The production browser test
+`tests/native-save/native-operation-history.spec.ts` checks a visual edit and a
+metadata batch through two Undo and two Redo steps with exact source assertions.

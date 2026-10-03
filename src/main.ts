@@ -55,6 +55,7 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
+import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { nativeElementChoices, nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
@@ -1167,7 +1168,7 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
 let nativeStyleClass: { selectionKey: string; name: string } | undefined;
 
 // The Style panel reads the same source and matched rules as the CSS pane.
-function nativeStylePanelContext(): StylePanelContext | undefined {
+function nativeStylePanelContext(): (StylePanelContext & { matchedRules?: NativeSelectedRule[] }) | undefined {
   if (!nativeSite) return undefined;
   const selection = lastNativeSelection, sources = nativeSources();
   const source = selection ? sources[selection.path] : undefined;
@@ -1184,7 +1185,7 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
   return {
     key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
     tag: selection?.tag ?? "", className, classes,
-    target, modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
+    target, matchedRules: selection?.selectors ?? [], modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
     assetRevision: focalPath ? String(nativeAssetVersions.get(focalPath) ?? 0) : "0", files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };
 }
@@ -4429,6 +4430,48 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     if (from) touched.add(from);
   }
   const before = new Map([...touched].map((path) => [path, store.get(scope, path)] as const));
+  if (!moves.length && !deletes.length && !creates.length && !op.open) {
+    const editor = editorModule, anchor = currentPath;
+    if (!editor || !anchor || !editor.isMounted(anchor)) return "Open a page before changing these files.";
+    const after = new Map(before);
+    const beforeSources = new Map(expectedSources);
+    for (const path of touched) if (!beforeSources.has(path)) beforeSources.set(path, nativeEffectiveSource(path));
+    if (!beforeSources.has(anchor)) beforeSources.set(anchor, nativeEffectiveSource(anchor));
+    const afterSources = new Map(beforeSources);
+    const now = Date.now();
+    for (const [path, text] of edits) {
+      const draft = before.get(path), base = bases.get(path);
+      afterSources.set(path, text);
+      if (draft && !draft.deleted && draft.baseSha !== null && !draft.movedFrom && text === draft.original) after.set(path, undefined);
+      else if (draft && !draft.deleted) after.set(path, { ...draft, content: text, updatedAt: now });
+      else if (base && text === base.text) continue;
+      else if (draft?.deleted) after.set(path, { ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content: text, updatedAt: now });
+      else if (base) after.set(path, { ...scope, version: 1, path, baseSha: base.sha, original: base.text, content: text, updatedAt: now });
+      else after.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: text, updatedAt: now });
+    }
+    if ([...afterSources].every(([path, source]) => source === beforeSources.get(path))) return undefined;
+    const receipt = prepareNativeTextHistory({ scope, store,
+      isLive: () => generation === epoch && setupScope() === scopeKey && !versionView,
+      source: nativeEffectiveSource, mounted: editor.isMounted,
+      modelState: path => editor.captureFileModelState(scope, path),
+      evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
+      prepareSources: editor.prepareHistorySources,
+    }, { before, after, beforeSources, afterSources });
+    if (!receipt?.apply()) return store.error ?? receipt?.error() ?? changedOperation;
+    const transition = (direction: "undo" | "redo") => {
+      if (!receipt[direction]()) { announce(receipt.error() ?? changedOperation); return false; }
+      afterFileChanges();
+      announce(direction === "undo" ? op.undone : done);
+      return true;
+    };
+    if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"))) {
+      if (receipt.undo()) afterFileChanges();
+      return "The editor changed before this operation could be recorded. Review the current drafts.";
+    }
+    afterFileChanges();
+    announce(done);
+    return undefined;
+  }
   const record: NativeOperationRecord = { scope: { ...scope }, epoch, before, opened: currentPath, undone: op.undone };
   const opened = releaseFiles(touched);
 

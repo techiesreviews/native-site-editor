@@ -1,0 +1,117 @@
+import type { DraftScope, SavedDraft } from "../drafts";
+import type { DraftAccess } from "../file-changes";
+
+interface Proof { isCurrent(): boolean }
+interface Sources extends Proof { apply(): boolean; undo(): boolean; redo(): boolean }
+export interface NativeTextHistoryHost {
+  scope: DraftScope;
+  store: DraftAccess & { error: string | null };
+  isLive(): boolean;
+  source(path: string): string | undefined;
+  mounted(path: string): boolean;
+  modelState(path: string): Proof;
+  evictModel(path: string, proof: Proof): Proof | undefined;
+  prepareSources(edits: { path: string; expectedSource: string; text: string }[]): Sources | undefined;
+}
+export interface NativeTextHistoryPlan {
+  before: Map<string, SavedDraft | undefined>;
+  after: Map<string, SavedDraft | undefined>;
+  beforeSources: Map<string, string | undefined>;
+  afterSources: Map<string, string | undefined>;
+}
+/** A synchronous, source-checked draft transaction; UI refresh and history registration belong to the host. */
+export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: NativeTextHistoryPlan) {
+  const scope = { ...host.scope };
+  const paths = [...new Set([...plan.beforeSources.keys(), ...plan.afterSources.keys(), ...plan.before.keys(), ...plan.after.keys()])];
+  const proofs = new Map(paths.map(path => [path, host.modelState(path)]));
+  const mounted = new Map(paths.map(path => [path, host.mounted(path)]));
+  const edited = paths.filter(path => plan.beforeSources.get(path) !== plan.afterSources.get(path));
+  const modelEdits = edited.filter(path => mounted.get(path)).map(path => ({ path, expectedSource: plan.beforeSources.get(path), text: plan.afterSources.get(path) }));
+  if (modelEdits.some(edit => edit.expectedSource === undefined || edit.text === undefined)) return;
+  const preparedSources = host.prepareSources(modelEdits as { path: string; expectedSource: string; text: string }[]);
+  if (!preparedSources) return;
+  const sources: Sources = preparedSources;
+  let lastError: string | undefined;
+  let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
+  const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
+  const modelsCurrent = () => [...proofs].every(([path, proof]) => proof.isCurrent() && host.mounted(path) === mounted.get(path));
+  const sourceCurrent = (expected: Map<string, string | undefined>) => [...expected].every(([path, text]) => host.source(path) === text);
+  const current = (after: boolean) => host.isLive() && recordsCurrent(after ? plan.after : plan.before) && modelsCurrent() && sources.isCurrent() && sourceCurrent(after ? plan.afterSources : plan.beforeSources);
+  const save = (path: string, record: SavedDraft | undefined) => record ? host.store.save(record) : host.store.remove(scope, path);
+  function reanchorMountedRecords(records: Map<string, SavedDraft | undefined>, texts: Map<string, string | undefined>) {
+    if (!host.isLive() || !modelsCurrent() || !sources.isCurrent() || !sourceCurrent(texts)) return;
+    for (const edit of modelEdits) {
+      const expected = records.get(edit.path), actual = host.store.get(scope, edit.path);
+      // A preceding, proven Monaco Undo/Redo may persist an identical existing
+      // file again. New files and every unmounted record retain exact identity.
+      if (!expected || expected.baseSha === null || !actual || expected === actual) continue;
+      const fields = Object.keys(expected).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
+      if (fields.length === Object.keys(actual).filter(key => key !== "updatedAt").length && fields.every(key => {
+        const before = expected[key], after = actual[key];
+        return before === after || typeof before === "object" && typeof after === "object" && JSON.stringify(before) === JSON.stringify(after);
+      })) records.set(edit.path, actual);
+    }
+  }
+  function transition(direction: "apply" | "undo" | "redo") {
+    const after = direction !== "undo";
+    if (state === "applied") reanchorMountedRecords(plan.after, plan.afterSources);
+    else if (state === "undone") reanchorMountedRecords(plan.before, plan.beforeSources);
+    if (state !== (direction === "apply" ? "prepared" : after ? "undone" : "applied") || !current(!after)) {
+      const records = after ? plan.before : plan.after, texts = after ? plan.beforeSources : plan.afterSources;
+      const changedDraft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
+      const changedModel = [...proofs].find(([path, proof]) => !proof.isCurrent() || host.mounted(path) !== mounted.get(path));
+      const changedSource = [...texts].find(([path, text]) => host.source(path) !== text);
+      lastError = !host.isLive() ? "The repository changed." : changedDraft ? `The draft for ${changedDraft[0]} changed.` : changedModel ? `The editor model for ${changedModel[0]} changed.` : changedSource ? `The source for ${changedSource[0]} changed.` : "The owned source history step changed.";
+      return false;
+    }
+    lastError = undefined;
+    // An unmounted cache is evicted only with its exact proof. Unrelated models
+    // retain their original proof through every own source transition.
+    for (const path of edited) if (!mounted.get(path)) {
+      const proof = host.evictModel(path, proofs.get(path)!);
+      if (!proof) return false;
+      proofs.set(path, proof);
+    }
+    if (!sources[direction]()) return false;
+    for (const edit of modelEdits) proofs.set(edit.path, host.modelState(edit.path));
+    const expected = new Map(after ? plan.before : plan.after), desired = after ? plan.after : plan.before;
+    // Monaco's own synchronous persistence creates new draft objects. Advance
+    // only proven source steps, never unrelated records touched by listeners.
+    for (const edit of modelEdits) {
+      const record = host.store.get(scope, edit.path);
+      const text = after ? edit.text : edit.expectedSource;
+      if (record !== expected.get(edit.path) && record && (record.deleted || record.opaque || record.content !== text)) {
+        state = "failed"; return false;
+      }
+      expected.set(edit.path, record);
+    }
+    const written = new Map<string, SavedDraft | undefined>();
+    try {
+      if (!host.isLive() || !recordsCurrent(expected) || !modelsCurrent() || !sources.isCurrent()) throw new Error("The operation source changed.");
+      for (const [path, record] of desired) {
+        if (!host.isLive() || !modelsCurrent() || host.store.get(scope, path) !== expected.get(path)) throw new Error("The operation changed during its draft write.");
+        let saved = false;
+        try { saved = save(path, record); }
+        finally { written.set(path, host.store.get(scope, path)); }
+        if (!saved) throw new Error(host.store.error ?? `Could not update ${path}.`);
+      }
+      if (!host.isLive() || !recordsCurrent(desired) || !modelsCurrent() || !sourceCurrent(after ? plan.afterSources : plan.beforeSources)) throw new Error("The operation changed during its draft write.");
+      state = after ? "applied" : "undone";
+      return true;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "The draft operation failed.";
+      // Never overwrite a draft or model changed by a synchronous listener.
+      const reverse = after ? "undo" : "redo";
+      const restored = sources.isCurrent() && sources[reverse]();
+      if (restored) for (const edit of modelEdits) {
+        proofs.set(edit.path, host.modelState(edit.path));
+        written.set(edit.path, host.store.get(scope, edit.path));
+      }
+      const original = after ? plan.before : plan.after;
+      for (const [path, record] of written) if (host.store.get(scope, path) === record && (!modelEdits.some(edit => edit.path === path) || restored)) save(path, original.get(path));
+      if (!current(!after)) state = "failed";
+      return false;
+    }
+  }
+  return { error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+}
