@@ -8,7 +8,7 @@ the site's files, shown in the code pane as it happens and undone with Undo.
 
 Code: `src/page-builder/component-model.ts` (pure, DOM-free: slots, slot
 states, edits, usage, detach, make), `src/page-builder/components.ts` (the
-edit bar's part, the properties panel, the banner, the dialogs),
+edit bar's part, Structure instance fields, the banner, the dialogs),
 `src/page-builder/components.css`, `src/page-builder/component-icon.ts`.
 Wiring is a few lines in `src/main.ts` (`mountComponentTools`, and calls in
 `renderNativeEditBar`, `selectNativeSource`, `setCurrentPage`, `mountSource`).
@@ -30,48 +30,22 @@ everything that is a component, in both schemes:
   the tooltip. An element inside an instance starts with a chip
   `◇ Project card ›` that selects the instance (for an element of a template,
   the instance on the page it renders in, opening the page).
-- **Page structure.** An instance's row has the mark; the rows of what the page
-  slots into it have a violet rail and a badge naming their slot (`title`,
-  drawn by CSS with empty alt text, so the row's name stays its own).
+- **Page structure.** An instance keeps its component mark. Expanding it lists each template slot name once; direct assigned elements are folded into their slot row rather than duplicated as ordinary rows. Unknown assignments remain ordinary page rows with their real DOM paths.
 
-## Properties panel
+## Instance fields in Structure
 
-Decision: a panel docked at the foot of the sidebar, shown whenever an
-instance (or something the page slots into one) is selected and its file is
-open — Framer's right panel, without a button to press, and without covering
-the canvas. Its header stays in view; the page structure keeps its selected
-row in view above it.
+The separate properties panel is retired. A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
 
-- **Header:** the component's name and tag, how many instances it has, and
-  *Edit component* and *Detach instance…*.
-- **Slots**, in template order, each with its kind (text, image, link, other):
-  - *Text*: a field that writes the page's own slotted element's text as you
-    type (only the changed stretch, so `<strong>` around a word stays; one
-    undo step until the field is left). A slot the page does not fill shows
-    its fallback marked *Default*; typing copies the fallback into the page
-    (`<h3 slot="title">…</h3>`, or `<span slot>` for bare text), placed among
-    the instance's children in the template's slot order.
-  - *Image*: Address (repository images suggested), *Upload image…*, Alt text.
-  - *Link*: Text and Address (the site's pages suggested).
-  - *Other* content (several elements, a list) is summarised; pressing it
-    selects it in the preview, where the edit bar edits it.
-  - **Optional slots** — those the component hides when the page leaves them
-    empty: `data-if`, a slot with no fallback (and its wrapper), or any slot
-    of a section component the page fills at all — get a switch. On copies the
-    fallback (or an element of the slot's kind) into the page and focuses its
-    first field; off takes the page's element out with its lines.
-  - A filled slot that has a fallback gets *Reset*, which takes the page's
-    content out so the template's fallback shows again.
-  - The slot the canvas selection sits in is highlighted; a slot's name
-    selects its content in the canvas.
-  The rules are those of the starter's `hideEmpty` and the runtime's
-  `applyEmptyRules` (`shownSlots` in the model mirrors them).
-- **Attributes** of the instance tag: each editable in place, removable, and a
-  new one added from a name and value (event handlers refused).
+- Text is editable inline. An empty slot shows its fallback; typing copies that content into the page in template slot order.
+- Image details unfold into Image and Alt text. Link details unfold into Button text and Link / URL. Unsupported rich text remains Content and selects the authored element instead of flattening it.
+- Optional slots use a native checkbox. On fills the slot from its fallback; off removes the page's assignment. Filled slots with a fallback offer Reset so the shared fallback shows again. These remain the starter's `hideEmpty`/`applyEmptyRules` semantics.
+- Attributes unfold beneath the component root. Existing class, id and custom attributes retain their values and can be edited or removed; a name/value form adds new attributes. Invalid names, event-handler names and duplicates are refused. Named entities are decoded once for display; an unchanged value leaves source bytes intact.
+
+Fields capture the exact instance source, template, scope, mounted model/session and version on first focus. Their own typing advances that proof and forms one edit group; external source or context changes refuse further writes. Closing a stale field cannot close another model's edit group. New-attribute drafts keep their first-open proof through rerenders. The host's Structure wiring and real editor Undo/Redo integration checks remain pending for this leaf.
 
 ## Edit component
 
-The complete component-root name button in the edit bar (or *Edit component* in the panel for a directly selected instance) opens its template and selects the template root in the code pane. A violet strip over the preview
+The complete component-root name button in the edit bar (or *Edit* on its Structure root row) opens its template and selects the template root in the code pane. A violet strip over the preview
 says **Editing component `<project-card>` · changes apply to 3 instances on 1
 page** while any component's template is open (it shows even with the code
 pane collapsed; the code pane's title is tinted too). *Used on* lists the pages
@@ -178,7 +152,7 @@ The seam browser test runs the production component controller with mocked compo
   edits, usage counting through nested components, detach, make component and
   tag names.
 - `tests/native-save/native-components.spec.ts` (browser): the accent in the
-  bar, structure and canvas and the chip back to the instance; the panel's
+  bar, structure and canvas and the chip back to the instance; the instance fields’
   text, link, optional, reset and attribute edits as source with undo; Edit
   component with the banner, Used on and Done; Detach; Make component with
   undo and redo of its files; an image slot and a `data-if` slot on a
@@ -187,7 +161,7 @@ The seam browser test runs the production component controller with mocked compo
 ## Known gaps
 
 - Editing a template's slot *definitions* (adding a slot, renaming one) is done
-  in the code pane; the panel edits instances.
+  in the code pane; Structure edits instances.
 - Variants (`:host([variant])` rules) are not offered as choices yet;
   attributes are edited as plain text.
 - Make component does not offer to move CSS, and does not create a loader for

@@ -190,3 +190,8 @@
 .page-structure__slot-field input:focus-visible { outline:2px solid var(--focus-ring); outline-offset:1px; }
 .page-structure__slot-field input[aria-invalid=true] { border-color:var(--danger); }
 .page-structure__slot details { margin-top:6px; }
+.page-structure__attributes { padding:6px 12px; font-size:12px; }
+.page-structure__attribute { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; }
+.page-structure__attribute-add { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:6px; margin-top:8px; }
+.page-structure__attribute-add input { min-width:0; width:100%; box-sizing:border-box; font:inherit; color:inherit; background:var(--panel-surface); border:1px solid var(--border); border-radius:4px; padding:6px; }
+.page-structure__attribute-error { grid-column:1/-1; margin:0; color:var(--danger); }

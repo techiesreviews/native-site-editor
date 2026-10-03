@@ -3,7 +3,7 @@ import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { componentIcon } from "../page-builder/component-icon";
 import "./page-structure.css";
-import type { ComponentStructureModel, ComponentSlotPart } from "../page-builder/components";
+import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
 // fed by the runtime's index paths after each render. A row selects its
@@ -298,6 +298,78 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const fieldClosers = new Map<HTMLInputElement, () => void>();
   let renderingFields = false;
   const detailOpen = new Map<string, boolean>();
+  const attributeForms = new Map<string, HTMLFormElement>();
+  const formClosers = new Map<HTMLFormElement, () => void>();
+  function cleanControls() {
+    for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
+    for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
+    for (const [id, form] of attributeForms) if (!tree.contains(form)) {
+      formClosers.get(form)?.(); formClosers.delete(form); attributeForms.delete(id);
+    }
+  }
+  function guardedField(id: string, label: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined) {
+    const previous = fieldInputs.get(id);
+    let input: HTMLInputElement;
+    if (previous && previous === document.activeElement) input = previous;
+    else {
+      input = document.createElement("input"); input.type = "text"; input.value = value;
+      let session: ComponentFieldSession | undefined;
+      input.addEventListener("focus", () => { session ??= open(); });
+      input.addEventListener("input", () => { if (!session?.write(input.value)) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid"); });
+      const close = () => { session?.close(); session = undefined; };
+      fieldClosers.set(input, close);
+      input.addEventListener("blur", () => { if (!renderingFields) close(); });
+      input.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); input.blur(); } });
+      fieldInputs.set(id, input);
+    }
+    input.setAttribute("aria-label", accessible);
+    const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "", label), input); return wrap;
+  }
+  function attributeControls(model: ComponentStructureModel) {
+    const id = `${model.host.path}:${key([...model.host.node])}:attributes`;
+    const details = document.createElement("details"); details.className = "page-structure__attributes";
+    details.dataset.detailKey = id; details.open = detailOpen.get(id) ?? false;
+    details.addEventListener("toggle", () => detailOpen.set(id, details.open));
+    const summary = document.createElement("summary"); summary.textContent = "Attributes"; details.append(summary);
+    for (const attribute of model.attributes) {
+      const row = node("div", "page-structure__attribute");
+      row.append(guardedField(`${id}:${attribute.name}`, attribute.name, `Attribute: ${attribute.name}`, attribute.value, () => model.openAttribute(attribute.name)),
+        button("Remove", () => model.removeAttribute(attribute.name), "text-button"));
+      row.lastElementChild?.setAttribute("aria-label", `Remove ${attribute.name}`);
+      details.append(row);
+    }
+    let form = attributeForms.get(id);
+    if (!form) {
+      form = document.createElement("form"); form.className = "page-structure__attribute-add";
+      const name = document.createElement("input"), value = document.createElement("input");
+      name.placeholder = "name"; name.setAttribute("aria-label", "New attribute name");
+      value.placeholder = "value"; value.setAttribute("aria-label", "New attribute value");
+      const submit = button("Add", () => undefined, "text-button"); submit.type = "submit"; submit.setAttribute("aria-label", "Add attribute");
+      const problem = node("p", "page-structure__attribute-error"); problem.setAttribute("role", "alert"); problem.hidden = true;
+      let origin: ReturnType<ComponentStructureModel["openAttributeAdd"]>;
+      form.addEventListener("focusin", () => {
+        origin ??= handlers.componentSlots?.(model.host.path, model.host.node)?.openAttributeAdd();
+      });
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        const result = origin?.add(name.value, value.value);
+        if (!result || "error" in result) {
+          problem.textContent = result && "error" in result ? result.error : "The instance changed; reopen Attributes before adding it.";
+          problem.hidden = false; return;
+        }
+        name.value = value.value = ""; origin?.close(); origin = undefined; problem.hidden = true;
+      });
+      form.addEventListener("focusout", event => {
+        if (!renderingFields && !form!.contains(event.relatedTarget as Node | null) && !name.value && !value.value) { origin?.close(); origin = undefined; }
+      });
+      const closeDraft = () => { origin?.close(); origin = undefined; };
+      formClosers.set(form, closeDraft);
+      form.append(name, value, submit, problem); attributeForms.set(id, form);
+    }
+    details.append(form);
+    return details;
+  }
+
   function slotControls(model: ComponentStructureModel, level: number) {
     const result: HTMLElement[] = [];
 
@@ -317,22 +389,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       block.append(header);
       function field(part: ComponentSlotPart, label: string, value: string) {
         const id = `${model.host.path}:${key([...model.host.node])}:${slot.name}:${part}`;
-        const previous = fieldInputs.get(id);
-        let input: HTMLInputElement;
-        if (previous && previous === document.activeElement) input = previous;
-        else {
-          input = document.createElement("input"); input.type = "text"; input.value = value;
-          let session: ReturnType<ComponentStructureModel["openField"]>;
-          input.addEventListener("focus", () => { session ??= model.openField(slot.name, part); });
-          input.addEventListener("input", () => { if (!session?.write(input.value)) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid"); });
-          const close = () => { session?.close(); session = undefined; };
-          fieldClosers.set(input, close);
-          input.addEventListener("blur", () => { if (!renderingFields) close(); });
-          input.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); input.blur(); } });
-          fieldInputs.set(id, input);
-        }
-        input.setAttribute("aria-label", `${slot.label}: ${label}`);
-        const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "", label), input); return wrap;
+        return guardedField(id, label, `${slot.label}: ${label}`, value, () => model.openField(slot.name, part));
       }
       if (slot.kind === "text" && slot.value.editable) block.append(field("text", "Text", slot.value.text));
       else if (slot.kind === "image" || slot.kind === "link") {
@@ -354,6 +411,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       } else block.append(node("span", "page-structure__slot-summary", `Content${slot.value.text ? `: ${slot.value.text}` : ""}`));
       result.push(block);
     }
+    result.push(attributeControls(model));
     return result;
   }
 
@@ -530,6 +588,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       meta.hidden = true;
       tree.hidden = true;
       tree.replaceChildren();
+      cleanControls();
       return;
     }
     hint.hidden = true;
@@ -545,13 +604,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       activeField.focus();
       if (caret && caret[0] !== null) activeField.setSelectionRange(caret[0], caret[1]);
       renderingFields = false;
-      for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
-      for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
+      cleanControls();
       return;
     }
     renderingFields = false;
-    for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
-    for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
+    cleanControls();
     if (activeField) fieldClosers.get(activeField)?.();
     if (focused && rows.has(focused)) {
       for (const el of rows.values()) el.tabIndex = -1;
@@ -602,7 +659,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     },
     destroy() {
       for (const close of fieldClosers.values()) close();
-      fieldClosers.clear(); fieldInputs.clear(); detailOpen.clear();
+      for (const close of formClosers.values()) close();
+      formClosers.clear();
+      fieldClosers.clear(); fieldInputs.clear(); detailOpen.clear(); attributeForms.clear();
       endDrag();
       hint.remove();
       meta.remove();

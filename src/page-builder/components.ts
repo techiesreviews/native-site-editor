@@ -145,10 +145,16 @@ const KIND_MARK: Record<SlotValue["kind"], ComponentMark> = { text: "text", imag
 const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "nav", "figure", "div", "form"]);
 
 export type ComponentSlotPart = "text" | "src" | "alt" | "href";
+export interface ComponentFieldSession { write(value: string): boolean; close(): void }
 export interface ComponentStructureModel {
   host: { path: string; node: readonly number[]; tag: string };
   slots: readonly { name: string; label: string; kind: SlotValue["kind"]; value: Readonly<SlotValue>; shown: boolean; filled: boolean; whenEmpty: SlotState["whenEmpty"]; assignedNodes: readonly number[][] }[];
-  openField(name: string, part: ComponentSlotPart): { write(value: string): boolean; close(): void } | undefined;
+  attributes: readonly { name: string; value: string }[];
+  openAttribute(name: string): ComponentFieldSession | undefined;
+  addAttribute(name: string, value: string): { ok: true } | { error: string };
+  openAttributeAdd(): { add(name: string, value: string): { ok: true } | { error: string }; close(): void } | undefined;
+  removeAttribute(name: string): boolean;
+  openField(name: string, part: ComponentSlotPart): ComponentFieldSession | undefined;
   setVisible(name: string, on: boolean): boolean;
   selectSlot(name: string): void;
   edit(): void;
@@ -1168,6 +1174,72 @@ export function createComponentTools(deps: ComponentDeps) {
       }
       return at;
     };
+    const attributeValue = (at: Located, name: string) => {
+      const opening = document.createElement("template");
+      opening.innerHTML = at.source.slice(at.range.tag.start, at.range.tag.end) + `</${at.tag}>`;
+      return opening.content.firstElementChild?.getAttribute(name) ?? undefined;
+    };
+    // The legacy token ranges must describe the browser's actual attributes.
+    const attributeSourceSafe = (at: Located) => {
+      const opening = document.createElement("template");
+      opening.innerHTML = at.source.slice(at.range.tag.start, at.range.tag.end) + `</${at.tag}>`;
+      const actual = opening.content.firstElementChild;
+      if (!actual || actual.localName !== at.tag || actual.attributes.length !== at.instance.attributes.length) return false;
+      return at.instance.attributes.every(attribute => {
+        const fragment = document.createElement("template");
+        fragment.innerHTML = `<x-attribute${at.source.slice(attribute.start, attribute.end)}></x-attribute>`;
+        const parsed = fragment.content.firstElementChild;
+        return parsed?.attributes.length === 1 && parsed.getAttributeNames()[0] === attribute.name
+          && parsed.getAttribute(attribute.name) === actual.getAttribute(attribute.name);
+      });
+    };
+    const openSession = (plan: (at: Located, value: string) => RangeEdit | { error: string } | undefined, message: string): ComponentFieldSession | undefined => {
+      if (!read()) return;
+      const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
+      if (!initialProof) return;
+      let expected = initial.source, closed = false, wrote = false;
+      let proof = initialProof;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+        proof.dispose?.();
+        if (ownsGroup) editor.closeActiveEditGroup(path);
+      };
+      const reject = () => { close(); return false; };
+      return {
+        write(value) {
+          if (closed) return reject();
+          const at = read(expected, proof);
+          if (!at) return reject();
+          const edit = plan(at, value);
+          if (!edit) return reject();
+          if ("error" in edit) { deps.announce(edit.error); return reject(); }
+          const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
+          if (next === at.source) return true;
+          live(path, edit, message, at.node);
+          if (deps.sources()[path] !== next) return reject();
+          if (!hostProof.isCurrent()) return reject();
+          const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
+          if (!nextProof) return reject();
+          proof.dispose?.(); proof = nextProof;
+          expected = next;
+          wrote = true;
+          return true;
+        },
+        close,
+      };
+    };
+    const addAttribute = (rawName: string, value: string, proof?: { isCurrent(): boolean }): { ok: true } | { error: string } => {
+      const at = read(initial.source, proof);
+      if (!at) return { error: "The instance changed; reopen Attributes before adding it." };
+      if (!attributeSourceSafe(at)) return { error: "The attribute markup is ambiguous; edit its source directly." };
+      const name = rawName.trim().toLowerCase();
+      const problem = attributeNameProblem(name) ?? (at.instance.attributes.some(item => item.name === name) ? `${name} is set already: change it above.` : undefined);
+      if (problem) return { error: problem };
+      return change(path, [attributeEdit(at.source, at.range.tag, name, value)], `${name} added`, at.node)
+        ? { ok: true } : { error: "The attribute could not be added." };
+    };
     return {
       host: { path, node: [...nodePath], tag: initial.tag },
       slots: initial.slots.map(slot => ({ name: slot.name, label: slotLabel(slot.name),
@@ -1179,49 +1251,52 @@ export function createComponentTools(deps: ComponentDeps) {
           return node ? [node] : [];
         }),
       })),
-      openField(name, part) {
+      attributes: initial.instance.attributes.map(({ name, value }) => ({ name, value: attributeValue(initial, name) ?? value })),
+      openAttribute(name) {
+        const problem = /^on/i.test(name) ? attributeNameProblem(name) : undefined;
+        if (problem) { deps.announce(problem); return; }
+        return openSession((at, value) => {
+          if (!attributeSourceSafe(at)) return { error: "The attribute markup is ambiguous; edit its source directly." };
+          if (at.instance.attributes.filter(item => item.name === name).length !== 1) return { error: "This attribute is missing or duplicated; edit its source directly." };
+          if (attributeValue(at, name) === value) return { start: 0, end: 0, text: "" };
+          return attributeEdit(at.source, at.range.tag, name, value);
+        }, `${name} changed`);
+      },
+      addAttribute,
+      openAttributeAdd() {
         if (!read()) return;
-        const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
-        if (!initialProof) return;
-        let expected = initial.source, closed = false, wrote = false;
-        let proof = initialProof;
-        const close = () => {
-          if (closed) return;
-          closed = true;
-          const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
-          proof.dispose?.();
-          if (ownsGroup) editor.closeActiveEditGroup(path);
-        };
-        const reject = () => { close(); return false; };
+        const proof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
+        if (!proof) return;
+        let closed = false;
         return {
-          write(value) {
-            if (closed) return reject();
-            const at = read(expected, proof), slot = at?.slots.find(slot => slot.name === name);
-            if (!at || !slot) return reject();
-            if (part === "src" || part === "href") {
-              const problem = nativeElementUrlProblem(value, part === "src" ? ["http", "https"] : ["http", "https", "mailto", "tel"], false);
-              if (problem) { deps.announce(problem); return reject(); }
-            }
-            const descriptor = slotValue(at.source, at.template, at.instance, slot);
-            if ((part === "text" && !descriptor.editable) || (part === "src" || part === "alt") && descriptor.kind !== "image" || part === "href" && descriptor.kind !== "link") return reject();
-            const edit = part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
-              : slotAttributeEdit(at, slot, part, value);
-            if (!edit) return reject();
-            if ("error" in edit) { deps.announce(edit.error); return reject(); }
-            const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
-            if (next === at.source) return true;
-            live(path, edit, `${slotLabel(name)} changed`, at.node);
-            if (deps.sources()[path] !== next) return reject();
-            if (!hostProof.isCurrent()) return reject();
-            const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
-            if (!nextProof) return reject();
-            proof.dispose?.(); proof = nextProof;
-            expected = next;
-            wrote = true;
-            return true;
+          add(name, value) {
+            if (closed) return { error: "Reopen Attributes before adding it." };
+            if (!read(initial.source, proof)) { closed = true; proof.dispose?.(); return { error: "The instance changed; reopen Attributes before adding it." }; }
+            const result = addAttribute(name, value, proof);
+            if ("ok" in result) { closed = true; proof.dispose?.(); }
+            return result;
           },
-          close,
+          close() { if (!closed) { closed = true; proof.dispose?.(); } },
         };
+      },
+      removeAttribute(name) {
+        const at = read();
+        if (!at || !attributeSourceSafe(at) || at.instance.attributes.filter(item => item.name === name).length !== 1) return false;
+        return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
+      },
+      openField(name, part) {
+        return openSession((at, value) => {
+          const slot = at.slots.find(slot => slot.name === name);
+          if (!slot) return;
+          if (part === "src" || part === "href") {
+            const problem = nativeElementUrlProblem(value, part === "src" ? ["http", "https"] : ["http", "https", "mailto", "tel"], false);
+            if (problem) return { error: problem };
+          }
+          const descriptor = slotValue(at.source, at.template, at.instance, slot);
+          if ((part === "text" && !descriptor.editable) || (part === "src" || part === "alt") && descriptor.kind !== "image" || part === "href" && descriptor.kind !== "link") return;
+          return part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
+            : slotAttributeEdit(at, slot, part, value);
+        }, `${slotLabel(name)} changed`);
       },
       setVisible(name, on) {
         const at = read(), slot = at?.slots.find(slot => slot.name === name);
