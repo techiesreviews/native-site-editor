@@ -14,6 +14,7 @@ test("image library searches repository images and shows transitive page usage",
   await open(page, baseURL);
   const panel = library(page);
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await expect.poll(() => panel.locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await panel.getByLabel("Search images", { exact: true }).fill("studio-desk");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
@@ -136,4 +137,15 @@ test("cancelling optimisation aborts pending worker work and keeps Add disabled"
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(panel).not.toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("the editor CSP permits decoding generated image Blob URLs", async ({ page, baseURL }) => {
+  const response = await page.goto(baseURL!);
+  expect(response?.headers()["content-security-policy"]).toMatch(/img-src[^;]*blob:/);
+  const width = await page.evaluate(async () => {
+    const url = URL.createObjectURL(new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="24" height="12"><rect width="24" height="12"/></svg>'], { type: "image/svg+xml" }));
+    const image = new Image(); image.src = url;
+    try { await image.decode(); return image.naturalWidth; } finally { URL.revokeObjectURL(url); }
+  });
+  expect(width).toBe(24);
 });
