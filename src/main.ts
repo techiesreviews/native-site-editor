@@ -4592,7 +4592,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       await openAfter(path, !initial || !op.open, true);
       if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
-      if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(path ? { file: path } : undefined);
+      if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(initial && op.focus ? op.focus : path ? { file: path } : undefined);
       if (message && live() && receipt.isCurrent() && element("status").textContent === previousStatus) announce(message);
       return true;
     } finally {
