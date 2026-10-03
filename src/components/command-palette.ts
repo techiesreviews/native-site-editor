@@ -117,12 +117,12 @@ const RECENT_KEY = "native-site-editor:palette-recent";
 const RECENT_SHOWN = 5;
 
 // How many of each group show: before typing, and for a query.
-const EMPTY_LIMITS: Record<string, number> = { Selection: 12, Actions: 24, Pages: 6, Components: 6, Files: 0, Agent: 1 };
-const QUERY_LIMITS: Record<string, number> = { Selection: 8, Actions: 8, Pages: 8, Components: 6, Files: 8, Agent: 3 };
+const EMPTY_LIMITS: Record<string, number> = { Selection: 12, Actions: 24, Elements: 6, Pages: 6, Components: 6, Files: 0, Agent: 1 };
+const QUERY_LIMITS: Record<string, number> = { Selection: 8, Actions: 8, Elements: 20, Pages: 8, Components: 6, Files: 8, Agent: 3 };
 const GO_LIMITS: Record<string, number> = { Pages: 12, Components: 8, Files: 30 };
 const SCOPE_GROUPS: Record<PaletteScope, string[] | undefined> = {
   all: undefined,
-  actions: ["Selection", "Actions", "Agent"],
+  actions: ["Selection", "Actions", "Elements", "Agent"],
   pages: ["Pages"],
   go: ["Pages", "Files", "Components"],
 };
@@ -133,7 +133,7 @@ const PLACEHOLDERS: Record<PaletteScope, string> = {
   go: "Go to a page, file or component…",
 };
 // Before typing, groups come in this order.
-const EMPTY_ORDER = ["Selection", "Agent", "Recent", "Actions", "Pages", "Components", "Files"];
+const EMPTY_ORDER = ["Selection", "Agent", "Recent", "Actions", "Elements", "Pages", "Components", "Files"];
 
 export function createCommandPalette(options: CommandPaletteOptions) {
   const storage = options.storage ?? localStorage;

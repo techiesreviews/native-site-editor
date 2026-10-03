@@ -8,6 +8,9 @@
 // Keys pressed in the preview frame never reach this document: the preview
 // runtime forwards the ones the editor answers as `shortcut` messages
 // (public/native-preview-runtime.js, "Editor shortcuts").
+import type { AddChoice } from "./add-catalog";
+import { nativeDestinations, nativeMarkupInsertEdit } from "./native-operations";
+import { nativeChoiceMarkup } from "./native-elements";
 import type { EditBarControl, EditBarModel } from "../components/edit-bar";
 import { createCommandPalette, type CommandPalette } from "../components/command-palette";
 import { createShortcutSheet, type ShortcutSheet } from "../components/shortcut-sheet";
@@ -41,6 +44,10 @@ export interface EditorPaletteDeps {
   files: () => string[];
   components: () => PaletteComponent[];
   currentPath: () => string | undefined;
+  /** Native choices are separate from site components and never open templates. */
+  nativeElements?: () => readonly AddChoice[];
+  /** Optional synchronous host placement; the palette still validates source safety. */
+  nativeInsertPoint?: (source: string, path: string, selection: PaletteSelection | undefined, choice: AddChoice) => { path?: string; parent: number[]; index: number } | undefined;
   /** Site and mount revision, changed when an editor session is replaced. */
   revision?: () => string;
   /** Opens a file (a page in the preview and the code pane, any other file in the code pane). */
@@ -372,6 +379,58 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
   return out;
 }
 
+/** Source-safe native placement: inside a valid container, else after selection, else main. */
+export function nativePaletteInsertPoint(source: string, path: string, selection: PaletteSelection | undefined, choice: AddChoice): { parent: number[]; index: number } | undefined {
+  const markup = nativeChoiceMarkup(choice.tag);
+  if (!markup) return undefined;
+  const valid = (point: { parent: number[]; index: number }) => Boolean(nativeMarkupInsertEdit(source, point.parent, point.index, markup));
+  if (selection?.path === path && selection.node?.length) {
+    const destinations = nativeDestinations(source, path, selection.node);
+    for (const placement of ["inside", "after"] as const) {
+      const candidate = destinations.find((item) => item.placement === placement)?.point;
+      if (candidate && valid(candidate)) return { parent: [...candidate.parent], index: candidate.index };
+    }
+    return undefined;
+  }
+  const { root } = parseMarked(source);
+  const main = root.querySelector("main");
+  if (!main) return undefined;
+  const node: number[] = [];
+  for (let element: Element | null = main; element; element = element.parentElement) node.unshift([...(element.parentNode as ParentNode).children].indexOf(element));
+  const candidate = nativeDestinations(source, path, node).find((item) => item.placement === "inside")?.point;
+  return candidate && valid(candidate) ? { parent: [...candidate.parent], index: candidate.index } : undefined;
+}
+
+/** Each visible command carries its exact page, selection and mount snapshot. */
+export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
+  const path = deps.currentPath();
+  const source = path ? deps.source(path) : undefined;
+  if (!path || source === undefined || !deps.pages().some((page) => page.file === path)) return [];
+  const revision = deps.revision?.();
+  const selection = deps.selection();
+  const identity = JSON.stringify(selection);
+  return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag))).map((choice) => ({
+    id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
+    hint: choice.group ?? "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
+    run: async () => {
+      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
+        deps.announce("The page changed. Reopen the command palette and try again."); return;
+      }
+      const point: { path?: string; parent: number[]; index: number } | undefined = deps.nativeInsertPoint ? deps.nativeInsertPoint(source, path, selection, choice) : nativePaletteInsertPoint(source, path, selection, choice);
+      const markup = nativeChoiceMarkup(choice.tag)!;
+      if (!point || !nativeMarkupInsertEdit(source, point.parent, point.index, markup)) {
+        deps.announce(`Select a valid HTML container to add ${choice.label}.`); return;
+      }
+      // Host callbacks cannot silently replace the captured source or selection.
+      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity) {
+        deps.announce("The page changed. Reopen the command palette and try again."); return;
+      }
+      if (point.path !== undefined && point.path !== path) { deps.announce("The insertion page changed. Reopen the command palette."); return; }
+      await deps.insert(point.path === path ? point as { path: string; parent: number[]; index: number } : { path, parent: [...point.parent], index: point.index }, { tag: choice.tag, label: choice.label });
+    },
+  }));
+}
+
 // Shortcuts that are no command of the palette, for the sheet: what lists,
 // the canvas, the code editor and the edit bar answer themselves.
 function listShortcuts() {
@@ -465,6 +524,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     }),
     registerCommandSource(() => selectionCommands(deps)),
     registerCommandSource(() => siteCommands(deps)),
+    registerCommandSource(() => nativePaletteCommands(deps)),
     ...listShortcuts(),
   ];
 
