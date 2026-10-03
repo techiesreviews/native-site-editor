@@ -23,7 +23,9 @@
 // `fixtures/native-routing` is `native-routing` (id 530), a site with pages
 // in folders, a single-file page and a partial that is not a page, and
 // `fixtures/native-conventions` is `native-conventions` (id 531), a site
-// with components, layered shared styles and a folder with no page.
+// with components, layered shared styles and a folder with no page, and
+// `fixtures/native-cards` is `native-cards` (id 540), a home page whose
+// card grid links to subpages under /work/ (the page builder's cards).
 //
 // Onboarding controls (per browser session, like the other /__demo/ controls;
 // send them after the first page load has minted the session cookie, with
@@ -298,6 +300,10 @@ if (!demoMode)
   }, {
     root: resolve(projectRoot, "fixtures/native-conventions"),
     repo: { ...DEMO_REPO, id: 531, name: "native-conventions", full_name: `${DEMO_LOGIN}/native-conventions` },
+  }, {
+    // The page builder's card grids: a home page whose cards link to subpages under /work/.
+    root: resolve(projectRoot, "fixtures/native-cards"),
+    repo: { ...DEMO_REPO, id: 540, name: "native-cards", full_name: `${DEMO_LOGIN}/native-cards` },
   });
 const initialFixtureGits = new Map<string, Git>();
 

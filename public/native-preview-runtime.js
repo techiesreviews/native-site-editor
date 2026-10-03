@@ -549,6 +549,7 @@
     drawBox(selectBox, selected);
     scheduleRect();
     schedulePins();
+    scheduleItemGrids();
   }
 
   // Places a section can be inserted: every gap between the children of a
@@ -679,6 +680,126 @@
       emit("insert-points", { path: String(state && state.pagePaths[state.route] || ""), points: points });
     });
   }
+
+  // ---- Repeated items (page builder: cards, docs/page-builder/cards.md) ----
+  // A grid or list on the page: an element of the page (not the page root,
+  // <main> or <body>) whose element children include at least two of one
+  // kind: the same custom element, or the same tag and classes for an
+  // article, li, div, figure, a, blockquote or dd. Sections are never items.
+  // The same rule as src/page-builder/card-grid.ts. For the item under the
+  // pointer and the one around the selection (through shadow roots to the
+  // page's own item), the editor gets the grid (`item-grids`): the
+  // container's index path, the item's index, its place and the count,
+  // whether the items run in a row, and the frame-viewport box where one
+  // more item would go, after the last one (beside it when there is room in
+  // its row, else at the start of the next row, or below it in a column).
+  var ITEM_TAGS = ["article", "li", "div", "figure", "a", "blockquote", "dd"];
+  var NOT_GRIDS = ["html", "head", "body", "main"];
+  function itemKindOf(el) {
+    var tag = el.localName;
+    if (sectionLike(el)) return null;
+    if (tag.indexOf("-") > 0) return tag;
+    if (ITEM_TAGS.indexOf(tag) < 0) return null;
+    var classes = (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).sort();
+    return classes.length ? tag + "." + classes.join(".") : tag;
+  }
+  function repeatedItems(container) {
+    if (!container || container === pageEl || NOT_GRIDS.indexOf(container.localName) >= 0) return null;
+    var groups = {};
+    var order = [];
+    Array.prototype.forEach.call(container.children, function (child) {
+      var kind = injectedStyle(child) ? null : itemKindOf(child);
+      if (!kind) return;
+      if (!groups[kind]) { groups[kind] = []; order.push(kind); }
+      groups[kind].push(child);
+    });
+    var best = null;
+    order.forEach(function (kind) {
+      if (groups[kind].length >= 2 && (!best || groups[kind].length > best.length)) best = groups[kind];
+    });
+    return best;
+  }
+  function gridItemOf(el) {
+    var current = el;
+    // An item itself first (a card holding a grid of its own is still its grid's card); then
+    // the grid itself (the gap between its items), which counts as its last item.
+    var mine = el && el.parentElement && el.parentElement !== pageEl && pageEl && pageEl.contains(el.parentElement) ? repeatedItems(el.parentElement) : null;
+    if (mine && mine.indexOf(el) >= 0) return { container: el.parentElement, item: el, items: mine };
+    var own = el && el !== pageEl && pageEl && pageEl.contains(el) ? repeatedItems(el) : null;
+    if (own) return { container: el, item: own[own.length - 1], items: own };
+    while (pageEl && current && current !== pageEl) {
+      var parentEl = current.parentElement;
+      if (!parentEl) {
+        var root = current.getRootNode && current.getRootNode();
+        current = root instanceof ShadowRoot ? root.host : null;
+        continue;
+      }
+      if (parentEl !== pageEl && pageEl.contains(parentEl)) {
+        var items = repeatedItems(parentEl);
+        if (items && items.indexOf(current) >= 0) return { container: parentEl, item: current, items: items };
+      }
+      current = parentEl;
+    }
+    return null;
+  }
+  function gridReport(found) {
+    if (!found || !state) return null;
+    var parentPath = elementIndexPath(found.container);
+    var itemPath = elementIndexPath(found.item);
+    if (!parentPath || !itemPath) return null;
+    var rects = found.items.map(function (item) { return item.getBoundingClientRect(); });
+    var last = rects[rects.length - 1];
+    var box = found.container.getBoundingClientRect();
+    var row = false;
+    var gap = 0;
+    var rowGap = -1;
+    for (var i = 1; i < rects.length; i++) {
+      if (Math.abs(rects[i].top - rects[i - 1].top) < 2 && rects[i].left > rects[i - 1].left) {
+        row = true;
+        gap = Math.max(0, rects[i].left - rects[i - 1].right);
+      } else if (rowGap < 0 && rects[i].top > rects[i - 1].top) {
+        rowGap = Math.max(0, rects[i].top - rects[i - 1].bottom);
+      }
+    }
+    var ghost;
+    var beside = row && last.right + gap + last.width <= box.right + 1;
+    if (beside) {
+      ghost = { left: last.right + gap, top: last.top, width: last.width, height: last.height };
+    } else if (row) {
+      ghost = { left: rects[0].left, top: last.bottom + (rowGap < 0 ? gap : rowGap), width: last.width, height: last.height };
+    } else {
+      ghost = { left: last.left, top: last.bottom + Math.max(rowGap, 8), width: last.width, height: Math.min(last.height, 120) };
+    }
+    var round = function (n) { return Math.round(n); };
+    return {
+      path: String(state.pagePaths[state.route] || ""),
+      parent: parentPath,
+      index: itemPath[itemPath.length - 1],
+      position: found.items.indexOf(found.item),
+      count: found.items.length,
+      row: row,
+      beside: beside,
+      ghost: { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) }
+    };
+  }
+  var gridFrame = 0;
+  var lastGrids = "";
+  function scheduleItemGrids() {
+    if (gridFrame || !state) return;
+    gridFrame = requestAnimationFrame(function () {
+      gridFrame = 0;
+      var report = {
+        hover: gridReport(hovered && hovered.isConnected ? gridItemOf(hovered) : null),
+        selected: gridReport(selected && selected.isConnected ? gridItemOf(selected) : null)
+      };
+      // A new render has a new context: its report goes out even when it is the same.
+      var key = String(state && state.context) + JSON.stringify(report);
+      if (key === lastGrids) return;
+      lastGrids = key;
+      emit("item-grids", report);
+    });
+  }
+  // ---- End of repeated items ----
 
   // The page's own elements as a tree of index paths, for the editor's page
   // structure sidebar: the light DOM under the page root, not the inside of
@@ -1632,7 +1753,10 @@
     // elements, and typing in a text element, keep the browser's own behaviour.
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       var active = document.activeElement;
-      if (!selected || !selected.isConnected || !sectionLike(selected) || editing || (active && active.isContentEditable)) return;
+      if (!selected || !selected.isConnected || editing || (active && active.isContentEditable)) return;
+      // A section, or an item of a grid (a card): the editor moves it among its siblings.
+      var gridItem = sectionLike(selected) ? null : gridItemOf(selected);
+      if (!sectionLike(selected) && !(gridItem && gridItem.item === selected)) return;
       e.preventDefault();
       emit("move", { direction: e.key === "ArrowUp" ? "up" : "down" });
       return;

@@ -98,7 +98,7 @@ export type AddressExtra =
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 
-export type IconName = "link" | "unlink" | "up" | "down" | "duplicate" | "remove" | "grip" | "ask";
+export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "grip" | "ask";
 
 // The edit bar's icons by what they do, drawn from the editor's icon set.
 const iconNames: Record<IconName, PhosphorName> = {
@@ -106,6 +106,9 @@ const iconNames: Record<IconName, PhosphorName> = {
   unlink: "link-break",
   up: "arrow-up",
   down: "arrow-down",
+  left: "arrow-left",
+  right: "arrow-right",
+  add: "plus",
   duplicate: "copy",
   remove: "trash",
   grip: "dots-six-vertical",
