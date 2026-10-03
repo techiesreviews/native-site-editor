@@ -70,7 +70,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   function update() {
     if (destroyed) return;
     if (dirty()) {
-      if (activeSnapshot && !current(activeSnapshot)) report("The page or repository changed. Your input was kept; reopen before applying.");
+      if (!applying && activeSnapshot && !current(activeSnapshot)) report("The page or repository changed. Your input was kept; reopen before applying.");
       return;
     }
     activeForm = undefined; activeSnapshot = undefined;
@@ -91,7 +91,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       const name = customName.value.trim();
       if (name) {
         const changed = withCustomPageField(source, name, customValue.value, saved.identity);
-        if (fields[name] !== customValue.value) source = changed;
+        if (Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
+        source = changed;
       }
       return source;
     };
@@ -114,8 +115,10 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     else for (const collection of baked.collections.filter((item) => item.path === path)) {
       const block = node("div", "collections-panel__collection");
       block.append(node("h3", "", `Pages from ${collection.folders.join(", ")}`), node("p", "", `${collection.records.length} matching ${collection.records.length === 1 ? "page" : "pages"}`));
-      for (const record of collection.records) block.append(button(`Edit page: ${record.fields.title || record.url}`, () => deps.openPage(record.path)));
-      block.append(button("Edit card design in source", () => deps.openPage(path)));
+      if (!options.settings) {
+        for (const record of collection.records) block.append(button(`Edit page: ${record.fields.title || record.url}`, () => deps.openPage(record.path)));
+        block.append(button("Edit card design in source", () => deps.openPage(path)));
+      }
       const advanced = node("details", "collections-panel__advanced");
       advanced.append(node("summary", "", "Advanced"), node("pre", "collections-panel__preview", collection.template));
       block.append(advanced);
@@ -191,7 +194,9 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   return { update, openGrid,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
     pageFieldSource(source) {
-      if (destroyed || !fieldSource) throw new Error("Open a page to edit its fields.");
+      if (destroyed) throw new Error("Open a page to edit its fields.");
+      if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return source;
+      if (!fieldSource) throw new Error("Open a page to edit its fields.");
       return fieldSource(source);
     },
     destroy() { destroyed = true; root.remove(); } };
