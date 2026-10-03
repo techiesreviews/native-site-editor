@@ -57,8 +57,16 @@ test("raw whitespace slot names block incompatible authoring without changing so
   assert.match(model.authoringProblem!, /exact name/);
   assert.throws(() => planSlotCondition(template, model.targets[1].node, ["b"]), /Unsupported slot name/);
 });
-test("Unicode tag folding fails closed and stray slash resumes HTML attributes", () => {
-  assert.throws(() => readSlotConditions('<X-İ data-if="a"></X-İ>'), /Ambiguous/);
+test("Unicode tag names preserve condition offsets and stray slash resumes HTML attributes", () => {
+  const unicode = '<!-- İstanbul --><slot name="a"></slot><X-İ data-if="a" title="Exact">İstanbul</X-İ>';
+  const unicodeTarget = readSlotConditions(unicode).targets[1];
+  const unicodePlan = planSlotCondition(unicode, unicodeTarget.node, undefined);
+  assert.equal(unicodePlan.start, unicode.indexOf('<X-İ'));
+  assert.equal(unicodePlan.expected, '<X-İ data-if="a" title="Exact">');
+  assert.equal(unicode.slice(0, unicodePlan.start) + unicodePlan.text + unicode.slice(unicodePlan.end), unicode.replace(' data-if="a"', ' '));
+  const element = parseSource(unicode).filter(node => node.type === 'element')[1];
+  assert.equal(element.name, 'x-İ');
+  assert.equal(unicode.slice(element.start, element.end), '<X-İ data-if="a" title="Exact">İstanbul</X-İ>');
   const template = '<slot name="x"></slot><div / data-if="x" keep=raw>Keep</div>';
   const target = readSlotConditions(template).targets[1];
   assert.deepEqual(target.names, ["x"]);

@@ -135,7 +135,7 @@ for (const fixture of [
   });
 }
 
-test("stray slash condition preserves source and Unicode tag mismatch fails closed", async ({ page, baseURL }) => {
+test("stray slash and valid Unicode conditions preserve source and actual DOM names", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
   const source = '<slot name="a"></slot><slot name="b"></slot><div / data-if="a" keep=raw>Keep</div>';
@@ -146,9 +146,14 @@ test("stray slash condition preserves source and Unicode tag mismatch fails clos
     editor.replaceActiveRanges([{ path, start: 0, end: before.length, expected: before, text: source }]);
     const modelPath = "/src/page-builder/component-conditions.ts";
     const model = await import(/* @vite-ignore */ modelPath);
-    let rejected = false;
-    try { model.readSlotConditions('<X-İ data-if="a"></X-İ>'); } catch { rejected = true; }
-    if (!rejected) throw new Error("Unicode folding exposed an ambiguous editable target");
+    const unicode = '<!-- İstanbul --><slot name="a"></slot><X-İ data-if="a" title="Exact">İstanbul</X-İ>';
+    const target = model.readSlotConditions(unicode).targets[1];
+    const plan = model.planSlotCondition(unicode, target.node, undefined);
+    const updated = unicode.slice(0, plan.start) + plan.text + unicode.slice(plan.end);
+    const parsed = document.createElement('template'); parsed.innerHTML = updated;
+    const custom = parsed.content.children[1];
+    if (custom.localName !== 'x-İ' || custom.textContent !== 'İstanbul' || custom.getAttribute('title') !== 'Exact' || custom.hasAttribute('data-if')) throw new Error('Unicode conditions disagree with actual DOM');
+    if (plan.start !== unicode.indexOf('<X-İ') || plan.expected !== '<X-İ data-if="a" title="Exact">' || updated !== unicode.replace(' data-if="a"', ' ')) throw new Error('Unicode condition source offsets changed adjacent bytes');
   }, { path, source });
   await page.getByRole("button", { name: "Visibility conditions" }).click();
   const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
