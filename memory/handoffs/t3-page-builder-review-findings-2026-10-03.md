@@ -141,3 +141,13 @@ Astra independently approves settings67b8811/23a1f51. Mediaef41313 fixes previou
 ## Narrow fixes checkpoint — 2026-10-03T11:57Z
 
 Media proof P2 corrected asb32b18e; fifteen engine units and nineteen realMonaco/history browsers pass. Final narrow independent review active CLI83801. Realstarter browser found img-src policy blocked Blob objectURL thumbnails;5d81764 minimally adds blob: to production headers and test harness image directive only, with nine actual decode/media/transaction browser checks passing. No release approval claimed yet.
+
+
+## Final narrow approval — 2026-10-03T11:58Z
+
+Astra independently approves b32b18e/5d81764. Earlier probe now rejects Undo and preserves two drafts; Apply/Undo/Redo unrelated model changes retain old guards. Own source receipts advance before refresh and own cached eviction is guarded. Minimal Blob image policy corrections verified. Result `.scratch/t3-continuation/review-final-fix-result.md`; session83801 closed. Exact releasedf08701f types/build/593units pass. New12:01 annotated UI moves and component resize work are later local slices, not covered by this release approval.
+
+
+## Latest annotation slices approved — 2026-10-03T12:09Z
+
+Independent Astra approves2ab6e7a component pane andddf8f42 navigation placement. No new blocker. Final18 navigation/settings browser log supersedes intermediate locator failures; component meaningful browser passed by worker report. Result `.scratch/t3-continuation/review-annotations-result.md`, CLI39821 closed. These local commits are not pushed/deployed. Style resize/persistent Images pane remain pending; two setup-checklist tests still target the intentionally removed entry and require updated entry expectations. Safe source ownership handback recorded at top of main handoff.
