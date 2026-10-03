@@ -19,6 +19,7 @@
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { readSlotConditions, planSlotCondition } from "./component-conditions";
 import { mountComponentPanelResize } from "./component-panel-resize";
 import { button, node } from "../ui/dom";
 import { nativePageBody, type NativeSite } from "../../shared/native-project";
@@ -385,8 +386,88 @@ export function createComponentTools(deps: ComponentDeps) {
     usedOnButton = used;
     const done = button("Done", () => void backToPage(), "component-banner__done");
     done.title = "Back to the page, with this instance selected";
-    banner.replaceChildren(componentIcon(14), text, used, node("span", "component-banner__space"), done);
+    const conditions = button("Visibility conditions", () => openConditions(tag, conditions), "component-banner__used");
+    banner.replaceChildren(componentIcon(14), text, used, conditions, node("span", "component-banner__space"), done);
     banner.hidden = false;
+  }
+
+  // A template-only dialog: no file switch, so the native transaction stays
+  // mounted and its undo stack remains visible in the integrated code pane.
+  const conditionsDialog = node("dialog", "create-dialog component-conditions");
+  conditionsDialog.setAttribute("aria-label", "Template visibility conditions");
+  document.body.append(conditionsDialog);
+  function openConditions(tag: string, anchor: HTMLButtonElement) {
+    const template = templateOf(tag);
+    if (!template || !editable(template.path)) return;
+    const revision = deps.revision();
+    const mapping = JSON.stringify(site()?.components);
+    const selection = JSON.stringify(deps.selection());
+    const previewPage = deps.previewPage();
+    const editor = deps.editor();
+    const current = () => deps.revision() === revision && JSON.stringify(site()?.components) === mapping
+      && deps.sources()[template.path] === template.source && editable(template.path)
+      && deps.editor() === editor && JSON.stringify(deps.selection()) === selection && deps.previewPage() === previewPage;
+    let model: ReturnType<typeof readSlotConditions>;
+    try { model = readSlotConditions(template.source); }
+    catch (error) { deps.error(error); return; }
+    const heading = node("h2", "create-dialog__title", "Template visibility conditions");
+    const scope = node("p", "create-dialog__result", `Changes to ${template.path} affect all instances of <${tag}>. Every required slot must have content provided by the page; fallback content does not count.`);
+    const select = node("select", "component-conditions__target");
+    select.setAttribute("aria-label", "Source target");
+    for (const target of model.targets) {
+      const option = document.createElement("option");
+      option.textContent = target.label;
+      select.append(option);
+    }
+    const fields = node("fieldset", "component-conditions__fields");
+    const summary = node("p", "create-dialog__result");
+    const error = node("p", "create-dialog__result is-error");
+    error.setAttribute("role", "alert");
+    let inputs: { name: string; input: HTMLInputElement }[] = [];
+    const target = () => model.targets[select.selectedIndex];
+    const populate = () => {
+      const at = target();
+      inputs = [];
+      fields.replaceChildren(node("legend", "", "Require all selected slots"));
+      if (!at) return;
+      summary.textContent = at.present ? `Current condition: ${at.names.length ? at.names.map((name) => slotLabel(name)).join(" AND ") : "Always visible (no requirements)"}` : "Current condition: no explicit condition";
+      error.textContent = at.problem ?? "";
+      for (const name of model.slotNames) {
+        const label = node("label", "component-conditions__choice");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = at.names.includes(name);
+        input.disabled = !name && !(at.element.name === "slot" && at.label === "Slot: Content");
+        label.append(input, slotLabel(name));
+        fields.append(label);
+        inputs.push({ name, input });
+      }
+    };
+    select.addEventListener("change", populate);
+    const close = () => { conditionsDialog.close(); anchor.isConnected && anchor.focus(); };
+    const save = (remove: boolean) => {
+      error.textContent = "";
+      if (!current()) { error.textContent = "Template, repository, editor or selection changed. Your choices are kept. Close and reopen to review the current source."; return; }
+      try {
+        const at = target();
+        if (!at) throw new Error("No template condition target is available.");
+        const names = inputs.filter(({ input }) => input.checked).map(({ name }) => name);
+        if (!remove && at.element.name !== "slot" && !names.length)
+          throw new Error("Empty wrapper conditions require a runtime fix. Choose required slots or explicitly remove the condition.");
+        const plan = planSlotCondition(template.source, at.node, remove ? undefined : names);
+        if (!current()) throw new Error("Template context changed. Your choices are kept.");
+        if (plan.text !== plan.expected) editor!.replaceActiveRanges([{ path: template.path, start: plan.start, end: plan.end, text: plan.text, expected: plan.expected }]);
+        deps.announce(remove ? "Template condition removed for all instances." : "Template condition saved for all instances.");
+        close();
+      } catch (problem) { error.textContent = problem instanceof Error ? problem.message : String(problem); }
+    };
+    const actions = node("div", "create-dialog__actions");
+    actions.append(button("Cancel", close, "button"), button("Remove condition", () => save(true), "button"), button("Save condition", () => save(false), "button button--primary"));
+    conditionsDialog.replaceChildren(heading, scope, select, summary, fields, error, actions);
+    populate();
+    conditionsDialog.oncancel = (event) => { event.preventDefault(); close(); };
+    conditionsDialog.showModal();
+    select.focus();
   }
 
   /** Back from a template to the page the preview shows, the instance worked on selected. */
@@ -1033,6 +1114,7 @@ export function createComponentTools(deps: ComponentDeps) {
       banner.remove();
       usedOn.remove();
       dialog.remove();
+      conditionsDialog.remove();
     },
   };
 }

@@ -1,0 +1,101 @@
+import { storedDrafts } from "./drafts";
+import { test, expect, type Page } from "@playwright/test";
+const path = "components/project-card/project-card.html";
+async function code(page: Page) {
+  await page.locator('#content [role="textbox"]').first().focus();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+C");
+  const value = await page.evaluate(() => navigator.clipboard.readText());
+  await page.keyboard.press("ArrowRight");
+  return value;
+}
+test("template conditions use native Monaco transaction, undo/redo and keep stale input", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+  const before = await code(page);
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+  await expect(dialog.getByLabel("Source target")).toBeFocused();
+  await dialog.getByLabel("Source target").selectOption({ label: "Slot: title" });
+  await dialog.getByLabel("Link", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  const after = await code(page);
+  expect(after).toBe(before.replace('<slot name="title">', '<slot data-if="link" name="title">'));
+  expect((await storedDrafts(page)).map(({ path: file, content }) => ({ path: file, content }))).toEqual([{ path, content: after }]);
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => code(page)).toBe(before);
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await expect.poll(() => code(page)).toBe(after);
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  await dialog.getByLabel("Body", { exact: true }).check();
+  // External draft changes must not overwrite the captured template.
+  await page.evaluate(() => { location.hash = '#repo=501&branch=main&file=index.html'; });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("changed");
+  await expect(dialog.getByLabel("Body", { exact: true })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+
+
+test("authored condition hides all instances and assigned content reveals only its instance", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+  await dialog.getByLabel("Link", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  const cards = page.frameLocator(".native-preview-frame").locator("project-card");
+  const hidden = (index: number) => cards.nth(index).evaluate((el) => getComputedStyle(el.shadowRoot!.querySelector('slot[name="title"]')!).display);
+  for (const index of [0, 1, 2]) await expect.poll(() => hidden(index)).toBe("none");
+  const original = await code(page);
+  const filled = original.replace('<span slot="title">Reusable cards</span>', '<span slot="title">Reusable cards</span><a slot="link" href="/about/">Provided link</a>');
+  await page.evaluate((value) => navigator.clipboard.writeText(value), filled);
+  await page.locator('#content [role="textbox"]').first().focus();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(() => hidden(0)).not.toBe("none");
+  for (const index of [1, 2]) await expect.poll(() => hidden(index)).toBe("none");
+});
+
+
+test("source and repository changes reject captured condition edits", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+  const before = await code(page);
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+  await dialog.getByLabel("Link", { exact: true }).check();
+  await page.evaluate(async ({ path, before }) => {
+    const modulePath = "/src/components/code-editor.ts";
+    const editor = await import(/* @vite-ignore */ modulePath);
+    editor.replaceActiveRanges([{ path, start: 0, end: before.length, expected: before, text: before + "\n<!-- concurrent edit -->" }]);
+  }, { path, before });
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("changed");
+  await expect(dialog.getByLabel("Link", { exact: true })).toBeChecked();
+  await page.keyboard.press("Escape");
+  expect(await code(page)).toBe(before + "\n<!-- concurrent edit -->");
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  await page.evaluate(() => { location.hash = '#repo=531&branch=main&file=index.html'; });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("changed");
+});
+
+
+test("selection changes retain choices and reject the captured target", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+  await expect(page.frameLocator(".native-preview-frame").locator("project-card").first()).toBeAttached();
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+  await dialog.getByLabel("Link", { exact: true }).check();
+  await page.frameLocator(".native-preview-frame").locator("project-card").first().evaluate((el) => (el.shadowRoot!.querySelector("h3") as HTMLElement).click());
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("changed");
+  await expect(dialog.getByLabel("Link", { exact: true })).toBeChecked();
+});

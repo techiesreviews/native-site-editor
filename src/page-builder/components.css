@@ -615,3 +615,8 @@
 .component-panel-resize:is(:hover, :focus-visible) svg { opacity: 1; }
 .component-panel.is-folded { overflow: hidden; }
 .component-panel.is-folded .component-panel__body { display: none; }
+
+.component-conditions { max-width: 560px; padding: 16px; }
+.component-conditions__target { width: 100%; color: var(--text); background: var(--surface); padding: 8px; }
+.component-conditions__fields { margin: 12px 0; border: 1px solid var(--line); }
+.component-conditions__choice { display: flex; gap: 8px; align-items: center; padding: 6px; }
