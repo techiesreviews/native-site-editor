@@ -9,7 +9,9 @@ async function open(page: Page, baseURL: string | undefined) {
 }
 async function painted(overlay: Locator, opacity: string) {
   await expect(overlay).toHaveCSS("opacity", opacity);
-  if (opacity === "1") await expect(overlay).toHaveCSS("pointer-events", "auto");
+  // The overlay box never moves or blocks the row; its buttons keep a stable hit target.
+  await expect(overlay).toHaveCSS("pointer-events", "none");
+  await expect(overlay.locator("> button").first()).toHaveCSS("pointer-events", "auto");
 }
 
 test("Pages and Files overlay existing actions without shrinking names, and keep keyboard menus", async ({ page, baseURL }) => {
@@ -32,7 +34,7 @@ test("Pages and Files overlay existing actions without shrinking names, and keep
   await expect(pageItem).toBeFocused();
 
   await page.locator("#explorer").getByRole("tab", { name: "Files", exact: true }).click();
-  const fileLine = page.locator(".file-row-line:has(> .file-row.selected)").first();
+  const fileLine = page.locator("#explorer .file-row-line.row-action-host:not(.is-folder)").filter({ visible: true }).first();
   const fileOverlay = fileLine.locator(".row-action-overlay");
   await page.mouse.move(1400, 900);
   await painted(fileOverlay, "0");

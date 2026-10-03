@@ -130,5 +130,7 @@
 .media-library__name-line .media-library__usage { width: var(--size-icon); height: var(--size-icon); padding: 0; display: inline-grid; place-items: center; }
 .media-library__usage-count { color: var(--muted); font-size: var(--type-small); }
 .media-library__card:hover .media-library__name-line > .row-action-overlay,
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay { opacity: 1; transform: none; pointer-events: auto; }
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay { opacity: 1; }
+.media-library__card:hover .media-library__name-line > .row-action-overlay > * > *,
+.media-library__card:focus-within .media-library__name-line > .row-action-overlay > * > * { transform: none; }
 .media-library__card:focus-within .media-library__name-line > .row-action-overlay { transition: none; }
