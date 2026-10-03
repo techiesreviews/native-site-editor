@@ -1590,7 +1590,7 @@
     var cascade = matchingRules(el, true);
     // Style panel defaults include properties that no author rule declares.
     var panelComputed = getComputedStyle(el);
-    var panelProperties = "display flex-direction flex-wrap justify-content align-items gap grid-template-columns width min-width max-width height font-family font-size font-weight line-height letter-spacing text-align color background-color background-image border-width border-style border-color border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius opacity box-shadow transition transform transform-origin margin-top margin-right margin-bottom margin-left padding-top padding-right padding-bottom padding-left".split(" ");
+    var panelProperties = "display flex-direction flex-wrap justify-content align-items gap grid-template-columns width min-width max-width height font-family font-size font-weight line-height letter-spacing text-align color background-color background-image border-radius border-width border-style border-color border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius opacity box-shadow transition transform transform-origin margin-top margin-right margin-bottom margin-left padding-top padding-right padding-bottom padding-left align-content align-self flex-grow flex-shrink flex-basis order grid-template-rows grid-auto-flow grid-auto-rows grid-auto-columns row-gap column-gap min-height max-height aspect-ratio box-sizing font-style text-transform white-space text-overflow word-spacing text-decoration-line background-position background-size background-repeat background-attachment object-fit object-position position top right bottom left z-index overflow overflow-x overflow-y visibility float clear".split(" ");
     cascade.computed = cascade.computed || {};
     panelProperties.forEach(function (property) { cascade.computed[property] = panelComputed.getPropertyValue(property); });
     var payload = {
@@ -2164,7 +2164,8 @@
     "display", "position", "box-sizing", "width", "height", "max-width", "margin", "padding", "border", "border-radius",
     "color", "background-color", "background-image", "opacity", "visibility", "overflow", "z-index",
     "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform",
-    "text-decoration-line", "gap", "flex-direction", "justify-content", "align-items", "grid-template-columns"
+    "text-decoration-line", "gap", "flex-direction", "justify-content", "align-items", "grid-template-columns",
+    "align-content", "align-self", "flex-grow", "flex-shrink", "flex-basis", "order", "grid-template-rows", "grid-auto-flow", "grid-auto-rows", "grid-auto-columns", "row-gap", "column-gap", "min-height", "max-height", "aspect-ratio", "box-sizing", "font-style", "text-transform", "white-space", "text-overflow", "word-spacing", "text-decoration-line", "background-position", "background-size", "background-repeat", "background-attachment", "object-fit", "object-position", "position", "top", "right", "bottom", "left", "z-index", "overflow", "overflow-x", "overflow-y", "visibility", "float", "clear"
   ];
   var INSPECT_MAX_ELEMENTS = 20;
   var INSPECT_MAX_RULES = 12;

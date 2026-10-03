@@ -1,3 +1,4 @@
+import { sections, sectionTitles, matchesStyleSearch, type Field } from "./style-fields";
 import "./style-panel.css";
 import { mountStylePanelResize } from "./style-panel-resize";
 import { node, button } from "../ui/dom";
@@ -19,38 +20,7 @@ export interface StylePanelHandlers {
   history: (direction: "undo" | "redo") => void;
   error: (message: string) => void;
 }
-interface Field { label: string; property: string; options?: string[]; kind?: "space" | "type" | "color" | "font"; unit?: boolean }
 const sides = ["top", "right", "bottom", "left"];
-const sections: { title: string; fields: Field[] }[] = [
-  { title: "Layout", fields: [
-    { label: "Display", property: "display", options: ["block", "flex", "grid", "none", "inline", "inline-block", "inline-flex"] },
-    { label: "Direction", property: "flex-direction", options: ["row", "column", "row-reverse", "column-reverse"] },
-    { label: "Wrap", property: "flex-wrap", options: ["nowrap", "wrap", "wrap-reverse"] },
-    { label: "Justify", property: "justify-content", options: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"] },
-    { label: "Align", property: "align-items", options: ["stretch", "flex-start", "center", "flex-end", "baseline"] },
-    { label: "Gap", property: "gap", kind: "space", unit: true },
-    { label: "Columns", property: "grid-template-columns" },
-  ] },
-  { title: "Size", fields: [
-    { label: "Width", property: "width", unit: true }, { label: "Min width", property: "min-width", unit: true },
-    { label: "Max width", property: "max-width", unit: true }, { label: "Height", property: "height", unit: true },
-  ] },
-  { title: "Typography", fields: [
-    { label: "Font family", property: "font-family", kind: "font" },
-    { label: "Font size", property: "font-size", kind: "type", unit: true },
-    { label: "Weight", property: "font-weight", options: ["100", "200", "300", "400", "500", "600", "700", "800", "900", "normal", "bold"] },
-    { label: "Line height", property: "line-height", kind: "type" }, { label: "Letter spacing", property: "letter-spacing", unit: true },
-    { label: "Text align", property: "text-align", options: ["left", "center", "right", "justify", "start", "end"] },
-    { label: "Text colour", property: "color", kind: "color" },
-  ] },
-  { title: "Background", fields: [ { label: "Background colour", property: "background-color", kind: "color" }, { label: "Background image", property: "background-image" } ] },
-  { title: "Border", fields: [
-    { label: "Border width", property: "border-width", unit: true }, { label: "Border style", property: "border-style", options: ["none", "solid", "dashed", "dotted", "double"] },
-    { label: "Border colour", property: "border-color", kind: "color" },
-    ...["top-left", "top-right", "bottom-right", "bottom-left"].map((corner) => ({ label: `${corner.replace("-", " ")} radius`, property: `border-${corner}-radius`, unit: true })),
-  ] },
-  { title: "Effects", fields: [ { label: "Opacity", property: "opacity" }, { label: "Box shadow", property: "box-shadow" }, { label: "Transition", property: "transition" }, { label: "Transform", property: "transform" }, { label: "Transform origin", property: "transform-origin" } ] },
-];
 
 /** A native controls panel. Commits on change; scrubs commit once on release. */
 export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLElement) {
@@ -64,6 +34,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const links = { margin: false, padding: false };
   const opened = new Set(["Spacing"]);
   let pending = false, interacting = false;
+  let searchQuery = "";
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   root.addEventListener("pointerup", () => setTimeout(() => {
     interacting = false;
@@ -336,16 +307,38 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (getCurrentBreakpoint() !== "all") body.append(button("Hide on this size", () => void write({ display: "none" }, context), "style-panel__hide"));
     const content = node("div", "style-panel__scroll");
     content.append(node("p", "style-panel__hint", "Muted values are computed. Clear a field to remove its declaration."));
-    for (const title of ["Layout", "Spacing", "Size", "Typography", "Background", "Border", "Effects"]) {
+    for (const title of sectionTitles) {
       const details = node("details", "style-panel__section"); details.open = opened.has(title);
-      const summary = node("summary", "style-panel__section-title", title); details.append(summary); details.addEventListener("toggle", () => { if (details.open) opened.add(title); else opened.delete(title); });
+      const summary = node("summary", "style-panel__section-title", title); details.append(summary); details.addEventListener("toggle", () => { if (searchQuery) return; if (details.open) opened.add(title); else opened.delete(title); });
       if (title === "Spacing") details.append(spacing(variables));
       else for (const field of sections.find((s) => s.title === title)!.fields) {
-        const row = node("div", "style-panel__field"); row.append(node("span", "", field.label), fieldControl(field, variables)); details.append(row);
+        const row = node("div", "style-panel__field"); row.dataset.searchLabel = field.label; row.dataset.searchProperty = field.property; row.append(node("span", "", field.label), fieldControl(field, variables)); details.append(row);
       }
       content.append(details);
     }
-    body.append(content); content.scrollTop = scrollTop;
+    const search = node("div", "style-panel__search");
+    const input = node("input"); input.type = "search"; input.value = searchQuery; input.placeholder = "Search styles"; input.setAttribute("aria-label", "Search styles");
+    const clear = button("Clear", () => { input.value = ""; searchQuery = ""; filter(); input.focus(); }); clear.setAttribute("aria-label", "Clear style search");
+    const empty = node("p", "style-panel__hint", "No matching styles."); empty.setAttribute("role", "status");
+    function filter() {
+      let matches = 0;
+      for (const details of content.querySelectorAll<HTMLDetailsElement>("details")) {
+        const title = details.querySelector("summary")!.textContent!;
+        if (title === "Spacing") {
+          const visible = matchesStyleSearch(searchQuery, "margin padding spacing box model", "margin padding", title); details.hidden = !visible; if (visible) matches++;
+        } else {
+          let count = 0;
+          for (const row of details.querySelectorAll<HTMLElement>("[data-search-property]")) {
+            row.hidden = !matchesStyleSearch(searchQuery, row.dataset.searchLabel!, row.dataset.searchProperty!, title); if (!row.hidden) count++;
+          }
+          details.hidden = count === 0; matches += count;
+        }
+        details.open = searchQuery ? !details.hidden : opened.has(title);
+      }
+      clear.hidden = !searchQuery; empty.hidden = matches > 0;
+    }
+    input.addEventListener("input", () => { searchQuery = input.value; filter(); });
+    search.append(input, clear); body.append(search, content); content.append(empty); filter(); content.scrollTop = scrollTop;
   }
   const resize = mountStylePanelResize(workspace, root, value => {
     const changed = collapsed !== value; collapsed = value;

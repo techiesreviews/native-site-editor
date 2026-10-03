@@ -175,3 +175,11 @@ whitespace and quote character. Only the new token is HTML-escaped and appended;
 an unquoted value is quoted when needed. A duplicate leaves the source unchanged.
 Selector matching collapses only CSS whitespace outside strings, comments and
 escapes, so distinct attribute values and escaped class names remain distinct.
+
+Search styles filters native property controls by label, CSS property, section,
+or familiar terms such as “round corners”. Matching sections open while searching;
+clearing restores their previous folds. Typing filters the existing controls,
+keeping their focus and captured source context. The catalogue includes positioning,
+flex and grid sizing, overflow, typography and image positioning. Numeric defaults
+add pixels only to individual length properties; ratios, line height, order and
+flex growth remain unitless. Every edit still passes native CSS validation.

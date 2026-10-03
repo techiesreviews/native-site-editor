@@ -65,3 +65,7 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel__target { display: flex; flex-direction: column; gap: 4px; }
 .style-panel__path { font-family: system-ui, sans-serif; font-size: var(--type-small); color: var(--muted); }
 .style-panel__add-class { padding-bottom: 8px; }
+
+.style-panel__search { display: flex; gap: 6px; padding: 6px 12px; background: var(--panel-surface); flex-shrink: 0; }
+.style-panel__search input { min-width: 0; flex: 1; height: var(--size-control); }
+.style-panel [hidden] { display: none !important; }
