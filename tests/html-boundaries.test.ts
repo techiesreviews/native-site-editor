@@ -91,3 +91,19 @@ test('native document bounds and structured data recognize real end-tag delimite
     assert.ok(updated.includes('<title>New</title></head>'));
   }
 });
+test('production fallback fill and insertion preserve attributes, raw text and Unicode spacing',async()=>{
+  const {fillMarkup,fillInsertEdit,templateSlots,readInstance,parseSource}=await import('../src/page-builder/component-model');
+  const fallback='<div data-x=" two  spaces\r\nnext " data-y=a\u00a0data-key=1 data-key="remove"><pre> a  b\r\n c </pre><textarea> a  b\r\n c </textarea><script>let x = " a  b ";\r\n// exact</script><style>.a { content: " a  b "; }</style></div>';
+  const template=`<slot name="body">${fallback}</slot>`,slots=templateSlots(template),markup=fillMarkup(template,slots[0]);
+  assert.equal(markup,fallback.replace('<div','<div slot="body"').replace(' data-key="remove"',''));
+  const page='<x-card></x-card>',range=parseSource(page)[0];assert.equal(range.type,'element');if(range.type!=='element')return;
+  const edit=fillInsertEdit(page,readInstance(page,range),slots,'body',markup)!;
+  const output=page.slice(0,edit.start)+edit.text+page.slice(edit.end);
+  assert.ok(output.includes(markup));
+  const multi='<slot name="body"><pre> a  b\n c </pre>\r\n <!-- exact --> <textarea> d  e </textarea></slot>';
+  assert.equal(fillMarkup(multi,templateSlots(multi)[0]),'<pre slot="body"> a  b\n c </pre>\r\n <!-- exact --> <textarea slot="body"> d  e </textarea>');
+  for(const text of ['\u00a0',' &nbsp;  x\u00a0 ','a  b\r\n c']){
+    const source=`<slot>${text}</slot>`;
+    assert.equal(fillMarkup(source,templateSlots(source)[0]),text.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g,''));
+  }
+});

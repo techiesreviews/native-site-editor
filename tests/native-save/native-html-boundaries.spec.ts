@@ -69,3 +69,17 @@ test('attribute cleanup and native end tags agree with actual DOM source values'
   expect(result.title).toBe('New');expect(result.meta).toBe('Exact');expect(result.header).toBe('İstanbul');expect(result.footer).toBe('Exact');expect(result.main).toBe('\n');
   expect(result.body).toBe('body</body\u00a0>still body');expect(result.domBody).toBe('bodystill body');expect(result.updatedTitle).toBe('New');expect(result.json).toBe('<p>keep</p>');
 });
+test('real fallback fill insertion retains attribute values and raw element content',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const api=await import('/src/page-builder/component-model.ts');
+    const fallback='<div data-x=" two  spaces\r\nnext " data-y=a\u00a0data-key=1 data-key="remove"><pre> a  b\r\n c </pre><textarea> a  b\r\n c </textarea><script>let x = " a  b ";\r\n// exact</script><style>.a { content: " a  b "; }</style></div>';
+    const template=`<slot name="body">${fallback}</slot>`,slots=api.templateSlots(template),markup=api.fillMarkup(template,slots[0]);
+    const source='<x-card></x-card>',range=api.parseSource(source)[0];if(range.type!=='element')throw Error('range');
+    const edit=api.fillInsertEdit(source,api.readInstance(source,range),slots,'body',markup)!;const output=source.slice(0,edit.start)+edit.text+source.slice(edit.end);
+    const parse=(text:string)=>{const root=document.createElement('template');root.innerHTML=text;const div=root.content.querySelector('div')!;return{attr:div.getAttribute('data-x'),unquoted:div.getAttribute('data-y'),pre:div.querySelector('pre')!.textContent,textarea:div.querySelector('textarea')!.value,script:div.querySelector('script')!.textContent,style:div.querySelector('style')!.textContent,key:div.hasAttribute('data-key'),slot:div.getAttribute('slot')};};
+    const nbsp='<slot>\u00a0</slot>';
+    return{before:parse(fallback),after:parse(output),markup,expected:fallback.replace('<div','<div slot="body"').replace(' data-key="remove"',''),output,nbsp:api.fillMarkup(nbsp,api.templateSlots(nbsp)[0])};
+  });
+  expect(result.markup).toBe(result.expected);expect(result.output).toContain(result.markup);
+  expect(result.after).toEqual({...result.before,key:false,slot:'body'});expect(result.after.attr).toBe(' two  spaces\nnext ');expect(result.after.unquoted).toBe('a\u00a0data-key=1');expect(result.after.pre).toBe(' a  b\n c ');expect(result.after.textarea).toBe(' a  b\n c ');expect(result.nbsp).toBe('\u00a0');
+});

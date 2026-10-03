@@ -562,26 +562,30 @@ export function withoutDataKeys(html: string) {
  */
 export function fillMarkup(template: string, slot: TemplateSlot, text?: string): string {
   const name = slot.name;
-  const parts = meaningful(template, slot.element.children);
+  const trimAscii = (value: string) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+  const parts = slot.element.children.filter(node => node.type === "element" || trimAscii(template.slice(node.start, node.end)).length > 0);
   const single = parts.length === 1 && parts[0].type === "element" ? parts[0] : undefined;
   const label = slotLabel(name);
   if (single) {
-    let copy = withoutDataKeys(template.slice(single.start, single.end).replace(/\s+/g, " ").trim());
+    let copy = withoutDataKeys(template.slice(single.start, single.end));
     const local = elements(parseSource(copy))[0];
     if (text !== undefined && local?.close && textOnly(local.children))
       copy = copy.slice(0, local.tag.end) + escapeText(text) + copy.slice(local.close.start);
     return withSlot(copy, name || undefined);
   }
   if (parts.length && textOnly(parts)) {
-    const inner = text !== undefined ? escapeText(text) : withoutDataKeys(slot.fallback.replace(/\s+/g, " ").trim());
+    const inner = text !== undefined ? escapeText(text) : withoutDataKeys(trimAscii(slot.fallback));
     return name ? `<span slot="${escapeAttribute(name)}">${inner}</span>` : inner;
   }
   if (parts.length) {
-    // Several elements: each takes the slot, in order, on one line.
-    return parts.map((part) => {
-      const copy = withoutDataKeys(template.slice(part.start, part.end).replace(/\s+/g, " ").trim());
-      return part.type === "text" ? (name ? `<span slot="${escapeAttribute(name)}">${copy}</span>` : copy) : withSlot(copy, name || undefined);
-    }).join(" ");
+    // Several elements take the slot in order; preserve their internal bytes
+    // and the source gaps between them.
+    return parts.map((part, index) => {
+      const copy = withoutDataKeys(template.slice(part.start, part.end));
+      const gap = index ? template.slice(parts[index - 1].end, part.start) : "";
+      const filled = part.type === "text" ? (name ? `<span slot="${escapeAttribute(name)}">${copy}</span>` : copy) : withSlot(copy, name || undefined);
+      return gap + filled;
+    }).join("");
   }
   const slotAttribute = name ? ` slot="${escapeAttribute(name)}"` : "";
   if (slot.kind === "image") return `<img${slotAttribute} src="" alt="">`;
