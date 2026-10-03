@@ -67,6 +67,22 @@ export interface ComponentFileReceipt {
 }
 export type ComponentFileCreation = { error: string } | { receipt: ComponentFileReceipt };
 
+/** Host-bound snapshot for a deferred slot action; never supplied by iframe DOM alone. */
+export interface ComponentInstanceSlotTarget {
+  pagePath: string;
+  pageNode: number[];
+  tag: string;
+  templatePath: string;
+  expectedRevision: string;
+  /** Complete file sources, including page markup outside the instance. */
+  expectedPageSource: string;
+  expectedTemplateSource: string;
+  /** The exact active host selection object captured by the adapter. */
+  expectedSelection: NativePreviewSelection;
+  /** Host proof of unchanged editor model/session/version and repository context. */
+  isCurrent(): boolean;
+}
+
 export interface ComponentDeps {
   site: () => NativeSite | undefined;
   /** Stable scope/generation identity; creating this component must not change it. */
@@ -430,8 +446,8 @@ export function createComponentTools(deps: ComponentDeps) {
       inputs = [];
       fields.replaceChildren(node("legend", "", "Require all selected slots"));
       if (!at) return;
-      summary.textContent = at.present ? `Current condition: ${at.names.length ? at.names.map((name) => slotLabel(name)).join(" AND ") : "Always visible (no requirements)"}` : "Current condition: no explicit condition";
-      error.textContent = at.problem ?? "";
+      summary.textContent = at.problem ? `Current condition: ${at.problem}` : at.present ? `Current condition: ${at.names.length ? at.names.map((name) => slotLabel(name)).join(" AND ") : "Always visible (no requirements)"}` : "Current condition: no explicit condition";
+      error.textContent = at.problem ?? model.authoringProblem ?? "";
       for (const name of model.slotNames) {
         const label = node("label", "component-conditions__choice");
         const input = document.createElement("input");
@@ -451,6 +467,7 @@ export function createComponentTools(deps: ComponentDeps) {
       try {
         const at = target();
         if (!at) throw new Error("No template condition target is available.");
+        if (!remove && (at.problem || model.authoringProblem)) throw new Error(at.problem || model.authoringProblem);
         const names = inputs.filter(({ input }) => input.checked).map(({ name }) => name);
         if (!remove && at.element.name !== "slot" && !names.length)
           throw new Error("Empty wrapper conditions require a runtime fix. Choose required slots or explicitly remove the condition.");
@@ -786,6 +803,26 @@ export function createComponentTools(deps: ComponentDeps) {
   /** The instance on show, read again from the source as it is now. */
   const current = () => (shown ? instanceAt(shown.path, shown.node, shown.within) : undefined);
 
+  /** Fills one native named assignment only while its captured host is still active. */
+  function fillInstanceSlot(target: ComponentInstanceSlotTarget, name: string): boolean {
+    const selection = deps.selection();
+    const sameNode = (a: number[] | undefined, b: number[]) => Boolean(a && a.length === b.length && a.every((part, index) => part === b[index]));
+    if (!target.isCurrent() || deps.revision() !== target.expectedRevision
+      || selection !== target.expectedSelection || selection.host
+      || selection.path !== target.pagePath || selection.tag !== target.tag || !sameNode(selection.node, target.pageNode)
+      || deps.previewPage() !== target.pagePath || !editable(target.pagePath)
+      || site()?.components[target.tag] !== target.templatePath
+      || deps.sources()[target.pagePath] !== target.expectedPageSource
+      || deps.sources()[target.templatePath] !== target.expectedTemplateSource
+      || deps.editor()?.getMountedSource(target.pagePath) !== target.expectedPageSource) return false;
+    const at = current();
+    if (!at || at.within !== undefined || at.path !== target.pagePath || !sameNode(at.node, target.pageNode)
+      || at.tag !== target.tag || at.templatePath !== target.templatePath
+      || at.source !== target.expectedPageSource || at.template !== target.expectedTemplateSource
+      || !at.slots.some((slot) => slot.name === name) || at.states.get(name)?.filled !== false) return false;
+    return setSlotOn(name, true);
+  }
+
   /** Text typed into a slot's field: its text, an image's address or alt text, a link's address. */
   function typeInto(slotName: string, part: "text" | "src" | "alt" | "href", text: string) {
     const at = current();
@@ -830,20 +867,22 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   /** Switches a slot on (the page fills it, from the template's fallback) or off (the page's content goes). */
-  function setSlotOn(slotName: string, on: boolean) {
+  function setSlotOn(slotName: string, on: boolean): boolean {
     const at = current();
     const slot = at?.slots.find((entry) => entry.name === slotName);
-    if (!at || !slot) return;
+    if (!at || !slot) return false;
     const label = slotLabel(slotName);
     if (on) {
       const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot));
-      if (!edit) { deps.announce("The instance's end tag could not be found in the source."); return; }
+      if (!edit) { deps.announce("The instance's end tag could not be found in the source."); return false; }
       const kind = slotValue(at.source, at.template, at.instance, slot).kind;
-      if (change(at.path, [edit], `${label} shown`, at.node)) focusNext = `${kind === "image" ? "src" : kind === "link" ? "href" : "text"}:${slotName}`;
+      const accepted = change(at.path, [edit], `${label} shown`, at.node);
+      if (accepted) focusNext = `${kind === "image" ? "src" : kind === "link" ? "href" : "text"}:${slotName}`;
+      return accepted;
     } else {
       const edits = fillRemoveEdits(at.source, at.instance, slotName);
       const reset = at.states.get(slotName)?.whenEmpty === "fallback";
-      change(at.path, edits, reset ? `${label} reset to the component's default` : `${label} hidden`, at.node);
+      return change(at.path, edits, reset ? `${label} reset to the component's default` : `${label} hidden`, at.node);
     }
   }
 
@@ -1108,6 +1147,7 @@ export function createComponentTools(deps: ComponentDeps) {
       renderBanner();
     },
     editComponent,
+    fillInstanceSlot,
     destroy() {
       destroyResize();
       panel.remove();

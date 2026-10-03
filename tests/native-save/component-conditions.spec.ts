@@ -99,3 +99,61 @@ test("selection changes retain choices and reject the captured target", async ({
   await expect(dialog.getByRole("alert")).toContainText("changed");
   await expect(dialog.getByLabel("Link", { exact: true })).toBeChecked();
 });
+
+for (const fixture of [
+  { label: "empty wrapper", source: '<slot name="a"></slot><div data-if="">Keep</div>', target: 1, warning: "Unsupported empty wrapper" },
+  { label: "unknown requirement", source: '<slot name="a"></slot><div data-if="a missing">Keep</div>', target: 1, warning: "Unknown slot" },
+  { label: "exact whitespace slot name", source: '<slot name=" a "></slot><slot name="a"></slot>', target: 1, warning: "Unsupported slot name" },
+]) {
+  test(`${fixture.label} refuses Save, preserves choices and permits explicit removal`, async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+    await page.evaluate(async ({ path, source }) => {
+      const modulePath = "/src/components/code-editor.ts";
+      const editor = await import(/* @vite-ignore */ modulePath);
+      const before = editor.getMountedSource(path);
+      editor.replaceActiveRanges([{ path, start: 0, end: before.length, expected: before, text: source }]);
+    }, { path, source: fixture.source });
+    await page.getByRole("button", { name: "Visibility conditions" }).click();
+    const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+    await dialog.getByLabel("Source target").selectOption({ index: fixture.target });
+    await expect(dialog.getByRole("alert")).toContainText(fixture.warning);
+    await expect(dialog).not.toContainText("Always visible");
+    const choice = dialog.getByRole("checkbox").last();
+    await choice.check();
+    await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText(fixture.warning);
+    await expect(choice).toBeChecked();
+    const unchanged = await page.evaluate(async (path) => {
+      const modulePath = "/src/components/code-editor.ts";
+      return (await import(/* @vite-ignore */ modulePath)).getMountedSource(path);
+    }, path);
+    expect(unchanged).toBe(fixture.source);
+    await dialog.getByRole("button", { name: "Remove condition", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(await code(page)).toBe(fixture.source.replace(/data-if="[^"]*"/, ""));
+  });
+}
+
+test("stray slash condition preserves source and Unicode tag mismatch fails closed", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30000 });
+  const source = '<slot name="a"></slot><slot name="b"></slot><div / data-if="a" keep=raw>Keep</div>';
+  await page.evaluate(async ({ path, source }) => {
+    const editorPath = "/src/components/code-editor.ts";
+    const editor = await import(/* @vite-ignore */ editorPath);
+    const before = editor.getMountedSource(path);
+    editor.replaceActiveRanges([{ path, start: 0, end: before.length, expected: before, text: source }]);
+    const modelPath = "/src/page-builder/component-conditions.ts";
+    const model = await import(/* @vite-ignore */ modelPath);
+    let rejected = false;
+    try { model.readSlotConditions('<X-İ data-if="a"></X-İ>'); } catch { rejected = true; }
+    if (!rejected) throw new Error("Unicode folding exposed an ambiguous editable target");
+  }, { path, source });
+  await page.getByRole("button", { name: "Visibility conditions" }).click();
+  const dialog = page.getByRole("dialog", { name: "Template visibility conditions" });
+  await dialog.getByLabel("Source target").selectOption({ index: 2 });
+  await dialog.getByLabel("B", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Save condition", exact: true }).click();
+  expect(await code(page)).toBe(source.replace('data-if="a"', 'data-if="a b"'));
+});

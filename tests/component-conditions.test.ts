@@ -24,8 +24,8 @@ test("AND truth table, bare slot, ordinary empty, unknown and fallback", () => {
     assert.equal(slotConditionVisible(targets[2], new Set(names)), visible);
   assert.equal(slotConditionVisible(targets[0], new Set()), false);
   assert.equal(slotConditionVisible(targets[0], new Set(["a"])), true);
-  assert.equal(slotConditionVisible(targets[3], new Set()), true);
-  assert.equal(slotConditionVisible(targets[4], new Set(["missing"])), false);
+  assert.equal(slotConditionVisible(targets[3], new Set()), undefined);
+  assert.equal(slotConditionVisible(targets[4], new Set(["missing"])), undefined);
   const page = `<test-card></test-card>`;
   const element = parseSource(page)[0];
   assert.equal(element.type, "element");
@@ -38,4 +38,32 @@ test("ASCII attribute lexing preserves NBSP, entities, and rejects duplicate att
   assert.throws(() => planSlotCondition(`<slot data-if data-if>`, [0], undefined), /Duplicate/);
   assert.equal(readSlotConditions(`<slot data-if>`).targets[0].names[0], "");
   assert.equal(planSlotCondition(`<slot>`, [0], [""]).text, `<slot data-if>`);
+});
+
+test("unsupported empty wrappers and unknown requirements require explicit removal", () => {
+  for (const value of ["", "missing", "a missing"]) {
+    const template = `<slot name="a"></slot><div data-if="${value}">Keep</div>`;
+    const target = readSlotConditions(template).targets[1];
+    assert.ok(target.problem);
+    assert.equal(slotConditionVisible(target, new Set(["a", ""])), undefined);
+    assert.throws(() => planSlotCondition(template, target.node, ["a"]), /Unsupported|Unknown/);
+    assert.equal(planSlotCondition(template, target.node, undefined).text, '<div >');
+  }
+});
+test("raw whitespace slot names block incompatible authoring without changing source", () => {
+  const template = '<slot name=" a "></slot><slot name="b"></slot>';
+  const model = readSlotConditions(template);
+  assert.deepEqual(model.slotNames, [" a ", "b"]);
+  assert.match(model.authoringProblem!, /exact name/);
+  assert.throws(() => planSlotCondition(template, model.targets[1].node, ["b"]), /Unsupported slot name/);
+});
+test("Unicode tag folding fails closed and stray slash resumes HTML attributes", () => {
+  assert.throws(() => readSlotConditions('<X-İ data-if="a"></X-İ>'), /Ambiguous/);
+  const template = '<slot name="x"></slot><div / data-if="x" keep=raw>Keep</div>';
+  const target = readSlotConditions(template).targets[1];
+  assert.deepEqual(target.names, ["x"]);
+  const plan = planSlotCondition(template, target.node, ["x"]);
+  assert.equal(plan.text, '<div / data-if="x" keep=raw>');
+  assert.equal(planSlotCondition(template, target.node, undefined).text, '<div /  keep=raw>');
+  assert.throws(() => planSlotCondition('<slot name="x" / data-if="x" / data-if="x">', [0], ["x"]), /Duplicate/);
 });

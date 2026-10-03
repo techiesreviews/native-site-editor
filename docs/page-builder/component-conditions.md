@@ -8,7 +8,9 @@ Save performs one guarded start-tag replacement through the mounted native Monac
 
 ## Existing runtime limitation
 
-The requested model treats empty `data-if` on an ordinary element as an empty conjunction (visible). The current production preview runtime at `public/native-preview-runtime.js:1697` instead splits an empty string into one empty slot name, normally hiding the element. This task prohibits runtime edits. The dialog blocks saving an empty ordinary-element condition with an explanation and retains the input. Empty ordinary-element conditions therefore have model coverage but cannot be claimed to have matching production behavior until that host/runtime seam is fixed. Named conditions and bare slot conditions use the existing production behavior.
+Existing empty `data-if` on an ordinary wrapper is explicitly unrepresentable. Both the starter published loader and preview tie it to unnamed assigned content or hide it. The model returns unknown visibility (`undefined`), and the dialog explains the unsupported state and refuses Save. This runtime mismatch remains unresolved; no runtime changes are included. Remove condition is an explicit valid operation.
+
+Unknown requirements cannot be silently replaced by the available checkboxes. Resolve them in code or explicitly remove the condition. Slot names remain exact source values; whitespace in a name blocks condition authoring because requirements cannot express that exact name. Tag comparison uses ASCII-only case folding and fails closed when the structural parser disagrees. Stray slashes resume attribute reading according to HTML tokenization, preserving every unrelated byte and detecting existing or duplicate `data-if` attributes.
 
 ## Validation
 

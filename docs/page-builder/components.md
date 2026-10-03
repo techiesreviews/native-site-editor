@@ -126,8 +126,55 @@ step (the code editor's history companion): Undo/Redo in the top bar take the
 files back and write them again. (⌘Z typed inside the code pane is the code
 editor's own text undo and leaves the new files as drafts to discard.)
 
+## Deferred instance slot adapter
+
+`ComponentTools.fillInstanceSlot(target, name): boolean` is the public seam
+for a host adapter receiving a slot ghost report. It returns whether the
+native source edit was accepted. `setSlotOn` remains private. The exported
+target interface in `src/page-builder/components.ts` is exactly:
+
+```ts
+export interface ComponentInstanceSlotTarget {
+  pagePath: string;
+  pageNode: number[];
+  tag: string;
+  templatePath: string;
+  expectedRevision: string;
+  expectedPageSource: string;
+  expectedTemplateSource: string;
+  expectedSelection: NativePreviewSelection;
+  isCurrent(): boolean;
+}
+```
+
+The host adapter binds the report to the current revision, complete page
+and template sources, and the exact active selection object. `isCurrent`
+must prove that the editor model, session, version and repository context
+are unchanged; the existing `captureFileModelState(scope, pagePath)` can
+provide the model proof. Capture these identities when receiving the report,
+then retain them until the action. Do not reconstruct a fresh target at click
+time or accept identities supplied only by the iframe.
+
+The method requires the active selected element itself to be the shown
+instance, with matching page path, node, tag and template mapping. It rereads
+the instance and checks the mounted model's full source, the full page and
+template sources, revision, preview page and model proof. A changed selection
+(including a descendant of the same host), missing slot, filled slot, stale
+model or changed context returns `false` without editing or navigating.
+
+An accepted action uses the existing native fallback markup insertion as
+one undo transaction, selects the instance after preview update and focuses
+the slot's next field. The first same-name outlet supplies fallback markup. Duplicate same-name
+`<slot>` outlets share one native assignment; occurrences cannot be filled independently. The seam never
+mutates iframe DOM or opens a shared template.
+
 ## Tests
 
+The seam browser test runs the production component controller with mocked component dependencies. It proves the controller contract, not the root ghost adapter or real Monaco Undo integration for ghost actions. That integration remains pending in the separately owned main adapter. The seam has not received independent Claude review.
+
+- `tests/native-save/component-slot-seam.spec.ts`: guarded host snapshots,
+  stale selection/model/source/context rejection, one assignment for duplicate
+  outlets, one transaction and existing field focus.
 - `tests/component-model.test.ts` (unit): slots and kinds, slot states
   (fallback, optional, section rule, `data-if`), slot values, text edits that
   keep formatting, filling and emptying slots in template order, attribute
