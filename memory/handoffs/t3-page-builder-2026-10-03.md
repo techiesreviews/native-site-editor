@@ -715,3 +715,14 @@ Structure aab/3a plus e76 reports-only leaf still not approved or integrated: wo
 Purecollection identity seam assigned same Codexmedia grunt in NEW sol-collection-identity-final / pb/collection-identity-final@4de155d, owns native-collection-host.ts, corresponding units and docs/page-builder/collection-host.md only. Optional candidateIdentity for bake, oldexpectedIdentity for snapshotguard; no helper configparser/main changes. Collections actualhost still pending. Testmigration7767 and actualmovedNotesunderFern reveal assertion still require currenthost reproduction.
 
 Root beforewindow clean, no5266/5616/5617 listeners; main root5210 PID232465, LANHTTPS5211 PID290725, immutableactualstarter19f95215 PID560973 remain. LAN https://192.168.1.7:5211/#repo=501&branch=main&file=index.html (branchmain refers starter). Previeworigin/devf087/version103fded7 unchanged; no push/deploy/PR; production untouched. Existingdisplayedscreenshots retained, no newwholecandidate releaseproof yet. No currentdeadline/timer; exactcontext occupancy unavailable. Next returnlease, finish Structureleaf review/thinhost/realstarter screenshots, Move actualhost and collections.
+
+
+## Collection identity integrated and full Structure leaf in review — 2026-10-03T19:02:29+00:00
+
+Root now719f5f8 after53f1c69 purecandidateIdentity leaf cherry, approved exactOpus5.5/errorfalse/denials[] in claude-collection-identity.json/result.md, exec96179 completedexit0/session4ae51860-bf95-4d13-bd6a-e5754e4f8950.23units/types/diffpass; oldidentity remains staleguard, candidateidentity onlybake, containerscopied/legacy/noop preserved. Host must derivecandidateidentity from actualpostorigin config/home viaexistingreadSiteIdentity and recomputefreshsnapshotidentity immediatelybeforeapply. No actualcollectionshostyet.
+
+Rootmain.ts existingHTMLMove WIP belongsworkflow, preserved and unstaged; helper-onlycherry allowed byworker in shortwindow/no browserfreeze. Pending Move skipsordinary shadow selections until explicittemplateEdit API integrated; no guessingcurrentpathscope/noHTMLAdd.
+
+Components fullleaf nowclean immutablea4f9abd (combinede76face+aab3aaf+3a4e646+a4f9abd), 6followupownedpaths, full766unit/12actualDOM MOCKcontrollerbrowsers/types/diffgreen in structure-attributes-complete-* logs. Attributes featureparity and malformedunquoted-quote/Unicode/entity/noop guards complete; no main/runtimechanges, no5616/5617 servers. Full readonlyOpus review exec36298 active, claude-structure-complete-brief.md/json/stderr; not integrated or actualmain/Monaco/starter verified. Latestlinks/image expandabledetails labels included.
+
+Returnapp/indexlease afterthisdoc-onlycommit. No push/deploy/PR; previewf087/version103fded7 unchanged; production/main untouched. Root5210/LAN5211/immutable19f95215 remain. Next Structureleaf review/fixes → boundedmainthinwire/defaultinstance/explicittemplate+nestedhostChain, actualstarterprogressshots; Moveactualhost tests; collectionsactualhost.
