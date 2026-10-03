@@ -41,7 +41,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   uploadInput.className = "media-library__upload-input";
   uploadInput.setAttribute("aria-label", "Upload images");
   const uploadButton = button("Upload images…", () => uploadInput.click());
-  const closeButton = button("Close", close);
+  const closeButton = cancellation("Close", close);
   header.append(heading, uploadButton);
   if (modal) header.append(closeButton);
   header.append(uploadInput);
@@ -111,11 +111,32 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   modal?.addEventListener("close", dispose, { once: true });
   function tell(text: string) { if (alive) message.textContent = text; }
   async function task(work: () => Promise<void>) {
-    if (busy || !alive) return;
+    if (!alive) return;
+    if (busy) { tell("An image change is in progress. Wait for it to finish before making another change."); return; }
     busy = true; dialog.setAttribute("aria-busy", "true");
+    setBusyControls();
     try { await work(); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) tell(error instanceof Error ? error.message : "The image change could not be made."); }
-    finally { busy = false; dialog.removeAttribute("aria-busy"); }
+    finally { busy = false; dialog.removeAttribute("aria-busy"); setBusyControls(); }
   }
+  function cancellation(label: string, action: () => void) {
+    const control = button(label, action); control.dataset.mediaCancel = "true"; return control;
+  }
+  function setBusyControls() {
+    for (const control of dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input,button,select")) {
+      if (busy && control.dataset.mediaCancel !== "true") control.setAttribute("aria-disabled", "true"); else control.removeAttribute("aria-disabled");
+      if (control instanceof HTMLInputElement && control.type !== "checkbox" && control.type !== "file") control.readOnly = busy;
+    }
+  }
+  dialog.addEventListener("click", event => {
+    if (!busy || !(event.target instanceof Element) || event.target.closest("[data-media-cancel]") || !event.target.closest("button,input,select")) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    tell("An image change is in progress. Wait for it to finish before making another change.");
+  }, { capture: true, signal: listeners.signal });
+  dialog.addEventListener("keydown", event => {
+    if (!busy || event.target instanceof Element && event.target.closest("[data-media-cancel]") || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    tell("An image change is in progress. Wait for it to finish before making another change.");
+  }, { capture: true, signal: listeners.signal });
   function objectUrl(blob: Blob) { const url = URL.createObjectURL(blob); urls.add(url); return url; }
   function asset(path: string) {
     let pending = assets.get(path);
@@ -171,13 +192,25 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
             focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
           })) : [];
           const active = document.activeElement;
+          const focus = active instanceof HTMLElement && sheet.contains(active) ? {
+            label: active.getAttribute("aria-label"), text: active instanceof HTMLButtonElement ? active.textContent : undefined,
+            start: active instanceof HTMLInputElement ? active.selectionStart : null,
+            end: active instanceof HTMLInputElement ? active.selectionEnd : null,
+          } : undefined;
           await showDetail(path, false, true);
-          if (alive && detailPath === path) for (const saved of inputs) {
-            const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
-            if (!input) continue;
-            input.value = saved.value;
-            if (saved.focused && (!active?.isConnected || document.activeElement === document.body)) {
-              input.focus(); if (saved.start !== null && saved.end !== null) input.setSelectionRange(saved.start, saved.end);
+          if (alive && detailPath === path) {
+            for (const saved of inputs) {
+              const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
+              if (!input) continue;
+              input.value = saved.value; input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            // Metadata Undo changes values, but it must not strand keyboard focus.
+            // A user who focused elsewhere during the read keeps that focus.
+            if (focus && document.activeElement === document.body && !active?.isConnected) {
+              const controls = [...sheet.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button")];
+              const control = controls.find(control => focus.label ? control.getAttribute("aria-label") === focus.label : control instanceof HTMLButtonElement && control.textContent === focus.text) ?? controls[0];
+              control?.focus();
+              if (control instanceof HTMLInputElement && focus.start !== null && focus.end !== null) control.setSelectionRange(focus.start, focus.end);
             }
           }
         }
@@ -282,6 +315,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         await options.onPick!(image); close();
       }), "button"));
     }
+    setBusyControls();
     if (focusUsage) usageTitle.focus(); else if (!background) sheet.querySelector<HTMLElement>("button")?.focus();
   }
   function confirmDelete(paths: string[], unusedOnly = false) {
@@ -292,7 +326,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const pages = new Set(paths.flatMap((path) => library.usage[path]?.pages ?? []));
     sheet.append(node("h3", "", `Delete ${paths.length} ${paths.length === 1 ? "image" : "images"}?`), node("p", "", pages.size ? `Used on ${pages.size} pages. Their references will break if you delete these images.` : "These images have no page usage. Check any component and CSS references below."));
     for (const path of paths) sheet.append(node("p", "media-library__hint", `${path}${library.usage[path]?.files.length ? ` · Referenced by ${library.usage[path].files.join(", ")}` : " · No source references"}`));
-    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), button("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
+    sheet.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."), cancellation("Cancel", () => { sheet.hidden = true; }), button("Delete images", () => void task(async () => { await adapter.remove(paths, unusedOnly); await refresh(); sheet.hidden = true; tell("Images deleted as drafts."); })));
   }
   function showOptimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     if (!alive) return;
@@ -352,7 +386,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       add.disabled = false;
     }));
     for (const control of [width, quality, format, responsive, original]) control.addEventListener("input", () => { prepareVersion++; optimisation?.abort(); prepared = []; add.disabled = true; results.replaceChildren(); });
-    sheet.append(prepare, results, add, button("Cancel", () => { detailVersion++; optimisation?.abort(); sheet.hidden = true; }));
+    sheet.append(prepare, results, add, cancellation("Cancel", () => { detailVersion++; optimisation?.abort(); sheet.hidden = true; }));
     width.focus();
   }
   search.addEventListener("input", draw, { signal: listeners.signal });

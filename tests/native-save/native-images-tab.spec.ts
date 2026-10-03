@@ -31,8 +31,12 @@ test("metadata Undo and Redo refresh open detail fields while preserving query",
   await pane(page).getByLabel("Default alt text", { exact: true }).fill("Host refresh portrait");
   await pane(page).getByRole("button", { name: "Save metadata", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Host refresh portrait");
+  await expect(pane(page)).not.toHaveAttribute("aria-busy", "true");
+  await expect(pane(page).getByRole("button", {name:"Save metadata",exact:true})).toBeFocused();
+  await pane(page).getByLabel("Default alt text", {exact:true}).focus();
   await page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"); });
   await expect(pane(page).getByLabel("Default alt text", { exact: true })).toHaveValue(before);
+  await expect(pane(page).getByLabel("Default alt text", {exact:true})).toBeFocused();
   await page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("redo", "index.html"); });
   await expect(pane(page).getByLabel("Default alt text", { exact: true })).toHaveValue("Host refresh portrait");
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
@@ -54,12 +58,15 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   await expect(alt).toHaveValue("Unfinished alt");
   await expect(pane(page).getByLabel("Image tags", { exact: true })).toHaveValue("unfinished, tags");
   await alt.focus();
+  await page.evaluate(() => { (window as any).mediaCardBeforeRefresh = document.querySelector(".media-library__card"); });
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const text = editor.getMountedSource("index.html");
     if (text === undefined) throw new Error("Missing source model");
     editor.replaceActiveRange({path:"index.html", start:text.length, end:text.length, expected:"", text:"\n<!-- visible unrelated edit -->"});
   });
+  await expect.poll(() => page.evaluate(() => !(window as any).mediaCardBeforeRefresh.isConnected)).toBe(true);
+  await expect(pane(page)).not.toHaveAttribute("aria-busy", "true");
   await expect(alt).toBeFocused();
   await expect(alt).toHaveValue("Unfinished alt");
   await pane(page).getByRole("button", { name: "Save metadata", exact: true }).click();
@@ -88,7 +95,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       expect(geometry.right).toBeLessThanOrEqual(390);
       expect(geometry.width).toBeLessThanOrEqual(geometry.client);
     }
-    const width = await page.evaluate(() => document.documentElement.scrollWidth);; expect(width).toBeLessThanOrEqual(390);
+    const width = await page.evaluate(() => document.documentElement.scrollWidth); expect(width).toBeLessThanOrEqual(390);
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -108,4 +115,60 @@ test("image slot keeps its chooser modal while manager query survives", async ({
   await expect(chooser).toHaveCount(0);
   await page.locator("#explorer-toggle").click(); await page.getByRole("tab", { name: "Images", exact: true }).click();
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
+});
+test("changed image usage rebuilds detail references while retaining unfinished fields and focus", async ({page,baseURL}) => {
+  await open(page,baseURL);await pane(page).getByRole("button",{name:"Details for images/studio-desk.svg",exact:true}).click();
+  const alt = pane(page).getByLabel("Default alt text",{exact:true});await alt.fill("Unfinished referenced portrait");await alt.focus();
+  await pane(page).getByLabel("Image tags",{exact:true}).fill("unfinished usage tags");await alt.focus();
+  await page.evaluate(async () => {
+    (window as any).mediaAltBeforeUsage = document.querySelector('#explorer-images input[aria-label="Default alt text"]');
+    const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html");
+    if(source === undefined) throw new Error("Missing source model");
+    editor.replaceActiveRange({path:"index.html",start:source.length,end:source.length,expected:"",text:'\n<img src="/images/studio-desk.svg" alt="New native page reference">'});
+  });
+  await expect.poll(() => page.evaluate(() => !(window as any).mediaAltBeforeUsage.isConnected)).toBe(true);
+  await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
+  await expect(alt).toHaveValue("Unfinished referenced portrait");await expect(alt).toBeFocused();
+  await expect(pane(page).getByLabel("Image tags",{exact:true})).toHaveValue("unfinished usage tags");
+});
+test("busy image action explains blocked controls and keeps Save focus after its refresh", async ({page,baseURL}) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path","index.html");
+  await page.evaluate(async () => {
+    const {createMediaLibraryView} = await import("/src/page-builder/media-library-view.ts");
+    let metadata = {alt:"",tags:[] as string[]}, renames=0;
+    const host = document.createElement("div");host.style.cssText="position:fixed;inset:20px;background:white;z-index:1000";document.body.append(host);
+    const view = createMediaLibraryView(host,{
+      async load(){return {key:"busy",items:[{path:"images/a.svg",version:"A"}],metadata:{"images/a.svg":metadata},usage:{}};},
+      async blob(){return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'],{type:"image/svg+xml"});},
+      async metadata(changes){await new Promise<void>(resolve => {(window as any).releaseImageWrite=resolve;});metadata={alt:changes["images/a.svg"]?.alt ?? "",tags:[]};},
+      async upload(){return "";},async rename(){renames++;},async remove(){},async rewrite(){},async openPage(){},
+    });
+    Object.assign(window,{busyImageProbe:{state:()=>renames,dispose:()=>{view.dispose();host.remove();}}});await view.ready;
+  });
+  const library = page.getByRole("region",{name:"Images",exact:true});await library.getByRole("button",{name:"Details for images/a.svg",exact:true}).click();
+  await library.getByLabel("Default alt text",{exact:true}).fill("Saved pending alt");await library.getByRole("button",{name:"Save metadata",exact:true}).click();
+  await expect(library).toHaveAttribute("aria-busy","true");await expect(library.getByRole("button",{name:"Rename",exact:true})).toHaveAttribute("aria-disabled","true");
+  await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button=>button.textContent==="Rename")!.click());
+  await expect(library.locator(".media-library__message")).toContainText("image change is in progress");
+  expect(await page.evaluate(() => (window as any).busyImageProbe.state())).toBe(0);
+  await page.evaluate(() => (window as any).releaseImageWrite());await expect(library).not.toHaveAttribute("aria-busy","true");
+  await expect(library.getByRole("button",{name:"Save metadata",exact:true})).toBeFocused();
+  await expect(library.getByLabel("Default alt text",{exact:true})).toHaveValue("Saved pending alt");
+  await page.evaluate(() => (window as any).busyImageProbe.dispose());
+});
+test("closed Images explorer defers repository refresh until reopened", async ({page,baseURL}) => {
+  await open(page,baseURL);
+  await page.evaluate(() => {(window as any).closedImageCard=document.querySelector(".media-library__card");});
+  await page.keyboard.press("Escape");await expect(page.locator("#explorer")).not.toBeVisible();
+  await page.evaluate(async () => {
+    const editor=await import("/src/components/code-editor.ts"), source=editor.getMountedSource("index.html");
+    if(source === undefined) throw new Error("Missing source model");
+    editor.replaceActiveRange({path:"index.html",start:source.length,end:source.length,expected:"",text:"\n<!-- closed pane edit -->"});
+  });
+  await expect.poll(async () => (await storedDraft(page,"index.html"))?.content).toContain("closed pane edit");
+  expect(await page.evaluate(() => (window as any).closedImageCard.isConnected)).toBe(true);
+  await page.locator("#explorer-toggle").click();
+  await expect.poll(() => page.evaluate(() => !(window as any).closedImageCard.isConnected)).toBe(true);
+  await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
 });

@@ -3723,10 +3723,11 @@ function ensureExplorerImages() {
   explorerImagesSignature = imagesSignature();
   explorerImages = mountMediaLibrary(element("explorer-images"), { refreshKey: imagesSignature });
 }
+function explorerImagesVisible() { return !element("explorer-images").hidden && element("explorer").matches(":popover-open"); }
 function requestExplorerImagesRefresh() {
   if (!explorerImages) return;
   if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
-  if (element("explorer-images").hidden) { explorerImagesRefreshNeeded = true; return; }
+  if (!explorerImagesVisible()) { explorerImagesRefreshNeeded = true; return; }
   const signature = imagesSignature();
   if (signature === explorerImagesSignature) { if (explorerImagesRefreshNeeded) queueMicrotask(flushExplorerImagesRefresh); return; }
   explorerImagesSignature = signature; explorerImagesRefreshNeeded = true;
@@ -3734,7 +3735,7 @@ function requestExplorerImagesRefresh() {
 }
 function flushExplorerImagesRefresh() {
   const view = explorerImages;
-  if (!view || !explorerImagesRefreshNeeded || element("explorer-images").hidden) return;
+  if (!view || !explorerImagesRefreshNeeded || !explorerImagesVisible()) return;
   if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
   if (view.element.getAttribute("aria-busy") === "true") {
     if (!explorerImagesObserver) {
@@ -3754,6 +3755,7 @@ function flushExplorerImagesRefresh() {
 }
 
 function mountExplorerTabs() {
+  element("explorer").addEventListener("toggle", () => { if (explorerImagesVisible() && explorerTab === "images") ensureExplorerImages(); });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
     tab.addEventListener("click", () => selectExplorerTab(name));
