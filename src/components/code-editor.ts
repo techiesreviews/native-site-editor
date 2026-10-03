@@ -26,12 +26,33 @@ function linkToCanvas(editor: monaco.editor.ICodeEditor, path: string, model: mo
     const version = model.getVersionId();
     return { source: model.getValue(), stale: () => model.isDisposed() || model.getVersionId() !== version };
   };
+  // A range of text being selected is about text, not an element: a cursor
+  // move counts only while the selection stays empty.
+  const empty = () => editor.getSelection()?.isEmpty() !== false;
+  const cursor = (position: monaco.IPosition) => {
+    const shot = snapshot();
+    tell({ path, kind: "cursor", offset: model.getOffsetAt(position), source: shot.source, stale: () => shot.stale() || !empty() });
+  };
+  let pressed = false;
   editor.onDidChangeCursorPosition((event) => {
-    // Typing, undo and the editor's own reveals move the cursor too, and
-    // a range being selected is about text; none of them is pointing.
-    if ((event.source !== "mouse" && event.source !== "keyboard") || event.reason !== monaco.editor.CursorChangeReason.Explicit) return;
-    if (editor.getSelection()?.isEmpty() === false) return;
-    tell({ path, kind: "cursor", offset: model.getOffsetAt(event.position), ...snapshot() });
+    // Typing, undo and the editor's own reveals move the cursor too; they
+    // are not pointing. A press counts when it is let go (it may become a drag).
+    if (event.source !== "keyboard" || event.reason !== monaco.editor.CursorChangeReason.Explicit) return;
+    if (empty()) cursor(event.position);
+    else tell({ path, kind: "range" });
+  });
+  editor.onMouseDown((event) => {
+    // In the text, not on a fold chevron or the scrollbar.
+    const type = event.target.type;
+    pressed = event.event.leftButton &&
+      (type === monaco.editor.MouseTargetType.CONTENT_TEXT || type === monaco.editor.MouseTargetType.CONTENT_EMPTY);
+    tell({ path, kind: "range" });
+  });
+  editor.onMouseUp(() => {
+    if (!pressed) return;
+    pressed = false;
+    const position = editor.getPosition();
+    if (position && empty()) cursor(position);
   });
   let line = 0;
   editor.onMouseMove((event) => {

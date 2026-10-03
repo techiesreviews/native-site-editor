@@ -512,6 +512,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       ready = true;
       postTheme();
       if (canvas.spacing()) toCanvas({ type: "canvas-spacing", on: true });
+      lastAvoid = "";
+      postAvoid();
       pins.reset();
       schedule();
       return;
@@ -695,6 +697,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function clearSelection() {
     staleClick = false;
+    codeLink.cancel();
     canvas.setCrumbs([]);
     editBar.hide();
     postClearSelection();
@@ -704,6 +707,22 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The code pane's cursor selects its element here (as a refresh, so the
   // cursor stays put; the canvas scrolls only to an element out of sight),
   // and the line under the pointer gets a soft dashed box (code-link.ts).
+  // Canvas labels keep clear of the edit bar: the runtime hears where it
+  // stands over the frame (frame-viewport coordinates), or that it is hidden.
+  let lastAvoid = "";
+  const postAvoid = () => {
+    const bar = editBar.element;
+    const at = bar.hidden ? undefined : bar.getBoundingClientRect();
+    const box = frame.getBoundingClientRect();
+    const rect = at && at.width ? { top: at.top - box.top, left: at.left - box.left, bottom: at.bottom - box.top, right: at.right - box.left } : null;
+    const key = JSON.stringify(rect);
+    if (key === lastAvoid) return;
+    lastAvoid = key;
+    toCanvas({ type: "canvas-avoid", rect });
+  };
+  const avoidWatch = new MutationObserver(() => requestAnimationFrame(postAvoid));
+  avoidWatch.observe(editBar.element, { attributes: true, attributeFilter: ["style", "hidden"], childList: true });
+
   const codeLink = linkCodeToCanvas({
     owns: (path) => Boolean(site && mounted && ready && !viewing && nativeSitePaths(site).includes(path)),
     hint: (request) => toCanvas({ type: "canvas-hint", request: request ?? null }),
@@ -881,6 +900,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       editBar.destroy();
       canvas.destroy();
       codeLink.destroy();
+      avoidWatch.disconnect();
       pins.destroy();
       stopTheme();
       insertControls.destroy();

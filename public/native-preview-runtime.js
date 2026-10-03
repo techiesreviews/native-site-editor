@@ -2061,6 +2061,8 @@
   var canvasLabel = null;
   var canvasHintBox = null;
   var canvasSpacingBoxes = null;
+  // Where the editor's edit bar stands over the frame, for labels to keep clear of.
+  var canvasAvoid = null;
   function canvasOverlay(name) {
     var el = document.createElement("div");
     el.setAttribute("data-native-selection-box", name);
@@ -2144,10 +2146,22 @@
     canvasLabel.style.background = color;
     canvasLabel.style.color = canvasInk(color);
     canvasLabel.style.display = "block";
-    // Above the element's top-left corner, or just inside it at the top of the page.
-    var top = rect.top >= 18 ? rect.top - 17 : rect.top + 1;
-    canvasLabel.style.left = Math.max(0, rect.left) + window.scrollX + "px";
+    // At the element's left edge, kept inside the frame's width.
+    var width = canvasLabel.offsetWidth;
+    var left = Math.max(0, Math.min(rect.left, document.documentElement.clientWidth - width));
+    // Above the element's top-left corner, else just inside it, else below
+    // it: the first place clear of the edit bar.
+    var places = [rect.top + 1, rect.bottom + 1];
+    if (rect.top >= 18) places.unshift(rect.top - 17);
+    var top = places.find(function (y) { return !canvasCovered(left, y, width, 16); });
+    if (top === undefined) top = places[0];
+    canvasLabel.style.left = left + window.scrollX + "px";
     canvasLabel.style.top = top + window.scrollY + "px";
+  }
+  // Whether a box (frame-viewport coordinates) falls under the edit bar.
+  function canvasCovered(left, top, width, height) {
+    var bar = canvasAvoid;
+    return !!bar && left < bar.right && left + width > bar.left && top < bar.bottom && top + height > bar.top;
   }
   function canvasPlace(box, left, top, width, height, value) {
     if (!(width > 0.5 && height > 0.5)) { box.style.display = "none"; return; }
@@ -2219,6 +2233,9 @@
     var up = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === "ArrowUp";
     var esc = e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey;
     if ((!up && !esc) || !selected || !selected.isConnected || sectionDrag) return;
+    // A form field on the page (in a component too) keeps its own keys.
+    var target = typeof e.composedPath === "function" ? e.composedPath()[0] : e.target;
+    if (target instanceof Element && /^(input|textarea|select)$/.test(target.localName)) return;
     // Escape first drops what was typed (onEditingKey); the next one climbs.
     if (esc && editing && editing.innerHTML !== editingHtml) return;
     e.preventDefault();
@@ -2231,6 +2248,12 @@
     if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "theme") {
       if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
+      updateBoxes();
+      return;
+    }
+    if (msg.type === "canvas-avoid") {
+      var bar = msg.rect;
+      canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
       updateBoxes();
       return;
     }
@@ -2263,8 +2286,9 @@
     // moving the cursor (a refresh), and scrolled to when out of sight.
     if (msg.type === "canvas-code-select") {
       var wanted = resolveNodePath(msg.request);
-      if (!wanted || wanted === selected) return;
-      canvasSelect(wanted, "refresh");
+      if (!wanted) return;
+      // Already selected: nothing to report, but it is still brought into sight.
+      if (wanted !== selected) canvasSelect(wanted, "refresh");
       var rect = wanted.getBoundingClientRect();
       if (rect.bottom < 0 || rect.top > window.innerHeight) {
         var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;

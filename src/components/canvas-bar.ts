@@ -124,8 +124,10 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
     const gutter = parseFloat(getComputedStyle(frameHost).getPropertyValue("--canvas-gutter")) || 0;
     return frameHost.clientWidth - 2 * gutter;
   }
+  // The width the frame has or is moving to (a transition may be under way):
+  // a framed width as far as the canvas allows, else the whole canvas.
   function shownWidth() {
-    return Math.round(stage.getBoundingClientRect().width);
+    return Math.round(width === "fill" ? frameHost.clientWidth : Math.min(width, available()));
   }
   function showWidth() {
     const shown = shownWidth();

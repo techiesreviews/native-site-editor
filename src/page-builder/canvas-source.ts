@@ -35,15 +35,21 @@ export function elementPathAtOffset(html: string, offset: number): number[] | un
   if (!last) return undefined;
   const chain: Element[] = [];
   for (let el: Element | null = last; el; el = el.parentElement) if (el.hasAttribute(MARK)) chain.push(el);
-  const extents: SourceExtent[] = chain.map((el) => {
+  // Outermost first: an element whose end tag is implied (`<div><p>Hi</div>`)
+  // ends no later than its parent's end tag begins.
+  const extents: SourceExtent[] = [];
+  let limit = end;
+  for (let at = chain.length - 1; at >= 0; at--) {
+    const el = chain[at];
     const tag = tagOf(el)!;
     // The element ends before the next start tag outside it; its end tag
     // tells exactly where, when it can be told apart.
     const following = marked.slice(marked.indexOf(el) + 1).find((other) => !el.contains(other));
-    const boundary = following ? tagOf(following)!.start : end;
+    const boundary = Math.min(following ? tagOf(following)!.start : end, limit);
     const range = elementEnd(html, tags, tags.indexOf(tag), boundary);
-    return { start: tag.start, end: range ? range.end : boundary };
-  });
+    extents[at] = { start: tag.start, end: range ? range.end : boundary };
+    limit = range?.close ? range.close.start : boundary;
+  }
   const found = chain[innermostAt(extents, offset)];
   if (!found) return undefined;
   const path: number[] = [];

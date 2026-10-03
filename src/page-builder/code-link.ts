@@ -38,7 +38,9 @@ export function linkCodeToCanvas(target: CodeLinkTarget) {
   function onPointer(event: Event) {
     const pointer = (event as CustomEvent<CodePointer>).detail;
     if (!pointer || typeof pointer.path !== "string" || !target.owns(pointer.path)) return;
-    if (pointer.kind === "leave") {
+    if (pointer.kind === "range") {
+      window.clearTimeout(cursorTimer);
+    } else if (pointer.kind === "leave") {
       window.clearTimeout(hoverTimer);
       hint(undefined);
     } else if (pointer.kind === "hover") {

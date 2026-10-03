@@ -98,4 +98,6 @@ export function innermostAt(extents: SourceExtent[], offset: number) {
 export const CODE_POINTER_EVENT = "native-code-pointer";
 export type CodePointer =
   | { path: string; kind: "cursor" | "hover"; offset: number; source: string; stale: () => boolean }
-  | { path: string; kind: "leave" };
+  | { path: string; kind: "leave" }
+  /** A press or a range of text began: a cursor move still waiting is dropped. */
+  | { path: string; kind: "range" };

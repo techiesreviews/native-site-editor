@@ -183,3 +183,131 @@ test("the spacing overlay shades margin and padding", async ({ page }) => {
   await toggle.click();
   await expect(padding).toHaveCount(0);
 });
+
+test("implied end tags map to their parent and pending code pointers can be cancelled", async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const { elementPathAtOffset } = await import('/src/page-builder/canvas-source.ts');
+    const { linkCodeToCanvas } = await import('/src/page-builder/code-link.ts');
+    const cases = ['<div><p>Hi</div>', '<ul><li>one<li>two</ul>', '<main><section><p>Hi</section></main>'];
+    const mapped = cases.map(source => elementPathAtOffset(source, source.indexOf('</')));
+    const selected: number[][] = [];
+    const link = linkCodeToCanvas({ owns: () => true, hint: () => {}, select: request => selected.push(request.node) });
+    const cursor = () => window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'cursor', source: '<div><p>Hi</p></div>', offset: 6, stale: () => false } }));
+    cursor();
+    window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'range' } }));
+    await new Promise(resolve => setTimeout(resolve, 180));
+    const afterRange = selected.length;
+    cursor();
+    link.cancel();
+    await new Promise(resolve => setTimeout(resolve, 180));
+    const afterClear = selected.length;
+    cursor();
+    await new Promise(resolve => setTimeout(resolve, 180));
+    link.destroy();
+    return { mapped, afterRange, afterClear, selected };
+  });
+  expect(result).toEqual({ mapped: [[0], [0], [0, 0]], afterRange: 0, afterClear: 0, selected: [[0, 0]] });
+});
+
+test("width arrows accumulate their target during motion and survive blur", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const width = page.getByRole('textbox', { name: 'Frame width in pixels' });
+  await width.fill('600');
+  await width.press('Enter');
+  await expect.poll(() => frameWidth(page)).toBe(600);
+  await width.press('ArrowUp');
+  await width.press('ArrowUp');
+  await width.press('Shift+ArrowUp');
+  await expect(width).toHaveValue('612');
+  await page.locator('.canvas-bar').click({ position: { x: 5, y: 5 } });
+  await expect.poll(() => frameWidth(page)).toBe(612);
+});
+
+test("native form fields keep parent-navigation shortcuts, including shadow fields", async ({ page }) => {
+  const frame = page.frameLocator('.native-preview-frame');
+  await frame.locator('.hero h1').click();
+  await expect(current(page)).toHaveText('h1');
+  const results = await frame.locator('body').evaluate(() => {
+    const targets: HTMLElement[] = [document.createElement('input'), document.createElement('textarea'), document.createElement('select')];
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const nested = document.createElement('textarea');
+    shadow.append(nested);
+    document.body.append(host, ...targets);
+    return [...targets, nested].map(target => {
+      target.focus();
+      const event = new KeyboardEvent('keydown', { key: 'ArrowUp', ctrlKey: true, bubbles: true, composed: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  });
+  expect(results).toEqual([false, false, false, false]);
+  await expect(current(page)).toHaveText('h1');
+});
+
+test("mobile hover labels stay in the viewport and clear the edit bar", async ({ page }) => {
+  await page.getByRole('button', { name: 'Mobile, 390 px' }).click();
+  await expect.poll(() => frameWidth(page)).toBe(390);
+  const frame = page.frameLocator('.native-preview-frame');
+  const target = frame.locator('.hero h1');
+  await target.evaluate(el => {
+    el.className = 'a-very-long-class-name-that-must-fit-in-the-narrow-canvas';
+    (el as HTMLElement).style.cssText = 'position:relative;left:300px;width:40px;font-size:12px';
+  });
+  await target.hover();
+  const label = frame.locator('[data-native-selection-box=label]');
+  await expect(label).toBeVisible();
+  const geometry = await label.evaluate(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right, width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+  expect(geometry.scroll).toBe(390);
+  await frame.locator(".hero p.lead").click();
+  await expect(page.getByRole('toolbar', { name: 'Edit bar' })).toBeVisible();
+  await page.locator(".canvas-bar").hover();
+  await target.hover();
+  await expect(label).toBeVisible();
+  const bar = (await page.getByRole('toolbar', { name: 'Edit bar' }).boundingBox())!;
+  await expect.poll(async () => {
+    const at = (await label.boundingBox())!;
+    return at.x < bar.x + bar.width && at.x + at.width > bar.x && at.y < bar.y + bar.height && at.y + at.height > bar.y;
+  }).toBe(false);
+});
+
+test("code navigation reveals an element that remains selected after manual scrolling", async ({ page }) => {
+  const frame = page.frameLocator('.native-preview-frame');
+  await frame.locator('.hero h1').click();
+  await expect(current(page)).toHaveText('h1');
+  await frame.locator('body').evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => frame.locator('.hero h1').evaluate(el => el.getBoundingClientRect().bottom)).toBeLessThan(0);
+  const node = await frame.locator('.hero h1').evaluate(el => {
+    const path: number[] = [];
+    for (let at: Element | null = el; at && at.id !== 'page'; at = at.parentElement) path.unshift([...at.parentElement!.children].indexOf(at));
+    return path;
+  });
+  await page.locator('.native-preview-frame').evaluate((el, node) => {
+    (el as HTMLIFrameElement).contentWindow!.postMessage({ source: 'astro-native-preview-host', type: 'canvas-code-select', request: { path: 'index.html', node } }, '*');
+  }, node);
+  await expect.poll(() => frame.locator('.hero h1').evaluate(el => el.getBoundingClientRect().bottom)).toBeGreaterThan(0);
+  await expect(current(page)).toHaveText('h1');
+});
+
+test("dragging a code range and clearing the canvas cancel pending cursor selection", async ({ page }) => {
+  const frame = page.frameLocator('.native-preview-frame');
+  await frame.locator('.hero h1').click();
+  await expect(current(page)).toHaveText('h1');
+  const line = page.locator('#content .view-line').filter({ hasText: '<section class="hero"' });
+  const box = (await line.boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 150, box.y + box.height / 2, { steps: 4 });
+  await page.waitForTimeout(180);
+  await page.mouse.up();
+  await page.waitForTimeout(180);
+  await expect(current(page)).toHaveText('h1');
+  // Queue a cursor event then clear through the real canvas-clear path before its debounce fires.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'cursor', source: '<main><section><h1>Title</h1></section></main>', offset: 16, stale: () => false } })));
+  await crumbs(page).first().click();
+  await expect(crumbs(page)).toHaveText(['body']);
+  await page.waitForTimeout(180);
+  await expect(crumbs(page)).toHaveText(['body']);
+});
