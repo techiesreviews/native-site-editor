@@ -398,3 +398,37 @@
     animation: none;
   }
 }
+
+/* Separate sibling actions preserve the instance selector and section grip. */
+.edit-bar__component-name {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.edit-bar__component-edit {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  color: var(--component);
+  background: var(--panel-surface);
+  opacity: 0;
+}
+.edit-bar__component-name:hover .edit-bar__component-edit,
+.edit-bar__component-name:focus-within .edit-bar__component-edit {
+  opacity: 0.65;
+}
+.edit-bar__component-name .edit-bar__component-edit:hover,
+.edit-bar__component-name .edit-bar__component-edit:focus-visible {
+  opacity: 1;
+  background: var(--hover);
+}
+@media (hover: none) {
+  .edit-bar__component-edit {
+    opacity: 0.65;
+  }
+}

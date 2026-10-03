@@ -71,7 +71,7 @@ row in view above it.
 
 ## Edit component
 
-*Edit component* (edit bar and panel) opens the template in the code pane and
+The pencil over the component name in the edit bar (or *Edit component* in the panel) opens the template in the code pane and
 selects, in the instance being worked on, the template element that shows the
 selected slot (the root element when the instance itself was selected); the
 slot's own tag is then selected in the code. A violet strip over the preview
@@ -195,3 +195,5 @@ The seam browser test runs the production component controller with mocked compo
   attributes are edited as plain text.
 - Make component does not offer to move CSS, and does not create a loader for
   a site without one.
+
+The edit bar name reveals a faded pencil on hover and keyboard focus; touch devices show it continuously. The pencil is a separate, named button. Inside a component, clicking the context name still selects its host instance. The section name and grip retain their drag behavior. Stale pencils cannot open a template after selection or source changes.

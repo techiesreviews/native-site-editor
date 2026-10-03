@@ -284,7 +284,25 @@ export function createComponentTools(deps: ComponentDeps) {
   /** The edit bar's component identity for a selection: the mark on an instance, the chip inside one. */
   function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context"> {
     const out: Pick<EditBarModel, "component" | "context"> = {};
-    if (isComponent(selection.tag)) out.component = { tag: selection.tag };
+    const revision = deps.revision();
+    const path = deps.currentPath();
+    const source = deps.sources()[selection.path];
+    const editor = deps.editor();
+    const selectionKey = (value: NativePreviewSelection | undefined) => value && JSON.stringify({
+      path: value.path, tag: value.tag, node: value.node, selector: value.selector, host: value.host,
+    });
+    const expectedSelection = selectionKey(selection);
+    const guardedEdit = (tag: string, within?: string) => {
+      const template = templateOf(tag);
+      const templateSource = template && deps.sources()[template.path];
+      return () => {
+        if (selectionKey(deps.selection()) !== expectedSelection || deps.revision() !== revision || deps.currentPath() !== path
+          || deps.editor() !== editor || deps.sources()[selection.path] !== source
+          || !template || templateOf(tag)?.path !== template.path || deps.sources()[template.path] !== templateSource) return;
+        void editComponent(tag, within);
+      };
+    };
+    if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag) };
     // The instance around the selection: in the same file, else (for an
     // element of a template) the instance on the page it renders in.
     const at = locate(selection, true);
@@ -295,6 +313,7 @@ export function createComponentTools(deps: ComponentDeps) {
         label,
         title: at.within ? `In the ${slotLabel(at.within).toLowerCase()} slot of ${label}: select the instance` : `Select the ${label} instance`,
         onSelect: () => deps.preview()?.selectNode({ path: at.path, node: at.node }),
+        onEdit: guardedEdit(at.tag, at.within),
       };
     } else if (host && isComponent(host.tag)) {
       const label = componentLabel(host.tag);
@@ -302,6 +321,7 @@ export function createComponentTools(deps: ComponentDeps) {
         label,
         title: host.path && host.node ? `Select this ${label} instance` : `Inside the ${label} component`,
         onSelect: () => void selectHost(host),
+        onEdit: guardedEdit(host.tag),
       };
     }
     return out;
@@ -317,12 +337,10 @@ export function createComponentTools(deps: ComponentDeps) {
   function controls(selection: NativePreviewSelection): EditBarControl[] {
     const out: EditBarControl[] = [];
     if (isComponent(selection.tag)) {
-      out.push({ kind: "button", label: "Edit component", title: `Open <${selection.tag}>'s template, which every instance shares`, className: "edit-bar__component-action", onPress: () => void editComponent(selection.tag) });
       return out;
     }
     const at = selection.host ? undefined : locate(selection);
     if (at) {
-      out.push({ kind: "button", label: "Edit component", title: `Open <${at.tag}>'s template at this part`, className: "edit-bar__component-action", onPress: () => void editComponent(at.tag, at.within) });
       return out;
     }
     // A part of a page (not inside a template) can become a component.

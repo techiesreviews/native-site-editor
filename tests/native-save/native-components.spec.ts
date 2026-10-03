@@ -78,7 +78,20 @@ test("an instance wears the component accent in the bar, the page structure and 
   const kind = bar(page).locator(".edit-bar__kind");
   await expect(kind).toHaveClass(/edit-bar__kind--component/);
   await expect(kind).toHaveAttribute("title", "<project-card>");
-  await expect(bar(page).getByRole("button", { name: "Edit component" })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Edit Project card component", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Edit component", exact: true })).toHaveCount(0);
+  const pencil = bar(page).getByRole("button", { name: "Edit Project card component", exact: true });
+  await page.mouse.move(0, 0);
+  await expect(pencil).toHaveCSS("opacity", "0");
+  const bounds = await bar(page).boundingBox();
+  await kind.hover();
+  await expect(pencil).toHaveCSS("opacity", "0.65");
+  expect(await bar(page).boundingBox()).toEqual(bounds);
+  await pencil.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
+  await expect(pencil).toBeFocused();
+  await expect(pencil).toHaveCSS("opacity", "1");
   // The canvas: the selection box in the component accent.
   const accent = await componentColor(page);
   await expect.poll(() => box(page, "selected").evaluate((el) => getComputedStyle(el).borderTopColor)).toBe(accent);
@@ -180,7 +193,10 @@ test("the properties panel edits an instance's slots and attributes as page sour
 test("Edit component opens the template at the part, says what an edit changes, and goes back", async ({ page }) => {
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
-  await bar(page).getByRole("button", { name: "Edit component" }).click();
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   const banner = page.locator(".component-banner");
   await expect(banner).toBeVisible();
@@ -202,7 +218,7 @@ test("Edit component opens the template at the part, says what an edit changes, 
 
   // From the instance: the template's root is selected; Done goes back to the instance.
   await row(page, "Project card Fast edits").click();
-  await bar(page).getByRole("button", { name: "Edit component" }).click();
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
   await banner.getByRole("button", { name: "Done" }).click();
@@ -426,5 +442,33 @@ test("Make component refuses a page replacement made while its preview dialog is
     expect(await storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
   } finally {
     await client.close();
+  }
+});
+
+
+test("replaced component pencils cannot navigate after selection changes", async ({ page }) => {
+  await selectFirstCard(page);
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).evaluate((el) => {
+    (window as unknown as { oldComponentPencil: HTMLElement }).oldComponentPencil = el as HTMLElement;
+  });
+  await select(page, "project-card span[slot='title']");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
+  await page.evaluate(() => (window as unknown as { oldComponentPencil: HTMLElement }).oldComponentPencil.click());
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
+});
+
+test("component name pencil stays exposed on touch devices", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  try {
+    await open(page, baseURL);
+    await selectFirstCard(page);
+    const pencil = bar(page).getByRole("button", { name: "Edit Project card component", exact: true });
+    await expect(pencil).toHaveCSS("opacity", "0.65");
+    await pencil.tap();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
+  } finally {
+    await context.close();
   }
 });

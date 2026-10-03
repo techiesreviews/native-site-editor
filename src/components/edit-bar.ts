@@ -1,7 +1,7 @@
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pins";
-import { componentIcon } from "../page-builder/component-icon";
+import { componentIcon, mark } from "../page-builder/component-icon";
 import "./edit-bar.css";
 
 // The edit bar: contextual controls anchored to the element selected in the
@@ -134,10 +134,10 @@ export interface EditBarModel {
   draggable?: boolean;
   // The selection is a component instance: its name wears the component
   // mark and accent (src/page-builder/components.ts), `tag` in its tooltip.
-  component?: { tag: string };
+  component?: { tag: string; onEdit?: () => void };
   // The selection sits inside an instance (what the page slots in, or the
   // template's own): a chip before the name selects that instance.
-  context?: { label: string; title: string; onSelect: () => void };
+  context?: { label: string; title: string; onSelect: () => void; onEdit?: () => void };
 }
 
 // A point in the frame's viewport, as the page inside it measures it.
@@ -208,7 +208,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > select")];
+    return [...bar.querySelectorAll<HTMLElement>("button:not([disabled]), :scope > select")];
   }
 
   function closePopover(restoreFocus: boolean) {
@@ -788,6 +788,19 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       kindName.prepend(componentIcon(12));
       kindName.title = `<${model.component.tag}>`;
     } else kindName.removeAttribute("title");
+    function editableName(name: HTMLElement, onEdit: () => void, label: string) {
+      const region = node("span", "edit-bar__component-name");
+      name.replaceWith(region);
+      const pencil = button("", () => {
+        if (!bar.hidden && bar.contains(pencil)) onEdit();
+      }, "edit-bar__button edit-bar__component-edit");
+      pencil.setAttribute("aria-label", `Edit ${label} component`);
+      pencil.title = `Edit ${label} component`;
+      pencil.append(mark("edit", 16, "edit-bar__icon"));
+      pencil.addEventListener("pointerdown", (event) => event.stopPropagation());
+      region.append(name, pencil);
+    }
+    if (model.component?.onEdit) editableName(kindName === gripName ? grip : kindName, model.component.onEdit, model.kind);
     if (model.context) {
       const { onSelect } = model.context;
       const chip = button("", () => onSelect(), "edit-bar__button edit-bar__context");
@@ -795,6 +808,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.setAttribute("aria-label", model.context.title);
       chip.title = model.context.title;
       bar.prepend(chip);
+      if (model.context.onEdit) editableName(chip, model.context.onEdit, model.context.label);
     }
     for (const control of model.controls) {
       if (control.kind === "button") {
