@@ -33,6 +33,7 @@ async function grid(page: Page) {
   await page.evaluate(() => {
     const harness = (window as any).collectionTest; harness.panel.openGrid("index.html", harness.start);
   });
+  await page.locator(".collections-panel__advanced > summary").click();
   await page.getByLabel("Card template HTML").fill(`<article><a href="{url}">{title}</a><img src="{image}" data-if="image"></article>`);
 }
 const panel = (page: Page) => page.getByRole("region", { name: "Collections and page fields" });

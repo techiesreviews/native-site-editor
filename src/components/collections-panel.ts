@@ -19,25 +19,44 @@ export interface CollectionsDeps {
 export interface CollectionsPanel {
   update(): void;
   openGrid(path: string, sourceStart: number): void;
+  pageFieldsDirty(): boolean;
+  pageFieldSource(source: string): string;
   destroy(): void;
 }
-export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps): CollectionsPanel {
+export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean } = {}): CollectionsPanel {
   const root = node("section", "collections-panel");
   root.setAttribute("aria-label", "Collections and page fields");
   host.append(root);
   let destroyed = false;
-  const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision() });
-  const current = (saved: ReturnType<typeof snapshot>) => saved.revision === deps.revision() && JSON.stringify(saved.routes) === JSON.stringify(deps.routes()) && JSON.stringify(saved.identity) === JSON.stringify(deps.identity()) && Object.entries(saved.sources).every(([path, source]) => deps.sources()[path] === source);
+  let applying = false;
+  let activeForm: HTMLElement | undefined;
+  let cleanStamp = "";
+  let fieldSource: ((source: string) => string) | undefined;
+  let activeSnapshot: ReturnType<typeof snapshot> | undefined;
+  let fieldForm: HTMLElement | undefined;
+  const stamp = (form: HTMLElement) => JSON.stringify([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].map(input => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
+  const dirty = () => Boolean(activeForm && stamp(activeForm) !== cleanStamp);
+  const track = (form: HTMLElement, saved: ReturnType<typeof snapshot>) => { activeForm = form; activeSnapshot = saved; cleanStamp = stamp(form); };
+  const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision(), page: deps.page() });
+  const current = (saved: ReturnType<typeof snapshot>) => saved.page === deps.page() && saved.revision === deps.revision() && Object.keys(saved.sources).length === Object.keys(deps.sources()).length && JSON.stringify(saved.routes) === JSON.stringify(deps.routes()) && JSON.stringify(saved.identity) === JSON.stringify(deps.identity()) && Object.entries(saved.sources).every(([path, source]) => deps.sources()[path] === source);
   const status = node("p", "collections-panel__status");
   status.setAttribute("role", "status");
   const report = (message: string) => { status.textContent = message; deps.announce(message); };
   const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult, label: string) => {
-    if (destroyed) return;
+    if (destroyed || applying) return;
     if ("error" in plan) { report(plan.error); return; }
     if (!current(saved)) { report("The page or repository changed. Reopen the collection panel before applying."); return; }
-    const applied = await deps.apply(plan, saved.revision, label);
+    const submittedForm = activeForm, submittedStamp = submittedForm && stamp(submittedForm);
+    let applied: boolean;
+    applying = true;
+    try { applied = await deps.apply(plan, saved.revision, label); }
+    catch (error) { if (!destroyed) report(error instanceof Error ? error.message : "The collection could not be applied."); return; }
+    finally { applying = false; }
     if (destroyed) return;
-    if (applied) { update(); report(label); }
+    if (applied) {
+      if (activeForm === submittedForm && submittedForm && stamp(submittedForm) === submittedStamp) { activeForm = undefined; update(); report(label); }
+      else report(`${label}. Newer input was kept; reopen before applying again.`);
+    }
   };
   function control(form: HTMLElement, label: string, value: string, multiline = false) {
     const wrap = node("label", "collections-panel__field");
@@ -50,41 +69,65 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
   }
   function update() {
     if (destroyed) return;
-    root.replaceChildren(node("h2", "", "Page fields"));
+    if (dirty()) {
+      if (activeSnapshot && !current(activeSnapshot)) report("The page or repository changed. Your input was kept; reopen before applying.");
+      return;
+    }
+    activeForm = undefined; activeSnapshot = undefined;
+    fieldSource = undefined; fieldForm = undefined;
+    root.replaceChildren(...(options.settings ? [] : [node("h2", "", "Page fields")]));
     const path = deps.page(), saved = snapshot();
     if (!path || saved.sources[path] === undefined) { root.append(node("p", "", "Open a page to edit its fields."), status); return; }
     const url = Object.entries(saved.routes).find(([, file]) => file === path)?.[0] ?? "";
     root.append(node("p", "collections-panel__scope", `Page fields · ${url}`));
     const fields = readPageFields(saved.sources[path], url, saved.identity);
-    const form = node("form", "collections-panel__form");
-    const inputs = Object.entries(fields).filter(([name]) => name !== "url").map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
+    const form = node(options.settings ? "div" : "form", "collections-panel__form");
+    const inputs = Object.entries(fields).filter(([name]) => name !== "url" && (!options.settings || !["title", "description", "image"].includes(name))).map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
     const customName = control(form, "New custom field name", "");
     const customValue = control(form, "New custom field value", "");
-    const apply = node("button", "button primary", "Apply page fields"); apply.type = "submit";
-    form.append(apply);
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      try {
-        let source = saved.sources[path];
-        for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
-        if (customName.value.trim()) source = withCustomPageField(source, customName.value.trim(), customValue.value, saved.identity);
-        void submit(saved, planCollectionChange(saved.sources, { ...saved.sources, [path]: source }, saved.routes, saved.identity), "Page fields and collections updated");
-      } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
-    });
-    root.append(form, node("h2", "", "Collections"));
+    const stage = (source: string) => {
+      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
+      for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
+      const name = customName.value.trim();
+      if (name) {
+        const changed = withCustomPageField(source, name, customValue.value, saved.identity);
+        if (fields[name] !== customValue.value) source = changed;
+      }
+      return source;
+    };
+    fieldSource = stage; fieldForm = form;
+    if (!options.settings) {
+      const apply = node("button", "button primary", "Apply page fields"); apply.type = "submit";
+      form.append(apply, button("Cancel changes", () => { activeForm = undefined; update(); }));
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        try {
+          const source = stage(saved.sources[path]);
+          void submit(saved, planCollectionChange(saved.sources, { ...saved.sources, [path]: source }, saved.routes, saved.identity), "Page fields and collections updated");
+        } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
+      });
+    }
+    track(form, saved);
+    root.append(form, ...(options.settings ? [] : [node("h2", "", "Collections")]));
     const baked = planBake(saved.sources, saved.routes, saved.identity);
     if ("error" in baked) root.append(node("p", "", baked.error));
     else for (const collection of baked.collections.filter((item) => item.path === path)) {
       const block = node("div", "collections-panel__collection");
       block.append(node("h3", "", `Pages from ${collection.folders.join(", ")}`), node("p", "", `${collection.records.length} matching ${collection.records.length === 1 ? "page" : "pages"}`));
       for (const record of collection.records) block.append(button(`Edit page: ${record.fields.title || record.url}`, () => deps.openPage(record.path)));
-      block.append(button("Edit card design in source", () => deps.openPage(path)), node("pre", "collections-panel__preview", collection.template));
+      block.append(button("Edit card design in source", () => deps.openPage(path)));
+      const advanced = node("details", "collections-panel__advanced");
+      advanced.append(node("summary", "", "Advanced"), node("pre", "collections-panel__preview", collection.template));
+      block.append(advanced);
       root.append(block);
     }
     root.append(status);
   }
   function openGrid(path: string, sourceStart: number) {
     if (destroyed) return;
+    if (options.settings) { report("Select a grid and open its collection settings."); return; }
+    if (dirty()) { report("Apply or reopen the current fields before opening another collection."); return; }
+    fieldSource = undefined; fieldForm = undefined;
     const saved = snapshot(), source = saved.sources[path];
     if (source === undefined) { report("Load the page before making a collection."); return; }
     const el = [...descendants(parseSource(source))].find((item) => item.start === sourceStart);
@@ -114,10 +157,12 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     const sort = control(form, "Sort by field (-date for newest first)", existing?.spec.sort ?? "-date");
     const filter = control(form, "Exact filter (category=Pottery)", existing?.spec.filter ?? "");
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
-    const template = control(form, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
+    const advanced = node("details", "collections-panel__advanced");
+    advanced.append(node("summary", "", "Advanced"));
+    const template = control(advanced, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
     const originalTemplate = existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : template.value;
     const displayedTemplate = template.value;
-    form.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
+    advanced.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
     const preview = node("pre", "collections-panel__preview");
     const result = node("p"); result.setAttribute("role", "status");
     let plan: BakeResult = { error: "Preview the collection first." };
@@ -137,10 +182,17 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps):
     };
     form.addEventListener("input", refresh);
     const apply = node("button", "button primary", existing ? "Save collection" : "Make collection"); apply.type = "submit";
-    form.append(result, preview, apply, button("Cancel", update));
+    advanced.append(preview);
+    form.append(result, advanced, button("Edit card design in source", () => deps.openPage(path)), apply, button("Cancel", () => { activeForm = undefined; update(); }));
     form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, existing ? "Collection saved" : "Grid made into a collection"); });
-    root.append(form, status); refresh();
+    root.append(form, status); refresh(); track(form, saved);
   }
   update();
-  return { update, openGrid, destroy() { destroyed = true; root.remove(); } };
+  return { update, openGrid,
+    pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
+    pageFieldSource(source) {
+      if (destroyed || !fieldSource) throw new Error("Open a page to edit its fields.");
+      return fieldSource(source);
+    },
+    destroy() { destroyed = true; root.remove(); } };
 }
