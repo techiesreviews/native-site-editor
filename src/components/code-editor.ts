@@ -1,4 +1,5 @@
 import "./code-editor.css";
+import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath, type CssWorkspace } from "../page-builder/css-intelligence";
 import { monaco } from "./monaco";
 import {
   draftStore,
@@ -70,6 +71,8 @@ function linkToCanvas(editor: monaco.editor.ICodeEditor, path: string, model: mo
 
 export interface SourceFile {
   key: string;
+  /** Current, scope-bound CSS sources. The host opens a real editor for definitions. */
+  cssWorkspace?: () => CssWorkspace | undefined;
   path: string;
   source: string;
   readOnly?: boolean;
@@ -830,6 +833,73 @@ export function mountCodeEditor(
     refresh: () => update(),
   };
   mounted.set(file.path, registration);
+  const cssProviders: monaco.IDisposable[] = [];
+  if (isCssPath(file.path) && file.cssWorkspace) {
+    const workspaceFor = (model: monaco.editor.ITextModel) => {
+      if (disposed || model.isDisposed() || model !== current.model || mounted.get(file.path) !== registration) return;
+      const workspace = file.cssWorkspace?.();
+      // A host may update its source map in place while openDefinition awaits.
+      return workspace && { ...workspace, sources: { ...workspace.sources }, orderedPaths: [...workspace.orderedPaths] };
+    };
+    const range = (model: monaco.editor.ITextModel, start: number, end: number) =>
+      monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+    const language = current.model.getLanguageId();
+    cssProviders.push(monaco.languages.registerCompletionItemProvider(language, {
+      triggerCharacters: ["-"],
+      provideCompletionItems(model, position) {
+        const workspace = workspaceFor(model);
+        const token = workspace && cssVariableCompletion(model.getValue(), model.getOffsetAt(position), file.path);
+        if (!workspace || !token) return { suggestions: [] };
+        const declarations = cssVariableDeclarations(workspace);
+        const names = [...new Set(declarations.map(item => item.name))].filter(name => name.startsWith(token.prefix));
+        return { suggestions: names.map(name => ({
+          label: name, kind: monaco.languages.CompletionItemKind.Variable,
+          insertText: token.wrap ? `var(${name})` : name,
+          range: range(model, token.start, token.end),
+          detail: declarations.filter(item => item.name === name).map(item => `${item.path}: ${item.value}`).join("; "),
+        })) };
+      },
+    }));
+    cssProviders.push(monaco.languages.registerHoverProvider(language, {
+      provideHover(model, position) {
+        const workspace = workspaceFor(model);
+        const token = workspace && cssVariableReference(model.getValue(), model.getOffsetAt(position), file.path);
+        if (!workspace || !token) return;
+        const declarations = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
+        if (!declarations.length) return;
+        return { range: range(model, token.start, token.end), contents: declarations.map(item => ({
+          value: `**${item.path.replace(/[\\`*_{}[\]()<>]/g, "\\$&")}**\n\n`,
+        })).flatMap((heading, index) => [heading, { value: "```css\n" + declarations[index].name + ": " + declarations[index].value.replace(/`/g, "\\`") + "\n```" }]) };
+      },
+    }));
+    cssProviders.push(monaco.languages.registerDefinitionProvider(language, {
+      async provideDefinition(model, position, cancellation) {
+        const workspace = workspaceFor(model);
+        const token = workspace && cssVariableReference(model.getValue(), model.getOffsetAt(position), file.path);
+        if (!workspace || !token || cancellation?.isCancellationRequested) return;
+        const version = model.getVersionId();
+        const definitions = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
+        const locations: monaco.languages.Location[] = [];
+        for (const definition of definitions) {
+          let target = mounted.get(definition.path);
+          if (!target || target.model.getValue() !== workspace.sources[definition.path]) {
+            try {
+              if (!await workspace.openDefinition(definition.path, definition.start, definition.end, workspace.revision)) return;
+            } catch { return; }
+            target = mounted.get(definition.path);
+          }
+          const fresh = workspaceFor(model);
+          if (cancellation?.isCancellationRequested || !fresh || fresh.revision !== workspace.revision || model.getVersionId() !== version ||
+            Object.keys(workspace.sources).some(path => fresh.sources[path] !== workspace.sources[path]) ||
+            Object.keys(fresh.sources).length !== Object.keys(workspace.sources).length) return;
+          if (!target || target.session !== session || target.model.isDisposed() || target.model.getValue() !== workspace.sources[definition.path]) return;
+          locations.push({ uri: target.model.uri, range: range(target.model, definition.start, definition.end) });
+        }
+        return locations;
+      },
+    }));
+  }
+
   let mode: "edit" | "review" | "version" = "edit";
   let version: VersionCompare | undefined;
   let destroyView = () => {};
@@ -1151,6 +1221,7 @@ export function mountCodeEditor(
     if (mounted.get(file.path) === registration) mounted.delete(file.path);
     if (marks.length || elementMarks.length) current.model.deltaDecorations([...marks, ...elementMarks], []);
     markers.dispose();
+    for (const provider of cssProviders) provider.dispose();
     file.onContextChange?.(null);
     publisher?.destroy();
     publishers.delete(refreshOutside);
