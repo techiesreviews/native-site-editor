@@ -229,3 +229,58 @@ test("an external draft replacement during awaited visual Undo is preserved and 
   });
   expect(result).toEqual({ accepted: false, exact: true, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" });
 });
+
+test("Files rename retains an open stylesheet's owned model through Undo and Redo", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  const original = await source(page);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
+  const explorer = page.locator("#explorer");
+  const folder = explorer.getByRole("button", { name: "styles", exact: true });
+  if (await folder.getAttribute("aria-expanded") !== "true") await folder.click();
+  await explorer.getByRole("button", { name: "site.css", exact: true }).focus();
+  await page.keyboard.press("F2");
+  const name = explorer.getByRole("textbox", { name: "New name for styles/site.css", exact: true });
+  await name.fill("layout.css");
+  await name.press("Enter");
+  await expect(page.locator("#status")).toContainText("Renamed styles/site.css to styles/layout.css");
+  expect(await source(page)).toBe(original);
+  await history(page, "undo");
+  await expect.poll(() => source(page)).toBe(original);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  await expect(page.locator("#status")).toContainText("Undid renaming styles/site.css");
+  await history(page, "redo");
+  expect(await source(page)).toBe(original);
+  const moved = await page.evaluate(async () => (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "styles/layout.css"));
+  expect(moved?.movedFrom).toBe("styles/site.css");
+  expect(moved?.content).toContain(".hero");
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+});
+
+test("deferred create Undo preserves a newer save outcome instead of announcing early success", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "+ New page", exact: true }).click();
+  const title = page.getByRole("textbox", { name: "New page title", exact: true });
+  await title.fill("Status ownership");
+  await title.press("Enter");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "status-ownership/index.html");
+  await expect(page.locator("#status")).toContainText("Created");
+  const result = await page.evaluate(async () => {
+    const status = document.getElementById("status")!;
+    const before = status.textContent;
+    const accepted = await (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "status-ownership/index.html");
+    const immediate = status.textContent;
+    status.textContent = "Selected files saved to GitHub.";
+    return { accepted, before, immediate };
+  });
+  expect(result.accepted).toBe(true);
+  expect(result.immediate).toBe(result.before);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await expect(page.locator("#status")).toHaveText("Selected files saved to GitHub.");
+});

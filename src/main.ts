@@ -1010,6 +1010,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     );
     secondaryPath = css;
     secondaryHistoryScope = historyScope;
+    nativeHistoryMountCapture?.(css);
     return true;
   } catch (error) {
     if (request === secondaryRequest) errorMessage(error);
@@ -4475,7 +4476,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       modelState: path => editor.captureFileModelState(scope, path, true),
     evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
     prepareSources: changes => editor.prepareHistorySources(changes, true),
-  }, { before, after, beforeSources, afterSources, retainPaths: [anchor] });
+  }, { before, after, beforeSources, afterSources, retainPaths: [anchor, ...[...touched].filter(path => editor.isMounted(path) && afterSources.get(path) === undefined)] });
   let releaseRefresh: (() => void) | undefined = editor.holdHistoryRefresh(anchor);
   if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? changedOperation; receipt?.dispose(); releaseRefresh(); return error; }
   const session = nativeHistorySession(scope, anchor);
@@ -4488,8 +4489,8 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     receipt.dispose();
     for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key);
   };
-  const refresh = async (path: string | undefined, initial = false) => {
-    const changing = [...new Set([anchor, currentPath, next, path].filter((value): value is string => !!value))];
+  const refresh = async (path: string | undefined, initial = false, message?: string, previousStatus = element("status").textContent) => {
+    const changing = [...new Set([anchor, currentPath, next, path, ...touched].filter((value): value is string => !!value))];
     const complete = receipt.beginOwnUITransition(changing);
     if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));
@@ -4500,10 +4501,11 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       // source-only updates cannot change a preview that still points Home.
       afterFileChanges();
       if (!live() || !receipt.isCurrent()) return false;
-      await openAfter(path, !initial || !op.open);
+      await openAfter(path, !initial || !op.open, true);
       if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
       if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(path ? { file: path } : undefined);
+      if (message && live() && receipt.isCurrent() && element("status").textContent === previousStatus) announce(message);
       return true;
     } finally {
       if (nativeHistoryMountCapture === capture) nativeHistoryMountCapture = undefined;
@@ -4513,17 +4515,16 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   };
   const transition = (direction: "undo" | "redo") => {
     if (refreshPending) { announce("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
+    const previousStatus = element("status").textContent;
     releaseRefresh = editor.holdHistoryRefresh(currentPath ?? anchor);
     if (!receipt[direction]()) { releaseRefresh(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     refreshPending = true;
     // runVisualHistory must first accept this exact initiating journal. A
     // macrotask, rather than a microtask, closes it only after that acceptance.
     setTimeout(() => {
-      void refresh(direction === "undo" ? anchor : next).then(accepted => {
-        if (accepted && live() && receipt.isCurrent()) announce(direction === "undo" ? op.undone : done);
-      }).catch(error => { refreshPending = false; errorMessage(error); });
+      void refresh(direction === "undo" ? anchor : next, false, direction === "undo" ? op.undone : done, previousStatus)
+        .catch(error => { refreshPending = false; errorMessage(error); });
     }, 0);
-    announce(direction === "undo" ? op.undone : done);
     return true;
   };
   if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"), dispose)) {
@@ -4531,8 +4532,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   }
   refreshPending = true;
   afterFileChanges();
-  if (!await refresh(next, true)) return receipt.error() ?? "The files changed, but the editor changed while opening them. Review the current drafts.";
-  announce(done);
+  if (!await refresh(next, true, done)) return receipt.error() ?? "The files changed, but the editor changed while opening them. Review the current drafts.";
   return undefined;
 }
 
@@ -4962,11 +4962,11 @@ function afterFileChanges() {
 // Opens `path` after an operation, or the home page (else the folder summary)
 // when it is gone. `keepExplorer`: the explorer stays open (true) or closes
 // (false); by default a new file keeps it open and a branch file closes it.
-async function openAfter(path: string | undefined, keepExplorer?: boolean) {
+async function openAfter(path: string | undefined, keepExplorer?: boolean, quietStatus = false) {
   const epoch = generation;
   const scope = draftScope();
   const draft = path && scope ? draftStore().get(scope, path) : undefined;
-  const keep = { keepExplorer: keepExplorer ?? false };
+  const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
   if (draft && draft.baseSha === null && !draft.deleted) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
   else if (path && !draft?.deleted) await restoreFile(path, epoch, keep);
   else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], epoch, keep);
@@ -5264,10 +5264,13 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
     });
     if (!ok) { announce(`Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`); return undefined; }
   }
-  const error = await applyFileOperation(ops);
-  if (error) return error;
   const what = source.folder ? `the folder ${source.path}` : source.path;
-  announce(operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${parentOf(to) || "the top of the repository"}.`);
+  const done = operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${parentOf(to) || "the top of the repository"}.`;
+  const native = !!nativeSite;
+  const error = native ? await applyNativeOperation({ moves: ops.map(op => ({ from: op.file.path, to: op.to })), done,
+    undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.` }) : await applyFileOperation(ops);
+  if (error) return error;
+  if (!native) announce(done);
   requestAnimationFrame(() => {
     for (let part = parentOf(to); part; part = parentOf(part)) openFolders.add(part);
     if (!fileRow(to)) renderFileTree();
@@ -5430,9 +5433,11 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
     action: "Delete",
   });
   if (!ok) { announce(`Cancelled deleting ${target.path}`); return "Cancelled."; }
-  const error = await applyFileOperation(found.map((file) => ({ file })));
+  const done = target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`;
+  const native = !!nativeSite;
+  const error = native ? await applyNativeOperation({ deletes: found.map(file => file.path), done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
   if (error) { errorMessage(new Error(error)); return error; }
-  announce(target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`);
+  if (!native) announce(done);
   requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
   return undefined;
 }
@@ -5600,14 +5605,14 @@ async function openEntry(
   entry: TreeEntry,
   path: string,
   epoch: number,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean } = {},
+  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean } = {},
 ) {
   if (epoch !== generation || !currentRepo || !snapshot || !info.user) return;
   // A file deleted in the drafts opens as a note with Restore; one renamed
   // or moved opens where it is now.
   const marker = draftStore().get({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, path);
   if (marker?.deleted) {
-    if (marker.movedTo) { await openAfter(marker.movedTo, options.keepExplorer); return; }
+    if (marker.movedTo) { await openAfter(marker.movedTo, options.keepExplorer, options.quietStatus); return; }
     ++fileGeneration;
     if (!options.keepExplorer) explorerDropdown?.close();
     setCurrentPage(path);
@@ -5640,7 +5645,7 @@ async function openEntry(
     return;
   }
   content.replaceChildren(node("p", "empty-message", "Loading source…"));
-  status(`Reading ${path}…`);
+  if (!options.quietStatus) status(`Reading ${path}…`);
   try {
     const content = await readFile(currentRepo.full_name, entry.sha);
     if (epoch !== generation || selection !== fileGeneration) return;
@@ -5653,7 +5658,7 @@ async function openEntry(
       selection,
       options,
     );
-    settleStatus(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
+    if (!options.quietStatus) settleStatus(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
   } catch (error) {
     if (epoch === generation && selection === fileGeneration) {
       content.replaceChildren(
@@ -6093,7 +6098,7 @@ async function applyAgentCommand(command: AgentCommand) {
 async function restoreFile(
   path: string,
   epoch: number,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean } = {},
+  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean } = {},
 ) {
   const selection = ++fileGeneration;
   const repo = currentRepo!;
