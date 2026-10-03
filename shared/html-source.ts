@@ -17,7 +17,7 @@ const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe
 export const MARK = "data-native-src";
 
 // HTML folds ASCII letters only; Unicode lowercasing can also change offset lengths.
-const asciiLower = (text: string) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
+export const asciiLower = (text: string) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
 
 export function startTags(html: string): StartTag[] {
   const out: StartTag[] = [];

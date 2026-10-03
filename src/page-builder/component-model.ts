@@ -19,7 +19,7 @@
 // Every edit here is a range edit of the file the instance is in: the
 // page's own markup inside the instance tag, or the instance's attributes.
 
-import { VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
+import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 
 export interface RangeEdit {
   start: number;
@@ -84,10 +84,10 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
     }
     const next = html[lt + 1] ?? "";
     if (next === "/") {
-      const match = /^<\/([a-zA-Z][^\s/>]*)[^>]*>/.exec(html.slice(lt, to));
+      const match = /^<\/([a-zA-Z][^\t\n\f\r />]*)[^>]*>/.exec(html.slice(lt, to));
       if (!match) { i = lt + 1; continue; }
       flush(lt);
-      const name = match[1].toLowerCase();
+      const name = asciiLower(match[1]);
       const at = stack.map((el) => el.name).lastIndexOf(name);
       if (at >= 0) {
         // The element closed here gets its end tag; those opened in it end with it.
@@ -108,8 +108,8 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
     if (!/[a-zA-Z]/.test(next)) { i = lt + 1; continue; }
     flush(lt);
     let j = lt + 1;
-    while (j < to && !/[\s/>]/.test(html[j])) j++;
-    const name = html.slice(lt + 1, j).toLowerCase();
+    while (j < to && !/[\t\n\f\r />]/.test(html[j])) j++;
+    const name = asciiLower(html.slice(lt + 1, j));
     const nameEnd = j;
     while (j < to && html[j] !== ">") {
       const char = html[j];
@@ -124,7 +124,9 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
     i = text = end;
     if (VOID_ELEMENTS.has(name)) continue;
     if (RAW_TEXT.has(name)) {
-      const close = html.toLowerCase().indexOf(`</${name}`, end);
+      const lower = asciiLower(html);
+      let close = lower.indexOf(`</${name}`, end);
+      while (close >= 0 && !/[\t\n\f\r />]/.test(html[close + name.length + 2] ?? "")) close = lower.indexOf(`</${name}`, close + 2);
       const gt = close < 0 ? -1 : html.indexOf(">", close);
       if (close < 0 || gt < 0 || gt >= to) {
         el.end = to;
@@ -258,10 +260,10 @@ export function decodeEntities(text: string) {
 export function startTagAttributes(html: string, tag: StartTag) {
   const out: { name: string; value: string; start: number; end: number }[] = [];
   const text = html.slice(tag.nameEnd, tag.end);
-  const pattern = /\s+([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  const pattern = /[\t\n\f\r ]+([^\t\n\f\r "'>\/=]+)(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r "'=<>`]+)))?/g;
   for (const match of text.matchAll(pattern)) {
     out.push({
-      name: match[1].toLowerCase(),
+      name: asciiLower(match[1]),
       value: decodeEntities(match[2] ?? match[3] ?? match[4] ?? ""),
       start: tag.nameEnd + match.index,
       end: tag.nameEnd + match.index + match[0].length,
@@ -684,7 +686,7 @@ export function attributeEdit(source: string, tag: StartTag, name: string, value
   }
   if (value === undefined) return { start: tag.end, end: tag.end, text: "" };
   let at = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
-  while (at > tag.nameEnd && /\s/.test(source[at - 1])) at--;
+  while (at > tag.nameEnd && /[\t\n\f\r ]/.test(source[at - 1])) at--;
   return { start: at, end: at, text: ` ${name}="${escaped}"` };
 }
 

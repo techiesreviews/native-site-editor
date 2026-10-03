@@ -45,3 +45,26 @@ test('text selection balance rejects Unicode whitespace/case disguised closing n
   const valid='a<X-İ>b</X-İ>c';
   assert.deepEqual(textRangeInSource(valid,0,3,'abc'),{start:0,end:valid.length});
 });
+
+test('component tokenization preserves Unicode names, attribute values and raw closing offsets',async()=>{
+  const {parseSource,startTagAttributes}=await import('../src/page-builder/component-model');
+  for(const char of ['\u00a0','\u000b','\ufeff']){
+    const source=`<X-İ${char} DATA-İ=x${char}/><b>Child</b></X-İ${char}><script>İstanbul</script${char}>not closed</script><p>after</p>`;
+    const nodes=parseSource(source).filter(node=>node.type==='element');
+    assert.equal(nodes[0].name,`x-İ${char}`);
+    assert.deepEqual(startTagAttributes(source,nodes[0].tag).map(a=>[a.name,a.value]),[['data-İ',`x${char}/`]]);
+    assert.equal(source.slice(nodes[1].start,nodes[1].end),`<script>İstanbul</script${char}>not closed</script>`);
+    assert.equal(source.slice(nodes[2].start,nodes[2].end),'<p>after</p>');
+  }
+});
+test('new pages keep exact Unicode header/footer bytes and genuine closing boundaries',async()=>{
+  const {nativePageTemplate,withoutStructuredData}=await import('../src/native-create');
+  const source='<html><head><title>İstanbul</title></head><body><header>İstanbul</header><main><p>old</p></main><footer>İstanbul</footer></body></html>';
+  const page=nativePageTemplate(source,'New');
+  assert.ok(page.includes('<head><title>New</title>'));
+  assert.ok(page.includes('<header>İstanbul</header><main>\n</main><footer>İstanbul</footer></body></html>'));
+  for(const char of ['\u00a0','\u000b','\ufeff']){
+    assert.equal(withoutStructuredData(`<script type="application/ld+json">İ</script${char}>bad</script><p>keep</p>`),'<p>keep</p>');
+    assert.ok(nativePageTemplate(source.replace('</main>',`</main${char}>bad</main>`),'New').includes('<main>\n</main><footer>'));
+  }
+});

@@ -18,7 +18,7 @@
 //
 // The module takes plain path lists and text; it has no DOM and no I/O.
 import { resolveImportPath } from "./css-imports";
-import { startTagAttribute, startTags, type StartTag } from "./html-source";
+import { asciiLower, startTagAttribute, startTags, type StartTag } from "./html-source";
 import { NATIVE_HOME_PAGE, deriveNativeRoutes } from "./native-routes";
 
 export { NATIVE_HOME_PAGE, NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from "./native-routes";
@@ -232,7 +232,7 @@ function headParts(html: string): HeadParts {
   for (const tag of tags) {
     if (tag.name === "head" && !parts.head) parts.head = tag;
     if (tag.name === "title" && !parts.title) {
-      const close = html.toLowerCase().indexOf("</title", tag.end);
+      const close = asciiLower(html).indexOf("</title", tag.end);
       if (close >= 0 && close <= end) parts.title = { tag, inner: { start: tag.end, end: close } };
     }
     if (tag.name === "link" && !parts.canonical && startTagAttribute(html, tag, "rel")?.value.toLowerCase().split(/\s+/).includes("canonical"))

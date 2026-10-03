@@ -21,3 +21,11 @@ text-selection refusal, Unicode case and section boundaries. The browser fixture
 compares production scanning/marking/ranges with the actual HTML DOM parser,
 including NBSP/VT/BOM and dotted capital I. The full unit suite covers existing
 raw text, attributes, entities, source locations, component generation and moves.
+# Caller offset consistency
+
+Component source names and unquoted attributes use HTML ASCII whitespace and
+ASCII case folding. Raw-text closing searches preserve UTF-16 offsets and reject
+longer or Unicode-suffixed closing names. Page creation and page-title rewriting
+use the same offset-preserving fold, so `İstanbul` in titles, headers or footers
+does not shift an edit into adjacent source. This is a lexical correction, not
+a tree-repair or namespace-parser replacement.

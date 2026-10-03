@@ -37,3 +37,17 @@ test('section classification respects real nonblank Unicode text around the elem
   for(const item of result.slice(0,3)){expect(item.text).toBe(item.char+item.char);expect(item.section).toBe(false);}
   for(const item of result.slice(3))expect(item.section).toBe(true);
 });
+test('component ranges and new page output match real Unicode DOM parsing',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const {parseSource,startTagAttributes}=await import('/src/page-builder/component-model.ts');
+    const {nativePageTemplate}=await import('/src/native-create.ts');
+    const source='<X-İ DATA-İ=x\u00a0/><b>Child</b></X-İ><script>İstanbul</script\u00a0>still raw</script><p>after</p>';
+    const root=document.createElement('template');root.innerHTML=source;
+    const nodes=parseSource(source).filter(n=>n.type==='element');
+    const home='<html><head><title>İstanbul</title></head><body><header>İstanbul</header><main><p>old</p></main><footer>İstanbul</footer></body></html>';
+    const output=nativePageTemplate(home,'New');const doc=new DOMParser().parseFromString(output,'text/html');
+    return {names:nodes.map(n=>n.name),domNames:[...root.content.children].map(n=>n.localName),attributes:startTagAttributes(source,nodes[0].tag).map(a=>[a.name,a.value]),domValue:root.content.firstElementChild!.getAttribute('data-İ'),raw:source.slice(nodes[1].tag.end,nodes[1].close!.start),domRaw:root.content.querySelector('script')!.textContent,output,title:doc.title,header:doc.querySelector('header')!.textContent,footer:doc.querySelector('footer')!.textContent,main:doc.querySelector('main')!.textContent};
+  });
+  expect(result.names).toEqual(result.domNames);expect(result.attributes).toEqual([['data-İ',result.domValue]]);expect(result.domValue).toBe('x\u00a0/');expect(result.raw).toBe(result.domRaw);
+  expect(result.title).toBe('New');expect(result.header).toBe('İstanbul');expect(result.footer).toBe('İstanbul');expect(result.main).toBe('\n');expect(result.output).toContain('</main><footer>İstanbul</footer></body></html>');
+});

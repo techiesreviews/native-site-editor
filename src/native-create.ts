@@ -6,7 +6,7 @@
 // segment, a `/` for folders under it), the route a typed URL is, and a new
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
-import { startTagAttribute, startTags } from "../shared/html-source";
+import { asciiLower, startTagAttribute, startTags } from "../shared/html-source";
 import { nativePageHead, nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -132,7 +132,7 @@ export function withoutStructuredData(html: string): string {
   for (;;) {
     const tag = startTags(text).find((item) => item.name === "script" && startTagAttribute(text, item, "type")?.value.trim().toLowerCase() === "application/ld+json");
     if (!tag) return text;
-    const close = /<\/script\s*>/i.exec(text.slice(tag.end));
+    const close = /<\/script[\t\n\f\r ]*>/i.exec(text.slice(tag.end));
     const end = close ? tag.end + close.index + close[0].length : text.length;
     const lineStart = text.lastIndexOf("\n", tag.start - 1) + 1;
     const own = /^[ \t]*$/.test(text.slice(lineStart, tag.start)) && /^[ \t]*(?:\r?\n|$)/.exec(text.slice(end));
@@ -156,9 +156,10 @@ export function nativePageTemplate(home: string | undefined, title: string, url?
   const source = withoutStructuredData(home ?? MINIMAL_PAGE);
   const full = nativeNewPageTitle(nativePageHead(source).title, title);
   const text = nativePageWithUrl(nativePageWithDetails(source, { title: full, description: "" }), url);
-  const lower = text.toLowerCase();
+  const lower = asciiLower(text);
   const main = startTags(text).find((tag) => tag.name === "main");
-  const close = main ? lower.indexOf("</main", main.end) : -1;
+  const mainClose = main ? /<\/main(?=[\t\n\f\r />])/.exec(lower.slice(main.end)) : undefined;
+  const close = main && mainClose ? main.end + mainClose.index : -1;
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   if (main && close >= 0) {
     const lead = text.slice(text.lastIndexOf("\n", main.start - 1) + 1, main.start);
@@ -166,7 +167,7 @@ export function nativePageTemplate(home: string | undefined, title: string, url?
     return `${text.slice(0, main.end)}${newline}${indent}${text.slice(close)}`;
   }
   const body = startTags(text).find((tag) => tag.name === "body");
-  const bodyClose = body ? lower.lastIndexOf("</body") : -1;
+  const bodyClose = body ? [...lower.matchAll(/<\/body(?=[\t\n\f\r />])/g)].at(-1)?.index ?? -1 : -1;
   if (!body || bodyClose < body.end) return nativePageWithDetails(MINIMAL_PAGE, { title: full, description: "" });
   return `${text.slice(0, body.end)}${newline}  <main>${newline}  </main>${newline}${text.slice(bodyClose)}`;
 }
