@@ -10,6 +10,7 @@ export interface GridEditorOptions<T> {
   makeGrid?: () => void;
 }
 export const MAX_GRID_TRACKS = 24;
+let gridErrorId = 0;
 /** Only explicit equal fractional tracks are editable as counts. Computed pixels are custom. */
 export function equalTrackCount(raw: string): number | undefined {
   const value = raw.trim();
@@ -20,12 +21,16 @@ export function equalTrackCount(raw: string): number | undefined {
 export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOptions<T>) {
   const root = document.createElement('section'); root.className = 'grid-editor'; root.setAttribute('aria-label', 'Grid layout');
   const expected = options.expected;
-  const events = new AbortController(); let disposed = false;
+  const events = new AbortController(); let disposed = false; let busy = false;
   const allowed = () => !disposed && !(typeof options.readOnly === 'function' ? options.readOnly() : options.readOnly) && options.isCurrent(expected);
-  const emit = (properties: Record<string, string | null>) => {
-    if (!allowed()) return;
-    try { Promise.resolve(options.onChange(properties, expected)).catch(error => options.onError?.(error)); }
-    catch (error) { options.onError?.(error); }
+  const emit = async (properties: Record<string, string | null>, accepted: () => void) => {
+    if (!allowed() || busy) return;
+    busy = true; refresh();
+    try {
+      await options.onChange(properties, expected);
+      if (allowed()) accepted();
+    } catch (error) { if (allowed()) options.onError?.(error); }
+    finally { busy = false; if (!disposed) refresh(); }
   };
   const preview = document.createElement('div'); preview.className = 'grid-editor__preview'; preview.setAttribute('role', 'img'); root.append(preview);
   const counts: Record<string, number | undefined> = {};
@@ -43,35 +48,45 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const raw = authored ?? options.computed?.[property] ?? '';
     counts[axis] = equalTrackCount(raw);
     const label = document.createElement('label'); label.className = 'grid-editor__field'; label.append(axis === 'columns' ? 'Columns' : 'Rows');
-    const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = String(counts[axis] ?? 1); label.append(input);
+    const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = counts[axis] ? String(counts[axis]) : ''; label.append(input);
     const status = document.createElement('p'); status.className = 'grid-editor__status';
-    status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `Custom ${axis}: ${raw || 'default / implicit tracks'}`;
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = `Set equal ${axis}`;
+    status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
+    const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = input.value ? `Replace with ${input.value} equal ${axis}` : `Replace with N equal ${axis}`; };
+    updateButton(); input.addEventListener('input', updateButton, { signal: events.signal });
     button.addEventListener('click', () => {
       const count = Number(input.value);
       if (!allowed() || !Number.isInteger(count) || count < 1 || count > MAX_GRID_TRACKS) return;
-      emit({ [property]: `repeat(${count}, minmax(0, 1fr))` }); counts[axis] = count; status.textContent = `${count} equal tracks`; renderPreview();
+      void emit({ [property]: `repeat(${count}, minmax(0, 1fr))` }, () => { counts[axis] = count; status.textContent = `${count} equal tracks`; renderPreview(); });
     }, { signal: events.signal });
     root.append(label, button, status);
   }
   for (const property of ['gap', 'column-gap', 'row-gap']) {
     const label = document.createElement('label'); label.className = 'grid-editor__field'; label.append(property === 'gap' ? 'Gap' : property === 'column-gap' ? 'Column gap' : 'Row gap');
     const input = document.createElement('input'); input.type = 'text'; input.value = options.authored[property] ?? ''; input.placeholder = options.computed?.[property] ?? 'Default'; label.append(input);
+    const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
+    error.id = `grid-gap-error-${++gridErrorId}`; input.setAttribute('aria-describedby', error.id);
     let last = input.value;
     const commit = () => {
       const value = input.value.trim();
-      if (!allowed() || value === last || value && !CSS.supports(property, value)) return;
-      emit({ [property]: value || null }); last = value;
+      if (!allowed() || busy) return;
+      if (value && !CSS.supports(property, value)) {
+        const message = `Enter a valid ${property.replaceAll('-', ' ')}.`;
+        input.setAttribute('aria-invalid', 'true'); error.textContent = message; error.hidden = false;
+        options.onError?.(new Error(message)); return;
+      }
+      input.removeAttribute('aria-invalid'); error.hidden = true; error.textContent = '';
+      if (value === last) return;
+      void emit({ [property]: value || null }, () => { last = value; });
     };
     input.addEventListener('change', commit, { signal: events.signal });
     input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); commit(); } }, { signal: events.signal });
-    root.append(label);
+    root.append(label, error);
   }
   if (options.makeGrid) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Make grid';
     button.addEventListener('click', () => { if (allowed()) options.makeGrid?.(); }, { signal: events.signal }); root.append(button);
   }
-  function refresh() { for (const control of root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button')) control.disabled = !allowed(); }
+  function refresh() { for (const control of root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button')) control.disabled = busy || !allowed(); }
   renderPreview(); refresh(); container.append(root);
   return { element: root, refresh, dispose() { if (disposed) return; disposed = true; events.abort(); root.remove(); } };
 }

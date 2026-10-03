@@ -12,8 +12,11 @@ test('contain geometry excludes letterboxes for landscape and portrait images', 
   assert.deepEqual(containedImageRect({ left: 10, top: 20, width: 200, height: 200 }, 200, 400), { left: 60, top: 20, width: 100, height: 200 });
   assert.equal(containedImageRect({ left: 0, top: 0, width: 0, height: 100 }, 1, 1), undefined);
 });
-test('only raster bytes or explicitly trusted host blobs can be previews', () => {
+test('raster bytes and explicitly trusted SVG or host blobs can be previews', () => {
   assert.equal(trustedPreviewURL({ dataURL: 'data:image/png;base64,AAAA' }), 'data:image/png;base64,AAAA');
+  const svg = 'data:image/svg+xml;base64,AAAA';
+  assert.equal(trustedPreviewURL({ dataURL: svg, hostTrusted: true }), svg);
+  assert.throws(() => trustedPreviewURL({ dataURL: svg, hostTrusted: false }));
   assert.equal(trustedPreviewURL({ blobURL: 'blob:http://localhost/id', hostTrusted: true }), 'blob:http://localhost/id');
   for (const dataURL of ['https://example.com/image.png', 'data:image/svg+xml;base64,AAAA', 'data:text/html;base64,AAAA', 'data:image/png;base64,']) assert.throws(() => trustedPreviewURL({ dataURL }));
   assert.throws(() => trustedPreviewURL({ blobURL: 'https://example.com/a', hostTrusted: true }));

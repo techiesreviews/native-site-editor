@@ -3,10 +3,13 @@
 .grid-editor__preview span { background: var(--current, #dce8f8); border: 1px solid var(--line, #aaa); min-width: 0; min-height: 0; }
 .grid-editor__preview[data-custom="true"] { border-style: dashed; }
 .grid-editor__field { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
-.grid-editor__field input { width: 70px; min-width: 0; }
+.grid-editor__field input { width: 48px; min-width: 0; }
 .grid-editor__field:has(input[type="text"]), .grid-editor__status { grid-column: 1 / -1; }
 .grid-editor__status { margin: 0 0 4px; color: var(--muted, #666); overflow-wrap: anywhere; }
 .grid-editor :is(input, button) { box-sizing: border-box; font: inherit; color: inherit; min-height: var(--size-control, 28px); padding: 4px 6px; border: 1px solid var(--control-line, #bbb); border-radius: var(--radius, 4px); background: var(--surface-input, #fff); }
-.grid-editor button { cursor: pointer; }
+.grid-editor button { cursor: pointer; max-width: 155px; }
 .grid-editor :is(input, button):focus-visible { outline: var(--focus-ring, 2px solid #2463eb); outline-offset: 2px; }
 .grid-editor :disabled { opacity: .55; cursor: default; }
+
+.grid-editor__error { grid-column: 1 / -1; margin: 0; color: var(--error, #b42318); }
+.grid-editor [hidden] { display: none; }

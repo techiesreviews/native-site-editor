@@ -1,5 +1,5 @@
 /** Native focus-position control. The host resolves preview bytes; this leaf never fetches assets. */
-export type FocalPreviewAsset = { dataURL: string } | { blobURL: string; hostTrusted: true };
+export type FocalPreviewAsset = { dataURL: string; hostTrusted?: boolean } | { blobURL: string; hostTrusted: true };
 export interface ImageFocalPointOptions<T> {
   mode: 'object-position' | 'background-position';
   previewAsset: FocalPreviewAsset;
@@ -13,6 +13,7 @@ export interface ImageFocalPointOptions<T> {
   onChange: (properties: Record<string, string | null>, expected: T) => void | Promise<void>;
   onError?: (error: unknown) => void;
 }
+let focusStatusId = 0;
 export interface FocusPoint { x: number; y: number }
 export function clampFocus(value: number) { return Math.min(100, Math.max(0, value)); }
 /** Deliberately excludes lengths, calc(), edge offsets, and multi-layer backgrounds. */
@@ -32,8 +33,9 @@ export function parseFocusPosition(raw: string): FocusPoint | undefined {
 }
 export function trustedPreviewURL(asset: FocalPreviewAsset): string {
   if ('dataURL' in asset && /^data:image\/(?:png|jpeg|gif|webp|avif);base64,[A-Za-z0-9+/]+={0,2}$/i.test(asset.dataURL)) return asset.dataURL;
+  if ('dataURL' in asset && asset.hostTrusted === true && /^data:image\/svg\+xml(?:;charset=utf-8)?(?:;base64)?,.+$/i.test(asset.dataURL)) return asset.dataURL;
   if ('blobURL' in asset && asset.hostTrusted === true && /^blob:https?:\/\//i.test(asset.blobURL)) return asset.blobURL;
-  throw new Error('Focus preview requires raster image bytes or an explicitly host-trusted blob URL.');
+  throw new Error('Focus preview requires raster image bytes or explicitly host-trusted SVG bytes / blob URL.');
 }
 /** Full image coordinates inside an object-fit:contain box, excluding letterbox space. */
 export function containedImageRect(box: { left: number; top: number; width: number; height: number }, width: number, height: number) {
@@ -48,12 +50,14 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
   const allowed = () => !disposed && !(typeof options.readOnly === 'function' ? options.readOnly() : options.readOnly) && options.isCurrent(expected);
   const root = document.createElement('section'); root.className = 'image-focal-point'; root.setAttribute('aria-label', 'Image focus');
   const preview = document.createElement('div'); preview.className = 'image-focal-point__preview'; preview.tabIndex = 0; preview.setAttribute('role', 'group'); preview.setAttribute('aria-label', 'Full image focus preview. Use arrow keys to set focus; Shift moves ten percent.');
-  const image = document.createElement('img'); image.alt = 'Full image focus preview'; image.draggable = false; image.src = url;
+  const image = document.createElement('img'); image.alt = ''; image.draggable = false; image.src = url;
   const marker = document.createElement('span'); marker.className = 'image-focal-point__marker'; marker.setAttribute('aria-hidden', 'true'); preview.append(image, marker);
   const status = document.createElement('p'); status.className = 'image-focal-point__status'; status.setAttribute('aria-live', 'polite');
-  const context = document.createElement('p'); context.className = 'image-focal-point__context'; context.textContent = `Full image coordinates; actual crop depends on container and ${options.mode === 'object-position' ? `object-fit: ${options.fit ?? 'default'}` : `background-size: ${options.size ?? 'default'}`}.`;
+  status.id = `image-focus-status-${++focusStatusId}`; preview.setAttribute('aria-describedby', status.id);
+  const context = document.createElement('p'); context.className = 'image-focal-point__context'; context.textContent = `Full image; crop depends on container and ${options.mode === 'object-position' ? `object-fit: ${options.fit ?? 'default'}` : `background-size: ${options.size ?? 'default'}`}.`;
   const raw = options.authored ?? options.computed ?? '';
   let point = parseFocusPosition(raw), committed = point ? { ...point } : undefined;
+  const clampedRaw = raw.split(/\s+/).some(token => /^[-+]?(?:\d+\.?\d*|\.\d+)%$/.test(token) && (Number.parseFloat(token) < 0 || Number.parseFloat(token) > 100));
   let edited = false;
   let drag: { id: number; before?: FocusPoint } | undefined;
   const inputs: HTMLInputElement[] = [];
@@ -80,13 +84,14 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
     marker.hidden = !point;
     const box = image.getBoundingClientRect(), rect = containedImageRect(box, image.naturalWidth, image.naturalHeight);
     if (point && rect) { marker.style.left = `${rect.left - box.left + rect.width * point.x / 100}px`; marker.style.top = `${rect.top - box.top + rect.height * point.y / 100}px`; }
-    status.textContent = point ? `${point.x}% ${point.y}%${options.authored === undefined && !edited ? ' · computed' : ''}` : `Custom position: ${raw || 'default'}. Set percentages to replace it.`;
+    status.textContent = point && clampedRaw && !edited ? `${options.authored === undefined ? 'Computed' : 'Authored'} position: ${raw}. Editing marker clamped to ${point.x}% ${point.y}%; source unchanged.` : point ? `${point.x}% ${point.y}%${options.authored === undefined && !edited ? ' · computed' : ''}` : `Custom position: ${raw || 'default'}. Set percentages to replace it.`;
   }
   function publish(next: FocusPoint) {
     if (!allowed()) return;
     next = { x: Math.round(clampFocus(next.x) * 100) / 100, y: Math.round(clampFocus(next.y) * 100) / 100 };
+    const replaceClampedSource = clampedRaw && !edited;
     edited = true; point = next; draw();
-    if (committed?.x === next.x && committed.y === next.y) return;
+    if (!replaceClampedSource && committed?.x === next.x && committed.y === next.y) return;
     committed = { ...next };
     try { Promise.resolve(options.onChange({ [options.mode]: `${next.x}% ${next.y}%` }, expected)).catch(error => options.onError?.(error)); }
     catch (error) { options.onError?.(error); }
