@@ -113,3 +113,13 @@ test("an unrelated path cannot be declared as an owned UI transition", () => {
   const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
   assert.equal(receipt.beginOwnUITransition(["untouched.css"]), undefined);
 });
+
+test("an unchanged foreign model cannot become an owned UI transition", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!;
+  assert.equal(receipt.apply(), true);
+  assert.equal(receipt.beginOwnUITransition(["untouched.css"]), undefined);
+  assert.match(receipt.error()!, /untouched\.css.*not part of this owned source transition/);
+  f.models.get("untouched.css")!.version++;
+  assert.equal(receipt.undo(), false);
+  assert.equal(f.records.get("index.html"), f.record);
+});

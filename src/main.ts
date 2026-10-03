@@ -974,13 +974,14 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
   if (!currentRepo || !snapshot || !info.user || !guard()) return false;
   const request = ++secondaryRequest;
   const historyScope = currentPath ? nativeHistorySession({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, currentPath) : undefined;
-  if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
   const scope = {
     account: info.user.login,
     repoId: currentRepo.id,
     repo: currentRepo.full_name,
     branch: snapshot.branch,
   };
+  if (draftStore().get(scope, css)?.deleted) return false;
+  if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
   try {
     // A stylesheet only in the drafts (a new component's) opens from its draft.
     const draft = draftStore().get(scope, css);
@@ -992,7 +993,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
       entry ? readFile(scope.repo, entry.sha) : "",
       loadEditorModule(),
     ]);
-    if (request !== secondaryRequest || !guard()) return false;
+    if (request !== secondaryRequest || !guard() || draftStore().get(scope, css)?.deleted) return false;
     disposeSecondary?.();
     element("secondary-pane").hidden = false;
     element("main").classList.add("has-secondary");
@@ -4493,13 +4494,15 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   const untouchedFiles = nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n");
   const live = () => epoch === generation && scopeKey === setupScope() && !versionView &&
     nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n") === untouchedFiles;
+  const retainedPaths = [anchor, ...[...touched].filter(path => editor.isMounted(path) && afterSources.get(path) === undefined)];
+  const changingTextPaths = [...touched].filter(path => beforeSources.get(path) !== afterSources.get(path) || retainedPaths.includes(path));
   const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
     source: storedSource, mounted: editor.isMounted,
     retainModel: path => editor.retainFileModel(scope, path),
       modelState: path => editor.captureFileModelState(scope, path, true),
     evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof),
     prepareSources: changes => editor.prepareHistorySources(changes, true),
-  }, { before, after, beforeSources, afterSources, retainPaths: [anchor, ...[...touched].filter(path => editor.isMounted(path) && afterSources.get(path) === undefined)] });
+  }, { before, after, beforeSources, afterSources, retainPaths: retainedPaths });
   let releaseRefresh: (() => void) | undefined = editor.holdHistoryRefresh(anchor);
   if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? changedOperation; receipt?.dispose(); releaseRefresh(); return error; }
   const session = nativeHistorySession(scope, anchor);
@@ -4513,13 +4516,20 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key);
   };
   const refresh = async (path: string | undefined, initial = false, message?: string, previousStatus = element("status").textContent) => {
-    const changing = [...new Set([anchor, currentPath, next, path, ...touched].filter((value): value is string => !!value))];
+    const changing = [...new Set([anchor, currentPath, next, path, ...changingTextPaths].filter((value): value is string => !!value))];
     const complete = receipt.beginOwnUITransition(changing);
     if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));
     const capture = (path: string) => { if (live() && changing.includes(path)) owned.set(path, editor.captureFileModelState(scope, path, true)); };
     nativeHistoryMountCapture = capture;
     try {
+      // A removed stylesheet must not remain editable over its deleted marker.
+      // Its leased model remains available to this exact receipt for Undo.
+      if (secondaryPath && changing.includes(secondaryPath) && store.get(scope, secondaryPath)?.deleted) {
+        const removed = secondaryPath;
+        closeSecondary();
+        capture(removed);
+      }
       // Rebuild the owned route graph before opening a restored/new page. Its
       // source-only updates cannot change a preview that still points Home.
       afterFileChanges();

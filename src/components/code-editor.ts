@@ -188,6 +188,9 @@ export function holdHistoryRefresh(path: string) {
   return () => { if (released) return; released = true; const count = (refreshingVisualHistory.get(session) ?? 1) - 1; if (count) refreshingVisualHistory.set(session, count); else refreshingVisualHistory.delete(session); for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false); };
 }
 const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
+// Journal-owned source steps suppress persistence during a refresh hold.
+// Ordinary canvas writes are routed too, but must still reach the draft store.
+const journalModelChanges = new WeakSet<monaco.editor.ITextModel>();
 // A live compound receipt owns these exact Monaco steps across page mounts.
 const historyReceiptModels = new WeakMap<monaco.editor.ITextModel, number>();
 function retainHistoryModel(model: monaco.editor.ITextModel) {
@@ -323,13 +326,13 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
       for (const step of owned) {
         if (!matchesStep(step, direction === "undo")) throw new Error("The source changed during its text history operation.");
         if (step.text === step.expectedSource) continue;
-        routedModelChanges.add(step.model);
+        routedModelChanges.add(step.model); journalModelChanges.add(step.model);
         try {
           const result = step.model[direction]();
           // These are isolated text-model steps. A workspace-wide async undo
           // is not an owned local step and cannot be committed by this receipt.
           if (result) { void result.catch(() => {}); throw new Error("The text history step is asynchronous."); }
-        } finally { routedModelChanges.delete(step.model); }
+        } finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
         moved.push(step);
         const after = direction === "redo";
         if (step.model.getAlternativeVersionId() !== (after ? step.after : step.before) ||
@@ -341,10 +344,10 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
       // A synchronous local failure rolls back only the steps already moved.
       for (const step of moved.reverse()) {
         if (!matchesStep(step, direction === "redo")) { state = "failed"; continue; }
-        routedModelChanges.add(step.model);
+        routedModelChanges.add(step.model); journalModelChanges.add(step.model);
         try { const result = step.model[direction === "undo" ? "redo" : "undo"](); if (result) void result.catch(() => {}); }
         catch { state = "failed"; }
-        finally { routedModelChanges.delete(step.model); }
+        finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
       }
       if (!matches(expectedState === "applied")) state = "failed";
       return false;
@@ -361,9 +364,9 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
           if (!matchesStep(step, false)) throw new Error("The source changed during its text history operation.");
           if (step.text !== step.expectedSource) {
             step.model.pushStackElement();
-            routedModelChanges.add(step.model);
+            routedModelChanges.add(step.model); journalModelChanges.add(step.model);
             try { step.model.pushEditOperations([], [{ range: step.model.getFullModelRange(), text: step.text }], () => null); }
-            finally { routedModelChanges.delete(step.model); }
+            finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
             step.model.pushStackElement();
           }
           step.after = step.model.getAlternativeVersionId();
@@ -374,10 +377,10 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
         return true;
       } catch {
         for (const step of applied.reverse()) if (step.text !== step.expectedSource && matchesStep(step, true)) {
-          routedModelChanges.add(step.model);
+          routedModelChanges.add(step.model); journalModelChanges.add(step.model);
           try { const result = step.model.undo(); if (result) void result.catch(() => {}); }
           catch { state = "failed"; }
-          finally { routedModelChanges.delete(step.model); }
+          finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
         }
         state = matches(false) ? "prepared" : "failed";
         return false;
@@ -1169,7 +1172,7 @@ export function mountCodeEditor(
     const changed =
       current.baseSha === null || current.model.getValue() !== current.original;
     if (persist && file.scope && current.baseSha !== undefined && !file.readOnly &&
-        (!refreshingVisualHistory.has(session) || !!changes && !routedModelChanges.has(current.model))) {
+        (!refreshingVisualHistory.has(session) || !!changes && !journalModelChanges.has(current.model))) {
       // A renamed file keeps where it came from (src/file-changes.ts).
       const stored = current.baseSha === null ? store.get(file.scope, file.path) : undefined;
       const moved = stored && !stored.deleted

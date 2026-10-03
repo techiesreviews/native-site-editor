@@ -247,12 +247,14 @@ test("Files rename retains an open stylesheet's owned model through Undo and Red
   await name.press("Enter");
   await expect(page.locator("#status")).toContainText("Renamed styles/site.css to styles/layout.css");
   expect(await source(page)).toBe(original);
+  await expect(page.locator("#secondary-pane")).toBeHidden();
   await history(page, "undo");
   await expect.poll(() => source(page)).toBe(original);
   await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
   await expect(page.locator("#status")).toContainText("Undid renaming styles/site.css");
   await history(page, "redo");
   expect(await source(page)).toBe(original);
+  await expect(page.locator("#secondary-pane")).toBeHidden();
   const moved = await page.evaluate(async () => (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "styles/layout.css"));
   expect(moved?.movedFrom).toBe("styles/site.css");
   expect(moved?.content).toContain(".hero");
@@ -283,4 +285,95 @@ test("deferred create Undo preserves a newer save outcome instead of announcing 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(frame(page).locator(".hero h1")).toBeVisible();
   await expect(page.locator("#status")).toHaveText("Selected files saved to GitHub.");
+});
+
+
+test("ordinary canvas edits persist while a history refresh is held", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    Object.assign(window, { releaseNativeHold: editor.holdHistoryRefresh("index.html") });
+  });
+  await frame(page).locator(".hero h1").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("combobox", { name: "Heading level" }).selectOption("h2");
+  await expect(frame(page).locator(".hero h2")).toBeVisible();
+  const stored = await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const record = (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "index.html");
+    (window as unknown as { releaseNativeHold(): void }).releaseNativeHold();
+    return { text: record?.content, model: editor.getMountedSource("index.html") };
+  });
+  expect(stored.text).toBe(stored.model);
+  expect(stored.text).toContain("<h2");
+  await page.reload();
+  await expect(frame(page).locator(".hero h2")).toBeVisible();
+});
+
+test("an image can be renamed twice and deleted through guarded Undo and Redo", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
+  const explorer = page.locator("#explorer");
+  const folder = explorer.getByRole("button", { name: "images", exact: true });
+  if (await folder.getAttribute("aria-expanded") !== "true") await folder.click();
+  for (const [from, to] of [["studio-desk.svg", "desk-one.svg"], ["desk-one.svg", "desk-two.svg"]]) {
+    await explorer.getByRole("button", { name: from, exact: true }).focus();
+    await page.keyboard.press("F2");
+    const name = explorer.getByRole("textbox", { name: `New name for images/${from}`, exact: true });
+    await name.fill(to); await name.press("Enter");
+    await expect(page.locator("#status")).toContainText(`Renamed images/${from} to images/${to}`);
+  }
+  await history(page, "undo");
+  await expect(page.locator("#status")).toContainText("Undid renaming images/desk-one.svg");
+  await history(page, "redo");
+  await expect(page.locator("#status")).toContainText("Renamed images/desk-one.svg to images/desk-two.svg");
+  await explorer.getByRole("button", { name: "desk-two.svg", exact: true }).focus();
+  await page.keyboard.press("Delete");
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Deleted");
+  await history(page, "undo"); await expect(page.locator("#status")).toContainText("Undid");
+  await history(page, "redo"); await expect(page.locator("#status")).toContainText("Deleted");
+  const records = await page.evaluate(async () => {
+    const store = (await import("/src/drafts.ts")).draftStore();
+    const scope = { account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" };
+    return [store.get(scope, "images/studio-desk.svg"), store.get(scope, "images/desk-two.svg")];
+  });
+  expect(records[0]?.deleted).toBe(true);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+});
+
+for (const action of ["rename", "delete"] as const) test(`an opaque binary draft supports Files ${action} Undo and Redo`, async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.evaluate(async () => {
+    const store = (await import("/src/drafts.ts")).draftStore();
+    store.save({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", version: 1,
+      path: "images/binary.png", baseSha: null, original: "", content: "", sourceSha: "a".repeat(40), opaque: true,
+      upload: { size: 68, type: "image/png" }, updatedAt: Date.now() });
+    await store.flush();
+  });
+  // Load the seeded opaque draft through the same startup tree as a returning browser.
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
+  const explorer = page.locator("#explorer");
+  const folder = explorer.getByRole("button", { name: "images", exact: true });
+  if (await folder.getAttribute("aria-expanded") !== "true") await folder.click();
+  await explorer.locator('.file-row[data-path="images/binary.png"]').focus();
+  if (action === "rename") {
+    await page.keyboard.press("F2");
+    const name = explorer.getByRole("textbox", { name: "New name for images/binary.png", exact: true });
+    await name.fill("renamed.png"); await name.press("Enter");
+    await expect(page.locator("#status")).toContainText("Renamed images/binary.png to images/renamed.png");
+  } else {
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(page.locator("#status")).toContainText("Deleted");
+  }
+  await history(page, "undo"); await expect(page.locator("#status")).toContainText("Undid");
+  await history(page, "redo"); await expect(page.locator("#status")).toContainText(action === "rename" ? "Renamed" : "Deleted");
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
 });

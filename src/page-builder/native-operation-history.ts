@@ -137,7 +137,8 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       lastError = !host.isLive() ? "The repository changed before opening the page." : draft ? `The draft for ${draft[0]} changed before opening the page.` : source ? `The source for ${source[0]} changed before opening the page.` : model ? `The model for ${model[0]} changed before opening the page.` : "The owned source step changed before opening the page.";
       return;
     }
-    if (changing.some(path => proofs.has(path) && !edited.includes(path) && !retained.has(path))) return;
+    const unsupported = changing.find(path => proofs.has(path) && !edited.includes(path) && !retained.has(path));
+    if (unsupported) { lastError = `The editor for ${unsupported} is not part of this owned source transition.`; return; }
     const phase = state, changed = new Set(changing);
     const records = phase === "applied" ? plan.after : plan.before;
     const texts = phase === "applied" ? plan.afterSources : plan.beforeSources;
