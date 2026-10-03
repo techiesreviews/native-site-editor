@@ -46,6 +46,7 @@ import {
   templateSlots,
   usageSummary,
   type Instance,
+  type MakeComponentPlan,
   type RangeEdit,
   type SlotState,
   type SlotValue,
@@ -56,8 +57,18 @@ import "../components/create-dialog.css";
 
 type CodeEditor = typeof import("../components/code-editor");
 
+/** File operations stay bound to their original scope and exact created drafts. */
+export interface ComponentFileReceipt {
+  isCurrent(): boolean;
+  undo(): void;
+  redo(): void | Promise<void>;
+}
+export type ComponentFileCreation = { error: string } | { receipt: ComponentFileReceipt };
+
 export interface ComponentDeps {
   site: () => NativeSite | undefined;
+  /** Stable scope/generation identity; creating this component must not change it. */
+  revision: () => string;
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
   editor: () => CodeEditor | undefined;
@@ -78,10 +89,8 @@ export interface ComponentDeps {
   links: () => { label: string; value: string }[];
   /** A page's name as the Pages tab shows it. */
   pageLabel: (file: string) => string;
-  /** Writes new files as drafts and finds the site's pages and components again; resolves to an error. */
-  createFiles: (files: { path: string; content: string }[]) => Promise<string | undefined>;
-  /** Takes back new files written by `createFiles`. */
-  removeFiles: (paths: string[]) => void;
+  /** Creates drafts atomically; the receipt owns cleanup, undo and redo in the captured scope. */
+  createFiles: (files: { path: string; content: string }[]) => Promise<ComponentFileCreation>;
   /** The sidebar, whose foot holds the properties panel. */
   panelHost: HTMLElement;
   /** Puts the banner over a component's template above the preview's frame. */
@@ -899,6 +908,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const nodePath = selection.node;
     const source = deps.sources()[path];
     const current = site();
+    const revision = deps.revision();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
     if (!range?.close) { deps.announce("The element's end tag could not be found in the source."); return; }
@@ -955,7 +965,11 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!ok) return;
     const planned = plan();
     if (!planned.made || !planned.tag) return;
-    await makeComponent(path, nodePath, planned.tag);
+    if (deps.revision() !== revision || deps.sources()[path] !== source) {
+      deps.announce("The page or repository changed meanwhile; no component was made.");
+      return;
+    }
+    await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, range, made: planned.made, revision });
   }
 
   /**
@@ -963,39 +977,39 @@ export function createComponentTools(deps: ComponentDeps) {
    * with an instance, as one undo step: undoing the page's edit takes the
    * new files back, redoing writes them again.
    */
-  async function makeComponent(path: string, nodePath: number[], tag: string) {
-    const source = deps.sources()[path] ?? "";
-    const range = locateNativeElementRange(source, nodePath);
-    const made = range ? makeComponentPlan(source, range, tag) : undefined;
-    if (!range || !made || "error" in made) { deps.announce("The element changed meanwhile; no component was made."); return; }
+  async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; revision: string }) {
+    const { path, nodePath, tag, source, range, made, revision } = request;
+    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source;
+    if (!unchanged()) { deps.announce("The page or repository changed meanwhile; no component was made."); return; }
     const newFiles = [
       { path: `components/${tag}/${tag}.html`, content: made.template },
       { path: `components/${tag}/${tag}.css`, content: made.css },
     ];
-    const problem = await deps.createFiles(newFiles);
-    if (problem) { deps.error(new Error(problem)); return; }
+    const result = await deps.createFiles(newFiles);
+    if ("error" in result) { deps.error(new Error(result.error)); return; }
+    const receipt = result.receipt;
     const editor = deps.editor();
-    // Writing the files can wait on GitHub: a page changed meanwhile keeps its change, and no component is made.
-    if (deps.sources()[path] !== source) {
-      deps.removeFiles(newFiles.map((file) => file.path));
-      deps.announce("The page changed meanwhile; no component was made.");
+    // The plan is the one reviewed in the modal. Cleanup belongs to its receipt,
+    // even if another repository now has a draft at the same path.
+    if (!unchanged() || !receipt.isCurrent()) {
+      receipt.undo();
+      deps.announce("The page or repository changed meanwhile; no component was made.");
       return;
     }
     if (!editor || !editable(path)) {
-      deps.removeFiles(newFiles.map((file) => file.path));
+      receipt.undo();
       deps.announce("Open the page first.");
       return;
     }
-    const latest = deps.sources()[path] ?? "";
     deps.preview()?.selectAfterUpdate({ path, node: nodePath });
     try {
-      editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: latest.slice(range.start, range.end) }, false, {
-        undo: () => deps.removeFiles(newFiles.map((file) => file.path)),
-        redo: () => void deps.createFiles(newFiles),
+      editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: source.slice(range.start, range.end) }, false, {
+        undo: () => receipt.undo(),
+        redo: () => void receipt.redo(),
       });
       deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html`);
     } catch (error) {
-      deps.removeFiles(newFiles.map((file) => file.path));
+      receipt.undo();
       deps.preview()?.selectAfterUpdate(undefined);
       deps.error(error);
     }

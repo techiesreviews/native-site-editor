@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
@@ -386,4 +387,44 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
     return text;
   });
   expect(text).toBe("Hello  world");
+});
+
+test("Make component refuses a page replacement made while its preview dialog is open", async ({ page, baseURL }) => {
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  const prompt = await page.evaluate(() => navigator.clipboard.readText());
+  const url = /Server: `(\S+)`/.exec(prompt)![1];
+  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
+  expect(url).toBe(`${baseURL}/mcp`);
+  const client = new Client({ name: "components-review-agent", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const response = await client.callTool({ name, arguments: args });
+    expect(response.isError).toBeFalsy();
+    return JSON.parse((response.content as { text: string }[])[0].text);
+  };
+  try {
+    await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    const home = await call("get_page", { page: "/" });
+    const hero = /<section class="hero"[^>]*>[\s\S]*?<\/section>/.exec(home.html)![0];
+    await select(page, "section.hero");
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+    await bar(page).getByRole("button", { name: "Make component…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Make component" });
+    await expect(dialog).toContainText("A native browser preview");
+    const replacement = `<section class="hero" data-key="hero"><h1>Unreviewed replacement</h1></section>`;
+    const edited = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: hero, newText: replacement }] });
+    expect(edited.state).toBe("applied");
+    await expect(frame(page).locator("section.hero h1")).toHaveText("Unreviewed replacement");
+    await dialog.getByRole("button", { name: "Make component", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(status(page)).toHaveText("The page or repository changed meanwhile; no component was made.");
+    expect((await storedDraft(page, indexPath))?.content).toContain(replacement);
+    expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
+    expect(await storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
+  } finally {
+    await client.close();
+  }
 });
