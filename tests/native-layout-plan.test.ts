@@ -144,3 +144,21 @@ test('script-loaded CSS bundles traverse their import graph while favicon assets
   assert.equal(await tab.evaluate(()=>getComputedStyle(document.body).color),'rgb(0, 0, 255)');
  }finally{await browser.close();}
 });
+
+test('extensionless scripted CSS roots and whitespace as values cannot hide imported target sheets',async()=>{
+ const sources={'index.html':page.replace('</head>',`<link id="bundle" rel="preload" href="bundle" onload="this.rel='stylesheet';this.onload=null"><link rel="stylesheet" href="theme.css"></head>`),'bundle':'@import "styles/site.css";','styles/site.css':'body{color:red}','theme.css':'body{color:blue}'};
+ for(const attributes of [`onload="this.rel='stylesheet'"`,`onerror="this.rel='stylesheet'"`,'as=" STYLE "']){
+  const html=page.replace('</head>',`<link rel="preload" href="bundle" ${attributes}></head>`);
+  const result=planNativeLayoutInsert(input({sources:{...sources,'index.html':html}}));assert.ok('error'in result);assert.match(result.error,/Choose another stylesheet/);
+ }
+ const {chromium}=await import('@playwright/test');const browser=await chromium.launch({headless:true});
+ try{
+  const tab=await browser.newPage();await tab.route('https://native-layout.test/**',route=>{const path=new URL(route.request().url()).pathname.slice(1);return route.fulfill({contentType:path==='bundle'||path.endsWith('.css')?'text/css':'text/html',body:sources[path as keyof typeof sources]??sources['index.html']});});
+  await tab.goto('https://native-layout.test/');
+  // Simulate the published callback after the preload response; it becomes a real CSS load.
+  await tab.evaluate(()=>{const link=document.querySelector<HTMLLinkElement>('#bundle')!;link.dispatchEvent(new Event('load'));});
+  await tab.waitForFunction(()=>document.styleSheets.length===2 && getComputedStyle(document.body).color==='rgb(0, 0, 255)');
+  const result=planNativeLayoutInsert(input({sources}));assert.ok('error'in result);
+  assert.equal(await tab.evaluate(()=>document.querySelectorAll('#bundle').length),1);
+ }finally{await browser.close();}
+});

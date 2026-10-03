@@ -62,5 +62,6 @@ planner refuses a duplicate. Complete-source and full-file guards remain
 required through any host async preparation and apply.
 Script-loaded preload CSS roots also traverse the same import closure before
 `rel` filtering, including a bundle importing the chosen CSS path. Only likely
-CSS roots (`as="style"` or CSS hrefs) are traversed; ordinary favicon/binary links
+CSS roots (trimmed, case-insensitive `as="style"`, CSS hrefs, or any event-handler
+attribute) are traversed; ordinary favicon/binary links without handlers
 do not turn into unverifiable CSS dependencies.
