@@ -35,6 +35,8 @@ export interface Command {
   icon?: string;
   // Drawn in the component accent.
   accent?: "component";
+  // Opens a page, file or component template; eligible for Go to.
+  navigation?: boolean;
   // Listed only when this is true now (an action that cannot run is left out).
   when?: () => boolean;
   // Shown before any typing, among the suggestions.
@@ -172,4 +174,12 @@ export function matchesKeys(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrl
   if (key.length === 1 && !/[a-z]/i.test(key)) return event.key === key;
   if (event.shiftKey !== want.has("Shift")) return false;
   return event.key.toLowerCase() === key.toLowerCase();
+}
+
+/** Reject a command whose source or selection changed after it was listed. */
+export function guardCommand(run: () => void | Promise<void>, unchanged: () => boolean, stale: () => void): () => void | Promise<void> {
+  return () => {
+    if (!unchanged()) { stale(); return; }
+    return run();
+  };
 }

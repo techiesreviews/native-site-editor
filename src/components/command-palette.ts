@@ -196,7 +196,7 @@ export function createCommandPalette(options: CommandPaletteOptions) {
   function results(raw: string): { group: string; items: Ranked<Command>[] }[] {
     const parsed = parseQuery(raw, scope);
     const allowed = SCOPE_GROUPS[parsed.scope];
-    const pool = options.commands().filter((command) => !allowed || allowed.includes(command.group));
+    const pool = options.commands().filter((command) => (!allowed || allowed.includes(command.group)) && (parsed.scope !== "go" || command.navigation === true));
     if (!parsed.text) {
       // What the selection can do, then recent items, then each group in its usual order.
       const byId = new Map(pool.filter((command) => command.group !== "Selection" && command.group !== "Agent").map((command) => [command.id, command]));
@@ -305,6 +305,8 @@ export function createCommandPalette(options: CommandPaletteOptions) {
     remember(entry.item.id);
     close();
     try {
+      // Let the originating click finish before a command opens another popover.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       await entry.item.run();
     } catch (error) {
       options.onError(error);
@@ -313,6 +315,7 @@ export function createCommandPalette(options: CommandPaletteOptions) {
 
   input.addEventListener("input", render);
   input.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     // Ctrl+N and Ctrl+P too on a Mac, as in its text fields (elsewhere they are the browser's).
     const emacs = isMac() && event.ctrlKey && !event.metaKey;
     const down = event.key === "ArrowDown" || (emacs && event.key === "n");
@@ -341,10 +344,9 @@ export function createCommandPalette(options: CommandPaletteOptions) {
   dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
   // A click on the backdrop closes.
   dialog.addEventListener("pointerdown", (event) => { if (event.target === dialog) close(); });
-  dialog.addEventListener("close", () => {
-    const target = opener;
-    opener = null;
-    if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    close();
   });
 
   function showScope() {
@@ -366,9 +368,15 @@ export function createCommandPalette(options: CommandPaletteOptions) {
     input.focus();
   }
 
-  /** Closes; focus goes back where it was (a command run next may move it on). */
+  function restoreFocus() {
+    const target = opener;
+    opener = null;
+    if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true });
+  }
+
+  /** Restores focus synchronously, before the next command can open a field. */
   function close() {
-    if (dialog.open) dialog.close();
+    if (dialog.open) { dialog.close(); restoreFocus(); }
   }
 
   return {

@@ -12,7 +12,7 @@ import type { EditBarControl, EditBarModel } from "../components/edit-bar";
 import { createCommandPalette, type CommandPalette } from "../components/command-palette";
 import { createShortcutSheet, type ShortcutSheet } from "../components/shortcut-sheet";
 import { parseMarked } from "../native-source-location";
-import { availableCommands, matchesKeys, registerCommand, registerCommandSource, registerShortcut, shortcutSheet, type Command, type Keys } from "./commands";
+import { availableCommands, guardCommand, matchesKeys, registerCommand, registerCommandSource, registerShortcut, shortcutSheet, type Command, type Keys } from "./commands";
 
 export interface PalettePage {
   file: string;
@@ -145,6 +145,11 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
   if (!model || !selection) return [];
+  const source = deps.source(selection.path);
+  const identity = JSON.stringify(selection);
+  const guard = (run: () => void | Promise<void>) => guardCommand(run,
+    () => deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
+    () => deps.announce("The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
   // Fields (Address, Label, Alt text) and Ask agent come after what acts at once.
@@ -158,7 +163,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
       icon: BAR_ICONS[control.label] ?? BAR_ICONS[title] ?? "text",
       shortcut: BAR_SHORTCUTS[title] ?? BAR_SHORTCUTS[control.label],
       keywords: ["selection", "element", kind.toLowerCase()],
-      run,
+      run: guard(run),
       ...extra,
     });
   };
@@ -190,7 +195,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
       icon: "parent",
       shortcut: [["Shift", "Enter"]],
       keywords: ["up", "container", "outer", "selection"],
-      run: () => deps.select(selection.path, node.slice(0, -1)),
+      run: guard(() => deps.select(selection.path, node.slice(0, -1))),
     });
   }
   out.push(...later);
@@ -289,6 +294,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
       title: page.label,
       hint: page.route,
       group: "Pages",
+      navigation: true,
       icon: page.route === "/" ? "home" : "file",
       keywords: [page.file, "page", "open"],
       suggested: page.file !== current,
@@ -298,6 +304,8 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
   // Components: add a section component where the selection is, or open any component's template.
   const selection = deps.selection();
   const pagePath = current && pageFiles.has(current) ? current : undefined;
+  const listedSource = pagePath ? deps.source(pagePath) : undefined;
+  const listedSelection = JSON.stringify(selection);
   for (const component of deps.components()) {
     if (component.section && pagePath) {
       out.push({
@@ -310,6 +318,10 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
         suggested: true,
         keywords: ["insert", "section", "component", component.tag],
         run: async () => {
+          if (deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || JSON.stringify(deps.selection()) !== listedSelection) {
+            deps.announce("The page changed. Reopen the command palette and try again.");
+            return;
+          }
           const source = deps.source(pagePath) ?? "";
           const point = sectionInsertPoint(source, selection?.path === pagePath ? selection : undefined, deps.isSectionTag);
           if (!point) { deps.announce(`Select a section to add ${component.label} after it.`); return; }
@@ -320,6 +332,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
     out.push({
       id: `component.open:${component.tag}`,
       title: `Open ${component.label} component`,
+      navigation: true,
       hint: component.file,
       group: "Components",
       icon: "component",
@@ -337,6 +350,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
       title: path.slice(slash + 1),
       hint: slash > 0 ? path.slice(0, slash) : undefined,
       group: "Files",
+      navigation: true,
       icon: fileIcon(path),
       keywords: [path],
       run: () => deps.open(path),
@@ -396,18 +410,23 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     commands: availableCommands,
     fromQuery: (text) => {
       // Ask agent with what was typed, about the selected element.
-      const prompt = deps.editBar()?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
+      const model = deps.editBar();
+      const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
       if (!prompt || text.length < 3) return [];
+      const selection = deps.selection();
+      const source = selection && deps.source(selection.path);
+      const identity = JSON.stringify(selection);
       return [{
         id: "agent.ask-typed",
         title: `Ask agent: “${text}”`,
         hint: deps.editBar()?.kind,
         group: "Agent",
         icon: "sparkle",
-        run: async () => {
+        run: guardCommand(async () => {
           const problem = await prompt.onSend(text);
           if (problem) deps.onError(new Error(problem));
-        },
+        }, () => deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+        () => deps.announce("The selection changed. Reopen the command palette and try again.")),
       }];
     },
     showShortcuts,

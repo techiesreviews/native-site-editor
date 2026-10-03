@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fuzzyMatch, groupRanked, markRuns, parseQuery, pushRecent, rankItems, type Searchable } from "../src/page-builder/palette-search.ts";
-import { availableCommands, keyCaps, keyLabel, matchesKeys, registerCommand, registerCommandSource, registerShortcut, resetCommands, runCommand, shortcutSheet, type Command } from "../src/page-builder/commands.ts";
+import { availableCommands, guardCommand, keyCaps, keyLabel, matchesKeys, registerCommand, registerCommandSource, registerShortcut, resetCommands, runCommand, shortcutSheet, type Command } from "../src/page-builder/commands.ts";
 
 test("fuzzy matching finds letters in order and prefers word starts and runs", () => {
   assert.equal(fuzzyMatch("xyz", "Publish changes"), undefined);
@@ -111,4 +111,30 @@ test("keys show and match per platform", () => {
   assert.equal(matchesKeys(press("?", { shiftKey: true }), ["?"], true), true);
   assert.equal(matchesKeys(press("Enter", { shiftKey: true }), ["Shift", "Enter"], false), true);
   assert.equal(matchesKeys(press("Enter"), ["Shift", "Enter"], false), false);
+});
+
+
+test("source guards reject stale insertion closures and selection changes", async () => {
+  let source = "<section>Old</section><p>Text</p>";
+  let selection = "section:0";
+  const capturedSource = source;
+  const capturedSelection = selection;
+  const offset = source.indexOf("<p>");
+  let rejected = 0;
+  const duplicate = guardCommand(() => {
+    source = source.slice(0, offset) + "<section>Old</section>" + source.slice(offset);
+  }, () => source === capturedSource && selection === capturedSelection, () => { rejected++; });
+  source = "<section>Longer replacement</section><p>Text</p>";
+  const changed = source;
+  await duplicate();
+  assert.equal(source, changed);
+  assert.equal(rejected, 1);
+  source = capturedSource;
+  selection = "section:1";
+  await duplicate();
+  assert.equal(source, capturedSource);
+  assert.equal(rejected, 2);
+  selection = capturedSelection;
+  await duplicate();
+  assert.equal(source, "<section>Old</section><section>Old</section><p>Text</p>");
 });

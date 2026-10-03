@@ -177,6 +177,7 @@ test("a component is added after the selected section, as one undo step", async 
   const frame = page.frameLocator(".native-preview-frame");
   await frame.locator("section.hero h1").click();
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("feature");
   await expect(active(page)).toHaveAttribute("aria-label", /^Add Feature block, <feature-block> after the selected section/);
   await expect(option(page, /^Open Feature block component, components\/feature-block\/feature-block\.html/)).toBeVisible();
@@ -215,4 +216,73 @@ test("? shows every keyboard shortcut; typing ? in a field does not", async ({ p
   await page.keyboard.press("?");
   await expect(sheet).toBeHidden();
   await page.keyboard.press("ControlOrMeta+Z");
+});
+
+
+test("Go to opens component templates without offering Add commands", async ({ page }) => {
+  await page.locator("#explorer-toggle").focus();
+  await page.keyboard.press("ControlOrMeta+P");
+  await expect(search(page)).toBeFocused();
+  await search(page).fill("feature");
+  await expect(option(page, /^Add /)).toHaveCount(0);
+  await expect(active(page)).toHaveAttribute("data-command", "component.open:feature-block");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
+});
+
+test("New page command retains focus after the palette close event", async ({ page }) => {
+  await page.locator("#explorer-toggle").focus();
+  await page.keyboard.press("ControlOrMeta+K");
+  await search(page).fill("new page");
+  await option(page, /^New page$/).click();
+  const title = page.getByRole("textbox", { name: "New page title", exact: true });
+  await expect(title).toBeFocused();
+  // Let the queued native dialog close event run before testing real typing.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(title).toBeFocused();
+  await page.keyboard.type("Palette focus");
+  await expect(title).toHaveValue("Palette focus");
+});
+
+test("IME navigation keys leave the palette highlight and native key handling alone", async ({ page }) => {
+  await page.locator("#explorer-toggle").focus();
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
+  const initial = await active(page).getAttribute("data-command");
+  for (const key of ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Tab", "Enter"]) {
+    const prevented = await search(page).evaluate((input, key) => {
+      const event = new KeyboardEvent("keydown", { key, isComposing: true, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      return event.defaultPrevented;
+    }, key);
+    expect(prevented).toBe(false);
+    await expect(active(page)).toHaveAttribute("data-command", initial!);
+    await expect(palette(page)).toBeVisible();
+  }
+});
+
+
+test("a source edit while the palette is open rejects a stale Duplicate", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await frame.locator("section.filler h2").click();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
+  await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
+  await search(page).fill("duplicate");
+  await expect(active(page)).toHaveAttribute("data-command", "selection.duplicate");
+  const changed = await page.evaluate(async () => {
+    const modulePath = "/src/components/monaco.ts";
+    const { monaco } = await import(modulePath);
+    const model = monaco.editor.getModels().find((model: { getValue(): string }) => model.getValue().includes('class="filler"'));
+    if (!model) throw new Error("Page source model missing");
+    const source = model.getValue().replace("<body>", "<body>\n<!-- source changed while palette was open -->");
+    model.setValue(source);
+    return source;
+  });
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  await expect.poll(() => editorText(page)).toBe(changed);
+  await expect(frame.locator("section.filler")).toHaveCount(1);
 });
