@@ -165,3 +165,67 @@ test("new page and navigation cross their original history anchor through two Un
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "services/index.html");
   await expect(frame(page).locator("site-header nav a[href='/services/']")).toHaveText("Services");
 });
+
+test("a visual edit on a created page restores its owned draft identity before create Undo and Redo", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "+ New page", exact: true }).click();
+  const title = page.getByRole("textbox", { name: "New page title", exact: true });
+  await title.fill("Visual chain");
+  await title.press("Enter");
+  const path = "visual-chain/index.html";
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+  await expect(page.locator("#status")).toContainText("Created");
+  const created = await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+  await page.evaluate(async path => {
+    const editor = await import("/src/components/code-editor.ts");
+    const text = editor.getMountedSource(path)!;
+    const start = text.indexOf("</main>");
+    editor.replaceActiveRange({ path, start, end: start, expected: "", text: "<h1>Owned visual heading</h1>\n" });
+  }, path);
+  await expect(frame(page).locator("main h1")).toHaveText("Owned visual heading");
+  const edited = await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+  const step = async (direction: "undo" | "redo", active: string) => {
+    expect(await page.evaluate(async ({ direction, active }) => (await import("/src/components/code-editor.ts")).runVisualHistory(direction, active), { direction, active })).toBe(true);
+  };
+  await step("undo", path);
+  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path)).toBe(created);
+  await step("undo", path);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await step("redo", "index.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+  await expect(page.locator("#status")).toContainText("Created");
+  await step("redo", path);
+  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path)).toBe(edited);
+  await expect(frame(page).locator("main h1")).toHaveText("Owned visual heading");
+});
+
+test("an external draft replacement during awaited visual Undo is preserved and refused", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("combobox", { name: "Heading level" }).selectOption("h2");
+  await expect(frame(page).locator(".hero h2")).toBeVisible();
+  const result = await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const { monaco } = await import("/src/components/monaco.ts");
+    const store = (await import("/src/drafts.ts")).draftStore();
+    const record = store.get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "index.html")!;
+    const model = monaco.editor.getModels().find(value => value.getValue() === editor.getMountedSource("index.html"))!;
+    const undo = model.undo.bind(model);
+    let foreign: typeof record;
+    model.undo = () => Promise.resolve(undo()).then(() => {
+      foreign = { ...record, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" };
+      store.save(foreign);
+    });
+    try {
+      const accepted = await editor.runVisualHistory("undo", "index.html");
+      const current = store.get(record, record.path);
+      return { accepted, exact: current === foreign!, content: current?.content, baseSha: current?.baseSha, mode: current?.mode };
+    } finally { model.undo = undo; }
+  });
+  expect(result).toEqual({ accepted: false, exact: true, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" });
+});

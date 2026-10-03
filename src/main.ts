@@ -4496,6 +4496,9 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     const capture = (path: string) => { if (live() && changing.includes(path)) owned.set(path, editor.captureFileModelState(scope, path, true)); };
     nativeHistoryMountCapture = capture;
     try {
+      // Rebuild the owned route graph before opening a restored/new page. Its
+      // source-only updates cannot change a preview that still points Home.
+      afterFileChanges();
       if (!live() || !receipt.isCurrent()) return false;
       await openAfter(path, !initial || !op.open);
       if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }

@@ -108,6 +108,14 @@ model and scope proof must remain unchanged. Another history action is blocked
 until the owned editor transition settles. This does not accept an arbitrary new
 model or an external edit as an owned transition.
 
+A visual edit records its own draft references before and after the source step.
+After guarded Monaco Undo or Redo, it restores that reference only if the exact
+model, version, source and synchronous writer record remain current after the
+await, and every stable draft field matches. This lets a visual edit on a new
+page precede Undo of the page creation without treating an arbitrary equal-text
+new-file draft as the creation's record. A foreign replacement is refused and
+control refreshes do not overwrite it.
+
 ## Validation
 
 `tests/site-head.test.ts`, `tests/site-identity.test.ts`,

@@ -153,6 +153,7 @@ type VisualHistoryEntry = {
   after: number;
   undone?: number;
   group?: boolean;
+  draft?: { scope: DraftScope; before?: SavedDraft; after?: SavedDraft; beforeSource: string; afterSource: string };
   /** Changes to other files made with this edit: undone and redone with it. */
   companions?: HistoryCompanion[];
 };
@@ -229,13 +230,20 @@ const historyFor = (session: string) => {
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
   return history;
 };
-function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false, companion?: HistoryCompanion) {
+function sameHistoryDraft(a: SavedDraft | undefined, b: SavedDraft | undefined) {
+  if (!a || !b) return a === b;
+  const keys = Object.keys(a).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
+  return keys.length === Object.keys(b).filter(key => key !== "updatedAt").length && keys.every(key => a[key] === b[key]);
+}
+function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false, companion?: HistoryCompanion, draft?: VisualHistoryEntry["draft"]) {
   const history = historyFor(session);
   const last = history.undo.at(-1);
   if (group && !isAction(last) && last?.group && last.model === model && last.path === path) {
     last.after = model.getAlternativeVersionId();
+    if (last.draft && draft) { last.draft.after = draft.after; last.draft.afterSource = draft.afterSource; }
+    else last.draft = undefined;
     if (companion) (last.companions ??= []).push(companion);
-  } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined });
+  } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined, draft });
   for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
   history.redo.length = 0;
   for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
@@ -480,10 +488,31 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
     const expected = direction === "undo" ? entry?.after : entry?.undone;
     if (entry && targetEditor?.model === entry.model && targetEditor.session === session && !targetEditor.readOnly &&
         !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === expected) {
-      source.pop();
+      const draft = entry.draft;
+      const expectedDraft = direction === "undo" ? draft?.after : draft?.before;
+      const restoredDraft = direction === "undo" ? draft?.before : draft?.after;
+      const expectedSource = direction === "undo" ? draft?.afterSource : draft?.beforeSource;
+      const restoredSource = direction === "undo" ? draft?.beforeSource : draft?.afterSource;
+      const store = draftStore();
+      if (draft && (store.get(draft.scope, entry.path) !== expectedDraft || entry.model.getValue() !== expectedSource)) return false;
       routedModelChanges.add(entry.model);
-      try { await entry.model[direction](); }
-      finally { routedModelChanges.delete(entry.model); }
+      let written: SavedDraft | undefined;
+      let version: number;
+      try {
+        const operation = entry.model[direction]();
+        // Capture the synchronous model writer before an awaited continuation.
+        written = draft ? store.get(draft.scope, entry.path) : undefined;
+        version = entry.model.getAlternativeVersionId();
+        await operation;
+      } finally { routedModelChanges.delete(entry.model); }
+      if (visualHistory.get(session) !== history || source.at(-1) !== entry || mounted.get(entry.path) !== targetEditor ||
+          entry.model.isDisposed() || entry.model.getAlternativeVersionId() !== version!) return false;
+      if (draft) {
+        if (entry.model.getValue() !== restoredSource || store.get(draft.scope, entry.path) !== written || !sameHistoryDraft(restoredDraft, written)) return false;
+        if (!(restoredDraft ? store.save(restoredDraft) : store.remove(draft.scope, entry.path))) return false;
+        if (store.get(draft.scope, entry.path) !== restoredDraft) return false;
+      }
+      source.pop();
       if (direction === "undo") entry.undone = entry.model.getAlternativeVersionId();
       else entry.after = entry.model.getAlternativeVersionId();
       const companions = entry.companions ?? [];
@@ -503,7 +532,9 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
     return true;
   } finally {
     runningVisualHistory.delete(session);
-    for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
+    // The model notification already persisted the owned source step. A
+    // control refresh must not replace a foreign record that rejected it.
+    for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false);
   }
 }
 const editorFor = (path: string) => {
@@ -833,6 +864,8 @@ export function mountCodeEditor(
     },
     replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion) {
       const target = rangeOf(edit);
+      const beforeDraft = file.scope ? store.get(file.scope, file.path) : undefined;
+      const beforeSource = current.model.getValue();
       if (edit.text === edit.expected) return;
       if (!group) current.model.pushStackElement();
       const before = current.model.getAlternativeVersionId();
@@ -847,7 +880,8 @@ export function mountCodeEditor(
         marks.push({ before, after: current.model.getAlternativeVersionId(), done: true, companion });
         companionMarks.set(current.model, marks.slice(-50));
       }
-      recordVisualEdit(session, file.path, current.model, group, marked ? undefined : companion);
+      recordVisualEdit(session, file.path, current.model, group, marked ? undefined : companion,
+        file.scope ? { scope: file.scope, before: beforeDraft, after: store.get(file.scope, file.path), beforeSource, afterSource: current.model.getValue() } : undefined);
       view?.setSelection(
         monaco.Range.fromPositions(
           current.model.getPositionAt(edit.start),
@@ -859,6 +893,8 @@ export function mountCodeEditor(
       const verified = edits.map((edit) => ({ edit, range: rangeOf(edit) }));
       const changes = verified.filter(({ edit }) => edit.text !== edit.expected);
       if (!changes.length) return;
+      const beforeDraft = file.scope ? store.get(file.scope, file.path) : undefined;
+      const beforeSource = current.model.getValue();
       current.model.pushStackElement();
       routedModelChanges.add(current.model);
       try {
@@ -869,7 +905,8 @@ export function mountCodeEditor(
         );
       } finally { routedModelChanges.delete(current.model); }
       current.model.pushStackElement();
-      recordVisualEdit(session, file.path, current.model);
+      recordVisualEdit(session, file.path, current.model, false, undefined,
+        file.scope ? { scope: file.scope, before: beforeDraft, after: store.get(file.scope, file.path), beforeSource, afterSource: current.model.getValue() } : undefined);
     },
   };
   const registration: MountedEditor = {
