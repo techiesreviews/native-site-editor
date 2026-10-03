@@ -13,6 +13,39 @@ import type { PublishResult } from "../../shared/types";
 import { listChanges, type FileChange } from "../file-changes";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
+import { CODE_POINTER_EVENT, type CodePointer } from "../page-builder/canvas-model";
+
+// Code to canvas (page builder): an HTML editor reports where its cursor
+// goes by a click or a key and which line the pointer is over, so the
+// canvas can select or point at that element (src/page-builder/code-link.ts).
+function linkToCanvas(editor: monaco.editor.ICodeEditor, path: string, model: monaco.editor.ITextModel) {
+  const tell = (pointer: CodePointer) => window.dispatchEvent(new CustomEvent(CODE_POINTER_EVENT, { detail: pointer }));
+  // A pointer's source is read when it is sent, so its offset matches it;
+  // the canvas drops it when the model has changed since (`stale`).
+  const snapshot = () => {
+    const version = model.getVersionId();
+    return { source: model.getValue(), stale: () => model.isDisposed() || model.getVersionId() !== version };
+  };
+  editor.onDidChangeCursorPosition((event) => {
+    // Typing, undo and the editor's own reveals move the cursor too, and
+    // a range being selected is about text; none of them is pointing.
+    if ((event.source !== "mouse" && event.source !== "keyboard") || event.reason !== monaco.editor.CursorChangeReason.Explicit) return;
+    if (editor.getSelection()?.isEmpty() === false) return;
+    tell({ path, kind: "cursor", offset: model.getOffsetAt(event.position), ...snapshot() });
+  });
+  let line = 0;
+  editor.onMouseMove((event) => {
+    const at = event.target.position?.lineNumber ?? 0;
+    if (at === line) return;
+    line = at;
+    if (!at) tell({ path, kind: "leave" });
+    else tell({ path, kind: "hover", offset: model.getOffsetAt({ lineNumber: at, column: model.getLineFirstNonWhitespaceColumn(at) || 1 }), ...snapshot() });
+  });
+  editor.onMouseLeave(() => {
+    line = 0;
+    tell({ path, kind: "leave" });
+  });
+}
 
 export interface SourceFile {
   key: string;
@@ -836,6 +869,7 @@ export function mountCodeEditor(
       });
       view = editor;
       editor.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
+      if (current.model.getLanguageId() === "html") linkToCanvas(editor, file.path, current.model);
       if (current.view) editor.restoreViewState(current.view);
       else if (current.model.getLanguageId() === "html") {
         const lines = defaultFoldLines(current.model.getValue());

@@ -1,0 +1,267 @@
+/* The canvas bar over the preview and the stage the frame stands on
+   (canvas-bar.ts). One look with the code panes' title bars. */
+.canvas-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 4px 8px 4px 10px;
+  border-bottom: 1px solid var(--control-line);
+  background: var(--surface-toolbar);
+  color: var(--text);
+  font-size: var(--type-small);
+}
+.canvas-bar[hidden] {
+  display: none;
+}
+
+/* Breadcrumb: body › main › section.hero › h1, the selection last. */
+.canvas-crumbs {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.canvas-crumbs::-webkit-scrollbar {
+  display: none;
+}
+.canvas-crumbs.is-clipped {
+  mask-image: linear-gradient(to right, transparent 0, #000 32px);
+}
+.canvas-crumbs__list {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+.canvas-crumbs__item {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.canvas-crumbs__separator {
+  padding: 0 2px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+.canvas-crumb {
+  height: var(--size-icon);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font: var(--type-small) / 1 var(--font-mono);
+  cursor: pointer;
+}
+.canvas-crumb:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.canvas-crumb:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.canvas-crumb[aria-current="true"] {
+  background: var(--current);
+  color: var(--text);
+  font-weight: 600;
+}
+.canvas-crumb--component,
+.canvas-crumb--template {
+  color: var(--component-text);
+}
+.canvas-crumb--component {
+  font-weight: 600;
+}
+:is(.canvas-crumb--component, .canvas-crumb--template)[aria-current="true"] {
+  background: color-mix(in oklch, var(--component) 18%, transparent);
+  color: var(--component-text);
+}
+
+/* Breakpoints, width and the spacing toggle. */
+.canvas-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.canvas-devices {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--hover);
+}
+.canvas-device {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: var(--size-icon);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.canvas-device:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.canvas-device:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 0;
+}
+.canvas-devices .canvas-device[aria-pressed="true"] {
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-small);
+  color: var(--text);
+}
+.canvas-spacing[aria-pressed="true"] {
+  background: var(--pressed);
+  color: var(--on-pressed);
+}
+.canvas-width {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.canvas-width__input {
+  width: 64px;
+  height: var(--size-icon);
+  padding: 0 24px 0 6px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  color: var(--text);
+  font: var(--type-small) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.canvas-width__input:focus {
+  border-color: var(--focus);
+  outline: 1px solid var(--focus);
+}
+.canvas-width__unit {
+  position: absolute;
+  right: 6px;
+  color: var(--muted);
+  font: var(--type-small) / 1 var(--font-mono);
+  pointer-events: none;
+}
+
+/* The canvas: Desktop fills it; a framed width stands centred on a dotted
+   ground, a handle on each side. */
+.canvas-host {
+  --canvas-gutter: 28px;
+  position: relative;
+  justify-content: center;
+  transition: padding 180ms ease-out;
+}
+.canvas-host.is-framed {
+  padding: 16px var(--canvas-gutter);
+  background:
+    radial-gradient(circle, color-mix(in oklch, var(--text) 16%, transparent) 1px, transparent 1.5px) 0 0 / 16px 16px,
+    var(--surface-subtle);
+}
+.canvas-stage {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+  transition: width 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.canvas-host.is-framed .native-preview-frame {
+  border-radius: var(--radius-small);
+  box-shadow: 0 0 0 1px var(--control-line), var(--shadow-small);
+}
+.canvas-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: none;
+  width: 18px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.canvas-host.is-framed .canvas-handle {
+  display: block;
+}
+.canvas-handle--left {
+  left: -20px;
+}
+.canvas-handle--right {
+  right: -20px;
+}
+.canvas-handle:focus-visible {
+  outline: none;
+}
+.canvas-handle__grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.45;
+  transform: translate(-50%, -50%);
+  transition: width 120ms ease-out, height 120ms ease-out, opacity 120ms ease-out, background-color 120ms ease-out;
+}
+.canvas-handle:is(:hover, :focus-visible) .canvas-handle__grip,
+.canvas-host.is-resizing .canvas-handle:focus .canvas-handle__grip {
+  width: 6px;
+  height: 56px;
+  background: var(--primary);
+  opacity: 1;
+}
+.canvas-handle:focus-visible .canvas-handle__grip {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.canvas-size {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pressed);
+  color: var(--on-pressed);
+  font: 600 var(--type-small) / 16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease-out;
+}
+.canvas-host.is-resizing {
+  cursor: ew-resize;
+}
+.canvas-host.is-resizing .canvas-stage {
+  transition: none;
+}
+.canvas-host.is-resizing .native-preview-frame {
+  pointer-events: none;
+}
+.canvas-host.is-resizing .canvas-size {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-host,
+  .canvas-stage,
+  .canvas-device,
+  .canvas-handle__grip,
+  .canvas-size {
+    transition: none;
+  }
+}
