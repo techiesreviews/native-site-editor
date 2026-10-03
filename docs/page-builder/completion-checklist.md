@@ -5,8 +5,8 @@ Current scope comes from Lex's authorized continuation in destination T3 thread 
 - [x] Recover and fix original component/canvas/palette findings and flaky tests.
 - [x] Settings categories and navigation placement; component properties resize.
 - [x] Style class chips, width/fold parity, practical catalogue and search.
-- [ ] Close CSS-variable host/menu review findings; improve shared-class context and source navigation.
-- [ ] Complete and review true persistent Images tab beside Pages/Files.
+- [x] Close CSS-variable host/menu review findings; improve shared-class context and source navigation. Independent review approved; focused Undo/source navigation and matched-priority fixes integrated.
+- [x] Complete and review persistent Images tab beside Pages/Files, including draft transactions, background refresh, metadata focus, deletion guards and keyboard return.
 - [ ] Integrate reviewed grid and image focal-point widgets with native CSS and Undo.
 - [ ] Finish native element source-boundary review, integrate catalogue into Add, resolve inline grid CSS compatibility.
 - [x] Extend the collection model to mixed page sources (work/services/portfolio/articles/videos); union deduplication, global filter/sort/limit and source chooser. Host integration remains below.
