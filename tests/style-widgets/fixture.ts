@@ -10,18 +10,20 @@ const context = canvas.getContext('2d')!; context.fillStyle = '#2870b5'; context
 context.fillStyle = '#ffe5a0'; context.fillRect(100, 40, 200, 120);
 const asset = { dataURL: canvas.toDataURL('image/png') };
 let current = true, readOnly = false;
-let fail = false, pending: (() => void) | undefined; const errors: string[] = []; let defer = false;
+let fail = false, pending: ((reject?: boolean) => void) | undefined; const errors: string[] = []; let defer = false;
 let mounted: ReturnType<typeof mountGridEditor> | ReturnType<typeof mountImageFocalPoint> | undefined;
 const expected = { selection: 'fixture', source: 'opaque snapshot' };
 const writes: { properties: Record<string, string | null>; sameExpected: boolean }[] = [];
 const shared = { onError: (error: unknown) => errors.push(String(error)), expected, isCurrent: () => current, readOnly: () => readOnly, onChange: (properties: Record<string, string | null>, token: unknown) => { if (fail) { fail = false; return Promise.reject(new Error('Write failed')); }
-    if (defer) return new Promise<void>(resolve => { pending = () => { writes.push({ properties, sameExpected: token === expected }); resolve(); }; });
+    if (defer) return new Promise<void>((resolve, reject) => { pending = (failed) => { if (failed) reject(new Error('Write failed')); else { writes.push({ properties, sameExpected: token === expected }); resolve(); } }; });
     writes.push({ properties, sameExpected: token === expected }); } };
 const api = {
   writes, errors,
   failNext() { fail = true; },
   deferNext() { defer = true; },
   resolve() { defer = false; pending?.(); pending = undefined; },
+  reject() { defer = false; pending?.(true); pending = undefined; },
+  implicitGrid() { mounted?.dispose(); mounted = mountGridEditor(fixture, { ...shared, authored: {} }); },
   computedGrid() { mounted?.dispose(); writes.length = 0; mounted = mountGridEditor(fixture, { ...shared, authored: {}, computed: { 'grid-template-columns': '120px 120px' } }); },
   svg(trusted = true) { mounted?.dispose(); writes.length = 0; const previewAsset = { dataURL: `data:image/svg+xml;base64,${btoa(starterSVG)}`, hostTrusted: trusted }; try { mounted = mountImageFocalPoint(fixture, { ...shared, mode: 'object-position', previewAsset, authored: '25% 75%' }); return true; } catch { return false; } },
   mount(kind: 'grid' | 'focal', raw?: string, mode: 'object-position' | 'background-position' = 'object-position') {

@@ -58,7 +58,8 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
   const raw = options.authored ?? options.computed ?? '';
   let point = parseFocusPosition(raw), committed = point ? { ...point } : undefined;
   const clampedRaw = raw.split(/\s+/).some(token => /^[-+]?(?:\d+\.?\d*|\.\d+)%$/.test(token) && (Number.parseFloat(token) < 0 || Number.parseFloat(token) > 100));
-  let edited = false;
+  let edited = false, acceptedEdit = false, writeVersion = 0;
+  let pendingValue: string | undefined;
   let drag: { id: number; before?: FocusPoint } | undefined;
   const inputs: HTMLInputElement[] = [];
   root.append(preview);
@@ -84,17 +85,25 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
     marker.hidden = !point;
     const box = image.getBoundingClientRect(), rect = containedImageRect(box, image.naturalWidth, image.naturalHeight);
     if (point && rect) { marker.style.left = `${rect.left - box.left + rect.width * point.x / 100}px`; marker.style.top = `${rect.top - box.top + rect.height * point.y / 100}px`; }
-    status.textContent = point && clampedRaw && !edited ? `${options.authored === undefined ? 'Computed' : 'Authored'} position: ${raw}. Editing marker clamped to ${point.x}% ${point.y}%; source unchanged.` : point ? `${point.x}% ${point.y}%${options.authored === undefined && !edited ? ' · computed' : ''}` : `Custom position: ${raw || 'default'}. Set percentages to replace it.`;
+    status.textContent = point && clampedRaw && !edited && !drag ? `${options.authored === undefined ? 'Computed' : 'Authored'} position: ${raw}. Editing marker clamped to ${point.x}% ${point.y}%; source unchanged.` : point ? `${point.x}% ${point.y}%${options.authored === undefined && !edited && !drag ? ' · computed' : ''}` : `Custom position: ${raw || 'default'}. Set percentages to replace it.`;
   }
   function publish(next: FocusPoint) {
     if (!allowed()) return;
     next = { x: Math.round(clampFocus(next.x) * 100) / 100, y: Math.round(clampFocus(next.y) * 100) / 100 };
-    const replaceClampedSource = clampedRaw && !edited;
+    const replaceClampedSource = clampedRaw && !acceptedEdit;
     edited = true; point = next; draw();
-    if (!replaceClampedSource && committed?.x === next.x && committed.y === next.y) return;
-    committed = { ...next };
-    try { Promise.resolve(options.onChange({ [options.mode]: `${next.x}% ${next.y}%` }, expected)).catch(error => options.onError?.(error)); }
-    catch (error) { options.onError?.(error); }
+    const value = `${next.x}% ${next.y}%`;
+    if (pendingValue === value || (!replaceClampedSource && committed?.x === next.x && committed.y === next.y)) return;
+    const version = ++writeVersion; pendingValue = value;
+    const accepted = { ...next };
+    const succeed = () => { if (allowed() && version === writeVersion) { committed = accepted; acceptedEdit = true; } };
+    const fail = (error: unknown) => { if (allowed() && version === writeVersion) options.onError?.(error); };
+    const finish = () => { if (version === writeVersion) pendingValue = undefined; };
+    try {
+      const result = options.onChange({ [options.mode]: value }, expected);
+      if (result) void Promise.resolve(result).then(succeed, fail).finally(finish);
+      else { succeed(); finish(); }
+    } catch (error) { fail(error); finish(); }
   }
   function cancel() {
     if (!drag) return;

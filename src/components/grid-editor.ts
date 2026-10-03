@@ -50,31 +50,42 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const label = document.createElement('label'); label.className = 'grid-editor__field'; label.append(axis === 'columns' ? 'Columns' : 'Rows');
     const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = counts[axis] ? String(counts[axis]) : ''; label.append(input);
     const status = document.createElement('p'); status.className = 'grid-editor__status';
-    status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
+    status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined && raw ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
     const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = input.value ? `Replace with ${input.value} equal ${axis}` : `Replace with N equal ${axis}`; };
     updateButton(); input.addEventListener('input', updateButton, { signal: events.signal });
+    const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
+    error.id = `grid-count-error-${++gridErrorId}`; input.setAttribute('aria-describedby', error.id);
+    let invalidValue: string | undefined;
     button.addEventListener('click', () => {
+      if (!allowed() || busy || !input.value.trim()) return;
       const count = Number(input.value);
-      if (!allowed() || !Number.isInteger(count) || count < 1 || count > MAX_GRID_TRACKS) return;
+      if (!Number.isInteger(count) || count < 1 || count > MAX_GRID_TRACKS) {
+        const message = `Enter a whole number from 1 to ${MAX_GRID_TRACKS}.`;
+        input.setAttribute('aria-invalid', 'true'); error.textContent = message; error.hidden = false;
+        if (invalidValue !== input.value) options.onError?.(new Error(message));
+        invalidValue = input.value; return;
+      }
+      invalidValue = undefined; input.removeAttribute('aria-invalid'); error.hidden = true; error.textContent = '';
       void emit({ [property]: `repeat(${count}, minmax(0, 1fr))` }, () => { counts[axis] = count; status.textContent = `${count} equal tracks`; renderPreview(); });
     }, { signal: events.signal });
-    root.append(label, button, status);
+    root.append(label, button, error, status);
   }
   for (const property of ['gap', 'column-gap', 'row-gap']) {
     const label = document.createElement('label'); label.className = 'grid-editor__field'; label.append(property === 'gap' ? 'Gap' : property === 'column-gap' ? 'Column gap' : 'Row gap');
     const input = document.createElement('input'); input.type = 'text'; input.value = options.authored[property] ?? ''; input.placeholder = options.computed?.[property] ?? 'Default'; label.append(input);
     const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
     error.id = `grid-gap-error-${++gridErrorId}`; input.setAttribute('aria-describedby', error.id);
-    let last = input.value;
+    let last = input.value, invalidValue: string | undefined;
     const commit = () => {
       const value = input.value.trim();
       if (!allowed() || busy) return;
       if (value && !CSS.supports(property, value)) {
         const message = `Enter a valid ${property.replaceAll('-', ' ')}.`;
         input.setAttribute('aria-invalid', 'true'); error.textContent = message; error.hidden = false;
-        options.onError?.(new Error(message)); return;
+        if (invalidValue !== value) options.onError?.(new Error(message));
+        invalidValue = value; return;
       }
-      input.removeAttribute('aria-invalid'); error.hidden = true; error.textContent = '';
+      invalidValue = undefined; input.removeAttribute('aria-invalid'); error.hidden = true; error.textContent = '';
       if (value === last) return;
       void emit({ [property]: value || null }, () => { last = value; });
     };
@@ -84,9 +95,18 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
   }
   if (options.makeGrid) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Make grid';
-    button.addEventListener('click', () => { if (allowed()) options.makeGrid?.(); }, { signal: events.signal }); root.append(button);
+    button.addEventListener('click', () => { if (allowed() && !busy) options.makeGrid?.(); }, { signal: events.signal }); root.append(button);
   }
-  function refresh() { for (const control of root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button')) control.disabled = busy || !allowed(); }
+  function refresh() {
+    root.setAttribute('aria-busy', String(busy));
+    for (const control of root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button')) {
+      const blocked = busy || !allowed();
+      // Preserve native keyboard focus through pending and stale completion.
+      control.disabled = !allowed() && !busy && document.activeElement !== control;
+      control.setAttribute('aria-disabled', String(blocked));
+      if (control instanceof HTMLInputElement) control.readOnly = blocked;
+    }
+  }
   renderPreview(); refresh(); container.append(root);
   return { element: root, refresh, dispose() { if (disposed) return; disposed = true; events.abort(); root.remove(); } };
 }

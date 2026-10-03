@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-type WidgetAPI = { writes: { properties: Record<string, string | null>; sameExpected: boolean }[]; mount(kind: 'grid' | 'focal', raw?: string, mode?: 'object-position' | 'background-position'): void; stale(refresh?: boolean): void; lock(refresh?: boolean): void; errors: string[]; failNext(): void; deferNext(): void; resolve(): void; computedGrid(): void; svg(trusted?: boolean): boolean; dispose(): void; rejectURL(): boolean };
+type WidgetAPI = { writes: { properties: Record<string, string | null>; sameExpected: boolean }[]; mount(kind: 'grid' | 'focal', raw?: string, mode?: 'object-position' | 'background-position'): void; stale(refresh?: boolean): void; lock(refresh?: boolean): void; errors: string[]; failNext(): void; deferNext(): void; resolve(): void; reject(): void; implicitGrid(): void; computedGrid(): void; svg(trusted?: boolean): boolean; dispose(): void; rejectURL(): boolean };
 declare global { interface Window { widgets: WidgetAPI } }
 const writes = (page: Page) => page.evaluate(() => window.widgets.writes);
 async function focal(page: Page, raw = '25% 75%', mode: 'object-position' | 'background-position' = 'object-position') {
@@ -86,7 +86,7 @@ test('async tracks update only after success; rejected retry, stale and disposed
   for (const end of ['stale', 'dispose']) {
     await page.evaluate(() => { window.widgets.mount('grid'); window.widgets.deferNext(); });
     await count.fill('4'); await page.getByRole('button', { name: 'Replace with 4 equal columns' }).click();
-    await expect(count).toBeDisabled(); await expect(page.getByText('Custom columns:', { exact: false })).toBeVisible();
+    await expect(count).toHaveAttribute('readonly', ''); await expect(page.getByText('Custom columns:', { exact: false })).toBeVisible();
     await page.evaluate(end => { if (end === 'stale') window.widgets.stale(); else window.widgets.dispose(); window.widgets.resolve(); }, end);
     await expect(page.getByText('4 equal tracks', { exact: true })).toHaveCount(0);
   }
@@ -105,4 +105,86 @@ test('raw out-of-range focus is explained; trusted native starter SVG loads and 
   expect(await page.locator('img').evaluate((img: HTMLImageElement) => img.naturalHeight)).toBe(180);
   const box = (await page.locator('img').boundingBox())!; await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   expect(await writes(page)).toHaveLength(1); expect(requests).toEqual([]);
+});
+
+test('pending grid preserves actual Enter, Tab and button focus', async ({ page }) => {
+  for (const action of ['Enter', 'Tab', 'button']) for (const end of ['resolve', 'reject', 'stale', 'dispose']) {
+    await page.evaluate(() => { window.widgets.mount('grid'); window.widgets.deferNext(); });
+    const gap = page.getByLabel('Gap', { exact: true });
+    let target = gap;
+    if (action === 'button') {
+      await page.getByLabel('Columns', { exact: true }).fill('3');
+      target = page.getByRole('button', { name: 'Replace with 3 equal columns' }); await target.click();
+    } else {
+      await gap.fill('12px'); await gap.press(action);
+      if (action === 'Tab') target = page.getByLabel('Column gap', { exact: true });
+    }
+    await expect(target).toBeFocused();
+    if (end === 'stale') await page.evaluate(() => window.widgets.stale());
+    if (end === 'dispose') await page.evaluate(() => { window.widgets.dispose(); const input = document.createElement('input'); input.id = 'next-context'; document.body.append(input); input.focus(); });
+    await page.evaluate(end => { if (end === 'reject') window.widgets.reject(); else window.widgets.resolve(); }, end);
+    if (end === 'dispose') { await expect(page.locator('#next-context')).toBeFocused(); await page.locator('#next-context').evaluate(node => node.remove()); }
+    else await expect(target).toBeFocused();
+  }
+});
+
+
+test('pending focus survives rejection and stale; disposal never steals new focus', async ({ page }) => {
+  for (const end of ['resolve', 'reject', 'stale', 'dispose', 'moved']) {
+    await page.evaluate(() => { window.widgets.mount('grid'); window.widgets.deferNext(); });
+    const gap = page.getByLabel('Gap', { exact: true });
+    await gap.fill('12px'); await gap.press('Enter'); await expect(gap).toBeFocused();
+    await gap.press('Enter'); expect(await writes(page)).toEqual([]);
+    if (end === 'stale') await page.evaluate(() => window.widgets.stale());
+    if (end === 'dispose') {
+      await page.evaluate(() => { window.widgets.dispose(); const input = document.createElement('input'); input.id = 'new-selection'; document.body.append(input); input.focus(); });
+    }
+    if (end === 'moved') await page.getByLabel('Column gap', { exact: true }).focus();
+    await page.evaluate(end => { if (end === 'reject') window.widgets.reject(); else window.widgets.resolve(); }, end);
+    if (end === 'dispose') await expect(page.locator('#new-selection')).toBeFocused();
+    else if (end === 'moved') await expect(page.getByLabel('Column gap', { exact: true })).toBeFocused();
+    else await expect(gap).toBeFocused();
+    if (end === 'stale') { await gap.press('Enter'); expect(await writes(page)).toHaveLength(1); }
+  }
+});
+
+test('gap errors deduplicate Enter plus blur; bounded counts report accessible errors', async ({ page }) => {
+  const gap = page.getByLabel('Gap', { exact: true });
+  await gap.fill('bad-gap'); await gap.press('Enter'); await gap.press('Tab');
+  expect(await page.evaluate(() => window.widgets.errors)).toEqual(['Error: Enter a valid gap.']);
+  const count = page.getByLabel('Columns', { exact: true });
+  for (const value of ['0', '25']) {
+    await count.fill(value); await page.getByRole('button', { name: `Replace with ${value} equal columns` }).click();
+    await expect(count).toHaveAttribute('aria-invalid', 'true');
+    const id = await count.getAttribute('aria-describedby');
+    await expect(page.locator(`#${id}`)).toHaveText('Enter a whole number from 1 to 24.');
+  }
+  expect(await writes(page)).toEqual([]);
+  await count.fill('3'); await page.getByRole('button', { name: 'Replace with 3 equal columns' }).click();
+  await expect(count).not.toHaveAttribute('aria-invalid');
+  await page.evaluate(() => window.widgets.implicitGrid());
+  await expect(page.getByText('Custom columns: default / implicit tracks', { exact: true })).toBeVisible();
+});
+
+test('focal accepted writes alone advance committed; retry and late failures guarded', async ({ page }) => {
+  await focal(page); const x = page.getByLabel('X (%)', { exact: true });
+  await page.evaluate(() => window.widgets.failNext()); await x.fill('40'); await x.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.widgets.errors.length)).toBe(1);
+  await x.press('Enter'); expect(await writes(page)).toHaveLength(1);
+  await x.press('Enter'); expect(await writes(page)).toHaveLength(1);
+  for (const end of ['stale', 'dispose']) {
+    await focal(page); await page.evaluate(() => window.widgets.deferNext());
+    await x.fill('40'); await x.press('Enter');
+    await page.evaluate(end => { if (end === 'stale') window.widgets.stale(); else window.widgets.dispose(); window.widgets.reject(); }, end);
+    expect(await page.evaluate(() => window.widgets.errors)).toEqual([]);
+  }
+  await focal(page, '120% -2%');
+  await page.evaluate(() => window.widgets.failNext()); await x.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.widgets.errors.length)).toBe(1);
+  await x.press('Enter'); expect(await writes(page)).toHaveLength(1);
+  await focal(page, '120% -2%'); await dragStart(page);
+  await expect(page.locator('.image-focal-point__status')).not.toContainText('clamped');
+  await expect(page.locator('.image-focal-point__status')).not.toContainText('120%');
+  await page.keyboard.press('Escape'); await page.mouse.up(); expect(await writes(page)).toEqual([]);
+  await expect(page.locator('.image-focal-point__status')).toContainText('Authored position: 120% -2%');
 });
