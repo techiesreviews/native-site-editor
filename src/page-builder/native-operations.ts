@@ -107,7 +107,7 @@ function tree(source: string): SourceNode | undefined {
     if (!(namespace === "html" ? VOID_ELEMENTS.has(child.name) : selfClosing)) stack.push(child);
     at = child.openEnd;
   }
-  if (stack.length !== 1 || !semanticTree(root)) return undefined;
+  if (stack.length !== 1 || !semanticTree(root, source)) return undefined;
   // The preview removes scripts and refresh metadata before counting children.
   const visible = (node: SourceNode) => {
     node.children = node.children.filter((child) => {
@@ -173,7 +173,7 @@ function canContain(parent: SourceNode, children: SourceNode[]) {
   return !names.some((name) => ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
 }
 const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd"]);
-function semanticTree(root: SourceNode) {
+function semanticTree(root: SourceNode, source: string) {
   return all(root).every((node) => {
     if (node.name === "plaintext") return false;
     if (node.name === "html" && node.parent !== root) return false;
@@ -181,7 +181,23 @@ function semanticTree(root: SourceNode) {
     if ((node.namespace ?? "html") !== "html") return true;
     if (["caption", "colgroup", "thead", "tbody", "tfoot"].includes(node.name) && node.parent?.name !== "table") return false;
     if (node.name === "col" && node.parent?.name !== "colgroup") return false;
-    if (node.name === "colgroup" && node.children.some((child) => child.name !== "col")) return false;
+    if (node.name === "colgroup") {
+      if (node.children.some((child) => child.name !== "col")) return false;
+      // HTML closes colgroup on non-space character tokens (including entities).
+      let at = node.openEnd;
+      for (const child of [...node.children, { start: node.closeStart, end: node.closeStart }]) {
+        const text = source.slice(at, child.start).replace(/<!--[\s\S]*?-->/g, "");
+        if (/[^\t\n\f\r ]/.test(decodeHtmlEntities(text))) return false;
+        at = child.end;
+      }
+    }
+    if (["rt", "rp", "rb", "rtc"].includes(node.name)) {
+      // Ruby annotation start tags can close earlier annotations in this scope.
+      for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor.name === "ruby" || ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
+        if (["rt", "rp", "rb", "rtc"].includes(ancestor.name)) return false;
+      }
+    }
     if (node.name === "table" && node.children.some((child) => !["caption", "colgroup", "thead", "tbody", "tfoot"].includes(child.name))) return false;
     if (["thead", "tbody", "tfoot"].includes(node.name) && node.children.some((child) => child.name !== "tr")) return false;
     if (node.name === "tr" && (node.children.some((child) => !["td", "th"].includes(child.name)) || !["thead", "tbody", "tfoot"].includes(node.parent?.name ?? ""))) return false;

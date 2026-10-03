@@ -1,7 +1,7 @@
 import { startTags, startTagAttribute, VOID_ELEMENTS, type StartTag } from "../../shared/html-source";
 import { nativePageBody } from "../../shared/native-project";
 import { decodeHtmlEntities } from "./html-entities";
-import { nativeDestinations, nativeMoveEdit, type GuardedSourceEdit } from "./native-operations";
+import { nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit } from "./native-operations";
 
 export interface NativeElementMoveDestination { parent: number[]; index: number }
 export interface NativeElementMoveChoice { label: string; destination: NativeElementMoveDestination }
@@ -64,14 +64,13 @@ const same = (a: readonly number[], b: readonly number[]) => a.length === b.leng
 
 /** A fresh guarded edit and the moved element's path after removal/insertion. */
 export function nativeElementMovePlan(source: string, from: readonly number[], destination: NativeElementMoveDestination): NativeElementMoveResult {
-  const edit = nativeMoveEdit(source, from, destination);
-  if (!edit) {
-    const element = indexedElements(source).find(value => same(value.path, from));
-    const ordinary = element && !element.tag.name.includes("-") && !["svg", "math", "template", "noscript", "xmp", "noembed", "noframes"].includes(element.tag.name);
-    const sibling = ordinary && nativeDestinations(source, "", from).find(value => value.placement === "before");
-    if (sibling && same(destination.parent, sibling.point.parent) && [sibling.point.index, sibling.point.index + 1].includes(destination.index)) return { status: "stayed", reason: "already-position" };
-    return { status: "refused", error: "This destination cannot accept the selected element." };
+  const refusal: NativeElementMoveResult = { status: "refused", error: "This destination cannot accept the selected element." };
+  if (from.length && same(destination.parent, from.slice(0, -1)) && [from.at(-1)!, from.at(-1)! + 1].includes(destination.index)) {
+    return nativeMoveDestinationValid(source, from, destination)
+      ? { status: "stayed", reason: "already-position" } : refusal;
   }
+  const edit = nativeMoveEdit(source, from, destination);
+  if (!edit) return refusal;
   const oldParent = from.slice(0, -1), oldIndex = from.at(-1)!;
   const parent = [...destination.parent];
   // Removing a preceding sibling shifts the destination container and every

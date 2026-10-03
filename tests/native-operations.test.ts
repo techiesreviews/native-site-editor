@@ -135,3 +135,33 @@ test("ignored nested document wrappers cannot shift native preview selection pat
   assert.deepEqual(await page.locator('main > section').allTextContents(),['Old','New']);
  }finally{await browser.close();}
 });
+
+test("colgroup character tokens and nested ruby annotations refuse repaired source paths", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    for (const text of ['x', '&#120;', '&nbsp;']) {
+      const source = `<main><table><colgroup>${text}<col></colgroup><tbody><tr><td><div>A</div></td></tr></tbody><tbody><tr><td><div>B</div></td></tr></tbody></table></main>`;
+      await page.setContent(source);
+      assert.deepEqual(await page.locator('table').evaluate(el => Array.from(el.children).map(child => child.localName)), ['colgroup', 'colgroup', 'tbody', 'tbody']);
+      assert.equal(await page.locator('table').evaluate(el => el.children[2].children[0].children[0].children[0].textContent), 'A');
+      assert.deepEqual(nativeDestinations(source, 'index.html', [0,0,2,0,0,0]), []);
+      assert.equal(nativeMarkupInsertEdit(source, [0], 1, '<section>New</section>'), undefined);
+    }
+    const ruby = '<main><ruby><rt><rp></rp></rt><rt><div>A</div></rt><rt><div>B</div></rt></ruby></main>';
+    await page.setContent(ruby);
+    assert.deepEqual(await page.locator('ruby').evaluate(el => Array.from(el.children).map(child => child.localName)), ['rt','rp','rt','rt']);
+    assert.equal(await page.locator('ruby').evaluate(el => el.children[2].children[0].textContent), 'A');
+    assert.deepEqual(nativeDestinations(ruby, 'index.html', [0,0,2,0]), []);
+    for (const outer of ['rt','rp','rb','rtc']) for (const inner of ['rt','rp','rb','rtc']) {
+      const source = `<main><ruby><${outer}><${inner}>A</${inner}></${outer}></ruby></main>`;
+      assert.equal(nativeMarkupInsertEdit(source, [0], 1, '<section>New</section>'), undefined);
+    }
+    const valid = '<main><table><colgroup>\r\n<!-- keep -->&#32;<col>\t</colgroup><tbody><tr><td>A</td></tr></tbody></table><ruby>字<rp>(</rp><rt>reading</rt><rp>)</rp></ruby><ruby><rt><ruby>字<rt>inner</rt></ruby></rt></ruby></main>';
+    const edit = nativeMarkupInsertEdit(valid, [0], 3, '<section>New</section>'); assert.ok(edit);
+    await page.setContent(applyGuardedSourceEdit(valid, edit)!);
+    assert.equal(await page.locator('main > section').textContent(), 'New');
+    assert.equal(await page.locator('table > colgroup > col').count(), 1);
+    assert.equal(await page.locator('main > ruby').count(), 2);
+  } finally { await browser.close(); }
+});

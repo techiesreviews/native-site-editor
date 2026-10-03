@@ -43,3 +43,16 @@ including their line endings, while reindenting ordinary structural markup.
 identical siblings, parent index shifts, ancestor moves, sensitive bytes, stale
 snapshots and invalid/opaque/table/form/interactive cases. A headless Chromium
 check resolves the returned path against the actual resulting DOM without a server.
+
+The shared `nativeMoveDestinationValid` gate also proves adjacent-gap no-ops before
+returning `stayed`; metadata and opaque selections cannot masquerade as edges.
+Choices can be derived lazily when a menu opens, then freshly revalidated on use.
+
+The bounded source guard refuses known browser repair classes: nested document
+wrappers, misplaced table parts, non-space colgroup character tokens (after entity
+decoding), nested ruby annotations in the same ruby scope, definition-item
+closure, and invalid form/interactive nesting. Explicit table parents, whitespace
+and comments in colgroup, ordinary sibling ruby annotations and a nested ruby's
+separate scope remain supported. This is a conservative balanced-source guard,
+not a complete HTML parser; unsupported or repaired sources are refused rather
+than assigned potentially different browser element paths.

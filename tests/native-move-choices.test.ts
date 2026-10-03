@@ -117,3 +117,11 @@ test("full-document body sibling edges count visible root children while unsuppo
   if (up.status === "moved") assert.deepEqual(up.selection, [0]);
   assert.equal(nativeElementSiblingMove('<main></main><footer></footer>', [1], "down").status, "refused");
 });
+
+test("metadata and opaque no-ops refuse before sibling edge classification", () => {
+  for (const markup of ['<link rel=x>', '<meta name=x>', '<x-card></x-card>', '<template><p>A</p></template>', '<svg></svg>']) {
+    const source = `<main>${markup}<p>A</p></main>`;
+    for (const index of [0,1]) assert.equal(nativeElementMovePlan(source, [0,0], {parent:[0],index}).status, 'refused', markup);
+    for (const direction of ['up','down'] as const) assert.equal(nativeElementSiblingMove(source, [0,0], direction).status, 'refused', markup);
+  }
+});
