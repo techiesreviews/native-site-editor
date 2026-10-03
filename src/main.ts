@@ -57,7 +57,7 @@ import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
-import { nativeElementChoices, nativeChoiceMarkup } from "./page-builder/native-elements";
+import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
@@ -230,7 +230,8 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
-  const settingsPage = () => currentPath && nativeRouteForPath(currentPath) ? currentPath : nativeSite?.routes["/"];
+  const settingsPage = () => nativeSite?.routes[nativePreview?.route() ?? ""] ??
+    (currentPath && nativeRouteForPath(currentPath) ? currentPath : nativeSite?.routes["/"]);
   element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); });
   element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); });
   disposeExplorerImages();
@@ -370,9 +371,8 @@ function mountWorkspace() {
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
-    insertExtraChoices: () => nativeElementChoices.map(choice => /native:(?:grid|columns)$/.test(choice.tag) ? { ...choice, label: `${choice.label} (layout CSS integration pending)` } : choice),
     insertPointFor: nativeElementAddPoint,
-    insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a compatible HTML destination. Layout CSS integration is pending.",
+    insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => pageStructure?.update(structure),
     onMove: (direction) => { if (lastNativeSelection && !moveNativeSection(lastNativeSelection, direction)) cards?.move(lastNativeSelection, direction); },
