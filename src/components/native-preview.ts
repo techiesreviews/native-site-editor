@@ -320,6 +320,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const postFocus = () =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "component-focus", tag: focusTag }, "*");
   // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
+  let editBarRenderKey = "";
   const editBar = createEditBar(pane, frame, {
     start: (at) => toRuntime("drag-start", at),
     move: (at) => toRuntime("drag-move", at),
@@ -965,8 +966,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       cardGrids?.addToSelected();
     },
     /** Show the edit bar for the current selection. */
-    showEditBar(model: EditBarModel, rect: SelectionRect) {
-      editBar.show(model, rect);
+    showEditBar(model: EditBarModel, rect: SelectionRect, textSelection?: NativeTextSelection) {
+      // Repeated selection reports must not close a menu under the pointer.
+      // Any source or serialized control/origin change still refreshes its callbacks.
+      const key = JSON.stringify({ model, sources, textSelection });
+      if (!editBar.element.hidden && key === editBarRenderKey) editBar.move(rect);
+      else { editBarRenderKey = key; editBar.show(model, rect); }
     },
     hideEditBar() {
       editBar.hide();

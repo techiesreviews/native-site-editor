@@ -19,6 +19,7 @@ async function openSite(page: Page) {
 
 test("page settings edit SEO, linked social details and a live share card, with draft undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
+  await expect(pageBlock(page).getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
   await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
   const panel = dialog(page, "Page settings");
   await panel.getByLabel("Title", { exact: true }).fill("A garden studio");
@@ -144,4 +145,94 @@ test("page settings preserve named entities when changing another field", async 
   await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
   await expect(dialog(page, "Page settings").getByLabel("Title", { exact: true })).toHaveValue("Café ©");
   await expect(dialog(page, "Page settings").getByLabel("Description", { exact: true })).toHaveValue("A changed description");
+});
+
+async function prependSourceNote(page: Page) {
+  await page.evaluate(async (modulePath) => {
+    const { replaceActiveRange } = await import(modulePath) as typeof import("../../src/components/code-editor");
+    replaceActiveRange({ path: "index.html", start: 0, end: 0, text: "<!-- newer source -->\n", expected: "" });
+  }, "/src/components/code-editor.ts");
+}
+
+test("page settings refuse the source changed while their dialog was open", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  await settings.getByLabel("Title", { exact: true }).fill("Stale title");
+  await prependSourceNote(page);
+  const before = (await storedDraft(page, "index.html"))!.content;
+  await settings.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(settings.getByRole("status")).toContainText("source changed");
+  expect((await storedDraft(page, "index.html"))!.content).toBe(before);
+});
+
+test("site settings and 404 refuse a stale home-page template", async ({ page, baseURL }) => {
+  await open(page, baseURL); await openSite(page);
+  const settings = dialog(page, "Site settings");
+  await settings.getByLabel("Site name", { exact: true }).fill("Stale site name");
+  await prependSourceNote(page);
+  const before = (await storedDraft(page, "index.html"))!.content;
+  await settings.getByRole("button", { name: "Apply site settings" }).click();
+  await expect(settings.getByRole("status")).toContainText("source changed");
+  expect((await storedDraft(page, "index.html"))!.content).toBe(before);
+  expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
+  await settings.getByRole("button", { name: /404/ }).click();
+  await expect(settings.getByRole("status")).toContainText("source changed");
+  expect(await storedDraft(page, "404.html")).toBeUndefined();
+});
+
+test("an explicitly unlinked equal social title survives reopening the controller", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  await settings.getByLabel("Use page title", { exact: true }).uncheck();
+  await settings.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(settings).not.toBeVisible();
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await expect(dialog(page, "Page settings").getByLabel("Use page title", { exact: true })).not.toBeChecked();
+});
+
+test("repeated unchanged native selection and text-selection reports preserve the Effects menu", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.evaluate(() => {
+    window.addEventListener("message", (event) => {
+      if (event.data?.source === "astro-native-preview" && event.data.context) {
+        (window as typeof window & { selectionContext?: string }).selectionContext = event.data.context;
+        if (event.data.type === "select") (window as typeof window & { nativeSelectionReport?: unknown }).nativeSelectionReport = event.data;
+      }
+    });
+  });
+  await frame(page).locator(".hero h1").click();
+  await page.getByRole("button", { name: "Effects", exact: true }).click();
+  const item = page.getByRole("menuitem", { name: "Fade in on scroll", exact: true });
+  await expect(item).toBeVisible();
+  expect(await page.evaluate(() => (window as typeof window & { selectionContext?: string }).selectionContext)).toBeTruthy();
+  await page.evaluate(() => {
+    const source = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!.contentWindow!;
+    const report = (window as typeof window & { nativeSelectionReport?: Record<string, unknown> }).nativeSelectionReport;
+    if (!report) throw new Error("No native selection report was captured.");
+    for (let i = 0; i < 3; i++) {
+      window.dispatchEvent(new MessageEvent("message", { source, data: { ...report, reason: "refresh" } }));
+      window.dispatchEvent(new MessageEvent("message", { source, data: { source: "astro-native-preview", type: "text-selection", context: (window as typeof window & { selectionContext?: string }).selectionContext, selection: undefined } }));
+    }
+  });
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect.poll(async () => (await storedDraft(page, "styles/effects.css"))?.content).toContain("Effect: reveal-fade");
+});
+
+test("batch source checks reject an edit arriving during the first async file lookup", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await pageBlock(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  const settings = dialog(page, "Page settings");
+  await settings.getByLabel("Title", { exact: true }).fill("Racing title");
+  await settings.getByRole("button", { name: "Apply page settings" }).evaluate(async (button, modulePath) => {
+    const { replaceActiveRange } = await import(modulePath) as typeof import("../../src/components/code-editor");
+    (button as HTMLButtonElement).click();
+    replaceActiveRange({ path: "index.html", start: 0, end: 0, text: "<!-- edit during lookup -->\n", expected: "" });
+  }, "/src/components/code-editor.ts");
+  await expect(settings.getByRole("status")).toContainText("source changed");
+  const source = (await storedDraft(page, "index.html"))!.content;
+  expect(source).toContain("<!-- edit during lookup -->");
+  expect(source).not.toContain("Racing title");
 });

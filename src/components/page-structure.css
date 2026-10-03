@@ -25,6 +25,8 @@
   text-transform: uppercase;
   color: var(--muted);
 }
+.page-structure__field[hidden] { display: none; }
+
 .page-structure__field {
   display: flex;
   flex-direction: column;

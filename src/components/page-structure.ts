@@ -1,4 +1,4 @@
-import { node } from "../ui/dom";
+import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { componentIcon } from "../page-builder/component-icon";
@@ -20,6 +20,9 @@ import "./page-structure.css";
 export type PageMetaField = "title" | "description";
 
 export interface PageStructureHandlers {
+  /** Open all page details; the sidebar then shows only a compact summary. */
+  onPageSettings?: (path: string) => void;
+  onNavigation?: (path: string) => void;
   /**
    * The title and description of the page at `path`, empty strings when it
    * has none; nothing when the file is not a page of the site (the fields
@@ -89,6 +92,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   meta.setAttribute("aria-label", "Page");
   meta.hidden = true;
   meta.append(node("span", "page-structure__meta-heading", "Page"));
+  const summary = node("p", "page-structure__meta-summary");
+  const settings = button("Page settings", () => { if (structure?.path) handlers.onPageSettings?.(structure.path); }, "text-button");
+  const navigation = button("Navigation", () => { if (structure?.path) handlers.onNavigation?.(structure.path); }, "text-button");
+  summary.hidden = settings.hidden = !handlers.onPageSettings;
+  navigation.hidden = !handlers.onNavigation;
+  meta.append(summary, settings, navigation);
   const fields = {} as Record<PageMetaField, HTMLInputElement>;
   for (const [field, label] of [["title", "Title"], ["description", "Description"]] as const) {
     const wrap = node("label", "page-structure__field");
@@ -103,6 +112,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     });
     input.addEventListener("blur", () => { if (structure?.path) handlers.onPageMetaClose?.(structure.path, field); });
     fields[field] = input;
+    wrap.hidden = Boolean(handlers.onPageSettings);
     meta.append(wrap);
   }
   // The URL: applies on Enter only, since it moves files and updates links.
@@ -146,12 +156,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     metaNotice.textContent = current.notice ?? "";
     metaNotice.hidden = !current.notice;
     const address = handlers.pageUrl?.(path);
-    url.root.hidden = !address;
+    summary.textContent = [current.title || current.placeholders?.title || "Untitled page", address?.route].filter(Boolean).join(" · ");
+    settings.disabled = Boolean(current.notice || current.readOnly);
+    url.root.hidden = !address || Boolean(handlers.onPageSettings);
     if (address) {
       url.reset(address.route);
       url.input.readOnly = Boolean(address.fixed);
       urlNote.textContent = address.fixed ?? "";
-      urlNote.hidden = !address.fixed;
+      urlNote.hidden = !address.fixed || Boolean(handlers.onPageSettings);
     } else urlNote.hidden = true;
   }
 

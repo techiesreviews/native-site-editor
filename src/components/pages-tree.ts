@@ -16,6 +16,7 @@ export interface NativeNewRequest {
   slug: string;
   /** Add a card for it to the grid that lists its siblings (`cardOffer`). */
   addCard?: boolean;
+  addToNavigation?: boolean;
 }
 
 /** A row an action applies to: a page, or a URL with subpages and no page of its own (no `file`). */
@@ -69,6 +70,9 @@ export function createPagesTree(options: {
   remove?: (target: NativePagesTarget) => void;
   /** Gives a URL with no page its own page. */
   createPage?: (route: string) => void;
+  pageSettings?: (file: string) => void;
+  /** Whether a recognised header navigation can receive a new top-level page. */
+  canAddToNavigation?: () => boolean;
   /** What changing a page's URL to the typed value does. */
   planUrl?: (target: NativePagesTarget, value: string) => UrlPlan;
   /** Changes a page's URL; resolves to an error message, or nothing when done. */
@@ -164,12 +168,19 @@ export function createPagesTree(options: {
       label.append(card, node("span", "", offer));
       form.append(label);
     }
+    const addNavigation = node("input");
+    addNavigation.type = "checkbox";
+    if (parent === "/" && options.canAddToNavigation?.()) {
+      const label = node("label", "site-settings__check");
+      label.append(addNavigation, node("span", "", "Add to navigation"));
+      form.append(label);
+    }
     item.append(form);
 
     let slug = "";
     let slugEdited = false;
     let pending = false;
-    const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug, ...(offer ? { addCard: card.checked } : {}) });
+    const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug, ...(offer ? { addCard: card.checked } : {}), ...(addNavigation.checked ? { addToNavigation: true } : {}) });
     // The URL follows the title until it is edited by hand; a problem shows once there is something to check.
     const check = (showEmpty = false) => {
       if (!slugEdited) slug = slugify(input.value);
@@ -320,6 +331,7 @@ export function createPagesTree(options: {
     }
     const home = page.special === "home";
     return [
+      ...(options.pageSettings ? [{ label: "Page settings…", run: () => options.pageSettings!(page.file!) }] : []),
       ...(isFolderRoute(page.route) ? [{ label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) }] : []),
       ...(options.retitle ? [{ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) }] : []),
       ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),

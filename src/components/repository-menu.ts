@@ -24,6 +24,7 @@ export function createRepositoryMenu(options: {
   onAccessChanged: () => void;
   onSwitchAccount: (login: string) => void;
   onSignOut: () => void;
+  onSiteSettings?: () => void;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
@@ -120,6 +121,7 @@ export function createRepositoryMenu(options: {
   siteSlot.id = "site-actions";
   const actions = node("div", "repository-menu__section repository-menu__actions");
   actions.append(siteSlot);
+  if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
@@ -357,7 +359,8 @@ export function createRepositoryMenu(options: {
 
   function setRepository(repo?: Repository) {
     currentId = repo?.id;
-    actions.hidden = !repo || !showSiteActions;
+    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings);
+    siteSlot.hidden = !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
     badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "·"));
