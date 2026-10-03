@@ -138,8 +138,10 @@ type RangeApi = {
 /** An earlier version of the file, shown beside the current one (History). */
 export type VersionCompare = { content: string; label: string };
 type MountedEditor = {
+  path: string;
   apply(command: AgentCommand): Promise<void>;
   discardNew(): boolean;
+  dispose(): void;
   range: RangeApi;
   model: monaco.editor.ITextModel;
   session: string;
@@ -163,6 +165,15 @@ export interface HistoryCompanion {
   redo(): void;
 }
 const mounted = new Map<string, MountedEditor>();
+// More than one pane can temporarily own the same cached model/path.
+const liveMounted = new Set<MountedEditor>();
+function unregisterMounted(path: string, registration: MountedEditor) {
+  liveMounted.delete(registration);
+  if (mounted.get(path) !== registration) return;
+  const previous = [...liveMounted].reverse().find(editor => editor.path === path);
+  if (previous) mounted.set(path, previous);
+  else mounted.delete(path);
+}
 // The Save menus of the mounted editors, for a draft written outside them.
 const publishers = new Set<() => void>();
 /** A browser draft changed outside the editors: the Save menus list it again. */
@@ -201,7 +212,7 @@ function retainHistoryModel(model: monaco.editor.ITextModel) {
     const count = (historyReceiptModels.get(model) ?? 1) - 1;
     if (count) historyReceiptModels.set(model, count); else historyReceiptModels.delete(model);
     for (const [key, draft] of drafts) if (!count && draft.model === model && !model.isDisposed() &&
-        ![...mounted.values()].some(editor => editor.model === model) && draft.baseSha !== null && model.getValue() === draft.original) {
+        ![...liveMounted].some(editor => editor.model === model) && draft.baseSha !== null && model.getValue() === draft.original) {
       model.dispose(); drafts.delete(key);
     }
   };
@@ -401,7 +412,7 @@ export function discardNewFile(path: string) {
 export function dropDraft(scope: DraftScope, path: string) {
   const key = draftKey(scope, path);
   const kept = drafts.get(key);
-  if (kept && [...mounted.values()].some((editor) => editor.model === kept.model)) return false;
+  if (kept && [...liveMounted].some((editor) => editor.model === kept.model)) return false;
   draftStore().remove(scope, path);
   if (kept) {
     kept.model.dispose();
@@ -417,7 +428,7 @@ export function dropDraft(scope: DraftScope, path: string) {
 export function forgetDraftModel(scope: DraftScope, path: string) {
   const key = draftKey(scope, path);
   const kept = drafts.get(key);
-  if (!kept || [...mounted.values()].some((editor) => editor.model === kept.model)) return false;
+  if (!kept || [...liveMounted].some((editor) => editor.model === kept.model)) return false;
   kept.model.dispose();
   drafts.delete(key);
   return true;
@@ -625,6 +636,7 @@ export function clearHistory() {
   for (const editor of mounted.values()) editor.refresh();
 }
 export function clearDrafts() {
+  for (const owner of [...liveMounted]) owner.dispose();
   for (const draft of drafts.values()) draft.model.dispose();
   drafts.clear();
   for (const session of visualHistory.keys()) invalidateVisualHistory(session);
@@ -913,11 +925,12 @@ export function mountCodeEditor(
     },
   };
   const registration: MountedEditor = {
-    apply, range, discardNew: () => discardNew(), model: current.model, session, readOnly: !!file.readOnly,
+    path: file.path, apply, range, discardNew: () => discardNew(), dispose: disposeMountedEditor, model: current.model, session, readOnly: !!file.readOnly,
     ensureHistoryTarget: file.ensureHistoryTarget,
     refresh: (persist = true) => update(undefined, persist),
   };
   mounted.set(file.path, registration);
+  liveMounted.add(registration);
   const cssProviders: monaco.IDisposable[] = [];
   if (isCssPath(file.path) && file.cssWorkspace) {
     const workspaceFor = (model: monaco.editor.ITextModel) => {
@@ -1040,10 +1053,12 @@ export function mountCodeEditor(
   }
   const discardNew = () => {
     if (current.baseSha !== null || !file.scope || disposed) return false;
+    const owners = [...liveMounted].filter(editor => editor.model === current.model);
     store.remove(file.scope, file.path);
-    drafts.delete(file.key);
+    if (drafts.get(file.key) === current) drafts.delete(file.key);
     file.onDiscardNew?.();
-    current.model.dispose();
+    for (const owner of owners) owner.dispose();
+    if (![...liveMounted].some(editor => editor.model === current.model) && !current.model.isDisposed()) current.model.dispose();
     return true;
   };
   const discard = button(
@@ -1318,9 +1333,10 @@ export function mountCodeEditor(
   update();
   render("edit");
   reportContext();
-  return () => {
+  function disposeMountedEditor() {
+    if (disposed) return;
     disposed = true;
-    if (mounted.get(file.path) === registration) mounted.delete(file.path);
+    unregisterMounted(file.path, registration);
     if (marks.length || elementMarks.length) current.model.deltaDecorations([...marks, ...elementMarks], []);
     markers.dispose();
     for (const provider of cssProviders) provider.dispose();
@@ -1335,12 +1351,14 @@ export function mountCodeEditor(
     workspace?.classList.remove("workspace--code");
     if (
       current.baseSha !== null &&
-      current.model.getValue() === current.original && !historyReceiptModels.has(current.model)
+      current.model.getValue() === current.original && !historyReceiptModels.has(current.model) &&
+      ![...liveMounted].some(editor => editor.model === current.model)
     ) {
       current.model.dispose();
-      drafts.delete(file.key);
+      if (drafts.get(file.key) === current) drafts.delete(file.key);
     }
-  };
+  }
+  return disposeMountedEditor;
 }
 
 function reconcilePublished(result: PublishResult, submitted: SavedDraft[]) {
