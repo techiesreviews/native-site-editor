@@ -4533,6 +4533,21 @@ function nativeCollectionSnapshot(scope = draftScope()): NativeCollectionSnapsho
  */
 async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): Promise<string | undefined> {
   if (!nativeSite) return "Open a native site first.";
+  // Every touched path is guarded by its source as the caller computed from
+  // it, captured before any await: a newer edit is refused, never overwritten.
+  const touched = [...(origin.moves ?? []).flatMap((move) => [move.from, move.to]), ...(origin.deletes ?? []),
+    ...(origin.creates ?? []).map((file) => file.path), ...(origin.edits?.keys() ?? [])];
+  const expectedSources = new Map(origin.expectedSources ?? []);
+  for (const path of touched) if (!expectedSources.has(path)) expectedSources.set(path, nativeEffectiveSource(path));
+  origin = { ...origin, expectedSources };
+  // Only HTML (pages, components, templates), the site config and folder
+  // relocations can change a listing; anything else (CSS, images, scripts)
+  // is applied as it was, without reading or baking other pages.
+  const listingInput = Boolean(origin.folders?.length) || touched.some((path) => path === NATIVE_CONFIG_PATH || /\.html?$/i.test(path));
+  if (!listingInput) {
+    const { folders: _none, ...plain } = origin;
+    return applyNativeOperation(plain);
+  }
   // Listings bake from every page: load the whole text index when any page
   // source is missing, then plan from the fresh state.
   const scope = setupScope(), epoch = generation;
@@ -4543,9 +4558,17 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): P
     if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
     snapshot = nativeCollectionSnapshot();
   }
-  // The site name may change in this very operation: read it from the result.
-  const candidate = (path: string) => origin.edits?.get(path) ?? origin.creates?.find(file => file.path === path)?.content ?? snapshot.sources[path];
-  const candidateIdentity = { name: readSiteIdentity(candidate(NATIVE_CONFIG_PATH), candidate(snapshot.routes["/"] ?? NATIVE_HOME_PAGE) ?? "").name };
+  // The site name may change in this very operation: read it from the result,
+  // with the home page found among the files as they are after it.
+  const movedFrom = new Map((origin.moves ?? []).map((move) => [move.to, move.from]));
+  const afterFiles = new Set(snapshot.files);
+  for (const move of origin.moves ?? []) { afterFiles.delete(move.from); afterFiles.add(move.to); }
+  for (const path of origin.deletes ?? []) afterFiles.delete(path);
+  for (const file of origin.creates ?? []) afterFiles.add(file.path);
+  for (const path of origin.edits?.keys() ?? []) afterFiles.add(path);
+  const candidate = (path: string | undefined) => path === undefined || !afterFiles.has(path) ? undefined
+    : origin.edits?.get(path) ?? origin.creates?.find((file) => file.path === path)?.content ?? snapshot.sources[movedFrom.get(path) ?? path];
+  const candidateIdentity = { name: readSiteIdentity(candidate(NATIVE_CONFIG_PATH), candidate(deriveNativeRoutes([...afterFiles])["/"]) ?? "").name };
   const plan = planNativeCollectionOperation({ ...snapshot, origin, candidateIdentity });
   if ("error" in plan) return plan.error;
   const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot());

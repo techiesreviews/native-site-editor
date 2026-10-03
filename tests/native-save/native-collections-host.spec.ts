@@ -189,3 +189,25 @@ test("Add on an automatic listing creates only the page; the bake adds exactly o
   await expect.poll(() => homeDraft(page)).toBe(home);
   expect((await storedDraft(page, "work/three/index.html"))?.content).toBe(three);
 });
+
+test("an asset delete is not blocked by an invalid listing elsewhere and writes nothing else", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: home.replace('<section class="filler"', `<section data-each="work"><template><p>{title}</p></template></section>\n  <section class="filler"`) } });
+  await open(page, baseURL, "index.html");
+  await page.waitForLoadState("networkidle");
+  const fetched: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/files")) fetched.push(request.url()); });
+  await openFiles(page);
+  const images = explorerRow(page, "images").first();
+  if ((await images.getAttribute("aria-expanded")) === "false") await images.click();
+  await explorerRow(page, "studio-desk.svg").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for images/studio-desk.svg" }).getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: /^Delete images\/studio-desk\.svg/ }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toHaveText("Deleted images/studio-desk.svg.");
+  expect((await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
+  // Only the deleted file's own blob (kept for Undo) is read: no page index.
+  expect(fetched.length).toBeLessThanOrEqual(1);
+  for (const url of fetched) expect(new URL(url).searchParams.get("shas")?.split(",")).toHaveLength(1);
+});
