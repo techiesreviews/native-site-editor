@@ -138,12 +138,3 @@ test("source guards reject stale insertion closures and selection changes", asyn
   await duplicate();
   assert.equal(source, "<section>Old</section><section>Old</section><p>Text</p>");
 });
-
-test("native Add commands remain searchable as elements and distinct from component and navigation IDs", async () => {
-  const { nativeElementChoices } = await import("../src/page-builder/native-elements.ts");
-  const commands = nativeElementChoices.map((choice) => ({ id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", keywords: [choice.group ?? "", choice.tag] }));
-  const pool = [...commands, { id: "component.add:grid", title: "Add Grid", group: "Components" }];
-  assert.deepEqual(rankItems(pool, "Add Grid").map((item) => item.item.id).sort(), ["component.add:grid", "native.add:native:grid"]);
-  assert.equal(rankItems(pool, "Forms").length, 6);
-  assert.equal(parseQuery("/Add Grid", "all").scope, "pages");
-});

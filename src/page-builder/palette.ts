@@ -398,7 +398,7 @@ export function nativePaletteInsertPoint(source: string, path: string, selection
   const node: number[] = [];
   for (let element: Element | null = main; element; element = element.parentElement) node.unshift([...(element.parentNode as ParentNode).children].indexOf(element));
   const candidate = nativeDestinations(source, path, node).find((item) => item.placement === "inside")?.point;
-  return candidate && valid(candidate) ? { parent: [...candidate.parent], index: candidate.index } : undefined;
+  return candidate?.tag === "main" && valid(candidate) ? { parent: [...candidate.parent], index: candidate.index } : undefined;
 }
 
 /** Each visible command carries its exact page, selection and mount snapshot. */
@@ -411,7 +411,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
   const identity = JSON.stringify(selection);
   return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag))).map((choice) => ({
     id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
-    hint: choice.group ?? "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
+    hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
       if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
         deps.announce("The page changed. Reopen the command palette and try again."); return;
