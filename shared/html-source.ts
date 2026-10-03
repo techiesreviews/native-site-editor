@@ -54,8 +54,10 @@ export function startTags(html: string): StartTag[] {
     i = end;
     if (RAW_TEXT.has(name)) {
       if (name === "plaintext") break;
-      const close = html.toLowerCase().indexOf(`</${name}`, i);
-      i = close < 0 ? html.length : close;
+      const close = new RegExp(`</${name}(?=[\\s/>])`, "gi");
+      close.lastIndex = i;
+      const match = close.exec(html);
+      i = match ? match.index : html.length;
     }
   }
   return out;
