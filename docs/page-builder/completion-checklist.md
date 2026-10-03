@@ -1,0 +1,21 @@
+# Native builder completion checklist
+
+Current scope comes from Lex's authorized continuation in destination T3 thread `da5eb845-2cdf-4f84-8736-2704ec23f3ad`. Keep all output native runnable HTML/CSS/Web Components; editor-only controls stay in the editor project. Production/main remains untouched. Code, UX and design review uses Claude Opus 5.5 through CLI.
+
+- [x] Recover and fix original component/canvas/palette findings and flaky tests.
+- [x] Settings categories and navigation placement; component properties resize.
+- [x] Style class chips, width/fold parity, practical catalogue and search.
+- [ ] Close CSS-variable host/menu review findings; improve shared-class context and source navigation.
+- [ ] Complete and review true persistent Images tab beside Pages/Files.
+- [ ] Integrate reviewed grid and image focal-point widgets with native CSS and Undo.
+- [ ] Finish native element source-boundary review, integrate catalogue into Add, resolve inline grid CSS compatibility.
+- [ ] Extend collections to mixed page sources (work/services/portfolio/articles/videos); union deduplication, global filter/sort/limit and source chooser.
+- [ ] Integrate collection fields/bake/history/page-operation hooks and distinguish automatic collections from manual cards.
+- [ ] Fix card placeholder/popup scroll geometry and overlapping Add controls, with real click tests.
+- [ ] Remove `pb-add-panel__code-toggle` and its per-item/hover HTML peek functionality. Keep actual code panes.
+- [ ] Remove Effects from the edit bar **and its associated functionality** (queued by Lex; no immediate interruption requested). Keep native Style settings such as shadow/transform/transition.
+- [ ] Keep actual code visible in minimized panes; preserve remembered drag/keyboard restore.
+- [ ] Finish template conditions and optional-slot canvas affordances without mutating site DOM for editor overlays.
+- [ ] Final consistency/accessibility/source/Undo checks, fresh real-starter feature screenshots displayed in this thread, exact-candidate preview release and verified version.
+
+Checkpoint paths, commits, workers, ports, tests and next actions are recorded in `memory/handoffs/t3-page-builder-2026-10-03.md`. A checked slice does not imply the complete builder is finished; unresolved review findings block its release.
