@@ -404,6 +404,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  padding-right: 28px;
 }
 .edit-bar__component-edit {
   position: absolute;
@@ -415,7 +416,7 @@
   justify-content: center;
   padding: 0 6px;
   color: var(--component);
-  background: var(--panel-surface);
+  background: transparent;
   opacity: 0;
 }
 .edit-bar__component-name:hover .edit-bar__component-edit,

@@ -292,14 +292,18 @@ export function createComponentTools(deps: ComponentDeps) {
       path: value.path, tag: value.tag, node: value.node, selector: value.selector, host: value.host,
     });
     const expectedSelection = selectionKey(selection);
-    const guardedEdit = (tag: string, within?: string) => {
+    const guardedEdit = (tag: string, within?: string, part?: { path: string; node: number[]; tag: string }) => {
       const template = templateOf(tag);
       const templateSource = template && deps.sources()[template.path];
+      if (!template || templateSource === undefined) return undefined;
       return () => {
         if (selectionKey(deps.selection()) !== expectedSelection || deps.revision() !== revision || deps.currentPath() !== path
           || deps.editor() !== editor || deps.sources()[selection.path] !== source
-          || !template || templateOf(tag)?.path !== template.path || deps.sources()[template.path] !== templateSource) return;
-        void editComponent(tag, within);
+          || !template || templateOf(tag)?.path !== template.path || deps.sources()[template.path] !== templateSource) {
+          deps.announce("This component action is stale. Select the component again to edit its current template.");
+          return;
+        }
+        void editComponent(tag, within, part);
       };
     };
     if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag) };
@@ -321,7 +325,8 @@ export function createComponentTools(deps: ComponentDeps) {
         label,
         title: host.path && host.node ? `Select this ${label} instance` : `Inside the ${label} component`,
         onSelect: () => void selectHost(host),
-        onEdit: guardedEdit(host.tag),
+        onEdit: deps.currentPath() === templateOf(host.tag)?.path ? undefined
+          : guardedEdit(host.tag, undefined, selection.node ? { path: selection.path, node: [...selection.node], tag: selection.tag } : undefined),
       };
     }
     return out;
@@ -357,7 +362,7 @@ export function createComponentTools(deps: ComponentDeps) {
    * `slot` (the element holding that slot, its `<slot>` marked in the code)
    * in the instance on show, else the template's first element.
    */
-  async function editComponent(tag: string, slot?: string) {
+  async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }) {
     const template = templateOf(tag);
     if (!template) return;
     const from = deps.selection();
@@ -370,7 +375,8 @@ export function createComponentTools(deps: ComponentDeps) {
     // A slot shows no box of its own: a template that is one slot (`<slot><p>…</p></slot>`)
     // has nothing to select in the preview, only its code to mark.
     const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
-    const nodePath = element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0];
+    const preserved = part?.path === template.path && locateNativeElementRange(source, part.node)?.tag.name === part.tag ? part.node : undefined;
+    const nodePath = preserved ?? (element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0]);
     if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
     else if (target && deps.currentPath() === template.path) {
       deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);

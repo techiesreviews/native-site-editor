@@ -83,6 +83,9 @@ test("an instance wears the component accent in the bar, the page structure and 
   const pencil = bar(page).getByRole("button", { name: "Edit Project card component", exact: true });
   await page.mouse.move(0, 0);
   await expect(pencil).toHaveCSS("opacity", "0");
+  const nameBounds = (await kind.boundingBox())!;
+  const pencilBounds = (await pencil.boundingBox())!;
+  expect(pencilBounds.x).toBeGreaterThanOrEqual(nameBounds.x + nameBounds.width);
   const bounds = await bar(page).boundingBox();
   await kind.hover();
   await expect(pencil).toHaveCSS("opacity", "0.65");
@@ -105,7 +108,7 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(box(page, "instance")).toHaveCSS("border-top-style", "dashed");
   await expect.poll(() => box(page, "selected").evaluate((el) => getComputedStyle(el).borderTopColor)).not.toBe(accent);
   await expect(row(page, "Text Reusable cards")).toHaveAttribute("aria-selected", "true");
-  await chip.click();
+  await chip.locator(".edit-bar__context-caret").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
   await expect(row(page, "Project card Reusable cards")).toHaveAttribute("aria-selected", "true");
   await expect(box(page, "instance")).toBeHidden();
@@ -116,6 +119,7 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card note");
   await expect(bar(page).getByRole("button", { name: "Select this Project card instance" })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Edit enclosing Project card component", exact: true })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Select this Project card instance" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
@@ -193,7 +197,7 @@ test("the properties panel edits an instance's slots and attributes as page sour
 test("Edit component opens the template at the part, says what an edit changes, and goes back", async ({ page }) => {
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
-  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).focus();
+  await bar(page).getByRole("button", { name: "Edit enclosing Project card component", exact: true }).focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
@@ -456,6 +460,7 @@ test("replaced component pencils cannot navigate after selection changes", async
   await page.evaluate(() => (window as unknown as { oldComponentPencil: HTMLElement }).oldComponentPencil.click());
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
+  await expect(status(page)).toHaveText("This component action is stale. Select the component again to edit its current template.");
 });
 
 test("component name pencil stays exposed on touch devices", async ({ browser, baseURL }) => {
@@ -466,9 +471,133 @@ test("component name pencil stays exposed on touch devices", async ({ browser, b
     await selectFirstCard(page);
     const pencil = bar(page).getByRole("button", { name: "Edit Project card component", exact: true });
     await expect(pencil).toHaveCSS("opacity", "0.65");
+    const nameBounds = (await bar(page).locator(".edit-bar__kind").boundingBox())!;
+    expect((await pencil.boundingBox())!.x).toBeGreaterThanOrEqual(nameBounds.x + nameBounds.width);
     await pencil.tap();
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   } finally {
     await context.close();
   }
+});
+
+// Exercise the real toolbar in a browser with both nested identities and a drag
+// adapter. Native section tests below this suite verify source writes and Undo.
+test("editable component names keep their drag pixels and disable nested actions during drag", async ({ page }) => {
+  await page.evaluate(async () => {
+    const modulePath = "/src/components/edit-bar.ts";
+    const { createEditBar } = await import(modulePath);
+    const pane = document.createElement("div");
+    pane.id = "affordance-drag";
+    pane.style.cssText = "position:fixed;inset:150px 100px 100px;background:white;z-index:1000";
+    document.body.append(pane);
+    const output = document.createElement("output");
+    output.id = "affordance-actions";
+    document.body.append(output);
+    const record = (value: string) => { output.textContent += value + " "; };
+    const toolbar = createEditBar(pane, pane, {
+      start: () => record("start"), move: () => {}, end: () => record("end"), cancel: () => record("cancel"),
+    });
+    toolbar.show({
+      kind: "Project card", draggable: true, controls: [],
+      component: { tag: "project-card", onEdit: () => record("direct") },
+      context: { label: "Project card", title: "Select enclosing instance", onSelect: () => record("select"), onEdit: () => record("enclosing") },
+    }, { top: 100, left: 100, width: 300, height: 100, right: 400, bottom: 200 });
+  });
+  const toolbar = page.locator("#affordance-drag .edit-bar");
+  const direct = toolbar.getByRole("button", { name: "Edit Project card component", exact: true });
+  const enclosing = toolbar.getByRole("button", { name: "Edit enclosing Project card component", exact: true });
+  const chip = toolbar.getByRole("button", { name: "Select enclosing instance", exact: true });
+  const output = page.locator("#affordance-actions");
+  const caret = chip.locator(".edit-bar__context-caret");
+  expect((await enclosing.boundingBox())!.x).toBeGreaterThanOrEqual((await chip.boundingBox())!.x + (await chip.boundingBox())!.width);
+  await caret.click();
+  await expect(output).toHaveText("select ");
+  await direct.click();
+  await expect(output).toHaveText("select direct ");
+  await expect(toolbar).not.toHaveClass(/is-dragging/);
+  // The last actual letter, measured with Range, must remain part of the grip.
+  const point = await toolbar.locator(".edit-bar__grip .edit-bar__kind").evaluate((el) => {
+    const text = el.lastChild!;
+    const range = document.createRange();
+    range.setStart(text, text.textContent!.length - 1);
+    range.setEnd(text, text.textContent!.length);
+    const rect = range.getBoundingClientRect();
+    return { x: rect.right - 1, y: rect.top + rect.height / 2 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 10, point.y, { steps: 3 });
+  await expect(toolbar).toHaveClass(/is-dragging/);
+  await expect(output).toHaveText("select direct start ");
+  for (const action of [direct, enclosing, chip]) {
+    expect(await action.evaluate((el) => Boolean(el.closest("[inert]")))).toBe(true);
+    await action.evaluate((el) => { (el as HTMLElement).focus(); (el as HTMLElement).click(); });
+    await expect(action).not.toBeFocused();
+  }
+  // A second pointer cannot activate an inert action; keyboard cannot move or edit.
+  await enclosing.dispatchEvent("pointerdown", { pointerId: 2, pointerType: "touch", button: 0 });
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowDown");
+  await expect(output).toHaveText("select direct start ");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(toolbar).not.toHaveClass(/is-dragging/);
+  await expect(toolbar.locator("[inert]")).toHaveCount(0);
+  await enclosing.focus();
+  await page.keyboard.press("Enter");
+  await expect(output).toHaveText("select direct start cancel enclosing ");
+});
+
+test("host template entry preserves the part, omits redundant entry, and rejects stale or missing templates", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const result = await page.evaluate(async () => {
+    const modulePath = "/src/page-builder/components.ts";
+    const { createComponentTools } = await import(modulePath);
+    const templatePath = "components/project-card/project-card.html";
+    const sources: Record<string, string> = {
+      "index.html": "<project-card></project-card>",
+      [templatePath]: "<article><h2>Heading</h2><p>Body</p></article>",
+    };
+    let path = "index.html";
+    let selection = { path: templatePath, tag: "p", node: [0, 1], text: "Body", reason: "click", selectors: [], host: { tag: "project-card", selector: "project-card", path: "index.html", node: [0] } };
+    const announcements: string[] = [];
+    const opened: string[] = [];
+    const selected: { path: string; node: number[] }[] = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const tools = createComponentTools({
+      site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), revision: () => "scope", sources: () => sources,
+      editor: () => undefined, preview: () => ({ selectNode: (at: { path: string; node: number[] }) => selected.push(at), selectAfterUpdate: () => {} }),
+      currentPath: () => path, selection: () => selection,
+      openFile: async (file: string) => { opened.push(file); path = file; return true; },
+      announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], upload: async () => undefined,
+      links: () => [], pageLabel: (file: string) => file, createFiles: async () => ({ error: "Unavailable" }),
+      panelHost: host, addStrip: (strip: HTMLElement) => host.append(strip), codeTitle: document.createElement("div"), previewPage: () => "index.html",
+    });
+    try {
+      const entry = tools.identity(selection).context;
+      entry.onEdit();
+      await Promise.resolve();
+      const preserved = selected[0];
+      const alreadyOpen = Boolean(tools.identity(selection).context.onEdit);
+      path = "index.html";
+      const stale = tools.identity(selection).context.onEdit;
+      sources[templatePath] += "\n";
+      stale();
+      delete sources[templatePath];
+      const missingHost = Boolean(tools.identity(selection).context.onEdit);
+      selection = { ...selection, path: "index.html", tag: "project-card", node: [0] };
+      const missingDirect = Boolean(tools.identity(selection).component.onEdit);
+      return { preserved, alreadyOpen, missingHost, missingDirect, opened, announcements };
+    } finally { tools.destroy(); host.remove(); }
+  });
+  expect(pageErrors).toEqual([]);
+  expect(result.preserved).toEqual({ path: cardPath, node: [0, 1] });
+  expect(result.alreadyOpen).toBe(false);
+  expect(result.missingHost).toBe(false);
+  expect(result.missingDirect).toBe(false);
+  expect(result.opened).toEqual([cardPath]);
+  expect(result.announcements.at(-1)).toBe("This component action is stale. Select the component again to edit its current template.");
 });
