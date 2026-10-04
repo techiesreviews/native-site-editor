@@ -148,3 +148,22 @@ test('an image rename moves literal template references, relative and suffixed v
   assert.deepEqual(doc.pages['work/one/index.html'].fields, { hero: '/images/b.jpg?v=3', far: 'https://x.example/images/a.jpg', mood: 'calm' });
   assert.deepEqual((doc as Record<string, unknown>).keep, { unknown: [1] });
 });
+
+test('a bare relative page field is resolved where its cards are written: on every page that lists it, refusing when they disagree', async () => {
+  const { planDocumentMediaBatch } = await import('../src/page-builder/document-collections');
+  const { makeCollectionTarget, writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document');
+  const home = '<html><body><main><div class="cards"></div></main></body></html>';
+  const listing = (pagePath: string) => ({ pagePath, target: makeCollectionTarget(home, home.indexOf('<div class="cards">')), folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<img src="{photo}" alt="">', fields: ['photo'], overrides: {} });
+  const routes = { '/': 'index.html', '/work/': 'work/index.html', '/work/one/': 'work/one/index.html', '/blog/': 'blog/index.html', '/about/': 'about/index.html' };
+  const pages = { 'work/one/index.html': { fields: { photo: 'images/a.jpg', root: '/images/a.jpg?v=2' } }, 'about/index.html': { fields: { photo: 'images/a.jpg' } } };
+  const move = [{ from: 'images/a.jpg', to: 'images/b.jpg' }];
+  // Listed from the root: the card on index.html shows images/a.jpg, so the field moves to what the page rewriter writes there.
+  const root = writePageBuilderDocument({ version: 1, pages, collections: { home: listing('index.html') } } as never);
+  const moved = readPageBuilderDocument(planDocumentMediaBatch({}, root, new Map(), move, routes)!);
+  assert.deepEqual(moved.pages['work/one/index.html'].fields, { photo: '/images/b.jpg', root: '/images/b.jpg?v=2' });
+  // Listed by nothing: resolved on its own page (about/images/a.jpg is not the moved image).
+  assert.deepEqual(moved.pages['about/index.html'].fields, { photo: 'images/a.jpg' });
+  // Listed from the root and from /blog/: the same value means two different images, so the rename is refused.
+  const both = writePageBuilderDocument({ version: 1, pages, collections: { home: listing('index.html'), blog: listing('blog/index.html') } } as never);
+  assert.throws(() => planDocumentMediaBatch({}, both, new Map(), move, routes), /^Error: The page field “photo” of work\/one\/index\.html \(images\/a\.jpg\) points at different images on blog\/index\.html and index\.html, which list it, so the image was not renamed\./);
+});

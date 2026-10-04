@@ -208,15 +208,19 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
  * and stored values (per-card overrides, page fields), page-relative or not. Cards that were already edited by hand stay recorded as edited. Returns
  * the JSON text to write, or undefined when nothing in it changes.
  */
-export function planDocumentMediaBatch(sources: Readonly<Record<string, string | undefined>>, sidecar: string | undefined, edits: ReadonlyMap<string, string>, moves: readonly { from: string; to: string }[]): string | undefined {
+export function planDocumentMediaBatch(sources: Readonly<Record<string, string | undefined>>, sidecar: string | undefined, edits: ReadonlyMap<string, string>, moves: readonly { from: string; to: string }[], routes: Readonly<Record<string, string>> = {}): string | undefined {
   if (sidecar === undefined) return undefined;
   const document = readSidecar(sidecar);
   const renamed = new Map(moves.map(({ from, to }) => [from, to]));
   // Template references are rewritten one move at a time, so a chain (a to b, b to c) could move twice.
   if (moves.some(({ to }) => renamed.has(to))) throw new Error("These image moves overlap (one moves onto another that also moves). Move them one at a time.");
-  // A stored value is one URL, resolved against the page it appears on, as the page HTML rewriter resolves
-  // it: only a repository image that moved changes (keeping its ?query/#hash); external and data URLs never.
-  const follow = (value: string, file: string) => {
+  /**
+   * A stored value is one URL, as it will be written into a card on page `file`, resolved there exactly as
+   * the page HTML rewriter resolves it. Only a repository image that moved changes, and it changes to what
+   * that rewriter writes into the card itself (keeping ?query/#hash), so the next bake matches the cards.
+   * External, own-site absolute and data URLs never change.
+   */
+  const follow = (value: string, file: string): string => {
     const path = mediaResolvePath(value, file), to = path === undefined ? undefined : renamed.get(path);
     return to === undefined ? value : mediaUrl(to) + (/[?#].*$/.exec(value.trim())?.[0] ?? "");
   };
@@ -234,7 +238,21 @@ export function planDocumentMediaBatch(sources: Readonly<Record<string, string |
     for (const { from, to } of moves) collection.template = rewriteMediaReferences(collection.pagePath, collection.template, from, to);
     for (const fields of Object.values(collection.overrides)) for (const [name, value] of Object.entries(fields)) fields[name] = follow(value, collection.pagePath);
   }
-  for (const [file, page] of Object.entries(next.pages)) if (page.fields) for (const [name, value] of Object.entries(page.fields)) page.fields[name] = follow(value, file);
+  // A page's own field is written as-is into the cards of every collection that may list that page, so it is
+  // resolved on each of those pages. It changes only when they all agree; otherwise the rename is refused.
+  const routeOf = new Map(Object.entries(routes).map(([route, file]) => [file, route]));
+  for (const [file, page] of Object.entries(next.pages)) {
+    if (!page.fields) continue;
+    const route = routeOf.get(file);
+    const consumers = [...new Set(Object.values(document.collections).filter((collection) => route !== undefined && collection.pagePath !== file &&
+      collection.folders.some((folder) => route.startsWith(folder) && route !== folder)).map((collection) => collection.pagePath))].sort();
+    for (const [name, value] of Object.entries(page.fields)) {
+      const results = new Set((consumers.length ? consumers : [file]).map((consumer) => follow(value, consumer)));
+      if (results.size > 1)
+        throw new Error(`The page field “${name}” of ${file} (${value}) points at different images on ${consumers.join(" and ")}, which list it, so the image was not renamed. Make the field a path from the site root first.`);
+      page.fields[name] = [...results][0];
+    }
+  }
   const text = writePageBuilderDocument(next, sidecar);
   return text === sidecar ? undefined : text;
 }

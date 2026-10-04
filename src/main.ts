@@ -3257,7 +3257,7 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
       if (nativeDocumentLoading()) throw new Error(DOCUMENT_LOADING);
       const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH, scope);
       const sources = Object.fromEntries([...batch.edits.keys()].map((path) => [path, batch.expectedSources.has(path) ? batch.expectedSources.get(path) : nativeEffectiveSource(path, scope)]));
-      const json = planDocumentMediaBatch(sources, sidecar, batch.edits, batch.moves);
+      const json = planDocumentMediaBatch(sources, sidecar, batch.edits, batch.moves, deriveNativeRoutes(nativeFiles(scope).sort()));
       if (json !== undefined) batch = { ...batch, edits: new Map([...batch.edits, [EDITOR_PAGE_BUILDER_PATH, json]]), expectedSources: new Map([...batch.expectedSources, [EDITOR_PAGE_BUILDER_PATH, sidecar]]) };
       await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
         scope, store: draftStore(), bytes: uploadBytes(), assertLive,
