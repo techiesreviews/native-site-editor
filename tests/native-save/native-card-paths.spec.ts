@@ -294,3 +294,50 @@ test("in a narrow, short pane the list stays at its folder, in view, off the Add
   expect(attached(scrolled), JSON.stringify({ scrollable, scrolled })).toBe(true);
   expect(scrolled.path.top).not.toBe(first.path.top);
 });
+
+test("Tab from an option goes on to the popover's next control and Shift+Tab back to the folder; the list closes, the popover stays", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  await folder(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(folders(page).getByRole("option").first()).toBeFocused();
+  await expect(popover(page)).toHaveAttribute("aria-owns", "card-add-folders-menu");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Tab");
+  await expect(folders(page)).toBeHidden();
+  await expect(popover(page).getByRole("button", { name: "Card only" })).toBeFocused();
+  await expect(popover(page)).toBeVisible();
+  await expect(popover(page)).not.toHaveAttribute("aria-owns", /./);
+  await expect(url(page)).toHaveText("URL /work/oak/");
+  await folder(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Shift+Tab");
+  await expect(folders(page)).toBeHidden();
+  await expect(folder(page)).toBeFocused();
+  await expect(popover(page)).toBeVisible();
+  // Escape from the list returns to the folder too, the popover open.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Escape");
+  await expect(folder(page)).toBeFocused();
+  await expect(popover(page)).toBeVisible();
+});
+
+test("in a short list, the last folder reached from the keyboard shows whole above the New folder row held at its foot", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 820, height: 640 });
+  await openPopover(page, baseURL);
+  await folder(page).focus();
+  await page.keyboard.press("ArrowDown");
+  const options = folders(page).getByRole("option");
+  const count = await options.count();
+  // Down to the last folder (the option before New folder).
+  for (let at = 1; at < count - 1; at++) await page.keyboard.press("ArrowDown");
+  const last = options.nth(count - 2);
+  await expect(last).toBeFocused();
+  const box = await last.evaluate((option) => {
+    const list = option.parentElement!.getBoundingClientRect(), row = option.getBoundingClientRect(), add = option.parentElement!.querySelector(".card-add__folder--new")!.getBoundingClientRect();
+    return { top: row.top - list.top, gapToNew: add.top - row.bottom, scrolls: option.parentElement!.scrollHeight > option.parentElement!.clientHeight };
+  });
+  expect(box.top).toBeGreaterThanOrEqual(-0.5);
+  expect(box.gapToNew, JSON.stringify(box)).toBeGreaterThanOrEqual(-0.5);
+  await page.screenshot({ path: `${shots}/folders-narrow-short-last-light.png` });
+});

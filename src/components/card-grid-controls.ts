@@ -237,6 +237,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     // keeps its size and place, so the folder stays under the pointer): a
     // list, the current folder first and "New folder" last.
     const menu = node("div", "card-add__folders");
+    menu.id = "card-add-folders-menu";
     menu.hidden = true;
     const list = node("div", "card-add__folder-list");
     list.id = "card-add-folders";
@@ -357,6 +358,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         renderMenu();
         menu.hidden = false;
         pathButton.setAttribute("aria-expanded", "true");
+        // The list sits in the pane beside the popover; it belongs to the dialog while it is open.
+        popover.setAttribute("aria-owns", menu.id);
         placeMenu();
       }
       if (focusOption) (options().find((option) => option.getAttribute("aria-selected") === "true") ?? options()[0])?.focus();
@@ -367,6 +370,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       if (menu.hidden) return;
       menu.hidden = true;
       pathButton.setAttribute("aria-expanded", "false");
+      popover.removeAttribute("aria-owns");
       if (refocus) pathButton.focus();
     };
     const endNaming = () => {
@@ -459,7 +463,14 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         event.preventDefault();
         event.stopPropagation();
         hideMenu(true);
-      } else if (event.key === "Tab") closeList(false);
+      } else if (event.key === "Tab") {
+        // The list is outside the popover in the page's order: Tab goes on from
+        // its folder within the popover, Shift+Tab back to the folder.
+        event.preventDefault();
+        closeList(false);
+        if (event.shiftKey) pathButton.focus();
+        else [only, create].find((control) => !control.disabled)?.focus();
+      }
     });
     folderField.addEventListener("input", () => { naming = folderField.value; namingTyped = true; check(); });
     // Focus leaving the list (not to its button) closes it.
@@ -545,6 +556,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     menuPlacer = undefined;
     folderMenu?.remove();
     folderMenu = undefined;
+    popover.removeAttribute("aria-owns");
     trackGrid();
     popover.hidden = true;
     popover.replaceChildren();

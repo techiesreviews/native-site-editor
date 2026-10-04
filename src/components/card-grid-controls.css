@@ -236,6 +236,8 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  /* An option scrolled to stays clear of "New folder" held at the foot. */
+  scroll-padding-block-end: var(--size-compact, 28px);
   overscroll-behavior: contain;
 }
 .card-add__folder {
@@ -267,6 +269,7 @@
   justify-content: flex-start;
   position: sticky;
   bottom: 0;
+  box-shadow: 0 -1px 0 var(--control-line);
   background: var(--panel-surface);
   color: var(--link);
   font-family: inherit;
