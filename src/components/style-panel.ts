@@ -289,8 +289,13 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     control.dataset.property = field.property; control.value = own; control.classList.toggle("is-computed", !own);
     control.addEventListener("focus", () => { if (handlers.context()?.key === snapshot.expected?.key) snapshot.expected = handlers.context(); });
     const typedMenuOpen = () => !!variableMenu && variableMenuOrigin?.control === control;
-    control.addEventListener("change", () => { if (!typedMenuOpen()) void apply(control.value.trim()); });
+    control.addEventListener("change", () => {
+      // Leaving the field with a raw --name is handled once, by the blur restore below.
+      if (typedMenuOpen() || document.activeElement !== control && /^(?:var\(\s*)?--[\w-]*$/.test(control.value.trim())) return;
+      void apply(control.value.trim());
+    });
     // Typing "--" or "var(--" offers matching variables inline; focus stays in the field.
+    const bare = (name: string) => name.replace(/^--/, "").toLowerCase();
     function openVariableMenu(x: number, y: number, typed?: string) {
       closeVariableMenu();
       const expected = currentContext(control.isConnected && snapshot.expected?.key === renderContext?.key ? renderContext : snapshot.expected), workspace = expected?.workspace;
@@ -302,9 +307,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       };
       const declarations = cssVariableDeclarations(workspace);
       const offered = relevantVariables(field.property, declarations, (property, value) => CSS.supports(property, value))
-        .filter(declaration => typed === undefined || declaration.name.toLowerCase().includes(typed.toLowerCase()));
+        .filter(declaration => typed === undefined || bare(declaration.name).includes(bare(typed)));
+      // Typed completion ranks exact, then prefix, then contained matches.
+      if (typed !== undefined) {
+        const rank = (name: string) => bare(name) === bare(typed) ? 0 : bare(name).startsWith(bare(typed)) ? 1 : 2;
+        offered.sort((a, b) => rank(a.name) - rank(b.name));
+      }
       if (typed !== undefined && !offered.length) return;
       const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property, control: typed === undefined ? undefined : control };
+      menu.id = "style-panel-variable-menu";
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
       menu.style.left = `${Math.max(0, Math.min(x, innerWidth - 260))}px`; menu.style.top = `${Math.max(0, Math.min(y, innerHeight - 240))}px`;
       if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
@@ -350,25 +361,36 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const box = menu.getBoundingClientRect(), fieldBox = control.getBoundingClientRect();
       menu.style.left = `${Math.max(4, Math.min(x, innerWidth - box.width - 4))}px`;
       menu.style.top = `${Math.max(4, y + box.height > innerHeight - 4 ? Math.min(fieldBox.top, y) - box.height - 2 : y)}px`;
-      const first = menu.querySelector<HTMLButtonElement>("button"); if (first) first.tabIndex = 0;
-      if (typed === undefined) (first ?? menu).focus();
+      const first = menu.querySelector<HTMLButtonElement>("button");
+      // Typed mode keeps the menu out of the Tab order: Tab leaves the field.
+      if (typed === undefined) { if (first) first.tabIndex = 0; (first ?? menu).focus(); }
+      else if (first) { first.classList.add("is-active"); control.setAttribute("aria-controls", menu.id); }
     }
     if (control instanceof HTMLInputElement) {
       control.setAttribute("aria-autocomplete", "list");
+      control.title = "Type -- for site variables.";
       control.addEventListener("input", () => {
         const typed = /^(?:var\(\s*)?(--[\w-]*)$/.exec(control.value.trim())?.[1];
         if (typed && handlers.context()?.workspace) { const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom + 2, typed); }
-        else if (typedMenuOpen()) closeVariableMenu();
+        else if (typedMenuOpen()) { closeVariableMenu(); }
       });
       control.addEventListener("keydown", event => {
         if (!typedMenuOpen()) return;
-        const first = variableMenu!.querySelector<HTMLButtonElement>(".style-panel__variable-choice button:first-child");
+        const first = variableMenu!.querySelector<HTMLButtonElement>(".style-panel__variable-choice button.is-active");
         if (event.key === "ArrowDown" && first) { event.preventDefault(); event.stopImmediatePropagation(); first.focus(); }
         else if (event.key === "Enter" && first) { event.preventDefault(); event.stopImmediatePropagation(); first.click(); }
         else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); }
+        else if (event.key === "Tab") closeVariableMenu();
       });
       control.addEventListener("blur", () => setTimeout(() => {
-        if (typedMenuOpen() && !variableMenu!.contains(document.activeElement) && document.activeElement !== control) closeVariableMenu();
+        if (variableMenu?.contains(document.activeElement) || document.activeElement === control || !control.isConnected) return;
+        if (typedMenuOpen()) closeVariableMenu();
+       
+        // Leaving without a choice never keeps an unwritten raw --name in the field.
+        if (/^(?:var\(\s*)?--[\w-]*$/.test(control.value.trim())) {
+          control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
+          report("Variable not applied. Choose one from the list to write var(--name).");
+        }
       }, 0));
     }
     control.addEventListener("contextmenu", event => { if (!handlers.context()?.workspace) return; event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
@@ -418,7 +440,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     group.append(node("p", "style-panel__hint", "Click to type. Drag pixel values to scrub."));
     for (const kind of ["margin", "padding"]) {
       const row = node("div", "style-panel__field");
-      row.append(node("span", "", `${kind} preset`), fieldControl({ label: `${kind} preset`, property: kind, kind: "space", unit: true }, variables));
+      row.append(node("span", "", `${kind} (all)`), fieldControl({ label: `${kind} preset`, property: kind, kind: "space", unit: true }, variables));
       group.append(row);
     }
     return group;
@@ -426,20 +448,28 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   /** Existing CSS classes matching the typed partial, offered inline below Add class. */
   function classSuggestions(form: HTMLFormElement, input: HTMLInputElement, add: HTMLButtonElement, context: StylePanelContext) {
     const own = new Set(context.classes ?? (context.className ? [context.className] : []));
+    // Read classes when suggesting: CSS edits made while focus is in the panel do not re-render it.
+    const knownClasses = () => {
+    const fresh = handlers.context(), files = fresh?.key === context.key ? fresh.files : context.files;
     const known = new Set<string>();
-    for (const [path, source] of Object.entries(context.files)) {
+    for (const [path, source] of Object.entries(files)) {
       if (!/\.css$/i.test(path)) continue;
-      try { for (const block of scanCss(source)) for (const match of block.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) if (!own.has(match[1])) known.add(match[1]); } catch { /* unreadable CSS offers nothing */ }
+      // Attribute selectors and strings are not classes; escaped names are skipped, not truncated.
+      try { for (const block of scanCss(source)) for (const match of block.selector.replace(/\[[^\]]*\]|"[^"]*"|'[^']*'/g, " ").matchAll(/\.(-?[_a-zA-Z][\w-]*)(?![\\\w-])/g)) if (!own.has(match[1])) known.add(match[1]); } catch { /* unreadable CSS offers nothing */ }
     }
+    return known;
+    };
     const list = node("div", "style-panel__class-suggestions"); list.id = "style-panel-class-suggestions"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", "Existing classes"); list.hidden = true;
+    // Stays a textbox (its role is shared with other flows); the list is announced via aria-controls.
     input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-controls", list.id);
     const choose = (name: string) => { input.value = name; list.hidden = true; input.focus(); form.requestSubmit(add); };
     const show = () => {
       const typed = input.value.trim().toLowerCase();
-      const names = typed ? [...known].filter(name => name.toLowerCase().includes(typed) && name.toLowerCase() !== typed)
+      const names = typed ? [...knownClasses()].filter(name => name.toLowerCase().includes(typed) && name.toLowerCase() !== typed)
         .sort((a, b) => Number(!a.toLowerCase().startsWith(typed)) - Number(!b.toLowerCase().startsWith(typed)) || a.localeCompare(b)).slice(0, 6) : [];
       list.replaceChildren(...names.map(name => {
-        const option = button(name, () => choose(name), "style-panel__class-suggestion"); option.setAttribute("role", "option"); option.tabIndex = -1; return option;
+        const option = button(name, () => choose(name), "style-panel__class-suggestion"); option.setAttribute("role", "option"); option.setAttribute("aria-selected", "false"); option.tabIndex = -1;
+        option.addEventListener("focus", () => option.setAttribute("aria-selected", "true")); option.addEventListener("blur", () => option.setAttribute("aria-selected", "false")); return option;
       }));
       list.hidden = !names.length;
     };
@@ -580,7 +610,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     }
     if (getCurrentBreakpoint() !== "all") content.append(button("Hide on this size", () => void write({ display: "none" }, context), "style-panel__hide"));
     if (selectionPanel) content.append(selectionHost);
-    content.append(node("p", "style-panel__hint", "Muted values are computed. Clear a field to remove its declaration."));
+    content.append(node("p", "style-panel__hint", "Muted values are computed. Clear a field to remove its declaration. Type -- for site variables."));
     for (const title of sectionTitles) {
       const details = node("details", "style-panel__section"); details.open = opened.has(title);
       const summary = node("summary", "style-panel__section-title", title); details.append(summary); details.addEventListener("toggle", () => { if (searchQuery) return; if (details.open) opened.add(title); else opened.delete(title); });

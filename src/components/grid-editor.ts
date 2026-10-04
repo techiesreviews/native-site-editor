@@ -51,7 +51,7 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = counts[axis] ? String(counts[axis]) : ''; label.append(input);
     const status = document.createElement('p'); status.className = 'grid-editor__status';
     status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined && raw ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
-    const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = 'Apply'; button.setAttribute('aria-label', input.value ? `Replace with ${input.value} equal ${axis}` : `Replace with N equal ${axis}`); button.title = button.getAttribute('aria-label')!; };
+    const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = 'Apply'; button.setAttribute('aria-label', `Apply: replace with ${input.value || 'N'} equal ${axis}`); button.title = button.getAttribute('aria-label')!; };
     updateButton(); input.addEventListener('input', updateButton, { signal: events.signal });
     const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
     error.id = `grid-count-error-${++gridErrorId}`; input.setAttribute('aria-describedby', error.id);
