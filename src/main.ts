@@ -2051,7 +2051,11 @@ function withoutCollectionRecipes<T extends { paintedSource?: string; items: Nat
 function nativeNodeGenerated(path: string | undefined, node: readonly number[]) {
   const source = path === undefined ? undefined : nativeSources()[path];
   const range = source === undefined ? undefined : locateNativeElementRange(source, [...node]);
-  return Boolean(range && generatedRegionAt(source!, range.tag.start));
+  if (!range) return false;
+  if (generatedRegionAt(source!, range.tag.start)) return true;
+  // Cards a JSON collection made; while the JSON cannot be read, nothing on the page is offered as plain.
+  try { return Boolean(documentEditTouches(nativeDocumentRegions(path!, source!), [{ start: range.tag.start, end: range.tag.start }])); }
+  catch { return /\.html?$/i.test(path!); }
 }
 
 // Component, Structure and card tools write through this view of the editor:

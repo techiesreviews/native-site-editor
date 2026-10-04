@@ -175,3 +175,18 @@ test("a collection whose page was deleted outside the editor can be forgotten al
   expect(after.collections[id]).toEqual(document.collections[id]);
   expect((await storedDrafts(page)).map((draft: { path: string }) => draft.path)).toEqual([SIDECAR]);
 });
+
+test("Structure marks cards a JSON collection made as generated, with no fields, and leaves the grid itself plain", async ({ page, baseURL }) => {
+  await saved(page, baseURL);
+  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
+  const tree = page.getByRole("tree", { name: "Page structure" });
+  const cards = tree.locator(".page-structure__row--generated");
+  // The four cards (and what is inside them) are generated; each card row says so.
+  await expect(cards.filter({ hasText: /^Card project/ })).toHaveCount(4);
+  await expect(tree.locator(".page-structure__row").filter({ hasText: /^Card project/ }).and(tree.locator(":not(.page-structure__row--generated)"))).toHaveCount(0);
+  await expect(tree.locator(".page-structure__row--generated .page-structure__slot-toggle, .page-structure__row--generated input")).toHaveCount(0);
+  const grid = tree.locator(".page-structure__row").filter({ hasText: /^Block / });
+  await expect(grid).toHaveCount(1);
+  await expect(grid).not.toHaveClass(/page-structure__row--generated/);
+  expect(await storedDrafts(page)).toEqual([]);
+});
