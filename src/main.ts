@@ -87,6 +87,8 @@ import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } f
 import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
+import { isManualCardGrid } from "./page-builder/native-grid-collection";
+import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits } from "./page-builder/collection-bake";
 import { validCollectionRoute } from "./page-builder/collection-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
@@ -1255,6 +1257,14 @@ function nativeSelectedCollection(): SelectedCollection | undefined {
   for (let depth = selection.node.length; depth > 0; depth--) {
     const range = locateNativeElementRange(source, selection.node.slice(0, depth));
     if (range && startTagAttribute(source, range.tag, "data-each")) return { path: selection.path, start: range.tag.start,
+      key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
+  }
+  // A hand-written grid of cards offers to choose its pages; nothing changes until Apply.
+  const elements = [...descendants(parseSource(source))];
+  for (let depth = selection.node.length; depth > 0; depth--) {
+    const range = locateNativeElementRange(source, selection.node.slice(0, depth));
+    const element = range && elements.find((item) => item.start === range.tag.start);
+    if (element && isManualCardGrid(source, element)) return { path: selection.path, start: element.start,
       key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
   }
   return undefined;
