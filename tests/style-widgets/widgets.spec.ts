@@ -170,13 +170,23 @@ test('focal accepted writes alone advance committed; retry and late failures gua
   await focal(page); const x = page.getByLabel('X (%)', { exact: true });
   await page.evaluate(() => window.widgets.failNext()); await x.fill('40'); await x.press('Enter');
   await expect.poll(() => page.evaluate(() => window.widgets.errors.length)).toBe(1);
-  await x.press('Enter'); expect(await writes(page)).toHaveLength(1);
+  // A rejected write changes nothing: the field shows the accepted value again, and Enter on it writes nothing.
+  expect(await writes(page)).toEqual([]);
+  await expect(x).toHaveValue('25'); await expect(page.locator('.image-focal-point__status')).toHaveText('25% 75%');
+  await x.press('Enter'); expect(await writes(page)).toEqual([]);
+  // Retrying the edit writes it exactly once; repeating Enter on the accepted value does not write again.
+  await x.fill('40'); await x.press('Enter');
+  expect(await writes(page)).toEqual([{ properties: { 'object-position': '40% 75%' }, sameExpected: true }]);
   await x.press('Enter'); expect(await writes(page)).toHaveLength(1);
   for (const end of ['stale', 'dispose']) {
     await focal(page); await page.evaluate(() => window.widgets.deferNext());
     await x.fill('40'); await x.press('Enter');
     await page.evaluate(end => { if (end === 'stale') window.widgets.stale(); else window.widgets.dispose(); window.widgets.reject(); }, end);
-    expect(await page.evaluate(() => window.widgets.errors)).toEqual([]);
+    // A late rejection is still a real failure of this widget's own write: a stale
+    // widget reports it and shows the accepted value again; a disposed one stays silent.
+    expect(await page.evaluate(() => window.widgets.errors)).toEqual(end === 'stale' ? ['Error: Write failed'] : []);
+    expect(await writes(page)).toEqual([]);
+    if (end === 'stale') { await expect(x).toHaveValue('25'); await expect(x).toBeDisabled(); }
   }
   await focal(page, '120% -2%');
   await page.evaluate(() => window.widgets.failNext()); await x.press('Enter');
