@@ -14,6 +14,9 @@ async function open(page: Page, baseURL: string | undefined) {
   const lead = page.frameLocator(".native-preview-frame").locator(".lead");
   await expect(lead).toBeVisible(); await lead.click();
   await showStylePanel(page);
+  // The dock opens from the keyboard, so take the pointer off the clicked element:
+  // the rest-state checks below must not see its :hover rules.
+  await page.mouse.move(0, 0);
   await expect.poll(() => source(page)).toBeDefined();
 }
 test("native focused Undo retries the prior value and original Show in code follows current source", async ({ page, baseURL }) => {
