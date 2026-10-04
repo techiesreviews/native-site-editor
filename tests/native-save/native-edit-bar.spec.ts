@@ -184,14 +184,13 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await child!.evaluate(() => window.scrollTo(0, 0));
   await expect(bar(page)).toBeVisible();
 
-  // Heading controls include arrangement; roving focus skips the disabled first move.
+  // Heading controls have no move controls: only a whole section moves from the bar.
   await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
   expect(await bar(page).locator("button, select").evaluateAll(controls => controls.map(control => ({
     name: control.getAttribute("aria-label") ?? control.textContent?.trim(), disabled: (control as HTMLButtonElement | HTMLSelectElement).disabled,
   })))).toEqual([
     { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
     { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
-    { name: "Move up", disabled: true }, { name: "Move down", disabled: false }, { name: "Move to", disabled: false },
   ]);
   // Tab walks every enabled control; native selects retain their own arrow keys.
   await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
@@ -199,14 +198,12 @@ test("a selected link takes an address as typed with page suggestions, and the b
     bar(page).getByRole("combobox", { name: "Text size", exact: true }),
     bar(page).getByRole("button", { name: "Bold", exact: true }),
     bar(page).getByRole("button", { name: "Italic", exact: true }),
-    bar(page).getByRole("button", { name: "Move down", exact: true }),
-    bar(page).getByRole("button", { name: "Move to", exact: true }),
   ]) {
     await page.keyboard.press("Tab");
     await expect(control).toBeFocused();
   }
   await bar(page).getByRole("button", { name: "Bold" }).focus();
-  for (const name of ["Italic", "Move down", "Move to"]) {
+  for (const name of ["Italic"]) {
     await page.keyboard.press("ArrowRight");
     await expect(bar(page).getByRole("button", { name, exact: true })).toBeFocused();
   }
@@ -220,7 +217,7 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
-  await expect(bar(page).getByRole("button", { name: "Move to", exact: true })).toBeFocused();
+  await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
 
   // A section gets a bar without text controls; the page's main container none at all.
   await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());

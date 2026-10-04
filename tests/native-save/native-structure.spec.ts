@@ -73,7 +73,7 @@ test("the section icons move, duplicate and remove it as single undo steps", asy
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("an image shows in the preview, and Address and Alt text edit its tag", async ({ page }) => {
+test("an image shows in the preview, and Choose image and Alt text edit its tag", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const image = frame.locator(".hero img");
   // The repository file is read for the sandboxed frame.
@@ -95,36 +95,32 @@ test("an image shows in the preview, and Address and Alt text edit its tag", asy
   await expect(page.locator("#status")).toHaveText("Alt text updated");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
 
-  // Address suggests the repository's images; picking one replaces the image,
-  // and the alt follows the new file's name since it matched the old one.
+  // Choose image… opens the repository's images; using one replaces the
+  // image in the source as one step. (The bar's old Address field for an
+  // image is gone, so a web address is no longer typed here.)
   await expect(bar(page).getByRole("button", { name: "Replace" })).toHaveCount(0);
-  await bar(page).getByRole("button", { name: "Address" }).click();
-  const images = popover(page).getByRole("listbox");
-  await expect(images.getByRole("option", { name: "/images/placeholder.svg" })).toHaveAttribute("aria-selected", "true");
-  await images.getByRole("option", { name: "/images/studio-desk.svg" }).click();
-  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="Studio desk">`);
-  await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+  await expect(bar(page).getByRole("button", { name: "Address" })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Choose image…" }).click();
+  const chooser = page.getByRole("dialog", { name: "Choose image" });
+  await chooser.getByRole("button", { name: "Details for images/studio-desk.svg" }).click();
+  await chooser.getByRole("button", { name: "Use image" }).click();
   await expect(page.locator("#status")).toHaveText("Image replaced");
+  await expect.poll(() => editorText(page, "#content")).toContain(`<img width="320" height="180" loading="lazy" decoding="async" class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="studio desk">`);
+  await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
 
-  // A written alt is kept on the next replacement; emptied, the image is decorative.
+  // A written alt is kept; emptied, the image is decorative.
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("A sketch on the desk");
   await page.keyboard.press("Enter");
-  await expect.poll(() => editorText(page, "#content")).toContain(`alt="A sketch on the desk"`);
-  // A web address applies as typed, with no image suggested for it.
-  await bar(page).getByRole("button", { name: "Address" }).click();
-  await popover(page).getByRole("combobox", { name: "Address" }).fill("https://example.test/photo.jpg");
-  await expect(images).toBeHidden();
-  await page.keyboard.press("Enter");
-  await expect.poll(() => editorText(page, "#content")).toContain(`<img class="hero-image" src="https://example.test/photo.jpg" data-key="hero-image" alt="A sketch on the desk"`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt="A sketch on the desk"`);
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("");
   await page.keyboard.press("Enter");
-  await expect.poll(() => editorText(page, "#content")).toContain(`src="https://example.test/photo.jpg" data-key="hero-image" alt=""`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt=""`);
   await expect(page.locator("#status")).toHaveText("Image marked decorative");
 
-  // Five changes, five undo steps.
-  for (let step = 0; step < 5; step++) await undo(page);
+  // Four changes, four undo steps.
+  for (let step = 0; step < 4; step++) await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 

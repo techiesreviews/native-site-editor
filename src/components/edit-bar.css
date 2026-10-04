@@ -572,3 +572,20 @@
 .edit-bar > .edit-bar__grip.edit-bar__component-name {
   padding: 4px 2px;
 }
+
+/* Address suggestions stay inside the popover's width: a long page title
+   is cut with an ellipsis (its full text in the tooltip), never scrolled
+   sideways. */
+.edit-bar__popover:has(.edit-bar__options) {
+  overflow-x: hidden;
+}
+.edit-bar__options {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+.edit-bar__option {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -176,3 +176,58 @@ for (const colorScheme of ["light", "dark"] as const) {
     if (shots) await page.screenshot({ path: `${shots}/section-bottom-${colorScheme}.png` });
   });
 }
+
+// Only a whole section moves from the bar. A child (a heading here) shows no
+// Move up/down or Move to, and Alt+Up from its bar leaves the source alone.
+test("a child of a section has no move controls; the section keeps them", async ({ page }) => {
+  const toolbar = bar(page);
+  const order = () => frame(page).locator(".hero > *").evaluateAll((els) => els.map((el) => el.tagName));
+  await frame(page).locator(".hero p.lead").click();
+  await expect(toolbar).toBeVisible();
+  for (const name of ["Move up", "Move down", "Move left", "Move right", "Move to"]) await expect(toolbar.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole("button", { name: "Bold" })).toBeVisible();
+  const before = await order();
+  await toolbar.getByRole("button", { name: "Bold" }).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.waitForTimeout(300);
+  expect(await order()).toEqual(before);
+  await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
+  for (const name of ["Move up", "Move down"]) await expect(toolbar.getByRole("button", { name, exact: true })).toBeVisible();
+});
+
+// The link's Address suggestions fit the popover: no sideways scroll, long
+// names cut with an ellipsis, one row per value; arrows and Escape still work.
+test("the address suggestions fit the field with no sideways scroll", async ({ page }) => {
+  const lead = frame(page).locator(".hero p.lead");
+  await lead.click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
+  await child!.evaluate(() => {
+    const text = document.querySelector(".hero p.lead")!.firstChild!;
+    const range = document.createRange();
+    range.setStart(text, 5); range.setEnd(text, 10);
+    getSelection()!.removeAllRanges(); getSelection()!.addRange(range);
+  });
+  const toolbar = bar(page);
+  await expect(toolbar).toBeVisible();
+  const link = toolbar.getByRole("button", { name: "Link", exact: true });
+  await link.click();
+  const popover = page.locator(".edit-bar__popover");
+  const address = popover.getByRole("combobox", { name: "Address" });
+  await expect(address).toBeFocused();
+  const list = popover.getByRole("listbox", { name: "Pages of this site" });
+  await expect(list.getByRole("option").first()).toBeVisible();
+  const fit = await popover.evaluate((el) => {
+    const list = el.querySelector(".edit-bar__options")!;
+    const option = getComputedStyle(el.querySelector(".edit-bar__option")!);
+    const values = [...el.querySelectorAll("[role='option']")].map((item) => item.textContent);
+    return { popover: el.scrollWidth <= el.clientWidth, list: list.scrollWidth <= list.clientWidth, ellipsis: option.textOverflow, unique: new Set(values).size === values.length };
+  });
+  expect(fit).toEqual({ popover: true, list: true, ellipsis: "ellipsis", unique: true });
+  await page.keyboard.press("ArrowDown");
+  await expect(list.getByRole("option").first()).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(address).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(popover).toBeHidden();
+});

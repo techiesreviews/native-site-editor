@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // Drag to reorder sections: a page structure row dragged onto another gap
 // among its siblings, and a selected section dragged in the canvas from the
@@ -196,8 +196,10 @@ test("the grip in the edit bar drags a selected section onto the target gap, one
   await expect(page.locator(".insert-point__plus:visible")).toHaveCount(0);
   // The bar stays; its other controls are inert; the page cannot be selected.
   await expect(bar(page)).toBeVisible();
-  await expect(bar(page).getByRole("button", { name: "Duplicate", includeHidden: true })).toHaveAttribute("inert", "");
-  await expect(grip(page)).not.toHaveAttribute("inert", "");
+  // Inert is set on the control's group, so it is checked through ancestry.
+  const inertAncestor = (locator: Locator) => locator.evaluate((el) => el.closest("[inert]") !== null);
+  expect(await inertAncestor(bar(page).getByRole("button", { name: "Duplicate", includeHidden: true }))).toBe(true);
+  expect(await inertAncestor(grip(page))).toBe(false);
   expect(await page.evaluate(() => document.documentElement.style.userSelect)).toBe("none");
   // Across the hero's heading text, then onto the gap above the hero.
   await page.mouse.move(heading.x + heading.width - 4, heading.y + heading.height / 2, { steps: 6 });

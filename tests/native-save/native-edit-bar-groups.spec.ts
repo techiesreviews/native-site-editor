@@ -117,29 +117,35 @@ test("in a 340px canvas between Structure and Style, groups wrap whole and keep 
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Link");
   await check([["Bold", "Italic"], ["Italic", "Address"]]);
 
-  // The paragraph: Bold/Italic together, Move down beside Move to.
+  // The paragraph: Bold/Italic together, and no move controls (only a
+  // whole section moves from the bar).
   await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await check([["Bold", "Italic"], ["Move up", "Move down"], ["Move down", "Move to"]]);
+  await check([["Bold", "Italic"]]);
+  for (const name of ["Move up", "Move down", "Move to"]) await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
+  // The section: its moves share the arrange group, beside Duplicate.
+  await frame.locator("#first").evaluate((el) => (el as HTMLElement).click());
+  await check([["Move up", "Move down"], ["Move down", "Duplicate"]]);
   // The narrow canvas really makes the bar wrap, so the checks above bite.
   expect(wrapped).toBeGreaterThan(0);
 
   // Keyboard Bold changes source; one Undo restores it exactly.
   const before = await source();
+  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
   await bold.focus(); await bold.press("Enter");
   await expect.poll(source).not.toBe(before);
   await undo(); await expect.poll(source).toBe(before);
 
-  // Keyboard Move down moves in source order; one Undo restores it exactly.
-  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
+  // Keyboard Move down moves the section in source order; one Undo restores it exactly.
+  await frame.locator("#first").evaluate((el) => (el as HTMLElement).click());
   const down = bar.getByRole("button", { name: "Move down", exact: true });
   await down.focus(); await down.press("Enter");
-  await expect(frame.locator("#first > p").first()).toHaveAttribute("id", "second");
+  await expect(frame.locator("main > section").first()).toHaveAttribute("id", "target");
   await undo(); await expect.poll(source).toBe(before);
 });
 
-test("Move down and Move to share the arrange group and both still work", async ({ page, baseURL }) => {
+test("a child has no Move down or Move to; its section's Move down still works as one undo step", async ({ page, baseURL }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
   const undo = async () => expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
@@ -153,27 +159,20 @@ test("Move down and Move to share the arrange group and both still work", async 
   });
   await frame.locator("#moving").click({ position: { x: 5, y: 5 } });
   const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
-  const down = bar.getByRole("button", { name: "Move down", exact: true });
-  const moveTo = bar.getByRole("button", { name: "Move to", exact: true });
-  await expect(moveTo).toBeVisible();
-
-  // Move down, then Move to, with no rule between them.
-  const next = await down.evaluate((el) => {
-    let sib = el.nextElementSibling;
-    while (sib && sib.textContent !== "Move to" && !sib.classList.contains("edit-bar__rule")) sib = sib.nextElementSibling;
-    return [sib?.classList.contains("edit-bar__rule") ? "rule" : sib?.textContent, el.parentElement === sib?.parentElement];
-  });
-  expect(next).toEqual(["Move to", true]);
-
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(bar.getByRole("button", { name: "Move down", exact: true })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Move to", exact: true })).toHaveCount(0);
+  // Alt+Down from the child's bar does not move it.
   const before = await source();
-  await down.focus(); await down.press("Enter");
-  await expect(frame.locator("#first > p").first()).toHaveAttribute("id", "second");
-  await undo(); await expect.poll(source).toBe(before);
+  await bar.getByRole("button", { name: "Bold", exact: true }).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.waitForTimeout(300);
+  expect(await source()).toBe(before);
 
-  await frame.locator("#moving").click({ position: { x: 5, y: 5 } });
-  await moveTo.focus(); await moveTo.press("Enter");
-  const destination = page.getByRole("menuitem", { name: /^Inside section#target, at the end/ });
-  await destination.focus(); await destination.press("Enter");
-  await expect(frame.locator("#target > #moving")).toBeVisible();
+  await frame.locator("#first").evaluate((el) => (el as HTMLElement).click());
+  const down = bar.getByRole("button", { name: "Move down", exact: true });
+  await expect(down).toBeVisible();
+  await down.focus(); await down.press("Enter");
+  await expect(frame.locator("main > section").first()).toHaveAttribute("id", "target");
   await undo(); await expect.poll(source).toBe(before);
 });

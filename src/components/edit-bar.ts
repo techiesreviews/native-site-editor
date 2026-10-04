@@ -121,6 +121,14 @@ const iconNames: Record<IconName, PhosphorName> = {
 };
 
 const arrangeIcons = new Set<IconName>(["up", "down", "left", "right", "add", "duplicate", "remove"]);
+const moveIcons = new Set<IconName>(["up", "down", "left", "right"]);
+
+// Only a whole section moves from the bar (its grip, arrows, Alt+Up/Down).
+// Any other selection drops its move controls here, so a heading or a card
+// inside a section never reads as something the bar moves.
+const isMoveControl = (control: EditBarControl) =>
+  control.kind === "button" && control.icon !== undefined && moveIcons.has(control.icon)
+  || control.kind === "menu" && control.label === "Move to";
 
 function icon(name: IconName) {
   return phosphorIcon(iconNames[name], 16, "edit-bar__icon");
@@ -500,8 +508,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   function renderSuggestions(address: NonNullable<typeof openAddress>) {
     const value = address.input.value.trim();
     const typed = value === address.opened ? "" : value.toLowerCase();
+    // One row per value: a page listed twice (or the current value repeated)
+    // shows once.
+    const seen = new Set<string>();
     const matches = (address.control.suggestions ?? []).filter((entry) =>
-      !typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed));
+      (!typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed))
+      && !seen.has(entry.value) && Boolean(seen.add(entry.value)));
     address.list.replaceChildren(...matches.map((entry) => {
       const option = button(entry.label, () => {
         if (openAddress !== address) return;
@@ -510,6 +522,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         closePopover(true);
       }, "edit-bar__menu-item edit-bar__option");
       option.setAttribute("role", "option");
+      option.title = entry.label;
       option.tabIndex = -1;
       if (entry.value === address.input.value.trim()) option.setAttribute("aria-selected", "true");
       return option;
@@ -806,7 +819,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (keptPrompt && note) note.control = keptPrompt;
     else closeNote(false);
     onFormat = model.onFormat;
-    onMove = model.onMove;
+    onMove = model.draggable ? model.onMove : undefined;
+    const controls = model.draggable ? model.controls : model.controls.filter((control) => !isMoveControl(control));
     let kindName: HTMLElement;
     if (model.draggable && drag) {
       gripName.textContent = model.kind;
@@ -853,7 +867,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       control.kind === "select" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
       : "content";
-    for (const control of model.controls) {
+    for (const control of controls) {
       const next = groupOf(control);
       if (next !== group) {
         // Each group wraps as one unit; its rule leads it, so a wrapped
