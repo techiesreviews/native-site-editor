@@ -35,6 +35,8 @@ async function load(page: Page, baseURL: string | undefined, seed: [string, stri
 test("with an unreadable sidecar, plain rows read as unchecked, not generated, and Remove still writes nothing", async ({ page, baseURL }) => {
   await load(page, baseURL, [[SIDECAR, "{ not json\n"]]);
   const before = await mounted(page);
+  expect(typeof before).toBe("string");
+  expect(before!.length).toBeGreaterThan(0);
   await frame(page).locator("section#work h2").first().click();
   await expect(tree(page)).toBeVisible();
   const rows = tree(page).locator(".page-structure__row");
@@ -49,13 +51,14 @@ test("with an unreadable sidecar, plain rows read as unchecked, not generated, a
   // A real write attempt through the edit bar is still refused: no drafts, source unchanged.
   await page.getByRole("button", { name: "section.flow", exact: true }).click();
   await bar(page).getByRole("button", { name: "Remove", exact: true }).click();
+  // The refusal is said, naming the unreadable file.
+  await expect(page.locator("#status, [role=alert]").filter({ hasText: `The editor's page data file ${SIDECAR} is not valid` }).first()).toBeVisible();
   await expect(frame(page).locator("section#work h2").first()).toBeVisible();
   expect(await storedDrafts(page)).toEqual([]);
   expect(await mounted(page)).toBe(before);
 });
 
-test("with a readable sidecar, cards a collection made are still flagged generated and plain rows carry no hint", async ({ page, baseURL }) => {
-  await load(page, baseURL, [["services/one/index.html", servicesPage]]);
+async function convert(page: Page) {
   await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
   const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
   if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
@@ -65,11 +68,25 @@ test("with a readable sidecar, cards a collection made are still flagged generat
   await inspector.getByRole("checkbox", { name: "/services/", exact: true }).check();
   await inspector.getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
+}
+
+// Generated cards are flagged, carry no component tools and no slot rows;
+// plain component instances elsewhere keep theirs.
+async function expectKnownCards(page: Page) {
   const cards = tree(page).locator(".page-structure__row--generated").filter({ hasText: /^Card project/ });
   await expect(cards).toHaveCount(4);
   await expect(cards.first()).toHaveAttribute("title", GENERATED);
   await expect(tree(page).locator(`[title="${UNKNOWN}"]`)).toHaveCount(0);
-  // Generated cards offer no slot fields.
-  await expect(tree(page).locator(".page-structure__row--generated .page-structure__slot-toggle, .page-structure__row--generated input")).toHaveCount(0);
+  await expect(tree(page).locator(".page-structure__row--generated.page-structure__row--instance")).toHaveCount(0);
+  await expect(tree(page).locator(".page-structure__row--generated.page-structure__row--slot")).toHaveCount(0);
+  for (const card of await cards.all())
+    for (const name of ["Attributes", "Edit component", "Disconnect this instance"]) await expect(card.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(tree(page).locator(".page-structure__row--instance").first()).toBeVisible();
+}
+
+test("with a readable sidecar, cards a collection made are still flagged generated and plain rows carry no hint", async ({ page, baseURL }) => {
+  await load(page, baseURL, [["services/one/index.html", servicesPage]]);
+  await convert(page);
+  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
+  await expectKnownCards(page);
 });
