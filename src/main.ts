@@ -2838,7 +2838,9 @@ let nativeComponentFieldSnapshot: { key: string; proofs: { isCurrent(): boolean 
 function nativeComponentFieldsRevision() {
   const scope = draftScope();
   const sources = nativeSources();
-  const key = JSON.stringify([generation, setupScope(), currentPath, nativeSite?.components, sources]);
+  // Without a scope or the editor module there are no model proofs, so nothing would ever mark this
+  // snapshot stale: whether proofs exist belongs to the key, or Structure keeps its pre-editor fields.
+  const key = JSON.stringify([generation, setupScope(), currentPath, nativeSite?.components, sources, Boolean(scope && editorModule)]);
   if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
   nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
   return String(++nativeComponentFieldToken);
