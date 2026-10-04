@@ -1038,7 +1038,7 @@
   // covers the viewport, so the editor's edit bar can stand clear of it.
   // Only what touches the top edge counts: a few points just under it are
   // probed (through component shadow roots) and their ancestors climbed to
-  // the first sticky/fixed one. The selected element's own bar, or one
+  // the first sticky/fixed one, which counts only when shaped like a header. The selected element's own bar, or one
   // inside it, is not an obstacle. 0 when nothing covers the top.
   function topInset(el) {
     var width = document.documentElement.clientWidth;
@@ -1056,7 +1056,11 @@
         var position = getComputedStyle(at).position;
         if (position !== "sticky" && position !== "fixed") continue;
         var box = at.getBoundingClientRect();
-        if (box.top <= 1 && at !== el && !composedContains(at, el) && !composedContains(el, at)) inset = Math.max(inset, box.bottom);
+        // Only a header-like bar counts: at least half the width and at most
+        // 40% of the height. A full-height sidebar or a full-screen layer
+        // touching the top is not a header and would push the bar down.
+        var headerLike = box.width >= width * 0.5 && box.height <= height * 0.4;
+        if (headerLike && box.top <= 1 && at !== el && !composedContains(at, el) && !composedContains(el, at)) inset = Math.max(inset, box.bottom);
         break;
       }
     });
