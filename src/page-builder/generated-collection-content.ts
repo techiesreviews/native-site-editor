@@ -2,8 +2,7 @@ import { startTagAttribute } from "../../shared/html-source";
 import { readCollections, type SourceCollection } from "./collection-model";
 import type { CollectionPreview } from "./collection-bake";
 import type { SourceElement } from "./component-model";
-import { readSidecar } from "./document-collections";
-import { locateCollectionTarget } from "./page-builder-document";
+import { locatePageCollections, readSidecar } from "./document-collections";
 
 /**
  * Cards a collection generates live after its template, inside the listing
@@ -118,15 +117,8 @@ export interface DocumentRegion { id: string; host: number; hostEnd: number; sta
 export function documentRegions(source: string, path: string, sidecar: string | undefined): DocumentRegion[] {
   if (sidecar === undefined) return [];
   const document = readSidecar(sidecar);
-  const regions: DocumentRegion[] = [];
-  for (const [id, collection] of Object.entries(document.collections)) {
-    if (collection.pagePath !== path) continue;
-    const located = locateCollectionTarget(source, collection.target);
-    if ("error" in located) throw new Error(`The cards of collection “${id}” can no longer be found exactly in ${path}. Undo the change that moved them, or remove the collection.`);
-    const { element } = located;
-    regions.push({ id, host: element.start, hostEnd: element.end, start: element.tag.end, end: element.close!.start });
-  }
-  return regions;
+  return Object.entries(locatePageCollections(source, document, path)).map(([id, item]) =>
+    ({ id, host: item.located.element.start, hostEnd: item.located.element.end, start: item.start, end: item.end }));
 }
 export function documentEditTouches(regions: readonly DocumentRegion[], edits: readonly { start: number; end: number }[]): DocumentRegion | undefined {
   for (const edit of edits) for (const region of regions) {

@@ -1,7 +1,7 @@
 import type { CollectionIdentity } from "./collection-fields";
 import { readCollections } from "./collection-model";
 import { applyCollectionEdits } from "./collection-bake";
-import { readSidecar } from "./document-collections";
+import { locatePageCollections, readSidecar } from "./document-collections";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, makeCollectionTarget, planLegacyCollectionImport, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 
 /**
@@ -30,12 +30,8 @@ export function sidecarCollectionAt(sources: Readonly<Record<string, string>>, p
   const document = readSidecar(sources[EDITOR_PAGE_BUILDER_PATH]);
   const source = sources[path];
   if (source === undefined) return undefined;
-  for (const [id, collection] of Object.entries(document.collections)) {
-    if (collection.pagePath !== path) continue;
-    const located = locateCollectionTarget(source, collection.target);
-    if (!("error" in located) && located.element.start === start) return { id, collection };
-  }
-  return undefined;
+  const found = Object.entries(locatePageCollections(source, document, path)).find(([, item]) => item.located.element.start === start);
+  return found ? { id: found[0], collection: document.collections[found[0]] } : undefined;
 }
 
 /** Imports every inline recipe (if any) into the document, returning the cleaned page texts. */

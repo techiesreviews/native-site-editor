@@ -12,10 +12,11 @@ function graph(sources:Record<string,string>){return{sources,routes:deriveNative
 /** A canonical site: cards baked and recorded by the editor itself. */
 function canonical(){
  const raw={'index.html':home(),'work/a/index.html':page('Alpha'),'work/b/index.html':page('Beta'),[SIDE]:writePageBuilderDocument(recipe(home()))};
- const built=planNativeCollectionOperation({...graph(raw),origin:origin({acceptCollections:['work'],expectedSources:new Map([['index.html',raw['index.html']]])})});
+ const built=planNativeCollectionOperation({...graph(raw),origin:origin({acceptCollections:['work'],expectedSources:new Map([['index.html',raw['index.html']],[SIDE,raw[SIDE]]])})});
  if('error'in built)throw Error(built.error);
  return {...raw,...Object.fromEntries(built.operation.edits!)};
 }
+const pins=(s:Record<string,string>)=>new Map<string,string|undefined>([['index.html',s['index.html']],[SIDE,s[SIDE]]]);
 const plan=(sources:Record<string,string>,extra:Partial<NativeCollectionOrigin>)=>planNativeCollectionOperation({...graph(sources),origin:origin(extra)});
 
 test('sidecar recipes bake clean HTML and record the exact output in JSON only',()=>{
@@ -43,10 +44,11 @@ test('hand-edited cards refuse every later operation; only an explicit id rebuil
  for(const extra of [{edits:new Map([['work/a/index.html',page('X')]])},{deletes:['work/b/index.html']},{creates:[{path:'work/z/index.html',content:page('Z')}]}] as Partial<NativeCollectionOrigin>[]){
   const r=plan(edited,extra);assert.ok('error'in r);assert.match(r.error,/index\.html were edited by hand/);
  }
- const rebuilt=plan(edited,{acceptCollections:['work']});
+ const rebuilt=plan(edited,{acceptCollections:['work'],expectedSources:pins(edited)});
+ const unpinned=plan(edited,{acceptCollections:['work']});assert.ok('error'in unpinned);assert.match(unpinned.error,/Pin/);
  if('error'in rebuilt)assert.fail(rebuilt.error);
  assert.equal(rebuilt.operation.edits!.get('index.html'),s['index.html']);
- const clean=plan(s,{acceptCollections:['work']});assert.ok('error'in clean);assert.match(clean.error,/already match/);
+ const clean=plan(s,{acceptCollections:['work'],expectedSources:pins(s)});assert.ok('error'in clean);assert.match(clean.error,/already match/);
  const doc=readPageBuilderDocument(s[SIDE]);delete (doc.collections as Record<string,unknown>).work;
  const manual=plan(edited,{edits:new Map([[SIDE,writePageBuilderDocument(doc,s[SIDE])]])});
  if('error'in manual)assert.fail(manual.error);
@@ -91,4 +93,19 @@ test('a new sidecar is created in the same operation and its absence is pinned',
  assert.equal(r.operation.expectedSources.get(SIDE),undefined);
  assert.ok(r.operation.edits!.get('index.html')!.includes('>Alpha</a>'));
  assert.ok(readPageBuilderDocument(r.operation.creates!.find(c=>c.path===SIDE)!.content).collections.work.outputFingerprint);
+});
+test('same-page collections are located together: nested, duplicate or missing targets refuse the whole operation',()=>{
+ const s=canonical();
+ const doc=readPageBuilderDocument(s[SIDE]);
+ // A second collection whose target is nested inside the first.
+ const nestedSource=s['index.html'].replace('<a href="/work/a/">','<span class="inner"><a href="/work/a/">').replace('Alpha</a>','Alpha</a></span>');
+ doc.collections.inner={...doc.collections.work,target:makeCollectionTarget(nestedSource,nestedSource.indexOf('<span class="inner">')),outputFingerprint:'x'};
+ const nested=plan({...s,'index.html':nestedSource,[SIDE]:writePageBuilderDocument(doc,s[SIDE])},{edits:new Map([['work/b/index.html',page('Beta 2')]])});
+ assert.ok('error'in nested);assert.match(nested.error,/overlap|edited by hand|can no longer be found/);
+ // One hand-edited and one missing on the same page: refused, nothing written.
+ const two=readPageBuilderDocument(s[SIDE]);
+ two.collections.gone={...two.collections.work,target:{path:[9,9],tag:'div',openingTagFingerprint:'<div class="nothing">'},outputFingerprint:''};
+ const twoSources={...s,'index.html':s['index.html'].replace('>Alpha<','>Mine<'),[SIDE]:writePageBuilderDocument(two,s[SIDE])};
+ const r=plan(twoSources,{acceptCollections:['work'],expectedSources:pins(twoSources)});
+ assert.ok('error'in r);assert.match(r.error,/can no longer be found exactly/);
 });

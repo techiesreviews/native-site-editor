@@ -2,7 +2,7 @@ import { applyCollectionEdits, bindCollectionTemplate } from "./collection-bake"
 import { descendants, parseSource, startTagAttributes } from "./component-model";
 import { builtinFields, ownPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, collectionSpec, knownCollectionField, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
-import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, type LocatedCollectionTarget, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 
 /**
  * Collections whose recipes live only in `.editor/page-builder.json`. The page
@@ -41,23 +41,33 @@ export function readSidecar(text: string | undefined): PageBuilderDocument {
   try { return readPageBuilderDocument(text); } catch (error) { throw new Error(SIDECAR_INVALID(error)); }
 }
 
-function innerOf(source: string, collection: PageBuilderCollection, id: string) {
-  const located = locateCollectionTarget(source, collection.target);
-  if ("error" in located) throw new Error(`The cards of collection “${id}” on ${collection.pagePath} can no longer be found exactly (${located.error}). Undo the change that moved them, or remove the collection.`);
-  const { element } = located;
-  return { located, start: element.tag.end, end: element.close!.start, text: source.slice(element.tag.end, element.close!.start) };
+/**
+ * Every collection of one page, located together: same, nested or stale
+ * targets refuse the whole page instead of guessing which cards are whose.
+ */
+export function locatePageCollections(source: string, document: PageBuilderDocument, pagePath: string): Record<string, { located: LocatedCollectionTarget; start: number; end: number; text: string }> {
+  const records = Object.fromEntries(Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath));
+  if (!Object.keys(records).length) return {};
+  const found = locateCollections(source, records);
+  if ("error" in found) throw new Error(`The collections on ${pagePath} can no longer be found exactly (${found.error}). Undo the change that moved them, or remove a collection.`);
+  return Object.fromEntries(Object.entries(found.collections).map(([id, located]) => [id, { located, start: located.element.tag.end, end: located.element.close!.start, text: source.slice(located.element.tag.end, located.element.close!.start) }]));
 }
 
 /** Each existing collection's current cards against the exact output the editor last wrote. */
 export function documentDrift(sources: Readonly<Record<string, string>>, document: PageBuilderDocument): { id: string; kind: "edited" | "unbuilt" | "missing"; reason?: string }[] {
   const drift: { id: string; kind: "edited" | "unbuilt" | "missing"; reason?: string }[] = [];
-  for (const [id, collection] of Object.entries(document.collections)) {
-    const source = sources[collection.pagePath];
-    if (source === undefined) { drift.push({ id, kind: "missing", reason: `Load ${collection.pagePath} before changing its collection.` }); continue; }
-    let inner: ReturnType<typeof innerOf>;
-    try { inner = innerOf(source, collection, id); } catch (error) { drift.push({ id, kind: "missing", reason: (error as Error).message }); continue; }
-    if (collection.outputFingerprint === inner.text) continue;
-    drift.push({ id, kind: collection.outputFingerprint === undefined && !inner.text.trim() ? "unbuilt" : "edited" });
+  for (const pagePath of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
+    const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath).map(([id]) => id);
+    const source = sources[pagePath];
+    if (source === undefined) { for (const id of ids) drift.push({ id, kind: "missing", reason: `Load ${pagePath} before changing its collection.` }); continue; }
+    let located: ReturnType<typeof locatePageCollections>;
+    try { located = locatePageCollections(source, document, pagePath); }
+    catch (error) { for (const id of ids) drift.push({ id, kind: "missing", reason: (error as Error).message }); continue; }
+    for (const id of ids) {
+      const collection = document.collections[id], inner = located[id];
+      if (collection.outputFingerprint === inner.text) continue;
+      drift.push({ id, kind: collection.outputFingerprint === undefined && !inner.text.trim() ? "unbuilt" : "edited" });
+    }
   }
   return drift;
 }
@@ -111,7 +121,9 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     const after = readSidecar(afterText);
     const accept = new Set(input.accept ?? []);
     const drift = documentDrift(input.before.sources, before);
-    for (const id of accept) if (!drift.some((item) => item.id === id && item.kind !== "missing")) throw new Error(`The cards of collection “${id}” already match their page data.`);
+    // Cards that cannot be located refuse first: acceptance never stands in for a target.
+    for (const item of drift) if (item.kind === "missing" && Object.hasOwn(after.collections, item.id)) throw new Error(item.reason!);
+    for (const id of accept) if (!drift.some((item) => item.id === id)) throw new Error(`The cards of collection “${id}” already match their page data.`);
     for (const item of drift) {
       // A collection the change removes from the sidecar keeps its cards as they are.
       if (!Object.hasOwn(after.collections, item.id)) continue;
@@ -134,18 +146,28 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     rekey(document.pages);
     const pageEdits = new Map<string, { start: number; end: number; text: string; id: string }[]>();
     const previews: DocumentCollectionPreview[] = [];
+    // Page paths and folders are updated first so each page's collections are located together.
     for (const [id, collection] of Object.entries(document.collections)) {
       collection.pagePath = moves.get(collection.pagePath) ?? collection.pagePath;
-      if (deletes.has(collection.pagePath)) { delete document.collections[id]; continue; }
+      if (deletes.has(collection.pagePath)) delete document.collections[id];
+    }
+    const located = new Map<string, ReturnType<typeof locatePageCollections>>();
+    for (const [id, collection] of Object.entries(document.collections)) {
       collection.folders = collection.folders.map(relocate);
       rekey(collection.overrides);
       const source = input.candidate.sources[collection.pagePath];
       if (source === undefined) throw new Error(`Load ${collection.pagePath} before baking its collection.`);
-      const inner = innerOf(source, collection, id);
+      const inner = (located.get(collection.pagePath) ?? located.set(collection.pagePath, locatePageCollections(source, document, collection.pagePath)).get(collection.pagePath)!)[id];
       collection.target = inner.located.target;
       const all = collectionRecords({ ...input.candidate.sources }, { ...input.candidate.routes }, input.identity,
         { folder: collection.folders.join(" "), folders: collection.folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, collection.pagePath, collection.fields)
-        .map((record) => ({ ...record, fields: { ...record.fields, ...stringFields(document.pages[record.path]?.fields), ...(collection.overrides[record.path] ?? {}) } }));
+        .map((record) => {
+          const page = document.pages[record.path];
+          // An authored date in the JSON stands in only where the page has no real date of its own.
+          const date: PageFields = typeof page?.date === "string" && !record.fields.date ? { date: page.date } : {};
+          const fields: PageFields = { ...record.fields, ...date, ...stringFields(page?.fields), ...(collection.overrides[record.path] ?? {}) };
+          return { ...record, fields };
+        });
       if (all.length > MAX_COLLECTION_ITEMS * 4) throw new Error("Too many pages for one collection.");
       const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
       // An empty list still validates its template instead of silently accepting a typo.
@@ -162,12 +184,8 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
       const next = applyCollectionEdits(input.candidate.sources[path], edits);
       texts.set(path, next);
       // Opening tags are unchanged; refresh each target's path against the new text.
-      for (const edit of edits) {
-        const collection = document.collections[edit.id];
-        const located = locateCollectionTarget(next, collection.target);
-        if ("error" in located) throw new Error(`Collection “${edit.id}” could not be placed in ${path}.`);
-        collection.target = located.target;
-      }
+      const placed = locatePageCollections(next, document, path);
+      for (const [id, item] of Object.entries(placed)) document.collections[id].target = item.located.target;
     }
     const empty = !Object.keys(document.collections).length && !Object.keys(document.pages).length && Object.keys(document).length === 3;
     // No file is created for nothing; an existing (or deleted) file is otherwise rewritten only when it changes.

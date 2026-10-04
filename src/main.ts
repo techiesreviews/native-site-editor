@@ -86,7 +86,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder/page-builder-document";
 import { generatedDrift, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
-import { mountCollectionsPanel } from "./components/collections-panel";
+import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
@@ -2621,7 +2621,8 @@ let siteLinkPreferences = new Map<string, SiteLinkPreference>();
 function nativeSettingsController() {
   const scope = setupScope(), epoch = generation;
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
-  const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
+  // The editor's page data file holds custom fields: pinned (bytes or absence) with the pages.
+  const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH, EDITOR_PAGE_BUILDER_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
   let routes = JSON.stringify(nativeSite?.routes);
   // After this dialog's own Apply succeeds, its result is the new baseline,
   // so input kept from meanwhile can be applied on top of it. The operation
@@ -2633,6 +2634,7 @@ function nativeSettingsController() {
     }
     return error;
   };
+  let fieldPanel: CollectionsPanel | undefined;
   const sourcesChanged = () => routes !== JSON.stringify(nativeSite?.routes) || [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
   const stale = () => scope !== setupScope() || epoch !== generation;
   const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
@@ -2648,13 +2650,23 @@ function nativeSettingsController() {
         for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value);
         if (pageFields) next = pageFields(next);
       } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
-      if (next === source) return undefined;
-      return applied(await applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
+      // Custom fields and an authored date live in the editor's JSON, applied with the page in one step.
+      const sidecar = expectedSources.get(EDITOR_PAGE_BUILDER_PATH);
+      let sidecarNext: string | undefined;
+      try { sidecarNext = pageFields && fieldPanel ? fieldPanel.pageFieldDocument(sidecar) : undefined; } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
+      const edits = new Map<string, string>(next === source ? [] : [[path, next]]);
+      const creates: { path: string; content: string }[] = [];
+      if (sidecarNext !== undefined && sidecarNext !== sidecar) {
+        if (sidecar === undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: sidecarNext });
+        else edits.set(EDITOR_PAGE_BUILDER_PATH, sidecarNext);
+      }
+      if (!edits.size && !creates.length) return undefined;
+      return applied(await applyNativeCollectionOperation({ expectedSources, edits, creates, done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
     },
     pageFields(host, path) {
       // Date and custom fields, staged against this dialog's own snapshot.
       const saved = nativeCollectionSnapshot();
-      return mountCollectionsPanel(host, {
+      return fieldPanel = mountCollectionsPanel(host, {
         sources: () => stale() ? {} : nativeCollectionSnapshot().sources,
         routes: () => stale() ? {} : nativeCollectionSnapshot().routes,
         identity: () => nativeCollectionSnapshot().identity,
@@ -3531,6 +3543,7 @@ function openExplorer() {
 }
 
 let repositories: Repository[] = [];
+// Unset until start() has read the session.
 let info: SessionInfo;
 let currentRepo: Repository | undefined;
 let snapshot: Snapshot | undefined;
@@ -7716,8 +7729,10 @@ document.addEventListener("click", (event) => {
   if ((event.target as Element).closest?.('a[href="/auth/login"]'))
     retainWorkspaceLink();
 });
+// A fragment change before the session has loaded is not lost: once signed
+// in, the repositories load from the location as it is then.
 window.addEventListener("hashchange", () => {
-  if (info.user) void loadRepositories();
+  if (info?.user) void loadRepositories();
 });
 renderLogin("loading");
 void start();

@@ -4,7 +4,7 @@ import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
-import { planDocumentBake, type DocumentCollectionPreview } from './document-collections';
+import { planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
 import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
@@ -235,6 +235,16 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       const target = moves.find(move => move.from === path)?.to ?? path;
       if ((baked.edits[target] ?? []).length)
         throw Error(`The cards in ${path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or fix the collection in Code first.`);
+    }
+    // Accepting replacement is scoped: the sidecar and each accepted listing page must be pinned at their current bytes.
+    if (origin.acceptCollections?.length) {
+      const pinned = (path: string) => origin.expectedSources?.has(path) && origin.expectedSources.get(path) === own(sources, path);
+      if (!pinned(EDITOR_PAGE_BUILDER_PATH)) throw Error(`Pin ${EDITOR_PAGE_BUILDER_PATH} before replacing cards.`);
+      const stored = readSidecar(own(sources, EDITOR_PAGE_BUILDER_PATH));
+      for (const id of origin.acceptCollections) {
+        const page = stored.collections[id]?.pagePath;
+        if (!page || !pinned(page)) throw Error(`Pin the page of collection “${id}” before replacing its cards.`);
+      }
     }
     // Sidecar collections: recipes only in JSON, finished cards only in HTML.
     const document = planDocumentBake({

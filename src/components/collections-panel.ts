@@ -6,7 +6,8 @@ import { attribute, collectionSpec, readCollections, validCollectionRoute } from
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
-import type { DocumentCollectionPreview } from "../page-builder/document-collections";
+import { readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
+import { EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -30,6 +31,8 @@ export interface CollectionsPanel {
   pageFieldsDirty(): boolean;
   pageFieldsStamp(): string | undefined;
   pageFieldSource(source: string): string;
+  /** The editor's JSON with this page's custom fields and authored date applied; unchanged bytes when nothing changed. */
+  pageFieldDocument(sidecar: string | undefined): string | undefined;
   destroy(): void;
 }
 export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean; grid?: () => { path: string; start: number } | undefined } = {}): CollectionsPanel {
@@ -41,6 +44,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   let activeForm: HTMLElement | undefined;
   let cleanStamp = "";
   let fieldSource: ((source: string) => string) | undefined;
+  let fieldDocument: ((sidecar: string | undefined) => string | undefined) | undefined;
   let activeSnapshot: ReturnType<typeof snapshot> | undefined;
   let fieldForm: HTMLElement | undefined;
   let activeGrid: { path: string; start: number } | undefined;
@@ -116,24 +120,55 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!path || saved.sources[path] === undefined) { root.append(node("p", "", "Open a page to edit its fields."), status); return; }
     const url = Object.entries(saved.routes).find(([, file]) => file === path)?.[0] ?? "";
     root.append(node("p", "collections-panel__scope", `Page fields · ${url}`));
-    const fields = readPageFields(saved.sources[path], url, saved.identity);
+    // Real head fields stay in the page; custom fields and an authored date come from the editor's JSON.
+    const htmlFields = readPageFields(saved.sources[path], url, saved.identity);
+    let stored: PageBuilderDocument;
+    try { stored = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]); }
+    catch (error) { root.append(node("p", "collections-panel__refusal", (error as Error).message), status); return; }
+    const storedPage = stored.pages[path] ?? {};
+    const jsonFields: Record<string, string> = {};
+    for (const [name, value] of Object.entries(storedPage.fields ?? {})) if (typeof value === "string") jsonFields[name] = value;
+    if (typeof storedPage.date === "string" && !Object.hasOwn(htmlFields, "date")) jsonFields.date = storedPage.date;
+    if (!Object.hasOwn(htmlFields, "date") && !Object.hasOwn(jsonFields, "date")) jsonFields.date = "";
+    const fields: Record<string, string> = { ...jsonFields, ...htmlFields };
+    const inHtml = (name: string) => Object.hasOwn(htmlFields, name) && name !== "url";
     const form = node(options.settings ? "div" : "form", "collections-panel__form");
     const inputs = Object.entries(fields).filter(([name]) => name !== "url" && (!options.settings || !["title", "description", "image"].includes(name))).map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
     const customName = control(form, "New custom field name", "");
     const customValue = control(form, "New custom field value", "");
-    const stage = (source: string) => {
-      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
-      for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
+    const newName = () => {
       const name = customName.value.trim();
       if (!name && customValue.value !== "") throw new Error("Name the new custom field, or clear its value.");
-      if (name) {
-        const changed = withCustomPageField(source, name, customValue.value, saved.identity);
-        if (Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
-        source = changed;
-      }
+      if (name && Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
+      if (name && ["title", "description", "image", "date", "url"].includes(name)) throw new Error(`${name} is a built-in field. Choose another name.`);
+      if (name && !/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error("Use a valid editable page field name: lowercase letters, digits, - or _.");
+      return name;
+    };
+    // Fields that are real page metadata are edited where they are; nothing new is written into the head.
+    const stage = (source: string) => {
+      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
+      for (const { name, input } of inputs) if (inHtml(name) && input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
+      newName();
       return source;
     };
-    fieldSource = stage; fieldForm = form;
+    const stageDocument = (sidecar: string | undefined) => {
+      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
+      const document = readSidecar(sidecar);
+      const page = { ...(document.pages[path] ?? {}) };
+      const custom: Record<string, string> = { ...(page.fields ?? {}) };
+      for (const { name, input } of inputs) {
+        if (inHtml(name) || input.value === fields[name]) continue;
+        if (name === "date") { if (input.value) page.date = input.value; else delete page.date; }
+        else custom[name] = input.value;
+      }
+      const name = newName();
+      if (name) custom[name] = customValue.value;
+      if (Object.keys(custom).length) page.fields = custom; else delete page.fields;
+      if (Object.keys(page).length) document.pages[path] = page; else delete document.pages[path];
+      const empty = !Object.keys(document.pages).length && !Object.keys(document.collections).length;
+      return sidecar === undefined && empty ? undefined : writePageBuilderDocument(document, sidecar);
+    };
+    fieldSource = stage; fieldDocument = stageDocument; fieldForm = form;
     if (!options.settings) {
       const apply = node("button", "button primary", "Apply page fields"); apply.type = "submit";
       form.append(apply, button("Cancel changes", () => { activeForm = undefined; update(); }));
@@ -141,7 +176,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
         event.preventDefault();
         try {
           const source = stage(saved.sources[path]);
-          void submit(saved, planCollectionChange(saved.sources, { ...saved.sources, [path]: source }, saved.routes, saved.identity), "Page fields and collections updated");
+          const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH], next = stageDocument(sidecar);
+          const edits = new Map<string, string>(source === saved.sources[path] ? [] : [[path, source]]);
+          const creates: { path: string; content: string }[] = [];
+          if (next !== undefined && next !== sidecar) { if (sidecar === undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: next }); else edits.set(EDITOR_PAGE_BUILDER_PATH, next); }
+          void submit(saved, { edits, creates, expectedSources: new Map<string, string | undefined>([[path, saved.sources[path]], [EDITOR_PAGE_BUILDER_PATH, sidecar]]) }, "Page fields and collections updated");
         } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
       });
     }
@@ -317,6 +356,12 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   return { update, openGrid, dirty,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
     pageFieldsStamp: () => !destroyed && fieldForm && activeForm === fieldForm ? stamp(fieldForm) : undefined,
+    pageFieldDocument(sidecar) {
+      if (destroyed) throw new Error("Open a page to edit its fields.");
+      if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return sidecar;
+      if (!fieldDocument) throw new Error("Open a page to edit its fields.");
+      return fieldDocument(sidecar);
+    },
     pageFieldSource(source) {
       if (destroyed) throw new Error("Open a page to edit its fields.");
       if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return source;
