@@ -78,8 +78,10 @@ test("a section plus inserts a component from its section-only group alongside n
   const options = picker(page).getByRole("group", { name: "More sections" }).getByRole("option");
   await expect(options).toHaveText([/^Feature block\s*<feature-block>$/]);
 
+  const topLevel = await frame.locator("main > *").count();
   await options.first().click();
   await expect(picker(page)).toBeHidden();
+  await expect(frame.locator("main > *")).toHaveCount(topLevel + 1);
   await expect(frame.locator("section.cards + feature-block + section.filler")).toHaveCount(1);
   await expect(frame.getByRole("heading", { name: "A feature worth sharing" })).toBeVisible();
   // The instance carries its own copy of the template's text slots.
@@ -148,10 +150,12 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   // Read without moving focus: the picker closes when focus leaves it.
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(indexSource);
   // Typed on to one match, Enter inserts it at the end of the page's sections.
+  const topLevel = await page.frameLocator(".native-preview-frame").locator("main > *").count();
   await page.keyboard.type("ure block");
   await expect(picker(page).getByRole("option")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await expect(page.frameLocator(".native-preview-frame").locator("section.filler + feature-block")).toHaveCount(1);
+  await expect(page.frameLocator(".native-preview-frame").locator("main > *")).toHaveCount(topLevel + 1);
   await expect.poll(() => editorText(page, "#content")).toContain(
     `  </section>\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n</main>`,
   );
@@ -181,8 +185,11 @@ test("with no section component the picker still offers the native page sections
   await expect(picker(page).getByRole("group", { name: "Page sections" }).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
   await expect(picker(page).getByRole("option", { name: /^Heading/ })).toHaveCount(0);
   // Choosing one writes an ordinary section before the hero; Undo restores the page exactly.
-  await picker(page).getByRole("option", { name: /^Intro/ }).click();
   const frame = page.frameLocator(".native-preview-frame");
+  const topLevel = await frame.locator("main > *").count();
+  await picker(page).getByRole("option", { name: /^Intro/ }).click();
+  await expect(frame.locator("main > *")).toHaveCount(topLevel + 1);
+  await expect(frame.locator("main > section.section-intro:first-child h2")).toHaveText("Section heading");
   await expect(frame.locator("main > section:first-child + section.hero")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toMatch(/<main class="page" data-key="main">\n\s*<section class="[^"]+">[\s\S]*<\/section>\n\s*<section class="hero"/);
   expect(await editorText(page, "#content")).not.toContain("<feature-block>");
@@ -204,12 +211,22 @@ test("inserting while a component file is open edits the page", async ({ page })
   await scrollFrame(page, "top");
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
+  const topLevel = await frame.locator("main > *").count();
   await picker(page).getByRole("option", { name: /Feature block/ }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(frame.locator("main > *")).toHaveCount(topLevel + 1);
   await expect(frame.locator("main > feature-block:first-child + section.hero")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toContain(
     `<main class="page" data-key="main">\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="hero"`,
   );
-  // The shared footer template is untouched, byte for byte.
-  expect(await page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), footerPath) ?? footerSource).toBe(footerSource);
+  // The shared footer template is untouched, byte for byte: reopened through
+  // the page's footer instance, its mounted source is the fixture's.
+  await frame.locator(".site-footer p").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await page.getByRole("treeitem", { name: /^Site footer/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Site footer component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
+  const mounted = async () => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), footerPath);
+  await expect.poll(async () => typeof (await mounted())).toBe("string");
+  expect(await mounted()).toBe(footerSource);
 });

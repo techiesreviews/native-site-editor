@@ -11,11 +11,30 @@ const sectionClasses = (page: Page) => frame(page).locator("main > *").evaluateA
 
 // The page after an insert is the page before with one ordinary <section> added
 // and, at most, one stylesheet link for the section's layout CSS in <head>;
-// nothing else changed, no editor tags.
-function insertedSection(before: string, after: string) {
+// nothing else changed, no editor tags. The section is the expected one: its
+// root class and heading text, as in the page's DOM.
+const SECTIONS = {
+  Intro: { root: "section-intro", heading: "Section heading" },
+  Features: { root: "section-features", heading: "Features" },
+  Split: { root: "section-split", heading: "Tell your story" },
+  Contact: { root: "contact-section", heading: "Get in touch" },
+} as const;
+const topLevel = (page: Page) => frame(page).locator("main > *").count();
+async function expectSectionInDom(page: Page, name: keyof typeof SECTIONS) {
+  const { root, heading } = SECTIONS[name];
+  await expect(frame(page).locator(`main > section.${root}`)).toHaveCount(1);
+  await expect(frame(page).locator(`main > section.${root} h2`)).toHaveText(heading);
+}
+function insertedSection(before: string, after: string, name: keyof typeof SECTIONS) {
   const head = after.indexOf("</head>");
   const links = [...after.slice(0, head).matchAll(/\n?[ \t]*<link rel="stylesheet" href="[^"]+">\n?/g)].filter((match) => !before.includes(match[0].trim()));
   expect(links.length).toBeLessThanOrEqual(1);
+  // The only stylesheet an insert may add is the shared section layout CSS,
+  // linked relative to index.html, so it resolves to /styles/sections.css.
+  for (const link of links) {
+    expect(link[0].trim()).toBe('<link rel="stylesheet" href="styles/sections.css">');
+    expect(new URL("styles/sections.css", "https://site.example/index.html").pathname).toBe("/styles/sections.css");
+  }
   for (const link of links) after = after.slice(0, link.index) + after.slice(link.index! + link[0].length);
   let start = 0;
   while (start < before.length && before[start] === after[start]) start++;
@@ -32,6 +51,9 @@ function insertedSection(before: string, after: string) {
   expect(trimmed.endsWith("</section>")).toBe(true);
   expect(added).not.toContain("native:");
   expect(added).not.toMatch(/data-native-|data-editor/);
+  const { root, heading } = SECTIONS[name];
+  expect(trimmed).toMatch(new RegExp(`^<section class="${root}"[ >]`));
+  expect(trimmed).toContain(`<h2>${heading}</h2>`);
   return trimmed;
 }
 
@@ -64,7 +86,8 @@ test("Add offers only sections, writes ordinary HTML after the selection's secti
   const after = await sectionClasses(page);
   expect(after[0]).toBe(order[0]);
   expect(after.slice(2)).toEqual(order.slice(1));
-  insertedSection(before!, (await source(page))!);
+  await expectSectionInDom(page, "Intro");
+  insertedSection(before!, (await source(page))!, "Intro");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
@@ -73,6 +96,7 @@ test("with a section selected, Add inserts a sibling section, never inside it", 
   await frame(page).locator(".hero").evaluate((element) => (element as HTMLElement).click());
   const before = await source(page);
   const heroChildren = await frame(page).locator(".hero > *").count();
+  const count = await topLevel(page);
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
   await add(page).getByRole("searchbox").fill("Contact");
   const contact = add(page).getByRole("option", { name: /^Contact/ });
@@ -80,7 +104,10 @@ test("with a section selected, Add inserts a sibling section, never inside it", 
   await contact.press("Enter");
   await expect(frame(page).locator("main > section.hero + section")).toHaveCount(1);
   await expect(frame(page).locator(".hero > *")).toHaveCount(heroChildren);
-  insertedSection(before!, (await source(page))!);
+  await expect(frame(page).locator("main > *")).toHaveCount(count + 1);
+  await expect(frame(page).locator("main > section.hero + section.contact-section")).toHaveCount(1);
+  await expectSectionInDom(page, "Contact");
+  insertedSection(before!, (await source(page))!, "Contact");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
@@ -88,6 +115,7 @@ test("with a section selected, Add inserts a sibling section, never inside it", 
 test("dragging a section uses the actual canvas gap instead of the selection", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
   const before = await source(page);
+  const count = await topLevel(page);
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
   const option = add(page).getByRole("option", { name: /^Split/ });
   await option.scrollIntoViewIfNeeded();
@@ -101,7 +129,10 @@ test("dragging a section uses the actual canvas gap instead of the selection", a
   // Between the cards and the filler, not next to the selected heading's section.
   await expect(frame(page).locator("section.cards + section + section.filler")).toHaveCount(1);
   await expect(frame(page).locator("section.hero + section.cards")).toHaveCount(1);
-  insertedSection(before!, (await source(page))!);
+  await expect(frame(page).locator("main > *")).toHaveCount(count + 1);
+  await expect(frame(page).locator("section.cards + section.section-split + section.filler")).toHaveCount(1);
+  await expectSectionInDom(page, "Split");
+  insertedSection(before!, (await source(page))!, "Split");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
@@ -109,12 +140,16 @@ test("dragging a section uses the actual canvas gap instead of the selection", a
 test("a section plus inserts at that explicit gap", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
   const before = await source(page);
+  const count = await topLevel(page);
   await frame(page).locator("section.hero").hover();
   await page.getByRole("button", { name: "Add a section before “A native browser preview”", exact: true }).click();
   await add(page).getByRole("option", { name: /^Features/ }).click();
   await expect(add(page)).toBeHidden();
   await expect(frame(page).locator("main > section:first-child + section.hero")).toHaveCount(1);
-  insertedSection(before!, (await source(page))!);
+  await expect(frame(page).locator("main > *")).toHaveCount(count + 1);
+  await expect(frame(page).locator("main > section.section-features:first-child")).toHaveCount(1);
+  await expectSectionInDom(page, "Features");
+  insertedSection(before!, (await source(page))!, "Features");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
