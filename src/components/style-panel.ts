@@ -56,7 +56,14 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   let restoringWidgetFocus = false, focusRestoreToken = 0;
   let variableMenu: HTMLElement | undefined;
   let variableMenuOrigin: { key: string; property: string; control?: HTMLElement } | undefined;
-  function closeVariableMenu() { variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined; }
+  function closeVariableMenu() {
+    // Drop references to the removed list so none dangle.
+    variableMenuOrigin?.control?.removeAttribute("aria-controls"); variableMenuOrigin?.control?.removeAttribute("aria-activedescendant");
+    variableMenu?.remove(); variableMenu = undefined; variableMenuOrigin = undefined;
+  }
+  const live = node("div", "style-panel__live"); live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite");
+  root.append(live);
+  function announce(message: string) { live.textContent = message; }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   const gestureEvents = new AbortController();
   let gestureTimer: ReturnType<typeof setTimeout> | undefined;
@@ -288,50 +295,53 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     control.name = field.property; control.setAttribute("aria-label", field.label);
     control.dataset.property = field.property; control.value = own; control.classList.toggle("is-computed", !own);
     control.addEventListener("focus", () => { if (handlers.context()?.key === snapshot.expected?.key) snapshot.expected = handlers.context(); });
-    const typedMenuOpen = () => !!variableMenu && variableMenuOrigin?.control === control;
     control.addEventListener("change", () => {
       // Leaving the field with a raw --name is handled once, by the blur restore below.
-      if (typedMenuOpen() || document.activeElement !== control && /^(?:var\(\s*)?--[\w-]*$/.test(control.value.trim())) return;
+      if (suggestionsOpen() || document.activeElement !== control && rawVariable(control.value)) return;
       void apply(control.value.trim());
     });
-    // Typing "--" or "var(--" offers matching variables inline; focus stays in the field.
     const bare = (name: string) => name.replace(/^--/, "").toLowerCase();
-    function openVariableMenu(x: number, y: number, typed?: string) {
-      closeVariableMenu();
+    const rawVariable = (value: string) => /^(?:var\(\s*)?--[\w-]*$/.test(value.trim());
+    /** Captures the variable workspace for this field, refusing stale targets on use. */
+    function variableScope() {
       const expected = currentContext(control.isConnected && snapshot.expected?.key === renderContext?.key ? renderContext : snapshot.expected), workspace = expected?.workspace;
-      if (!expected || !workspace) return;
+      if (!expected || !workspace) return undefined;
       const menuBreakpoint = getCurrentBreakpoint(), menuState = state;
-      const menuCurrent = () => {
+      const isCurrent = () => {
         if (menuBreakpoint !== getCurrentBreakpoint() || menuState !== state) { report("The style target changed. Select the element again."); return false; }
         return !!currentContext(expected);
       };
-      const declarations = cssVariableDeclarations(workspace);
-      const offered = relevantVariables(field.property, declarations, (property, value) => CSS.supports(property, value))
-        .filter(declaration => typed === undefined || bare(declaration.name).includes(bare(typed)));
-      // Typed completion ranks exact, then prefix, then contained matches.
-      if (typed !== undefined) {
-        const rank = (name: string) => bare(name) === bare(typed) ? 0 : bare(name).startsWith(bare(typed)) ? 1 : 2;
-        offered.sort((a, b) => rank(a.name) - rank(b.name));
-      }
-      if (typed !== undefined && !offered.length) return;
-      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property, control: typed === undefined ? undefined : control };
-      menu.id = "style-panel-variable-menu";
+      const offered = relevantVariables(field.property, cssVariableDeclarations(workspace), (property, value) => CSS.supports(property, value));
+      const choose = (name: string) => {
+        if (!isCurrent()) return;
+        const value = `var(${name})`;
+        if (control instanceof HTMLInputElement) control.value = value;
+        if (onChange) void onChange(value, expected); else void write({ [field.property]: value }, expected);
+      };
+      return { expected, workspace, isCurrent, offered, choose };
+    }
+    function place(menu: HTMLElement, x: number, y: number) {
+      // Keep the whole menu inside the viewport; flip above the field when short.
+      const box = menu.getBoundingClientRect(), fieldBox = control.getBoundingClientRect();
+      menu.style.left = `${Math.max(4, Math.min(x, innerWidth - box.width - 4))}px`;
+      menu.style.top = `${Math.max(4, y + box.height > innerHeight - 4 ? Math.min(fieldBox.top, y) - box.height - 2 : y)}px`;
+    }
+    // Right-click / Shift+F10: an action menu with "use variable" and "go to definition".
+    function openVariableMenu(x: number, y: number) {
+      closeVariableMenu();
+      const scope = variableScope();
+      if (!scope) return;
+      const { expected, workspace, isCurrent, offered, choose: use } = scope;
+      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property };
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
-      menu.style.left = `${Math.max(0, Math.min(x, innerWidth - 260))}px`; menu.style.top = `${Math.max(0, Math.min(y, innerHeight - 240))}px`;
       if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
       for (const declaration of offered) {
         const row = node("div", "style-panel__variable-choice"); row.setAttribute("role", "none");
-        const choose = button("", () => {
-          if (menuCurrent()) {
-            const value = `var(${declaration.name})`;
-            if (control instanceof HTMLInputElement) control.value = value;
-            if (onChange) void onChange(value, expected); else void write({ [field.property]: value }, expected);
-          }
-          closeVariableMenu(); if (control.isConnected) control.focus();
-        }); choose.setAttribute("role", "menuitem"); choose.tabIndex = -1; choose.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
+        const choose = button("", () => { use(declaration.name); closeVariableMenu(); if (control.isConnected) control.focus(); });
+        choose.setAttribute("role", "menuitem"); choose.tabIndex = -1; choose.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
         choose.append(node("strong", "", declaration.name), node("span", "style-panel__variable-provenance", `${declaration.value} · ${declaration.path}`));
         const definition = button("", () => {
-          const current = menuCurrent(); closeVariableMenu();
+          const current = isCurrent(); closeVariableMenu();
           if (current) void workspace.openDefinition(declaration.path, declaration.start, declaration.end, workspace.revision).then(ok => { if (!ok) report("The variable source changed. Open its definition again."); }).catch(report);
         }); definition.setAttribute("role", "menuitem"); definition.tabIndex = -1; definition.setAttribute("aria-label", `Go to ${declaration.name} in ${declaration.path}`);
         definition.classList.add("style-panel__variable-definition"); definition.append(icon("arrow-up-right", 14));
@@ -355,39 +365,71 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         if (event.relatedTarget instanceof Node && menu.contains(event.relatedTarget)) return;
         setTimeout(() => { if (variableMenu === menu && !menu.contains(document.activeElement)) closeVariableMenu(); }, 0);
       });
-      menu.tabIndex = -1; root.append(menu);
-      if (typed !== undefined) menu.addEventListener("pointerdown", event => event.preventDefault());
-      // Keep the whole menu inside the viewport; flip above the field when short.
-      const box = menu.getBoundingClientRect(), fieldBox = control.getBoundingClientRect();
-      menu.style.left = `${Math.max(4, Math.min(x, innerWidth - box.width - 4))}px`;
-      menu.style.top = `${Math.max(4, y + box.height > innerHeight - 4 ? Math.min(fieldBox.top, y) - box.height - 2 : y)}px`;
-      const first = menu.querySelector<HTMLButtonElement>("button");
-      // Typed mode keeps the menu out of the Tab order: Tab leaves the field.
-      if (typed === undefined) { if (first) first.tabIndex = 0; (first ?? menu).focus(); }
-      else if (first) { first.classList.add("is-active"); control.setAttribute("aria-controls", menu.id); }
+      menu.tabIndex = -1; root.append(menu); place(menu, x, y);
+      const first = menu.querySelector<HTMLButtonElement>("button"); if (first) first.tabIndex = 0; (first ?? menu).focus();
+    }
+    // Typing "--" or "var(--" shows a listbox of matching variables. Focus stays
+    // in the field; aria-activedescendant names the option Enter will choose.
+    let suggestionIndex = 0;
+    const suggestionsOpen = () => !!variableMenu && variableMenuOrigin?.control === control;
+    function suggestionOptions() { return suggestionsOpen() ? [...variableMenu!.querySelectorAll<HTMLElement>('[role="option"]')] : []; }
+    function highlight(index: number) {
+      const options = suggestionOptions(); if (!options.length) return;
+      suggestionIndex = (index + options.length) % options.length;
+      options.forEach((option, i) => { option.setAttribute("aria-selected", String(i === suggestionIndex)); option.classList.toggle("is-active", i === suggestionIndex); });
+      const active = options[suggestionIndex];
+      control.setAttribute("aria-activedescendant", active.id); active.scrollIntoView({ block: "nearest" });
+      announce(`${active.dataset.name} selected, ${suggestionIndex + 1} of ${options.length}.`);
+    }
+    function openSuggestions(typed: string) {
+      const scope = variableScope();
+      const offered = (scope?.offered ?? []).filter(declaration => bare(declaration.name).includes(bare(typed)));
+      // Exact, then prefix, then contained matches.
+      const rank = (name: string) => bare(name) === bare(typed) ? 0 : bare(name).startsWith(bare(typed)) ? 1 : 2;
+      offered.sort((a, b) => rank(a.name) - rank(b.name));
+      if (!scope || !offered.length) { if (suggestionsOpen()) { closeVariableMenu(); announce("No matching variables."); } return; }
+      const reopened = suggestionsOpen();
+      closeVariableMenu();
+      const list = node("div", "style-panel__variable-menu style-panel__variable-list"); variableMenu = list;
+      variableMenuOrigin = { key: scope.expected.key, property: field.property, control };
+      list.id = "style-panel-variable-list"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", `${field.label} variables`);
+      offered.forEach((declaration, index) => {
+        const option = node("div", "style-panel__variable-option"); option.id = `style-panel-variable-option-${index}`;
+        option.setAttribute("role", "option"); option.dataset.name = declaration.name;
+        option.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
+        option.append(node("strong", "", declaration.name), node("span", "style-panel__variable-provenance", `${declaration.value} · ${declaration.path}`));
+        option.addEventListener("click", () => { scope.choose(declaration.name); closeVariableMenu(); if (control.isConnected) control.focus(); });
+        list.append(option);
+      });
+      // Pointer and touch choose without taking focus from the field.
+      list.addEventListener("pointerdown", event => event.preventDefault());
+      root.append(list);
+      const rect = control.getBoundingClientRect(); place(list, rect.left, rect.bottom + 2);
+      control.setAttribute("aria-controls", list.id);
+      if (!reopened) announce(`${offered.length} variable${offered.length === 1 ? "" : "s"} available.`);
+      highlight(0);
     }
     if (control instanceof HTMLInputElement) {
       control.setAttribute("aria-autocomplete", "list");
       control.title = "Type -- for site variables.";
       control.addEventListener("input", () => {
         const typed = /^(?:var\(\s*)?(--[\w-]*)$/.exec(control.value.trim())?.[1];
-        if (typed && handlers.context()?.workspace) { const rect = control.getBoundingClientRect(); openVariableMenu(rect.left, rect.bottom + 2, typed); }
-        else if (typedMenuOpen()) { closeVariableMenu(); }
+        if (typed && handlers.context()?.workspace) openSuggestions(typed);
+        else if (suggestionsOpen()) { closeVariableMenu(); announce("Variable suggestions closed."); }
       });
       control.addEventListener("keydown", event => {
-        if (!typedMenuOpen()) return;
-        const first = variableMenu!.querySelector<HTMLButtonElement>(".style-panel__variable-choice button.is-active");
-        if (event.key === "ArrowDown" && first) { event.preventDefault(); event.stopImmediatePropagation(); first.focus(); }
-        else if (event.key === "Enter" && first) { event.preventDefault(); event.stopImmediatePropagation(); first.click(); }
-        else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); }
+        if (!suggestionsOpen()) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); event.stopImmediatePropagation(); highlight(suggestionIndex + (event.key === "ArrowDown" ? 1 : -1)); }
+        else if (event.key === "Enter") { event.preventDefault(); event.stopImmediatePropagation(); suggestionOptions()[suggestionIndex]?.click(); }
+        else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); announce("Variable suggestions closed."); }
         else if (event.key === "Tab") closeVariableMenu();
       });
       control.addEventListener("blur", () => setTimeout(() => {
-        if (variableMenu?.contains(document.activeElement) || document.activeElement === control || !control.isConnected) return;
-        if (typedMenuOpen()) closeVariableMenu();
-       
+        // A re-render or new selection removed this field: never restore onto another one.
+        if (document.activeElement === control || !control.isConnected) return;
+        if (suggestionsOpen()) closeVariableMenu();
         // Leaving without a choice never keeps an unwritten raw --name in the field.
-        if (/^(?:var\(\s*)?--[\w-]*$/.test(control.value.trim())) {
+        if (rawVariable(control.value)) {
           control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
           report("Variable not applied. Choose one from the list to write var(--name).");
         }
@@ -440,7 +482,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     group.append(node("p", "style-panel__hint", "Click to type. Drag pixel values to scrub."));
     for (const kind of ["margin", "padding"]) {
       const row = node("div", "style-panel__field");
-      row.append(node("span", "", `${kind} (all)`), fieldControl({ label: `${kind} preset`, property: kind, kind: "space", unit: true }, variables));
+      const label = `${kind[0].toUpperCase()}${kind.slice(1)} (all)`;
+      row.append(node("span", "", label), fieldControl({ label, property: kind, kind: "space", unit: true }, variables));
       group.append(row);
     }
     return group;
@@ -450,44 +493,60 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const own = new Set(context.classes ?? (context.className ? [context.className] : []));
     // Read classes when suggesting: CSS edits made while focus is in the panel do not re-render it.
     const knownClasses = () => {
-    const fresh = handlers.context(), files = fresh?.key === context.key ? fresh.files : context.files;
-    const known = new Set<string>();
-    for (const [path, source] of Object.entries(files)) {
-      if (!/\.css$/i.test(path)) continue;
-      // Attribute selectors and strings are not classes; escaped names are skipped, not truncated.
-      try { for (const block of scanCss(source)) for (const match of block.selector.replace(/\[[^\]]*\]|"[^"]*"|'[^']*'/g, " ").matchAll(/\.(-?[_a-zA-Z][\w-]*)(?![\\\w-])/g)) if (!own.has(match[1])) known.add(match[1]); } catch { /* unreadable CSS offers nothing */ }
-    }
-    return known;
+      const fresh = handlers.context(), files = fresh?.key === context.key ? fresh.files : context.files;
+      const known = new Set<string>();
+      for (const [path, source] of Object.entries(files)) {
+        if (!/\.css$/i.test(path)) continue;
+        try {
+          for (const block of scanCss(source)) {
+            // Attribute selectors and strings are not classes; escaped names are skipped, not truncated.
+            const selector = block.selector.replace(/\[[^\]]*\]|"[^"]*"|'[^']*'/g, " ");
+            for (const match of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)(?![\\\w-])/g)) if (!own.has(match[1])) known.add(match[1]);
+          }
+        } catch { /* unreadable CSS offers nothing */ }
+      }
+      return known;
     };
+    // Focus stays in the field (a textbox with list autocomplete); the listbox's
+    // options are not focusable and aria-activedescendant names the highlighted one.
     const list = node("div", "style-panel__class-suggestions"); list.id = "style-panel-class-suggestions"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", "Existing classes"); list.hidden = true;
-    // Stays a textbox (its role is shared with other flows); the list is announced via aria-controls.
-    input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-controls", list.id);
-    const choose = (name: string) => { input.value = name; list.hidden = true; input.focus(); form.requestSubmit(add); };
+    input.setAttribute("aria-autocomplete", "list");
+    let active = -1;
+    const options = () => [...list.querySelectorAll<HTMLElement>('[role="option"]')];
+    const hide = () => { list.hidden = true; active = -1; input.removeAttribute("aria-controls"); input.removeAttribute("aria-activedescendant"); };
+    const highlight = (index: number) => {
+      const all = options(); active = index;
+      all.forEach((option, i) => { option.setAttribute("aria-selected", String(i === index)); option.classList.toggle("is-active", i === index); });
+      if (all[index]) { input.setAttribute("aria-activedescendant", all[index].id); announce(`${all[index].dataset.name} selected, ${index + 1} of ${all.length}.`); }
+      else input.removeAttribute("aria-activedescendant");
+    };
+    const choose = (name: string) => { input.value = name; hide(); input.focus(); form.requestSubmit(add); };
     const show = () => {
       const typed = input.value.trim().toLowerCase();
       const names = typed ? [...knownClasses()].filter(name => name.toLowerCase().includes(typed) && name.toLowerCase() !== typed)
         .sort((a, b) => Number(!a.toLowerCase().startsWith(typed)) - Number(!b.toLowerCase().startsWith(typed)) || a.localeCompare(b)).slice(0, 6) : [];
-      list.replaceChildren(...names.map(name => {
-        const option = button(name, () => choose(name), "style-panel__class-suggestion"); option.setAttribute("role", "option"); option.setAttribute("aria-selected", "false"); option.tabIndex = -1;
-        option.addEventListener("focus", () => option.setAttribute("aria-selected", "true")); option.addEventListener("blur", () => option.setAttribute("aria-selected", "false")); return option;
+      const wasOpen = !list.hidden;
+      list.replaceChildren(...names.map((name, index) => {
+        const option = node("div", "style-panel__class-suggestion", name); option.id = `style-panel-class-option-${index}`; option.dataset.name = name;
+        option.setAttribute("role", "option"); option.setAttribute("aria-selected", "false");
+        option.addEventListener("click", () => choose(name)); return option;
       }));
-      list.hidden = !names.length;
+      if (!names.length) { if (wasOpen) announce("Class suggestions closed."); hide(); return; }
+      list.hidden = false; active = -1; input.setAttribute("aria-controls", list.id); input.removeAttribute("aria-activedescendant");
+      announce(`${names.length} existing class${names.length === 1 ? "" : "es"} available.`);
     };
     input.addEventListener("input", show);
+    // Pointer and touch choose without taking focus from the field.
     list.addEventListener("pointerdown", event => event.preventDefault());
     input.addEventListener("keydown", event => {
-      const options = [...list.querySelectorAll<HTMLButtonElement>("button")];
-      if (list.hidden || !options.length) return;
-      if (event.key === "ArrowDown") { event.preventDefault(); options[0].focus(); }
-      else if (event.key === "Tab" && !event.shiftKey && options.length === 1) { event.preventDefault(); input.value = options[0].textContent ?? ""; list.hidden = true; }
-      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); list.hidden = true; }
+      const all = options();
+      if (list.hidden || !all.length) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); highlight(((active < 0 && event.key === "ArrowUp" ? 0 : active) + (event.key === "ArrowDown" ? 1 : -1) + all.length) % all.length); }
+      else if (event.key === "Enter" && active >= 0) { event.preventDefault(); choose(all[active].dataset.name!); }
+      else if (event.key === "Tab" && !event.shiftKey && all.length === 1) { event.preventDefault(); input.value = all[0].dataset.name!; hide(); }
+      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); hide(); announce("Class suggestions closed."); }
     });
-    list.addEventListener("keydown", event => {
-      const options = [...list.querySelectorAll<HTMLButtonElement>("button")], index = options.indexOf(document.activeElement as HTMLButtonElement);
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); const next = index + (event.key === "ArrowDown" ? 1 : -1); (next < 0 ? input : options[Math.min(next, options.length - 1)]).focus(); }
-      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); list.hidden = true; input.focus(); }
-    });
-    form.addEventListener("focusout", () => setTimeout(() => { if (!form.contains(document.activeElement)) list.hidden = true; }, 0));
+    input.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== input) hide(); }, 0));
     form.append(list);
   }
   function applyFold() {

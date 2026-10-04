@@ -97,4 +97,13 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel__variable-choice button:first-child { align-items: flex-start; }
 .style-panel__variable-choice strong { font-family: var(--font-mono); font-size: var(--type-small); overflow-wrap: anywhere; }
 .style-panel .style-panel__variable-definition { flex: none; width: var(--size-compact); display: grid; place-items: center; color: var(--muted); }
-.style-panel__variable-choice button.is-active { background: var(--current); box-shadow: inset 2px 0 0 var(--link); }
+.style-panel__live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.style-panel__variable-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px; border-radius: var(--radius); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.style-panel__variable-option:hover { background: var(--hover); }
+.style-panel__variable-option strong { font-family: var(--font-mono); font-size: var(--type-small); }
+.style-panel :is(.style-panel__variable-option, .style-panel__class-suggestion).is-active { background: var(--current); box-shadow: inset 2px 0 0 var(--link); opacity: 1; }
+.style-panel .style-panel__class-suggestion { cursor: pointer; border-radius: var(--radius); min-height: var(--size-compact); display: inline-flex; align-items: center; }
+
+/* Same base surface as Page structure (.sidebar); the margin box keeps a distinct raised tone. */
+.style-panel, .style-panel__search { background: var(--surface-subtle); }
+.style-panel__box--margin { background: var(--panel-surface); }

@@ -40,7 +40,7 @@ test("typed variable completion writes var() and global colours edit in place", 
   await panel(page).getByText("Typography", { exact: true }).click();
   const color = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
   await color.fill("var(--acc");
-  await panel(page).getByRole("menu", { name: "Text colour variables" }).getByRole("menuitem", { name: /^--accent ·/ }).click();
+  await panel(page).getByRole("listbox", { name: "Text colour variables" }).getByRole("option", { name: /^--accent ·/ }).click();
   await expect(color).toHaveValue("var(--accent)");
   await expect(frame(page).locator(".lead")).toHaveCSS("color", "rgb(47, 109, 58)");
   await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
@@ -181,7 +181,7 @@ test("focused selects and variable completions accept repeated own edits", async
   await color.focus();
   for (const name of ["--accent", "--muted", "--accent"]) {
     await color.fill(name);
-    await panel(page).getByRole("menu", { name: "Text colour variables" }).getByRole("menuitem", { name: new RegExp(`^${name} ·`) }).click();
+    await panel(page).getByRole("listbox", { name: "Text colour variables" }).getByRole("option", { name: new RegExp(`^${name} ·`) }).click();
     await expect.poll(() => css(page)).toContain(`color: var(${name});`);
     await expect(color).toBeFocused();
   }

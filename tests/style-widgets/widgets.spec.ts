@@ -27,8 +27,8 @@ test('grid render/custom preservation, explicit track conversion, isolated gap a
   await expect(page.getByRole('img')).toHaveAttribute('aria-label', 'Equal grid preview: 3 columns, 2 rows');
 });
 test('grid bounded counts, stale and readOnly reject controls', async ({ page }) => {
-  await page.getByLabel('Rows', { exact: true }).fill('25'); await page.getByRole('button', { name: /Replace with .* equal rows/ }).click(); expect(await writes(page)).toEqual([]);
-  await page.evaluate(() => window.widgets.stale(false)); await page.getByLabel('Rows', { exact: true }).fill('3'); await page.getByRole('button', { name: /Replace with .* equal rows/ }).click(); expect(await writes(page)).toEqual([]);
+  await page.getByLabel('Rows', { exact: true }).fill('25'); await page.getByRole('button', { name: /Replace with .* equal rows/i }).click(); expect(await writes(page)).toEqual([]);
+  await page.evaluate(() => window.widgets.stale(false)); await page.getByLabel('Rows', { exact: true }).fill('3'); await page.getByRole('button', { name: /Replace with .* equal rows/i }).click(); expect(await writes(page)).toEqual([]);
   await page.evaluate(() => { window.widgets.mount('grid'); window.widgets.lock(); }); await expect(page.getByLabel('Gap', { exact: true })).toBeDisabled();
   await page.evaluate(() => window.widgets.dispose()); await expect(page.locator('.grid-editor')).toHaveCount(0);
 });
