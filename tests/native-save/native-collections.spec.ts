@@ -216,3 +216,24 @@ test("an empty legacy source with template attributes refuses the JSON move and 
   expect(state.sources["index.html"]).toBe(original);
   expect(state.sources[".editor/page-builder.json"]).toBeUndefined();
 });
+
+test("custom fields kept in the editor's JSON are offered to Sort and Filter, and the JSON value wins as in the bake", async ({ page }) => {
+  await page.evaluate(() => {
+    const h = (window as any).collectionTest;
+    h.state.sources["work/one/index.html"] = h.state.sources["work/one/index.html"].replace("</head>", '<meta name="field:mood" content="html">');
+    h.state.sources[".editor/page-builder.json"] = JSON.stringify({ version: 1, pages: { "work/one/index.html": { fields: { mood: "json", price: "10" } }, "work/two/index.html": { fields: { price: "5" } } }, collections: {} }, null, 2) + "\n";
+    h.derive();
+  });
+  await grid(page);
+  const sort = page.getByRole("combobox", { name: "Sort by", exact: true });
+  await expect(sort.locator("option", { hasText: "price" })).toHaveCount(1);
+  await sort.selectOption("price");
+  await expect(panel(page).locator("pre")).toContainText('href="/work/two/">Two</a>');
+  const preview = await panel(page).locator("pre").textContent();
+  expect(preview!.indexOf("/work/two/")).toBeLessThan(preview!.indexOf("/work/one/"));
+  const filter = page.getByRole("combobox", { name: "Filter by", exact: true });
+  await filter.selectOption("mood");
+  await page.getByLabel("Matches exactly").fill("json");
+  await expect(panel(page)).toContainText("1 matching page");
+  await expect(panel(page).locator("pre")).toContainText('href="/work/one/"');
+});
