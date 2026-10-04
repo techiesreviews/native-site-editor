@@ -1295,11 +1295,24 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   nativeLinkedStyles = styles;
   const rules = styles ? linkedRules(styles) : [];
   if (request !== linkedStyleRequest || epoch !== generation || page !== currentPath) return;
-  const css = rules.find((rule) => rule.path !== page)?.path ??
+  // Explicit template entry keeps its authored stylesheet when the selected
+  // template element has no direct rules, rather than using page-body rules.
+  const componentCss = page && nativeComponentTagForPath(page) && !selection.selectors.length
+    ? nativeComponentCssPath(page) : undefined;
+  const scope = draftScope();
+  const componentDraft = componentCss && scope ? draftStore().get(scope, componentCss) : undefined;
+  const fallbackCss = componentCss && !componentDraft?.deleted && !componentDraft?.upload && !componentDraft?.opaque &&
+    nativeEffectiveSource(componentCss) !== undefined ? componentCss : undefined;
+  const css = fallbackCss ?? rules.find((rule) => rule.path !== page)?.path ??
     styles?.rules.find((rule) => rule.path !== page)?.path ?? defaultLinkedStyle()?.css ?? secondaryPath;
   if (!reveal && css !== secondaryPath) return;
   linkedStyle = { page, css, rules };
-  if (css && !(await openSecondary(css))) return;
+  const current = () => {
+    const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
+    return request === linkedStyleRequest && epoch === generation && page === currentPath &&
+      (!fallbackCss || (!draft?.deleted && !draft?.upload && !draft?.opaque && nativeEffectiveSource(fallbackCss) !== undefined));
+  };
+  if (css && !(await openSecondary(css, current))) return;
   if (request !== linkedStyleRequest || epoch !== generation || page !== currentPath) return;
   if (!css) closeSecondary();
   renderLinkedStyle();
@@ -6987,12 +7000,25 @@ async function openComponentLinkedStyle(page: string) {
   const css = nativeComponentCssPath(page);
   const request = ++linkedStyleRequest;
   const epoch = generation;
-  const entry = await findEntry(css);
+  const scope = draftScope();
+  if (!scope) return false;
+  const draft = draftStore().get(scope, css);
+  // A new component's stylesheet may exist only in drafts, as openSecondary
+  // already supports. A branch-tree miss must not hide that authored file.
+  const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
+  const entry = created ? undefined : await findEntry(css);
   if (request !== linkedStyleRequest || epoch !== generation || currentPath !== page) return false;
-  if (!entry) return openDefaultLinkedStyle(page);
+  const latestDraft = draftStore().get(scope, css);
+  if (latestDraft?.deleted || latestDraft?.upload || latestDraft?.opaque ||
+      (!entry && !(latestDraft && latestDraft.baseSha === null))) return openDefaultLinkedStyle(page);
   nativeLinkedStyles = undefined;
   linkedStyle = { page, css, rules: linkedStyleIdle };
-  if (!(await openSecondary(css))) return false;
+  const current = () => {
+    const draft = draftStore().get(scope, css);
+    return request === linkedStyleRequest && epoch === generation && currentPath === page &&
+      linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque;
+  };
+  if (!(await openSecondary(css, current))) return false;
   if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
   renderLinkedStyle();
   return true;

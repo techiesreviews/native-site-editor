@@ -303,19 +303,40 @@ test("a component an agent creates opens its new stylesheet beside the page", as
     expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
     return body;
   };
+  const htmlPath = "components/hero-banner/hero-banner.html";
   const cssPath = "components/hero-banner/hero-banner.css";
+  const template = '<section data-key="hero-banner">\n  <h2 data-key="banner-title"><slot name="title">A new banner</slot></h2>\n</section>\n';
+  const stylesheet = "h2 {\n  color: rebeccapurple;\n}\n";
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
-    await call("write_file", { path: "components/hero-banner/hero-banner.html", content: '<section data-key="hero-banner">\n  <h2 data-key="banner-title"><slot name="title">A new banner</slot></h2>\n</section>\n' });
-    await call("write_file", { path: cssPath, content: "h2 {\n  color: rebeccapurple;\n}\n" });
+    await call("write_file", { path: htmlPath, content: template });
+    await call("write_file", { path: cssPath, content: stylesheet });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "hero-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });
     expect((await call("add_section", { page: "/", component: "hero-banner", expectedHash: home.hash, after: "1.0" })).state).toBe("applied");
 
+    await expect.poll(async () => (await draft(page, htmlPath))?.content).toBe(template);
+    await expect.poll(async () => (await draft(page, cssPath))?.content).toBe(stylesheet);
+    const insertedPage = (await call("get_page", { page: "/" })).html;
+
+    // A template child keeps the page instance selected and its ordinary CSS.
     await frame(page).locator("main > hero-banner h2").click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+    await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+
+    // Enter the shared template explicitly to open its sibling stylesheet.
+    await page.getByRole("tree", { name: "Page structure" })
+      .getByRole("treeitem", { name: /^Hero banner/ }).locator(".page-structure__label").click();
+    const bar = page.getByRole("toolbar", { name: "Edit bar" });
+    await expect(bar.locator(".edit-bar__kind")).toHaveText("Hero banner");
+    await bar.getByRole("button", { name: "Edit Hero banner component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", htmlPath);
     await expect(page.locator("#secondary-title")).toHaveText(cssPath);
     await expect(page.locator("#content-secondary .view-lines")).toContainText("rebeccapurple");
     await expect(page.locator("#status")).not.toContainText("Could not open");
+    expect((await call("get_page", { page: "/" })).html).toBe(insertedPage);
+    expect((await draft(page, htmlPath))?.content).toBe(template);
+    expect((await draft(page, cssPath))?.content).toBe(stylesheet);
   } finally {
     await client.close();
   }
