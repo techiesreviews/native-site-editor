@@ -86,6 +86,8 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel } from "./components/collections-panel";
+import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
+import { applyCollectionEdits } from "./page-builder/collection-bake";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { fetchWithReadRetry } from "./read-retry";
@@ -463,6 +465,7 @@ function mountWorkspace() {
     Object.entries(expected.files).every(([path, source]) => current.files[path] === source);
   stylePanel = createStylePanel({
     context: nativeStylePanelContext,
+    selectionPanel: mountNativeSelectedCollection,
     write: async (properties, breakpoint, state, expected) => {
       const context = nativeStylePanelContext(), epoch = generation;
       const target = context?.target, source = target && context?.files[target.path];
@@ -1235,6 +1238,50 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
     target, matchedRules: selection?.selectors ?? [], modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
     assetRevision: focalPath ? String(nativeAssetVersions.get(focalPath) ?? 0) : "0", files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };
+}
+
+/** Collection controls edit the selected page instance, never a shared component template. */
+function nativeSelectedCollection(): SelectedCollection | undefined {
+  const selection = lastNativeSelection;
+  if (versionView || !selection?.node || selection.path !== currentPath || !nativeRouteForPath(selection.path) ||
+    nativeEditableTemplatePath() || !editorModule?.isMounted(selection.path)) return undefined;
+  const source = nativeEffectiveSource(selection.path);
+  const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
+  if (!range || !startTagAttribute(source!, range.tag, "data-each")) return undefined;
+  return { path: selection.path, start: range.tag.start,
+    key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
+}
+function mountNativeSelectedCollection(host: HTMLElement) {
+  const sources = () => Object.fromEntries(Object.entries(nativeCollectionSnapshot().sources)
+    .filter(([path]) => /\.html?$/i.test(path) || path === NATIVE_CONFIG_PATH));
+  const revision = () => `${nativeCollectionSnapshot().revision}\n${nativeSelectedCollection()?.key ?? ""}`;
+  return mountSelectedCollection(host, {
+    target: nativeSelectedCollection, sources,
+    routes: () => nativeCollectionSnapshot().routes,
+    identity: () => nativeCollectionSnapshot().identity,
+    revision, page: () => nativeSelectedCollection()?.path,
+    async prepare(target) {
+      const before = sources(), expectedRevision = revision();
+      const error = await ensureNativeTextIndex();
+      if (error) throw new Error(error);
+      if (revision() !== expectedRevision || nativeSelectedCollection()?.key !== target.key ||
+        Object.entries(before).some(([path, source]) => nativeEffectiveSource(path) !== source))
+        throw new Error("The selection or source changed while loading pages. Open the collection again.");
+    },
+    async apply(plan, expectedRevision, label) {
+      const target = nativeSelectedCollection(), saved = nativeCollectionSnapshot();
+      if (!target || revision() !== expectedRevision) throw new Error("The selection changed. Reopen the collection before applying.");
+      const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
+        JSON.stringify(nativeCollectionSnapshot().routes) === JSON.stringify(saved.routes) &&
+        JSON.stringify(nativeCollectionSnapshot().identity) === JSON.stringify(saved.identity);
+      const edits = new Map(Object.entries(plan.edits).map(([path, edits]) => [path, applyCollectionEdits(plan.expectedSources[path], edits)]));
+      const error = await applyNativeOperation({ edits, expectedSources: new Map(Object.entries(plan.expectedSources)), current,
+        done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
+      if (error) throw new Error(error);
+      return true;
+    },
+    openPage: (path) => { void restoreFile(path, generation); }, announce,
+  });
 }
 
 /** Resolve an authored asset; computed URLs alone do not identify repository provenance. */

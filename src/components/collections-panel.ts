@@ -19,14 +19,15 @@ export interface CollectionsDeps {
 export interface CollectionsPanel {
   update(): void;
   openGrid(path: string, sourceStart: number): void;
+  dirty(): boolean;
   pageFieldsDirty(): boolean;
   pageFieldsStamp(): string | undefined;
   pageFieldSource(source: string): string;
   destroy(): void;
 }
-export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean } = {}): CollectionsPanel {
+export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean; grid?: () => { path: string; start: number } | undefined } = {}): CollectionsPanel {
   const root = node("section", "collections-panel");
-  root.setAttribute("aria-label", "Collections and page fields");
+  root.setAttribute("aria-label", options.grid ? "Collection settings" : "Collections and page fields");
   host.append(root);
   let destroyed = false;
   let applying = false;
@@ -35,7 +36,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   let fieldSource: ((source: string) => string) | undefined;
   let activeSnapshot: ReturnType<typeof snapshot> | undefined;
   let fieldForm: HTMLElement | undefined;
-  const stamp = (form: HTMLElement) => JSON.stringify([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].map(input => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
+  let activeGrid: { path: string; start: number } | undefined;
+  const stamp = (form: HTMLElement) => JSON.stringify([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")].map(input => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
   const dirty = () => Boolean(activeForm && stamp(activeForm) !== cleanStamp);
   const track = (form: HTMLElement, saved: ReturnType<typeof snapshot>) => { activeForm = form; activeSnapshot = saved; cleanStamp = stamp(form); };
   const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision(), page: deps.page() });
@@ -78,6 +80,14 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (destroyed) return;
     if (dirty()) {
       if (!applying && activeSnapshot && !current(activeSnapshot)) report("The page or repository changed. Your input was kept; reopen before applying.");
+      return;
+    }
+    if (options.grid) {
+      const target = options.grid();
+      if (target && activeForm && activeSnapshot && activeGrid?.path === target.path && activeGrid.start === target.start && current(activeSnapshot)) return;
+      activeForm = undefined; activeSnapshot = undefined; activeGrid = undefined;
+      if (target) openGrid(target.path, target.start);
+      else root.replaceChildren();
       return;
     }
     activeForm = undefined; activeSnapshot = undefined;
@@ -145,8 +155,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!el?.close) { report("Choose a complete grid in the page source."); return; }
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
     const form = node("form", "collections-panel__form");
-    const existing = readCollections(source).find((collection) => collection.element.start === sourceStart);
-    root.replaceChildren(node("h2", "", existing ? "Edit collection" : "Make this grid a collection"), node("p", "collections-panel__scope", "Collection template · repeated card design"));
+    let existing;
+    try { existing = readCollections(source).find((collection) => collection.element.start === sourceStart); }
+    catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
+    activeGrid = { path, start: sourceStart };
+    root.replaceChildren(node("h2", "", existing ? "Edit collection" : "Make this grid a collection"), node("p", "collections-panel__scope", "Choose which pages appear in this grid."));
     const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
     // Parent folders need no index page of their own. Keep route order stable.
     const discovered = [...new Set(urls.flatMap((url) => {
@@ -165,8 +178,26 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       return input;
     });
     form.append(sourceGroup);
-    const sort = control(form, "Sort by field (-date for newest first)", existing?.spec.sort ?? "-date");
-    const filter = control(form, "Exact filter (category=Pottery)", existing?.spec.filter ?? "");
+    const fieldNames = [...new Set(["title", "date", "url", ...Object.entries(saved.routes).flatMap(([url, file]) =>
+      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
+    const select = (label: string, choices: [string, string][], value: string) => {
+      const wrap = node("label", "collections-panel__field"); wrap.append(node("span", "", label));
+      const input = node("select");
+      for (const [value, label] of choices) { const option = node("option", "", label); option.value = value; input.append(option); }
+      input.value = value; wrap.append(input); form.append(wrap); return input;
+    };
+    const sortValue = existing?.spec.sort ?? "-date";
+    const sort = select("Sort by", [["", "Page order"], ...fieldNames.map((name): [string, string] => [name, name[0].toUpperCase() + name.slice(1)])], sortValue.replace(/^-/, ""));
+    const direction = select("Order", [["ascending", "Ascending"], ["descending", "Descending"]], sortValue.startsWith("-") ? "descending" : "ascending");
+    const filterValue = existing?.spec.filter ?? "", equals = filterValue.indexOf("=");
+    const filterName = equals < 0 ? "" : filterValue.slice(0, equals);
+    const filter = select("Filter by", [["", "All pages"], ...[...new Set([...fieldNames, ...(filterName ? [filterName] : [])])].map((name): [string, string] => [name, name[0].toUpperCase() + name.slice(1)])], filterName);
+    const filterMatch = control(form, "Matches exactly", equals < 0 ? "" : filterValue.slice(equals + 1));
+    filterMatch.parentElement!.hidden = !filter.value;
+    // Preserve an authored custom sort even when no current page defines it.
+    if (sortValue && !fieldNames.includes(sortValue.replace(/^-/, ""))) {
+      const option = node("option", "", sortValue.replace(/^-/, "")); option.value = sortValue.replace(/^-/, ""); sort.append(option); sort.value = option.value;
+    }
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
     const advanced = node("details", "collections-panel__advanced");
     advanced.append(node("summary", "", "Advanced"));
@@ -179,10 +210,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     let plan: BakeResult = { error: "Preview the collection first." };
     const refresh = () => {
       apply.disabled = true;
+      filterMatch.parentElement!.hidden = !filter.value;
       try {
         const folders = checks.filter((input) => input.checked).map((input) => input.value);
         if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
-        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value, filter: filter.value, limit: limit.value, template: template.value === displayedTemplate ? originalTemplate : template.value });
+        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value ? `${direction.value === "descending" ? "-" : ""}${sort.value}` : "", filter: filter.value ? `${filter.value}=${filterMatch.value}` : "", limit: limit.value, template: template.value === displayedTemplate ? originalTemplate : template.value });
         plan = planCollectionChange(saved.sources, { ...saved.sources, [path]: converted }, saved.routes, saved.identity);
         if ("error" in plan) { result.textContent = plan.error; preview.textContent = ""; return; }
         const collection = plan.collections.find((item) => item.path === path && item.start === sourceStart);
@@ -192,6 +224,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       } catch (error) { plan = { error: error instanceof Error ? error.message : "The collection could not be previewed." }; result.textContent = plan.error; preview.textContent = ""; }
     };
     form.addEventListener("input", refresh);
+    form.addEventListener("change", refresh);
     const apply = node("button", "button primary", existing ? "Save collection" : "Make collection"); apply.type = "submit";
     advanced.append(preview);
     form.append(result, advanced, button("Edit card design in source", () => deps.openPage(path)), apply, button("Cancel", () => { activeForm = undefined; update(); }));
@@ -199,7 +232,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     root.append(form, status); refresh(); track(form, saved);
   }
   update();
-  return { update, openGrid,
+  return { update, openGrid, dirty,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
     pageFieldsStamp: () => !destroyed && fieldForm && activeForm === fieldForm ? stamp(fieldForm) : undefined,
     pageFieldSource(source) {

@@ -21,6 +21,7 @@ export interface StylePanelContext {
 }
 export interface StylePanelHandlers {
   context: () => StylePanelContext | undefined;
+  selectionPanel?: (host: HTMLElement) => { update(): void; destroy(): void };
   write: (properties: Record<string, string | null>, breakpoint: Breakpoint, state: StyleState, expected?: StylePanelContext) => Promise<void>;
   variable: (variable: SiteVariable, value: string, expected?: StylePanelContext) => Promise<void>;
   selectClass: (name: string, expected: StylePanelContext) => void;
@@ -40,6 +41,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   opener.setAttribute("aria-label", "Open Style panel");
   const body = node("div", "style-panel__body");
   root.append(opener, body);
+  const selectionHost = node("div", "style-panel__selection");
+  const selectionPanel = handlers.selectionPanel?.(selectionHost);
   let collapsed = true, global = false, state: StyleState = "", key = "", busy = false;
   const links = { margin: false, padding: false };
   const opened = new Set(["Spacing"]);
@@ -81,6 +84,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     finally { busy = false; root.removeAttribute("aria-busy"); update(); }
   }
   function update() {
+    selectionPanel?.update();
     const context = handlers.context();
     const nextKey = context?.key ?? "";
     if (nextKey !== key) { key = nextKey; render(); return; }
@@ -505,9 +509,13 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       form.append(input, add);
       form.addEventListener("submit", (event) => { event.preventDefault(); const fresh = handlers.context(); const expected = currentContext(form.isConnected && fresh?.key === classSnapshot.expected?.key ? fresh : classSnapshot.expected); if (expected) void commit(() => handlers.addClass(input.value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""), expected)); }); body.append(form);
     }
-    if (!context.className) return;
+    if (!context.className) {
+      if (selectionPanel) { const content = node("div", "style-panel__scroll"); content.append(selectionHost); body.append(content); }
+      return;
+    }
     if (getCurrentBreakpoint() !== "all") body.append(button("Hide on this size", () => void write({ display: "none" }, context), "style-panel__hide"));
     const content = node("div", "style-panel__scroll");
+    if (selectionPanel) content.append(selectionHost);
     content.append(node("p", "style-panel__hint", "Muted values are computed. Clear a field to remove its declaration."));
     for (const title of sectionTitles) {
       const details = node("details", "style-panel__section"); details.open = opened.has(title);
@@ -638,5 +646,5 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (changed) render(); else applyFold();
   });
   render();
-  return { root, update, dispose() { gestureEvents.abort(); if (gestureTimer) clearTimeout(gestureTimer); rebuildWidgets = undefined; widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
+  return { root, update, dispose() { selectionPanel?.destroy(); gestureEvents.abort(); if (gestureTimer) clearTimeout(gestureTimer); rebuildWidgets = undefined; widgetRender++; widgets.forEach(widget => widget.dispose()); widgets = []; closeVariableMenu(); unsubscribe(); resize.dispose(); root.remove(); } };
 }
