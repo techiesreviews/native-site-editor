@@ -119,3 +119,88 @@ test("after a fresh load the JSON file on the branch is read: the popover shows 
   await expect(message(page)).toBeHidden();
   await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeEnabled();
 });
+
+// A source edit landing while Create waits. The click is a synthetic
+// (untrusted) `HTMLElement.click()` on the real Create button: its real
+// submit handler runs synchronously into src/page-builder/cards.ts `addPage`,
+// which records the page's source and the JSON file and then awaits
+// `ensureOpen` (already open here, so only a promise turn: no network is
+// held). In the same task, before that continuation, the public editor API
+// appends a comment to the end of index.html, outside the generated grid.
+const REFUSED = "The page changed meanwhile; check the URL and try again.";
+const FOREIGN = "\n<!-- foreign edit -->";
+
+test("a source edit landing while Create waits is refused: nothing else is written, one Undo takes the edit back, and Create then works", async ({ page, baseURL }) => {
+  const sidecar = await savedJsonCollection(page, baseURL);
+  const before = await mounted(page);
+  await openPopover(page);
+  await title(page).fill("Oak");
+  const create = popover(page).getByRole("button", { name: "Create page and card" });
+  await expect(create).toBeEnabled();
+  const race = await create.evaluate(async (button, foreign) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource("index.html")!;
+    (button as HTMLButtonElement).click();
+    // The handler ran up to its first await; nothing is written yet.
+    const untouched = editor.getMountedSource("index.html") === source;
+    editor.replaceActiveRange({ path: "index.html", start: source.length, end: source.length, expected: "", text: foreign });
+    return { untouched };
+  }, FOREIGN);
+  expect(race.untouched).toBe(true);
+  await expect(popover(page).locator(".card-add__message")).toHaveText(REFUSED);
+  await expect(popover(page)).toBeVisible();
+  expect(await mounted(page)).toBe(before + FOREIGN);
+  // Only the foreign edit is drafted: no page, no card, no JSON draft; the JSON file as saved.
+  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual(["index.html"]);
+  expect(await storedDraft(page, "work/oak/index.html")).toBeUndefined();
+  expect(await storedDraft(page, SIDECAR)).toBeUndefined();
+  expect(await file(page, baseURL, SIDECAR)).toBe(sidecar);
+  await expect(cards(page)).toHaveCount(3);
+  // One Undo takes the foreign edit back.
+  await page.keyboard.press("Escape");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  // With no edit in between, the real button creates the page and its baked card, one Undo again.
+  await openPopover(page);
+  await title(page).fill("Oak");
+  await popover(page).getByRole("button", { name: "Create page and card" }).click();
+  await expect(page.locator("#status")).toContainText("Created the page Oak at /work/oak/");
+  await expect(cards(page)).toHaveCount(4);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  expect(await file(page, baseURL, SIDECAR)).toBe(sidecar);
+});
+
+// While the popover is open, an edit to the generated grid's own opening tag
+// (through the same public editor API) makes its JSON collection unlocatable:
+// the next check, on typing, reads that live and refuses; putting the tag back
+// makes Create available again.
+test("an open popover rechecks its collection as the title is typed: refused while the grid's tag is changed, offered again once it is back", async ({ page, baseURL }) => {
+  await savedJsonCollection(page, baseURL);
+  const before = await mounted(page);
+  await openPopover(page);
+  await title(page).fill("Oak");
+  const create = popover(page).getByRole("button", { name: "Create page and card" });
+  await expect(create).toBeEnabled();
+  const tag = '<div class="cards"';
+  const at = before.indexOf(tag) + tag.length;
+  expect(before.indexOf(tag)).toBeGreaterThan(0);
+  await page.evaluate(async (at) => {
+    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: ' data-moved="1"' });
+  }, at);
+  if (await popover(page).isHidden()) test.info().annotations.push({ type: "limitation", description: "The source update closed the popover; the live recheck could not be shown." });
+  await expect(popover(page)).toBeVisible();
+  await title(page).press("End");
+  await page.keyboard.type("s");
+  await expect(popover(page).locator(".card-add__message")).toContainText("could not be found");
+  await expect(create).toBeDisabled();
+  await page.evaluate(async (at) => {
+    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at + ' data-moved="1"'.length, expected: ' data-moved="1"', text: "" });
+  }, at);
+  await page.keyboard.press("Backspace");
+  await expect(popover(page).locator(".card-add__message")).toBeHidden();
+  await expect(create).toBeEnabled();
+  expect(await mounted(page)).toBe(before);
+});
