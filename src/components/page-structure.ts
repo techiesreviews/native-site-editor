@@ -1,7 +1,8 @@
 import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
-import { componentIcon } from "../page-builder/component-icon";
+import { mark, componentIcon } from "../page-builder/component-icon";
+import "./row-action-overlay.css";
 import "./page-structure.css";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
 
@@ -80,6 +81,12 @@ export interface PageStructureHandlers {
   onMoveTo?: (path: string, item: NativeStructureItem, index: number) => "moved" | "stayed" | undefined;
   /** Status text for the screen reader. */
   announce?: (text: string) => void;
+  /**
+   * The page's current source bytes. With the painted render's
+   * `paintedSource` it proves a structure fresh, so a slot just shown settles
+   * its editor only on a paint of the source that holds it.
+   */
+  pageSource?: (path: string) => string | undefined;
 }
 
 const HINT_NO_PAGE = "Open a page of a native project to see its sections and content here.";
@@ -180,6 +187,73 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const inMain = new Set<string>();
   const isFolded = (id: string) => foldState.get(id) ?? inMain.has(id);
   const rows = new Map<string, HTMLElement>();
+  type SlotRowContext = { model: ComponentStructureModel; slot: ComponentStructureModel["slots"][number]; anchor: readonly number[] };
+  let openSlot: { host: string; name: string; anchor: string } | undefined;
+  let openAttributes: string | undefined;
+  const hostKey = (model: ComponentStructureModel) => `${model.host.path}:${key([...model.host.node])}`;
+  // Field ids live in separate namespaces so a slot named "attributes" never meets the Attributes panel.
+  const slotFieldPrefix = (model: ComponentStructureModel, name: string) => `${hostKey(model)}:slot:${name}:`;
+  // A slot with no element of its own (text only, or missing) anchors to a row of its own: no node index.
+  const slotRowKey = (model: ComponentStructureModel, name: string) => `~${key([...model.host.node])}:${name}`;
+  // "?" waits for a Show to give the slot something to anchor to.
+  const PENDING = "?";
+  // Per render: whether the painted items are proven current (undefined: no proof
+  // either way), and whether a pending Show still waits for a fresh paint.
+  let paintFresh: boolean | undefined;
+  let keepPending = false;
+  // Settle a pending Show on this host's painted children only when they hold the
+  // slot's actual assigned nodes (same paths, same slot name) on a paint not proven stale.
+  function settlePending(model: ComponentStructureModel, painted: readonly NativeStructureItem[]) {
+    if (openSlot?.anchor !== PENDING || openSlot.host !== hostKey(model)) return;
+    const slot = model.slots.find(slot => slot.name === openSlot!.name);
+    if (!slot) return;
+    const matches = slot.assignedNodes.every(node => painted.some(child => key(child.node) === key([...node]) && child.slot === slot.name));
+    if (!slot.filled) { if (paintFresh === false) keepPending = true; return; }
+    if (paintFresh === false || !matches && paintFresh === undefined) { keepPending = true; return; }
+    // A paint proven current that still lacks the assigned paths with this exact
+    // slot name (the parser reshaped the markup, or the slot attribute's raw
+    // whitespace differs) never will: give up plainly rather than wait forever
+    // and take focus on some later render.
+    if (!matches) {
+      openSlot = undefined;
+      focusSlotField = undefined;
+      handlers.announce?.(`The ${slot.name} slot is shown, but its element could not be found in Structure; select it on the page to edit it.`);
+      return;
+    }
+    openSlot.anchor = slot.assignedNodes.length ? key([...slot.assignedNodes[0]]) : slotRowKey(model, slot.name);
+    foldState.set(openSlot.anchor, false);
+    if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = openSlot.anchor;
+  }
+  // Only slots with a field get an editor; content (rich or several roots) is edited on the page.
+  const editable = (slot: SlotRowContext["slot"]) => slot.kind === "image" || slot.kind === "link" || slot.kind === "text" && slot.value.editable;
+  // Pencil, F2 or badge: open the one inline editor at the slot's first
+  // assigned root (else its own slot row), select that real element and
+  // focus the editor's first field. Content slots have no fields: the badge
+  // only selects their root.
+  function requestSlotEdit(context: SlotRowContext | { model: ComponentStructureModel; slot: SlotRowContext["slot"]; anchor?: undefined }) {
+    const { model, slot, anchor } = context;
+    const target = anchor ?? model.host.node;
+    if (!editable(slot)) {
+      if (anchor) choose({ node: [...anchor] } as NativeStructureItem);
+      return;
+    }
+    openAttributes = undefined;
+    const owner = anchor ? key([...anchor]) : slotRowKey(model, slot.name);
+    openSlot = { host: hostKey(model), name: slot.name, anchor: owner };
+    foldState.set(key([...model.host.node]), false);
+    if (anchor) foldState.set(owner, false);
+    selected = key([...target]);
+    handlers.onSelect(model.host.path, [...target]);
+    focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: owner };
+    render();
+  }
+  const slotRows = new Map<string, HTMLElement>();
+  const rowElement = (id: string) => rows.get(id) ?? slotRows.get(id);
+  function iconAction(label: string, icon: Parameters<typeof mark>[0], action: () => void) {
+    const result = button("", action, "page-structure__action");
+    result.title = label; result.setAttribute("aria-label", label); result.append(mark(icon, 14)); return result;
+  }
+
   // The row to focus once the next render shows a section that just moved.
   let focusAfterRender: string | undefined;
 
@@ -260,10 +334,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       handlers.announce?.("Section drag cancelled");
       return;
     }
-    const outcome = handlers.onMoveTo?.(structure.path, current.item, current.target);
+    const targetRow = current.siblings[current.target] ?? current.siblings[current.siblings.length - 1];
+    const targetNode = targetRow?.dataset.node?.split(".").map(Number);
+    if (!targetNode?.length) { handlers.announce?.("Section drag cancelled"); return; }
+    const sourceIndex = targetNode[targetNode.length - 1] + (current.target === current.siblings.length ? 1 : 0);
+    const outcome = handlers.onMoveTo?.(structure.path, current.item, sourceIndex);
     if (outcome === "moved") {
       const from = current.item.node[current.item.node.length - 1];
-      focusAfterRender = key([...current.item.node.slice(0, -1), current.target > from ? current.target - 1 : current.target]);
+      focusAfterRender = key([...current.item.node.slice(0, -1), sourceIndex > from ? sourceIndex - 1 : sourceIndex]);
     } else if (!outcome) handlers.announce?.("Section drag cancelled");
   }
 
@@ -272,10 +350,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (event.button !== 0 || drag || !structure?.path || !handlers.canDrag?.(item)) return;
     if ((event.target as HTMLElement).classList.contains("page-structure__toggle")) return;
     const parentKey = key(item.node.slice(0, -1));
-    const parentRow = rows.get(parentKey);
-    const group = parentRow ? parentRow.nextElementSibling : tree;
-    if (!(group instanceof HTMLElement)) return;
-    const siblings = [...group.children].filter((child): child is HTMLElement => child instanceof HTMLElement && child.getAttribute("role") === "treeitem");
+    const group = el.parentElement;
+    if (!(group instanceof HTMLElement) || group !== tree && group.getAttribute("role") !== "group") return;
+    const siblings = [...group.children].filter((child): child is HTMLElement => child instanceof HTMLElement
+      && child.getAttribute("role") === "treeitem" && child.dataset.node?.split(".").slice(0, -1).join(".") === parentKey);
+    if (siblings.length < 2 || !siblings.includes(el)) return;
     drag = { pointerId: event.pointerId, item, el, startX: event.clientX, startY: event.clientY, dragging: false, siblings, group, target: undefined };
     el.setPointerCapture(event.pointerId);
     window.addEventListener("keydown", onDragKey, true);
@@ -298,7 +377,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const fieldInputs = new Map<string, HTMLInputElement>();
   const fieldClosers = new Map<HTMLInputElement, () => void>();
   let renderingFields = false;
-  let focusSlotField: string | undefined;
+  // One explicit focus request, consumed by the first render after it.
+  let focusSlotField: { prefix: string; row: string | undefined } | undefined;
+  // The component row whose Attributes were just opened: focus their first field.
+  let focusInline: string | undefined;
   const detailOpen = new Map<string, boolean>();
   const attributeForms = new Map<string, HTMLFormElement>();
   const formClosers = new Map<HTMLFormElement, () => void>();
@@ -323,16 +405,23 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const close = () => { session?.close(); session = undefined; };
       fieldClosers.set(input, close);
       input.addEventListener("blur", () => { if (!renderingFields) close(); });
-      input.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); input.blur(); if (event.key === "Escape") (input.closest(".page-structure__group")?.previousElementSibling as HTMLElement | null)?.focus(); } });
+      input.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== "Escape") return;
+        event.preventDefault();
+        // Enter applies (blur closes the session) and returns to the owning row; Escape also closes the editor.
+        const owner = input.closest<HTMLElement>("[data-edit-node]")?.dataset.editNode;
+        input.blur();
+        if (event.key === "Enter" && owner !== undefined) { event.stopPropagation(); rowElement(owner)?.focus(); }
+      });
       fieldInputs.set(id, input);
     }
     input.setAttribute("aria-label", accessible);
-    const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "", label), input); return wrap;
+    const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "page-structure__slot-field-label", label), input); return wrap;
   }
   function attributeControls(model: ComponentStructureModel) {
-    const id = `${model.host.path}:${key([...model.host.node])}:attributes`;
+    const id = `${hostKey(model)}:attr:`;
     const details = document.createElement("details"); details.className = "page-structure__attributes";
-    details.dataset.detailKey = id; details.open = detailOpen.get(id) ?? false;
+    details.dataset.detailKey = id; details.open = detailOpen.get(id) ?? true;
     details.addEventListener("toggle", () => detailOpen.set(id, details.open));
     const summary = document.createElement("summary"); summary.textContent = "Attributes"; details.append(summary);
     for (const attribute of model.attributes) {
@@ -377,30 +466,118 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return details;
   }
 
+  function visibilityControl(model: ComponentStructureModel, slot: SlotRowContext["slot"]) {
+    if (slot.whenEmpty === "fallback") return slot.filled
+      ? iconAction(`Reset ${slot.label} to default`, "reset", () => model.setVisible(slot.name, false))
+      : undefined;
+    const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = slot.filled;
+    toggle.className = "page-structure__slot-toggle"; toggle.setAttribute("aria-label", `Show ${slot.label}`);
+    // A small visible box inside a label that gives touch its 44px target.
+    const hit = node("label", "page-structure__hit");
+    hit.append(toggle);
+    toggle.addEventListener("change", () => {
+      const previous = { openSlot, openAttributes, focusSlotField };
+      if (toggle.checked) {
+        openAttributes = undefined;
+        openSlot = { host: hostKey(model), name: slot.name, anchor: PENDING };
+        focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: undefined };
+      }
+      // A refused Show or Hide leaves everything as it was: no armed editor.
+      if (!model.setVisible(slot.name, toggle.checked)) {
+        toggle.checked = slot.filled;
+        ({ openSlot, openAttributes, focusSlotField } = previous);
+      }
+    });
+    return hit;
+  }
+  // Pencil and visibility for a slot row: they fade in over the row's text
+  // while the row is hovered or focused, never covering the badge.
+  function slotActions(model: ComponentStructureModel, slot: SlotRowContext["slot"], edit: () => void) {
+    const actions = node("div", "row-action-overlay page-structure__slot-actions");
+    if (editable(slot)) actions.append(iconAction(`Edit ${slot.label}`, "edit", edit));
+    const visibility = slot.filled ? visibilityControl(model, slot) : undefined;
+    if (visibility) actions.append(visibility);
+    isolate(actions);
+    return actions.childElementCount ? actions : undefined;
+  }
+  // Keep row controls from starting a drag, choosing the row or moving focus by arrow keys.
+  function isolate(control: Element) {
+    for (const type of ["pointerdown", "click", "keydown"]) control.addEventListener(type, event => event.stopPropagation());
+  }
+
+  // A slot with no element of its own: text the page put straight into the
+  // instance (an ordinary, editable row), or nothing at all (a dim
+  // restoration row). Either way no node index and no Move.
+  function slotOnlyRow(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], level: number) {
+    const id = slotRowKey(model, slot.name);
+    const el = node("div", `page-structure__row page-structure__row--slot-only${slot.filled ? "" : " page-structure__row--empty-slot"}`);
+    el.setAttribute("role", "treeitem");
+    el.setAttribute("aria-level", String(level));
+    el.setAttribute("aria-selected", "false");
+    el.dataset.slotRow = id;
+    el.tabIndex = -1;
+    el.style.setProperty("--depth", String(level - 1));
+    const kind = slot.kind === "image" ? "img" : slot.kind === "link" ? "a" : "text";
+    const label = node("span", "page-structure__label");
+    label.append(node("span", "page-structure__toggle"), node("span", "page-structure__kind", kind));
+    label.firstElementChild!.setAttribute("aria-hidden", "true");
+    const preview = slot.kind === "image" ? slot.value.alt ?? "" : slot.value.text;
+    if (preview) label.append(" ", node("span", "page-structure__text", preview));
+    const edit = () => requestSlotEdit({ model, slot });
+    const badge = editable(slot) ? button(slot.label, edit, "page-structure__slot-badge") : node("span", "page-structure__slot-badge", slot.label);
+    if (badge instanceof HTMLButtonElement) { badge.title = `Edit ${slot.label}`; badge.setAttribute("aria-label", `Edit ${slot.label}`); isolate(badge); }
+    el.append(label, badge);
+    if (slot.filled) {
+      const actions = slotActions(model, slot, edit);
+      if (actions) { label.classList.add("row-action-host"); label.append(actions); }
+    } else {
+      // Missing: an optional slot's Show stays visible; a defaulted slot's pencil fades in.
+      const show = visibilityControl(model, slot);
+      if (show) { isolate(show); el.append(show); }
+      else if (editable(slot)) { const actions = node("div", "row-action-overlay page-structure__slot-actions"); actions.append(iconAction(`Edit ${slot.label}`, "edit", edit)); isolate(actions); label.classList.add("row-action-host"); label.append(actions); }
+    }
+    el.addEventListener("click", () => { if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); } });
+    el.addEventListener("keydown", event => {
+      if ((event.key === "F2" || event.key === "Enter") && editable(slot) && (slot.filled || slot.whenEmpty === "fallback")) { event.preventDefault(); event.stopPropagation(); edit(); return; }
+      const list = visibleRows(), at = list.indexOf(el);
+      const target = event.key === "ArrowDown" ? list[at + 1] : event.key === "ArrowUp" ? list[at - 1] : event.key === "Home" ? list[0] : event.key === "End" ? list[list.length - 1]
+        : event.key === "ArrowLeft" ? rows.get(key([...model.host.node])) : undefined;
+      if (!target) return;
+      event.preventDefault(); event.stopPropagation();
+      for (const other of list) other.tabIndex = -1;
+      target.tabIndex = 0; target.focus();
+    });
+    slotRows.set(id, el);
+    const result: HTMLElement[] = [el];
+    if (openSlot && openSlot.host === hostKey(model) && openSlot.name === slot.name && openSlot.anchor === id
+      // A hidden optional slot never edits from its restoration row: that would fill it past Show.
+      && (slot.filled || slot.whenEmpty === "fallback")) {
+      openSlot.anchor = id;
+      if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = id;
+      result.push(inlineEditor(model, slot, id, level));
+    }
+    return result;
+  }
+
+  // The one inline disclosure: the slot's fields under its anchor row.
+  function inlineEditor(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string, level: number) {
+    const inline = node("div", "page-structure__inline"); inline.dataset.editNode = owner; inline.dataset.slotEditor = slot.name;
+    inline.style.setProperty("--depth", String(level - 1));
+    const close = () => { openSlot = undefined; render(); rowElement(owner)?.focus(); };
+    inline.append(...slotControls({ ...model, slots: [slot] }, level), iconAction(`Close ${slot.label} editor`, "close", close));
+    inline.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
+    return inline;
+  }
+
   function slotControls(model: ComponentStructureModel, level: number) {
     const result: HTMLElement[] = [];
 
     for (const slot of model.slots) {
       const block = node("div", "page-structure__slot");
-      block.dataset.assignedNodes = JSON.stringify(slot.assignedNodes);
-      block.classList.toggle("is-selected", slot.assignedNodes.some(node => key([...node]) === selected));
       block.style.setProperty("--depth", String(level - 1));
       block.dataset.slotName = slot.name;
-      const header = node("div", "page-structure__slot-head");
-      const select = button(slot.label, () => model.selectSlot(slot.name), "page-structure__slot-name");
-      header.append(select);
-      if (slot.whenEmpty === "hidden") {
-        const visible = document.createElement("input"); visible.type = "checkbox"; visible.checked = slot.filled;
-        visible.setAttribute("aria-label", `Show ${slot.label}`);
-        visible.addEventListener("change", () => {
-          if (visible.checked) focusSlotField = `${model.host.path}:${key([...model.host.node])}:${slot.name}:`;
-          if (!model.setVisible(slot.name, visible.checked)) { visible.checked = slot.filled; focusSlotField = undefined; }
-        });
-        header.append(visible);
-      } else if (slot.filled) header.append(button("Reset", () => model.setVisible(slot.name, false), "text-button"));
-      block.append(header);
       function field(part: ComponentSlotPart, label: string, value: string) {
-        const id = `${model.host.path}:${key([...model.host.node])}:${slot.name}:${part}`;
+        const id = `${slotFieldPrefix(model, slot.name)}${part}`;
         return guardedField(id, label, `${slot.label}: ${label}`, value, () => handlers.componentSlots?.(model.host.path, model.host.node)?.openField(slot.name, part));
       }
       if (slot.kind === "text" && slot.value.editable) block.append(field("text", "Text", slot.value.text));
@@ -408,7 +585,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         const details = document.createElement("details");
         const detailKey = `${model.host.path}:${key([...model.host.node])}:${slot.name}`;
         details.dataset.detailKey = detailKey;
-        details.open = detailOpen.get(detailKey) ?? false;
+        details.open = detailOpen.get(detailKey) ?? true;
         details.addEventListener("toggle", () => detailOpen.set(detailKey, details.open));
         const summary = document.createElement("summary"); summary.textContent = slot.kind === "image" ? "Image" : "Link";
         details.append(summary);
@@ -447,11 +624,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       } else block.append(node("span", "page-structure__slot-summary", `Content${slot.value.text ? `: ${slot.value.text}` : ""}`));
       result.push(block);
     }
-    result.push(attributeControls(model));
     return result;
   }
 
-  function row(item: NativeStructureItem, level: number, insideMain = false): HTMLElement[] {
+  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext): HTMLElement[] {
     const id = key(item.node);
     if (insideMain) inMain.add(id);
     const el = node("div", "page-structure__row");
@@ -465,6 +641,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     toggle.setAttribute("aria-hidden", "true");
     const { kind, text, component } = handlers.label(item);
     const slotModel = structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
+    // A slot opened before its element existed (Show, or a defaulted slot's
+    // first edit) settles on its first actual assigned root.
+    if (slotContext && paintFresh !== false && openSlot && openSlot.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name
+      && openSlot.anchor === slotRowKey(slotContext.model, slotContext.slot.name) && item.slot === slotContext.slot.name) {
+      openSlot.anchor = key([...slotContext.anchor]);
+      foldState.set(openSlot.anchor, false);
+      if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = openSlot.anchor;
+    }
+    const editing = !!slotContext && editable(slotContext.slot) && openSlot?.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name && openSlot.anchor === id;
+    const attributes = !!slotModel && openAttributes === id;
     const hasChildren = item.children.length > 0 || !!slotModel;
     const label = node("span", "page-structure__label");
     const kindName = node("span", "page-structure__kind", kind);
@@ -476,14 +662,38 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
     if (slotModel) {
-      const actions = node("div", "page-structure__component-actions");
-      const edit = button("Edit", slotModel.edit, "text-button"); edit.title = "Edit component"; edit.setAttribute("aria-label", "Edit component");
-      const disconnect = button("Disconnect", slotModel.disconnect, "text-button"); disconnect.title = "Disconnect this instance"; disconnect.setAttribute("aria-label", "Disconnect this instance");
-      actions.append(edit, disconnect);
-      for (const type of ["pointerdown", "click", "keydown"]) actions.addEventListener(type, event => event.stopPropagation());
+      el.classList.add("page-structure__row--instance");
+      el.classList.add("row-action-host");
+      const actions = node("div", "row-action-overlay page-structure__component-actions");
+      const attributesAction = iconAction("Attributes", "content", () => {
+          openSlot = undefined;
+          openAttributes = openAttributes === id ? undefined : id;
+          if (openAttributes) { foldState.set(id, false); focusInline = id; }
+          render();
+          if (!openAttributes) rows.get(id)?.focus();
+        });
+      attributesAction.setAttribute("aria-expanded", String(attributes));
+      actions.append(
+        attributesAction,
+        iconAction("Edit component", "edit", slotModel.edit),
+        iconAction("Disconnect this instance", "detach", slotModel.disconnect),
+      );
+      isolate(actions);
       el.append(actions);
     }
-    // What the page slots into an instance names its slot (drawn by CSS, so the row's name stays its own).
+    if (slotContext) {
+      el.classList.add("page-structure__row--slot");
+      const { slot } = slotContext;
+      const badge = button(slot.label, () => requestSlotEdit(slotContext), "page-structure__slot-badge");
+      badge.title = `Edit ${slot.label}`;
+      badge.setAttribute("aria-label", editable(slot) ? `Edit ${slot.label}` : `Select ${slot.label}`);
+      if (!editable(slot)) badge.title = `Select ${slot.label}`;
+      isolate(badge);
+      const actions = slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext));
+      if (actions) { label.classList.add("row-action-host"); label.append(actions); }
+      el.append(badge);
+    }
+    // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
     el.addEventListener("pointerdown", (event) => pressRow(event, item, el));
     el.addEventListener("pointermove", moveRow);
@@ -501,17 +711,37 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       }
       choose(item);
     });
-    el.addEventListener("keydown", (event) => onKey(event, item, el));
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
+      onKey(event, item, el);
+    });
     rows.set(id, el);
-    if (!hasChildren) return [el];
+    const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level + 1) : undefined;
+    if (inline) inline.id = `structure-inline-${id}`;
+    if (!hasChildren) return inline ? [el, inline] : [el];
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
     group.setAttribute("role", "group");
     group.hidden = isFolded(id);
     const childInMain = insideMain || item.tag === "main";
-    const assigned = new Set(slotModel?.slots.flatMap(slot => slot.assignedNodes.map(node => key([...node]))) ?? []);
-    if (slotModel) group.append(...slotControls(slotModel, level + 1));
-    group.append(...item.children.filter(child => !assigned.has(key(child.node))).flatMap((child) => row(child, level + 1, childInMain)));
+    if (inline) group.append(inline);
+    if (attributes && slotModel) {
+      const panel = node("div", "page-structure__inline"); panel.dataset.editNode = id;
+      panel.style.setProperty("--depth", String(level));
+      const close = () => { openAttributes = undefined; render(); rows.get(id)?.focus(); };
+      panel.append(attributeControls(slotModel), iconAction("Close Attributes", "close", close));
+      panel.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
+      group.append(panel);
+    }
+    // Every authored child stays a real row in native source order; a known
+    // slot's rows share one editor anchor at its first assigned root.
+    if (slotModel) settlePending(slotModel, item.children);
+    for (const child of item.children) {
+      const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
+      const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
+      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined));
+    }
+    if (slotModel) for (const slot of slotModel.slots) if (!slot.assignedNodes.length) group.append(...slotOnlyRow(slotModel, slot, level + 1));
     return [el, group];
   }
 
@@ -604,10 +834,6 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       el.setAttribute("aria-selected", String(on));
       if (on) current = el;
     }
-    for (const block of tree.querySelectorAll<HTMLElement>(".page-structure__slot")) {
-      const nodes = JSON.parse(block.dataset.assignedNodes ?? "[]") as number[][];
-      block.classList.toggle("is-selected", nodes.some(node => key(node) === id));
-    }
     // The selected row (else the first) is the tree's tab stop.
     const stop = current ?? rows.values().next().value;
     for (const el of rows.values()) el.tabIndex = el === stop ? 0 : -1;
@@ -618,8 +844,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // The rows are about to be replaced: a drag in progress has nothing to land on.
     finishDrag(false);
     rows.clear();
+    slotRows.clear();
     inMain.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
+    const previousFocus = tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.slotRow : undefined;
     focusAfterRender = undefined;
     if (!structure || !structure.path) {
       hint.textContent = structure ? HINT_COMPONENT : HINT_NO_PAGE;
@@ -637,7 +865,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const caret = activeField ? [activeField.selectionStart, activeField.selectionEnd] : undefined;
     for (const details of tree.querySelectorAll<HTMLDetailsElement>("details[data-detail-key]")) detailOpen.set(details.dataset.detailKey!, details.open);
     renderingFields = true;
+    const current = structure.paintedSource !== undefined ? handlers.pageSource?.(structure.path) : undefined;
+    paintFresh = current === undefined ? undefined : current === structure.paintedSource;
+    keepPending = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
+    // An editor whose anchor went (Hide, Undo, Redo) or a Show that found
+    // nothing to anchor to is forgotten, so no later render reopens it.
+    // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
+    if (openSlot && !keepPending && paintFresh !== false && !tree.querySelector(".page-structure__inline[data-slot-editor]")) { openSlot = undefined; }
     setSelected(selected);
     if (activeField && tree.contains(activeField)) {
       activeField.focus();
@@ -648,18 +883,35 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     renderingFields = false;
     cleanControls();
-    if (focusSlotField) {
+    // An explicit edit request is consumed here, by its first render, even
+    // when the slot has no field (Content): its row then takes focus.
+    // Focus moved elsewhere (the canvas caret) meanwhile: the request lapses, the editor still opens.
+    if (focusSlotField && !keepPending && document.activeElement && document.activeElement !== document.body && !tree.contains(document.activeElement)) focusSlotField = undefined;
+    if (focusSlotField && !keepPending) {
       const wanted = focusSlotField; focusSlotField = undefined;
-      const input = [...fieldInputs].find(([id]) => id.startsWith(wanted))?.[1];
-      if (input && tree.contains(input)) { input.focus(); input.select(); return; }
+      const input = [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input) && !input.closest("[hidden]"))?.[1]
+        ?? [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input))?.[1];
+      if (input) {
+        const details = input.closest("details"); if (details) details.open = true;
+        input.focus(); input.select(); return;
+      }
+      const owner = wanted.row !== undefined ? rowElement(wanted.row) : undefined;
+      if (owner) { focusRowOnly(owner); return; }
+    }
+    if (focusInline) {
+      const wanted = focusInline; focusInline = undefined;
+      const first = tree.querySelector<HTMLElement>(`.page-structure__inline[data-edit-node="${wanted}"] input:not([type=hidden]):not([type=file])`);
+      if (first) { first.closest("details")?.setAttribute("open", ""); first.focus(); return; }
     }
     if (activeField) fieldClosers.get(activeField)?.();
-    if (focused && rows.has(focused)) {
-      for (const el of rows.values()) el.tabIndex = -1;
-      const el = rows.get(focused)!;
-      el.tabIndex = 0;
-      el.focus();
-    }
+    if (focused && rows.has(focused)) focusRowOnly(rows.get(focused)!);
+    else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
+  }
+
+  function focusRowOnly(el: HTMLElement) {
+    for (const other of rows.values()) other.tabIndex = -1;
+    el.tabIndex = 0;
+    el.focus();
   }
 
   return {
@@ -668,7 +920,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const path = next?.path ?? "";
       if (path !== structure?.path) {
         foldState.clear();
-        selected = undefined;
+        selected = undefined; openSlot = undefined; openAttributes = undefined;
       }
       structure = next;
       const pending = pendingSelection;
@@ -679,7 +931,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (pending.path === path) selected = key(pending.node);
       }
       const proof = handlers.componentFieldsRevision?.();
-      const signature = next ? `${next.path}\n${JSON.stringify(next.items)}\n${proof ?? ""}` : "";
+      const signature = next ? `${next.path}\n${JSON.stringify(next.items)}\n${next.paintedSource ?? ""}\n${proof ?? ""}` : "";
       if ((!handlers.componentSlots || proof !== undefined) && signature === rendered && !tree.hidden === Boolean(next?.path)) return;
       rendered = signature;
       render();

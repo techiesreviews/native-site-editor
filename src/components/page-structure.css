@@ -179,22 +179,153 @@
 .page-structure__url-note { margin: -4px 0 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); }
 .page-structure__url-note[hidden] { display: none; }
 
-.page-structure__component-actions { position:absolute; top:50%; transform:translateY(-50%); right:4px; display:flex; gap:6px; background:var(--panel-surface); opacity:0; pointer-events:none; }
-.page-structure__row--component { position:relative; }
-.page-structure__row--component:is(:hover,:focus-within) .page-structure__component-actions { opacity:1; pointer-events:auto; }
-.page-structure__slot { padding:6px 12px 8px calc(12px + var(--depth) * 12px); border-bottom:1px solid var(--border); }
-.page-structure__slot-head { display:flex; align-items:center; gap:8px; }
-.page-structure__slot-name { flex:1; min-width:0; text-align:left; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
-.page-structure__slot-field { display:grid; grid-template-columns:minmax(0, min(35%, 112px)) minmax(0,1fr); align-items:center; gap:6px; margin-top:4px; font-size:var(--type-small); }
-.page-structure__slot-field input { min-width:0; width:100%; box-sizing:border-box; color:inherit; background:var(--panel-surface); border:1px solid var(--border); border-radius:4px; padding:6px; font:inherit; }
-.page-structure__slot-field input:focus-visible { outline:2px solid var(--focus-ring); outline-offset:1px; }
-.page-structure__slot-field input[aria-invalid=true] { border-color:var(--danger); }
-.page-structure__slot details { margin-top:6px; }
-.page-structure__attributes { padding:6px 12px; font-size:var(--type-small); }
-.page-structure__attribute { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; }
-.page-structure__attribute-add { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:6px; margin-top:8px; }
-.page-structure__attribute-add input { min-width:0; width:100%; box-sizing:border-box; font:inherit; color:inherit; background:var(--panel-surface); border:1px solid var(--border); border-radius:4px; padding:6px; }
-.page-structure__attribute-error { grid-column:1/-1; margin:0; color:var(--danger); }
+/* ---- Component instances: compact row actions, slot badges and the one
+   inline editor a pencil, F2 or a badge opens. ---- */
+/* The surface Structure actually sits on: the sidebar (style.css .sidebar).
+   Row fades end on it, with hover/current tints painted over it. A host on
+   another surface sets --structure-surface. */
+/* Row actions use the shared fade (row-action-overlay.css). Its background
+   follows the row's own paint in the same order the row rules use: resting
+   surface, then hover/focus, then current. An instance row hosts its actions
+   itself; a slot row's label hosts them, so the badge stays uncovered. */
+.page-structure__row.row-action-host,
+.page-structure__row > .page-structure__label.row-action-host { --row-action-background: var(--structure-surface, var(--surface-subtle)); }
+.page-structure__row.row-action-host:is(:hover, :focus-visible),
+.page-structure__row:is(:hover, :focus-visible) > .page-structure__label.row-action-host { --row-action-background: var(--hover); }
+.page-structure__row.row-action-host[aria-selected="true"],
+.page-structure__row[aria-selected="true"] > .page-structure__label.row-action-host { --row-action-background: var(--current); }
+/* The label is the host, but the whole row (hover, or keyboard focus on the
+   row or its badge) reveals its actions. */
+.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
+.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay::before,
+.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay > * > * { opacity: 1; transform: none; }
+.page-structure__row:focus-within > .row-action-host > .row-action-overlay::before,
+.page-structure__row:focus-within > .row-action-host > .row-action-overlay > *,
+.page-structure__row:focus-within > .row-action-host > .row-action-overlay > * > * { transition: none; }
+/* Hover and current are translucent tints over the Structure surface. The shared fade
+   paints only the tint, so an opaque surface layer goes under it: together they
+   end in the row's actual composited colour and hide the text beneath. It
+   slides and fades with the shared layer. */
+.page-structure__row .row-action-host > .row-action-overlay::after,
+.page-structure__row.row-action-host > .row-action-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  background: linear-gradient(to right, transparent, var(--structure-surface, var(--surface-subtle)) 20px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(40%);
+  transition: transform 140ms ease-out, opacity 140ms ease-out;
+}
+.page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay::after,
+.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay::after { opacity: 1; transform: none; }
+.page-structure__row.row-action-host:focus-within > .row-action-overlay::after,
+.page-structure__row:focus-within > .row-action-host > .row-action-overlay::after { transition: none; }
+@media (hover: none), (pointer: coarse) {
+  .page-structure__row .row-action-host > .row-action-overlay::after,
+  .page-structure__row.row-action-host > .row-action-overlay::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-structure__row .row-action-host > .row-action-overlay::after,
+  .page-structure__row.row-action-host > .row-action-overlay::after { transition: none; transform: none; }
+}
+/* A visibility checkbox keeps its small box; touch gets a 44px target around it. */
+.page-structure__hit { display: inline-grid; place-items: center; flex: none; cursor: pointer; }
+@media (hover: none), (pointer: coarse) {
+  .page-structure__hit { min-width: 44px; min-height: 44px; }
+}
+.page-structure__label.row-action-host { align-self: stretch; align-items: center; }
+/* Resting actions sit translated past the row's end; keep them from widening the tree. */
+.page-structure__row.row-action-host,
+.page-structure__label.row-action-host { overflow: clip; }
+.page-structure__action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small, 4px);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.page-structure__action:hover { color: var(--text); background: var(--hover); }
+.page-structure__action:focus-visible { outline: var(--focus-ring); outline-offset: -1px; color: var(--text); }
 
-.page-structure__slot.is-selected { background:var(--current); }
-.page-structure__slot-field > span { overflow-wrap:anywhere; }
+/* The slot a row fills: an actual badge button replaces the drawn name. */
+.page-structure__row--slot[data-slot]::after { content: none; }
+.page-structure__slot-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--radius-small, 4px);
+  background: var(--component-surface);
+  color: var(--component-text);
+  font: inherit;
+  font-size: var(--type-badge);
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+button.page-structure__slot-badge { cursor: pointer; }
+button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.page-structure__slot-toggle {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--component);
+  cursor: pointer;
+}
+@media (hover: none), (pointer: coarse) {
+  .page-structure__slot-toggle { width: 20px; height: 20px; }
+}
+.page-structure__label { flex: 1 1 auto; }
+.page-structure__row--empty-slot { color: var(--muted); }
+.page-structure__row--empty-slot .page-structure__kind,
+.page-structure__row--empty-slot .page-structure__text { opacity: 0.6; font-style: italic; }
+.page-structure__row--slot-only > .page-structure__hit { margin-left: 4px; }
+.page-structure__row--empty-slot .page-structure__slot-badge { opacity: 0.7; }
+
+/* The inline editor: one disclosure under its row. */
+.page-structure__inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 2px 4px 4px calc(6px + var(--depth, 0) * 16px);
+  padding: 6px 4px 6px 8px;
+  border-left: 2px solid var(--component);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--component-surface);
+}
+.page-structure__inline > :first-child { flex: 1; min-width: 0; }
+.page-structure__inline > .page-structure__action { flex: none; }
+.page-structure__slot { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.page-structure__slot-field { display: grid; grid-template-columns: minmax(0, min(35%, 96px)) minmax(0, 1fr); align-items: center; gap: 6px; font-size: var(--type-small); color: var(--muted); }
+.page-structure__slot-field > span { overflow-wrap: anywhere; }
+/* In the narrow sidebar each caption sits above a full-width field. */
+.page-structure__inline .page-structure__slot-field,
+.page-structure__inline .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+/* A lone Text field needs no visible caption; its accessible name stays. */
+.page-structure__slot > .page-structure__slot-field:only-child { grid-template-columns: minmax(0, 1fr); }
+.page-structure__slot > .page-structure__slot-field:only-child > .page-structure__slot-field-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.page-structure__slot-field input,
+.page-structure__attribute-add input { min-width: 0; width: 100%; box-sizing: border-box; color: var(--text); background: var(--surface-input, var(--panel-surface)); border: 1px solid var(--control-line, var(--line)); border-radius: var(--radius-small, 4px); padding: 4px 6px; font: inherit; font-size: var(--type-small); }
+.page-structure__slot-field input:focus-visible,
+.page-structure__attribute-add input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.page-structure__slot-field input[aria-invalid=true] { border-color: var(--danger); }
+.page-structure__slot details { display: flex; flex-direction: column; gap: 4px; }
+.page-structure__slot summary { cursor: pointer; font-size: var(--type-small); font-weight: 600; color: var(--component-text); }
+.page-structure__slot details[open] > :not(summary) { margin-top: 4px; }
+.page-structure__slot-summary { font-size: var(--type-small); color: var(--muted); }
+.page-structure__attributes { font-size: var(--type-small); }
+.page-structure__attributes summary { cursor: pointer; font-weight: 600; color: var(--component-text); }
+.page-structure__attribute { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; margin-top: 4px; }
+.page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, min(40%, 96px)) minmax(0, 1fr); }
+.page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
+.page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }

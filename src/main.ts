@@ -423,6 +423,7 @@ function mountWorkspace() {
   });
   nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
   pageStructure = createPageStructure(element("structure"), {
+    pageSource: (path) => nativeEffectiveSource(path),
     label: (item) => {
       const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
       return { ...structureLabel(item, component), component };
