@@ -75,12 +75,12 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 - [ ] Complete combined Style content/dock review and real-starter screenshots. Dock is integrated9a6fe75 with root29/29 resize browsers; content e81dadd has an independent approval with ARIA/raw-variable nits still to assess.
 - [ ] Finish the root/Claude architecture dialogue with measured costs and explicit safe module boundaries before implementing refactors.
 
-- [ ] Align slot actions to the far right of Structure rows; reveal on slot-name hover/focus with the existing matching faded overlay. Preserve inline text/link/image editing and slot toggles.
+- [x] Align slot actions to the far right of Structure rows; reveal on slot-name hover/focus with the existing matching faded overlay. Preserve inline text/link/image editing and slot toggles.
 - [ ] Replace the link/URL suggestion field shown in the edit bar with a native autocomplete/combobox, keeping inline appearance, arbitrary URLs, site paths/anchors, keyboard behavior and one Undo.
-- [ ] Remove only the “Plain HTML sections” heading inside Add to the page, as clarified with the red-arrow screenshot. Keep Intro, Features, Split and Contact choices and their native output.
+- [x] Remove only the “Plain HTML sections” heading inside Add to the page, as clarified with the red-arrow screenshot. Keep Intro, Features, Split and Contact choices and their native output.
 - [ ] Match Style's dark background and mirrored grip animation to Structure, retaining the full-right collapse and narrow drawer behavior.
 
-- [ ] Replace Structure slot visibility checkboxes with open-eye / closed-eye icon buttons. Preserve show/hide source behavior, inline actions, keyboard access, accessible names and Undo. Other settings checkboxes stay unchanged.
+- [x] Replace Structure slot visibility checkboxes with open-eye / closed-eye icon buttons. Preserve show/hide source behavior, inline actions, keyboard access, accessible names and Undo. Other settings checkboxes stay unchanged.
 
 - [ ] Fit the edit bar controls panel to its actual content width. Keep the label above it; prevent transparent label space blocking page clicks and long labels wrapping over controls. Lex confirms the empty strip in child-light.png must go.
 
@@ -92,3 +92,5 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 
 - [x] Cache repeated native source lookups privately by exact bytes. Integrated876707f after independent Claude review; parseMarked remains fresh, two bounded entries, no published output change. Bench covers repeated lookup only, not click latency.
 - [ ] Keep unpicked-variable cancellation notices inline in Style, avoiding the misleading global failed-request status and full-width error alert. Observed in real shared browser; no CSS write or new Undo occurs.
+
+- [ ] Verify missing Structure slot/action controls in the shared real-starter browser. Pure Structure tests and the actual editor model pass; the earlier base-URL module import was a separate Vite module and gave a misleading mounted=false result. Investigate render readiness/memoization without bypassing source/model guards.
