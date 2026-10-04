@@ -6,6 +6,9 @@ async function mount(page: Page, baseURL: string | undefined) {
   await page.evaluate(async () => {
     const modulePath = "/src/components/collections-panel.ts";
     const { mountCollectionsPanel } = await import(modulePath);
+    const hostPath = "/src/page-builder/native-collection-host.ts", routesPath = "/shared/native-routes.ts";
+    const { planNativeCollectionOperation } = await import(hostPath);
+    const { deriveNativeRoutes } = await import(routesPath);
     const host = document.createElement("div"); host.id = "collection-test-host"; document.body.replaceChildren(host);
     const home = `<html><head><title>Home | Studio</title></head><body><div class="cards"><article><a href="/old/">Old</a></article></div></body></html>`;
     const sources = {
@@ -17,16 +20,33 @@ async function mount(page: Page, baseURL: string | undefined) {
     const state = { sources, routes: { "/": "index.html", "/work/": "work/index.html", "/work/one/": "work/one/index.html", "/work/two/": "work/two/index.html" }, revision: "scope-A", page: "index.html", applied: [] as unknown[], messages: [] as string[], opened: [] as string[] };
     const panel = mountCollectionsPanel(host, {
       sources: () => state.sources, routes: () => state.routes, identity: () => ({ name: "Studio" }), revision: () => state.revision, page: () => state.page,
-      apply: (plan: { edits: Record<string, { start: number; end: number; text: string }[]>; expectedSources: Record<string, string> }, revision: string, label: string) => {
-        if (state.revision !== revision || Object.entries(plan.expectedSources).some(([path, text]) => state.sources[path as keyof typeof sources] !== text)) return false;
+      // Mirrors the host: a JSON recipe origin is planned again by the real host planner from the
+      // current graph, then every file is checked against its pinned bytes and applied together.
+      apply: (plan: any, revision: string, label: string) => {
+        if (state.revision !== revision) return false;
+        if ("creates" in plan) {
+          const planned = planNativeCollectionOperation({ sources: state.sources, routes: state.routes, files: Object.keys(state.sources), revision: state.revision, identity: { name: "Studio" }, origin: { ...plan, done: "", undone: "" } });
+          if ("error" in planned) throw new Error(planned.error);
+          const sources = state.sources as Record<string, string | undefined>;
+          if ([...planned.operation.expectedSources].some(([path, text]) => sources[path] !== text)) return false;
+          const edits: Record<string, string> = {};
+          for (const [path, text] of planned.operation.edits ?? []) edits[path] = text;
+          for (const file of planned.operation.creates ?? []) edits[file.path] = file.content;
+          state.applied.push({ plan: { edits, creates: (planned.operation.creates ?? []).map((file) => file.path) }, revision, label });
+          Object.assign(state.sources, edits);
+          return true;
+        }
+        if (Object.entries(plan.expectedSources).some(([path, text]) => state.sources[path as keyof typeof sources] !== text)) return false;
         state.applied.push({ plan, revision, label });
-        for (const [path, edits] of Object.entries(plan.edits)) for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+        for (const [path, edits] of Object.entries(plan.edits) as [string, { start: number; end: number; text: string }[]][]) for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
           const key = path as keyof typeof sources; state.sources[key] = state.sources[key].slice(0, edit.start) + edit.text + state.sources[key].slice(edit.end);
         }
         return true;
       }, openPage: (path: string) => state.opened.push(path), announce: (message: string) => state.messages.push(message),
     });
-    Object.assign(window, { collectionTest: { state, panel, start: home.indexOf('<div') } });
+    // Fixtures that add files re-derive routes exactly as the host does from its file list.
+    const derive = () => { state.routes = deriveNativeRoutes(Object.keys(state.sources).sort()); };
+    Object.assign(window, { collectionTest: { state, panel, derive, start: home.indexOf('<div') } });
   });
 }
 async function grid(page: Page) {
@@ -51,17 +71,27 @@ test("grid preview shows source, stable sort, count and plain HTML, then sends o
   const state = await page.evaluate(() => (window as any).collectionTest.state);
   expect(state.applied).toHaveLength(1);
   expect(state.applied[0].revision).toBe("scope-A");
-  expect(state.sources["index.html"]).toContain('data-each="/work/"');
-  expect(state.sources["index.html"]).toContain("<template>");
-  expect(state.sources["index.html"]).not.toContain("data-native-src");
+  // The recipe is stored in the editor's JSON; the page keeps only plain baked cards.
+  expect(state.applied[0].plan.creates).toEqual([".editor/page-builder.json"]);
+  const recipes = Object.values(JSON.parse(state.sources[".editor/page-builder.json"]).collections) as any[];
+  expect(recipes).toHaveLength(1);
+  expect(recipes[0]).toMatchObject({ pagePath: "index.html", folders: ["/work/"], limit: 1 });
+  expect(recipes[0].template).toContain('<a href="{url}">{title}</a>');
+  expect(state.sources["index.html"]).toContain('<div class="cards"><article><a href="/work/two/">Two</a><img src="/two.jpg"></article></div>');
+  for (const recipe of ["data-each", "<template", "data-native-src", "data-collection-id"]) expect(state.sources["index.html"]).not.toContain(recipe);
 });
 test("page field edits include dependent listing drafts in the same plan", async ({ page }) => {
   await grid(page); await page.getByRole("button", { name: "Make collection", exact: true }).click();
   await page.evaluate(() => { const h = (window as any).collectionTest; h.state.page = "work/two/index.html"; h.panel.update(); });
   await page.getByLabel("Title", { exact: true }).fill("New project");
   await page.getByRole("button", { name: "Apply page fields" }).click();
+  const before = await page.evaluate(() => (window as any).collectionTest.state.applied[0].plan.edits[".editor/page-builder.json"]);
   const state = await page.evaluate(() => (window as any).collectionTest.state);
-  expect(Object.keys(state.applied[1].plan.edits).sort()).toEqual(["index.html", "work/two/index.html"]);
+  // One plan: the page, its dependent listing, and the listing's recorded output fingerprint in the JSON.
+  expect(Object.keys(state.applied[1].plan.edits).sort()).toEqual([".editor/page-builder.json", "index.html", "work/two/index.html"]);
+  const [was] = Object.values(JSON.parse(before).collections) as any[], [now] = Object.values(JSON.parse(state.sources[".editor/page-builder.json"]).collections) as any[];
+  expect({ ...now, outputFingerprint: undefined }).toEqual({ ...was, outputFingerprint: undefined });
+  expect(now.outputFingerprint).not.toBe(was.outputFingerprint);
   expect(state.sources["index.html"]).toContain(">New project</a>");
   expect(state.sources["work/two/index.html"]).toContain("<title>New project | Studio</title>");
 });
@@ -116,15 +146,16 @@ test("five source checkboxes preview the union, disable empty selection, and ser
   await expect(panel(page)).toContainText("6 matching pages");
   await expect(panel(page).locator("pre")).toContainText('href="/videos/one/">videos</a>');
   await page.getByRole("button", { name: "Make collection", exact: true }).click();
-  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
-  expect(source).toContain('data-each="/work/ /services/ /portfolio/ /articles/ /videos/"');
-  expect((source.match(/<article>/g) ?? []).length).toBe(7); // retained template plus six cards
+  const { source, sidecar } = await page.evaluate(() => { const s = (window as any).collectionTest.state.sources; return { source: s["index.html"], sidecar: s[".editor/page-builder.json"] }; });
+  expect((Object.values(JSON.parse(sidecar).collections) as any[])[0].folders).toEqual(["/work/", "/services/", "/portfolio/", "/articles/", "/videos/"]);
+  expect((source.match(/<article>/g) ?? []).length).toBe(6); // six plain cards, no template
+  expect(source).not.toContain("data-each");
 });
 
 test("existing selected deeper source remains visible without its folder route", async ({ page }) => {
   await page.evaluate(() => {
     const h = (window as any).collectionTest;
-    h.state.sources["index.html"] = h.state.sources["index.html"].replace('<div class="cards">', '<div class="cards" data-each="/work/deep/" data-sort="title"><template><a href="{url}">{title}</a></template>');
+    h.state.sources["index.html"] = h.state.sources["index.html"].replace('<div class="cards">', '<div class="cards" data-each="/work/deep/" data-sort="title"><template><a href="{url}">{title}</a></template>').replace('<article><a href="/old/">Old</a></article>', '<a href="/work/deep/one/">Deep</a>');
     h.state.sources["work/deep/one/index.html"] = '<html><head><title>Deep</title></head><body></body></html>';
     h.state.routes["/work/deep/one/"] = "work/deep/one/index.html";
     h.panel.openGrid("index.html", h.start);
@@ -133,18 +164,20 @@ test("existing selected deeper source remains visible without its folder route",
   await expect(page.getByRole("checkbox", { name: "/work/", exact: true })).not.toBeChecked();
   await expect(panel(page)).toContainText("1 matching page");
   await page.getByRole("button", { name: "Save collection", exact: true }).click();
-  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
-  expect((source.match(/data-each=/g) ?? []).length).toBe(1);
-  expect(source).toContain('data-each="/work/deep/"');
+  const { source, sidecar } = await page.evaluate(() => { const s = (window as any).collectionTest.state.sources; return { source: s["index.html"], sidecar: s[".editor/page-builder.json"] }; });
+  // The legacy inline recipe moves into the JSON as-is; the page keeps the plain card.
+  expect((Object.values(JSON.parse(sidecar).collections) as any[]).map((recipe) => recipe.folders)).toEqual([["/work/deep/"]]);
+  expect(source).not.toContain("data-each");
+  expect(source).toContain('<div class="cards"><a href="/work/deep/one/">Deep</a></div>');
 });
 
 test("folders without index pages offer ancestors, exclude invalid routes, and bake a mixed union", async ({ page }) => {
   await page.evaluate(() => {
     const h = (window as any).collectionTest;
     for (const path of ["articles/one/index.html", "videos/series/one.html", ".hidden/one/index.html", "_private/one/index.html", "encoded%20/one/index.html", "wild*/one/index.html"]) {
-      h.state.routes[path.endsWith("index.html") ? `/${path.slice(0, -10)}` : `/${path}`] = path;
       h.state.sources[path] = `<html><head><title>${path}</title></head><body></body></html>`;
     }
+    h.derive();
   });
   await grid(page);
   await expect(page.getByRole("checkbox", { name: "/articles/", exact: true })).toBeVisible();
@@ -155,27 +188,31 @@ test("folders without index pages offer ancestors, exclude invalid routes, and b
   await page.getByRole("checkbox", { name: "/videos/", exact: true }).check();
   await expect(panel(page)).toContainText("2 matching pages");
   await page.getByRole("button", { name: "Make collection", exact: true }).click();
-  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
-  expect(source).toContain('data-each="/articles/ /videos/"');
+  const { source, sidecar } = await page.evaluate(() => { const s = (window as any).collectionTest.state.sources; return { source: s["index.html"], sidecar: s[".editor/page-builder.json"] }; });
+  expect((Object.values(JSON.parse(sidecar).collections) as any[])[0].folders).toEqual(["/articles/", "/videos/"]);
+  expect(source).not.toContain("data-each");
   expect(source).toContain('href="/articles/one/"');
   expect(source).toContain('href="/videos/series/one.html"');
   await expect(panel(page)).toContainText("Pages from /articles/, /videos/");
 });
 
-test("editing an empty legacy source preserves template attributes and native template bytes", async ({ page }) => {
+// A legacy inline recipe whose <template> carries authored attributes cannot move into the JSON
+// without losing them, so it is refused whole: Save stays disabled and nothing is written.
+test("an empty legacy source with template attributes refuses the JSON move and keeps every byte", async ({ page }) => {
   const retained = '<template id="authoring" data-note="x > y" class=card>\r\n  <a href="{url}">{title}</a>\r\n</template>';
-  await page.evaluate((retained) => {
+  const original = await page.evaluate((retained) => {
     const h = (window as any).collectionTest;
     h.state.sources["index.html"] = `<html><body><div class="cards" data-each="/empty/" data-sort="title">${retained}<b>Old</b></div><!-- outside --></body></html>`;
     h.start = h.state.sources["index.html"].indexOf("<div");
     h.panel.openGrid("index.html", h.start);
+    return h.state.sources["index.html"];
   }, retained);
   await expect(page.getByRole("heading", { name: "Edit collection", exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "/empty/", exact: true })).toBeChecked();
-  await expect(panel(page)).toContainText("0 matching pages");
-  await page.getByRole("button", { name: "Save collection", exact: true }).click();
-  const source = await page.evaluate(() => (window as any).collectionTest.state.sources["index.html"]);
-  expect(source).toContain(retained);
-  expect(source).toContain('</div><!-- outside --></body></html>');
-  await expect(panel(page)).toContainText("Collection saved");
+  await expect(panel(page)).toContainText("could not be moved into the editor's page data, so nothing was changed: A recipe template with authored attributes cannot be removed safely.");
+  await expect(page.getByRole("button", { name: "Save collection", exact: true })).toBeDisabled();
+  const state = await page.evaluate(() => (window as any).collectionTest.state);
+  expect(state.applied).toHaveLength(0);
+  expect(state.sources["index.html"]).toBe(original);
+  expect(state.sources[".editor/page-builder.json"]).toBeUndefined();
 });

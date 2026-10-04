@@ -140,11 +140,30 @@ test("a hand edit made after the collection opened makes its Apply refuse, keepi
   const drifted = seed[2][1].slice(0, at) + "Mine" + seed[2][1].slice(at + 3);
   await expect.poll(() => mounted(page, "index.html")).toBe(drifted);
   await order.selectOption("ascending");
-  await page.getByRole("region", { name: "Collection settings", exact: true }).getByRole("button", { name: "Save collection", exact: true }).click();
-  // The refusal itself, not the standing note.
-  await expect(page.getByText(/index\.html were edited by hand\. Choose/).first()).toBeVisible();
+  const settings = page.getByRole("region", { name: "Collection settings", exact: true });
+  const save = settings.getByRole("button", { name: "Save collection", exact: true });
+  // The preview names why, and Save cannot write over the hand edit.
+  await expect(settings).toContainText("The cards in index.html were edited by hand and no longer match the page data, so this change would replace them.");
+  await expect(save).toBeDisabled();
   expect(await mounted(page, "index.html")).toBe(drifted);
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(drifted);
+  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
+  // Undoing the hand edit in Code repairs the cards; the same settings then apply.
+  await page.evaluate(async (at) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at + 4, text: "One", expected: "Mine" }), at);
+  await expect.poll(() => mounted(page, "index.html")).toBe(seed[2][1]);
+  // The open form refuses the changed page; reopening reads the repaired cards.
+  await expect(settings).toContainText("reopen before applying");
+  await expect(save).toBeDisabled();
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await openCollection(page);
+  await order.selectOption("ascending");
+  await expect(settings).not.toContainText("edited by hand");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(async () => (await storedDraft(page, ".editor/page-builder.json"))?.content).toContain('"sort": "date"');
+  const rebuilt = (await storedDraft(page, "index.html"))!.content;
+  expect(rebuilt.indexOf("<h3>One</h3>")).toBeLessThan(rebuilt.indexOf("<h3>Two</h3>"));
+  expect(rebuilt).not.toContain("data-each");
 });
 
 test("hand-edited cards block later page changes until explicitly rebuilt, in one Undo", async ({ page, baseURL }) => {

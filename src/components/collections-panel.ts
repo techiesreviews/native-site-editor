@@ -139,8 +139,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const newName = () => {
       const name = customName.value.trim();
       if (!name && customValue.value !== "") throw new Error("Name the new custom field, or clear its value.");
+      if (name && ["title", "description", "image", "date", "url"].includes(name)) throw new Error(`${name} is a built-in field. Edit its own control above.`);
       if (name && Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
-      if (name && ["title", "description", "image", "date", "url"].includes(name)) throw new Error(`${name} is a built-in field. Choose another name.`);
       if (name && !/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error("Use a valid editable page field name: lowercase letters, digits, - or _.");
       return name;
     };
@@ -187,8 +187,18 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     track(form, saved);
     root.append(form, ...(options.settings ? [] : [node("h2", "", "Collections")]));
     const baked = planBake(saved.sources, saved.routes, saved.identity);
+    // Collections stored in the editor's JSON are listed from their recipe, with the cards the host would bake.
+    let fromJson: { folders: string[]; template: string; records: DocumentCollectionPreview["records"] }[] = [];
+    try {
+      const recipes = Object.entries(readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).collections).filter(([, recipe]) => recipe.pagePath === path);
+      if (recipes.length) {
+        const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files: Object.keys(saved.sources), revision: saved.revision, identity: saved.identity, origin: { done: "", undone: "" } });
+        if ("error" in planned) throw new Error(planned.error);
+        fromJson = recipes.map(([id, recipe]) => ({ folders: recipe.folders, template: recipe.template, records: planned.documentCollections.find((item) => item.id === id)?.records ?? [] }));
+      }
+    } catch (error) { root.append(node("p", "", error instanceof Error ? error.message : "The editor's page data could not be read.")); }
     if ("error" in baked) root.append(node("p", "", baked.error));
-    else for (const collection of baked.collections.filter((item) => item.path === path)) {
+    else for (const collection of [...baked.collections.filter((item) => item.path === path), ...fromJson]) {
       const block = node("div", "collections-panel__collection");
       block.append(node("h3", "", `Pages from ${collection.folders.join(", ")}`), node("p", "", `${collection.records.length} matching ${collection.records.length === 1 ? "page" : "pages"}`));
       if (!options.settings) {

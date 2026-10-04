@@ -68,7 +68,10 @@ test("General and staged Fields apply with the dependent listing as one draft op
   await expect.poll(async () => (await storedDraft(page, "work/one/index.html"))?.content ?? "").toContain("<title>One renamed</title>");
   const one = (await storedDraft(page, "work/one/index.html"))!.content;
   expect(one).toContain('<meta name="date" content="2027-05-01">');
-  expect(one).toContain('content="Clay &amp; glaze"');
+  // The custom field is page data in the editor's JSON; nothing new is added to the page head.
+  expect(one).not.toContain("Clay");
+  const json = (await storedDraft(page, ".editor/page-builder.json"))!.content;
+  expect(JSON.parse(json).pages["work/one/index.html"].fields).toEqual({ category: "Clay & glaze" });
   expect(one).toBe(await mounted(page, "work/one/index.html"));
   // The dependent listing on Home is baked from the result, newest first.
   const home = await homeDraft(page);
@@ -82,9 +85,11 @@ test("General and staged Fields apply with the dependent listing as one draft op
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, "work/one/index.html")).toBeUndefined();
   await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
   expect(await mounted(page, "work/one/index.html")).toBe(before);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "work/one/index.html"))?.content).toBe(one);
+  await expect.poll(async () => (await storedDraft(page, ".editor/page-builder.json"))?.content).toBe(json);
   await expect.poll(() => homeDraft(page)).toBe(home);
 });
 
@@ -189,9 +194,13 @@ test("deleting a collection page folder drops its card in the same Undo/Redo", a
 
 test("Add on an automatic listing creates only the page; the bake adds exactly one card, one Undo/Redo", async ({ page, baseURL }) => {
   await seed(page, baseURL);
-  // The seeded listing is already baked, so its cards are on Home.
+  // The seeded listing is already baked, so its cards are on Home. Before, the test baked it
+  // through Page settings; that is now refused for an unbuilt listing, so the seed holds the
+  // editor's own bake and the mounted bytes are the branch bytes, with no draft.
   await open(page, baseURL, "index.html");
   const baked = await mounted(page, "index.html");
+  expect(baked).toBe(await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text());
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
   expect(listingOf(baked)).toContain('href="/work/one/"');
   const articles = frame(page).locator('[data-key="work-list"] article');
   await expect(articles).toHaveCount(2);
@@ -268,7 +277,7 @@ async function mountSettings(page: Page) {
     const path = "work/one/index.html";
     const state = {
       sources: { [path]: '<!doctype html>\n<html>\n<head>\n  <title>One</title>\n  <meta name="date" content="2025-01-01">\n</head>\n<body><h1>One</h1></body>\n</html>\n' } as Record<string, string>,
-      calls: [] as string[], release: undefined as undefined | (() => void),
+      calls: [] as string[], release: undefined as undefined | (() => void), panel: undefined as undefined | { pageFieldDocument(sidecar: string | undefined): string | undefined },
     };
     const hold = () => new Promise<void>((resolve) => { state.release = resolve; });
     const settings = createSiteSettings({
@@ -276,14 +285,17 @@ async function mountSettings(page: Page) {
         let next = state.sources[file];
         for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as never, value as string);
         if (pageFields) next = pageFields(next);
+        // As the host does: staged custom fields go to the editor's JSON, staged with the page in one apply.
+        const json = pageFields && state.panel ? state.panel.pageFieldDocument(state.sources[".editor/page-builder.json"]) : undefined;
         state.calls.push(`page ${JSON.stringify(fields)}`);
         await hold();
         state.sources[file] = next;
+        if (json !== undefined) state.sources[".editor/page-builder.json"] = json;
         return undefined;
       },
       pageFields: (host, file) => {
         const saved = state.sources[file];
-        return mountCollectionsPanel(host, {
+        return state.panel = mountCollectionsPanel(host, {
           sources: () => state.sources, routes: () => ({ "/work/one/": path }), identity: () => ({ name: "Studio" }), revision: () => "r",
           page: () => saved === undefined ? undefined : file, apply: () => false, openPage: () => {}, announce: () => {},
         }, { settings: true });
@@ -304,6 +316,7 @@ const harness = (page: Page) => page.evaluate(() => (window as unknown as { sett
 const release = (page: Page) => page.evaluate(() => (window as unknown as { settingsHarness: { release(): void } }).settingsHarness.release());
 
 test("General and Date typed while Apply waits are kept, and Apply again writes them over the earlier values", async ({ page }) => {
+  const path = "work/one/index.html";
   const panel = await mountSettings(page);
   await panel.getByRole("tab", { name: "Fields", exact: true }).click();
   await panel.getByLabel("Date", { exact: true }).fill("2027-05-01");
@@ -326,7 +339,8 @@ test("General and Date typed while Apply waits are kept, and Apply again writes 
   const first = (await harness(page)).sources["work/one/index.html"];
   expect(first).toContain("<title>One first</title>");
   expect(first).toContain('<meta name="date" content="2027-05-01">');
-  expect(first).toContain('content="Clay"');
+  expect(first).not.toContain("Clay");
+  expect(JSON.parse((await harness(page)).sources[".editor/page-builder.json"]).pages[path].fields).toEqual({ category: "Clay" });
   // The Fields panel now reads the applied page: the added field is its own, holding the newer value.
   await expect(panel.getByLabel("Date", { exact: true })).toHaveValue("2028-02-02");
   await expect(panel.getByLabel("Date", { exact: true })).toBeFocused();
@@ -343,9 +357,9 @@ test("General and Date typed while Apply waits are kept, and Apply again writes 
   const second = (await harness(page)).sources["work/one/index.html"];
   expect(second).toContain("<title>One second</title>");
   expect(second).toContain('<meta name="date" content="2028-02-02">');
-  expect(second).toContain('content="Glaze"');
   expect(second).not.toContain("One first");
-  expect(second).not.toContain('content="Clay"');
+  expect(second).not.toContain("Glaze");
+  expect(JSON.parse((await harness(page)).sources[".editor/page-builder.json"]).pages[path].fields).toEqual({ category: "Glaze" });
 });
 
 test("an untouched dialog closes after its waiting Apply", async ({ page }) => {
