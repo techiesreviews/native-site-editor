@@ -163,5 +163,20 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       return current(phase === "applied");
     };
   }
-  return { beginOwnUITransition, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases) dispose(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+  /**
+   * The host mounted `path` itself, outside a transition (a stylesheet pane following the selection),
+   * over exactly this step's bytes: the draft record, stored source and mounted model text all still
+   * match the current phase. Only then is the proof taken synchronously at that mount adopted;
+   * any other change keeps the old proof, so Undo and Redo still refuse.
+   */
+  function adoptOwnMount(path: string, proof: Proof, modelText: string | undefined) {
+    if (state !== "applied" && state !== "undone" || !proofs.has(path) || !host.isLive()) return false;
+    const records = state === "applied" ? plan.after : plan.before, texts = state === "applied" ? plan.afterSources : plan.beforeSources;
+    if (!texts.has(path) || texts.get(path) === undefined || modelText !== texts.get(path) || host.source(path) !== texts.get(path)) return false;
+    if (records.has(path) && host.store.get(scope, path) !== records.get(path)) return false;
+    if (!host.mounted(path) || !proof.isCurrent()) return false;
+    proofs.set(path, proof); mounted.set(path, true);
+    return true;
+  }
+  return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases) dispose(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
 }

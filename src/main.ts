@@ -158,6 +158,8 @@ let currentPath: string | undefined;
 const nativeHistoryAliases = new Map<string, { epoch: number; scope: string; session: string }>();
 // `pane`: the mount is the stylesheet pane (it follows the page being opened).
 let nativeHistoryMountCapture: ((path: string, pane?: boolean) => void) | undefined;
+// Native operations' history steps, told when the stylesheet pane mounts a file outside their own transitions.
+const nativePaneMountAdopters = new Set<(path: string) => void>();
 function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
   const key = draftKey(scope, path), alias = nativeHistoryAliases.get(key);
   return alias && alias.epoch === generation && alias.scope === setupScope() ? alias.session : key;
@@ -1114,6 +1116,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     secondaryPath = css;
     secondaryHistoryScope = historyScope;
     nativeHistoryMountCapture?.(css, true);
+    if (!nativeHistoryMountCapture) for (const adopt of nativePaneMountAdopters) adopt(css);
     return true;
   } catch (error) {
     if (request === secondaryRequest) errorMessage(error);
@@ -5462,10 +5465,10 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n") === untouchedFiles;
   const retainedPaths = [anchor, ...[...touched].filter(path => editor.isMounted(path) && afterSources.get(path) === undefined)];
   const changingTextPaths = [...touched].filter(path => beforeSources.get(path) !== afterSources.get(path) || retainedPaths.includes(path));
-  // Opening a page closes and remounts the stylesheet pane (its history scope follows the page),
-  // an intentional part of this transition. Its file then is listed below; a stylesheet the pane
-  // mounts during the transition is owned only while its draft is still the one seen here.
-  const paneAtPrepare = secondaryPath;
+  // Opening a page may close and remount the stylesheet pane (its history scope follows the page).
+  // The pane's file is not a changing path unless this operation edits it: an unchanged pane keeps
+  // its prepared proof, and a stylesheet the pane mounts during the transition is owned (proved at
+  // that mount) only while its draft is still the one seen here.
   const stylesheetDraftsAtPrepare = new Map(nativeFiles(scope).filter(file => /\.css$/i.test(file)).map(file => [file, store.get(scope, file)]));
   const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
     source: storedSource, mounted: editor.isMounted,
@@ -5482,13 +5485,17 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   const moved = new Map(moves.map(move => [move.from, move.to]));
   const next = op.open ?? moved.get(anchor) ?? (deletes.includes(anchor) ? undefined : anchor);
   let refreshPending = false;
+  // A pane remount over this step's exact bytes keeps Undo available; anything else still refuses.
+  const adoptPane = (path: string) => { if (live()) receipt.adoptOwnMount(path, editor.captureFileModelState(scope, path, true), editor.getMountedSource(path)); };
+  nativePaneMountAdopters.add(adoptPane);
   const dispose = () => {
+    nativePaneMountAdopters.delete(adoptPane);
     receipt.dispose();
     for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key);
   };
   const refresh = async (path: string | undefined, initial = false, message?: string, previousStatus = element("status").textContent) => {
-    // The stylesheet pane's files (then and now) are part of this own UI transition; a remount is proved at mount.
-    const changing = [...new Set([anchor, currentPath, next, path, paneAtPrepare, secondaryPath, ...changingTextPaths].filter((value): value is string => !!value))];
+    // An unchanged stylesheet pane is not declared here: it stays an unrelated proof, or is proved at its remount.
+    const changing = [...new Set([anchor, currentPath, next, path, ...changingTextPaths].filter((value): value is string => !!value))];
     const complete = receipt.beginOwnUITransition(changing);
     if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));

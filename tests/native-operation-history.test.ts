@@ -150,3 +150,20 @@ test("a remount the host did not prove stays an unrelated change", () => {
   f.models.set("untouched.css", { text: "same", version: 1 });
   assert.equal(finish(owned), false); assert.match(receipt.error()!, /editor for untouched\.css changed while opening/);
 });
+
+test("a host remount over the exact step bytes adopts its proof; a changed remount stays refused", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  // The pane remounts the unchanged stylesheet: a new model with the same text.
+  f.models.set("untouched.css", { text: "same", version: 1 });
+  assert.equal(receipt.adoptOwnMount("untouched.css", f.host.modelState("untouched.css"), "same"), true);
+  assert.equal(receipt.undo(), true); assert.equal(receipt.redo(), true);
+  // A remount whose model or source differs from the step is not adopted, and Undo refuses.
+  f.models.set("untouched.css", { text: "edited", version: 1 });
+  assert.equal(receipt.adoptOwnMount("untouched.css", f.host.modelState("untouched.css"), "edited"), false);
+  assert.equal(receipt.adoptOwnMount("untouched.css", f.host.modelState("untouched.css"), "same"), false);
+  assert.equal(receipt.undo(), false); assert.equal(f.records.get("index.html"), f.record);
+  // Paths outside the step and steps not yet applied are never adopted.
+  assert.equal(receipt.adoptOwnMount("other.css", f.host.modelState("other.css"), undefined), false);
+  const g = fixture(), prepared = prepareNativeTextHistory(g.host, g.plan)!;
+  assert.equal(prepared.adoptOwnMount("untouched.css", g.host.modelState("untouched.css"), "same"), false);
+});

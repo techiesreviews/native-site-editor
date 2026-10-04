@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { storedDraft } from "./drafts";
+import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
 
 // Save section: the edit bar of a page's own plain <section> root saves its
@@ -69,6 +69,9 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: `${OUT}/save-section-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 820, height: 1000 });
+  await page.screenshot({ path: `${OUT}/save-section-narrow.png` });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await save.click();
   await expect.poll(async () => records((await storedDraft(page, SIDECAR))?.content).intro.html).toBe(sectionOf(edited, "section-intro"));
   const savedText = (await storedDraft(page, SIDECAR))!.content;
@@ -139,4 +142,43 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
   await plain.locator("section.section-intro").first().scrollIntoViewIfNeeded();
   await plain.screenshot({ path: `${OUT}/published-narrow-js-off.png` });
   await site.close();
+});
+
+// The stylesheet pane is already open beside the page (elements.css) before Add:
+// it is not part of the operation, so Add, Undo and Redo neither warn nor touch it.
+test("Add with an unchanged stylesheet pane open: no warning, three drafts, one Undo and Redo, also after the pane follows another stylesheet", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  const elementsCss = await file(page, baseURL, "styles/elements.css");
+  const notice = page.locator("#notice");
+  await frame(page).locator("section.flow h2").click();
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
+  expect(await mounted(page, "styles/elements.css")).toBe(elementsCss);
+  const before = await mounted(page);
+  await addIntro(page, "section.flow h2");
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  const drafts = await storedDrafts(page);
+  await expect(notice).not.toContainText("not part of this owned source transition");
+  await expect(notice).not.toContainText("changed");
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
+  expect(await mounted(page, "styles/elements.css")).toBe(elementsCss);
+  await page.screenshot({ path: `${OUT}/pane-open-add.png` });
+
+  // One Undo clears all three with the pane still open; one Redo restores them exactly.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual(drafts);
+  await expect(notice).not.toContainText("not part of this owned source transition");
+
+  // The pane moved to another stylesheet (the section's own) before Undo.
+  await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#secondary-title")).toHaveText(CSS);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual(drafts);
+
 });

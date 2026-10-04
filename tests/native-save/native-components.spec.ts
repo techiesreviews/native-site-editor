@@ -321,44 +321,22 @@ test("Detach replaces an instance with the markup it shows, after showing it", a
   await expect(frame(page).locator("section.cards > project-card")).toHaveCount(3);
 });
 
-test("Make component turns a section into a component with slots, as one undo step with its files", async ({ page }) => {
+test("native-first: a plain page section offers Save section, never Make component; unsupported Save writes nothing", async ({ page }) => {
+  // Native pages stay plain HTML: the edit bar does not convert sections or their children into components.
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  await bar(page).getByRole("button", { name: "Make component…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Make component" });
-  const name = dialog.getByRole("textbox", { name: "Component name" });
-  await expect(name).toHaveValue("section-hero");
-  await expect(dialog.locator(".component-dialog__file-name")).toHaveText([
-    "components/section-hero/section-hero.html (new)",
-    "components/section-hero/section-hero.css (new)",
-    "index.html (replaces the <section>)",
-  ]);
-  await name.fill("hero");
-  await expect(dialog.locator(".create-dialog__result").first()).toHaveText("A component's name has a dash in it, such as section-intro.");
-  await name.fill("section-hero");
-  await expect(dialog.locator(".create-dialog__result").first()).toContainText("<section-hero> gets 3 slots");
-  await dialog.getByRole("button", { name: "Make component" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(status(page)).toHaveText("Made the component <section-hero>: components/section-hero/section-hero.html");
-  const source = await editorText(page);
-  expect(source).toContain(`  <section-hero>
-    <span slot="title">A native browser preview</span>
-    <span slot="lead">Edit plain HTML, CSS, and shared component templates and watch the preview update in place — no build, no iframe reload.</span>
-    <img slot="hero-image" class="hero-image" src="/images/placeholder.svg" data-key="hero-image">
-  </section-hero>`);
-  // The page shows what it showed, now through the component.
-  await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.querySelector("h1"))).toBeNull();
-  await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector("h1")?.textContent?.trim())).toBe("A native browser preview");
-  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section hero");
-  expect((await storedDraft(page, "components/section-hero/section-hero.html"))?.content).toContain(`<h1 data-key="hero-title"><slot name="title">A native browser preview</slot></h1>`);
-  expect((await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(":host {\n  display: block;\n}\n");
-  // Undo takes the instance and the new files back; Redo makes them again.
-  await page.locator("#editor-toolbar-host").getByRole("button", { name: "Undo" }).click();
-  await expect(frame(page).locator("section.hero h1")).toHaveText("A native browser preview");
-  await expect.poll(() => storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
-  await page.locator("#editor-toolbar-host").getByRole("button", { name: "Redo" }).click();
-  await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector("h1")?.textContent?.trim())).toBe("A native browser preview");
-  await expect.poll(async () => (await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(":host {\n  display: block;\n}\n");
+  await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
+  const before = await editorText(page);
+  // This section was not added from a saved section, so Save section refuses and writes nothing.
+  await bar(page).getByRole("button", { name: "Save section", exact: true }).click();
+  await expect(page.locator("#notice")).toContainText("Section not saved");
+  expect(await editorText(page)).toBe(before);
+  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
+  expect(await storedDraft(page, indexPath)).toBeUndefined();
+  expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
+  // A child of the section: neither action.
+  await frame(page).locator("section.hero h1").first().click();
+  await expect(bar(page).getByRole("button", { name: /Make component|Save section/ })).toHaveCount(0);
 });
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {
