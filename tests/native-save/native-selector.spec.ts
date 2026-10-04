@@ -41,6 +41,24 @@ async function copySelectedEditorText(page: Page, host: string) {
   return page.evaluate(() => navigator.clipboard.readText());
 }
 
+async function enterProjectCard(page: Page, index = 0) {
+  const frame = page.frameLocator(".native-preview-frame");
+  await frame.locator("project-card").nth(index).locator("card-note").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect.poll(() => editorSource(page, "#content")).toBe(indexSource);
+  await page.getByRole("toolbar", { name: "Edit bar" })
+    .getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+}
+
+// Click the shadow element's own pixels, outside its inline slotted text.
+async function selectShadowPart(page: Page, selector: string) {
+  const part = page.frameLocator(".native-preview-frame").locator(selector).first();
+  const bounds = await part.boundingBox();
+  expect(bounds).not.toBeNull();
+  await part.click({ position: { x: bounds!.width - 2, y: 2 } });
+}
+
 test("selecting a page element opens its source and matching CSS rule", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
@@ -146,13 +164,8 @@ test("refreshing a native selection while typing CSS does not steal the secondar
   await expect
     .poll(() => frame.locator(".project-card").first().evaluate((el) => getComputedStyle(el).borderLeftColor))
     .toBe("rgb(47, 109, 58)");
-  const handle = await page.locator(".native-preview-frame").elementHandle();
-  const child = await handle!.contentFrame();
-  await child!.evaluate(() => {
-    const card = document.querySelector("project-card") as HTMLElement;
-    const title = card.shadowRoot!.querySelector(".project-card__title") as HTMLElement;
-    title.click();
-  });
+  await enterProjectCard(page);
+  await selectShadowPart(page, ".project-card__title");
   await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
 
   const textbox = page.locator("#content-secondary [role=\"textbox\"]").first();
@@ -194,7 +207,15 @@ test("links select by default, ctrl/cmd click navigates, and bad messages stay f
   // A plain click on a link selects it (the link lives in the header component)
   // and does not navigate: the About page stays rendered.
   await frame.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  const aboutSource = readFileSync(resolve(fixture, "about/index.html"), "utf8");
+  await expect.poll(() => editorSource(page, "#content")).toBe(aboutSource);
+  await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
+  // Inspect the shared header only after explicit template entry.
+  await page.getByRole("toolbar", { name: "Edit bar" })
+    .getByRole("button", { name: "Edit Site header component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
+  await frame.getByRole("link", { name: "Home", exact: true }).click();
   await expect(page.locator("#secondary-rules")).toContainText(".site-nav a");
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   await frame.getByRole("link", { name: "Home", exact: true }).click({ modifiers: ["ControlOrMeta"] });
@@ -247,11 +268,8 @@ test("component CSS loads on demand, scopes to matching shadow root, and edits l
   expect(scope.headerStyleText).not.toContain(".project-card");
   expect(scope.headerStyleText).toContain(".site-header");
 
-  await child!.evaluate(() => {
-    const card = document.querySelector("project-card") as HTMLElement;
-    const title = card.shadowRoot!.querySelector(".project-card__title") as HTMLElement;
-    title.click();
-  });
+  await enterProjectCard(page);
+  await selectShadowPart(page, ".project-card__title");
   await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
   await expect(page.locator("#secondary-rules")).toContainText(".project-card__title");
   await expect(page.locator("#secondary-rules")).toContainText("site.css");
@@ -340,13 +358,9 @@ test("selecting an element puts the caret after its start tag in the owning sour
   await expect.poll(() => caretToLineEnd(page, "#content"))
     .toBe("The header and footer are custom elements shared across Home and About.</p>");
 
-  // Inside a shadow root the component template owns the element.
-  const handle = await page.locator(".native-preview-frame").elementHandle();
-  const child = await handle!.contentFrame();
-  await child!.evaluate(() => {
-    const card = document.querySelectorAll("project-card")[2] as HTMLElement;
-    (card.shadowRoot!.querySelector("card-note") as HTMLElement).click();
-  });
+  // Explicit entry makes the parent template own its nested component tag.
+  await enterProjectCard(page, 2);
+  await frame.locator("project-card").nth(2).locator("card-note").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect.poll(() => caretToLineEnd(page, "#content")).toBe("Shared across cards</card-note>");
 
