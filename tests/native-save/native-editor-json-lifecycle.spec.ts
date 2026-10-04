@@ -121,21 +121,40 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
   const [id] = Object.keys(JSON.parse(sidecar).collections);
-  await expect(list).toContainText(`“${id}” on index.html`);
-  await list.getByRole("button", { name: `Forget recipe “${id}”, keep cards` }).click();
+  // One plain row: which grid on which page, why, and its action; the technical error only in its details.
+  const row = list.getByRole("listitem");
+  await expect(row).toHaveCount(1);
+  await expect(row.locator(".collections-panel__recovery-name")).toHaveText(/^Cards from \/work\/, \/services\/ on .+ \(\/\)$/);
+  await expect(row.locator(".collections-panel__recovery-reason")).toHaveText("Its grid was changed in Code, so the editor cannot tell which element it is.");
+  // The long error appears once, inside the row's closed details.
+  await expect(settings.getByText(/can no longer be found exactly/)).toHaveCount(1);
+  await expect(row.locator("details p")).toBeHidden();
+  await row.getByText("Technical details").click();
+  await expect(row.locator("details p")).toHaveText(`The collections on index.html can no longer be found exactly (Collection target is missing or ambiguous.). Undo the change that moved them, or open Page settings › Fields and forget the recipe there; its cards stay as they are. Recipe “${id}” in ${SIDECAR}, page index.html.`);
+  await row.getByRole("button", { name: /^Forget recipe, keep cards: Cards from / }).click();
   await expect.poll(async () => Object.keys((await json(page)).collections ?? { pending: 1 })).toEqual([]);
+  const forgotten = (await storedDraft(page, SIDECAR))!.content;
   const after = await json(page), before = JSON.parse(sidecar);
   delete before.collections[id];
   expect(after).toEqual(before);
-  expect((await storedDraft(page, "index.html"))!.content).toBe(home.slice(0, at) + ' data-x="1"' + home.slice(at));
+  const broken = home.slice(0, at) + ' data-x="1"' + home.slice(at);
+  expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
   await expect(list).toHaveCount(0);
+  // Forget is one Undo step of its own: Undo brings the recipe back exactly, Redo forgets it again; the page is untouched.
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, SIDECAR)).toBeUndefined();
+  expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(forgotten);
+  expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
 });
 
 test("a collection whose page was deleted outside the editor can be forgotten alone, keeping other recipes and page fields", async ({ page, baseURL }) => {
   const { sidecar } = await saved(page, baseURL);
   const document = JSON.parse(sidecar);
   const [id] = Object.keys(document.collections);
-  document.collections.gone = { ...document.collections[id], pagePath: "gone/index.html" };
+  document.collections.gone = { ...document.collections[id], pagePath: "gone/index.html", label: "Old blog cards" };
   document.pages["about/index.html"] = { fields: { mood: "calm" }, keep: { unknown: true } };
   const seeded = JSON.stringify(document, null, 2) + "\n";
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: seeded } });
@@ -145,10 +164,11 @@ test("a collection whose page was deleted outside the editor can be forgotten al
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
-  await expect(list).toContainText("“gone” on gone/index.html");
-  await expect(list).toContainText("gone/index.html no longer exists.");
-  await expect(list).not.toContainText(`“${id}”`);
-  await list.getByRole("button", { name: "Forget recipe “gone”, keep cards" }).click();
+  const row = list.getByRole("listitem");
+  await expect(row).toHaveCount(1);
+  await expect(row.locator(".collections-panel__recovery-name")).toHaveText("Old blog cards on gone/index.html");
+  await expect(row.locator(".collections-panel__recovery-reason")).toHaveText("This page no longer exists.");
+  await row.getByRole("button", { name: "Forget recipe, keep cards: Old blog cards on gone/index.html" }).click();
   await expect.poll(async () => Object.keys((await json(page)).collections ?? {}).sort()).toEqual([id]);
   const after = await json(page);
   expect(after.pages["about/index.html"]).toEqual({ fields: { mood: "calm" }, keep: { unknown: true } });

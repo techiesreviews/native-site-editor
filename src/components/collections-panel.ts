@@ -204,7 +204,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
         if ("error" in planned) throw new Error(planned.error);
         fromJson = recipes.map(([id, recipe]) => ({ folders: recipe.folders, template: recipe.template, records: planned.documentCollections.find((item) => item.id === id)?.records ?? [] }));
       }
-    } catch (error) { root.append(node("p", "", error instanceof Error ? error.message : "The editor's page data could not be read.")); }
+    } catch (error) {
+      // When some collection cannot be found, the list below says which, in plain words; no technical repeat here.
+      root.append(node("p", "", !options.grid && unlocatableRows(saved).length ? "This page's collections can be shown again once the ones listed below are fixed or forgotten."
+        : error instanceof Error ? error.message : "The editor's page data could not be read."));
+    }
     if ("error" in baked) root.append(node("p", "", baked.error));
     else for (const collection of [...baked.collections.filter((item) => item.path === path), ...fromJson]) {
       const block = node("div", "collections-panel__collection");
@@ -234,29 +238,51 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
    * whose page is gone). Each can be forgotten on its own: only its recipe
    * leaves the JSON; the cards stay in the page, as do all other page data.
    */
-  function appendUnlocatable(saved: ReturnType<typeof snapshot>) {
+  function unlocatableRows(saved: ReturnType<typeof snapshot>) {
     const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH];
-    if (sidecar === undefined || !deps.forget) return;
+    const rows: { id: string; page: string; label: string; where: string; reason: string; detail: string }[] = [];
+    if (sidecar === undefined || !deps.forget) return rows;
     let document: PageBuilderDocument;
-    try { document = readSidecar(sidecar); } catch { return; }
+    try { document = readSidecar(sidecar); } catch { return rows; }
     const files = new Set(deps.files?.() ?? Object.values(saved.routes));
-    const rows: { id: string; page: string; reason: string }[] = [];
     for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
       const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === page).map(([id]) => id);
       const source = saved.sources[page];
-      let reason: string | undefined;
-      if (source === undefined) reason = files.has(page) ? undefined : `${page} no longer exists.`;
-      else try { locatePageCollections(source, document, page); } catch (error) { reason = (error as Error).message; }
-      if (reason) for (const id of ids) rows.push({ id, page, reason });
+      let reason: string | undefined, detail = "";
+      if (source === undefined) { if (!files.has(page)) { reason = "This page no longer exists."; detail = `${page} is not in the repository.`; } }
+      else try { locatePageCollections(source, document, page); } catch (error) { reason = "Its grid was changed in Code, so the editor cannot tell which element it is."; detail = (error as Error).message; }
+      if (!reason) continue;
+      const url = Object.entries(saved.routes).find(([, file]) => file === page)?.[0];
+      let title = "";
+      try { if (source !== undefined && url) title = readPageFields(source, url, saved.identity).title ?? ""; } catch { title = ""; }
+      const where = title ? `${title.split(/\s+[|·–—-]\s+/)[0]} (${url})` : url ?? page;
+      for (const id of ids) {
+        const recipe = document.collections[id];
+        // An optional label kept in the JSON record names the grid; otherwise its pages describe it.
+        const label = typeof recipe.label === "string" && recipe.label.trim() ? recipe.label.trim() : `Cards from ${recipe.folders.join(", ")}`;
+        rows.push({ id, page, label, where, reason, detail: `${detail} Recipe “${id}” in ${EDITOR_PAGE_BUILDER_PATH}, page ${page}.` });
+      }
     }
-    if (!rows.length) return;
+    return rows;
+  }
+  /**
+   * Collections anywhere on the site whose grid cannot be found exactly (or
+   * whose page is gone). Each can be forgotten on its own: only its recipe
+   * leaves the JSON; the cards stay in the page, as do all other page data.
+   */
+  function appendUnlocatable(saved: ReturnType<typeof snapshot>) {
+    const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH];
+    const rows = unlocatableRows(saved);
+    if (sidecar === undefined || !rows.length) return;
     const section = node("section", "collections-panel__unlocatable");
     section.setAttribute("aria-label", "Collections that cannot be found");
     section.append(node("h3", "", "Collections that cannot be found"),
-      node("p", "", "Their cards are kept in the page. Fix the page in Code, or forget a recipe: its cards stay as they are, and every other page field is kept."));
+      node("p", "collections-panel__hint", "Their cards stay in the page as they are. Fix the grid in Code, or forget its recipe: the cards and every page field are kept."));
+    const list = node("ul", "collections-panel__recovery");
     for (const row of rows) {
-      const item = node("div", "collections-panel__collection");
-      const forget = button(`Forget recipe “${row.id}”, keep cards`, async () => {
+      const item = node("li", "collections-panel__recovery-row");
+      const name = `${row.label} on ${row.where}`;
+      const forget = button("Forget recipe, keep cards", async () => {
         if (applying || destroyed) return;
         applying = true; forget.disabled = true;
         let error: string | undefined;
@@ -265,11 +291,16 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
         finally { applying = false; }
         if (destroyed) return;
         if (error) { forget.disabled = false; report(error); return; }
-        update(); report(`Forgot the recipe of “${row.id}”; its cards stay as they are.`);
+        update(); report(`Forgot the recipe of ${name}; its cards stay as they are.`);
       });
-      item.append(node("h4", "", `“${row.id}” on ${row.page}`), node("p", "", row.reason), forget);
-      section.append(item);
+      forget.classList.add("collections-panel__recovery-action");
+      forget.setAttribute("aria-label", `Forget recipe, keep cards: ${name}`);
+      const details = node("details", "collections-panel__recovery-details");
+      details.append(node("summary", "", "Technical details"), node("p", "", row.detail.trim()));
+      item.append(node("span", "collections-panel__recovery-name", name), node("span", "collections-panel__recovery-reason", row.reason), forget, details);
+      list.append(item);
     }
+    section.append(list);
     root.append(section);
   }
   function openGrid(path: string, sourceStart: number) {
