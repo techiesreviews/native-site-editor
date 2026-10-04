@@ -1,3 +1,4 @@
+import { startTags } from "../../shared/html-source";
 import { splitSelectorList } from "../../shared/cascade";
 import { resolveImportPath, parseCssImports } from "../../shared/css-imports";
 import { nativePageRoute } from "../../shared/native-routes";
@@ -59,7 +60,25 @@ function active(source: string): SourceElement[] {
     return true;
   });
 }
+function refuseDeclarations(html: string): void {
+  const tags = new Map(startTags(html).map((tag) => [tag.start, tag]));
+  const raw = [...descendants(parseSource(html))].filter((element) => ["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes"].includes(element.name) && element.close);
+  for (let at = 0; at < html.length;) {
+    const lt = html.indexOf("<", at);
+    if (lt < 0) return;
+    const protectedText = raw.find((element) => lt >= element.tag.end && lt < element.close!.start);
+    if (protectedText) { at = protectedText.close!.start; continue; }
+    if (html.startsWith("<!--", lt)) {
+      const end = html.indexOf("-->", lt + 4);
+      if (end < 0) return; // The native validator refuses unfinished comments below.
+      at = end + 3; continue;
+    }
+    if (html.startsWith("<!", lt) || html.startsWith("<?", lt)) reject("Declarations are unsupported inside static section HTML.");
+    at = tags.get(lt)?.end ?? lt + 1;
+  }
+}
 function sectionHtml(record: StaticSectionRecord): void {
+  refuseDeclarations(record.html);
   const nodes = parseSource(record.html);
   const roots = nodes.filter((node): node is SourceElement => node.type === "element");
   if (roots.length !== 1 || roots[0].name !== "section" || nodes.some((node) => node.type === "text" && record.html.slice(node.start, node.end).trim())) reject("A static section needs exactly one explicit <section> root.");
@@ -187,9 +206,15 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     if (css === undefined && (!files || files.has(record.stylesheetPath))) reject("A complete file graph must prove the new stylesheet is absent.");
     const ids = new Set(active(record.html).map((element) => attribute(record.html, element, "id")).filter(Boolean));
     if (active(input.pageSource).some((element) => ids.has(attribute(input.pageSource, element, "id")))) reject("Inserting this section would duplicate an authored id.");
-    const insertion = nativeMarkupInsertEdit(input.pageSource, input.parent, input.index, record.html);
-    if (!insertion) reject("This section cannot be inserted at the selected native HTML boundary.");
-    let page = input.pageSource.slice(0, insertion.start) + insertion.text + input.pageSource.slice(insertion.end);
+    // Validate the actual fragment in its destination, but never use re-indented payload bytes.
+    const verified = nativeMarkupInsertEdit(input.pageSource, input.parent, input.index, record.html);
+    const placeholder = "<section></section>";
+    const insertion = nativeMarkupInsertEdit(input.pageSource, input.parent, input.index, placeholder);
+    if (!verified || !insertion || verified.start !== insertion.start || verified.end !== insertion.end) reject("This section cannot be inserted at the selected native HTML boundary.");
+    const slot = insertion.text.indexOf(placeholder);
+    if (slot < 0 || slot !== insertion.text.lastIndexOf(placeholder)) reject("The native insertion boundary does not contain one literal payload slot.");
+    const literal = insertion.text.slice(0, slot) + record.html + insertion.text.slice(slot + placeholder.length);
+    let page = input.pageSource.slice(0, insertion.start) + literal + input.pageSource.slice(insertion.end);
     const head = headTags(page), all = active(page);
     if (all.some((element) => element.name === "base" && attribute(page, element, "href") !== undefined)) reject("A base href prevents safe static section stylesheet linking.");
     let linked = false;
@@ -198,7 +223,12 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
         const inline = page.slice(element.tag.end, element.close?.start ?? element.tag.end);
         validateCssSource(inline);
         if (scanCss(inline).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("An inline stylesheet already uses this section's rootClass.");
-        if (parseCssImports(inline).imports.some((item) => resolveImportPath(input.pagePath, item.url) === record.stylesheetPath)) reject("The section stylesheet is already loaded indirectly.");
+        for (const item of parseCssImports(inline).imports) {
+          const imported = resolveImportPath(input.pagePath, item.url);
+          if (imported === record.stylesheetPath) reject("The section stylesheet is already loaded indirectly.");
+          if (!imported) reject("External inline stylesheet imports cannot be verified for static section insertion.");
+          if (typeof input.stylesheetSources[imported] !== "string") reject(`Load ${imported} before verifying inline stylesheet imports.`);
+        }
       }
       if (element.name !== "link") continue;
       const href = attribute(page, element, "href");

@@ -157,3 +157,38 @@ test("inline class collisions and uninspectable external stylesheet links refuse
   failure(input({pageSource:page.replace('</head>','<style>.intro-section { color: blue; }</style></head>')}),"An inline stylesheet already uses this section's rootClass.");
   failure(input({pageSource:page.replace('</head>','<link rel="stylesheet" href="https://example.test/theme.css"></head>')}),"External stylesheet links cannot be verified for static section insertion.");
 });
+
+test("indented native insertion preserves the entire multiline literal payload byte for byte", () => {
+  const record={...section,html:'<section class="intro-section" data-lines="a\nb"><!-- c\nd --><p>one\ntwo</p><pre>  raw\ntext</pre><section></section></section>',css:'.intro-section { white-space: pre-wrap; }'};
+  const indented='<html>\n  <head>\n    <title>Page</title>\n    <link rel="stylesheet" href="styles/sections.css">\n  </head>\n  <body>\n    <main>\n      <p>Keep</p>\n    </main>\n  </body>\n</html>';
+  for (const index of [0,1]) {
+    const before=input({documentText:document(record),pageSource:indented,index,stylesheetSources:{'styles/sections.css':record.css},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'styles/sections.css']});
+    const plan=good(before), html=plan.operation.edits.get('index.html')!;
+    assert.ok(html.includes(record.html));
+    assert.equal(html,index===0 ? indented.replace('<p>Keep</p>',record.html+'\n      <p>Keep</p>') : indented.replace('<p>Keep</p>','<p>Keep</p>\n      '+record.html));
+    assert.equal(html.includes('data-lines="a\n      b"'),false);
+    assert.equal(html.includes('<!-- c\n      d -->'),false);
+    assert.equal(plan.operation.expectedSources.get('index.html'),indented);
+    assert.deepEqual(before,input({documentText:document(record),pageSource:indented,index,stylesheetSources:{'styles/sections.css':record.css},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'styles/sections.css']}));
+  }
+  const empty=indented.replace('      <p>Keep</p>\n','');
+  const inserted=good(input({documentText:document(record),pageSource:empty,index:0,stylesheetSources:{'styles/sections.css':record.css},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'styles/sections.css']}));
+  assert.ok(inserted.operation.edits.get('index.html')!.includes(record.html));
+});
+
+test("doctype, CDATA and processing declarations refuse; declaration text in comments stays literal", () => {
+  for (const declaration of ['<!doctype html>','<![CDATA[content]]>','<!ENTITY custom "value">','<?xml version="1.0"?>']) failure(input({documentText:document({...section,html:declaration+section.html})}),'Declarations are unsupported inside static section HTML.');
+  const record={...section,html:'<!-- Mention <!doctype html> and <![CDATA[example]]> only --><section class="intro-section"><p>Native</p></section>'};
+  const result=good(input({documentText:document(record)}));
+  assert.ok(result.operation.edits.get('index.html')!.includes(record.html));
+});
+
+test("every inline stylesheet import requires a supplied snapshot and participates in conflict checks", () => {
+  const pageSource=page.replace('</head>','<style>@import "theme.css";</style></head>');
+  failure(input({pageSource}),'Load theme.css before verifying inline stylesheet imports.');
+  failure(input({pageSource,stylesheetSources:{'styles/sections.css':undefined,'theme.css':undefined}}),'Load theme.css before verifying inline stylesheet imports.');
+  failure(input({pageSource,stylesheetSources:{'styles/sections.css':undefined,'theme.css':'.intro-section { color: blue; }'},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'theme.css']}),"Another supplied stylesheet already uses this section's rootClass.");
+  const result=good(input({pageSource,stylesheetSources:{'styles/sections.css':undefined,'theme.css':'body { color: black; }'},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'theme.css']}));
+  assert.equal(result.operation.expectedSources.get('theme.css'),'body { color: black; }');
+  assert.ok(result.operation.edits.get('index.html')!.includes('<style>@import "theme.css";</style>'));
+});
