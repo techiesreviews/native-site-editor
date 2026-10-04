@@ -7,9 +7,16 @@ async function open(page: Page, baseURL: string | undefined, repo = 501) {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible();
 }
+// The Style dock starts collapsed to zero width; then everything in it except
+// its resize separator is inert and hidden, so the separator is what opens it.
+const grip = (page: Page) => page.getByRole("separator", { name: "Resize Style panel", exact: true });
+async function showPanel(page: Page) {
+  if (await grip(page).getAttribute("aria-valuenow") === "0") { await grip(page).focus(); await page.keyboard.press("Enter"); }
+  await expect(grip(page)).not.toHaveAttribute("aria-valuenow", "0");
+}
 async function select(page: Page, selector = ".lead") {
   await frame(page).locator(selector).click();
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showPanel(page);
   await expect(panel(page).getByText("Spacing", { exact: true })).toBeVisible();
 }
 async function fill(page: Page, label: string, value: string) {
@@ -65,7 +72,7 @@ test("tablet and hover changes write media and state rules; hide stays scoped", 
 test("Add class writes HTML before styling a heading; never writes inline CSS", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await frame(page).locator(".hero h1").click();
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showPanel(page);
   await panel(page).getByRole("textbox", { name: "Class name" }).fill("hero-title");
   await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
   await expect(frame(page).locator("h1.hero-title")).toBeVisible();
@@ -97,7 +104,9 @@ test("panel uses theme tokens in light and dark; collapses with Escape", async (
     await page.screenshot({ path: `.scratch/style/panel-${colorScheme}.png` });
   }
   await panel(page).getByRole("textbox", { name: "Padding top", exact: true }).focus(); await page.keyboard.press("Escape");
-  await expect(panel(page).getByRole("button", { name: "Open Style panel" })).toBeFocused();
+  // Collapsing moves focus to the separator, the dock's one control left reachable.
+  await expect(grip(page)).toBeFocused();
+  await expect(grip(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).not.toBeVisible();
 });
 
