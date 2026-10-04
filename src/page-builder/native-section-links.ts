@@ -2,7 +2,7 @@ import { nativePageRoute } from "../../shared/native-routes";
 import { descendants, parseSource, type SourceElement } from "./component-model";
 import { attribute } from "./collection-model";
 import {
-  EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
+  EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
   type CollectionTarget, type JsonValue, type PageBuilderDocument,
 } from "./page-builder-document";
 import type { StaticSectionOperation, StaticSectionRecord } from "./static-sections";
@@ -24,7 +24,15 @@ import type { StaticSectionOperation, StaticSectionRecord } from "./static-secti
  * `expectedSources` hold the exact bytes it was planned on; the host must compare them (and
  * `expectedFiles`) immediately before applying it atomically as one undo step.
  * Records are passed in already validated (`readStaticSectionRecords`); this module only
- * imports their type, so a future static insert can import it without a cycle.
+ * imports their type, so a future static insert can import it without a cycle. The catalogue
+ * also accepts HTML with whitespace or a comment around the section; such a record cannot be a
+ * basis (it is not one section from first to last byte) and is refused before any write.
+ *
+ * Deliberate limits (refuse rather than guess):
+ * - a copy without an id whose opening tag was edited can no longer be found: resolution, and
+ *   so every update, refuses until it is relinked;
+ * - copies on one page with the same opening tag cannot be told apart and refuse the same way;
+ * - an update never replaces or wraps an element that a collection in the editor JSON targets.
  */
 export const NATIVE_SECTION_KIND = "native-section";
 export interface NativeSectionLink { kind: typeof NATIVE_SECTION_KIND; recordId: string; target: CollectionTarget; basis: string; [key: string]: JsonValue | CollectionTarget }
@@ -58,6 +66,18 @@ function checkKey(key: string): void {
   if (!linkKey.test(key) || unsafeKeys.has(key)) fail(`Invalid section link key: ${key}.`);
 }
 const isNativeEntry = (value: unknown) => plainObject(value) && value.kind === NATIVE_SECTION_KIND;
+const foreignAncestors = ["template", "noscript", "slot", "svg", "math"];
+function checkOrdinary(element: SourceElement): void {
+  for (let parent = element.parent; parent; parent = parent.parent) {
+    const name = parent.name.toLowerCase();
+    if (name.includes("-") || foreignAncestors.includes(name)) fail("Sections inside components or templates cannot be linked.");
+  }
+}
+/** Exactly one complete `<section>`, first byte to last: the only HTML a basis can hold. */
+function checkBasis(html: string, label: string): void {
+  const roots = parseSource(html).filter((node): node is SourceElement => node.type === "element");
+  if (roots.length !== 1 || roots[0].name !== "section" || !roots[0].close || roots[0].start !== 0 || roots[0].end !== html.length) fail(`${label} must be exactly one section, with nothing around it.`);
+}
 
 function readLink(page: string, key: string, value: Record<string, unknown>): NativeSectionLink {
   checkKey(key);
@@ -66,8 +86,7 @@ function readLink(page: string, key: string, value: Record<string, unknown>): Na
   const target = value.target;
   if (!plainObject(target) || target.tag !== "section") fail(`Section link ${page} ${key} needs a section target.`);
   // The basis must be one complete section, the same kind as the target.
-  const roots = parseSource(value.basis).filter((node): node is SourceElement => node.type === "element");
-  if (roots.length !== 1 || roots[0].name !== "section" || roots[0].start !== 0 || roots[0].end !== value.basis.length) fail(`Section link ${page} ${key} has an invalid basis.`);
+  checkBasis(value.basis, `Section link ${page} ${key}'s basis`);
   return value as NativeSectionLink;
 }
 
@@ -107,6 +126,7 @@ function resolvePage(page: string, source: string, entries: Record<string, Nativ
   for (const [key, link] of Object.entries(entries)) {
     const located = locateCollectionTarget(source, link.target);
     if ("error" in located) fail(`Section link ${key} on ${page}: ${located.error} Relink it.`);
+    checkOrdinary(located.element);
     const { start, end } = located.element;
     for (const other of found) {
       if (other.start === start) fail(`Section links ${other.key} and ${key} on ${page} point at the same section.`);
@@ -126,10 +146,7 @@ function sectionAt(source: string, range: { start: number; end: number }): Sourc
     if (node.type !== "element") continue;
     if (node.start === range.start && node.end === range.end) {
       if (node.name !== "section" || !node.close) fail("Select a complete section itself.");
-      for (let parent = node.parent; parent; parent = parent.parent) {
-        const name = parent.name.toLowerCase();
-        if (name.includes("-") || ["template", "noscript", "slot", "svg", "math"].includes(name)) fail("Sections inside components or templates cannot be linked.");
-      }
+      checkOrdinary(node);
       return node;
     }
     if (node.start <= range.start && node.end >= range.end) stack.push(...node.children);
@@ -147,6 +164,7 @@ function writeJson(document: PageBuilderDocument, documentText: string | undefin
 
 function addLink(input: { documentText: string | undefined; pagePath: string; pageSource: string; element: SourceElement; record: StaticSectionRecord; key?: string }) {
   checkPage(input.pagePath);
+  checkBasis(input.record.html, `Saved section ${input.record.id}`);
   const document = readPageBuilderDocument(input.documentText);
   const existing = readNativeSectionLinks(input.documentText);
   // The page's other links must still resolve, and none may already be this section.
@@ -209,6 +227,7 @@ export function registerInsertedNativeSection(input: {
   range: { start: number; end: number }; record: StaticSectionRecord; key?: string;
 }): { key: string; documentText: string; create: boolean } | { error: string } {
   return result(() => {
+    if (input.files && !input.files.includes(input.pagePath)) fail("Loaded sources do not match the file graph.");
     const element = sectionAt(input.pageSourceAfter, input.range);
     if (input.pageSourceAfter.slice(element.start, element.end) !== input.record.html) fail("The inserted section does not match its saved record.");
     const { document, key } = addLink({ documentText: input.documentText, pagePath: input.pagePath, pageSource: input.pageSourceAfter, element, record: input.record, key: input.key });
@@ -237,6 +256,7 @@ export function planNativeSectionCopiesUpdate(input: {
 }): NativeSectionCopiesUpdatePlan | { error: string } {
   return result(() => {
     if (typeof input.documentText !== "string") fail(`Load ${EDITOR_PAGE_BUILDER_PATH} before updating copies.`);
+    checkBasis(input.record.html, `Saved section ${input.record.id}`);
     const files = input.files && new Set(input.files);
     if (files && !files.has(EDITOR_PAGE_BUILDER_PATH)) fail("Loaded sources do not match the file graph.");
     const links = readNativeSectionLinks(input.documentText);
@@ -254,6 +274,7 @@ export function planNativeSectionCopiesUpdate(input: {
     for (const page of new Set(updated.map((entry) => entry.page))) {
       const before = input.sources[page]!;
       const replace = updated.filter((entry) => entry.page === page).sort((a, b) => b.start - a.start);
+      checkCollections(page, before, replace, document);
       let after = before;
       for (const entry of replace) after = after.slice(0, entry.start) + input.record.html + after.slice(entry.end);
       checkReplacedPage(page, after, input.record);
@@ -284,6 +305,21 @@ export function planNativeSectionCopiesUpdate(input: {
       ...(files ? { expectedFiles: [...files].sort() } : {}),
     };
   });
+}
+/**
+ * The page's collections (editor JSON) must all be found, uniquely, and none may sit inside, be,
+ * or contain a copy about to be replaced: its recipe would vanish or rebind silently.
+ */
+function checkCollections(page: string, source: string, replaced: ResolvedNativeSectionLink[], document: PageBuilderDocument): void {
+  const records = Object.fromEntries(Object.entries(document.collections).filter(([, record]) => record.pagePath === page));
+  if (!Object.keys(records).length) return;
+  const located = locateCollections(source, records);
+  if ("error" in located) fail(`${page}: ${located.error}`);
+  for (const [id, { element }] of Object.entries(located.collections)) {
+    for (const copy of replaced) {
+      if (element.start < copy.end && copy.start < element.end) fail(`Collection ${id} on ${page} is inside or around a copy to update; update it by hand.`);
+    }
+  }
 }
 function findElement(source: string, start: number, end: number): SourceElement | undefined {
   const stack = parseSource(source);

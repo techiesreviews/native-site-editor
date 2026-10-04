@@ -161,3 +161,56 @@ test("rename and delete touch only native links and keep foreign entries", () =>
   assert.deepEqual(JSON.parse(removed as string).pages["index.html"].sections, { foreign: { kind: "other", note: "keep me" } });
   assert.ok(typeof deleteNativeSectionLink(text, "index.html", "foreign") === "object");
 });
+
+// Records the catalogue accepts but whose HTML is not exactly one section from
+// first to last byte: linking, registering or updating with them is refused
+// before any JSON is written, so the links stay readable.
+test("records with padding or a trailing comment are refused before writing a link", async () => {
+  const { readStaticSectionRecords } = await import("../src/page-builder/static-sections");
+  for (const html of [`\n${oldHtml}\n`, `  ${oldHtml}`, `${oldHtml}<!-- note -->`]) {
+    const catalogue = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { hero: record(html) } } });
+    const accepted = readStaticSectionRecords(catalogue).hero;
+    assert.equal(accepted.html, html, "the catalogue accepts this record");
+    const home = page(oldHtml);
+    const linked = planNativeSectionLink({ documentText: baseJson, pagePath: "index.html", pageSource: home, range: range(home, oldHtml), record: accepted });
+    assert.ok("error" in linked, JSON.stringify(html));
+    const inserted = page(html);
+    const at = range(inserted, oldHtml);
+    assert.ok("error" in registerInsertedNativeSection({ documentText: baseJson, pagePath: "index.html", pageSourceAfter: inserted, range: at, record: accepted }));
+    // An update to such a record writes nothing either.
+    const ok = link(baseJson, "index.html", home, range(home, oldHtml)).text;
+    const update = planNativeSectionCopiesUpdate({ documentText: ok, sources: { "index.html": home }, record: accepted });
+    assert.ok("error" in update);
+  }
+});
+
+test("register needs the page in the file graph; a copy later wrapped in a component is refused", () => {
+  const home = page(oldHtml);
+  assert.ok("error" in registerInsertedNativeSection({ documentText: baseJson, files: [EDITOR_PAGE_BUILDER_PATH], pagePath: "index.html", pageSourceAfter: home, range: range(home, oldHtml), record: record(oldHtml) }));
+  const { text } = link(baseJson, "index.html", home, range(home, oldHtml));
+  for (const wrapper of ["site-card", "template", "svg"]) {
+    const wrapped = page(`<${wrapper}>${oldHtml}</${wrapper}>`);
+    assert.ok("error" in resolveNativeSectionLinks({ documentText: text, sources: { "index.html": wrapped } }), wrapper);
+  }
+});
+
+test("an update that would replace or contain a collection's element is refused before any write", () => {
+  const listed = `<section class="hero"><h2>Hello</h2><ul id="list" data-each="/work/" data-limit="3"><template><li></li></template></ul></section>`;
+  const home = page(listed);
+  const linked = link(baseJson, "index.html", home, range(home, listed), listed).text;
+  const json = JSON.parse(linked);
+  json.collections.work = {
+    pagePath: "index.html", target: { authoredId: "list", path: [1, 0, 0, 1], tag: "ul", openingTagFingerprint: `<ul id="list">` },
+    folders: ["/work/"], sort: "", filter: "", limit: 3, template: "<li></li>", fields: [], overrides: {},
+  };
+  const withCollection = JSON.stringify(json);
+  const plan = planNativeSectionCopiesUpdate({ documentText: withCollection, sources: { "index.html": home }, record: record(newHtml) });
+  assert.match((plan as { error: string }).error, /Collection work on index\.html is inside or around a copy/);
+  // The same page with the collection outside the copy updates normally.
+  const apart = page(`${oldHtml}<ul id="list" data-each="/work/" data-limit="3"><template><li></li></template></ul>`);
+  const apartLinked = JSON.parse(link(baseJson, "index.html", apart, range(apart, oldHtml)).text);
+  apartLinked.collections.work = { ...json.collections.work, target: { ...json.collections.work.target, path: [1, 0, 1] } };
+  const ok = planNativeSectionCopiesUpdate({ documentText: JSON.stringify(apartLinked), sources: { "index.html": apart }, record: record(newHtml) });
+  assert.ok(!("error" in ok), "error" in ok ? ok.error : "");
+  assert.ok(ok.operation);
+});
