@@ -111,10 +111,10 @@
 .card-add[hidden] {
   display: none;
 }
+/* A fade only: the popover does not move while it opens, so its folder list starts where it ends. */
 @keyframes card-add-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
 }
 .card-add__title {
@@ -141,27 +141,171 @@
   font-size: var(--type-small);
   font-weight: 600;
 }
+/* The title reads as text in the popover (src/ui/inline-field.css), its row the field's height. */
 .card-add__input {
   height: var(--size-control);
-  margin: 0;
-  border: 1px solid var(--control-line);
+  margin: 0 -8px;
+  border: 0;
   border-radius: var(--radius);
   padding: 0 8px;
-  background: var(--surface-input);
   color: inherit;
   font: inherit;
+  font-size: var(--type-title);
 }
-.card-add__input:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: -1px;
+.card-add__input::placeholder {
+  color: var(--muted);
 }
-.card-add__input[aria-invalid="true"] {
-  border-color: var(--danger);
+.card-add__url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
 }
-.card-add__url code {
+.card-add__slug {
   color: var(--text);
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
+}
+/* The URL's folder: plain text that is a button, showing what it opens on hover and focus. */
+.card-add__path {
+  min-height: 24px;
+  margin: 0 -4px 0 0;
+  border: 0;
+  border-radius: var(--radius-small, var(--radius));
+  padding: 0 4px;
+  background: transparent;
+  color: var(--link);
+  font-family: var(--font-mono);
+  font-size: inherit;
+  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.card-add__path:hover,
+.card-add__path[aria-expanded="true"] {
+  background: var(--hover);
+  text-decoration-color: currentColor;
+}
+.card-add__path::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 4px;
+  border: 4px solid transparent;
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+  vertical-align: middle;
+  opacity: 0.6;
+}
+.card-add__path:focus-visible,
+.card-add__folder:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+/*
+ * The folders: a compact list dropping from the URL's folder over the
+ * popover's lower part, so the popover keeps its size and the folder stays
+ * under the pointer. "New folder" stays in view at the list's foot.
+ */
+.card-add__folders {
+  position: fixed;
+  z-index: 32;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 2px;
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
+  font-size: var(--type-small);
+  animation: card-folders-in 120ms ease-out;
+}
+.card-add__folders[hidden] {
+  display: none;
+}
+@keyframes card-folders-in {
+  from {
+    opacity: 0;
+  }
+}
+.card-add__folder-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.card-add__folder {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--size-compact, 28px);
+  border-radius: var(--radius);
+  padding: 0 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.card-add__folder:hover {
+  background: var(--hover);
+}
+.card-add__folder[aria-selected="true"] {
+  font-weight: 600;
+}
+.card-add__folder[aria-selected="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--primary);
+}
+.card-add__folder--new {
+  justify-content: flex-start;
+  position: sticky;
+  bottom: 0;
+  background: var(--panel-surface);
+  color: var(--link);
+  font-family: inherit;
+}
+.card-add__folder--new > svg {
+  flex: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+}
+.card-add__folder--new > span {
+  flex: 0 1 auto;
+  text-align: start;
+}
+.card-add__folder--new:hover {
+  background: color-mix(in srgb, var(--hover) 100%, var(--panel-surface));
+}
+.card-add__folder-naming {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-mono);
+}
+.card-add__folder-naming[hidden],
+.card-add__path[hidden] {
+  display: none;
+}
+.card-add__folder-prefix {
+  color: var(--muted);
+}
+.card-add__folder-input {
+  width: 12ch;
+  min-width: 4ch;
+  height: 24px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0 2px;
+  color: var(--text);
+  font: inherit;
 }
 .card-add__message {
   margin: 0;
@@ -215,10 +359,12 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card-ghost,
-  .card-add {
+  .card-add,
+  .card-add__folders {
     animation: none;
   }
-  .card-ghost__add {
+  .card-ghost__add,
+  .card-add__path {
     transition: none;
   }
 }

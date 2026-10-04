@@ -13,13 +13,14 @@
 
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
-import type { GridDescription, ItemGridReport } from "../components/card-grid-controls";
+import type { CardPageRequest, GridDescription, ItemGridReport } from "../components/card-grid-controls";
 import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { readCollections } from "./collection-model";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, type PageBuilderCollection } from "./page-builder-document";
 import { gridAt, gridOfItem, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 
 interface RangeEdit {
@@ -55,7 +56,7 @@ export interface CardsDeps {
   /** Takes a draft made by `saveNewDraft` back. */
   dropNewDraft(path: string): void;
   /** Creates and edits files as one operation (src/main.ts `applyNativeOperation`); resolves to an error. */
-  operation(op: { creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string } }): Promise<string | undefined>;
+  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
   announce(text: string): void;
@@ -67,6 +68,106 @@ function applyEdits(source: string, edits: RangeEdit[]) {
   let text = source;
   for (const edit of [...edits].sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
   return text;
+}
+
+/**
+ * The folder URLs a page could be made in: every folder a page of the site
+ * is in, each folder above it, and the site's top.
+ */
+export function cardPageFolders(routes: Record<string, string>): string[] {
+  const out = new Set<string>(["/"]);
+  for (const route of Object.keys(routes)) {
+    const parts = route.split("/").filter(Boolean);
+    const depth = route.endsWith("/") ? parts.length : parts.length - 1;
+    for (let at = 1; at <= depth; at++) out.add(`/${parts.slice(0, at).join("/")}/`);
+  }
+  return [...out].sort();
+}
+
+/**
+ * A grid's default folder when its cards' pages are not all in one (a page
+ * from another folder joined it): the folder most of its cards' pages are
+ * in, else the folder of its last card's page; only when two cards at least
+ * link to pages of the site in folders below its top. None for a list of
+ * the site's top-level pages (a menu).
+ */
+export function mixedParent(routes: Record<string, string>, itemRoutes: (string | undefined)[]): string | undefined {
+  const parents = [...new Set(itemRoutes.filter((route): route is string => Boolean(route && routes[route] && route.endsWith("/"))))]
+    .map((route) => route.replace(/[^/]+\/$/, ""))
+    .filter((parent) => parent !== "/");
+  if (parents.length < 2) return undefined;
+  const count = (parent: string) => parents.filter((other) => other === parent).length;
+  return [...parents].reverse().reduce((best, parent) => (count(parent) > count(best) ? parent : best));
+}
+
+/** Whether a folder is one of a listing's source folders or inside one (`/work/` covers `/work/a/`, never `/works/`). */
+export const cardFolderCovered = (prefixes: string[] | undefined, parent: string) =>
+  !prefixes || prefixes.some((prefix) => prefix.endsWith("/") && (parent === prefix || parent.startsWith(prefix)));
+
+/** The folders to offer, the default first; for a generated listing only those it covers. */
+export function cardFolderChoices(folders: string[], parent: string | undefined, prefixes: string[] | undefined): string[] {
+  const out = folders.filter((folder) => cardFolderCovered(prefixes, folder));
+  // A source folder is offered only when a page could be made in it.
+  for (const prefix of prefixes ?? []) {
+    const normal = normalizeRoute(prefix);
+    if (normal.ok && normal.value === prefix && prefix.endsWith("/") && !out.includes(prefix)) out.push(prefix);
+  }
+  return parent ? [parent, ...out.filter((folder) => folder !== parent)] : out;
+}
+
+/**
+ * The source folders of the generated listing a grid (its first item at
+ * `first`) is in: from `.editor/page-builder.json` (`sidecar`, its text) or
+ * the listing's own `data-each`. None for a grid made by hand; a reason
+ * whenever that cannot be told for sure (settings unread, unreadable,
+ * unlocatable, or more than one listing).
+ */
+export function cardRecipeFolders(path: string, source: string, first: { start: number; end: number }, sidecar: string | undefined, sidecarExists: boolean): { folders?: string[]; error?: string } {
+  const holds = (element: { start: number; end: number }) => element.start <= first.start && first.end <= element.end;
+  const found: string[][] = [];
+  try {
+    for (const collection of readCollections(source)) {
+      if (holds(collection.element) && !holds(collection.template)) found.push(collection.spec.folders);
+    }
+  } catch { return { error: "This listing's settings could not be read; fix them in the Collections panel first." }; }
+  if (sidecar === undefined && sidecarExists) return { error: "Checking this page's collection settings; try again in a moment." };
+  if (sidecar !== undefined) {
+    let records: Record<string, PageBuilderCollection>;
+    try {
+      records = Object.fromEntries(Object.entries(readPageBuilderDocument(sidecar).collections).filter(([, record]) => record.pagePath === path));
+    } catch { return { error: `${EDITOR_PAGE_BUILDER_PATH} could not be read, so this listing's folders are unknown.` }; }
+    if (Object.keys(records).length) {
+      const located = locateCollections(source, records);
+      if ("error" in located) return { error: `This page's collections could not be found: ${located.error}` };
+      for (const [id, at] of Object.entries(located.collections)) if (holds(at.element)) found.push(records[id].folders);
+    }
+  }
+  if (found.length > 1) return { error: "This grid is in more than one listing; add its page in the Collections panel." };
+  return found.length ? { folders: found[0] } : {};
+}
+
+/** Where a new page titled `request.title` goes in `request.parent` (in a new folder there, with `newFolder`), or why it cannot. */
+export function planCardPage(input: { routes: Record<string, string>; exists(path: string): boolean; folders: string[]; recipe?: string[] }, request: CardPageRequest): Checked<{ route: string; file: string }> {
+  const title = request.title.trim();
+  const slug = slugify(title);
+  if (!title) return { ok: false, error: "Enter the page's title." };
+  if (!slug) return { ok: false, error: "The title gives no URL: add letters or digits." };
+  // Only a URL a page could have, never one that leaves the site's folders.
+  const normal = normalizeRoute(request.parent);
+  if (!normal.ok || normal.value !== request.parent || !request.parent.endsWith("/")) return { ok: false, error: `${request.parent} is not a folder a page can be in.` };
+  if (!input.folders.includes(request.parent) && !input.recipe?.includes(request.parent)) return { ok: false, error: `There is no folder ${request.parent} in the site.` };
+  const taken = { route: (route: string) => input.routes[route], exists: input.exists };
+  let parent = request.parent;
+  if (request.newFolder !== undefined) {
+    const name = request.newFolder.trim();
+    if (!name) return { ok: false, error: "Enter the new folder's name." };
+    const folder = nativeNewTarget(parent, name, taken);
+    if (!folder.ok) return { ok: false, error: folder.error.replace(/ in the URL,/, " in the folder's name,") };
+    parent = folder.value.route;
+  }
+  if (!cardFolderCovered(input.recipe, parent))
+    return { ok: false, error: `This collection only includes ${input.recipe!.join(", ")}; update its source folders first.` };
+  return nativeNewTarget(parent, slug, taken);
 }
 
 export function createCards(deps: CardsDeps) {
@@ -96,17 +197,25 @@ export function createCards(deps: CardsDeps) {
     return entry.grid ? { source, grid: entry.grid } : undefined;
   }
 
-  /** Where a new page titled `title` goes under a collection's URL, or why it cannot. */
-  function planPage(collection: string, title: string): Checked<{ route: string; file: string }> {
+  const siteFolders = () => cardPageFolders(deps.site()?.routes ?? {});
+  const pageParent = (grid: SourceGrid) => grid.collection ?? mixedParent(deps.site()?.routes ?? {}, grid.items.map((item) => item.route));
+
+  /** What a page grid offers its new page: its default folder, the folders to choose from, and why none, when it cannot. */
+  function pageOptions(path: string, source: string, grid: SourceGrid) {
+    const first = grid.items[0];
+    const recipe = first ? cardRecipeFolders(path, source, first.range, deps.source(EDITOR_PAGE_BUILDER_PATH), deps.exists(EDITOR_PAGE_BUILDER_PATH)) : {};
+    const generated = Boolean(recipe.folders) || automatic(source, grid);
+    const parent = pageParent(grid) ?? recipe.folders?.[0];
+    return { parent, folders: cardFolderChoices(siteFolders(), parent, recipe.folders), generated, recipe };
+  }
+
+  /** Where a new page goes for `request`, or why it cannot. */
+  function planPage(path: string, source: string, grid: SourceGrid, request: CardPageRequest): Checked<{ route: string; file: string }> {
     const site = deps.site();
     if (!site) return { ok: false, error: "Open a native site first." };
-    const slug = slugify(title);
-    if (!title.trim()) return { ok: false, error: "Enter the page's title." };
-    if (!slug) return { ok: false, error: "The title gives no URL: add letters or digits." };
-    // Only a URL a page could have, never one that leaves the site's folders.
-    const parent = normalizeRoute(collection);
-    if (!parent.ok || parent.value !== collection) return { ok: false, error: `${collection} is not a URL a page can have.` };
-    return nativeNewTarget(collection, slug, { route: (route) => site.routes[route], exists: deps.exists });
+    const options = pageOptions(path, source, grid);
+    if (options.recipe.error) return { ok: false, error: options.recipe.error };
+    return planCardPage({ routes: site.routes, exists: deps.exists, folders: siteFolders(), recipe: options.recipe.folders }, request);
   }
 
   /**
@@ -173,7 +282,10 @@ export function createCards(deps: CardsDeps) {
   function describe(report: ItemGridReport): GridDescription | undefined {
     const found = gridFor(report.path, report.parent);
     if (!found) return undefined;
-    return { noun: found.grid.noun, label: found.grid.label, collection: found.grid.collection };
+    const options = pageOptions(report.path, found.source, found.grid);
+    const collection = options.parent;
+    if (!collection) return { noun: found.grid.noun, label: found.grid.label };
+    return { noun: found.grid.noun, label: found.grid.label, collection, folders: options.folders, newFolders: true, blocked: options.recipe.error };
   }
 
   // A grid inside a `data-each` listing is baked from its pages: a new page
@@ -207,20 +319,28 @@ export function createCards(deps: CardsDeps) {
   // Creates a page under the grid's URL and its card after the last one, as
   // one undo step of the page with the grid: the card is an edit in its
   // editor, and the new page's draft goes and comes back with it.
-  async function addPage(path: string, parent: number[], title: string): Promise<string | undefined> {
+  async function addPage(path: string, parent: number[], request: CardPageRequest): Promise<string | undefined> {
+    // What the request was made against, kept before anything waits.
+    const before = deps.source(path);
+    const sidecar = deps.source(EDITOR_PAGE_BUILDER_PATH);
     if (!(await deps.ensureOpen(path))) return "The page could not be opened.";
+    if (deps.source(path) !== before || deps.source(EDITOR_PAGE_BUILDER_PATH) !== sidecar)
+      return "The page changed meanwhile; check the URL and try again.";
     const found = gridFor(path, parent);
     const route = routeOf(path);
     const editor = deps.editor();
     const preview = deps.preview();
-    if (!found?.grid.collection || !route || !editor || !preview) return "That grid does not list pages any more.";
+    if (!found || !route || !editor || !preview || !pageOptions(path, found.source, found.grid).parent) return "That grid does not list pages any more.";
     const { source, grid } = found;
-    const target = planPage(found.grid.collection, title);
+    const title = request.title.trim();
+    const target = planPage(path, source, grid, request);
     if (!target.ok) return target.error;
     const content = subpageDocument(source, grid, title, target.value.route);
-    // A baked listing: only the page is created; the bake adds its card in
-    // the same operation and Undo.
-    if (automatic(source, grid)) return deps.operation({
+    const options = pageOptions(path, source, grid);
+    // A generated listing: only the page is created; the host bakes its card
+    // in the same operation and Undo, against the sources seen here.
+    if (options.generated) return deps.operation({
+      expectedSources: new Map([[path, source], [EDITOR_PAGE_BUILDER_PATH, sidecar]]),
       creates: [{ path: target.value.file, content }],
       edits: new Map(),
       done: `Created the page ${title} at ${target.value.route}; ${grid.label} updates from its listing settings.`,
@@ -351,13 +471,13 @@ export function createCards(deps: CardsDeps) {
 
   return {
     describe,
-    plan(report: ItemGridReport, title: string): Checked<{ route: string }> {
-      const about = describe(report);
-      if (!about?.collection) return { ok: false, error: "That grid does not list pages." };
-      return planPage(about.collection, title);
+    plan(report: ItemGridReport, request: CardPageRequest): Checked<{ route: string }> {
+      const found = gridFor(report.path, report.parent);
+      if (!found || !pageOptions(report.path, found.source, found.grid).parent) return { ok: false, error: "That grid does not list pages." };
+      return planPage(report.path, found.source, found.grid, request);
     },
     addCard: (report: ItemGridReport) => addCard(report.path, report.parent),
-    addPage: (report: ItemGridReport, title: string) => addPage(report.path, report.parent, title),
+    addPage: (report: ItemGridReport, request: CardPageRequest) => addPage(report.path, report.parent, request),
     move,
     controls,
 

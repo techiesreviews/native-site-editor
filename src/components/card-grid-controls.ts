@@ -51,16 +51,29 @@ export interface GridDescription {
   label: string;
   /** The URL its items' pages are under (`/work/`), when it is a list of pages. */
   collection?: string;
+  /** The folders a new page can go in, the default first. */
+  folders?: string[];
+  /** Whether a new folder can be made for it. */
+  newFolders?: boolean;
+  /** Why no page can be made from here now (its listing's settings are unread or unclear). */
+  blocked?: string;
+}
+
+/** A new page for a grid: its title, the folder it goes in, and a new folder to make there first. */
+export interface CardPageRequest {
+  title: string;
+  parent: string;
+  newFolder?: string;
 }
 
 export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
-  /** The URL a new page titled `title` gets, or why it cannot be made. */
-  plan(grid: ItemGridReport, title: string): Checked<{ route: string }>;
+  /** The URL the new page gets, or why it cannot be made. */
+  plan(grid: ItemGridReport, request: CardPageRequest): Checked<{ route: string }>;
   /** Adds a card with placeholder text after the last one. */
   addCard(grid: ItemGridReport): void;
   /** Creates the page and its card; resolves to an error to show, or nothing. */
-  addPage(grid: ItemGridReport, title: string): Promise<string | undefined>;
+  addPage(grid: ItemGridReport, request: CardPageRequest): Promise<string | undefined>;
 }
 
 /** The least height of a ghost below a grid: its button, and a little more. */
@@ -96,6 +109,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   let leaveTimer = 0;
   let hoverGone = false;
   let lastHover: ItemGridReport | undefined;
+  // Places the open popover's folder list again, after the popover moves.
+  let menuPlacer: (() => void) | undefined;
+  // The open popover's folder list.
+  let folderMenu: HTMLElement | undefined;
 
   add.addEventListener("pointerenter", () => {
     pointerOnAdd = true;
@@ -195,14 +212,50 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const where = node("p", "card-add__where", `In “${about.label}”, linking to a new page under ${about.collection}.`);
     const field = node("label", "card-add__field");
     const fieldName = node("span", "card-add__label", "Page title");
-    const input = node("input", "card-add__input");
+    const input = node("input", "card-add__input inline-field");
     input.type = "text";
     input.autocomplete = "off";
     input.placeholder = "What is it called?";
     input.setAttribute("aria-describedby", "card-add-url card-add-message");
     field.append(fieldName, input);
-    const url = node("p", "card-add__url");
+    // The URL: its folder is a button opening the folders it can go in (the
+    // current first, then "New folder"), in place under it.
+    const url = node("div", "card-add__url");
     url.id = "card-add-url";
+    let parent = about.collection!;
+    let newFolder: string | undefined;
+    const pathButton = node("button", "card-add__path");
+    pathButton.type = "button";
+    pathButton.setAttribute("aria-haspopup", "listbox");
+    pathButton.setAttribute("aria-expanded", "false");
+    pathButton.setAttribute("aria-controls", "card-add-folders");
+    const slugText = node("code", "card-add__slug");
+    const urlLabel = node("span", "card-add__url-label", "URL ");
+    url.append(urlLabel, pathButton, slugText);
+    // A new folder is named in place of the URL's folder: `/work/` [name] `/`.
+    // The folders drop down from the URL over the popover's lower part (it
+    // keeps its size and place, so the folder stays under the pointer): a
+    // list, the current folder first and "New folder" last.
+    const menu = node("div", "card-add__folders");
+    menu.hidden = true;
+    const list = node("div", "card-add__folder-list");
+    list.id = "card-add-folders";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Folder for the new page");
+    const naming_row = node("div", "card-add__folder-naming");
+    naming_row.setAttribute("role", "group");
+    naming_row.setAttribute("aria-label", "New folder");
+    naming_row.hidden = true;
+    const folderPrefix = node("span", "card-add__folder-prefix");
+    const folderField = node("input", "card-add__folder-input inline-field");
+    folderField.type = "text";
+    folderField.autocomplete = "off";
+    folderField.placeholder = "folder-name";
+    folderField.setAttribute("aria-label", "New folder's name");
+    const folderSlash = node("span", "card-add__folder-prefix");
+    naming_row.append(folderPrefix, folderField, folderSlash);
+    menu.append(list);
+    pathButton.after(naming_row);
     const message = node("p", "card-add__message");
     message.id = "card-add-message";
     message.setAttribute("aria-live", "polite");
@@ -217,29 +270,218 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const actions = node("div", "card-add__actions");
     actions.append(only, create);
     popover.replaceChildren(heading, where, field, url, message, actions);
+    // Beside the popover in the pane, not in it: the popover's opening
+    // animation moves it, and that would carry a fixed list with it.
+    folderMenu?.remove();
+    folderMenu = menu;
+    pane.append(menu);
     let pending = false;
+    // While a new folder is being named, its name so far (not yet chosen), and whether anything was typed in it.
+    let naming: string | undefined;
+    let namingTyped = false;
+    const request = () => ({ title: input.value.trim(), parent, ...(naming?.trim() ? { newFolder: naming } : naming === undefined && newFolder !== undefined ? { newFolder } : {}) });
     const check = (showEmpty = false) => {
       const title = input.value.trim();
-      const planned = title ? handlers.plan(grid, title) : undefined;
-      url.replaceChildren(node("span", "card-add__url-label", "URL "), node("code", "", planned?.ok ? planned.value.route : `${about.collection}…`));
-      const error = planned && !planned.ok ? planned.error : !title && showEmpty ? "Enter the page's title." : "";
+      const name = naming !== undefined ? naming.trim() : newFolder;
+      const folder = `${parent}${name ? `${name}/` : ""}`;
+      pathButton.textContent = folder;
+      pathButton.setAttribute("aria-label", `Folder ${folder}, change`);
+      const blocked = handlers.describe(grid)?.blocked;
+      const planned = blocked ? { ok: false as const, error: blocked } : title ? handlers.plan(grid, naming !== undefined && !naming.trim() ? { title, parent, newFolder: "" } : request()) : undefined;
+      // An empty new folder's name is no error until something is typed in it.
+      const untouched = naming !== undefined && !naming.trim() && !namingTyped;
+      const usable = untouched && title && !blocked ? handlers.plan(grid, { title, parent }) : planned;
+      slugText.textContent = usable?.ok ? usable.value.route.slice(folder.length) || usable.value.route : "…";
+      const error = untouched ? (usable && !usable.ok ? usable.error : "") : planned && !planned.ok ? planned.error : !title && showEmpty ? "Enter the page's title." : "";
       message.textContent = error;
       message.hidden = !error;
-      input.setAttribute("aria-invalid", String(Boolean(error)));
-      create.disabled = !planned?.ok || pending;
-      return planned;
+      const folderError = Boolean(error) && naming !== undefined && namingTyped && !(usable && !usable.ok && untouched);
+      input.setAttribute("aria-invalid", String(Boolean(error) && !folderError));
+      folderField.setAttribute("aria-invalid", String(folderError));
+      create.disabled = !usable?.ok || pending;
+      return usable;
     };
+    const options = () => [...list.querySelectorAll<HTMLElement>("[role=option]")];
+    let closeTimer = 0;
+    const renderMenu = () => {
+      const folders = about.folders?.length ? about.folders : [about.collection!];
+      const items = folders.map((folder, index) => {
+        const option = node("div", "card-add__folder", folder);
+        option.id = `card-add-folder-${index}`;
+        option.setAttribute("role", "option");
+        option.tabIndex = -1;
+        option.setAttribute("aria-selected", String(folder === parent && newFolder === undefined && naming === undefined));
+        option.dataset.folder = folder;
+        return option;
+      });
+      if (about.newFolders) {
+        const add = node("div", "card-add__folder card-add__folder--new");
+        add.append(icon("plus", 12, "icon--before"), node("span", "", `New folder in ${parent}`));
+        add.setAttribute("role", "option");
+        add.tabIndex = -1;
+        add.setAttribute("aria-selected", String(newFolder !== undefined || naming !== undefined));
+        add.dataset.newFolder = "";
+        items.push(add);
+      }
+      list.replaceChildren(...items);
+    };
+    // Under the URL's folder (above it only when not even a row fits below),
+    // in the pane, never over the popover's own Add button.
+    const placeMenu = () => {
+      if (menu.hidden) return;
+      const anchor = pathButton.getBoundingClientRect();
+      const form = popover.getBoundingClientRect();
+      const paneRect = pane.getBoundingClientRect();
+      const button = add.getBoundingClientRect();
+      const left = form.left + 8;
+      const width = form.width - 16;
+      let limit = Math.min(paneRect.bottom, window.innerHeight) - 8;
+      if (!ghost.hidden && button.left < left + width && button.right > left && button.top >= anchor.bottom) limit = Math.min(limit, button.top - 6);
+      menu.style.left = `${left}px`;
+      menu.style.width = `${width}px`;
+      menu.style.maxHeight = "";
+      const wanted = menu.scrollHeight;
+      const below = limit - anchor.bottom - 4;
+      const above = anchor.top - Math.max(paneRect.top, 0) - 12;
+      // Below it, scrolling, while a row fits there: above it, it would cover the title being typed.
+      const up = below < 40 && above > below;
+      const room = Math.max(56, up ? above : below);
+      menu.style.maxHeight = `${room}px`;
+      menu.classList.toggle("is-above", up);
+      menu.style.top = `${up ? anchor.top - 4 - Math.min(wanted, room) : anchor.bottom + 4}px`;
+    };
+    menuPlacer = placeMenu;
+    const showMenu = (focusOption = false) => {
+      clearTimeout(closeTimer);
+      if (menu.hidden) {
+        renderMenu();
+        menu.hidden = false;
+        pathButton.setAttribute("aria-expanded", "true");
+        placeMenu();
+      }
+      if (focusOption) (options().find((option) => option.getAttribute("aria-selected") === "true") ?? options()[0])?.focus();
+    };
+    const closeList = (refocus = false) => {
+      clearTimeout(closeTimer);
+      peeking = false;
+      if (menu.hidden) return;
+      menu.hidden = true;
+      pathButton.setAttribute("aria-expanded", "false");
+      if (refocus) pathButton.focus();
+    };
+    const endNaming = () => {
+      naming = undefined;
+      naming_row.hidden = true;
+      // Empty while hidden, so the URL's text is only what shows.
+      folderPrefix.textContent = folderSlash.textContent = "";
+      pathButton.hidden = false;
+    };
+    const hideMenu = (refocus = false) => {
+      if (naming !== undefined) { endNaming(); check(); }
+      closeList(refocus);
+    };
+    const choose = (option: HTMLElement) => {
+      if (option.dataset.newFolder !== undefined) {
+        // The URL's folder becomes the new folder's name field, the URL following as it is typed.
+        closeList(false);
+        naming = newFolder ?? "";
+        namingTyped = false;
+        folderField.value = naming;
+        folderPrefix.textContent = parent;
+        folderSlash.textContent = "/";
+        pathButton.hidden = true;
+        naming_row.hidden = false;
+        check();
+        folderField.focus();
+        return;
+      }
+      parent = option.dataset.folder!;
+      newFolder = undefined;
+      hideMenu(true);
+      check();
+    };
+    const confirmFolder = (toTitle: boolean) => {
+      const name = (naming ?? "").trim();
+      endNaming();
+      newFolder = name || undefined;
+      check();
+      if (toTitle) input.focus();
+    };
+    // A click opens the list (or keeps it, when pointing opened it) and goes into it; a second click closes it.
+    let peeking = false;
+    pathButton.addEventListener("click", () => {
+      if (menu.hidden || peeking) { peeking = false; showMenu(true); } else hideMenu(true);
+    });
+    pathButton.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      showMenu(true);
+    });
+    // Hovering shows the folders, but never takes focus from what is being typed.
+    for (const target of [pathButton, menu]) {
+      target.addEventListener("pointerenter", (event) => {
+        if ((event as PointerEvent).pointerType !== "mouse") return;
+        if (pathButton.hidden) return;
+        if (menu.hidden) peeking = true;
+        showMenu(false);
+      });
+      target.addEventListener("pointerleave", (event) => {
+        if ((event as PointerEvent).pointerType !== "mouse") return;
+        clearTimeout(closeTimer);
+        closeTimer = window.setTimeout(() => { if (!menu.contains(document.activeElement)) closeList(false); }, 250);
+      });
+    }
+    list.addEventListener("click", (event) => {
+      const option = (event.target as HTMLElement).closest<HTMLElement>("[role=option]");
+      if (option) choose(option);
+    });
+    folderField.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); confirmFolder(true); }
+      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); endNaming(); check(); pathButton.focus(); }
+    });
+    // Leaving the name field (to Create, Tab onwards, anywhere) takes the name where it is.
+    folderField.addEventListener("blur", () => {
+      setTimeout(() => { if (open && naming !== undefined && document.activeElement !== folderField) confirmFolder(false); });
+    });
+    list.addEventListener("keydown", (event) => {
+      const items = options();
+      const at = items.indexOf(document.activeElement as HTMLElement);
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        (event.key === "Home" ? items[0] : items.at(-1))?.focus();
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        if (items[at]) choose(items[at]);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        hideMenu(true);
+      } else if (event.key === "Tab") closeList(false);
+    });
+    folderField.addEventListener("input", () => { naming = folderField.value; namingTyped = true; check(); });
+    // Focus leaving the list (not to its button) closes it.
+    menu.addEventListener("focusout", () => {
+      setTimeout(() => {
+        const now = document.activeElement;
+        if (menu.hidden || !open || (now && (menu.contains(now) || now === pathButton))) return;
+        if (now && now !== document.body) closeList(false);
+      });
+    });
     input.addEventListener("input", () => check());
     popover.onsubmit = async (event) => {
       event.preventDefault();
       if (pending) return;
+      if (naming !== undefined) confirmFolder(false);
       const planned = check(true);
       if (!planned?.ok) { input.focus(); return; }
       pending = true;
       create.disabled = true;
       let error: string | undefined;
       try {
-        error = await handlers.addPage(grid, input.value.trim());
+        error = await handlers.addPage(grid, request());
       } catch (thrown) {
         error = thrown instanceof Error ? thrown.message : "The page could not be created.";
       } finally {
@@ -293,12 +535,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (finalY === below && side === undefined) popover.style.maxHeight = `${Math.max(120, bottom - below)}px`;
     popover.style.top = `${finalY}px`;
     popover.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
+    menuPlacer?.();
     pane.dispatchEvent(new Event("card-controls-layout"));
   }
 
   function close(restoreFocus: boolean) {
     if (!open) return;
     open = undefined;
+    menuPlacer = undefined;
+    folderMenu?.remove();
+    folderMenu = undefined;
     trackGrid();
     popover.hidden = true;
     popover.replaceChildren();
@@ -308,15 +554,17 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (restoreFocus && !ghost.hidden) add.focus();
   }
 
+  // A short pane scrolls the popover: the list follows its folder.
+  popover.addEventListener("scroll", () => menuPlacer?.(), { passive: true });
   popover.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
+    if (event.key !== "Escape" || event.defaultPrevented) return;
     event.preventDefault();
     event.stopPropagation();
     close(true);
   });
   function onPointerDown(event: PointerEvent) {
     const target = event.target as Node;
-    if (!open || popover.contains(target) || add.contains(target)) return;
+    if (!open || popover.contains(target) || add.contains(target) || folderMenu?.contains(target)) return;
     close(false);
   }
   document.addEventListener("pointerdown", onPointerDown, true);
@@ -373,6 +621,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();
       popover.remove();
+      folderMenu?.remove();
       pane.dispatchEvent(new Event("card-controls-layout"));
     },
   };
