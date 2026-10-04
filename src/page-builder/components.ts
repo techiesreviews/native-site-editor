@@ -1219,11 +1219,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const revision = deps.revision();
     const hostProof = editor.captureHistoryHost(path);
     if (!hostProof) return;
-    const read = (expectedSource = initial.source, proof?: { isCurrent(): boolean }) => {
+    const read = (expectedSource = initial.source, proof?: { isCurrent(): boolean }, staleMessage = "The instance changed; reopen its field before editing.") => {
       const at = instanceAt(path, [...initial.node]);
       if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor || !editable(path)
         || at.tag !== initial.tag || at.templatePath !== initial.templatePath || at.template !== initial.template || at.source !== expectedSource) {
-        deps.announce("The instance changed; reopen its field before editing.");
+        deps.announce(staleMessage);
         return;
       }
       return at;
@@ -1342,7 +1342,7 @@ export function createComponentTools(deps: ComponentDeps) {
               if (closed || !files.length || !read(initial.source, proof)) return false;
               const uploaded = await deps.upload(files.slice(0, 1));
               if (closed || uploaded === undefined) return false;
-              const current = read(initial.source, proof);
+              const current = read(initial.source, proof, "The instance changed while the image uploaded; it was not replaced.");
               if (!current) return false;
               const problem = nativeElementUrlProblem(uploaded, ["http", "https"], false);
               if (problem) { deps.announce(problem); return false; }
