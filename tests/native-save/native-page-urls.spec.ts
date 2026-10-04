@@ -286,9 +286,28 @@ test("dragging a page onto another makes it a subpage; onto the line between row
   await expandRow(page, "Work");
   const fern = item(page, "Fern & Kettle").locator(".pages-row");
 
-  // Onto itself: nothing happens.
-  await fern.dragTo(fern);
+  // A zero-distance dragTo is a click. Cross the browser's drag threshold,
+  // then return to the same row to exercise an actual rejected self-drop.
+  await fern.evaluate(row => {
+    const events: string[] = [];
+    for (const type of ["dragstart", "dragend"]) row.addEventListener(type, () => {
+      events.push(type);
+      row.setAttribute("data-test-self-drag-events", events.join(" "));
+    }, { once: true });
+  });
+  const selfBox = (await fern.boundingBox())!;
+  const selfX = selfBox.x + selfBox.width / 2, selfY = selfBox.y + selfBox.height / 2;
+  await page.mouse.move(selfX, selfY);
+  await page.mouse.down();
+  await page.mouse.move(selfX + 30, selfY, { steps: 5 });
+  await page.mouse.move(selfX, selfY, { steps: 5 });
+  await page.mouse.up();
+  await expect(fern).toHaveAttribute("data-test-self-drag-events", "dragstart dragend");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(explorer(page)).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  for (const path of ["index.html", "work/fern-and-kettle/index.html"])
+    expect(await draft(page, path), path).toBeUndefined();
 
   // Onto Home: a page at the top level; the link to it follows.
   await fern.dragTo(item(page, "Home").locator(".pages-row"));
