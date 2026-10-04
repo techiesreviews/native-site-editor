@@ -36,7 +36,7 @@ test.beforeEach(async ({ page, baseURL }) => {
 async function editAndSave(page: Page, heading: string) {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#content .view-lines")).toContainText("A native browser preview", { timeout: 20_000 });
+  await expect.poll(() => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), indexPath)).toBe(indexSource);
   await page.evaluate(async (text) => navigator.clipboard.writeText(text), indexSource.replace("A native browser preview", heading));
   await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+A");
@@ -165,7 +165,7 @@ test("a repository with no workflows just shows Saved, and no View live site wit
 test("Download site zips the repository's files as edited, unsaved drafts included", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#content .view-lines")).toContainText("A native browser preview", { timeout: 20_000 });
+  await expect.poll(() => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), indexPath)).toBe(indexSource);
   const edited = indexSource.replace("A native browser preview", "Unsaved download heading");
   await page.evaluate(async (text) => navigator.clipboard.writeText(text), edited);
   await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());

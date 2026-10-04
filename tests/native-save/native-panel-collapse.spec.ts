@@ -118,13 +118,13 @@ test("legacy collapsed preferences fully hide code and Style and restore remembe
 });
 
 
-test("Minimize code command returns focused Monaco to the visible restore grip", async ({ page, baseURL }) => {
+test("Hide code command returns focused Monaco to the visible restore grip", async ({ page, baseURL }) => {
   await load(page, baseURL);
   await page.locator('#content [role="textbox"]').first().focus();
   expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".monaco-editor")))).toBe(true);
   await page.keyboard.press("ControlOrMeta+p");
   const palette = page.locator("dialog.command-palette");
-  await palette.getByRole("combobox").fill("> Minimize code");
+  await palette.getByRole("combobox").fill("> Hide code");
   await palette.getByRole("combobox").press("Enter");
   await expect(code(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(code(page)).toBeFocused();

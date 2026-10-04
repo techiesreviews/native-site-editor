@@ -127,6 +127,16 @@ test("hovering labels an element, selecting shows its ancestors, and crumbs, Esc
 test("the breadcrumb follows a selection into components within components", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await frame.getByText("Shared across cards").first().click();
+  // A template click selects its page instance until explicit Edit.
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(current(page)).toHaveText("project-card");
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await frame.getByText("Shared across cards").first().click();
+  await expect(current(page)).toHaveText("card-note");
+  await bar.getByRole("button", { name: "Edit Card note component", exact: true }).click();
+  await frame.getByText("Shared across cards").first().click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
   await expect(crumbs(page)).toHaveText(["body", "main.page", "section.cards", "project-card", "article.project-card", "card-note", "p.card-note"]);
   await expect(page.locator(".canvas-crumb--component")).toHaveText(["project-card", "card-note"]);
@@ -173,13 +183,20 @@ test("the spacing overlay shades margin and padding", async ({ page }) => {
   const toggle = page.getByRole("button", { name: "Show margin and padding" });
   const padding = frame.locator("[data-native-spacing=padding]:visible");
   await frame.locator("project-card").first().locator("article").click({ position: { x: 4, y: 4 } });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(current(page)).toHaveText("project-card");
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await frame.locator("project-card").first().locator("article").click({ position: { x: 4, y: 4 } });
+  await expect(current(page)).toHaveText("article.project-card");
+  expect(await frame.locator("project-card").first().locator("article").evaluate(el => { const css = getComputedStyle(el); return [css.paddingTop, css.paddingRight, css.paddingBottom, css.paddingLeft]; })).toEqual(["20px", "20px", "20px", "20px"]);
   await expect(padding).toHaveCount(0);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await page.mouse.move(10, 500);
   // The card's 20px padding on all four sides, numbered.
   await expect(padding).toHaveCount(4);
-  await expect(padding.first()).toHaveText("20");
+  await expect(padding).toHaveText(["20", "20", "20", "20"]);
   await toggle.click();
   await expect(padding).toHaveCount(0);
 });

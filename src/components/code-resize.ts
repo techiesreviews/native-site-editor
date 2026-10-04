@@ -92,19 +92,27 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     },
   });
   handle.addEventListener("keydown", (event) => {
+    // Collapse state remains controllable even when a stacked layout has no code space.
+    if (isToggleKey(event)) {
+      event.preventDefault();
+      toggle();
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      collapsed = true;
+      apply();
+      save();
+      return;
+    }
     const { minimum, maximum } = bounds();
     if (main.clientHeight <= 0) return;
     const step = event.shiftKey ? 40 : 10;
     let px = collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight));
     if (event.key === "ArrowUp") px = collapsed ? minimum : Math.min(maximum, px + step);
     else if (event.key === "ArrowDown") px = px - step >= minimum ? px - step : 0;
-    else if (event.key === "Home") px = 0;
     else if (event.key === "End") px = maximum;
-    else if (isToggleKey(event)) {
-      event.preventDefault();
-      toggle();
-      return;
-    } else return;
+    else return;
     event.preventDefault();
     collapsed = px <= 0;
     if (!collapsed) height = px / main.clientHeight;

@@ -252,13 +252,13 @@ function actionCommands(deps: EditorPaletteDeps): Command[] {
       shortcut: mac ? [["Mod", "Shift", "Z"]] : [["Mod", "Shift", "Z"], ["Ctrl", "Y"]], when: deps.editing, run: () => deps.history("redo"),
     },
     {
-      id: "editor.toggle-code", title: "Minimize code", group: "Actions", icon: "split",
+      id: "editor.toggle-code", title: "Hide code", group: "Actions", icon: "split",
       keywords: ["toggle", "code pane", "source", "minimize", "preview"],
       when: () => !deps.codeHidden() && Boolean(document.querySelector(".code-resize")),
       run: deps.toggleCode,
     },
     {
-      id: "editor.show-code", title: "Restore code", group: "Actions", icon: "code",
+      id: "editor.show-code", title: "Show code", group: "Actions", icon: "code",
       keywords: ["toggle", "code pane", "source", "restore", "html"],
       when: () => deps.codeHidden(),
       run: deps.toggleCode,
