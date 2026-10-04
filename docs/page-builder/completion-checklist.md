@@ -83,3 +83,5 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 - [ ] Replace Structure slot visibility checkboxes with open-eye / closed-eye icon buttons. Preserve show/hide source behavior, inline actions, keyboard access, accessible names and Undo. Other settings checkboxes stay unchanged.
 
 - [ ] Fit the edit bar controls panel to its actual content width. Keep the label above it; prevent transparent label space blocking page clicks and long labels wrapping over controls. Lex confirms the empty strip in child-light.png must go.
+
+- [ ] Make the component > element label one connected piece, visually joined to its controls, preserving above-controls placement and matching-purple hover Edit. H owns this with the content-width correction.
