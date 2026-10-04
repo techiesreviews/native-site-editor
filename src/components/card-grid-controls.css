@@ -24,6 +24,19 @@
   justify-items: start;
   padding-left: 2px;
 }
+.card-ghost.is-strip {
+  /* Too little room below the grid for a card: a line where the next one
+     goes, with its button, ending where the page's next content starts. */
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.card-ghost.is-strip::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1.5px dashed color-mix(in oklch, var(--primary) 55%, transparent);
+}
 .card-ghost.is-below {
   align-items: start;
   padding-top: 20px;

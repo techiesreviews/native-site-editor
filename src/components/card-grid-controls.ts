@@ -34,7 +34,7 @@ export interface ItemGridReport {
   /** Whether the items run in a row (left to right) rather than down a column, and whether one more fits beside the last. */
   row: boolean;
   beside: boolean;
-  /** Where one more item would go, in frame-viewport pixels. */
+  /** Where one more item would go, in frame-viewport pixels; below the grid, it stops where the page's next content starts. */
   ghost: FrameBox;
 }
 
@@ -62,6 +62,9 @@ export interface CardGridHandlers {
   /** Creates the page and its card; resolves to an error to show, or nothing. */
   addPage(grid: ItemGridReport, title: string): Promise<string | undefined>;
 }
+
+/** The least height of a ghost below a grid: its button, and a little more. */
+const STRIP = 32;
 
 const gridKey = (grid: ItemGridReport) => `${grid.path}|${grid.parent.join(".")}`;
 const sameReport = (a: ItemGridReport | null | undefined, b: ItemGridReport | null | undefined) =>
@@ -130,6 +133,11 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     // Down a column (a list), the button starts the line, as a list's next item would, and keeps clear of the section plus.
     const column = !grid.row;
     const box = { ...grid.ghost, height: column ? Math.max(grid.ghost.height, 32) : grid.ghost.height };
+    // Below a row of cards with no room for one before the page's next
+    // content, the runtime reports a strip ending at that content: drawn as
+    // a line with its button, not a card-sized box.
+    const strip = grid.row && !grid.beside && box.height <= STRIP;
+    ghost.classList.toggle("is-strip", strip);
     ghost.hidden = box.top > frameRect.height || box.top + box.height < 0;
     Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
     ghost.classList.toggle("is-column", column);
@@ -138,9 +146,9 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const where = about.label ? ` to ${about.label}` : "";
     add.setAttribute("aria-label", about.collection ? `Add ${aOr(name)} with its own page${where}` : `Add ${aOr(name)}${where}`);
     add.title = about.collection ? `New page and ${name}${where}` : `Add ${aOr(name)}${where}, a copy with placeholder text`;
-    ghost.classList.toggle("is-compact", box.width < 120 || (!column && box.height < 40));
+    ghost.classList.toggle("is-compact", box.width < 120 || (!column && !strip && box.height < 40));
     // Below the last item, the button sits near the top, a short way from the items.
-    ghost.classList.toggle("is-below", !grid.beside && box.height > 96);
+    ghost.classList.toggle("is-below", !grid.beside && !strip && box.height > 96);
     if (open) placePopover();
   }
   const resize = new ResizeObserver(() => layout());
@@ -267,8 +275,23 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const before = anchor.left - paneRect.left - width - 12;
     const side = right + width <= left + frameRect.width - 12 ? right : before >= left + 12 ? before : undefined;
     const x = side ?? anchor.left - paneRect.left + anchor.width / 2 - width / 2;
-    const placedY = side === undefined ? y : Math.min(anchor.top - paneRect.top, bottom - height);
-    popover.style.top = `${Math.max(top + 12, placedY)}px`;
+    // For a ghost below the grid the popover grows up over the grid it adds
+    // to, so the page's content after the grid stays clear and clickable:
+    // beside the button it ends level with the button's bottom, else it ends
+    // 8px above the button. When that does not fit under the pane's top (a
+    // grid near the top, a short pane), it goes below the button as for any
+    // other grid, never over the button itself; there, the next content is
+    // covered while it is open.
+    const up = side === undefined ? anchor.top - paneRect.top - 8 - height : anchor.bottom - paneRect.top - height;
+    const upward = open && !open.grid.beside && up >= top + 12;
+    const placedY = upward ? up
+      : side === undefined ? (y === above ? above : below)
+      : Math.min(anchor.top - paneRect.top, bottom - height);
+    // Kept within the pane, except that below the button it keeps off the
+    // button (a short pane scrolls the popover, which caps its height).
+    const finalY = side === undefined && !upward && placedY === below ? below : Math.max(top + 12, placedY);
+    if (finalY === below && side === undefined) popover.style.maxHeight = `${Math.max(120, bottom - below)}px`;
+    popover.style.top = `${finalY}px`;
     popover.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
     pane.dispatchEvent(new Event("card-controls-layout"));
   }

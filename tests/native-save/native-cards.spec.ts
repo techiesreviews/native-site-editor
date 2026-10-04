@@ -428,3 +428,273 @@ test('collision placement uses real screen rectangles under a scaled preview pan
   await plus.click();await expect(page.locator('#scaled-collision')).toHaveAttribute('data-open','true');
   await page.evaluate(()=>{(window as any).scaledControls.destroy();document.querySelector('#scaled-collision')!.remove();});
 });
+
+const box = (locator: ReturnType<Page["locator"]>) => locator.boundingBox().then((b) => b!);
+const apart = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+
+test("below a grid the ghost stops where the next content starts; the page is not moved or changed", async ({ page, baseURL }) => {
+  // Two columns, both full, and the next section flush under the grid: a
+  // whole card's ghost would cover it. The ghost becomes a strip ending at the
+  // section's top; the page's own layout and DOM stay as authored.
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source
+    .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr))"')
+    .replace('id="services"', 'id="services" style="margin-top:0"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  // The page's DOM, less the editor's own contenteditable on the heading being edited.
+  const main = () => frame(page).locator("#main").evaluate((el) => {
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("[contenteditable]").forEach((edited) => edited.removeAttribute("contenteditable"));
+    return copy.outerHTML;
+  });
+  const services = frame(page).locator("#services");
+  const offset = () => services.evaluate((el) =>
+    el.getBoundingClientRect().top - el.ownerDocument.querySelector("#work .cards")!.getBoundingClientRect().bottom);
+  const domBefore = await main();
+  const offsetBefore = await offset();
+
+  await frame(page).locator("card-project").nth(1).locator("h3[slot=title]").click();
+  await expect(addCard(page)).toBeVisible();
+  await expect(page.locator(".card-ghost")).toHaveClass(/is-strip/);
+  const ghost = await box(page.locator(".card-ghost"));
+  expect(ghost.y + ghost.height).toBeLessThanOrEqual((await box(services)).y + 0.5);
+  expect(apart(await box(addCard(page)), await box(services.locator("h2")))).toBe(true);
+  // The section plus before the next section and the Add button never overlap.
+  const sectionPlus = page.getByRole("button", { name: /Add a section before “What we do/ });
+  await frame(page).locator("#services h2").hover();
+  await expect(sectionPlus).toBeVisible();
+  expect(apart(await box(sectionPlus), await box(addCard(page)))).toBe(true);
+  // Nothing in the page moved or changed: same DOM, same gap, same source.
+  expect(await main()).toBe(domBefore);
+  expect(await offset()).toBe(offsetBefore);
+  expect(await homeDraft(page)).toBe(fixture);
+
+  // The popover opens from the strip; its title takes typing; clicking the
+  // next section closes it and selects that section's heading.
+  await addCard(page).click();
+  await expect(popover(page)).toBeVisible();
+  const title = popover(page).getByRole("textbox", { name: "Page title" });
+  await expect(title).toBeFocused();
+  await title.fill("Draft");
+  await expect(title).toHaveValue("Draft");
+  // It opens up over the grid, clear of the next section.
+  expect(apart(await box(popover(page)), await box(services.locator("h2")))).toBe(true);
+  expect((await box(popover(page))).y + (await box(popover(page))).height).toBeLessThanOrEqual((await box(services)).y + 0.5);
+  await frame(page).locator("#services h2").click();
+  await expect(popover(page)).toBeHidden();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  await expect(page.getByRole("treeitem", { name: "Heading What we do", exact: true })).toHaveAttribute("aria-selected", "true");
+  expect(await main()).toBe(domBefore);
+  expect(await homeDraft(page)).toBe(fixture);
+
+  // Card only adds exactly one card; Undo gives the source back byte for byte.
+  await frame(page).locator("card-project").nth(1).locator("h3[slot=title]").click();
+  await addCard(page).click();
+  await popover(page).getByRole("button", { name: "Card only", exact: true }).click();
+  await expect(frame(page).locator("card-project")).toHaveCount(3);
+  expect((await homeDraft(page)).match(/<card-project>/g)).toHaveLength(3);
+  await page.locator(".code-editor__undo").click();
+  await expect(frame(page).locator("card-project")).toHaveCount(2);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+});
+
+test("with room below the grid the ghost fills it; a list's ghost stops at the section after it", async ({ page, baseURL }) => {
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source
+    .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr))"')
+    .replace('id="services"', 'id="services" style="margin-top:80px"')
+    .replace("    </section>\n  </main>", '    </section>\n    <section class="flow" id="after" style="margin-top:0"><h2>After</h2></section>\n  </main>')
+    // A CSS grid section with a side column: an aside beside the cards, lower
+    // than them, shares none of the ghost's columns and does not cut it.
+    .replace('class="flow" id="work"', 'class="flow" id="work" style="display:grid;grid-template-columns:1fr 160px;column-gap:24px"')
+    .replace("<h2>Recent work</h2>", '<h2 style="grid-column:1/-1">Recent work</h2>')
+    .replace("      </div>\n    </section>\n    <section class=\"flow\" id=\"services\"", '      </div>\n      <aside id="side" style="align-self:end;margin-bottom:-200px">Side note</aside>\n    </section>\n    <section class="flow" id="services"');
+  expect(fixture).toContain('id="after"');
+  expect(fixture).toContain('id="side"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  await frame(page).locator("card-project").first().locator("h3[slot=title]").click();
+  await frame(page).locator("#work .cards").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().bottom - 120));
+  await expect(addCard(page)).toBeVisible();
+  await expect(page.locator(".card-ghost")).not.toHaveClass(/is-strip/);
+  const ghost = await box(page.locator(".card-ghost"));
+  const services = await box(frame(page).locator("#services"));
+  const side = await box(frame(page).locator("#side"));
+  expect(side.y).toBeGreaterThan(ghost.y);
+  expect(side.x).toBeGreaterThanOrEqual(ghost.x + ghost.width);
+  expect(ghost.y + ghost.height).toBeLessThanOrEqual(services.y + 0.5);
+  expect(ghost.y + ghost.height).toBeGreaterThan(services.y - 2);
+  // A column list: its ghost stays above the section that follows.
+  await frame(page).locator("ul.services li").nth(1).hover();
+  await expect(addCard(page)).toHaveAccessibleName("Add an item to What we do");
+  const listGhost = await box(page.locator(".card-ghost"));
+  const after = await box(frame(page).locator("#after"));
+  expect(listGhost.y + listGhost.height).toBeLessThanOrEqual(after.y + 0.5);
+  expect(apart(await box(addCard(page)), await box(frame(page).locator("#after h2")))).toBe(true);
+  expect(await homeDraft(page)).toBe(fixture);
+});
+
+test("near the pane's top or in a narrow pane the popover never covers its button, and its title takes typing", async ({ page, baseURL }) => {
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source
+    .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr))"')
+    .replace('id="services"', 'id="services" style="margin-top:0"')
+    .replace('class="page"', 'class="page" style="padding-bottom:1200px"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  const card = frame(page).locator("card-project").nth(1).locator("h3[slot=title]");
+  for (const size of [{ width: 1440, height: 1000 }]) {
+    await page.setViewportSize(size);
+    await card.click();
+    // The grid's bottom just under the pane's top: no room above the button.
+    await frame(page).locator("html").evaluate(() => {
+      const cards = document.querySelector("#work .cards")!;
+      window.scrollBy(0, cards.getBoundingClientRect().bottom - 40);
+    });
+    await expect(addCard(page)).toBeVisible();
+    await addCard(page).click();
+    await expect(popover(page)).toBeVisible();
+    const title = popover(page).getByRole("textbox", { name: "Page title" });
+    await expect(title).toBeFocused();
+    await expect.poll(async () => apart(await box(popover(page)), await box(addCard(page)))).toBe(true);
+    // Scrolling back up step by step moves the grid down through the band
+    // where the popover just fits, or just does not fit, above the button.
+    for (let step = 0; step < 50; step++) {
+      await frame(page).locator("html").evaluate(() => window.scrollBy(0, -6));
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      if (!(await addCard(page).isVisible())) break;
+      const pop = await box(popover(page));
+      const button = await box(addCard(page));
+      expect(apart(pop, button), `step ${step}: popover ${JSON.stringify(pop)} over button ${JSON.stringify(button)}`).toBe(true);
+    }
+    await expect(title).toBeFocused();
+    await title.fill("Near the top");
+    await expect(title).toHaveValue("Near the top");
+    await expect(popover(page).getByRole("button", { name: "Card only", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover(page)).toBeHidden();
+    await frame(page).locator("html").evaluate(() => window.scrollTo(0, 0));
+  }
+  expect(await homeDraft(page)).toBe(fixture);
+});
+
+test("a grid slotted into a component stops its ghost at the template's content after the slot", async ({ page, baseURL }) => {
+  // card-project's template has its default <slot> before the paragraph that
+  // holds its link: a list slotted there is followed by the link on screen,
+  // not in the page's DOM.
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source.replace(
+    '<a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>\n        </card-project>',
+    '<a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>\n          <ul class="facts" style="margin:0"><li>Menu</li><li>Hours</li></ul>\n        </card-project>');
+  expect(fixture).toContain('class="facts"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  await frame(page).locator("ul.facts li").nth(1).hover();
+  await expect(addCard(page)).toHaveAccessibleName(/Add an item/);
+  const ghost = await box(page.locator(".card-ghost"));
+  const link = await box(frame(page).locator("card-project").first().locator("a[slot=link]"));
+  const last = await box(frame(page).locator("ul.facts li").last());
+  expect(link.y).toBeGreaterThan(last.y);
+  expect(ghost.y + ghost.height).toBeLessThanOrEqual(link.y + 0.5);
+  expect(apart(await box(addCard(page)), link)).toBe(true);
+  expect(await homeDraft(page)).toBe(fixture);
+});
+
+test("in a pane too narrow for the popover beside its button, it opens above it when it fits and below it when not, never over it", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const results = await page.evaluate(async () => {
+    const { createCardGridControls } = await import("/src/components/card-grid-controls.ts");
+    const pane = document.createElement("div");
+    Object.assign(pane.style, { position: "fixed", left: "20px", top: "60px", width: "360px", height: "520px", zIndex: "100", background: "white" });
+    const frame = document.createElement("div");
+    Object.assign(frame.style, { width: "360px", height: "520px" });
+    pane.append(frame);
+    document.body.append(pane);
+    const controls = createCardGridControls(pane, frame, {
+      describe: () => ({ noun: "card", label: "Work", collection: "/work/" }),
+      plan: () => ({ ok: true, value: { route: "/work/x/" } }),
+      addCard: () => {},
+      addPage: async () => undefined,
+    });
+    const grid = (top: number) => ({ path: "index.html", parent: [1, 1], index: 1, position: 1, count: 2, row: true, beside: false,
+      ghost: { top, left: 20, width: 320, height: 32 } });
+    const frameFor = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const out: { top: number; overlap: boolean; above: boolean; focused: boolean }[] = [];
+    controls.update({ hover: null, selected: grid(300) });
+    (pane.querySelector(".card-ghost__add") as HTMLElement).click();
+    await frameFor();
+    for (let top = 0; top <= 480; top += 4) {
+      controls.update({ hover: null, selected: grid(top) });
+      await frameFor();
+      const button = pane.querySelector(".card-ghost__add")!.getBoundingClientRect();
+      const form = pane.querySelector(".card-add")!.getBoundingClientRect();
+      const overlap = !(form.right <= button.left || button.right <= form.left || form.bottom <= button.top + 0.5 || button.bottom <= form.top + 0.5);
+      out.push({ top, overlap, above: form.bottom <= button.top + 0.5, focused: document.activeElement?.classList.contains("card-add__input") ?? false });
+    }
+    controls.destroy();
+    pane.remove();
+    return out;
+  });
+  expect(results.filter((r) => r.overlap)).toEqual([]);
+  // Near the top it opens below; with room above it opens above.
+  expect(results[0].above).toBe(false);
+  expect(results[results.length - 1].above).toBe(true);
+  expect(results.every((r) => r.focused)).toBe(true);
+});
+
+test("a slotted list's ghost stops at the next element in its own slot", async ({ page, baseURL }) => {
+  // The list and a paragraph after it both go to card-project's default slot.
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source.replace(
+    '<a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>\n        </card-project>',
+    '<a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>\n          <ul class="facts" style="margin:0"><li>Menu</li><li>Hours</li></ul>\n          <p class="after-facts" style="margin:0">Open daily</p>\n        </card-project>');
+  expect(fixture).toContain('class="after-facts"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  const main = () => frame(page).locator("#main").evaluate((el) => el.outerHTML);
+  const domBefore = await main();
+  await frame(page).locator("ul.facts li").nth(1).hover();
+  await expect(addCard(page)).toHaveAccessibleName(/Add an item/);
+  const ghost = await box(page.locator(".card-ghost"));
+  const after = await box(frame(page).locator("p.after-facts"));
+  const last = await box(frame(page).locator("ul.facts li").last());
+  expect(after.y).toBeGreaterThanOrEqual(last.y + last.height - 1);
+  expect(ghost.y + ghost.height).toBeLessThanOrEqual(after.y);
+  expect(apart(await box(addCard(page)), after)).toBe(true);
+  expect(await main()).toBe(domBefore);
+  expect(await homeDraft(page)).toBe(fixture);
+});
+
+test("a grid's own trailing link after its cards stops the ghost, which never covers it", async ({ page, baseURL }) => {
+  const source = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const fixture = source
+    .replace('class="cards"', 'class="cards" style="grid-template-columns:repeat(2,minmax(0,1fr))"')
+    .replace("        </card-project>\n      </div>", '        </card-project>\n        <a class="more" href="/work/" style="grid-column:1/-1">View all work</a>\n      </div>')
+    .replace('id="services"', 'id="services" style="margin-top:120px"');
+  expect(fixture).toContain('class="more"');
+  await open(page, baseURL);
+  await pasteInto(page, fixture);
+  await expect.poll(() => homeDraft(page)).toBe(fixture);
+  const main = () => frame(page).locator("#main").evaluate((el) => {
+    const copy = el.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("[contenteditable]").forEach((edited) => edited.removeAttribute("contenteditable"));
+    return copy.outerHTML;
+  });
+  const domBefore = await main();
+  await frame(page).locator("card-project").nth(1).locator("h3[slot=title]").click();
+  await frame(page).locator("#work .cards").evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().bottom - 300));
+  await expect(addCard(page)).toBeVisible();
+  const ghost = await box(page.locator(".card-ghost"));
+  const more = await box(frame(page).locator("a.more"));
+  expect(ghost.y + ghost.height).toBeLessThanOrEqual(more.y);
+  expect(apart(await box(addCard(page)), more)).toBe(true);
+  expect(await main()).toBe(domBefore);
+  expect(await homeDraft(page)).toBe(fixture);
+});

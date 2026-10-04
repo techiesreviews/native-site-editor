@@ -847,6 +847,22 @@
       ghost = { left: last.left, top: last.bottom + Math.max(rowGap, 8), width: last.width, height: Math.min(last.height, 120) };
     }
     var round = function (n) { return Math.round(n); };
+    // Below the grid the ghost stops where the page's next content starts,
+    // so it never covers it (the page itself never moves): it fills the room
+    // there is, or, with less than a button's height, is a strip of that
+    // height ending at the next content, over the bottom of the last row.
+    // From the last item: the grid's own trailing children (a "View all"
+    // link) count before what follows the grid.
+    var next = beside ? null : nextContentTop(found.items[found.items.length - 1], last.bottom, ghost.left, ghost.left + ghost.width);
+    if (next !== null && ghost.top + ghost.height > next) {
+      // In whole pixels, ending at or above the next content; a box only
+      // when taller than the strip, so a 32px ghost below is always a strip.
+      var nextTop = Math.floor(next);
+      var top = Math.round(ghost.top);
+      ghost = nextTop - top > GHOST_STRIP
+        ? { left: ghost.left, top: top, width: ghost.width, height: nextTop - top }
+        : { left: ghost.left, top: nextTop - GHOST_STRIP, width: ghost.width, height: GHOST_STRIP };
+    }
     return {
       path: String(state.pagePaths[state.route] || ""),
       parent: parentPath,
@@ -858,6 +874,43 @@
       ghost: { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) }
     };
   }
+  // Where the page's next content below a grid starts: the highest top,
+  // at or below `minTop`, of the rendered elements after `el` that share
+  // some of the ghost's columns (`left`..`right`). It looks at `el`'s later
+  // siblings, then its ancestors' later siblings; for a slotted element both
+  // its own later siblings (in the same or other slots) and those after its
+  // slot in the component's template, then after its host. A `display: contents` element counts by its children; fixed and
+  // sticky elements, which float over the page, do not count. Frame-viewport
+  // pixels; null when nothing follows.
+  function nextContentTop(el, minTop, left, right) {
+    var best = null;
+    function consider(node, depth) {
+      if (injectedStyle(node) || depth > 6) return;
+      var style = getComputedStyle(node);
+      if (style.display === "contents") {
+        for (var child = node.firstElementChild; child; child = child.nextElementSibling) consider(child, depth + 1);
+        return;
+      }
+      if (style.display === "none" || style.position === "fixed" || style.position === "sticky") return;
+      var rect = node.getBoundingClientRect();
+      if (rect.height <= 0 || rect.top < minTop - 1 || rect.right <= left || rect.left >= right) return;
+      if (best === null || rect.top < best) best = rect.top;
+    }
+    var current = el;
+    while (current && current !== pageEl) {
+      for (var own = current.nextElementSibling; own; own = own.nextElementSibling) consider(own, 0);
+      var from = current.assignedSlot || current;
+      if (from !== current) for (var sib = from.nextElementSibling; sib; sib = sib.nextElementSibling) consider(sib, 0);
+      var parentEl = from.parentElement;
+      if (!parentEl) {
+        var root = from.getRootNode && from.getRootNode();
+        parentEl = root instanceof ShadowRoot ? root.host : null;
+      }
+      current = parentEl;
+    }
+    return best;
+  }
+  var GHOST_STRIP = 32;
   var trackedGrid = null;
   var recentGrid = null;
   var gridFrame = 0;
