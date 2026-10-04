@@ -11,7 +11,7 @@ const actualOnly = new Set([
   "native-social-preview.spec.ts", "native-fields-migration.spec.ts",
   "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",
 ]);
-const nativeOnly = new Set(["native-static-starter-create.spec.ts"]);
+const nativeOnly = new Set(["native-static-starter-create.spec.ts", "native-master-host.spec.ts"]);
 const args = process.argv.slice(2);
 const group = args.shift();
 try {
@@ -38,7 +38,7 @@ try {
     } else forwarded.push(arg);
   }
   // Creation starts from the demo account, independent of the archived preview fixture.
-  const creationOnly = group === "native-static" && files.every(name => nativeOnly.has(name));
+  const creationOnly = group === "native-static" && files.length === 1 && files[0] === "native-static-starter-create.spec.ts";
   env.ASE_NATIVE_SAVE_FIXTURE ??= group === "actual" ? "fixtures/actual-starter" : group === "native-static" && !creationOnly ? ".scratch/native-static-preview" : "fixtures/native-starter";
   if (group === "native-static") {
     if (!creationOnly) env.STATIC_SECTIONS_FIXTURE ??= "native";

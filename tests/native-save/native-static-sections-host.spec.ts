@@ -1,3 +1,4 @@
+import { locateCollectionTarget } from "../../src/page-builder/page-builder-document";
 import { requireStaticFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -150,6 +151,7 @@ actual("a saved custom section previews and inserts its own HTML with the live s
   const live = (await file(page, baseURL, CSS)) + ".section-intro { color: rgb(200, 0, 0); }\n";
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: record } } }, null, 2) + "\n" } });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: CSS, content: live } });
+  const sidecarBefore = await file(page, baseURL, SIDECAR);
   await load(page, baseURL, "about/index.html");
   const before = await mounted(page, "about/index.html");
   await openAdd(page, "main h1");
@@ -164,7 +166,26 @@ actual("a saved custom section previews and inserts its own HTML with the live s
   const about = await mounted(page, "about/index.html");
   expect(about).toContain(record.html);
   expect(about.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
-  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual(["about/index.html"]);
+  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual([SIDECAR, "about/index.html"]);
+  const sidecarAfter = (await storedDraft(page, SIDECAR))!.content;
+  const documentBefore = JSON.parse(sidecarBefore), documentAfter = JSON.parse(sidecarAfter);
+  const link = documentAfter.pages["about/index.html"].sections["intro-1"];
+  expect(link).toMatchObject({ kind: "native-section", recordId: record.id, basis: record.html });
+  const located = locateCollectionTarget(about!, link.target);
+  expect(located).not.toHaveProperty("error");
+  if (!("error" in located)) expect(about!.slice(located.element.start, located.element.end)).toBe(record.html);
+  const withoutLink = structuredClone(documentAfter);
+  delete withoutLink.pages["about/index.html"];
+  expect(withoutLink).toEqual(documentBefore);
+  expect(await file(page, baseURL, CSS)).toBe(live);
+  expect(await storedDraft(page, CSS)).toBeUndefined();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page, "about/index.html")).toBe(before);
+  expect(await file(page, baseURL, SIDECAR)).toBe(sidecarBefore);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "about/index.html"))?.content).toBe(about);
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(sidecarAfter);
 });
 
 actual("invalid editor JSON hides plain sections instead of falling back to defaults", async ({ page, baseURL }) => {
