@@ -231,11 +231,6 @@
   .page-structure__row .row-action-host > .row-action-overlay::after,
   .page-structure__row.row-action-host > .row-action-overlay::after { transition: none; transform: none; }
 }
-/* A visibility checkbox keeps its small box; touch gets a 44px target around it. */
-.page-structure__hit { display: inline-grid; place-items: center; flex: none; cursor: pointer; }
-@media (hover: none), (pointer: coarse) {
-  .page-structure__hit { min-width: 44px; min-height: 44px; }
-}
 .page-structure__label.row-action-host { align-self: stretch; align-items: center; }
 /* Resting actions sit translated past the row's end; keep them from widening the tree. */
 .page-structure__row.row-action-host,
@@ -273,21 +268,18 @@
 }
 button.page-structure__slot-badge { cursor: pointer; }
 button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
-.page-structure__slot-toggle {
-  margin: 0;
-  width: 14px;
-  height: 14px;
-  accent-color: var(--component);
-  cursor: pointer;
-}
+/* Visibility is an eye toggle (aria-pressed), drawn like the other row actions.
+   A hidden slot's closed eye stays on its dim row; touch gets 44px. */
+.page-structure__slot-toggle { flex: none; }
+.page-structure__slot-toggle[aria-pressed="false"] { color: var(--muted); }
 @media (hover: none), (pointer: coarse) {
-  .page-structure__slot-toggle { width: 20px; height: 20px; }
+  .page-structure__slot-toggle { min-width: 44px; min-height: 44px; }
 }
 .page-structure__label { flex: 1 1 auto; }
 .page-structure__row--empty-slot { color: var(--muted); }
 .page-structure__row--empty-slot .page-structure__kind,
 .page-structure__row--empty-slot .page-structure__text { opacity: 0.6; font-style: italic; }
-.page-structure__row--slot-only > .page-structure__hit { margin-left: 4px; }
+.page-structure__row--slot-only > .page-structure__slot-toggle { margin-left: 4px; }
 .page-structure__row--empty-slot .page-structure__slot-badge { opacity: 0.7; }
 
 /* The inline editor: one disclosure under its row. */
@@ -339,13 +331,11 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--slot-host > .row-action-overlay { padding: 0 4px; }
 .page-structure__row--slot-host > .row-action-overlay::before,
 .page-structure__row--slot-host > .row-action-overlay::after { display: none; }
-.page-structure__row--slot-host > .page-structure__slot-actions > .page-structure__hit { width: 22px; height: 22px; }
 .page-structure__row--slot-host > .page-structure__slot-badge { transition: margin-right 140ms ease-out; }
 .page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: var(--slot-actions-width); }
 .page-structure__row--slot-host:focus-within > .page-structure__slot-badge { transition: none; }
 @media (hover: none), (pointer: coarse) {
   /* Actions already take their own room after the badge. */
-  .page-structure__row--slot-host > .page-structure__slot-actions > .page-structure__hit { width: auto; height: auto; }
   .page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: 0; }
   .page-structure__row--slot-host > .page-structure__slot-badge { transition: none; }
 }

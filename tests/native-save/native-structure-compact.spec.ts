@@ -46,7 +46,7 @@ test('every authored row stays a native treeitem in source order with no fields 
  await expect(page.locator('[role=treeitem][data-node="0.1.0"] .page-structure__slot-badge')).toHaveCount(0);
  await expect(page.locator('[role=treeitem][data-node="0.4"]')).toHaveAttribute('data-slot','unknown');
  await expect(page.locator('[role=treeitem][data-node="0.4"] .page-structure__slot-badge')).toHaveCount(0);
- const missing=page.locator('.page-structure__row--empty-slot');await expect(missing).toHaveCount(1);await expect(missing).not.toHaveAttribute('data-node');await expect(missing).toHaveAttribute('role','treeitem');await expect(missing.getByRole('checkbox',{name:'Show Optional',exact:true})).toBeVisible();
+ const missing=page.locator('.page-structure__row--empty-slot');await expect(missing).toHaveCount(1);await expect(missing).not.toHaveAttribute('data-node');await expect(missing).toHaveAttribute('role','treeitem');await expect(missing.getByRole('button',{name:'Show Optional',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Edit Title',exact:true})).toHaveCount(2);
  await page.locator('[role=treeitem][data-node="0.0"]').click();
  expect((await H(page)).selected.at(-1)).toEqual({path:'index.html',node:[0,0]});
@@ -88,8 +88,8 @@ test('the slot badge of a later assigned root selects the first actual root',asy
 });
 
 test('a missing optional slot restores from its dim row and focuses its new field',async({page})=>{
- await harness(page);const show=page.getByRole('checkbox',{name:'Show Optional',exact:true});await expect(show).not.toBeChecked();
- await show.check();
+ await harness(page);const show=page.getByRole('button',{name:'Show Optional',exact:true});await expect(show).toHaveAttribute('aria-pressed','false');
+ await show.click();
  const field=page.getByRole('textbox',{name:'Optional: Text',exact:true});await expect(field).toBeFocused();
  expect((await H(page)).source).toContain('slot="optional"');
  await expect(page.locator('.page-structure__row--empty-slot')).toHaveCount(0);
@@ -97,7 +97,7 @@ test('a missing optional slot restores from its dim row and focuses its new fiel
  const anchor=await page.locator('.page-structure__inline').getAttribute('data-edit-node');
  await expect(page.locator(`[role=treeitem][data-node="${anchor}"] .page-structure__slot-badge`)).toHaveText('Optional');
  await field.press('Escape');await expect(page.locator(`[role=treeitem][data-node="${anchor}"]`)).toBeFocused();
- const hide=page.getByRole('checkbox',{name:'Show Optional',exact:true});await hide.focus();await page.keyboard.press('Space');expect((await H(page)).source).not.toContain('slot="optional"');
+ const hide=page.getByRole('button',{name:'Show Optional',exact:true});await hide.focus();await page.keyboard.press('Space');expect((await H(page)).source).not.toContain('slot="optional"');
 });
 
 test('deep canvas selection reveals once without fields or focus theft, and a later render keeps a manual fold',async({page})=>{
@@ -170,7 +170,7 @@ test('280px Structure with an open editor stays within its sidebar',async({page}
  const rowBox=(await page.locator('[role=treeitem][data-node="0.3"]').boundingBox())!;expect(rowBox.width).toBeLessThanOrEqual(280);
 });
 
-const toggleBy=async(page:any,name:string)=>{const box=page.getByRole('checkbox',{name,exact:true});await box.focus();await page.keyboard.press('Space');};
+const toggleBy=async(page:any,name:string)=>{const box=page.getByRole('button',{name,exact:true});await box.focus();await page.keyboard.press('Space');};
 
 test('a text-only default fill is an editable slot row, not a missing slot',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot>Default</slot></article>';s.source='<project-card>Hello</project-card>';s.version++;s.update();});
@@ -191,12 +191,12 @@ test('an optional text-only fill hides, restores and shows again through its rea
  expect(model).toEqual({name:model.name,whenEmpty:'hidden',filled:true,nodes:0});
  await expect(page.locator('.page-structure__row--empty-slot')).toHaveCount(0);
  const row=page.locator('.page-structure__row--slot-only');await expect(row).toContainText('Hello');
- const toggle=row.locator('input.page-structure__slot-toggle');await expect(toggle).toHaveCount(1);await expect(toggle).toBeChecked();
+ const toggle=row.locator('button.page-structure__slot-toggle');await expect(toggle).toHaveCount(1);await expect(toggle).toHaveAttribute('aria-pressed','true');
  const label=await toggle.getAttribute('aria-label');
  await toggle.focus();await page.keyboard.press('Space');
  expect((await H(page)).source).toBe('<project-card></project-card>');
  const missing=page.locator('.page-structure__row--empty-slot');await expect(missing).toHaveCount(1);
- const show=missing.getByRole('checkbox',{name:label!,exact:true});await expect(show).toBeVisible();await expect(show).not.toBeChecked();
+ const show=missing.getByRole('button',{name:label!,exact:true});await expect(show).toBeVisible();await expect(show).toHaveAttribute('aria-pressed','false');
  await show.focus();await page.keyboard.press('Space');
  expect((await H(page)).source).toBe('<project-card>Content</project-card>');
  await expect(page.locator('.page-structure__inline')).toHaveCount(1);await expect(page.locator('.page-structure__inline input[type=text]')).toBeFocused();
@@ -232,7 +232,7 @@ test('a refused Show restores the closed state and no later render arms an edito
  await harness(page);const before=(await H(page)).source;
  await page.evaluate(()=>{(window as any).slotHarness.revision='B-stale';(window as any).slotHarness.tools.structure=(()=>{const real=(window as any).slotHarness.tools.structure;return (path:string,node:number[])=>{const model=real(path,node);return model&&{...model,setVisible:()=>false};};})();});
  await toggleBy(page,'Show Optional');
- await expect(page.getByRole('checkbox',{name:'Show Optional',exact:true})).not.toBeChecked();
+ await expect(page.getByRole('button',{name:'Show Optional',exact:true})).toHaveAttribute('aria-pressed','false');
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.revision='A';s.source+='<!-- unrelated -->';s.version++;s.update();});
  await expect(page.locator('.page-structure__inline')).toHaveCount(0);
  expect(await visibleInputs(page)).toBe(0);
@@ -395,15 +395,15 @@ test('keyboard focus on a slot badge reveals the row actions without opening an 
  await title.hover();await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
 });
 
-test.describe('coarse pointer checkboxes',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:800}});
- test('filled Hide and missing Show keep a small box inside a 44px pointer target',async({page})=>{
+test.describe('coarse pointer visibility eyes',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:800}});
+ test('filled Hide and missing Show keep a small eye inside a 44px pointer target',async({page})=>{
   await harness(page);
-  const measure=(name:string)=>page.getByRole('checkbox',{name,exact:true}).evaluate((box:HTMLElement)=>{const b=box.getBoundingClientRect(),h=box.closest('label')!.getBoundingClientRect();return{box:[b.width,b.height],hit:[h.width,h.height,h.x,h.y]};});
+  const measure=(name:string)=>page.getByRole('button',{name,exact:true}).evaluate((box:HTMLElement)=>{const b=box.querySelector('svg')!.getBoundingClientRect(),h=box.getBoundingClientRect();return{box:[b.width,b.height],hit:[h.width,h.height,h.x,h.y]};});
   for(const [name,before,after] of [['Show Optional',false,true],['Show Optional',true,false]] as const){
    const m=await measure(name);expect(m.box[0]).toBeLessThanOrEqual(20.5);expect(m.box[1]).toBeLessThanOrEqual(20.5);expect(m.hit[0]).toBeGreaterThanOrEqual(43.9);expect(m.hit[1]).toBeGreaterThanOrEqual(43.9);
-   const box=page.getByRole('checkbox',{name,exact:true});if(before)await expect(box).toBeChecked();else await expect(box).not.toBeChecked();
+   const box=page.getByRole('button',{name,exact:true});if(before)await expect(box).toHaveAttribute('aria-pressed','true');else await expect(box).toHaveAttribute('aria-pressed','false');
    const selected=(await H(page)).selected.length;
-   // Tap the target's corner, outside the visible box.
+   // Tap the target's corner, outside the visible eye.
    await page.mouse.click(m.hit[2]+3,m.hit[3]+3);
    await expect.poll(async()=>(await H(page)).source.includes('slot="optional"')).toBe(after);
    expect((await H(page)).selected.length).toBe(selected);

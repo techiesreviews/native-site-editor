@@ -44,7 +44,7 @@ test('slot actions reveal at the far right after the badge without overflow',asy
 test('slot visibility toggle at the row edge hides the slot and resting rows stay compact',async({page})=>{
  await harness(page);
  await page.evaluate(()=>{const h=(window as any).slotHarness;h.source=h.source.replace('</project-card>','<p slot="optional">Extra</p></project-card>');h.update();});
- const image=row(page,'0.4');const toggle=image.getByRole('checkbox',{name:/^Show /});
+ const image=row(page,'0.4');const toggle=image.getByRole('button',{name:/^Show /});
  await expect(toggle).toHaveCSS('opacity','0');
  const rest=await image.evaluate((el:HTMLElement)=>el.getBoundingClientRect().height);expect(rest).toBeLessThan(40);
  await image.hover();await expect(toggle).toHaveCSS('opacity','1');await toggle.click();
@@ -61,3 +61,32 @@ test('keyboard focus on a slot row reveals its actions at once and Tab reaches t
 test.describe('reduced motion',()=>{test.use({reducedMotion:'reduce'});
  test('badge shift has no transition',async({page})=>{await harness(page);
   await expect(row(page,'0.0').locator('.page-structure__slot-badge')).toHaveCSS('transition-duration','0s');});});
+// Visibility is an eye toggle: open while shown, closed while hidden.
+const addOptional=(page:any)=>page.evaluate(()=>{const h=(window as any).slotHarness;h.source=h.source.replace('</project-card>','<p slot="optional">Extra</p></project-card>');h.update();});
+test('the visibility eye shows state, hides and shows by keyboard, and leaves no checkbox behind',async({page})=>{
+ await harness(page);await addOptional(page);
+ await expect(page.locator('.page-structure__tree input[type=checkbox]')).toHaveCount(0);
+ // A fallback slot keeps Reset to default and never wears an eye.
+ await expect(row(page,'0.0').getByRole('button',{name:'Reset Title to default',exact:true})).toHaveCount(1);
+ await expect(row(page,'0.0').locator('.page-structure__slot-toggle')).toHaveCount(0);
+ const eye=row(page,'0.4').getByRole('button',{name:'Show Optional',exact:true});
+ await expect(eye).toHaveAttribute('aria-pressed','true');await expect(eye).toHaveAttribute('title','Hide Optional');
+ await eye.focus();await page.keyboard.press('Enter');
+ await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');
+ const closed=page.locator('.page-structure__row--empty-slot').getByRole('button',{name:'Show Optional',exact:true});
+ await expect(closed).toHaveAttribute('aria-pressed','false');await expect(closed).toHaveAttribute('title','Show Optional');await expect(closed).toBeVisible();
+ await closed.focus();await page.keyboard.press('Space');
+ await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).toContain('slot="optional"');
+ await expect(page.getByRole('textbox',{name:'Optional: Text',exact:true})).toBeFocused();
+});
+test('a refused Show restores the closed eye and arms no editor',async({page})=>{
+ await harness(page);
+ await page.evaluate(()=>{const s=(window as any).slotHarness,real=s.tools.structure.bind(s.tools);s.tools.structure=(path:string,node:number[])=>{const model=real(path,node);if(!model)return model;const copy=Object.create(model);copy.setVisible=()=>false;return copy;};s.update();});
+ const before=await page.evaluate(()=>(window as any).slotHarness.source);
+ const closed=page.locator('.page-structure__row--empty-slot').getByRole('button',{name:'Show Optional',exact:true});
+ await closed.click();
+ await expect(closed).toHaveAttribute('aria-pressed','false');
+ await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ expect(await page.evaluate(()=>(window as any).slotHarness.source)).toBe(before);
+ await page.evaluate(()=>(window as any).slotHarness.update());await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+});

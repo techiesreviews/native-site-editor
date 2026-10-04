@@ -2,6 +2,8 @@ import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { mark, componentIcon } from "../page-builder/component-icon";
+import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
+import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import "./row-action-overlay.css";
 import "./page-structure.css";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
@@ -471,25 +473,32 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (slot.whenEmpty === "fallback") return slot.filled
       ? iconAction(`Reset ${slot.label} to default`, "reset", () => model.setVisible(slot.name, false))
       : undefined;
-    const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = slot.filled;
-    toggle.className = "page-structure__slot-toggle"; toggle.setAttribute("aria-label", `Show ${slot.label}`);
-    // A small visible box inside a label that gives touch its 44px target.
-    const hit = node("label", "page-structure__hit");
-    hit.append(toggle);
-    toggle.addEventListener("change", () => {
+    // An eye, as in Figma's layers: open while the slot shows, closed while hidden.
+    const toggle = button("", () => {
+      const showing = toggle.getAttribute("aria-pressed") === "true", next = !showing;
       const previous = { openSlot, openAttributes, focusSlotField };
-      if (toggle.checked) {
+      if (next) {
         openAttributes = undefined;
         openSlot = { host: hostKey(model), name: slot.name, anchor: PENDING };
         focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: undefined };
       }
+      paint(next);
       // A refused Show or Hide leaves everything as it was: no armed editor.
-      if (!model.setVisible(slot.name, toggle.checked)) {
-        toggle.checked = slot.filled;
+      if (!model.setVisible(slot.name, next)) {
+        paint(slot.filled);
         ({ openSlot, openAttributes, focusSlotField } = previous);
       }
-    });
-    return hit;
+    }, "page-structure__action page-structure__slot-toggle");
+    toggle.setAttribute("aria-label", `Show ${slot.label}`);
+    function paint(shown: boolean) {
+      toggle.setAttribute("aria-pressed", String(shown));
+      toggle.title = shown ? `Hide ${slot.label}` : `Show ${slot.label}`;
+      const template = document.createElement("template");
+      template.innerHTML = (shown ? eyeOpen : eyeClosed).replace("<svg ", '<svg class="icon" width="14" height="14" aria-hidden="true" focusable="false" ');
+      toggle.replaceChildren(template.content.firstElementChild!);
+    }
+    paint(slot.filled);
+    return toggle;
   }
   // Pencil and visibility for a slot row: they fade in over the row's text
   // while the row is hovered or focused, never covering the badge.

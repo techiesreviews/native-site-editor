@@ -170,8 +170,8 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         const groupRoot = node("div", "pb-add-group");
         groupRoot.setAttribute("role", "group");
         // The site's own plain sections lead the list without a visible
-        // heading; assistive tech still hears a plain group name.
-        if (group.items.every((item) => item.kind === "native")) groupRoot.setAttribute("aria-label", "Sections");
+        // heading; assistive tech still hears a plain group name, distinct from the components' "Sections".
+        if (group.items.every((item) => item.kind === "native")) groupRoot.setAttribute("aria-label", "Page sections");
         else {
           const heading = node("h3", "pb-add-group__title", group.name);
           heading.id = `${id}-group-${groups.length}`;

@@ -50,7 +50,8 @@ actual("on the real starter, defaults go into the stylesheet it already imports;
   expect(sectionsCss).toContain("@layer sections");
   const before = await mounted(page);
   await openAdd(page);
-  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toBeVisible();
+  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
+  await expect(panel(page).getByRole("group", { name: "Page sections", exact: true }).getByRole("option", { name: /^Intro HTML$/ })).toBeVisible();
   for (const name of ["Intro", "Features", "Split", "Contact"]) await expect(panel(page).getByRole("option", { name: new RegExp(`^${name} HTML$`) })).toHaveCount(1);
   await panel(page).getByRole("searchbox").fill("Heading");
   await expect(panel(page).getByRole("option", { name: /HTML$/ })).toHaveCount(0);
@@ -178,7 +179,8 @@ actual("invalid editor JSON hides plain sections instead of falling back to defa
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {} }, null, 2) + "\n" } });
   await load(page, baseURL);
   await openAdd(page);
-  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toBeVisible();
+  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
+  await expect(panel(page).getByRole("group", { name: "Page sections", exact: true }).getByRole("option", { name: /^Intro HTML$/ })).toBeVisible();
   await expect(panel(page).locator(".pb-add-panel__notice")).toBeHidden();
 });
 
@@ -323,7 +325,7 @@ for (const [label, scheme, width] of [["light", "light", 1440], ["dark", "dark",
         return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole);
       })).toBe(true);
     }
-    await panel(page).getByRole("heading", { name: "Plain HTML sections" }).scrollIntoViewIfNeeded();
+    await panel(page).getByRole("group", { name: "Page sections", exact: true }).scrollIntoViewIfNeeded();
     // Provenance: which messages came only after Add opened, and how many sandboxed thumbnail frames it made.
     await page.waitForTimeout(1000);
     const beforeShot = logged.length;
