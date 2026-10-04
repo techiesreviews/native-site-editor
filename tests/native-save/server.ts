@@ -1348,7 +1348,7 @@ async function main() {
       port: appPort,
       strictPort: true,
       watch: {
-        ignored: ["**/.scratch/**", "**/test-results/**", "**/playwright-report/**"],
+        ignored: ["**/.claude/**", "**/.scratch/**", "**/test-results/**", "**/playwright-report/**"],
       },
       allowedHosts: process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN
         ? [new URL(process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN).hostname]
