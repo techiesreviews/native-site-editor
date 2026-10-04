@@ -429,3 +429,51 @@ test("a section picked while the editor JSON is still read gets Update when the 
   expect(await storedDrafts(page)).toEqual([]);
   await page.unroute(() => true);
 });
+
+// Undo and Redo of an Add select what the step restores: Undo the element
+// selected for the Add (not the section that took the new one's place), Redo
+// the added section again, also with a Style edit undone and redone around it.
+test("Undo and Redo of an Add with a Style edit keep the selection on the restored elements", async ({ page, baseURL }) => {
+  const { before, added } = await addWithPane(page, baseURL);
+  const crumb = page.locator(".canvas-crumb[aria-current=true]");
+  const selectedIs = (selector: string) => frame(page).locator("html").evaluate((_, selector) => {
+    const box = document.querySelector('[data-native-selection-box="selected"]') as HTMLElement | null, el = document.querySelector(selector);
+    if (!box || box.style.display === "none" || !el) return false;
+    const a = box.getBoundingClientRect(), b = el.getBoundingClientRect();
+    return Math.abs(a.top - b.top) < 3 && Math.abs(a.height - b.height) < 3 && Math.abs(a.width - b.width) < 3;
+  }, selector);
+  const intro = frame(page).locator("section.section-intro");
+  await intro.click({ position: { x: 5, y: 5 } });
+  await showStylePanel(page);
+  const style = page.getByRole("complementary", { name: "Style panel" });
+  await style.getByRole("searchbox", { name: "Search styles" }).fill("margin-top");
+  const field = style.getByRole("textbox", { name: "Margin top", exact: true });
+  await field.fill("17");
+  await field.press("Enter");
+  await expect.poll(() => mounted(page, CSS)).toContain("margin-top: 17px");
+  const styled = (await mounted(page, CSS))!;
+  await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(styled);
+
+  const key = async (keys: string) => { await focusPrimary(page); await page.keyboard.press(keys); };
+  await key("ControlOrMeta+z");
+  await expect.poll(() => mounted(page, CSS)).not.toContain("margin-top: 17px");
+  await expect.poll(() => selectedIs("section.section-intro")).toBe(true);
+  await expect(crumb).toHaveText("section.section-intro");
+  await key("ControlOrMeta+z");
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  // The heading selected for the Add, not the contact section now at the Intro's place.
+  await expect.poll(() => selectedIs("section.flow > h2")).toBe(true);
+  await expect(crumb).toHaveText("h2");
+  await key("ControlOrMeta+Shift+z");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  expect(await mounted(page)).toBe(added);
+  await expect.poll(() => selectedIs("section.section-intro")).toBe(true);
+  await expect(crumb).toHaveText("section.section-intro");
+  await key("ControlOrMeta+Shift+z");
+  await expect.poll(() => mounted(page, CSS)).toBe(styled);
+  await expect(intro).toHaveCSS("margin-top", "17px");
+  await expect.poll(() => selectedIs("section.section-intro")).toBe(true);
+  await expect(crumb).toHaveText("section.section-intro");
+  await expect(refusal(page)).toHaveCount(0);
+});

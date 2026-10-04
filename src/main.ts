@@ -2691,6 +2691,8 @@ function staticSectionKeepsCollections(path: string, text: string | undefined, b
 }
 async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
+  // What its Undo selects again: the element selected for this Add, else the insertion's parent.
+  const selectedBefore = lastNativeSelection?.path === path && lastNativeSelection.node ? [...lastNativeSelection.node] : [...point.parent];
   const captured = nativeAddPoints.get(point);
   // Everything the plan reads is pinned here, before the first await.
   const sourceBefore = captured?.source ?? nativeEffectiveSource(path);
@@ -2744,7 +2746,7 @@ async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   if (!current()) { changed(); return; }
   const { open: _open, ...operation } = plan.operation;
   preview.selectAfterUpdate({ path, node: plan.selection.node }, { reveal: "center" });
-  const error = await applyNativeOperation({ ...operation, current });
+  const error = await applyNativeOperation({ ...operation, current, selection: { before: { path, node: selectedBefore }, after: { path, node: plan.selection.node } } });
   if (error) { preview.selectAfterUpdate(undefined); errorMessage(new Error(error)); }
 }
 
@@ -5280,6 +5282,12 @@ interface NativeOperation {
   focus?: { file?: string; route?: string };
   /** A whole-graph proof (a collection plan's), checked with every source guard. */
   current?: () => boolean;
+  /**
+   * The preview selection on each side of this operation (editor-only): its own Undo selects
+   * `before` and its Redo `after`, each against the exact sources the step restores, instead of
+   * whatever element took the removed one's place.
+   */
+  selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } };
 }
 
 // The whole current file graph for collection planning: every existing path
@@ -5570,7 +5578,9 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     if (refreshPending) { announce("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
     const previousStatus = element("status").textContent;
     releaseRefresh = editor.holdHistoryRefresh(currentPath ?? anchor);
-    if (!receipt[direction]()) { releaseRefresh(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
+    const select = direction === "undo" ? op.selection?.before : op.selection?.after;
+    if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
+    if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); releaseRefresh(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     refreshPending = true;
     // runVisualHistory must first accept this exact initiating journal. A
     // macrotask, rather than a microtask, closes it only after that acceptance.
