@@ -38,7 +38,8 @@ try {
   assert.equal(await page.locator("#result").textContent(), before);
   await search.fill("iframe");
   await panel.getByRole("option", { name: "Iframe embed HTML", exact: true }).focus();
-  assert.ok((await panel.locator(".pb-add-panel__peek-code").textContent())?.includes('sandbox=""'));
+  // The code peek was removed from the Add panel; it must not come back.
+  assert.equal(await panel.locator(".pb-add-panel__peek-code").count(), 0);
   await page.keyboard.press("Escape");
   assert.equal(await panel.isVisible(), false);
   assert.deepEqual(errors, []);

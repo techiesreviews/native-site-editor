@@ -51,6 +51,8 @@ export const insertPointKey = (point: InsertPoint) => `${point.path}|${point.par
 const keyOf = insertPointKey;
 let panelId = 0;
 
+const PLAIN_SECTIONS_GROUP = "Plain HTML sections";
+
 export function createAddPanel(handlers: AddPanelHandlers) {
   const id = `pb-add-${++panelId}`;
   const panel = node("div", "pb-add-panel");
@@ -169,9 +171,10 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       for (const group of addCatalog(choices)) {
         const groupRoot = node("div", "pb-add-group");
         groupRoot.setAttribute("role", "group");
-        // The site's own plain sections lead the list without a visible
-        // heading; assistive tech still hears a plain group name, distinct from the components' "Sections".
-        if (group.items.every((item) => item.kind === "native")) groupRoot.setAttribute("aria-label", "Page sections");
+        // The site's own plain sections (main.ts names their group) lead the
+        // list without a visible heading; assistive tech still hears a plain
+        // group name, distinct from the components' "Sections".
+        if (group.name === PLAIN_SECTIONS_GROUP) groupRoot.setAttribute("aria-label", "Page sections");
         else {
           const heading = node("h3", "pb-add-group__title", group.name);
           heading.id = `${id}-group-${groups.length}`;
