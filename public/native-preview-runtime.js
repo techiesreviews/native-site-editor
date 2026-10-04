@@ -443,7 +443,7 @@
       var requested = resolveNodePath(payload.selectNode);
       if (requested) {
         selected = requested;
-        if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
+        if (requested.scrollIntoView) requested.scrollIntoView({ block: payload.selectNode.reveal === "center" ? revealBlock(requested) : "nearest" });
       }
     }
     if (wasEditing && !editing && selected) startEditing(selected);
@@ -1154,6 +1154,13 @@
 
   // The element at `node` (element-child indexes) under the page root or under the shadow root of the component
   // whose template is `path`, preferring the currently selected instance.
+  // A just-added element is centred; one taller than the view shows from its top
+  // (the page's scroll-padding keeps it clear of a sticky header).
+  function revealBlock(el) {
+    var box = el.getBoundingClientRect && el.getBoundingClientRect();
+    return box && box.height > window.innerHeight * 0.8 ? "start" : "center";
+  }
+
   function resolveNodePath(request) {
     if (!state || !request || !Array.isArray(request.node)) return null;
     var path = String(request.path || "");

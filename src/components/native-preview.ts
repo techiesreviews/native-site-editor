@@ -241,6 +241,9 @@ export function routeStylesheets(site: NativeSite, sources: Record<string, strin
   return file ? nativePageStylesheets(sources[file] ?? "", file) : [];
 }
 
+/** A selection queued for the next render; `reveal: "center"` brings a just-added element fully into view. */
+type QueuedSelection = NativeNodeRequest & { reveal?: "center" };
+
 function composePayload(
   site: NativeSite,
   sources: Record<string, string>,
@@ -249,7 +252,7 @@ function composePayload(
   route: string,
   alone: string | undefined,
   context: string,
-  selectNode: NativeNodeRequest | undefined,
+  selectNode: QueuedSelection | undefined,
   selectText: { start: number; end: number } | undefined,
   hash?: string,
   editableTemplatePath?: string,
@@ -426,7 +429,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
-  let selectNode: NativeNodeRequest | undefined;
+  let selectNode: QueuedSelection | undefined;
   let selectText: { start: number; end: number } | undefined;
   // The id a followed link's fragment names, scrolled to after the next render.
   let scrollHash: string | undefined;
@@ -979,8 +982,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
     },
     /** Select this element once the next update (the one carrying an edit) has rendered. */
-    selectAfterUpdate(request: NativeNodeRequest | undefined) {
-      selectNode = request;
+    selectAfterUpdate(request: NativeNodeRequest | undefined, options?: { reveal?: "center" }) {
+      selectNode = request && options?.reveal ? { ...request, reveal: options.reveal } : request;
     },
     /** Re-select this text range (offsets into the selected element's text) after the next update. */
     selectTextAfterUpdate(range: { start: number; end: number } | undefined) {

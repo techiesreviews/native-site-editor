@@ -360,6 +360,43 @@ actual("adding a section beside a stored collection leaves its recipe and cards 
   await expect(page.locator("#notice")).not.toContainText("not added");
 });
 
+// A new section is centred in the preview, clear of the sticky site header, like a
+// section picked in Structure; the selection is that new section, nothing else.
+for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["narrow", { width: 900, height: 1000 }]] as const) {
+  actual(`an Intro added after Recent work shows whole below the sticky header and stays selected (${label})`, async ({ page, baseURL }) => {
+    await page.setViewportSize(viewport);
+    await load(page, baseURL);
+    const before = await mounted(page);
+    await openAdd(page);
+    await add(page, /^Intro HTML$/);
+    await expect(frame(page).locator("main > section.flow + section.section-intro")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+    const view = () => frame(page).locator("html").evaluate((html) => {
+      const box = (el: Element | null) => { const r = el!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+      return { intro: box(document.querySelector("main > section.section-intro")), header: box(document.querySelector("site-header")),
+        selected: box(document.querySelector('[data-native-selection-box="selected"]')), height: html.clientHeight, pad: parseFloat(getComputedStyle(html).scrollPaddingTop) || 0 };
+    });
+    // Whole, clear of the header, and centred as Structure does (in the view below the page's scroll-padding), not hugging an edge.
+    await expect.poll(async () => { const v = await view(); return v.intro.top >= v.header.bottom - 1 && v.intro.bottom <= v.height + 1
+      && Math.abs((v.intro.top + v.intro.bottom) / 2 - (v.pad + v.height) / 2) < 24; }).toBe(true);
+    const v = await view();
+    // The selection box is drawn around the new Intro.
+    for (const side of ["top", "bottom", "left", "right"] as const) expect(Math.abs(v.selected[side] - v.intro[side])).toBeLessThan(3);
+    await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();
+    const home = await mounted(page);
+    expect(home).toContain('<section class="section-intro"><h2>Section heading</h2>');
+    expect(home).not.toMatch(/data-native|static-section|saved-section/);
+    expect((await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+    await page.screenshot({ path: `${OUT}-reveal-${label}.png` });
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(() => storedDrafts(page)).toEqual([]);
+    expect(await mounted(page)).toBe(before);
+    await page.locator(".code-editor__redo").first().click();
+    await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
+  });
+}
+
 test.describe("native static starter", () => {
   test.skip(!native, "Needs ASE_NATIVE_SAVE_FIXTURE pointing at the native static starter.");
   test("all four defaults join the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {

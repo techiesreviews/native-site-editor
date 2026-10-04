@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
@@ -389,4 +390,42 @@ test("after a fresh load, Update appears once the editor JSON is read", async ({
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
+});
+
+// The editor JSON is read once, slowly (a held response); another matching
+// section picked meanwhile gets Update when the read ends, and the first
+// pick is not drawn again over it.
+test("a section picked while the editor JSON is still read gets Update when the read ends", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await addIntro(page, "section.flow h2");
+  await expect(frame(page).locator("section.flow + section.section-intro")).toHaveCount(1);
+  await addIntro(page, "section-contact");
+  await expect(frame(page).locator("section.section-intro")).toHaveCount(2);
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let asked = 0;
+  // The editor reads files by their Git blob SHA; hold the batch that has the editor JSON.
+  const json = Buffer.from(await file(page, baseURL, SIDECAR));
+  const sha = createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${json.length}\0`), json])).digest("hex");
+  await page.route((url) => url.pathname.startsWith("/api/file") && decodeURIComponent(url.search).includes(sha), async (route) => { asked++; await held; await route.fallback(); });
+  await load(page, baseURL);
+  const [first, second] = [frame(page).locator("section.section-intro").first(), frame(page).locator("section.section-intro").last()];
+  await first.click({ position: { x: 5, y: 5 } });
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect.poll(() => asked).toBeGreaterThan(0);
+  await second.scrollIntoViewIfNeeded();
+  await second.click({ position: { x: 5, y: 5 } });
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
+  release();
+  await expect(bar(page).getByRole("button", { name: "Update Intro", exact: true })).toBeVisible();
+  // Still the second section: the selection box is around it, not the first.
+  const box = await frame(page).locator('[data-native-selection-box="selected"]').boundingBox();
+  const target = await second.boundingBox();
+  expect(Math.abs(box!.y - target!.y)).toBeLessThan(3);
+  expect(Math.abs(box!.height - target!.height)).toBeLessThan(3);
+  expect(await storedDrafts(page)).toEqual([]);
+  await page.unroute(() => true);
 });

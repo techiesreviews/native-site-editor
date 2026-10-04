@@ -717,16 +717,26 @@ function nativeSectionSavePlan(selection: NativePreviewSelection) {
   const label = readStaticSectionRecords(docText)[plan.recordId]?.label;
   return label ? { plan, label } : undefined;
 }
-let nativeSectionSaveLoading = false;
+let nativeSectionSaveLoading: Promise<unknown> | undefined;
 function nativeSectionSaveControls(selection: NativePreviewSelection): EditBarControl[] {
   const eligible = nativeSectionSavePlan(selection);
   if (!eligible) {
-    // The editor JSON exists but is not read yet: read it once, then redraw this same selection.
+    // The editor JSON exists but is not read yet: read it once, then redraw
+    // whichever section is selected by then (it may differ from this one).
     if (selection.tag === "section" && !nativeSectionSaveLoading && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH) && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === undefined) {
-      nativeSectionSaveLoading = true;
-      void ensureNativeTextIndex().finally(() => {
-        nativeSectionSaveLoading = false;
-        if (lastNativeSelection === selection && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== undefined) renderNativeEditBar(selection);
+      const epoch = generation, scope = setupScope();
+      const loading = ensureNativeTextIndex().catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+      nativeSectionSaveLoading = loading;
+      void loading.then((error) => {
+        if (nativeSectionSaveLoading === loading) nativeSectionSaveLoading = undefined;
+        if (versionView || generation !== epoch || setupScope() !== scope) return;
+        const current = lastNativeSelection;
+        if (error) {
+          // Only tell about it while a section is still selected that wanted it.
+          if (current?.tag === "section") announce(`Saved sections could not be read. ${error}`);
+          return;
+        }
+        if (current?.tag === "section" && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== undefined && nativeSectionSavePlan(current)) renderNativeEditBar(current);
       });
     }
     return [];
@@ -2733,7 +2743,7 @@ async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   const current = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && [...nativeFiles()].sort().join("\n") === expectedFiles;
   if (!current()) { changed(); return; }
   const { open: _open, ...operation } = plan.operation;
-  preview.selectAfterUpdate({ path, node: plan.selection.node });
+  preview.selectAfterUpdate({ path, node: plan.selection.node }, { reveal: "center" });
   const error = await applyNativeOperation({ ...operation, current });
   if (error) { preview.selectAfterUpdate(undefined); errorMessage(new Error(error)); }
 }
