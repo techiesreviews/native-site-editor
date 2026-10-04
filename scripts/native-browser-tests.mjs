@@ -11,17 +11,15 @@ const actualOnly = new Set([
   "native-social-preview.spec.ts", "native-fields-migration.spec.ts",
   "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",
 ]);
+const nativeOnly = new Set(["native-static-starter-create.spec.ts"]);
 const args = process.argv.slice(2);
 const group = args.shift();
 try {
   if (!["default", "actual", "native-static"].includes(group)) throw new Error("Choose default, actual, or native-static.");
   const env = { ...process.env };
-  env.ASE_NATIVE_SAVE_FIXTURE ??= group === "actual" ? "fixtures/actual-starter" : group === "native-static" ? ".scratch/native-static-preview" : "fixtures/native-starter";
-  if (group === "native-static") env.STATIC_SECTIONS_FIXTURE ??= "native";
-  if (fixtureKind(env) !== group) throw new Error(`Selected ${group} command does not match ASE_NATIVE_SAVE_FIXTURE. Use the matching test:browser command or unset the conflicting environment.`);
   let files = readdirSync("tests/native-save").filter(name => name.endsWith(".spec.ts")).sort().filter(name => {
     const actual = actualOnly.has(name) || /-actual\.spec\.ts$/.test(name);
-    return group === "default" ? !actual : group === "actual" ? actual : name === "native-static-sections-host.spec.ts";
+    return group === "default" ? !actual && !nativeOnly.has(name) : group === "actual" ? actual : name === "native-static-sections-host.spec.ts" || nativeOnly.has(name);
   });
   const forwarded = [];
   let check = false;
@@ -39,6 +37,15 @@ try {
       files = files.filter(name => name.includes(pattern));
     } else forwarded.push(arg);
   }
+  // Creation starts from the demo account, independent of the archived preview fixture.
+  const creationOnly = group === "native-static" && files.every(name => nativeOnly.has(name));
+  env.ASE_NATIVE_SAVE_FIXTURE ??= group === "actual" ? "fixtures/actual-starter" : group === "native-static" && !creationOnly ? ".scratch/native-static-preview" : "fixtures/native-starter";
+  if (group === "native-static") {
+    if (!creationOnly) env.STATIC_SECTIONS_FIXTURE ??= "native";
+    env.ASE_NATIVE_STARTER_SOURCE ??= "native-static";
+    if (env.ASE_NATIVE_STARTER_SOURCE !== "native-static") throw new Error("Native static tests require ASE_NATIVE_STARTER_SOURCE=native-static.");
+  }
+  if (fixtureKind(env) !== (creationOnly ? "default" : group)) throw new Error(`Selected ${group} command does not match ASE_NATIVE_SAVE_FIXTURE. Use the matching test:browser command or unset the conflicting environment.`);
   if (!files.length) throw new Error("No specs match this fixture group and --spec selection.");
   if (env.ASE_TEST_PORT && (!/^\d+$/.test(env.ASE_TEST_PORT) || +env.ASE_TEST_PORT < 1 || +env.ASE_TEST_PORT > 65535)) throw new Error("--port must be an integer from 1 to 65535.");
   if (check) {

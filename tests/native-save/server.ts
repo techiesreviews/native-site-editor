@@ -158,6 +158,7 @@ import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
+import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
@@ -947,7 +948,17 @@ function newSessionId(): string {
 
 function env(): Env {
   return {
-    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+    ...(process.env.ASE_NATIVE_STARTER_SOURCE === "native-static" ? { STARTER_SOURCE: "native-static" } : {}),
+    ASSETS: { fetch: async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      const prefix = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
+      if (process.env.ASE_NATIVE_STARTER_SOURCE !== "native-static" || !path.startsWith(prefix)) return new Response("Not found", { status: 404 });
+      const relative = path.slice(prefix.length);
+      if (relative !== "manifest.json" && !/^files\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.asset$/.test(relative)) return new Response("Not found", { status: 404 });
+      if (relative.split("/").some(part => part === "." || part === "..")) return new Response("Not found", { status: 404 });
+      const file = resolve(projectRoot, "public", prefix.slice(1), relative);
+      return existsSync(file) ? new Response(readFileSync(file)) : new Response("Not found", { status: 404 });
+    } },
     GITHUB_CLIENT_ID: "demo-client-id",
     GITHUB_CLIENT_SECRET: "demo-client-secret",
     GITHUB_APP_SLUG: "native-site-editor-demo",
