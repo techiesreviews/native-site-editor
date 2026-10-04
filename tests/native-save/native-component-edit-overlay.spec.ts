@@ -5,7 +5,7 @@ const edit = (page: Page) => toolbar(page).getByRole("button", { name: "Edit Pro
 async function root(page: Page) {
   const row = page.getByRole("treeitem", { name: "Section", exact: true });
   await row.locator(".page-structure__toggle").click();
-  await page.getByRole("treeitem", { name: /^Project card Reusable cards(?: Edit component Disconnect this instance)?$/ }).locator(".page-structure__label").click();
+  await page.getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
   await expect(edit(page)).toBeVisible();
 }
 test.beforeEach(async ({page,baseURL})=>{
@@ -39,7 +39,7 @@ test('light DOM and template children have no component edit affordance while th
  await frame(page).locator('project-card article').first().click({position:{x:5,y:5}});
  await expect(page.locator('#current-page')).toHaveAttribute('data-path','index.html');
  await expect(edit(page)).toBeVisible();
- await expect(page.getByRole('treeitem',{name:/^Project card Reusable cards(?: Edit component Disconnect this instance)?$/})).toHaveAttribute('aria-selected','true');
+ await expect(page.getByRole('treeitem',{name:/^Project card Reusable cards$/})).toHaveAttribute('aria-selected','true');
  await edit(page).click();
  await frame(page).locator('project-card article').first().click({position:{x:5,y:5}});
  await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
@@ -110,13 +110,13 @@ test('programmatic address switch closes the old context before opening the new 
 test('root panel Edit remains usable after typing its instance slot',async({page})=>{
  await root(page);
  const panel=page.locator('#structure');
- const instance=page.getByRole('treeitem',{name:/^Project card Reusable cards(?: Edit component Disconnect this instance)?$/});
+ const instance=page.getByRole('treeitem',{name:/^Project card Reusable cards$/});
  if(await instance.getAttribute('aria-expanded')==='false')await instance.locator('.page-structure__toggle').click();
  await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().click();
  const title=panel.getByRole('textbox',{name:'Title: Text',exact:true});
  await title.fill('Edited root title');await title.press('Tab');
  await expect(frame(page).locator('project-card').first().locator('[slot="title"]')).toHaveText('Edited root title');
- await page.getByRole('treeitem',{name:/^Project card Edited root title(?: Edit component Disconnect this instance)?$/}).hover();
- await page.getByRole('treeitem',{name:/^Project card Edited root title(?: Edit component Disconnect this instance)?$/}).getByRole('button',{name:'Edit component',exact:true}).click();
+ await page.getByRole('treeitem',{name:/^Project card Edited root title$/}).hover();
+ await page.getByRole('treeitem',{name:/^Project card Edited root title$/}).getByRole('button',{name:'Edit component',exact:true}).click();
  await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
 });

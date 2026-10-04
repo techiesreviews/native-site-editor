@@ -132,9 +132,10 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
   await expect(status(page)).toHaveText("");
-  await expect.poll(() => editorText(page, "#content")).toBe(edgeSource);
-  await row(page, "Section").focus();
   await expect(row(page, "Section")).toBeFocused();
+  await expect.poll(() => editorText(page, "#content")).toBe(edgeSource);
+  // Source inspection changes focus; restore it only to start the next move.
+  await row(page, "Section").focus();
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
   await expect(status(page)).toHaveText("Moved up");
@@ -161,7 +162,7 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
 test("Alt+Down on a page structure row while a component file is open opens the page first, then moves the section", async ({ page }) => {
   // Shared parts open their template only after explicit Edit component intent.
   await row(page, "Section").locator(".page-structure__toggle").click();
-  await tree(page).getByRole("treeitem", { name: /^Project card Reusable cards(?: Edit component Disconnect this instance)?$/ }).locator(".page-structure__label").click();
+  await tree(page).getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
   await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await frame(page).locator("project-card article").first().click({position:{x:5,y:5}});
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");

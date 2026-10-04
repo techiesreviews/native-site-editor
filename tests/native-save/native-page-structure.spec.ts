@@ -16,9 +16,8 @@ test.beforeEach(async ({ page, baseURL }) => {
 
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", {
-  name: typeof name === "string"
-    ? new RegExp(`^${Array.from(name, character => "\\^$.*+?()[]{}|".includes(character) ? "\\" + character : character).join("")}(?: Edit component Disconnect this instance)?$`)
-    : name,
+  name,
+  exact: typeof name === "string",
 });
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const unfold = (page: Page, name: string) => row(page, name).locator(".page-structure__toggle").click();
@@ -34,7 +33,7 @@ test("the sidebar lists the page's elements and marks the one selected in the pr
   await expect(sections).toHaveText(["Section A native browser preview", "Section", "Section Scroll to verify"]);
   // Everything inside <main> starts folded, so the page reads as its sections.
   for (const section of await sections.all()) await expect(section).toHaveAttribute("aria-expanded", "false");
-  const card = tree(page).getByRole("treeitem", {name:/^Project card Reusable cards(?: Edit component Disconnect this instance)?$/});
+  const card = tree(page).getByRole("treeitem", {name:/^Project card Reusable cards$/});
   await expect(card).toHaveCount(0);
   await unfold(page, "Section");
   // A component instance is named by the heading in its shadow root, with the page's slotted text.

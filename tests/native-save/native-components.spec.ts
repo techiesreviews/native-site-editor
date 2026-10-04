@@ -28,7 +28,7 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", {
-  name: typeof name === "string" && /^(Project card|Media card|Card list)(?: |$)/.test(name) ? new RegExp(`^${name}(?: Edit component Disconnect this instance)?$`) : name,
+  name,
   exact: typeof name === "string",
 });
 const panel = (page: Page) => page.locator("#structure");
@@ -189,10 +189,10 @@ test("Structure edits an instance's slots and attributes as page source", async 
   await link.click();
   await expect(link).toBeChecked();
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
-  // Switched on, the slot's address is ready to type in.
+  // Show immediately focuses the button text field.
+  await expect(slot(page, "link").getByRole("textbox", {name:"Link: Button text"})).toBeFocused();
   await openSlotDetails(page, "link");
   const address = slot(page, "link").getByRole("combobox", { name: "Link: Link / URL" });
-  await expect(slot(page, "link").getByRole("textbox", {name:"Link: Button text"})).toBeFocused();
   await address.fill("/about/");
   await address.press("Enter");
   await slot(page, "link").getByRole("textbox", { name: "Link: Button text" }).fill("About the studio");

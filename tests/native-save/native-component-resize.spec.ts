@@ -6,7 +6,7 @@ test("Structure resizes, folds, restores and persists while component slot field
     await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
     const section = page.getByRole('treeitem', {name:'Section',exact:true});
     if(await section.getAttribute('aria-expanded')==='false')await section.locator('.page-structure__toggle').click();
-    const instance = page.getByRole('treeitem', {name:/^Project card Reusable cards(?: Edit component Disconnect this instance)?$/});
+    const instance = page.getByRole('treeitem', {name:/^Project card Reusable cards$/});
     await instance.locator(".page-structure__label").click();
     if (await instance.getAttribute('aria-expanded') === 'false') await instance.locator('.page-structure__toggle').click();
     await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().click();
