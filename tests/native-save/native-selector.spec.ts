@@ -117,21 +117,31 @@ test("slotted body keeps page ownership and shared CSS stays live through undo a
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
 
-  const selectBody = async () => {
-    await frame.locator("project-card").first().locator("p[slot=body]").click();
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-    await expect.poll(() => editorSource(page, "#content")).toBe(indexSource);
-    await expect(page.locator("#secondary-title")).toHaveText(cssPath);
-    await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
-    await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
-  };
-  await selectBody();
-  // Shared-template ownership requires explicit entry, while the assigned
-  // paragraph continues to belong to the page even inside that template.
+  await frame.locator("project-card").first().locator("p[slot=body]").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect.poll(() => editorSource(page, "#content")).toBe(indexSource);
+  await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+
+  // The slot covers its template wrapper's canvas pixels. Enter the shared
+  // template explicitly, then use the Code editor to select that wrapper.
   await enterProjectCard(page);
   const template = readFileSync(resolve(fixture, "components/project-card/project-card.html"), "utf8");
   await expect.poll(() => editorSource(page, "#content")).toBe(template);
-  await selectBody();
+  await page.locator("#content [role=textbox]").first().focus();
+  await page.keyboard.press("ControlOrMeta+f");
+  const find = page.locator("#content .find-widget");
+  await expect(find).toBeVisible();
+  await find.getByRole("textbox").first().fill("project-card__body");
+  await expect(find.locator(".matchesCount")).toHaveText("1 of 1");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  const bodyCrumb = page.getByRole("navigation", { name: "Selected element and its ancestors" })
+    .getByRole("button", { name: "p.project-card__body", exact: true });
+  await expect(bodyCrumb).toHaveAttribute("aria-current", "true");
+  await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+  await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
+  await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
 
   const redTitleCss = cssSource.replace(
     ".project-card__body {\n  margin: 0;\n  color: var(--muted);",
