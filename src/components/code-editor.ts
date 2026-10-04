@@ -239,6 +239,16 @@ function runCompanions(model: monaco.editor.ITextModel, undoing: boolean) {
     }
   }
 }
+// Versions on either side of an applied persistent receipt step. Such a step
+// belongs to a compound operation whose other files are drafts outside this
+// model. Typing in any file of the session clears the shared journal, but the
+// raw Monaco stack of the receipt model still holds that step; a raw fallback
+// must never cross it and revert one file while the others keep theirs.
+const receiptBoundaries = new WeakMap<monaco.editor.ITextModel, { before: number; after: number }[]>();
+function crossesReceipt(model: monaco.editor.ITextModel, direction: "undo" | "redo") {
+  const version = model.getAlternativeVersionId();
+  return (receiptBoundaries.get(model) ?? []).some((mark) => version === (direction === "undo" ? mark.after : mark.before));
+}
 const historyFor = (session: string) => {
   let history = visualHistory.get(session);
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
@@ -277,7 +287,7 @@ function canRunVisualHistory(session: string, direction: "undo" | "redo", fallba
   if (isAction(candidate)) return true;
   const expected = direction === "undo" ? candidate?.after : candidate?.undone;
   return Boolean(candidate && !candidate.model.isDisposed() && candidate.model.getAlternativeVersionId() === expected) ||
-    (direction === "undo" ? fallback.canUndo() : fallback.canRedo());
+    (!crossesReceipt(fallback, direction) && (direction === "undo" ? fallback.canUndo() : fallback.canRedo()));
 }
 /**
  * Records `action` as the next undo step of the mounted file `path`'s history,
@@ -382,6 +392,8 @@ export function prepareHistorySources(edits: HistorySourceEdit[], persistent = f
           }
           step.after = step.model.getAlternativeVersionId();
           applied.push(step);
+          if (step.text !== step.expectedSource && persistent)
+            receiptBoundaries.set(step.model, [...(receiptBoundaries.get(step.model) ?? []), { before: step.before, after: step.after }]);
         }
         if (!matches(true)) throw new Error("The source changed while applying its text step.");
         state = "applied";
@@ -538,6 +550,7 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
     invalidateVisualHistory(session);
     if (entry) return false;
     if (!fallback || fallback.readOnly || fallback.model.isDisposed() || !(direction === "undo" ? fallback.model.canUndo() : fallback.model.canRedo())) return false;
+    if (crossesReceipt(fallback.model, direction)) return false;
     if (direction === "undo") fallback.model.pushStackElement();
     routedModelChanges.add(fallback.model);
     try { await fallback.model[direction](); }

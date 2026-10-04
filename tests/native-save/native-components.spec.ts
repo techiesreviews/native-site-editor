@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { publishButton } from "./publish";
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
@@ -444,46 +444,54 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
   expect(text).toBe("Hello  world");
 });
 
-test("Make component refuses a page replacement made while its preview dialog is open", async ({ page, baseURL }) => {
-  await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
-  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
-  expect(url).toBe(`${baseURL}/mcp`);
-  const client = new Client({ name: "components-review-agent", version: "1.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
-  const call = async (name: string, args: Record<string, unknown>) => {
-    const response = await client.callTool({ name, arguments: args });
-    expect(response.isError).toBeFalsy();
-    return JSON.parse((response.content as { text: string }[])[0].text);
-  };
-  try {
-    await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
-    const home = await call("get_page", { page: "/" });
-    const hero = /<section class="hero"[^>]*>[\s\S]*?<\/section>/.exec(home.html)![0];
-    await select(page, "section.hero");
-    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-    await bar(page).getByRole("button", { name: "Make component…" }).click();
-    const dialog = page.getByRole("dialog", { name: "Make component" });
-    await expect(dialog).toContainText("A native browser preview");
-    const replacement = `<section class="hero" data-key="hero"><h1>Unreviewed replacement</h1></section>`;
-    const edited = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: hero, newText: replacement }] });
-    expect(edited.state).toBe("applied");
-    await expect(frame(page).locator("section.hero h1")).toHaveText("Unreviewed replacement");
-    await dialog.getByRole("button", { name: "Make component", exact: true }).click();
-    await expect(dialog).toBeHidden();
-    await expect(status(page)).toHaveText("The page or repository changed meanwhile; no component was made.");
-    expect((await storedDraft(page, indexPath))?.content).toContain(replacement);
-    expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
-    expect(await storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
-  } finally {
-    await client.close();
-  }
-});
+// A page change made while Save section awaits the editor JSON's branch text
+// must not let the save land: the JSON is not written and the change stays.
+test("Save section refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
+  const sidecar = ".editor/page-builder.json";
+  const addPanel = page.getByRole("dialog", { name: "Add to the page" });
+  await select(page, "section.hero");
+  if (!(await addPanel.isVisible())) await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  const option = addPanel.getByRole("option", { name: /^Intro HTML$/ });
+  await option.focus();
+  await option.press("Enter");
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+  await expect.poll(async () => (await storedDraft(page, sidecar))?.content ?? "").toContain("section-intro");
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  await expect.poll(() => storedDraft(page, sidecar)).toBeUndefined();
+  const json = await (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(sidecar)}`)).text();
+  expect(json).toContain("section-intro");
 
+  // A real inline edit, so the section differs from its saved record.
+  const heading = frame(page).locator("section.section-intro h2");
+  await heading.click();
+  await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("Edited heading");
+  await page.keyboard.press("Enter");
+  const mounted = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  await expect.poll(mounted).toContain("<h2>Edited heading</h2>");
+  await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
+  const save = bar(page).getByRole("button", { name: "Save section", exact: true });
+  await expect(save).toBeVisible();
+
+  // Press Save, then in the same turn (while it awaits the JSON's branch text)
+  // change the page through the editor's public module.
+  const foreign = "Foreign heading";
+  await save.evaluate(async (button, foreign) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource("index.html")!;
+    (button as HTMLElement).click();
+    const start = source.indexOf("Edited heading");
+    editor.replaceActiveRange({ path: "index.html", start, end: start + "Edited heading".length, expected: "Edited heading", text: foreign });
+  }, foreign);
+  await expect(page.locator("#notice")).toContainText("The repository or source changed meanwhile. Review the latest files and try again.");
+  expect(await mounted()).toContain(foreign);
+  expect(await storedDraft(page, sidecar)).toBeUndefined();
+  expect((await storedDraft(page, "styles/sections.css"))).toBeUndefined();
+  expect((await storedDraft(page, indexPath))?.content).toContain(foreign);
+});
 
 test("replaced component pencils cannot navigate after selection changes", async ({ page }) => {
   await selectFirstCard(page);

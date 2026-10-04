@@ -70,6 +70,11 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
   await page.screenshot({ path: `${OUT}/save-section-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 820, height: 1000 });
+  // The Add panel would cover the narrow page; close it and bring the bar into view.
+  if (await panel(page).isVisible()) await panel(page).getByRole("button", { name: /close/i }).click();
+  await expect(panel(page)).toBeHidden();
+  await frame(page).locator("section.section-intro").scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport();
   await page.screenshot({ path: `${OUT}/save-section-narrow.png` });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await save.click();
@@ -181,4 +186,36 @@ test("Add with an unchanged stylesheet pane open: no warning, three drafts, one 
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual(drafts);
 
+});
+
+// Typing in the open stylesheet pane after Add clears the shared journal. The
+// primary Undo must then refuse as a whole: the Add's three drafts, the page
+// source and the typed stylesheet bytes all stay exactly as they were.
+test("Undo after typing in the stylesheet pane following Add refuses without a partial revert", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await frame(page).locator("section.flow h2").click();
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
+  await addIntro(page, "section.flow h2");
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  const added = await mounted(page);
+
+  await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("/* foreign */");
+  await expect.poll(() => mounted(page, "styles/elements.css")).toContain("/* foreign */");
+  const typed = await mounted(page, "styles/elements.css");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", "styles/elements.css", CSS].sort());
+  const drafts = await storedDrafts(page);
+
+  const undo = page.locator(".code-editor__undo").first();
+  await expect(undo).toBeDisabled();
+  await undo.click({ force: true });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForTimeout(500);
+  expect(await storedDrafts(page)).toEqual(drafts);
+  expect(await mounted(page)).toBe(added);
+  expect(await mounted(page, "styles/elements.css")).toBe(typed);
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
 });
