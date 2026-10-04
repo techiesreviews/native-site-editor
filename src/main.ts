@@ -88,6 +88,7 @@ import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type Nati
 import { mountCollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { applyCollectionEdits } from "./page-builder/collection-bake";
+import { validCollectionRoute } from "./page-builder/collection-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { fetchWithReadRetry } from "./read-retry";
@@ -1245,20 +1246,27 @@ function nativeSelectedCollection(): SelectedCollection | undefined {
   const selection = lastNativeSelection;
   if (versionView || !selection?.node || selection.path !== currentPath || !nativeRouteForPath(selection.path) ||
     nativeEditableTemplatePath() || !editorModule?.isMounted(selection.path)) return undefined;
+  const route = nativeRouteForPath(selection.path);
+  if (!route || !validCollectionRoute(route, selection.path)) return undefined;
   const source = nativeEffectiveSource(selection.path);
-  const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
-  if (!range || !startTagAttribute(source!, range.tag, "data-each")) return undefined;
-  return { path: selection.path, start: range.tag.start,
-    key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
+  if (source === undefined) return undefined;
+  // Clicking a card also exposes its containing collection, alongside the card's own styles.
+  for (let depth = selection.node.length; depth > 0; depth--) {
+    const range = locateNativeElementRange(source, selection.node.slice(0, depth));
+    if (range && startTagAttribute(source, range.tag, "data-each")) return { path: selection.path, start: range.tag.start,
+      key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
+  }
+  return undefined;
 }
 function mountNativeSelectedCollection(host: HTMLElement) {
-  const sources = () => Object.fromEntries(Object.entries(nativeCollectionSnapshot().sources)
-    .filter(([path]) => /\.html?$/i.test(path) || path === NATIVE_CONFIG_PATH));
-  const revision = () => `${nativeCollectionSnapshot().revision}\n${nativeSelectedCollection()?.key ?? ""}`;
+  const sources = () => Object.fromEntries(nativeFiles().filter(path => /\.html?$/i.test(path) || path === NATIVE_CONFIG_PATH)
+    .flatMap(path => { const source = nativeEffectiveSource(path); return source === undefined ? [] : [[path, source]]; }));
+  const routes = () => deriveNativeRoutes(nativeFiles().sort());
+  const identity = () => ({ name: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(routes()["/"]) ?? "").name });
+  const revision = () => `${setupScope()}\n${generation}\n${nativeSelectedCollection()?.key ?? ""}`;
   return mountSelectedCollection(host, {
     target: nativeSelectedCollection, sources,
-    routes: () => nativeCollectionSnapshot().routes,
-    identity: () => nativeCollectionSnapshot().identity,
+    routes, identity,
     revision, page: () => nativeSelectedCollection()?.path,
     async prepare(target) {
       const before = sources(), expectedRevision = revision();

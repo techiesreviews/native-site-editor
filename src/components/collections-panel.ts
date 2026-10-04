@@ -50,7 +50,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   };
   const status = node("p", "collections-panel__status");
   status.setAttribute("role", "status");
-  const report = (message: string) => { status.textContent = message; deps.announce(message); };
+  const report = (message: string) => { const changed = status.textContent !== message; status.textContent = message; if (changed) deps.announce(message); };
   const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult, label: string) => {
     if (destroyed || applying) return;
     if ("error" in plan) { report(plan.error); return; }
@@ -83,6 +83,9 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       return;
     }
     if (options.grid) {
+      if (activeForm?.contains(document.activeElement) && activeSnapshot && !current(activeSnapshot)) {
+        report("The page or repository changed. Your input was kept; reopen before applying."); return;
+      }
       const target = options.grid();
       if (target && activeForm && activeSnapshot && activeGrid?.path === target.path && activeGrid.start === target.start && current(activeSnapshot)) return;
       activeForm = undefined; activeSnapshot = undefined; activeGrid = undefined;
@@ -211,6 +214,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const refresh = () => {
       apply.disabled = true;
       filterMatch.parentElement!.hidden = !filter.value;
+      direction.parentElement!.hidden = !sort.value;
       try {
         const folders = checks.filter((input) => input.checked).map((input) => input.value);
         if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
@@ -231,6 +235,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, existing ? "Collection saved" : "Grid made into a collection"); });
     root.append(form, status); refresh(); track(form, saved);
   }
+  if (options.grid) root.addEventListener("focusout", () => queueMicrotask(update));
   update();
   return { update, openGrid, dirty,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),

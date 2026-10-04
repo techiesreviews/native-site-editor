@@ -104,3 +104,18 @@ test("changing selection keeps unsubmitted collection input but refuses its old 
   await panel.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(panel).not.toBeVisible();
 });
+
+
+test("selecting a card exposes its containing collection without another selection step", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await frame(page).locator('[data-key="mixed-list"] article a').click();
+  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
+  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
+  await page.locator(".selected-collection > summary").click();
+  const panel = inspector(page);
+  await expect(panel.getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
+  await panel.getByRole("combobox", { name: "Sort by", exact: true }).selectOption("");
+  await expect(panel.getByRole("combobox", { name: "Order", exact: true })).not.toBeVisible();
+  await expect(panel.getByLabel("Card template HTML")).not.toBeVisible();
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
+});
