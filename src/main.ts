@@ -2492,7 +2492,12 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
   const done = value.trim() ? `${label} updated` : `${label} removed`;
   // A page that a collection lists rebuilds those cards in the same step, so
   // the listing never goes stale (a stale listing would read as hand-edited).
-  if (editorModule?.isMounted(path) && !(await nativePageIsListed(path))) {
+  // Captured before any await: a newer edit, branch or repository is refused, never overwritten.
+  const scope = setupScope(), epoch = generation;
+  const listed = editorModule?.isMounted(path) ? await nativePageIsListed(path) : true;
+  if (scope !== setupScope() || epoch !== generation || nativeEffectiveSource(path) !== source)
+    return "The page changed meanwhile. Try again.";
+  if (editorModule?.isMounted(path) && !listed) {
     try {
       editorModule.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, group);
     } catch (error) {
@@ -2504,6 +2509,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
     return undefined;
   }
   return applyNativeCollectionOperation({
+    expectedSources: new Map([[path, source]]),
     edits: new Map([[path, next]]),
     done,
     undone: `Undid changing the ${field} of ${nativePageLabelOf(path)}.`,
