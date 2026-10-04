@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // Linking a word in a paragraph from the edit bar: Link wraps the selected
 // text in `<a href="">` and opens its Address at once; Remove link unwraps.
@@ -176,7 +177,16 @@ test("a selected link inside a paragraph gets Address and Remove link", async ({
   await bar(page).getByRole("button", { name: "Remove link" }).click();
   await expect.poll(() => editorText(page)).toBe(indexSource);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  // A nav link is not inside a text element: Address, no Remove link.
+  // Ordinary shared-template clicks select its page instance without editing it.
+  await frame.getByRole("link", { name: "About", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Site header");
+  await expect(page.getByRole("treeitem", { name: "Site header", exact: true })).toHaveAttribute("aria-selected", "true");
+  expect(await editorText(page)).toBe(indexSource);
+  expect(await storedDraft(page, "components/site-header/site-header.html")).toBeUndefined();
+  await bar(page).getByRole("button", { name: "Edit Site header component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
+  // Within the explicitly opened template, a nav link offers Address, no Remove link.
   await frame.getByRole("link", { name: "About", exact: true }).click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page).getByRole("button", { name: "Address" })).toBeVisible();
