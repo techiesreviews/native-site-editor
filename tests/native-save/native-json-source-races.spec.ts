@@ -7,10 +7,16 @@ import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
 
 // A page Title write (the Pages tab's Rename) awaits the listed-page check
-// before it writes. A source edit landing in that await (here: the public
-// editor API, called in the same browser task right after the rename field's
-// Enter, so it runs before the write's continuation) must be refused, never
-// overwritten, and the collection listing and the editor's JSON stay untouched.
+// before it writes. A source edit landing in that await must be refused, never
+// overwritten, with the listing HTML and the editor's JSON left as they were.
+// The rename's Enter is a synthetic (untrusted) keydown dispatched to the real
+// rename field's handler, so the public editor API edit can follow it in the
+// same task, after the handler's capture and before its continuation.
+// The first two cases use a legacy `data-each` listing: the fixture has no
+// .editor/page-builder.json, so their "no JSON draft" checks hold trivially.
+// The third case moves the listing into the editor's JSON first, so the
+// JSON-aware branch of the listed check runs. None of them edits the JSON file
+// itself during the await.
 const SIDECAR = ".editor/page-builder.json";
 const REFUSED = "The page changed meanwhile. Try again.";
 const FOREIGN = "<!-- foreign edit -->\n";
@@ -103,13 +109,24 @@ test("a listed page's Rename refuses a source edit made during the listed check;
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? SEED["index.html"]).toBe(SEED["index.html"]);
 });
 
-test("an unlisted page's Rename refuses a source edit made during the listed check", async ({ page, baseURL }) => {
+test("an unlisted page's Rename refuses a source edit made during the listed check; retry is one Undo", async ({ page, baseURL }) => {
   const path = "about/index.html";
   await seed(page, baseURL, path);
   const label = /<title>([^<]*)<\/title>/.exec(readFileSync(join(fixture, path), "utf8"))![1];
   const { before, untouched } = await renameThenEditSource(page, path, label, "About renamed");
   expect(untouched).toBe(true);
   await expectRefusedThenUndo(page, path, before);
+
+  // Control without interference: the same rename succeeds, touching only this page's title and social title.
+  await renameThenEditSource(page, path, label, "About renamed", false);
+  await expect(page.locator("#status")).toHaveText(`Renamed ${label} to About renamed`);
+  expect(await mounted(page, path)).toBe(before
+    .replace(`<title>${label}</title>`, "<title>About renamed</title>")
+    .replace(`<meta property="og:title" content="${label}">`, '<meta property="og:title" content="About renamed">'));
+  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual([path]);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => mounted(page, path)).toBe(before);
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
 });
 
 // The same race on a page that a collection in the editor's JSON lists: the
