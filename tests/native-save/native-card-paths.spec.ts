@@ -120,3 +120,48 @@ test("a taken URL changes nothing; touch opens the list; dark and narrow keep th
   await page.setViewportSize({ width: 820, height: 760 });
   await page.screenshot({ path: `${shots}/folders-open-dark-narrow.png` });
 });
+
+test("after a card's page goes in another folder, the next Add still makes a page, in the grid's folder by default", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  await folder(page).click();
+  await folders(page).getByRole("option", { name: "/work/fern-and-kettle/" }).click();
+  await title(page).press("Enter");
+  await expect(page.locator("#status")).toHaveText("Created the page Oak at /work/fern-and-kettle/oak/ and its card in Recent work");
+  await expect(frame(page).locator("card-project")).toHaveCount(3);
+
+  await frame(page).locator("card-project").first().hover();
+  await expect(page.locator(".card-ghost__add")).toHaveAccessibleName("Add a card with its own page to Recent work");
+  await page.locator(".card-ghost__add").click();
+  await expect(title(page)).toBeFocused();
+  await title(page).fill("Ash");
+  await expect(url(page)).toHaveText("URL /work/ash/");
+  await title(page).press("Enter");
+  await expect(page.locator("#status")).toHaveText("Created the page Ash at /work/ash/ and its card in Recent work");
+  await expect(frame(page).locator("card-project")).toHaveCount(4);
+  expect((await storedDraft(page, "work/ash/index.html"))?.content).toContain("Ash");
+});
+
+test.describe("touch", () => {
+  test.use({ hasTouch: true });
+  test("taps open the folder list and choose a folder; nothing depends on hover", async ({ page, baseURL }) => {
+    await openPopover(page, baseURL);
+    await title(page).fill("Oak");
+    await folder(page).tap();
+    await expect(folders(page)).toBeVisible();
+    await folders(page).getByRole("option", { name: "/work/harbour-lane-pottery/" }).tap();
+    await expect(folders(page)).toBeHidden();
+    await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/oak/");
+    await folder(page).tap();
+    await folders(page).getByRole("option", { name: "New folder in /work/harbour-lane-pottery/" }).tap();
+    const name = folders(page).getByRole("textbox", { name: "New folder's name" });
+    await expect(name).toBeFocused();
+    await name.fill("kilns");
+    await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/kilns/oak/");
+    // Tapping the title takes the folder and keeps the popover.
+    await title(page).tap();
+    await expect(folders(page)).toBeHidden();
+    await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/kilns/oak/");
+    await expect(popover(page)).toBeVisible();
+  });
+});
