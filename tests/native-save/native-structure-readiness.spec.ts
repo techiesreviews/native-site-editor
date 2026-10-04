@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { requireActualFixture } from "./fixture-contract";
 
 // Structure painted before the code editor module loaded must gain its
 // component fields (instance rows, slot badges, slot-only rows) once the
 // editor mounts on the same bytes, with no source edit in between.
 // Runs on the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
-test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE?.endsWith("actual-starter"), "Set ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.");
+requireActualFixture();
 
 const counts = (page: Page) => page.evaluate(() => ({
   rows: document.querySelectorAll('[aria-label="Page structure"] [role=treeitem]').length,
@@ -36,6 +37,9 @@ for (const codeHidden of [false, true]) {
   test(`Structure gains component fields once the editor mounts on the same bytes${codeHidden ? " (code pane hidden)" : ""}`, async ({ page, baseURL }) => {
     await openHeld(page, baseURL, codeHidden);
     const start = await source(page);
+    expect(typeof start).toBe("string");
+    expect(start!.length).toBeGreaterThan(0);
+    if (codeHidden) await expect(page.getByRole("separator", { name: "Resize code" })).toHaveAttribute("aria-valuenow", "0");
     await expect.poll(async () => (await counts(page)).slotBadges, { timeout: 15_000 }).toBeGreaterThan(0);
     const after = await counts(page);
     expect(after.instanceRows).toBeGreaterThan(0);
