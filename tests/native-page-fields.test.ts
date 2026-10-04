@@ -163,3 +163,17 @@ test("refuses field metas whose attributes do not parse exactly", () => {
 test("refuses property=field: metas instead of skipping them", () => {
   code(() => readEditorFieldMetas("<html><head><meta property=\"field:a\" content=\"1\"></head></html>"), "native-page-fields/invalid-field");
 });
+
+test("glued entity-encoded field names are refused, not skipped", () => {
+  code(() => readEditorFieldMetas("<html><head><meta content=\"x\"name=\"field&#58;a\"></head></html>"), "native-page-fields/malformed-source");
+  code(() => readEditorFieldMetas("<html><head><meta content=\"x\"name=\"&#102;ield:a\"></head></html>"), "native-page-fields/malformed-source");
+});
+
+test("a malformed non-field meta mentioning field: fails closed", () => {
+  code(() => readEditorFieldMetas("<html><head><meta name=\"note\"content=\"see field:x\"></head></html>"), "native-page-fields/malformed-source");
+  assert.deepEqual(readEditorFieldMetas("<html><head><meta name=\"note\" content=\"see field:x\"></head></html>"), []);
+});
+
+test("property and name field: together are ambiguous", () => {
+  code(() => readEditorFieldMetas("<html><head><meta property=\"field:a\" name=\"field:a\" content=\"1\"></head></html>"), "native-page-fields/duplicate-meta");
+});

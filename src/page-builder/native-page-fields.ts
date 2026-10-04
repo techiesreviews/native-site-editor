@@ -92,7 +92,7 @@ export function readEditorFieldMetas(source: string): EditorFieldMeta[] {
     if (attributes.some((item) => item.name === "property" && item.value.startsWith(prefix)) && !names.some((item) => item.value.startsWith(prefix)))
       fail("native-page-fields/invalid-field", "Field metas must use name=\"field:…\", not property.");
     if (!names.some((item) => item.value.startsWith(prefix))) {
-      if (source.slice(element.tag.start, element.tag.end).includes(prefix) && !fullyParsed(source, element.tag))
+      if (decodeHtmlEntities(source.slice(element.tag.start, element.tag.end), true).includes(prefix) && !fullyParsed(source, element.tag))
         fail("native-page-fields/malformed-source", "A meta that may hold a field has attributes that cannot be read exactly.");
       continue;
     }
