@@ -390,7 +390,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     filterMatch.parentElement!.hidden = !filter.value;
     // Preserve an authored custom sort even when no current page defines it.
     if (sortValue && !fieldNames.includes(sortValue.replace(/^-/, ""))) {
-      const option = node("option", "", sortValue.replace(/^-/, "")); option.value = sortValue.replace(/^-/, ""); sort.append(option); sort.value = option.value;
+      const option = node("option", "", fieldLabel(sortValue.replace(/^-/, ""))); option.value = sortValue.replace(/^-/, ""); sort.append(option); sort.value = option.value;
     }
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
     const advanced = node("details", "collections-panel__advanced");

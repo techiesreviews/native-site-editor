@@ -45,11 +45,7 @@ test("a declared filter keeps its friendly label after the last page supplying t
   }
 });
 
-// ROOT GRANT NEEDED: src/components/collections-panel.ts (openGrid, "Preserve an
-// authored custom sort") appends the missing sort option with its raw name
-// (`release-year`), not fieldLabel(); the filter path above uses fieldLabel.
-// Repro: run this case as test(); the deleted-supplier pass gets "release-year".
-test.fixme("a declared sort keeps its friendly label after the last page supplying the field is gone", async ({ page: p, baseURL }) => {
+test("a declared sort keeps its friendly label after the last page supplying the field is gone", async ({ page: p, baseURL }) => {
   for (const supplier of [true, false]) {
     const panel = await seed(p, baseURL, supplier);
     const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
