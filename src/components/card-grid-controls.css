@@ -204,23 +204,45 @@
   outline: var(--focus-ring);
   outline-offset: -1px;
 }
-/* The folders, in place under the URL: a compact list, the current one first. */
+/*
+ * The folders: a compact list dropping from the URL's folder over the
+ * popover's lower part, so the popover keeps its size and the folder stays
+ * under the pointer. "New folder" stays in view at the list's foot.
+ */
 .card-add__folders {
+  position: fixed;
+  z-index: 32;
   display: flex;
   flex-direction: column;
-  max-height: 168px;
-  margin: -4px 0 0;
-  overflow-y: auto;
-  border-left: 2px solid var(--control-line);
-  padding: 2px 0 2px 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  padding: 2px;
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
   font-size: var(--type-small);
+  animation: card-folders-in 120ms ease-out;
 }
 .card-add__folders[hidden] {
   display: none;
 }
+@keyframes card-folders-in {
+  from {
+    opacity: 0;
+  }
+}
+.card-add__folder-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .card-add__folder {
   display: flex;
+  flex: none;
   align-items: center;
+  gap: 6px;
   min-height: var(--size-compact, 28px);
   border-radius: var(--radius);
   padding: 0 6px;
@@ -242,21 +264,29 @@
   color: var(--primary);
 }
 .card-add__folder--new {
+  position: sticky;
+  bottom: 0;
+  background: var(--panel-surface);
   color: var(--link);
   font-family: inherit;
 }
-.card-add__folder--naming {
-  gap: 0;
-  cursor: text;
+.card-add__folder--new:hover {
+  background: color-mix(in srgb, var(--hover) 100%, var(--panel-surface));
 }
-.card-add__folder--naming:hover {
-  background: transparent;
+.card-add__folder-naming {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-mono);
+}
+.card-add__folder-naming[hidden],
+.card-add__path[hidden] {
+  display: none;
 }
 .card-add__folder-prefix {
   color: var(--muted);
 }
 .card-add__folder-input {
-  flex: 1;
+  width: 12ch;
   min-width: 4ch;
   height: 24px;
   margin: 0;
@@ -318,7 +348,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card-ghost,
-  .card-add {
+  .card-add,
+  .card-add__folders {
     animation: none;
   }
   .card-ghost__add,

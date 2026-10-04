@@ -19,6 +19,12 @@ const title = (page: Page) => popover(page).getByRole("textbox", { name: "Page t
 const folder = (page: Page) => popover(page).locator(".card-add__path");
 const folders = (page: Page) => popover(page).getByRole("listbox", { name: "Folder for the new page" });
 const url = (page: Page) => popover(page).locator(".card-add__url");
+// The URL as it shows: its visible text, with the new folder's name field's value in its place.
+const shownUrl = (page: Page) => url(page).evaluate((row) => {
+  const walk = (node: Node): string => node instanceof HTMLInputElement ? node.value
+    : node instanceof HTMLElement ? (node.hidden ? "" : [...node.childNodes].map(walk).join("")) : node.textContent ?? "";
+  return walk(row).replace(/\s+/g, " ").trim();
+});
 const shots = ".scratch/inline-paths";
 
 async function openPopover(page: Page, baseURL: string | undefined) {
@@ -76,11 +82,12 @@ test("hovering the folder shows the list without taking focus; a new folder is n
   await expect(title(page)).toHaveValue("Oak Chair");
 
   await folders(page).getByRole("option", { name: "New folder in /work/" }).click();
-  const name = folders(page).getByRole("textbox", { name: "New folder's name" });
+  const name = popover(page).getByRole("textbox", { name: "New folder's name" });
   await expect(name).toBeFocused();
   await name.fill("chairs");
-  await expect(url(page)).toHaveText("URL /work/chairs/oak-chair/");
-  await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeDisabled();
+  await expect.poll(() => shownUrl(page)).toBe("URL /work/chairs/oak-chair/");
+  // Create takes the name as it is typed.
+  await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeEnabled();
   await page.screenshot({ path: `${shots}/new-folder-light.png` });
   // Escape drops the new folder only.
   await name.press("Escape");
@@ -95,7 +102,7 @@ test("hovering the folder shows the list without taking focus; a new folder is n
   await name.fill("chairs");
   await name.press("Enter");
   await expect(title(page)).toBeFocused();
-  await expect(url(page)).toHaveText("URL /work/chairs/oak-chair/");
+  await expect.poll(() => shownUrl(page)).toBe("URL /work/chairs/oak-chair/");
   const before = (await storedDraft(page, "index.html"))?.content;
   await page.getByRole("button", { name: "Create page and card" }).click();
   await expect(page.locator("#status")).toHaveText("Created the page Oak Chair at /work/chairs/oak-chair/ and its card in Recent work");
@@ -154,14 +161,74 @@ test.describe("touch", () => {
     await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/oak/");
     await folder(page).tap();
     await folders(page).getByRole("option", { name: "New folder in /work/harbour-lane-pottery/" }).tap();
-    const name = folders(page).getByRole("textbox", { name: "New folder's name" });
+    const name = popover(page).getByRole("textbox", { name: "New folder's name" });
     await expect(name).toBeFocused();
     await name.fill("kilns");
-    await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/kilns/oak/");
+    await expect.poll(() => shownUrl(page)).toBe("URL /work/harbour-lane-pottery/kilns/oak/");
     // Tapping the title takes the folder and keeps the popover.
-    await title(page).tap();
+    await popover(page).locator(".card-add__title").tap();
     await expect(folders(page)).toBeHidden();
-    await expect(url(page)).toHaveText("URL /work/harbour-lane-pottery/kilns/oak/");
+    await expect.poll(() => shownUrl(page)).toBe("URL /work/harbour-lane-pottery/kilns/oak/");
     await expect(popover(page)).toBeVisible();
   });
+});
+
+test("pointing at the folder opens the list without moving the folder; a click at the same spot keeps it open and chooses nothing", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  const before = (await folder(page).boundingBox())!;
+  const formBefore = (await popover(page).boundingBox())!;
+  const x = before.x + before.width / 2, y = before.y + before.height / 2;
+  await page.screenshot({ path: `${shots}/hover-anchor-before-light.png` });
+  await page.mouse.move(x - 120, y);
+  await page.mouse.move(x, y, { steps: 6 });
+  await expect(folders(page)).toBeVisible();
+  const after = (await folder(page).boundingBox())!;
+  expect(Math.abs(after.y - before.y)).toBeLessThan(0.5);
+  expect(Math.abs(after.x - before.x)).toBeLessThan(0.5);
+  expect((await popover(page).boundingBox())!).toEqual(formBefore);
+  await expect(title(page)).toBeFocused();
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(folders(page)).toBeVisible();
+  await expect(url(page)).toHaveText("URL /work/oak/");
+  await expect(folders(page).getByRole("option", { selected: true })).toHaveText("/work/");
+  // The list stays off the popover's own Add button.
+  const list = (await page.locator(".card-add__folders").boundingBox())!;
+  const ghost = (await page.locator(".card-ghost__add").boundingBox())!;
+  const overlaps = list.x < ghost.x + ghost.width && ghost.x < list.x + list.width && list.y < ghost.y + ghost.height && ghost.y < list.y + list.height;
+  expect(overlaps).toBe(false);
+  await page.screenshot({ path: `${shots}/hover-anchor-light.png` });
+  console.log(`anchor before ${JSON.stringify(before)} after ${JSON.stringify(after)} popover ${JSON.stringify(formBefore)} list ${JSON.stringify(list)} add ${JSON.stringify(ghost)}`);
+});
+
+test("a new folder's empty name is no error yet; Create takes a typed name in one click; focus shows an underline, not a box", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  const style = await title(page).evaluate((input) => { const s = getComputedStyle(input); return { outline: s.outlineStyle, shadow: s.boxShadow, border: s.borderTopWidth }; });
+  expect(style.outline).toBe("none");
+  expect(style.shadow).toContain("-2px");
+  await folder(page).click();
+  await folders(page).getByRole("option", { name: "New folder in /work/" }).click();
+  const name = popover(page).getByRole("textbox", { name: "New folder's name" });
+  await expect(name).toBeFocused();
+  await expect(popover(page).locator(".card-add__message")).toBeHidden();
+  await expect(title(page)).toHaveAttribute("aria-invalid", "false");
+  await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeEnabled();
+  await expect(popover(page).getByRole("listbox").getByRole("textbox")).toHaveCount(0);
+  await name.fill("chairs");
+  await page.getByRole("button", { name: "Create page and card" }).click();
+  await expect(page.locator("#status")).toHaveText("Created the page Oak at /work/chairs/oak/ and its card in Recent work");
+});
+
+test("Tab from a new folder's name keeps the name and moves on, not back to the title", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  await folder(page).click();
+  await folders(page).getByRole("option", { name: "New folder in /work/" }).click();
+  await popover(page).getByRole("textbox", { name: "New folder's name" }).fill("chairs");
+  await page.keyboard.press("Tab");
+  await expect.poll(() => shownUrl(page)).toBe("URL /work/chairs/oak/");
+  await expect(title(page)).not.toBeFocused();
+  await expect(title(page)).toHaveValue("Oak");
 });

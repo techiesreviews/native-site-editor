@@ -86,14 +86,18 @@ export function cardPageFolders(routes: Record<string, string>): string[] {
 
 /**
  * A grid's default folder when its cards' pages are not all in one (a page
- * from another folder joined it): the folder of its last card's page that
- * another card's page is in too. None for a list of a site's sections.
+ * from another folder joined it): the folder most of its cards' pages are
+ * in, else the folder of its last card's page; only when two cards at least
+ * link to pages of the site in folders below its top. None for a list of
+ * the site's top-level pages (a menu).
  */
 export function mixedParent(routes: Record<string, string>, itemRoutes: (string | undefined)[]): string | undefined {
   const parents = [...new Set(itemRoutes.filter((route): route is string => Boolean(route && routes[route] && route.endsWith("/"))))]
-    .map((route) => route.replace(/[^/]+\/$/, ""));
-  for (const parent of [...parents].reverse()) if (parent !== "/" && parents.filter((other) => other === parent).length >= 2) return parent;
-  return undefined;
+    .map((route) => route.replace(/[^/]+\/$/, ""))
+    .filter((parent) => parent !== "/");
+  if (parents.length < 2) return undefined;
+  const count = (parent: string) => parents.filter((other) => other === parent).length;
+  return [...parents].reverse().reduce((best, parent) => (count(parent) > count(best) ? parent : best));
 }
 
 /** Whether a folder is one of a listing's source folders or inside one (`/work/` covers `/work/a/`, never `/works/`). */
@@ -103,7 +107,11 @@ export const cardFolderCovered = (prefixes: string[] | undefined, parent: string
 /** The folders to offer, the default first; for a generated listing only those it covers. */
 export function cardFolderChoices(folders: string[], parent: string | undefined, prefixes: string[] | undefined): string[] {
   const out = folders.filter((folder) => cardFolderCovered(prefixes, folder));
-  for (const prefix of prefixes ?? []) if (!out.includes(prefix)) out.push(prefix);
+  // A source folder is offered only when a page could be made in it.
+  for (const prefix of prefixes ?? []) {
+    const normal = normalizeRoute(prefix);
+    if (normal.ok && normal.value === prefix && prefix.endsWith("/") && !out.includes(prefix)) out.push(prefix);
+  }
   return parent ? [parent, ...out.filter((folder) => folder !== parent)] : out;
 }
 

@@ -57,6 +57,10 @@ test("invalid, hidden, reserved, unknown or taken paths are refused", () => {
   assert.match(refused({ title: "!!", parent: "/work/" }), /no URL/);
 });
 
+test("a source folder no page could be in is never offered", () => {
+  assert.deepEqual(cardFolderChoices(["/"], undefined, ["/work/", "/bad", "/_x/", "/a/../"]), ["/work/"]);
+});
+
 test("a generated listing takes pages only in its source folders, on a slash boundary", () => {
   assert.equal(cardFolderCovered(["/work/"], "/work/"), true);
   assert.equal(cardFolderCovered(["/work/"], "/work/studio/"), true);
@@ -72,7 +76,10 @@ test("a generated listing takes pages only in its source folders, on a slash bou
 
 test("after a page from another folder joins a grid, its default folder stays explicit; a list of sections gets none", () => {
   assert.equal(mixedParent(routes, ["/work/a/", "/work/b/", "/works/old/"]), "/work/");
-  assert.equal(mixedParent(routes, ["/work/a/", "/works/old/"]), undefined);
+  // Each folder holding one card's page only: the last card's folder, explicitly.
+  assert.equal(mixedParent(routes, ["/work/a/", "/works/old/"]), "/works/");
+  assert.equal(mixedParent(routes, ["/works/old/", "/work/a/"]), "/work/");
+  // A menu of top-level pages, or one linked page, is not a list of pages.
   assert.equal(mixedParent(routes, ["/", "/work/", "/about.html"]), undefined);
   assert.equal(mixedParent(routes, ["/work/a/", "/work/a/", "/work/zz/"]), undefined);
 });
