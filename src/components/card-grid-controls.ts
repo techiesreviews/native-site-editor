@@ -111,6 +111,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   let lastHover: ItemGridReport | undefined;
   // Places the open popover's folder list again, after the popover moves.
   let menuPlacer: (() => void) | undefined;
+  // The open popover's folder list.
+  let folderMenu: HTMLElement | undefined;
 
   add.addEventListener("pointerenter", () => {
     pointerOnAdd = true;
@@ -267,7 +269,12 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     only.title = `Add ${aOr(about.noun)} with placeholder text and no page`;
     const actions = node("div", "card-add__actions");
     actions.append(only, create);
-    popover.replaceChildren(heading, where, field, url, message, actions, menu);
+    popover.replaceChildren(heading, where, field, url, message, actions);
+    // Beside the popover in the pane, not in it: the popover's opening
+    // animation moves it, and that would carry a fixed list with it.
+    folderMenu?.remove();
+    folderMenu = menu;
+    pane.append(menu);
     let pending = false;
     // While a new folder is being named, its name so far (not yet chosen), and whether anything was typed in it.
     let naming: string | undefined;
@@ -309,7 +316,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       });
       if (about.newFolders) {
         const add = node("div", "card-add__folder card-add__folder--new");
-        add.append(icon("plus", 12), node("span", "", `New folder in ${parent}`));
+        add.append(icon("plus", 12, "icon--before"), node("span", "", `New folder in ${parent}`));
         add.setAttribute("role", "option");
         add.tabIndex = -1;
         add.setAttribute("aria-selected", String(newFolder !== undefined || naming !== undefined));
@@ -536,6 +543,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (!open) return;
     open = undefined;
     menuPlacer = undefined;
+    folderMenu?.remove();
+    folderMenu = undefined;
     trackGrid();
     popover.hidden = true;
     popover.replaceChildren();
@@ -545,6 +554,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (restoreFocus && !ghost.hidden) add.focus();
   }
 
+  // A short pane scrolls the popover: the list follows its folder.
+  popover.addEventListener("scroll", () => menuPlacer?.(), { passive: true });
   popover.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
     event.preventDefault();
@@ -553,7 +564,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   });
   function onPointerDown(event: PointerEvent) {
     const target = event.target as Node;
-    if (!open || popover.contains(target) || add.contains(target)) return;
+    if (!open || popover.contains(target) || add.contains(target) || folderMenu?.contains(target)) return;
     close(false);
   }
   document.addEventListener("pointerdown", onPointerDown, true);
@@ -610,6 +621,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       document.removeEventListener("pointerdown", onPointerDown, true);
       layer.remove();
       popover.remove();
+      folderMenu?.remove();
       pane.dispatchEvent(new Event("card-controls-layout"));
     },
   };

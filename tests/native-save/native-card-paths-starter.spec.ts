@@ -18,7 +18,7 @@ test.afterEach(() => expect(pageErrors).toEqual([]));
 const shots = ".scratch/inline-paths/starter";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const popover = (page: Page) => page.getByRole("dialog", { name: "New card with its own page" });
-const folders = (page: Page) => popover(page).getByRole("listbox", { name: "Folder for the new page" });
+const folders = (page: Page) => page.getByRole("listbox", { name: "Folder for the new page" });
 const url = (page: Page) => popover(page).locator(".card-add__url");
 const shownUrl = (page: Page) => url(page).evaluate((row) => {
   const walk = (node: Node): string => node instanceof HTMLInputElement ? node.value
@@ -145,6 +145,16 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await expect(heading).toHaveText("Inline & exact");
     await page.locator(".code-editor__undo").click();
     await expect(heading).toHaveText(original);
+
+    // Structure: the hero's Primary link, its text and address fields.
+    const linkRow = tree(page).locator("[role=treeitem][data-slot=primary]").filter({ visible: true }).first();
+    await linkRow.hover();
+    await linkRow.locator(".page-structure__action[aria-label='Edit Primary']").click();
+    await expect(page.locator(".page-structure__inline input").first()).toBeFocused();
+    report.structureLink = await audit(page, ".page-structure__inline");
+    expect(report.structureLink.length).toBeGreaterThanOrEqual(2);
+    await page.screenshot({ path: `${shots}/fields-structure-link-${name}.png` });
+    await page.keyboard.press("Escape");
 
     // Structure: the hero's attributes form.
     await hero.hover();

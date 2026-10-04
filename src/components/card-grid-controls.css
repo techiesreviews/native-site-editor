@@ -111,10 +111,10 @@
 .card-add[hidden] {
   display: none;
 }
+/* A fade only: the popover does not move while it opens, so its folder list starts where it ends. */
 @keyframes card-add-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
 }
 .card-add__title {
@@ -264,11 +264,22 @@
   color: var(--primary);
 }
 .card-add__folder--new {
+  justify-content: flex-start;
   position: sticky;
   bottom: 0;
   background: var(--panel-surface);
   color: var(--link);
   font-family: inherit;
+}
+.card-add__folder--new > svg {
+  flex: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+}
+.card-add__folder--new > span {
+  flex: 0 1 auto;
+  text-align: start;
 }
 .card-add__folder--new:hover {
   background: color-mix(in srgb, var(--hover) 100%, var(--panel-surface));

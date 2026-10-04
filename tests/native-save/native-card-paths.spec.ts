@@ -17,7 +17,7 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const popover = (page: Page) => page.getByRole("dialog", { name: "New card with its own page" });
 const title = (page: Page) => popover(page).getByRole("textbox", { name: "Page title" });
 const folder = (page: Page) => popover(page).locator(".card-add__path");
-const folders = (page: Page) => popover(page).getByRole("listbox", { name: "Folder for the new page" });
+const folders = (page: Page) => page.getByRole("listbox", { name: "Folder for the new page" });
 const url = (page: Page) => popover(page).locator(".card-add__url");
 // The URL as it shows: its visible text, with the new folder's name field's value in its place.
 const shownUrl = (page: Page) => url(page).evaluate((row) => {
@@ -30,7 +30,8 @@ const shots = ".scratch/inline-paths";
 async function openPopover(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await frame(page).locator("card-project").first().hover();
+  await frame(page).locator("card-project").last().scrollIntoViewIfNeeded();
+  await frame(page).locator("card-project").last().hover();
   await page.locator(".card-ghost__add").click();
   await expect(title(page)).toBeFocused();
 }
@@ -215,7 +216,7 @@ test("a new folder's empty name is no error yet; Create takes a typed name in on
   await expect(popover(page).locator(".card-add__message")).toBeHidden();
   await expect(title(page)).toHaveAttribute("aria-invalid", "false");
   await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeEnabled();
-  await expect(popover(page).getByRole("listbox").getByRole("textbox")).toHaveCount(0);
+  await expect(folders(page).getByRole("textbox")).toHaveCount(0);
   await name.fill("chairs");
   await page.getByRole("button", { name: "Create page and card" }).click();
   await expect(page.locator("#status")).toHaveText("Created the page Oak at /work/chairs/oak/ and its card in Recent work");
@@ -231,4 +232,65 @@ test("Tab from a new folder's name keeps the name and moves on, not back to the 
   await expect.poll(() => shownUrl(page)).toBe("URL /work/chairs/oak/");
   await expect(title(page)).not.toBeFocused();
   await expect(title(page)).toHaveValue("Oak");
+});
+
+// Where the list is, against its folder and the popover's Add button.
+async function menuGeometry(page: Page) {
+  return page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as DOMRect;
+    const menu = rect(".card-add__folders"), path = rect(".card-add__path"), add = rect(".card-ghost__add");
+    const overlaps = menu.left < add.right && add.left < menu.right && menu.top < add.bottom && add.top < menu.bottom;
+    return { gapBelow: menu.top - path.bottom, gapAbove: path.top - menu.bottom, overlaps, menu, path, inView: menu.top >= 0 && menu.bottom <= innerHeight && menu.left >= 0 && menu.right <= innerWidth };
+  });
+}
+const attached = (geometry: Awaited<ReturnType<typeof menuGeometry>>) => Math.abs(geometry.gapBelow - 4) < 1 || Math.abs(geometry.gapAbove - 4) < 1;
+
+test.describe("with motion", () => {
+  test.use({ reducedMotion: "no-preference" });
+  test("the list is under its folder from the first frame of the popover's opening animation", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await frame(page).locator("card-project").first().hover();
+    await page.locator(".card-ghost__add").click();
+    // Still inside the popover's 160ms entrance: the list opens at its folder, not where the moving popover carries it.
+    await folder(page).focus();
+    await page.keyboard.press("ArrowDown");
+    const early = await menuGeometry(page);
+    expect(attached(early), JSON.stringify(early)).toBe(true);
+    await page.waitForTimeout(400);
+    const settled = await menuGeometry(page);
+    expect(attached(settled), JSON.stringify(settled)).toBe(true);
+    expect(settled.overlaps).toBe(false);
+  });
+});
+
+test("New folder's plus and words start at the row's left, like the folders above", async ({ page, baseURL }) => {
+  await openPopover(page, baseURL);
+  await folder(page).click();
+  const row = await folders(page).getByRole("option", { name: "New folder in /work/" }).evaluate((option) => {
+    const box = option.getBoundingClientRect(), icon = option.querySelector("svg")!.getBoundingClientRect(), words = option.querySelector("span")!.getBoundingClientRect();
+    const first = option.parentElement!.querySelector("[role=option]")!;
+    const text = document.createRange(); text.selectNodeContents(first);
+    return { iconLeft: icon.left - box.left, wordsLeft: words.left - box.left, firstLeft: text.getBoundingClientRect().left - box.left };
+  });
+  expect(row.iconLeft).toBeLessThanOrEqual(row.firstLeft + 1);
+  expect(row.wordsLeft).toBeLessThan(row.firstLeft + 24);
+});
+
+test("in a narrow, short pane the list stays at its folder, in view, off the Add button, and follows the popover's scroll", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 820, height: 640 });
+  await openPopover(page, baseURL);
+  await title(page).fill("Oak");
+  await folder(page).click();
+  const first = await menuGeometry(page);
+  expect(attached(first), JSON.stringify(first)).toBe(true);
+  expect(first.overlaps).toBe(false);
+  expect(first.inView).toBe(true);
+  await page.screenshot({ path: `${shots}/folders-narrow-short-light.png` });
+  // Scrolling the popover (capped to the pane) carries the list with its folder.
+  const scrollable = await popover(page).evaluate((form) => form.scrollHeight > form.clientHeight);
+  await popover(page).evaluate((form) => { form.style.maxHeight = "150px"; form.scrollTop = 30; form.dispatchEvent(new Event("scroll")); });
+  const scrolled = await menuGeometry(page);
+  expect(attached(scrolled), JSON.stringify({ scrollable, scrolled })).toBe(true);
+  expect(scrolled.path.top).not.toBe(first.path.top);
 });
