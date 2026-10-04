@@ -7123,6 +7123,39 @@ const agentSiteActions: AgentSiteActions = {
     editorModule.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
   },
   writeDraft: async (path, content, create) => {
+    if (!nativeSite && create) {
+      const scope = draftScope(), repo = currentRepo, snap = snapshot;
+      if (!scope || !repo || !snap) return "Open a repository first.";
+      const epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
+      const graph = JSON.stringify(snap.tree ?? snap.entries);
+      const before = new Map(store.list(scope).map(draft => [draft.path, draft]));
+      const isCurrent = () => {
+        const drafts = store.list(scope);
+        return epoch === generation && key === setupScope() && currentRepo === repo && snapshot === snap &&
+          !nativeSite && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
+          drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
+      };
+      // Before a home page exists there is no mounted editor to anchor collection
+      // history. Reuse the guarded file-creation transaction, then resync the site.
+      const made = await createComponentFileDrafts([{ path, content }], {
+        scope, store, isCurrent,
+        exists: path => pathNow(path, treeState(scope)) !== undefined,
+        checkPath: async path => {
+          const parts = path.split("/");
+          for (let index = 1; index < parts.length; index++) {
+            const parent = parts.slice(0, index).join("/");
+            if (pathNow(parent, treeState(scope)) === "file") return `${parent} is a file, so nothing can go in it.`;
+          }
+          return branchPathProblem(path);
+        },
+        drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
+        refresh: afterFileChanges,
+        announce,
+      });
+      if (made.error) return made.error;
+      await awaitNativeResync();
+      return undefined;
+    }
     const error = await applyNativeCollectionOperation({
       ...(create ? { creates: [{ path, content }] } : { edits: new Map([[path, content]]) }),
       ...(nativePageRoute(path) ? { open: path } : {}),

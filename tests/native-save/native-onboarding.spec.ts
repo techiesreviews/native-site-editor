@@ -351,9 +351,23 @@ test("a home page an agent writes switches the site on, and discarding all bring
   const site = async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })) as any).content[0].text);
   try {
     expect((await site()).native).toBe(false);
+    const stylesheet = "h1 { color: rebeccapurple; }\n";
+    const styled = await client.callTool({ name: "write_file", arguments: { path: "styles/site.css", content: stylesheet } });
+    expect(styled.isError, JSON.stringify(styled)).toBeFalsy();
+    expect(JSON.parse((styled.content[0] as { text: string }).text).state).toBe("applied");
+    expect((await site()).native).toBe(false);
+    // Existing files, invalid paths and a file used as a folder still refuse.
+    for (const path of ["styles/site.css", "../index.html", "styles/site.css/nested.css"]) {
+      const refused = await client.callTool({ name: "write_file", arguments: { path, content: "changed" } });
+      expect(refused.isError, JSON.stringify(refused)).toBe(true);
+    }
+    const read = await client.callTool({ name: "read_file", arguments: { path: "styles/site.css" } });
+    expect(read.isError, JSON.stringify(read)).toBeFalsy();
+    expect(JSON.parse((read.content[0] as { text: string }).text).content).toBe(stylesheet);
     const html = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>Agent site</title></head>\n<body><main><h1 data-key="title">Agent made</h1></main></body></html>\n';
     const written = await client.callTool({ name: "write_file", arguments: { path: "index.html", content: html } });
-    expect(written.isError).toBeFalsy();
+    expect(written.isError, JSON.stringify(written)).toBeFalsy();
+    expect(JSON.parse((written.content[0] as { text: string }).text).state).toBe("applied");
     await expect(frame(page).getByRole("heading", { name: "Agent made" })).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await site()).native, { timeout: 15_000 }).toBe(true);
     expect((await site()).pages?.length ?? 1).toBeGreaterThan(0);
