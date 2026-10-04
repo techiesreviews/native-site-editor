@@ -138,9 +138,18 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
 
   // Keyboard focus shows a plus without hovering.
   await expect(end.locator("xpath=..")).toHaveCSS("opacity", "1");
-  // Enter with a single match inserts it at the end of the page's sections.
+  // Enter inserts only a single match: "feat" matches Features and Feature block, so nothing yet.
   await end.click();
   await page.keyboard.type("feat");
+  await expect(picker(page).getByRole("option")).toHaveCount(2);
+  await page.keyboard.press("Enter");
+  await expect(picker(page)).toBeVisible();
+  await expect(page.frameLocator(".native-preview-frame").locator("feature-block")).toHaveCount(0);
+  // Read without moving focus: the picker closes when focus leaves it.
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(indexSource);
+  // Typed on to one match, Enter inserts it at the end of the page's sections.
+  await page.keyboard.type("ure block");
+  await expect(picker(page).getByRole("option")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await expect(page.frameLocator(".native-preview-frame").locator("section.filler + feature-block")).toHaveCount(1);
   await expect.poll(() => editorText(page, "#content")).toContain(
@@ -148,7 +157,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   );
 });
 
-test("with no section component the picker still offers portable native HTML", async ({ page, baseURL }) => {
+test("with no section component the picker still offers the native page sections", async ({ page, baseURL }) => {
   // Feature block's template made a <div>: nothing fits between sections.
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(featurePath)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", featurePath, { timeout: 30_000 });
@@ -168,13 +177,30 @@ test("with no section component the picker still offers portable native HTML", a
   await plus(page, "Add a section before “A native browser preview”").click();
   await expect(picker(page).getByRole("searchbox")).toBeVisible();
   await expect(picker(page).getByRole("option", { name: /Feature block/ })).toHaveCount(0);
-  await expect(picker(page).getByRole("option", { name: /^Heading HTML$/ })).toBeVisible();
+  await expect(picker(page).getByRole("group", { name: "More sections" })).toHaveCount(0);
+  await expect(picker(page).getByRole("group", { name: "Page sections" }).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
+  await expect(picker(page).getByRole("option", { name: /^Heading/ })).toHaveCount(0);
+  // Choosing one writes an ordinary section before the hero; Undo restores the page exactly.
+  await picker(page).getByRole("option", { name: /^Intro/ }).click();
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.locator("main > section:first-child + section.hero")).toHaveCount(1);
+  await expect.poll(() => editorText(page, "#content")).toMatch(/<main class="page" data-key="main">\n\s*<section class="[^"]+">[\s\S]*<\/section>\n\s*<section class="hero"/);
+  expect(await editorText(page, "#content")).not.toContain("<feature-block>");
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
 test("inserting while a component file is open edits the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
+  const footerPath = "components/site-footer/site-footer.html";
+  const footerSource = readFileSync(resolve(fixture, footerPath), "utf8");
+  // A click in the footer selects this page's instance; its root's Edit opens the shared template.
   await frame.locator(".site-footer p").click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await page.getByRole("treeitem", { name: /^Site footer/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Site footer component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
   await scrollFrame(page, "top");
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();
@@ -184,4 +210,6 @@ test("inserting while a component file is open edits the page", async ({ page })
   await expect.poll(() => editorText(page, "#content")).toContain(
     `<main class="page" data-key="main">\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n  <section class="hero"`,
   );
+  // The shared footer template is untouched, byte for byte.
+  expect(await page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), footerPath) ?? footerSource).toBe(footerSource);
 });
