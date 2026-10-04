@@ -1241,20 +1241,23 @@ export function mountCodeEditor(
     reportContext(changes);
   }
   // Monaco's own Undo/Redo keys act on this model's raw stack only. While the
-  // shared journal holds an action, or the raw step would cross a compound
-  // operation's receipt, the keys route through the journal instead, which
-  // runs the whole operation or refuses it. Otherwise Monaco keeps its keys.
+  // shared journal holds an entry (as the toolbar buttons would run), or the
+  // raw step would cross a compound operation's receipt, the keys route
+  // through the journal instead, which runs the whole step or refuses it.
+  // Typing clears the journal, so Monaco keeps its keys for ordinary typing.
   let historyRefused = false;
   let historyKeys: { undo: monaco.editor.IContextKey<boolean>; redo: monaco.editor.IContextKey<boolean> } | undefined;
   const routesHistory = (direction: "undo" | "redo") => !file.readOnly && !current.model.isDisposed() &&
-    (isAction(historyFor(session)[direction].at(-1)) || crossesReceipt(current.model, direction));
+    (Boolean(historyFor(session)[direction].at(-1)) || crossesReceipt(current.model, direction));
   function syncHistoryKeys() {
     historyKeys?.undo.set(routesHistory("undo"));
     historyKeys?.redo.set(routesHistory("redo"));
   }
   async function routeHistoryKey(direction: "undo" | "redo") {
     if (!routesHistory(direction)) return;
-    const done = isAction(historyFor(session)[direction].at(-1)) && await runVisualHistory(direction, file.path);
+    // Any journal entry (an operation or a range edit such as a style change)
+    // runs through the journal, which refuses or clears itself when stale.
+    const done = Boolean(historyFor(session)[direction].at(-1)) && await runVisualHistory(direction, file.path);
     if (!done && crossesReceipt(current.model, direction)) { historyRefused = true; update(undefined, false); }
   }
   function guardHistoryKeys(editor: monaco.editor.IStandaloneCodeEditor) {

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
+import { showStylePanel } from "./style-panel-controls";
 
 // Save section: the edit bar of a page's own plain <section> root saves its
 // exact HTML back to the matching saved section in .editor/page-builder.json.
@@ -317,4 +318,48 @@ test("Monaco Redo in the page editor refuses to redo only the page after the his
     expect(await mounted(page)).toBe(before);
     expect(await storedDrafts(page)).toEqual(drafts);
   }
+});
+
+test("Monaco Undo and Redo keys in the page editor follow a Style panel edit made after Add", async ({ page, baseURL }) => {
+  const { before, added, drafts } = await addWithPane(page, baseURL);
+  const strip = (list: Awaited<ReturnType<typeof storedDrafts>>) => list.map(({ updatedAt: _updatedAt, ...draft }) => draft);
+  const added3 = strip(drafts);
+  // A real Style panel edit of the added section's rule, in the stylesheet pane.
+  await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#secondary-title")).toHaveText(CSS);
+  await showStylePanel(page);
+  const style = page.getByRole("complementary", { name: "Style panel" });
+  await style.getByRole("searchbox", { name: "Search styles" }).fill("margin-top");
+  const field = style.getByRole("textbox", { name: "Margin top", exact: true });
+  await field.fill("17");
+  await field.press("Enter");
+  await expect.poll(() => mounted(page, CSS)).toContain("margin-top: 17px");
+  const styled = (await mounted(page, CSS))!;
+  await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(styled);
+  const styledDrafts = strip(await storedDrafts(page));
+  const addedCss = drafts.find((draft) => draft.path === CSS)!.content;
+
+  // First Ctrl+Z undoes the style only; the Add's three drafts stay.
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => mounted(page, CSS)).toBe(addedCss);
+  await expect.poll(async () => strip(await storedDrafts(page))).toEqual(added3);
+  expect(await mounted(page)).toBe(added);
+  await expect(refusal(page)).toHaveCount(0);
+  // Second Ctrl+Z undoes the whole Add.
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  // Redo restores the Add exactly, then the style.
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(async () => strip(await storedDrafts(page))).toEqual(added3);
+  expect(await mounted(page)).toBe(added);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(() => mounted(page, CSS)).toBe(styled);
+  await expect.poll(async () => strip(await storedDrafts(page))).toEqual(styledDrafts);
+  await expect(refusal(page)).toHaveCount(0);
+  await page.screenshot({ path: `${OUT}/keyboard-style-redo.png` });
 });
