@@ -113,22 +113,25 @@ test("selection with no direct matching rules falls back to shared body CSS", as
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain("body");
 });
 
-test("selecting inside a shadow component opens the component owner and shared CSS stays live through undo and redo", async ({ page }) => {
+test("slotted body keeps page ownership and shared CSS stays live through undo and redo", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator("project-card")).toHaveCount(3, { timeout: 30_000 });
 
-  const handle = await page.locator(".native-preview-frame").elementHandle();
-  const child = await handle!.contentFrame();
-  await child!.evaluate(() => {
-    const card = document.querySelector("project-card") as HTMLElement;
-    const body = card.shadowRoot!.querySelector(".project-card__body") as HTMLElement;
-    body.click();
-  });
-
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
-  await expect(page.locator("#secondary-title")).toHaveText(cssPath);
-  await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
-  await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
+  const selectBody = async () => {
+    await frame.locator("project-card").first().locator("p[slot=body]").click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+    await expect.poll(() => editorSource(page, "#content")).toBe(indexSource);
+    await expect(page.locator("#secondary-title")).toHaveText(cssPath);
+    await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
+    await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
+  };
+  await selectBody();
+  // Shared-template ownership requires explicit entry, while the assigned
+  // paragraph continues to belong to the page even inside that template.
+  await enterProjectCard(page);
+  const template = readFileSync(resolve(fixture, "components/project-card/project-card.html"), "utf8");
+  await expect.poll(() => editorSource(page, "#content")).toBe(template);
+  await selectBody();
 
   const redTitleCss = cssSource.replace(
     ".project-card__body {\n  margin: 0;\n  color: var(--muted);",
@@ -136,6 +139,7 @@ test("selecting inside a shadow component opens the component owner and shared C
   );
   expect(redTitleCss).not.toBe(cssSource);
   await pasteInto(page, "#content-secondary", redTitleCss);
+  await expect.poll(() => editorSource(page, "#content-secondary")).toBe(redTitleCss);
   await expect
     .poll(() => frame.locator(".project-card__body").first().evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(190, 20, 40)");
@@ -145,12 +149,14 @@ test("selecting inside a shadow component opens the component owner and shared C
 
   await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => editorSource(page, "#content-secondary")).toBe(cssSource);
   await expect
     .poll(() => frame.locator(".project-card__body").first().evaluate((el) => getComputedStyle(el).color))
     .not.toBe("rgb(190, 20, 40)");
 
   await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await expect.poll(() => editorSource(page, "#content-secondary")).toBe(redTitleCss);
   await expect
     .poll(() => frame.locator(".project-card__body").first().evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(190, 20, 40)");
