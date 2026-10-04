@@ -49,10 +49,18 @@ test("header links to the page on show get aria-current=page, following the rout
   await expect(nav("nav-about")).toHaveAttribute("aria-current", "page");
   await expect(nav("nav-home")).not.toHaveAttribute("aria-current", /.*/);
 
-  // Selecting the marked link opens the header's template, which has no aria-current.
+  // A plain click selects the page's header instance; the page on show stays
+  // open, its source as it is and its rendering marked.
+  const aboutSource = readFileSync(resolve(fixture, "about/index.html"), "utf8");
   await nav("nav-about").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await expect.poll(() => editorText(page, "#content")).toBe(aboutSource);
+  await expect(nav("nav-about")).toHaveAttribute("aria-current", "page");
+  // The header's root in Structure, then Edit, opens its template, which has no aria-current.
+  await page.getByRole("treeitem", { name: /^Site header/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Site header component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
-  expect(await editorText(page, "#content")).toBe(headerSource);
+  await expect.poll(() => editorText(page, "#content")).toBe(headerSource);
 });
 
 test("Ctrl/⌘+click on a link with a fragment scrolls its page to the element it names", async ({ page }) => {

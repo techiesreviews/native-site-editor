@@ -7,7 +7,8 @@ import { expect, test, type Page } from "@playwright/test";
 // holds no section offers one place at the end of <main> (the preview
 // runtime's insert points, src/native-insert.ts). The top bar names an open
 // page by its title, as the Pages tab labels it, and any other file by its
-// path. The starter repository (id 501) has a section component;
+// path. A section is added as ordinary HTML, with the shared section
+// stylesheet linked from <head>. The starter repository (id 501) has a section component;
 // `native-routing` (id 530) has the heading-only page work/notes.html.
 const indexPath = "index.html";
 const starterHome = readFileSync(resolve("fixtures/native-starter/index.html"), "utf8");
@@ -53,7 +54,7 @@ async function editorText(page: Page) {
   return text;
 }
 
-test("a new page starts with an empty <main>, and a section component goes in it", async ({ page, baseURL }) => {
+test("a new page starts with an empty <main>, and a native page section goes in it", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
   await expect(label(page)).toHaveText("Home");
   await openPages(page);
@@ -75,18 +76,26 @@ test("a new page starts with an empty <main>, and a section component goes in it
   await expect.poll(() => editorText(page)).toBe(shell(""));
 
   // One place, at the end of <main>: the empty page's "Start with a section"
-  // stands there instead of its plus, and adds a feature block.
+  // stands there instead of its plus, and suggests native page sections.
   await expect(page.locator(".insert-point__plus")).toHaveCount(1);
   await expect(page.locator(".insert-point__plus")).toBeHidden();
   const empty = page.getByRole("region", { name: "Empty page" });
   await expect(empty).toContainText("Start with a section");
-  await empty.getByRole("button", { name: "Add Feature block" }).click();
-  await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
-  await expect(page.locator("#status")).toHaveText("Feature block added");
+  await expect.poll(() => empty.getByRole("list", { name: "Suggested sections" }).getByRole("button").evaluateAll((buttons) => buttons.map((el) => el.getAttribute("aria-label")))).toEqual(["Add Intro", "Add Features", "Add Split"]);
+  await empty.getByRole("button", { name: "Add Features", exact: true }).click();
+  await expect(frame(page).locator("main > *")).toHaveCount(1);
+  await expect(frame(page).locator("main > section.section-features")).toHaveCount(1);
+  await expect(frame(page).locator("main > section.section-features h2")).toHaveText("Features");
   await expect(empty).toBeHidden();
-  await expect.poll(() => editorText(page)).toBe(shell(
-    `  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n`,
-  ));
+  // Ordinary HTML at the end of <main>, and the section stylesheet linked, relative to the page.
+  const withSectionCss = (html: string) => html.replace("\n</head>", `\n\n  <link rel="stylesheet" href="../styles/sections.css">\n</head>`);
+  const features = `<section class="section-features"><h2>Features</h2><ul><li><h3>First feature</h3><p>Describe what makes this useful.</p></li><li><h3>Second feature</h3><p>Describe what makes this useful.</p></li><li><h3>Third feature</h3><p>Describe what makes this useful.</p></li></ul></section>`;
+  await expect.poll(() => editorText(page)).toBe(withSectionCss(shell(`\n  ${features}\n`)));
+  // One Undo restores the empty page exactly.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => editorText(page)).toBe(shell(""));
+  await expect(frame(page).locator("main")).toBeEmpty();
+  await expect(empty).toBeVisible();
 });
 
 test("the top bar shows the open page's title, follows the applied Page settings title, and a stylesheet's path", async ({ page, baseURL }) => {
@@ -143,10 +152,20 @@ test("a page whose <main> holds no section offers one place at the end of <main>
   await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();
   await end.click();
   await expect(picker(page)).toContainText("Goes at the end");
-  // This site has no section components yet.
-  await expect(picker(page)).toContainText("No components fit here yet.");
-  await page.keyboard.press("Escape");
+  // This site has no section components, so the native page sections are its choices.
+  await expect(picker(page).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
+  await picker(page).getByRole("option", { name: /^Intro/ }).click();
   await expect(picker(page)).toBeHidden();
+  // At the end of <main>, after the heading, as ordinary HTML with the section stylesheet linked.
+  await expect(frame(page).locator("main > *")).toHaveCount(2);
+  await expect(frame(page).locator("main > h1 + section.section-intro:last-child h2")).toHaveText("Section heading");
+  const notes = readFileSync(resolve("fixtures/native-routing/work/notes.html"), "utf8");
+  await expect.poll(() => editorText(page)).toBe(notes
+    .replace("\n</head>", `\n\n  <link rel="stylesheet" href="../styles/sections.css">\n</head>`)
+    .replace("\n</main>", `\n  <section class="section-intro"><h2>Section heading</h2><p>Write a short introduction for this part of the page.</p></section>\n</main>`));
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => editorText(page)).toBe(notes);
+  await expect(frame(page).locator("main > *")).toHaveCount(1);
 
   // A page with sections keeps its gaps between them only.
   await open(page, baseURL, 530);
