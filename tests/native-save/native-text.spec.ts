@@ -89,13 +89,27 @@ test("a small edit keeps the formatting around it, Escape drops typing, a click 
 
 test("text inside a component template is typed into that template", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
+  const footerPath = "components/site-footer/site-footer.html";
+  const footerSource = readFileSync(resolve(fixture, footerPath), "utf8");
+  const mounted = (path: string) => page.evaluate(async (file) => (await import("/src/components/code-editor.ts")).getMountedSource(file), path);
   const footer = frame.locator(".site-footer p");
+  // A click selects this page's footer instance; the page stays open.
   await footer.click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  // The instance's root in Structure, then Edit, opens the shared template.
+  await page.getByRole("treeitem", { name: /^Site footer/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Site footer component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
+  await expect.poll(async () => typeof (await mounted(footerPath))).toBe("string");
+  expect(await mounted(footerPath)).toBe(footerSource);
+  await footer.click();
+  await expect(footer).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("Home");
   await page.keyboard.type("New: ");
   await page.keyboard.press("Enter");
   await expect(footer).toContainText("New: ");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
+  await expect.poll(() => mounted(footerPath)).toBe(footerSource.replace(`<p data-key="footer-note">`, `<p data-key="footer-note">New: `));
   await expect.poll(() => editorText(page, "#content")).toMatch(/<p[^>]*>New: /);
 });
 
@@ -144,8 +158,19 @@ test("text a page gives a component's default slot is the page's: a click select
   );
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
 
-  // The same inside a template: the card's note text belongs to the card's template.
+  const edited = withNote.replace(`Cafe · Identity and site · 2025</card-note>`, `Cafe · Identity and site · 2025 · Visit</card-note>`);
+  await expect.poll(() => editorText(page, "#content")).toBe(edited);
+
+  // A click on a card's own note selects that page instance; the page stays open, unchanged.
   await clickText(page, "project-card >> card-note", 1);
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect.poll(() => editorText(page, "#content")).toBe(edited);
+  // The card's root in Structure, then Edit, opens the shared template, where the note is typed.
+  const cardPath = "components/project-card/project-card.html";
+  await page.getByRole("treeitem", { name: /^Project card/ }).nth(1).locator(".page-structure__label").first().click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
+  await clickText(page, "project-card >> card-note", 1);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(frame.locator("project-card").nth(1).locator("card-note")).toHaveAttribute("contenteditable", /plaintext-only|true/);
 });
