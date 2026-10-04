@@ -80,7 +80,10 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
       if (event.key === 'Enter') { event.preventDefault(); commit(); }
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault(); if (drag || !allowed()) return;
-        publish({ ...(point ?? { x: 50, y: 50 }), [axis]: clampFocus((point?.[axis] ?? 50) + (event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? 10 : 1)) });
+        // Step from a valid typed draft, so the field and the marker agree afterwards.
+        const typed = input.dataset.focalDraft && input.value.trim() !== '' && Number.isFinite(Number(input.value)) ? clampFocus(Number(input.value)) : undefined;
+        delete input.dataset.focalDraft;
+        publish({ ...(point ?? { x: 50, y: 50 }), [axis]: clampFocus((typed ?? point?.[axis] ?? 50) + (event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? 10 : 1)) });
       }
     }, { signal: events.signal });
   }

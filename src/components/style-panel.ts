@@ -411,6 +411,12 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
   }
   let pendingWidgetRestore: ((final?: boolean) => void) | undefined;
+  // The context the mounted focal widget was built from, and a focused focal
+  // field's uncommitted text carried to the next focal mount (see rebuildWidgets).
+  let focalBuiltFrom: StylePanelContext | undefined;
+  let focalDraft: { label: string; value: string; start: number | null; end: number | null; key: string; breakpoint: Breakpoint; state: StyleState; files: Record<string, string>; target?: CssTarget } | undefined;
+  const sameFiles = (a: Record<string, string>, b: Record<string, string>) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([path, source]) => b[path] === source);
+  const sameCssTarget = (a?: CssTarget, b?: CssTarget) => !!a && !!b && a.path === b.path && a.selector === b.selector && a.start === b.start;
   function captureWidgetFocus() {
     if (restoringWidgetFocus && document.activeElement === document.body && pendingWidgetRestore) return pendingWidgetRestore;
     const previous = document.activeElement instanceof HTMLElement && document.activeElement.closest(".grid-editor, .image-focal-point") ? document.activeElement : undefined;
@@ -532,11 +538,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const restore = captureWidgetFocus();
       const widgetContext = handlers.context();
       if (!widgetContext || widgetContext.key !== context.key || collapsed) return;
-      // A focal field's typed, uncommitted text survives a remount of this same
-      // render (same element, state and breakpoint), and only onto the same target.
+      // A focal field's typed, uncommitted text survives only a remount for a new
+      // image asset revision: same element, target, state and breakpoint, and the
+      // CSS files byte-identical to those the focal widget was built from. Any
+      // newer CSS (agent, code edit, Undo) or other change drops the draft.
       const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.closest(".image-focal-point") && document.activeElement.dataset.focalDraft ? document.activeElement : undefined;
-      const draft = typing && { label: typing.closest("label")?.textContent ?? "", value: typing.value, start: typing.selectionStart, end: typing.selectionEnd,
-        breakpoint: getCurrentBreakpoint(), target: renderContext?.target && { ...renderContext.target } };
+      if (typing) focalDraft = focalBuiltFrom && focalBuiltFrom.key === widgetContext.key && focalBuiltFrom.assetRevision !== widgetContext.assetRevision &&
+        sameFiles(focalBuiltFrom.files, widgetContext.files) && sameCssTarget(focalBuiltFrom.target, widgetContext.target)
+        ? { label: typing.closest("label")?.textContent ?? "", value: typing.value, start: typing.selectionStart, end: typing.selectionEnd,
+          key: widgetContext.key, breakpoint: getCurrentBreakpoint(), state, files: widgetContext.files, target: widgetContext.target } : undefined;
       const own = ownValues();
       widgets = widgets.filter(widget => { if (!focalOnly || widget.kind === "focal") { widget.dispose(); return false; } return true; });
       for (let index = widgetSections.length - 1; index >= 0; index--) if (!focalOnly || widgetSections[index].kind === "focal") { widgetSections[index].details.remove(); widgetSections.splice(index, 1); }
@@ -581,7 +591,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         void handlers.focalAsset(widgetContext).then(result => {
           if (request !== focalRequest || widgetRequest !== widgetRender || !focal.host.isConnected || !proof.isCurrent(true)) return;
           focal.host.replaceChildren();
-          if (!result) { focal.details.remove(); filter(); restore(true); return; }
+          if (!result) { focalDraft = undefined; focal.details.remove(); filter(); restore(true); return; }
           const view = mountImageFocalPoint(focal.host, { mode: result.mode, previewAsset: result.asset,
             authored: own[result.mode], computed: widgetContext.computed[result.mode], fit: widgetContext.computed["object-fit"], size: widgetContext.computed["background-size"],
             expected: proof.captured, readOnly: () => busy || !!handlers.context()?.readOnly, isCurrent: () => proof.isCurrent(true),
@@ -616,14 +626,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
             }, onError: report });
           widgets.push({ ...view, kind: "focal", isCurrent: () => proof.isCurrent(true) });
           filter(); restore(true);
-          const target = handlers.context()?.target;
+          focalBuiltFrom = widgetContext;
+          const draft = focalDraft, now = handlers.context(); focalDraft = undefined;
           const field = document.activeElement instanceof HTMLInputElement && view.element.contains(document.activeElement) ? document.activeElement : undefined;
-          if (draft && field && field.closest("label")?.textContent === draft.label && getCurrentBreakpoint() === draft.breakpoint &&
-            target?.path === draft.target?.path && target?.selector === draft.target?.selector && target?.start === draft.target?.start) {
+          if (draft && now && field && field.closest("label")?.textContent === draft.label && now.key === draft.key && getCurrentBreakpoint() === draft.breakpoint && state === draft.state &&
+            sameFiles(draft.files, now.files) && sameCssTarget(draft.target, now.target)) {
             field.value = draft.value; field.dataset.focalDraft = "true";
             try { field.setSelectionRange(draft.start, draft.end); } catch { /* number inputs have no selection */ }
           }
-        }).catch(error => { if (request === focalRequest && widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); restore(true); report(error); } });
+        }).catch(error => { if (request === focalRequest && widgetRequest === widgetRender && focal.host.isConnected) { focalDraft = undefined; focal.details.remove(); restore(true); report(error); } });
       }
       // Grid owns these controls while present; they still remain searchable there.
       for (const row of content.querySelectorAll<HTMLElement>(".style-panel__field[data-search-property]")) row.dataset.gridDuplicate = String(gridShown && ["grid-template-columns", "grid-template-rows", "gap", "column-gap", "row-gap"].includes(row.dataset.searchProperty!));
