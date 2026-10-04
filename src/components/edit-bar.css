@@ -481,3 +481,94 @@
   margin: 4px 3px;
   background: var(--line);
 }
+
+/* The selection's name (and the instance around it, `section › element`)
+   reads as a label standing on top of the controls, like the page's outline
+   labels: the label row is drawn first, a zero-height break follows, and the
+   control groups take the second row on their own panel. The bar itself is
+   transparent so the label sits clear of that panel. A bar with no controls
+   is the label alone. */
+.edit-bar {
+  --edit-bar-label: 24px;
+  row-gap: 0;
+  padding: 0 4px 4px;
+  background: transparent;
+  box-shadow: none;
+}
+.edit-bar::before {
+  content: "";
+  order: 1;
+  flex: 0 0 100%;
+  height: 8px;
+}
+.edit-bar::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: calc(var(--edit-bar-label) + 4px) 0 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
+}
+.edit-bar:not(:has(> .edit-bar__group))::before,
+.edit-bar:not(:has(> .edit-bar__group))::after {
+  display: none;
+}
+.edit-bar > .edit-bar__group {
+  order: 2;
+}
+/* The first group starts the panel's row: no rule before it. */
+.edit-bar > .edit-bar__group:not(.edit-bar__group ~ .edit-bar__group) > .edit-bar__rule {
+  display: none;
+}
+.edit-bar > :is(.edit-bar__kind, .edit-bar__grip, .edit-bar__component-name, .edit-bar__context) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: var(--edit-bar-label);
+  min-height: 0;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-small);
+  font-size: var(--type-small);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.edit-bar > :first-child {
+  margin-left: -4px;
+}
+.edit-bar > .edit-bar__kind {
+  color: var(--text);
+}
+.edit-bar > .edit-bar__grip:not(.edit-bar__component-name) {
+  padding: 0 8px 0 3px;
+}
+.edit-bar > .edit-bar__context {
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.edit-bar > .edit-bar__context:hover {
+  background: var(--component-surface);
+  filter: brightness(0.96);
+}
+.edit-bar > .edit-bar__component-name > .edit-bar__kind,
+.edit-bar > .edit-bar__grip > .edit-bar__kind {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.edit-bar > .edit-bar__component-name > .edit-bar__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.edit-bar > :is(.edit-bar__kind--component, .edit-bar__component-name, .edit-bar__grip.edit-bar__component-name) {
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.edit-bar > .edit-bar__grip.edit-bar__component-name {
+  padding: 4px 2px;
+}
