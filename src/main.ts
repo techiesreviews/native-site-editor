@@ -82,9 +82,13 @@ import { locateClassRule, locateWriteRule, writeCssProperties, scanCss } from ".
 import { nativeImageAsset, singleBackgroundAsset } from "./page-builder/style-image-source";
 import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
-import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
+import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
-import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
+import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readStaticSectionRecords, type StaticSectionInsertPlan } from "./page-builder/static-sections";
+import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
+import type { AddChoice } from "./page-builder/add-catalog";
+import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
 import { generatedDrift, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
@@ -151,7 +155,8 @@ let currentPath: string | undefined;
 
 // A compound operation binds only its own page paths to the originating journal.
 const nativeHistoryAliases = new Map<string, { epoch: number; scope: string; session: string }>();
-let nativeHistoryMountCapture: ((path: string) => void) | undefined;
+// `pane`: the mount is the stylesheet pane (it follows the page being opened).
+let nativeHistoryMountCapture: ((path: string, pane?: boolean) => void) | undefined;
 function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
   const key = draftKey(scope, path), alias = nativeHistoryAliases.get(key);
   return alias && alias.epoch === generation && alias.scope === setupScope() ? alias.session : key;
@@ -388,6 +393,9 @@ function mountWorkspace() {
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
+    insertExtraChoices: nativeStaticSectionChoices,
+    insertNotice: nativeStaticSectionNotice,
+    insertPreview: nativeStaticSectionThumbnail,
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
@@ -1060,7 +1068,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     );
     secondaryPath = css;
     secondaryHistoryScope = historyScope;
-    nativeHistoryMountCapture?.(css);
+    nativeHistoryMountCapture?.(css, true);
     return true;
   } catch (error) {
     if (request === secondaryRequest) errorMessage(error);
@@ -2393,9 +2401,12 @@ function nativeSectionChoices(): InsertChoice[] {
 // Puts a new instance of a section component into the page at `point`, as
 // one undo step, and selects it. The page file opens first when another
 // file is in the editor, since edits go through the mounted editor.
-const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string }>();
+const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string; doc?: string; files?: string; css?: string }>();
 function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
-  const markup = nativeChoiceMarkup(choice.tag);
+  const isStatic = isStaticSectionTag(choice.tag);
+  const staticPreview = isStatic ? nativeStaticSectionPreview(choice.tag) : undefined;
+  if (isStatic && !staticPreview) return;
+  const markup = staticPreview?.html ?? nativeChoiceMarkup(choice.tag);
   if (/native:(?:grid|columns)$/.test(choice.tag)) return;
   if (!markup) return fallback;
   if (versionView || !nativeSite) return;
@@ -2404,15 +2415,18 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
   const source = path && nativeEffectiveSource(path);
   if (!path || source === undefined) return;
   const destinations = selected?.path === path && selected.node ? nativeDestinations(source, path, selected.node) : [];
-  const candidates = mode !== "click" ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
-  if (fallback?.path === path) candidates.push({ point: fallback, description: `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
+  // A whole section goes where a section component would (the page's section gap); never inside the selected element's parent.
+  const candidates = mode !== "click" || isStatic ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
+  if (fallback?.path === path) candidates.push({ point: fallback, description: isStatic ? positionText(fallback) : `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
   const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
   if (!found) return;
   const point = { ...found.point, parent: [...found.point.parent] };
-  nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
+  nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description,
+    ...(isStatic ? { doc: nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH), files: nativeFiles().sort().join("\n"), css: nativeStaticCssSnapshot() } : {}) });
   return point;
 }
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
+  if (isStaticSectionTag(choice.tag)) { await insertStaticSection(point, choice); return; }
   const path = point.path;
   const native = nativeChoiceMarkup(choice.tag);
   const captured = nativeAddPoints.get(point);
@@ -2446,6 +2460,207 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     preview.selectAfterUpdate(undefined);
     errorMessage(error);
   }
+}
+
+// Plain HTML/CSS sections (src/page-builder/static-sections.ts): saved records
+// from the editor's JSON and the curated defaults not saved yet, in the same
+// Add catalogue. The published page gets ordinary HTML and a stylesheet link.
+const SAVED_SECTION_PREFIX = "saved-section:";
+const STATIC_SECTION_GROUP = "Plain HTML sections";
+const isStaticSectionTag = (tag: string) => tag.startsWith(SAVED_SECTION_PREFIX) || tag.startsWith(DEFAULT_SECTION_CHOICE_PREFIX);
+// The editor JSON as it is now; `loaded: false` when the file exists but its text is not read yet.
+function nativeSectionDocument(): { loaded: boolean; text: string | undefined } {
+  const text = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  return { loaded: text !== undefined || !nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH), text };
+}
+function nativeStaticSectionChoices(): AddChoice[] {
+  if (!nativeSite || versionView) return [];
+  const { loaded, text } = nativeSectionDocument();
+  if (!loaded) return [];
+  try {
+    const saved = listSectionChoices(text).map(choice => ({ tag: SAVED_SECTION_PREFIX + choice.id, label: choice.label, group: STATIC_SECTION_GROUP, kind: "native" as const }));
+    const defaults = listDefaultSectionChoices(text);
+    if ("error" in defaults) return [];
+    return [...saved, ...defaults.map(choice => ({ tag: choice.id, label: choice.label, group: STATIC_SECTION_GROUP, kind: "native" as const }))];
+  } catch { return []; }
+}
+// Why the plain sections are missing from Add, when the editor JSON keeps them out.
+function nativeStaticSectionNotice(): string | undefined {
+  if (!nativeSite || versionView) return undefined;
+  const { loaded, text } = nativeSectionDocument();
+  if (!loaded) return `Plain HTML sections appear once ${EDITOR_PAGE_BUILDER_PATH} has loaded. Reopen Add in a moment.`;
+  let error: string | undefined;
+  try {
+    listSectionChoices(text);
+    const defaults = listDefaultSectionChoices(text);
+    if ("error" in defaults) error = defaults.error;
+  } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
+  return error === undefined ? undefined : `Plain HTML sections are hidden: ${EDITOR_PAGE_BUILDER_PATH} can't be read (${error}). Fix that file, then reopen Add.`;
+}
+// Every loaded stylesheet, the designated one proven absent when it is not a file.
+function nativeStaticStylesheetSources(stylesheetPath: string): { sources: Record<string, string | undefined>; unloaded: boolean } {
+  const files = nativeFiles();
+  const sources: Record<string, string | undefined> = {};
+  let unloaded = false;
+  for (const path of files) {
+    // Editor-private files (under a dot folder such as .editor/) are never public styles.
+    if (!/\.css$/i.test(path) || path.split("/").some(part => part.startsWith("."))) continue;
+    const source = nativeEffectiveSource(path);
+    if (source === undefined) unloaded = true;
+    else sources[path] = source;
+  }
+  if (!files.includes(stylesheetPath)) sources[stylesheetPath] = undefined;
+  return { sources, unloaded };
+}
+// Every public stylesheet's loaded bytes (or "unloaded"), to pin a chosen insertion point.
+function nativeStaticCssSnapshot(): string {
+  const { sources, unloaded } = nativeStaticStylesheetSources("");
+  return JSON.stringify([unloaded, Object.entries(sources).sort(([a], [b]) => a < b ? -1 : 1)]);
+}
+function nativeStaticRecord(tag: string, text: string | undefined) {
+  if (tag.startsWith(SAVED_SECTION_PREFIX)) return readStaticSectionRecords(text)[tag.slice(SAVED_SECTION_PREFIX.length)];
+  const id = tag.slice(DEFAULT_SECTION_CHOICE_PREFIX.length);
+  return readStaticSectionRecords(text)[id] ?? DEFAULT_STATIC_SECTIONS.find(section => section.id === id);
+}
+// What adding `tag` would insert now: the saved record with the live public CSS, or a default's seed.
+function nativeStaticSectionPreview(tag: string): { html: string; css: string; stylesheetPath: string; seed: boolean } | undefined {
+  const { loaded, text } = nativeSectionDocument();
+  if (!loaded) return;
+  try {
+    const record = nativeStaticRecord(tag, text);
+    if (!record) return;
+    const { sources } = nativeStaticStylesheetSources(record.stylesheetPath);
+    const live = { cssPolicy: "reuse-current" as const, stylesheetSources: sources, files: nativeFiles() };
+    const shown = tag.startsWith(SAVED_SECTION_PREFIX)
+      ? previewStaticSection(text, record.id, live)
+      : previewDefaultStaticSection(text, tag, live);
+    const seed = !tag.startsWith(SAVED_SECTION_PREFIX) && !Object.hasOwn(readStaticSectionRecords(text), record.id);
+    return "error" in shown ? undefined : { html: shown.html, css: shown.css, stylesheetPath: record.stylesheetPath, seed };
+  } catch { return; }
+}
+// The thumbnail renders through the usual document: the page on show with the section stylesheet linked.
+function nativeStaticSectionThumbnail(tag: string, inputs: ThumbnailInputs): { markup: string; inputs: ThumbnailInputs } | undefined {
+  if (!isStaticSectionTag(tag)) return;
+  const shown = nativeStaticSectionPreview(tag);
+  if (!shown) return;
+  const file = inputs.site.routes[inputs.route] ?? inputs.site.routes[nativeDefaultRoute(inputs.site)];
+  // A new default appends its seed to the stylesheet as it is; a saved section shows the live stylesheet.
+  const current = nativeEffectiveSource(shown.stylesheetPath) ?? "";
+  const css = shown.seed ? current.includes(shown.css) ? current : current + (current && !current.endsWith("\n") ? "\n" : "") + shown.css : shown.css;
+  const sources = { ...inputs.sources, [shown.stylesheetPath]: css };
+  if (file && sources[file] !== undefined && !nativeStaticStylesheetReached(sources, file, shown.stylesheetPath)) {
+    const from = file.split("/").slice(0, -1), to = shown.stylesheetPath.split("/");
+    while (from.length && from[0] === to[0]) { from.shift(); to.shift(); }
+    const link = `<link rel="stylesheet" href="${"../".repeat(from.length) + to.join("/")}">`;
+    const page = sources[file];
+    const head = page.search(/<\/head\s*>/i);
+    sources[file] = head < 0 ? link + page : page.slice(0, head) + link + page.slice(head);
+  }
+  return { markup: shown.html, inputs: { ...inputs, sources } };
+}
+// Whether the page's stylesheets, with their imports, already load `target`.
+function nativeStaticStylesheetReached(sources: Record<string, string>, file: string, target: string): boolean {
+  const queue = nativePageStylesheets(sources[file] ?? "", file), seen = new Set(queue);
+  while (queue.length) {
+    const path = queue.shift()!;
+    if (path === target) return true;
+    for (const item of parseCssImports(sources[path] ?? "").imports) {
+      const next = resolveImportPath(path, item.url);
+      if (next && !seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+  }
+  return false;
+}
+// Whether `y` is `x` with text inserted at one place at most.
+function insertedOnce(x: string, y: string): boolean {
+  if (y.length < x.length) return false;
+  let prefix = 0;
+  while (prefix < x.length && x[prefix] === y[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < x.length - prefix && x[x.length - 1 - suffix] === y[y.length - 1 - suffix]) suffix++;
+  return prefix + suffix >= x.length;
+}
+const bodyStart = (html: string) => html.search(/<body[\s>]/i);
+// Existing collection targets on the page must stay the same unique elements.
+function staticSectionKeepsCollections(path: string, text: string | undefined, before: string, after: string): string | undefined {
+  if (text === undefined) return;
+  const records = Object.fromEntries(Object.entries(readPageBuilderDocument(text).collections).filter(([, record]) => record.pagePath === path));
+  if (!Object.keys(records).length) return;
+  const old = locateCollections(before, records);
+  if ("error" in old) return `This page's collections need repair before adding a section (${old.error}).`;
+  const next = locateCollections(after, records);
+  if ("error" in next) return "Adding this section here would make a collection on this page ambiguous. Choose another place.";
+  // A stylesheet link may go into the head; the body gets the section at one place.
+  const bodyBefore = bodyStart(before), bodyAfter = bodyStart(after);
+  if (bodyBefore < 0 || bodyAfter < 0) return "The page change could not be matched to its collections.";
+  for (const [id, found] of Object.entries(old.collections)) {
+    const moved = next.collections[id].element;
+    const from = found.element.start - bodyBefore, to = moved.start - bodyAfter;
+    // The same element, moved only by the insertion before or after it (not an equal copy), with nothing added inside.
+    const same = from >= 0 && to >= 0 && before.slice(found.element.start, found.element.end) === after.slice(moved.start, moved.end)
+      && insertedOnce(before.slice(bodyBefore, found.element.start), after.slice(bodyAfter, moved.start))
+      && insertedOnce(before.slice(found.element.start), after.slice(moved.start))
+      && (before.slice(bodyBefore, found.element.start) === after.slice(bodyAfter, moved.start) || before.slice(found.element.start) === after.slice(moved.start));
+    if (!same) return "A section cannot be added inside a collection or change which element it uses.";
+  }
+}
+async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
+  const path = point.path;
+  const captured = nativeAddPoints.get(point);
+  // Everything the plan reads is pinned here, before the first await.
+  const sourceBefore = captured?.source ?? nativeEffectiveSource(path);
+  const epochBefore = captured?.epoch ?? generation, scopeBefore = captured?.scope ?? setupScope();
+  const filesBefore = captured?.files ?? nativeFiles().sort().join("\n");
+  const docBefore = captured ? captured.doc : nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  const cssBefore = captured?.css ?? nativeStaticCssSnapshot();
+  const unchanged = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && nativeEffectiveSource(path) === sourceBefore
+    && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === docBefore && nativeFiles().sort().join("\n") === filesBefore && nativeStaticCssSnapshot() === cssBefore;
+  const changed = () => errorMessage(new Error("The page, its stylesheets or the editor's JSON changed. Choose the section again."));
+  if (!unchanged()) { changed(); return; }
+  if (!nativeSite || sourceBefore === undefined || !Object.values(nativeSite.routes).includes(path)) return;
+  const filesList = filesBefore.split("\n").filter(Boolean);
+  // Unread files are read now; the choice was made without them, so it is made again.
+  if (filesList.includes(EDITOR_PAGE_BUILDER_PATH) && docBefore === undefined || nativeStaticStylesheetSources("").unloaded) {
+    const error = await ensureNativeTextIndex();
+    // Nothing is added from a choice made before the sources were read; a successful read is news, not an error.
+    if (error) errorMessage(new Error(error));
+    else element("status").textContent = `The site's styles have loaded. Choose ${choice.label} again to add it.`;
+    return;
+  }
+  if (currentPath !== path || !editorModule?.isMounted(path)) {
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false });
+    if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path)) return;
+    if (!unchanged()) { changed(); return; }
+  }
+  const preview = nativePreview;
+  if (!preview) return;
+  let plan: StaticSectionInsertPlan | { error: string };
+  let docText: string | undefined;
+  try {
+    docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+    const record = nativeStaticRecord(choice.tag, docText);
+    if (!record) { errorMessage(new Error(`${choice.label} is no longer available. Choose a section again.`)); return; }
+    const { sources, unloaded } = nativeStaticStylesheetSources(record.stylesheetPath);
+    if (unloaded) { errorMessage(new Error("Some stylesheets could not be read. Refresh the repository and try again.")); return; }
+    const input = { documentText: docText, pagePath: path, pageSource: sourceBefore, parent: point.parent, index: point.index, stylesheetSources: sources, files: filesList };
+    plan = choice.tag.startsWith(SAVED_SECTION_PREFIX)
+      ? planStaticSectionInsert({ ...input, sectionId: record.id, cssPolicy: "reuse-current" })
+      : planDefaultStaticSectionInsert({ ...input, sectionId: choice.tag });
+  } catch (error) { errorMessage(error); return; }
+  if ("error" in plan) { errorMessage(new Error(`${choice.label} was not added: ${plan.error}`)); return; }
+  const pageAfter = plan.operation.edits.get(path);
+  let guard: string | undefined;
+  try { guard = pageAfter === undefined ? "The page could not be changed." : staticSectionKeepsCollections(path, docText, sourceBefore, pageAfter); }
+  catch (error) { guard = error instanceof Error ? error.message : String(error); }
+  if (guard) { errorMessage(new Error(`${choice.label} was not added: ${guard}`)); return; }
+  const expectedFiles = (plan.expectedFiles ?? filesList).join("\n");
+  const current = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && [...nativeFiles()].sort().join("\n") === expectedFiles;
+  if (!current()) { changed(); return; }
+  const { open: _open, ...operation } = plan.operation;
+  preview.selectAfterUpdate({ path, node: plan.selection.node });
+  const error = await applyNativeOperation({ ...operation, current });
+  if (error) { preview.selectAfterUpdate(undefined); errorMessage(new Error(error)); }
 }
 
 function refuseNativeSelection(selection: NativePreviewSelection, message: string) {
@@ -5202,6 +5417,11 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     nativeFiles(scope).filter(path => !after.has(path)).sort().join("\n") === untouchedFiles;
   const retainedPaths = [anchor, ...[...touched].filter(path => editor.isMounted(path) && afterSources.get(path) === undefined)];
   const changingTextPaths = [...touched].filter(path => beforeSources.get(path) !== afterSources.get(path) || retainedPaths.includes(path));
+  // Opening a page closes and remounts the stylesheet pane (its history scope follows the page),
+  // an intentional part of this transition. Its file then is listed below; a stylesheet the pane
+  // mounts during the transition is owned only while its draft is still the one seen here.
+  const paneAtPrepare = secondaryPath;
+  const stylesheetDraftsAtPrepare = new Map(nativeFiles(scope).filter(file => /\.css$/i.test(file)).map(file => [file, store.get(scope, file)]));
   const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
     source: storedSource, mounted: editor.isMounted,
     retainModel: path => editor.retainFileModel(scope, path),
@@ -5222,11 +5442,16 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key);
   };
   const refresh = async (path: string | undefined, initial = false, message?: string, previousStatus = element("status").textContent) => {
-    const changing = [...new Set([anchor, currentPath, next, path, ...changingTextPaths].filter((value): value is string => !!value))];
+    // The stylesheet pane's files (then and now) are part of this own UI transition; a remount is proved at mount.
+    const changing = [...new Set([anchor, currentPath, next, path, paneAtPrepare, secondaryPath, ...changingTextPaths].filter((value): value is string => !!value))];
     const complete = receipt.beginOwnUITransition(changing);
     if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
     const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));
-    const capture = (path: string) => { if (live() && changing.includes(path)) owned.set(path, editor.captureFileModelState(scope, path, true)); };
+    const capture = (path: string, pane = false) => {
+      if (!live()) return;
+      if (changing.includes(path) || pane && stylesheetDraftsAtPrepare.has(path) && store.get(scope, path) === stylesheetDraftsAtPrepare.get(path))
+        owned.set(path, editor.captureFileModelState(scope, path, true));
+    };
     nativeHistoryMountCapture = capture;
     try {
       // A removed stylesheet must not remain editable over its deleted marker.

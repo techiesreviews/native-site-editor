@@ -42,7 +42,10 @@ export function createThumbnail(className = "", aspect?: number, minViewportWidt
     frame.style.width = `${canvasWidth}px`;
     frame.style.height = `${top + height}px`;
     frame.style.transform = `scale(${scale}) translateY(${-top}px)`;
-    root.style.height = `${Math.round(height * scale)}px`;
+    // The root's box includes its border (box-sizing: border-box): add it, so the scaled section is not clipped.
+    const style = getComputedStyle(root);
+    const border = style.boxSizing === "border-box" ? (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0) : 0;
+    root.style.height = `${Math.round(height * scale) + border}px`;
   }
 
   function measure() {

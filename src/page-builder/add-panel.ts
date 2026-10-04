@@ -15,10 +15,16 @@ import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
 import "./add-panel.css";
 
+// A single HTML element (a heading, a button) shows small and cropped; a plain
+// HTML section shows whole at the canvas's width, like a component.
+const isElement = (item: AddItem) => item.kind === "native" && item.tag.startsWith("native:");
+
 export interface AddPanelHandlers {
   choices(): InsertChoice[];
   // Optional native choices join the same searchable catalogue. Keys must be unique.
   extraChoices?(): readonly AddChoice[];
+  // Why some choices are missing (e.g. unreadable editor data), shown inline in the panel.
+  notice?(): string | undefined;
   // Native/container targets can differ from section-component targets.
   pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined, mode?: "click" | "drop" | "gap"): InsertPoint | undefined;
   destinationText?(point: InsertPoint | undefined): string;
@@ -69,6 +75,9 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   search.setAttribute("aria-label", "Search components");
   search.autocomplete = "off";
   const hint = node("p", "pb-add-panel__hint", "Click to add, or drag onto the page.");
+  const notice = node("p", "pb-add-panel__hint pb-add-panel__notice");
+  notice.setAttribute("role", "status");
+  notice.hidden = true;
   const list = node("div", "pb-add-panel__list");
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Components");
@@ -78,7 +87,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   body.append(list, message);
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
-  panel.append(head, position, search, hint, body, live);
+  panel.append(head, position, search, hint, notice, body, live);
   document.body.append(panel);
 
   let open = false;
@@ -181,7 +190,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       choose(item.tag);
     }, "pb-add-item__option") as HTMLButtonElement;
     option.setAttribute("role", "option");
-    const thumb = createThumbnail("pb-add-item__thumb", item.kind === "native" ? 0.45 : undefined, item.kind === "native" ? 320 : 640);
+    const thumb = createThumbnail("pb-add-item__thumb", isElement(item) ? 0.45 : undefined, isElement(item) ? 320 : 640);
     if (item.tag === "native:image") {
       const fallback = node("span", "pb-add-item__image-fallback");
       fallback.innerHTML = '<svg viewBox="0 0 48 40" fill="none" aria-hidden="true"><rect x="2" y="2" width="44" height="36" rx="3"/><circle cx="15" cy="13" r="4"/><path d="m3 32 12-12 8 8 9-13 13 17"/></svg>';
@@ -227,7 +236,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const width = handlers.canvasWidth();
     for (const entry of entries.values()) {
       const shown = handlers.preview(entry.item.tag);
-      if (shown) entry.thumb.render(shown.doc, entry.item.kind === "native" ? 320 : width);
+      if (shown) entry.thumb.render(shown.doc, isElement(entry.item) ? 320 : width);
     }
   }
 
@@ -250,6 +259,9 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     for (const group of groups) group.root.hidden = group.tags.every((tag) => entries.get(tag)!.root.hidden);
     search.hidden = !total;
     hint.hidden = !total;
+    const why = handlers.notice?.();
+    notice.hidden = !why;
+    if (notice.textContent !== (why ?? "")) notice.textContent = why ?? "";
     list.hidden = !shown;
     message.hidden = Boolean(shown);
     if (!total) {

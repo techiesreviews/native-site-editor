@@ -20,7 +20,7 @@ import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
-import { createPageBuilder } from "../page-builder/page-builder";
+import { createPageBuilder, type PageBuilderDeps } from "../page-builder/page-builder";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
@@ -198,6 +198,9 @@ export interface NativePreviewHandlers {
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   insertExtraChoices?: AddPanelHandlers["extraChoices"];
+  insertNotice?: AddPanelHandlers["notice"];
+  // A thumbnail for an extra choice: its markup and the preview inputs to render it with.
+  insertPreview?: PageBuilderDeps["previewChoice"];
   insertPointFor?: AddPanelHandlers["pointFor"];
   insertDestinationText?: AddPanelHandlers["destinationText"];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
@@ -358,6 +361,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
     choices: () => handlers.insertChoices?.() ?? [],
     extraChoices: handlers.insertExtraChoices,
+    notice: handlers.insertNotice,
+    previewChoice: handlers.insertPreview,
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,
     // An earlier version on show (History) is not edited: its places are not the source's.

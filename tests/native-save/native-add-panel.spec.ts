@@ -129,7 +129,14 @@ test("an item dragged onto the canvas goes into the gap under the pointer; Escap
 
 test("with an element of a component's template selected, a click adds after the page's instance of it", async ({ page }) => {
   // A note inside a card's template inside the cards section: the section is the page's.
-  await frame(page).locator("section.cards project-card card-note").first().click();
+  // Entering a template takes an explicit Edit (a plain click selects the page's instance).
+  const tree = page.getByRole("tree", { name: "Page structure", exact: true });
+  await tree.getByRole("treeitem", { name: "Section", exact: true }).locator(".page-structure__toggle").click();
+  const card = tree.getByRole("treeitem", { name: /^Project card Reusable cards/ }).first();
+  await card.locator(".page-structure__toggle").click();
+  await card.getByRole("button", { name: "Edit component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await frame(page).locator("section.cards project-card card-note p").first().click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#current-page")).not.toHaveAttribute("data-path", indexPath);
   await addButton(page).click();
   await expect(panel(page)).toContainText("Goes before “Scroll to verify”");

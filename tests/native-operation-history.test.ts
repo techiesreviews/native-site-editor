@@ -123,3 +123,30 @@ test("an unchanged foreign model cannot become an owned UI transition", () => {
   assert.equal(receipt.undo(), false);
   assert.equal(f.records.get("index.html"), f.record);
 });
+
+// The host's stylesheet pane remounts a file during its own page transition and proves the new
+// model at that mount boundary (it passes that proof in `owned`): accepted, and kept for Undo.
+test("own UI completion accepts a model the host proved at its own mount during the transition", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  const finish = receipt.beginOwnUITransition(["index.html"])!;
+  f.models.set("untouched.css", { text: "same", version: 1 });
+  const owned = new Map([["index.html", f.host.modelState("index.html")], ["untouched.css", f.host.modelState("untouched.css")]]);
+  assert.equal(finish(owned), true);
+  assert.equal(receipt.undo(), true); assert.equal(f.records.has("index.html"), false);
+});
+test("a model proved at the host's mount must still be current when the transition completes", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  const finish = receipt.beginOwnUITransition(["index.html"])!;
+  f.models.set("untouched.css", { text: "same", version: 1 });
+  const owned = new Map([["index.html", f.host.modelState("index.html")], ["untouched.css", f.host.modelState("untouched.css")]]);
+  f.models.get("untouched.css")!.version++;
+  assert.equal(finish(owned), false); assert.match(receipt.error()!, /untouched\.css/);
+  assert.equal(receipt.undo(), false);
+});
+test("a remount the host did not prove stays an unrelated change", () => {
+  const f = fixture(), receipt = prepareNativeTextHistory(f.host, f.plan)!; assert.equal(receipt.apply(), true);
+  const finish = receipt.beginOwnUITransition(["index.html"])!;
+  const owned = new Map([["index.html", f.host.modelState("index.html")]]);
+  f.models.set("untouched.css", { text: "same", version: 1 });
+  assert.equal(finish(owned), false); assert.match(receipt.error()!, /editor for untouched\.css changed while opening/);
+});
