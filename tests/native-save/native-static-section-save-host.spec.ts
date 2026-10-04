@@ -219,3 +219,102 @@ test("Undo after typing in the stylesheet pane following Add refuses without a p
   expect(await mounted(page, "styles/elements.css")).toBe(typed);
   await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
 });
+
+// Monaco's own Undo/Redo keys in the primary page editor. The focus is put in
+// that editor's input and checked before every key press.
+async function focusPrimary(page: Page) {
+  await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  expect(await page.evaluate(() => {
+    const active = document.activeElement;
+    return Boolean(active?.closest(".monaco-editor") && active.closest("#content") && !active.closest("#content-secondary"));
+  })).toBe(true);
+}
+async function typeInPane(page: Page, text: string) {
+  await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(text);
+  await expect.poll(() => mounted(page, "styles/elements.css")).toContain(text);
+}
+const refusal = (page: Page) => page.locator("#content .code-editor__notice, .code-editor__notice").filter({ hasText: "touched several files together" });
+async function addWithPane(page: Page, baseURL: string | undefined) {
+  await load(page, baseURL);
+  await frame(page).locator("section.flow h2").click();
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
+  const before = await mounted(page);
+  await addIntro(page, "section.flow h2");
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  return { before, added: (await mounted(page))!, drafts: await storedDrafts(page) };
+}
+
+test("Monaco Undo and Redo keys in the page editor run the whole Add", async ({ page, baseURL }) => {
+  const { before, added, drafts } = await addWithPane(page, baseURL);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(() => storedDrafts(page)).toEqual(drafts);
+  expect(await mounted(page)).toBe(added);
+  await expect(refusal(page)).toHaveCount(0);
+});
+
+test("Monaco Undo in the page editor refuses after the stylesheet pane cleared the history", async ({ page, baseURL }) => {
+  const { added } = await addWithPane(page, baseURL);
+  await typeInPane(page, "/* foreign */");
+  const typed = await mounted(page, "styles/elements.css");
+  await expect.poll(async () => (await storedDrafts(page)).length).toBe(4);
+  const drafts = await storedDrafts(page);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(refusal(page)).toBeVisible();
+  await expect(refusal(page)).toHaveAttribute("role", "status");
+  expect(await storedDrafts(page)).toEqual(drafts);
+  expect(await mounted(page)).toBe(added);
+  expect(await mounted(page, "styles/elements.css")).toBe(typed);
+  await expect(page.locator(".code-editor__undo").first()).toHaveAttribute("title", /touched several files together/);
+  await page.screenshot({ path: `${OUT}/keyboard-undo-refused.png` });
+  // The stylesheet's own typing still undoes normally in its own editor.
+  await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => mounted(page, "styles/elements.css")).not.toContain("/* foreign */");
+  expect(await mounted(page)).toBe(added);
+});
+
+test("Monaco Undo in the page editor removes later typing, then stops at the Add", async ({ page, baseURL }) => {
+  const { added, drafts: added3 } = await addWithPane(page, baseURL);
+  // Typing and undoing it re-saves the page draft; only its timestamp moves.
+  const content = async () => (await storedDrafts(page)).map(({ updatedAt: _updatedAt, ...draft }) => draft);
+  const drafts = added3.map(({ updatedAt: _updatedAt, ...draft }) => draft);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("x");
+  await expect.poll(() => mounted(page)).toBe(`${added}x`);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => mounted(page)).toBe(added);
+  await expect.poll(content).toEqual(drafts);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(refusal(page)).toBeVisible();
+  expect(await mounted(page)).toBe(added);
+  expect(await content()).toEqual(drafts);
+});
+
+test("Monaco Redo in the page editor refuses to redo only the page after the history was cleared", async ({ page, baseURL }) => {
+  const { before } = await addWithPane(page, baseURL);
+  await focusPrimary(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  await typeInPane(page, "/* foreign */");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path)).toEqual(["styles/elements.css"]);
+  const drafts = await storedDrafts(page);
+  for (const key of ["ControlOrMeta+Shift+z", "Control+y"]) {
+    await focusPrimary(page);
+    await page.keyboard.press(key);
+    await expect(refusal(page)).toBeVisible();
+    expect(await mounted(page)).toBe(before);
+    expect(await storedDrafts(page)).toEqual(drafts);
+  }
+});

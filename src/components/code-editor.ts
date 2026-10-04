@@ -249,6 +249,8 @@ function crossesReceipt(model: monaco.editor.ITextModel, direction: "undo" | "re
   const version = model.getAlternativeVersionId();
   return (receiptBoundaries.get(model) ?? []).some((mark) => version === (direction === "undo" ? mark.after : mark.before));
 }
+const receiptRefusal = "This change touched several files together and its shared history was cleared, so Undo and Redo here would change only this file. Review the current drafts instead.";
+let historyKeyIds = 0;
 const historyFor = (session: string) => {
   let history = visualHistory.get(session);
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
@@ -1226,13 +1228,48 @@ export function mountCodeEditor(
     }
     conflictBar.hidden = !conflict && !deletedUpstream;
     publisher?.refresh();
-    const message = file.readOnly ? "Read only" : store.error;
+    if (changes) historyRefused = false;
+    const message = file.readOnly ? "Read only" : store.error ?? (historyRefused ? receiptRefusal : undefined);
     notice.hidden = !message;
     notice.textContent = message ?? "";
     refreshDiscard(changed);
     undo.disabled = !!file.readOnly || !canRunVisualHistory(session, "undo", current.model);
     redo.disabled = !!file.readOnly || !canRunVisualHistory(session, "redo", current.model);
+    undo.title = crossesReceipt(current.model, "undo") ? `Undo: ${receiptRefusal}` : "Undo";
+    redo.title = crossesReceipt(current.model, "redo") ? `Redo: ${receiptRefusal}` : "Redo";
+    syncHistoryKeys();
     reportContext(changes);
+  }
+  // Monaco's own Undo/Redo keys act on this model's raw stack only. While the
+  // shared journal holds an action, or the raw step would cross a compound
+  // operation's receipt, the keys route through the journal instead, which
+  // runs the whole operation or refuses it. Otherwise Monaco keeps its keys.
+  let historyRefused = false;
+  let historyKeys: { undo: monaco.editor.IContextKey<boolean>; redo: monaco.editor.IContextKey<boolean> } | undefined;
+  const routesHistory = (direction: "undo" | "redo") => !file.readOnly && !current.model.isDisposed() &&
+    (isAction(historyFor(session)[direction].at(-1)) || crossesReceipt(current.model, direction));
+  function syncHistoryKeys() {
+    historyKeys?.undo.set(routesHistory("undo"));
+    historyKeys?.redo.set(routesHistory("redo"));
+  }
+  async function routeHistoryKey(direction: "undo" | "redo") {
+    if (!routesHistory(direction)) return;
+    const done = isAction(historyFor(session)[direction].at(-1)) && await runVisualHistory(direction, file.path);
+    if (!done && crossesReceipt(current.model, direction)) { historyRefused = true; update(undefined, false); }
+  }
+  function guardHistoryKeys(editor: monaco.editor.IStandaloneCodeEditor) {
+    const id = ++historyKeyIds;
+    const undoKey = `aseRoutesUndo${id}`, redoKey = `aseRoutesRedo${id}`;
+    historyKeys = { undo: editor.createContextKey(undoKey, false), redo: editor.createContextKey(redoKey, false) };
+    const actions = [
+      editor.addAction({ id: `ase.history.undo.${id}`, label: "Undo", precondition: undoKey,
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ], run: () => routeHistoryKey("undo") }),
+      editor.addAction({ id: `ase.history.redo.${id}`, label: "Redo", precondition: redoKey,
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY],
+        run: () => routeHistoryKey("redo") }),
+    ];
+    syncHistoryKeys();
+    return () => { for (const action of actions) action.dispose(); historyKeys = undefined; };
   }
   function render(next: typeof mode) {
     destroyView();
@@ -1260,6 +1297,7 @@ export function mountCodeEditor(
         model: current.model,
       });
       view = editor;
+      const unguard = guardHistoryKeys(editor);
       editor.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
       if (current.model.getLanguageId() === "html") linkToCanvas(editor, file.path, current.model);
       if (current.view) editor.restoreViewState(current.view);
@@ -1269,6 +1307,7 @@ export function mountCodeEditor(
           void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });
       }
       destroyView = () => {
+        unguard();
         current.view = editor.saveViewState();
         editor.dispose();
       };
@@ -1321,8 +1360,10 @@ export function mountCodeEditor(
       });
       editor.setModel({ original, modified: current.model });
       view = editor.getModifiedEditor();
+      const unguard = guardHistoryKeys(view as monaco.editor.IStandaloneCodeEditor);
       view.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
       destroyView = () => {
+        unguard();
         editor.setModel(null);
         editor.dispose();
         original.dispose();
