@@ -89,3 +89,6 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 - [ ] Finish remaining field-migration hardening and compact conflict UI. Initial reviewed host is integrated971638d; F owns default pins, unread-preview context and all-record field discovery polish.
 - [ ] Close four nonblocking Style polish findings after the integrated content changes5546c68: context-menu notice, live announcements, meaningful prior Undo history and dead CSS declarations. Core root66/66/check/build pass.
 - [ ] Keep the edit-bar label clear of the sticky header at the top of the page. Connected/content-width candidate afcc088 has actual5/default128 passing but is not integrated until independent review.
+
+- [x] Cache repeated native source lookups privately by exact bytes. Integrated876707f after independent Claude review; parseMarked remains fresh, two bounded entries, no published output change. Bench covers repeated lookup only, not click latency.
+- [ ] Keep unpicked-variable cancellation notices inline in Style, avoiding the misleading global failed-request status and full-width error alert. Observed in real shared browser; no CSS write or new Undo occurs.
