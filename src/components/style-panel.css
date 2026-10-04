@@ -104,3 +104,4 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel__variable-option strong { font-family: var(--font-mono); font-size: var(--type-small); }
 .style-panel :is(.style-panel__variable-option, .style-panel__class-suggestion).is-active { background: var(--current); box-shadow: inset 2px 0 0 var(--link); opacity: 1; }
 .style-panel .style-panel__class-suggestion { cursor: pointer; border-radius: var(--radius); min-height: var(--size-compact); display: inline-flex; align-items: center; }
+.style-panel__field-notice { grid-column: 1 / -1; margin: 2px 0 4px; color: var(--muted); font-size: var(--type-small); line-height: 1.4; }

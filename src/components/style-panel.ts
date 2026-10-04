@@ -55,7 +55,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   let gridShown = false;
   let restoringWidgetFocus = false, focusRestoreToken = 0;
   let variableMenu: HTMLElement | undefined;
-  let variableMenuOrigin: { key: string; property: string; control?: HTMLElement } | undefined;
+  // owner/settle: the field whose typed --text is pending while its action menu is open.
+  let variableMenuOrigin: { key: string; property: string; control?: HTMLElement; owner?: HTMLElement; settle?: () => void } | undefined;
   function closeVariableMenu() {
     // Drop references to the removed list so none dangle.
     variableMenuOrigin?.control?.removeAttribute("aria-controls"); variableMenuOrigin?.control?.removeAttribute("aria-activedescendant");
@@ -64,6 +65,21 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const live = node("div", "style-panel__live"); live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite");
   root.append(live);
   function announce(message: string) { live.textContent = message; }
+  /** An unpicked typed variable is a cancellation, not a failure: say so inline
+   *  beside the field (and once, politely) instead of raising the global error. */
+  const notApplied = "Variable not applied. Choose one from the list to write var(--name).";
+  // Survives a same-element re-render; a new selection or edit drops it.
+  let fieldNotice: { key: string; property: string } | undefined;
+  function clearFieldNotices() { fieldNotice = undefined; body.querySelectorAll(".style-panel__field-notice").forEach(notice => notice.remove()); }
+  function variableNotApplied(property: string, speak = true) {
+    clearFieldNotices();
+    fieldNotice = { key, property };
+    const control = [...body.querySelectorAll<HTMLElement>("[data-property]")].find(item => item.dataset.property === property);
+    const wrapper = control?.closest(".style-panel__control");
+    if (!wrapper) return;
+    const notice = node("p", "style-panel__field-notice", notApplied); notice.dataset.noticeFor = property;
+    wrapper.after(notice); if (speak) announce(notApplied);
+  }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   const gestureEvents = new AbortController();
   let gestureTimer: ReturnType<typeof setTimeout> | undefined;
@@ -271,7 +287,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       pendingValue = value;
       try {
         const accepted = onChange ? await onChange(value, snapshot.expected) : await write({ [field.property]: value }, snapshot.expected);
-        if (accepted !== false) acceptedValue = value;
+        if (accepted !== false) { acceptedValue = value; clearFieldNotices(); }
       } catch (error) { report(error); }
       finally { pendingValue = undefined; }
     };
@@ -315,6 +331,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const offered = relevantVariables(field.property, cssVariableDeclarations(workspace), (property, value) => CSS.supports(property, value));
       const choose = (name: string) => {
         if (!isCurrent()) return;
+        clearFieldNotices();
         const value = `var(${name})`;
         if (control instanceof HTMLInputElement) control.value = value;
         if (onChange) void onChange(value, expected); else void write({ [field.property]: value }, expected);
@@ -329,12 +346,16 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     }
     // Right-click / Shift+F10: an action menu with "use variable" and "go to definition".
     function openVariableMenu(x: number, y: number) {
+      // Another field's pending --text settles when its menu is replaced; this
+      // field keeps its own text until the new menu closes.
+      const previous = variableMenuOrigin;
       closeVariableMenu();
+      if (previous?.owner && previous.owner !== control) previous.settle?.();
       const scope = variableScope();
       if (!scope) return;
       const { expected, workspace, isCurrent, offered, choose: use } = scope;
       if (rawVariable(control.value)) control.dataset.pendingVariable = "true";
-      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property };
+      const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property, owner: control, settle: settleRaw };
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
       if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
       for (const declaration of offered) {
@@ -375,8 +396,10 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     function settleRaw() {
       if (document.activeElement !== control) delete control.dataset.pendingVariable;
       if (!(control instanceof HTMLInputElement) || !control.isConnected || document.activeElement === control || !rawVariable(control.value)) return;
+      // Only on the same element: a new selection never receives the old text's outcome.
+      if (handlers.context()?.key !== snapshot.expected?.key) return;
       control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
-      report("Variable not applied. Choose one from the list to write var(--name).");
+      variableNotApplied(field.property);
     }
     // Typing "--" or "var(--" shows a listbox of matching variables. Focus stays
     // in the field; aria-activedescendant names the option Enter will choose.
@@ -422,6 +445,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       control.setAttribute("aria-autocomplete", "list");
       control.title = "Type -- for site variables.";
       control.addEventListener("input", () => {
+        wrapper.nextElementSibling?.classList.contains("style-panel__field-notice") && wrapper.nextElementSibling.remove();
         const typed = /^(?:var\(\s*)?(--[\w-]*)$/.exec(control.value.trim())?.[1];
         if (typed && handlers.context()?.workspace) openSuggestions(typed);
         else if (suggestionsOpen()) { closeVariableMenu(); announce("Variable suggestions closed."); }
@@ -441,7 +465,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
           if (suggestionsOpen() && document.activeElement !== control) closeVariableMenu();
           // A same-element re-render already showed the source value; still say why.
           // A new selection is a different field: say nothing about the old text.
-          if (!control.isConnected) { if (wasRaw && fieldKey && handlers.context()?.key === fieldKey) report("Variable not applied. Choose one from the list to write var(--name)."); return; }
+          if (!control.isConnected) { if (wasRaw && fieldKey && handlers.context()?.key === fieldKey) variableNotApplied(field.property); return; }
           settleRaw();
         }, 0);
       });
@@ -603,6 +627,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (collapsed) return;
     const scrollTop = body.querySelector(".style-panel__scroll")?.scrollTop ?? 0;
     renderContext = handlers.context(); key = renderContext?.key ?? ""; renderOwn = ownValues();
+    const keptNotice = fieldNotice?.key === key ? fieldNotice : undefined; fieldNotice = undefined;
+    if (keptNotice) queueMicrotask(() => { if (key === keptNotice.key && !fieldNotice) variableNotApplied(keptNotice.property, false); });
     controlSnapshots.clear();
     body.replaceChildren();
     const header = node("div", "style-panel__header"); header.append(node("strong", "", "Style"));

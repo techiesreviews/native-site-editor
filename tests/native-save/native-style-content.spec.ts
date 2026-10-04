@@ -98,6 +98,20 @@ test("typed completion ranks exact, prefix, contained; arrows move the reference
   await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
 });
 
+const inline = (page: Page) => panel(page).locator(".style-panel__field-notice");
+/** A cancelled variable is informational: no global alert and no failed-request status. */
+async function noGlobalError(page: Page) {
+  await expect(page.locator("#notice")).toBeHidden();
+  await expect(page.locator("#status")).not.toHaveText("The last request did not complete.");
+}
+async function cancelledInline(page: Page, property: string) {
+  await expect(inline(page)).toHaveCount(1);
+  await expect(inline(page)).toHaveText(/Variable not applied/);
+  await expect(inline(page)).toHaveAttribute("data-notice-for", property);
+  await expect(panel(page).locator(".style-panel__live")).toHaveText(/Variable not applied/);
+  await noGlobalError(page);
+}
+
 test("an unapplied typed variable after a real edit: click-away and Tab restore it, and Undo reverts only the real edit", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const color = await colour(page);
@@ -111,11 +125,12 @@ test("an unapplied typed variable after a real edit: click-away and Tab restore 
   await panel(page).locator(".style-panel__header strong").click();
   await expect(list(page)).toHaveCount(0);
   await expect(color).toHaveValue("purple");
-  await expect(page.locator("#notice")).toContainText("Variable not applied");
+  await cancelledInline(page, "color");
   expect(await css(page)).toBe(edited);
-  // Tab away without a choice behaves the same.
-  await color.fill(""); await color.pressSequentially("--acc"); await color.press("Tab");
-  await expect(color).toHaveValue("purple"); expect(await css(page)).toBe(edited);
+  // Typing again clears the notice; Tab away without a choice shows it again.
+  await color.fill(""); await color.pressSequentially("--acc"); await expect(inline(page)).toHaveCount(0);
+  await color.press("Tab");
+  await expect(color).toHaveValue("purple"); await cancelledInline(page, "color"); expect(await css(page)).toBe(edited);
   // One Undo reverts exactly the real edit; nothing else was recorded.
   await color.focus(); await color.press("ControlOrMeta+Z");
   await expect.poll(() => css(page)).toBe(original);
@@ -141,19 +156,19 @@ test("Shift+F10 on typed --text keeps it pending through a refresh: no false not
   await expect.poll(() => css(page)).toContain("/* external */");
   const refreshed = await css(page); expect(refreshed).not.toBe(source);
   await page.waitForTimeout(200);
-  await expect(page.locator("#notice")).not.toContainText("Variable not applied");
+  await expect(inline(page)).toHaveCount(0); await noGlobalError(page);
   await expect(color).toHaveValue("--acc");
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0); await expect(color).toBeFocused(); await expect(color).toHaveValue("--acc");
   await color.press("Tab");
   await expect(color).toHaveValue(originalValue);
-  await expect(page.locator("#notice")).toContainText("Variable not applied");
+  await cancelledInline(page, "color");
   expect(await css(page)).toBe(refreshed);
   // An explicit choice from the context menu writes once.
   await color.fill(""); await color.pressSequentially("--acc"); await color.press("Shift+F10");
   await menu.getByRole("menuitem", { name: /^--accent ·/ }).click();
   await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
-  await expect(color).toHaveValue("var(--accent)");
+  await expect(color).toHaveValue("var(--accent)"); await expect(inline(page)).toHaveCount(0);
   await color.press("ControlOrMeta+Z");
   await expect.poll(() => css(page)).toBe(refreshed);
 });
@@ -167,7 +182,7 @@ test("selecting another element while suggesting closes the list without restori
   await expect(panel(page).getByRole("button", { name: "Style class cards" })).toBeVisible();
   await expect(list(page)).toHaveCount(0);
   await page.waitForTimeout(200);
-  await expect(page.locator("#notice")).not.toContainText("Variable not applied");
+  await expect(inline(page)).toHaveCount(0); await noGlobalError(page);
   const fresh = await colour(page);
   expect(await fresh.inputValue()).not.toMatch(/--a$/);
   expect(await css(page)).toBe(source);
@@ -238,4 +253,53 @@ test("Style panel shares Page structure's surface in light and dark; fields stay
     expect(colours.search, colorScheme).toBe(colours.structure);
     expect(colours.field, colorScheme).not.toBe(colours.structure);
   }
+});
+
+test("opening another field's variable menu settles the first field's pending --text inline (keyboard then mouse)", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await panel(page).getByRole("searchbox", { name: "Search styles" }).fill("colour");
+  const color = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
+  const background = panel(page).getByRole("textbox", { name: "Background colour", exact: true });
+  const original = await css(page), colourValue = await color.inputValue();
+  await color.fill(""); await color.pressSequentially("--acc"); await color.press("Shift+F10");
+  await expect(panel(page).getByRole("menu", { name: "Text colour variables" })).toBeVisible();
+  await background.click({ button: "right" });
+  await expect(panel(page).getByRole("menu", { name: "Background colour variables" })).toBeVisible();
+  await expect(panel(page).getByRole("menu", { name: "Text colour variables" })).toHaveCount(0);
+  await expect(color).toHaveValue(colourValue);
+  expect(await color.getAttribute("data-pending-variable")).toBeNull();
+  await cancelledInline(page, "color");
+  expect(await css(page)).toBe(original);
+  await page.keyboard.press("Escape");
+  await expect(panel(page).getByRole("menu")).toHaveCount(0);
+  expect(await css(page)).toBe(original);
+});
+
+test("reopening the same field's variable menu keeps its pending --text until that menu closes", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const color = await colour(page);
+  const original = await css(page), colourValue = await color.inputValue();
+  await color.fill(""); await color.pressSequentially("--acc");
+  await color.click({ button: "right" });
+  const menu = panel(page).getByRole("menu", { name: "Text colour variables" });
+  await expect(menu).toBeVisible();
+  // The open menu covers the pointer spot; reopen with the field's own contextmenu event.
+  await color.dispatchEvent("contextmenu");
+  await expect(menu).toHaveCount(1); await expect(color).toHaveValue("--acc");
+  await expect(inline(page)).toHaveCount(0); await noGlobalError(page);
+  await page.keyboard.press("Escape"); await expect(color).toBeFocused(); await color.press("Tab");
+  await expect(color).toHaveValue(colourValue); await cancelledInline(page, "color");
+  expect(await css(page)).toBe(original);
+  // The notice belongs to this element: selecting another removes it.
+  await frame(page).locator("section.cards").evaluate(element => (element as HTMLElement).click());
+  await expect(panel(page).getByRole("button", { name: "Style class cards" })).toBeVisible();
+  await expect(inline(page)).toHaveCount(0);
+});
+
+test("a real refusal still uses the global error, not the inline cancellation notice", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const color = await colour(page);
+  await color.fill("not-a-colour"); await color.press("Enter");
+  await expect(page.locator("#notice")).toContainText("Enter a valid text colour value.");
+  await expect(inline(page)).toHaveCount(0);
 });
