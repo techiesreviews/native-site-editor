@@ -66,8 +66,13 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
   for (const axis of ['x', 'y'] as const) {
     const label = document.createElement('label'); label.append(`${axis.toUpperCase()} (%)`);
     const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '100'; input.step = '1'; input.placeholder = 'Custom'; label.append(input); root.append(label); inputs.push(input);
+    // Text typed but not yet committed is the user's: redraws (image load,
+    // resize, refresh) leave it in place while the field has focus.
+    input.addEventListener('input', () => { input.dataset.focalDraft = 'true'; }, { signal: events.signal });
+    input.addEventListener('blur', () => { delete input.dataset.focalDraft; }, { signal: events.signal });
     const commit = () => {
       if (drag || !allowed() || input.value.trim() === '' || !Number.isFinite(Number(input.value))) return;
+      delete input.dataset.focalDraft;
       const next = { ...(point ?? { x: 50, y: 50 }), [axis]: clampFocus(Number(input.value)) }; publish(next);
     };
     input.addEventListener('change', commit, { signal: events.signal });
@@ -81,7 +86,10 @@ export function mountImageFocalPoint<T>(container: HTMLElement, options: ImageFo
   }
   root.append(status, context);
   function draw() {
-    inputs[0].value = point ? String(point.x) : ''; inputs[1].value = point ? String(point.y) : '';
+    inputs.forEach((input, index) => {
+      if (input.dataset.focalDraft && document.activeElement === input) return;
+      input.value = point ? String(index ? point.y : point.x) : '';
+    });
     marker.hidden = !point;
     const box = image.getBoundingClientRect(), rect = containedImageRect(box, image.naturalWidth, image.naturalHeight);
     if (point && rect) { marker.style.left = `${rect.left - box.left + rect.width * point.x / 100}px`; marker.style.top = `${rect.top - box.top + rect.height * point.y / 100}px`; }

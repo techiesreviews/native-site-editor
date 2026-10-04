@@ -532,6 +532,11 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const restore = captureWidgetFocus();
       const widgetContext = handlers.context();
       if (!widgetContext || widgetContext.key !== context.key || collapsed) return;
+      // A focal field's typed, uncommitted text survives a remount of this same
+      // render (same element, state and breakpoint), and only onto the same target.
+      const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.closest(".image-focal-point") && document.activeElement.dataset.focalDraft ? document.activeElement : undefined;
+      const draft = typing && { label: typing.closest("label")?.textContent ?? "", value: typing.value, start: typing.selectionStart, end: typing.selectionEnd,
+        breakpoint: getCurrentBreakpoint(), target: renderContext?.target && { ...renderContext.target } };
       const own = ownValues();
       widgets = widgets.filter(widget => { if (!focalOnly || widget.kind === "focal") { widget.dispose(); return false; } return true; });
       for (let index = widgetSections.length - 1; index >= 0; index--) if (!focalOnly || widgetSections[index].kind === "focal") { widgetSections[index].details.remove(); widgetSections.splice(index, 1); }
@@ -611,6 +616,13 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
             }, onError: report });
           widgets.push({ ...view, kind: "focal", isCurrent: () => proof.isCurrent(true) });
           filter(); restore(true);
+          const target = handlers.context()?.target;
+          const field = document.activeElement instanceof HTMLInputElement && view.element.contains(document.activeElement) ? document.activeElement : undefined;
+          if (draft && field && field.closest("label")?.textContent === draft.label && getCurrentBreakpoint() === draft.breakpoint &&
+            target?.path === draft.target?.path && target?.selector === draft.target?.selector && target?.start === draft.target?.start) {
+            field.value = draft.value; field.dataset.focalDraft = "true";
+            try { field.setSelectionRange(draft.start, draft.end); } catch { /* number inputs have no selection */ }
+          }
         }).catch(error => { if (request === focalRequest && widgetRequest === widgetRender && focal.host.isConnected) { focal.details.remove(); restore(true); report(error); } });
       }
       // Grid owns these controls while present; they still remain searchable there.

@@ -109,3 +109,17 @@ test("explicit hover preserves important priority in its own focal rule", async 
   await expect.poll(() => source(page)).toMatch(/\.lead:hover \{[^}]*background-position: 42% 5% !important/);
   await expect(page.locator("#notice")).not.toContainText("important image position");
 });
+
+test("focal X typed right after switching to hover keeps its value through the image load and writes the hover rule", async ({ page, baseURL }) => {
+  await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.lead:hover { background-position: 5% 5% !important; }\n');
+  const before = await source(page);
+  await style(page).getByRole("combobox", { name: "Style state" }).selectOption(":hover");
+  // No wait for the hover values: type as soon as the field exists, as a fast user would.
+  const x = style(page).getByLabel("X (%)", { exact: true });
+  await x.fill("42");
+  await expect(style(page).locator(".image-focal-point img")).toHaveJSProperty("complete", true);
+  await expect(x).toHaveValue("42"); await expect(x).toBeFocused();
+  await x.press("Enter");
+  await expect.poll(() => source(page)).toBe(before.replace(".lead:hover { background-position: 5% 5% !important; }", ".lead:hover { background-position: 42% 5% !important; }"));
+  await expect(page.locator("#notice")).not.toContainText("important image position");
+});
