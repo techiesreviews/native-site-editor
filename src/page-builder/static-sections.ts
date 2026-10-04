@@ -7,7 +7,7 @@ import { attribute } from "./collection-model";
 import { scanCss, validateCssSource, type CssBlock } from "./css-write";
 import { nativeMarkupInsertEdit } from "./native-operations";
 import { headTags } from "./site-head";
-import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, type JsonValue } from "./page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument, type JsonValue } from "./page-builder-document";
 
 /** Editor-only catalogue. Published sections remain ordinary HTML and CSS. */
 export interface StaticSectionRecord {
@@ -268,4 +268,63 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     if (css !== undefined && stylesheet !== css) edits.set(record.stylesheetPath, stylesheet);
     return { operation: { expectedSources, edits, ...(css === undefined ? { creates: [{ path: record.stylesheetPath, content: stylesheet }] } : {}), open: input.pagePath, done: `Added ${record.label}`, undone: `Removed ${record.label}` }, selection: { path: input.pagePath, node: [...input.parent, input.index] }, ...(files ? { expectedFiles: [...files].sort() } : {}) };
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+}
+export interface StaticSectionSaveInput {
+  /** Current editor JSON text; undefined only when `files` proves the document is absent. */
+  documentText: string | undefined;
+  /** Complete file graph. Required to create the editor JSON. */
+  files?: readonly string[];
+  /** Complete caller-supplied record. Nothing is captured or inferred from pages. */
+  record: StaticSectionRecord;
+  /** Explicit opt-in to replace an existing id, pinned to the record the caller last saw. */
+  overwrite?: { expected: StaticSectionRecord };
+}
+export interface StaticSectionSavePlan {
+  operation: StaticSectionOperation;
+  expectedFiles?: readonly string[];
+}
+const canonical = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item);
+/** Plans an editor-JSON-only upsert of one explicit static section record. Pages and stylesheets are untouched. */
+export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSectionSavePlan | { error: string } {
+  try {
+    const files = input.files && new Set(input.files);
+    if (input.documentText === undefined) {
+      if (!files) reject(`A complete file graph must prove ${EDITOR_PAGE_BUILDER_PATH} is absent.`);
+      if (files.has(EDITOR_PAGE_BUILDER_PATH)) reject(`Load ${EDITOR_PAGE_BUILDER_PATH} before saving a section.`);
+    } else if (typeof input.documentText !== "string" || files && !files.has(EDITOR_PAGE_BUILDER_PATH)) reject("Loaded sources do not match the file graph.");
+    plain(input.record, "Static section");
+    const record = structuredClone(input.record);
+    validateRecord(record, record.id);
+    const records = readStaticSectionRecords(input.documentText);
+    const document = readPageBuilderDocument(input.documentText);
+    if (Object.hasOwn(records, record.id)) {
+      if (!input.overwrite) reject("A static section with this id already exists; overwrite it explicitly.");
+      if (canonical(records[record.id]) !== canonical(input.overwrite.expected)) reject("The saved static section changed since it was loaded.");
+    } else if (input.overwrite) reject("There is no saved static section to overwrite.");
+    const classToken = new RegExp(`\\.${record.rootClass}(?![A-Za-z0-9_-])`);
+    for (const other of Object.values(records)) {
+      if (other.id === record.id) continue;
+      if (other.rootClass === record.rootClass) reject("Another static section already uses this rootClass.");
+      if (classToken.test(other.css) || new RegExp(`\\.${other.rootClass}(?![A-Za-z0-9_-])`).test(record.css)) reject("Section styles would collide with another static section's rootClass.");
+    }
+    const container = (document.reusableSections ?? { version: 1, records: {} }) as Record<string, JsonValue> & { records: Record<string, JsonValue> };
+    container.records[record.id] = record;
+    document.reusableSections = container;
+    const text = writePageBuilderDocument(document, input.documentText);
+    const expectedSources = new Map<string, string | undefined>([[EDITOR_PAGE_BUILDER_PATH, input.documentText]]);
+    const verb = input.overwrite ? "Updated" : "Saved";
+    return {
+      operation: {
+        expectedSources,
+        edits: input.documentText === undefined ? new Map() : new Map([[EDITOR_PAGE_BUILDER_PATH, text]]),
+        ...(input.documentText === undefined ? { creates: [{ path: EDITOR_PAGE_BUILDER_PATH, content: text }] } : {}),
+        open: EDITOR_PAGE_BUILDER_PATH,
+        done: `${verb} section ${record.label}`,
+        undone: `Reverted section ${record.label}`,
+      },
+      ...(files ? { expectedFiles: [...files].sort() } : {}),
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }

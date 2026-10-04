@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument } from "../src/page-builder/page-builder-document.ts";
-import { listSectionChoices, previewStaticSection, readStaticSectionRecords, planStaticSectionInsert, type StaticSectionRecord, type StaticSectionInsertInput } from "../src/page-builder/static-sections.ts";
+import { listSectionChoices, previewStaticSection, readStaticSectionRecords, planStaticSectionInsert, planStaticSectionSave, type StaticSectionRecord, type StaticSectionInsertInput, type StaticSectionSaveInput } from "../src/page-builder/static-sections.ts";
 
 const section: StaticSectionRecord = {
   id: "intro", label: "Introduction", rootClass: "intro-section", stylesheetPath: "styles/sections.css",
@@ -191,4 +191,72 @@ test("every inline stylesheet import requires a supplied snapshot and participat
   const result=good(input({pageSource,stylesheetSources:{'styles/sections.css':undefined,'theme.css':'body { color: black; }'},files:['index.html',EDITOR_PAGE_BUILDER_PATH,'theme.css']}));
   assert.equal(result.operation.expectedSources.get('theme.css'),'body { color: black; }');
   assert.ok(result.operation.edits.get('index.html')!.includes('<style>@import "theme.css";</style>'));
+});
+
+const other: StaticSectionRecord = { id: "outro", label: "Outro", rootClass: "outro-section", stylesheetPath: "styles/sections.css", html: '<section class="outro-section"><p>Bye</p></section>', css: '.outro-section { margin: 0; }' };
+const rich = JSON.stringify({version:1,pages:{"index.html":{fields:{tagline:"Hi"}}},collections:{},future:{kept:true},reusableSections:{version:1,records:{outro:other},future:["unknown"]}},null,2)+"\n";
+const saveFiles = ["index.html", EDITOR_PAGE_BUILDER_PATH];
+function saved(value: StaticSectionSaveInput) { const before = structuredClone(value); const result = planStaticSectionSave(value); if ("error" in result) assert.fail(result.error); assert.deepEqual(value, before); return result; }
+function saveFailure(value: StaticSectionSaveInput, reason: string) { const before = structuredClone(value); assert.deepEqual(planStaticSectionSave(value), { error: reason }); assert.deepEqual(value, before); }
+
+test("save creates absent editor JSON only when the complete graph proves absence", () => {
+  const plan = saved({ documentText: undefined, files: ["index.html"], record: section });
+  const op = plan.operation;
+  assert.equal(op.edits.size, 0);
+  assert.equal(op.creates!.length, 1); assert.equal(op.creates![0].path, EDITOR_PAGE_BUILDER_PATH);
+  assert.deepEqual([...op.expectedSources], [[EDITOR_PAGE_BUILDER_PATH, undefined]]);
+  assert.ok(op.expectedSources.has(EDITOR_PAGE_BUILDER_PATH));
+  assert.deepEqual(plan.expectedFiles, ["index.html"]);
+  assert.deepEqual(readStaticSectionRecords(op.creates![0].content), { intro: section });
+  assert.deepEqual(listSectionChoices(op.creates![0].content), [{ id: "intro", label: "Introduction", rootClass: "intro-section" }]);
+  saveFailure({ documentText: undefined, record: section }, `A complete file graph must prove ${EDITOR_PAGE_BUILDER_PATH} is absent.`);
+  saveFailure({ documentText: undefined, files: saveFiles, record: section }, `Load ${EDITOR_PAGE_BUILDER_PATH} before saving a section.`);
+  saveFailure({ documentText: rich, files: ["index.html"], record: section }, "Loaded sources do not match the file graph.");
+});
+
+test("save edits only editor JSON and preserves pages, collections, future keys and other records", () => {
+  const plan = saved({ documentText: rich, files: saveFiles, record: section });
+  assert.equal(plan.operation.creates, undefined);
+  assert.deepEqual([...plan.operation.edits.keys()], [EDITOR_PAGE_BUILDER_PATH]);
+  assert.deepEqual([...plan.operation.expectedSources], [[EDITOR_PAGE_BUILDER_PATH, rich]]);
+  const after = JSON.parse(plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!), before = JSON.parse(rich);
+  assert.deepEqual(after.pages, before.pages); assert.deepEqual(after.collections, before.collections); assert.deepEqual(after.future, before.future);
+  assert.deepEqual(after.reusableSections.future, ["unknown"]);
+  assert.deepEqual(after.reusableSections.records, { outro: other, intro: section });
+  assert.equal(plan.operation.open, EDITOR_PAGE_BUILDER_PATH);
+  // Unloaded-graph caller still pins the source snapshot.
+  assert.equal(saved({ documentText: rich, record: section }).expectedFiles, undefined);
+});
+
+test("existing id refuses by default; overwrite is opt-in and pinned to the expected record", () => {
+  const text = saved({ documentText: rich, files: saveFiles, record: section }).operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!;
+  const next = { ...section, label: "Intro v2" };
+  saveFailure({ documentText: text, files: saveFiles, record: next }, "A static section with this id already exists; overwrite it explicitly.");
+  saveFailure({ documentText: text, files: saveFiles, record: next, overwrite: { expected: { ...section, label: "Stale" } } }, "The saved static section changed since it was loaded.");
+  saveFailure({ documentText: rich, files: saveFiles, record: next, overwrite: { expected: section } }, "There is no saved static section to overwrite.");
+  const plan = saved({ documentText: text, files: saveFiles, record: next, overwrite: { expected: section } });
+  const records = readStaticSectionRecords(plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH));
+  assert.equal(records.intro.label, "Intro v2"); assert.deepEqual(records.outro, other);
+  assert.equal(plan.operation.done, "Updated section Intro v2");
+});
+
+test("save refuses rootClass and stylesheet class collisions with other records", () => {
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, rootClass: "outro-section", html: '<section class="outro-section"></section>', css: '.outro-section { color: red; }' } }, "Another static section already uses this rootClass.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section .outro-section { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
+  const outroUsesIntro = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x, .outro-section .intro-section { margin: 0; }'}}}});
+  saveFailure({ documentText: outroUsesIntro, files: saveFiles, record: section }, "Section styles would collide with another static section's rootClass.");
+  const prefixOnly = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x { margin: 0; }'}}}});
+  saved({ documentText: prefixOnly, files: saveFiles, record: section });
+});
+
+test("save refuses invalid JSON, versions, records, HTML and CSS without guessing or resetting", () => {
+  saveFailure({ documentText: "{", files: saveFiles, record: section }, planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }).error!);
+  assert.ok("error" in planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }));
+  saveFailure({ documentText: JSON.stringify({version:2,pages:{},collections:{}}), files: saveFiles, record: section }, "Unsupported page builder document version.");
+  saveFailure({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:2,records:{}}}), files: saveFiles, record: section }, "Unsupported reusable sections version.");
+  saveFailure({ documentText: '{"version":1,"version":1,"pages":{},"collections":{}}', files: saveFiles, record: section }, "Duplicate JSON key: version.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, id: "Bad Id" } }, "Invalid static section identity, label, rootClass or stylesheet path.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, html: '<section class="intro-section"><script></script></section>' } }, "Static sections support ordinary HTML without scripts, embedded styles, custom tags, slots, templates or foreign markup.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: 'p { color: red; }' } }, "Every section style selector must be rooted in its literal rootClass without global leakage or nesting.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, future: undefined as unknown as string } }, planStaticSectionSave({ documentText: rich, files: saveFiles, record: { ...section, future: undefined as unknown as string } }).error!);
 });
