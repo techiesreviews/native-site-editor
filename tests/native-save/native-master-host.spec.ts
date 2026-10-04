@@ -228,3 +228,36 @@ test("Update Intro saves the page's section into the master as written; pages an
   await expect(page.locator("#status")).toContainText("already matches");
   expect(await effective(page, baseURL, MASTER)).toBe(master);
 });
+
+test("the master line hides on other files, comes back on the master, and is rebuilt when its code pane is replaced", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await addIntro(page, "main > section h2");
+  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  await selectSection(page, "section.section-intro");
+  await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
+  await expect(banner(page)).toBeVisible();
+  // Another page, opened from the page menu: the line hides; the session stays.
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("treeitem", { name: "About · Larkspur Studio" }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await expect(banner(page)).toBeHidden();
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Files" }).click();
+  const files = page.locator("#explorer").getByRole("navigation", { name: "Repository files" });
+  await files.getByRole("button", { name: /^\.editor/ }).click();
+  await files.getByRole("button", { name: /^sections/ }).click();
+  await files.getByRole("button", { name: /^intro\.html/ }).click();
+  // Back on the master: the line is there again with its exits.
+  await expect(page.locator("#primary-title")).toHaveText(MASTER);
+  await expect(banner(page)).toBeVisible();
+  // The code pane's line is detached (as a rebuilt workspace would): the next code change makes it again.
+  await page.evaluate(() => document.querySelector(".master-banner")?.remove());
+  await expect(banner(page)).toHaveCount(0);
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" ");
+  await expect(banner(page)).toBeVisible();
+  await expect(banner(page).getByRole("button", { name: "Done" })).toBeVisible();
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText("index.html");
+});

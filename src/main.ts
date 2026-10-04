@@ -854,8 +854,13 @@ const masterController = createNativeSectionMasterController({
 });
 let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
 function renderMasterBanner() {
+  const content = document.getElementById("content");
+  // A workspace that was rebuilt holds a new code pane: the old line is dropped and made again there.
+  if (masterBanner && (!masterBanner.element.isConnected || masterBanner.element.nextElementSibling !== content)) {
+    masterBanner.element.remove();
+    masterBanner = undefined;
+  }
   if (!masterBanner) {
-    const content = document.getElementById("content");
     if (!content) return;
     masterBanner = createMasterBanner(content, {
       done: () => void masterController.done().then(() => {
@@ -866,7 +871,9 @@ function renderMasterBanner() {
       update: () => void masterController.updateCopies().then(renderMasterBanner),
     });
   }
-  masterBanner.show(masterController.context());
+  // Shown while the master itself is open; another file hides it, and coming back shows it again.
+  const context = masterController.context();
+  masterBanner.show(context && currentPath === context.htmlPath ? context : undefined);
 }
 // The edit bar's label and purple Edit for a whole saved section, or nothing.
 function nativeMasterIdentity(selection: NativePreviewSelection) {
@@ -4207,6 +4214,7 @@ function setCurrentPage(path?: string) {
   }
   updateCurrentPageLabel();
   element("primary-title").textContent = path ?? "";
+  if (masterBanner) renderMasterBanner();
   componentTools?.refresh();
   element("explorer-toggle").title = path
     ? `Pages & files — ${path}`
@@ -7106,7 +7114,7 @@ async function mountSource(
       commitHistory?.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
       // The master line shows at once whether the master can update copies.
-      if (masterBanner && !masterBanner.element.hidden) renderMasterBanner();
+      if (masterBanner) renderMasterBanner();
       // An open template's banner counts its instances again.
       componentTools?.refresh();
       // The Page fields follow the page's head (typed, undone or redone).
