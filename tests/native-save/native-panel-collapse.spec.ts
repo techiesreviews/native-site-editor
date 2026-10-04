@@ -83,7 +83,8 @@ for (const width of [1440, 390]) {
     await drag(page, style(page), draggedWidth + 100, 0);
     await expect.poll(() => metric(dock, "width")).toBe(0);
     await style(page).press("Enter");
-    await expect.poll(() => metric(dock, "width")).toBe(draggedWidth);
+    // A narrow drawer drag is transient; reopening keeps the remembered width.
+    await expect.poll(() => metric(dock, "width")).toBe(width < 600 ? dockWidth : draggedWidth);
     await style(page).press("Home"); await code(page).press("Home");
     await load(page, baseURL);
     await expect.poll(() => metric(split, "height")).toBe(0);

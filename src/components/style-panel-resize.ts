@@ -23,7 +23,8 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
     if (disposed) return;
     width = value < minimum() / 2 ? 0 : Math.round(Math.max(minimum(), Math.min(maximum(), value)));
     if (!width && panel.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
-    if (retain) requested = width ? value : 0;
+    // A drawer width is a clamp of the desktop request, never a new preference.
+    if (retain) requested = !width ? 0 : overlay() ? requested || last : value;
     workspace.style.setProperty("--style-panel-width", `${width}px`);
     for (const child of panel.children) {
       if (!(child instanceof HTMLElement) || child === handle) continue;
@@ -46,7 +47,7 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
   trackPress(handle, {
     start(event) { if (disposed) return false; drag = { x: event.clientX, width }; workspace.classList.add("style-panel-resizing"); return true; },
     move(event) { if (drag) apply(drag.width + drag.x - event.clientX); },
-    end(click) { if (disposed) return; const from = drag?.width; drag = undefined; workspace.classList.remove("style-panel-resizing"); if (click) return toggle(); if (width) { last = width; requested = width; } else if (from) last = from; save(); },
+    end(click) { if (disposed) return; const from = drag?.width; drag = undefined; workspace.classList.remove("style-panel-resizing"); if (click) return toggle(); if (width && !overlay()) { last = width; requested = width; } else if (!width && from && !overlay()) last = from; save(); },
   });
   handle.addEventListener("keydown", event => {
     if (isToggleKey(event)) { event.preventDefault(); toggle(); return; }
@@ -54,11 +55,7 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
     const values: Record<string, number> = { ArrowLeft: width ? width + step : minimum(), ArrowRight: width && width - step >= minimum() ? width - step : 0, Home: 0, End: maximum() };
     if (!(event.key in values)) return;
     event.preventDefault();
-    if (!values[event.key]) collapse(); else { apply(values[event.key]); last = width; save(); }
-  });
-  panel.addEventListener("keydown", event => {
-    if (event.key !== "Escape" || !width || !overlay() || event.defaultPrevented || event.target === handle) return;
-    event.preventDefault(); collapse(); handle.focus();
+    if (!values[event.key]) collapse(); else { apply(values[event.key]); if (!overlay()) last = width; save(); }
   });
   const observer = new ResizeObserver(() => apply(requested, false)); observer.observe(workspace); apply(requested);
   return { collapse, expand, toggle, dispose() { disposed = true; observer.disconnect(); handle.remove(); for (const child of panel.children) { if (child instanceof HTMLElement) { child.inert = false; child.removeAttribute("aria-hidden"); } } workspace.classList.remove("style-panel-resizing", "has-style-panel", "style-panel-overlay"); workspace.style.removeProperty("--style-panel-width"); } };

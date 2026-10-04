@@ -37,4 +37,10 @@ main.has-preview.style-panel-overlay.style-panel-overlay { grid-template-columns
 main.has-preview.style-panel-overlay > .style-panel:not(.is-collapsed) {
   z-index: 30; width: var(--style-panel-width, 280px); margin-left: calc(-1 * var(--style-panel-width, 280px));
   box-shadow: var(--shadow);
+  /* Full height of main so every control is reachable; the code pane stays
+     interactive beside the drawer and returns in full when it is hidden. */
+  grid-row: 1 / -1; align-self: stretch;
+}
+@media (pointer: coarse) {
+  main.style-panel-overlay > .style-panel:not(.is-collapsed) > .style-panel-resize { left: -22px; width: 44px; }
 }

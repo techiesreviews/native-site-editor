@@ -36,6 +36,10 @@ for (const width of [1440, 900, 390]) {
         // Narrow: a drawer over a full-width canvas, never a squeezed page.
         expect(sizes.preview).toBeGreaterThanOrEqual(sizes.main - 1);
         expect(sizes.panel.width).toBeLessThanOrEqual(sizes.main - 48);
+        const mainHeight = await page.locator("#main").evaluate(main => main.clientHeight);
+        expect(sizes.panel.height).toBeGreaterThanOrEqual(mainHeight * .6);
+        const add = page.locator("#style-dock").getByRole("button", { name: "Add class", exact: true });
+        await add.scrollIntoViewIfNeeded(); await expect(add).toBeInViewport();
       } else expect(sizes.preview + sizes.panel.width).toBeLessThanOrEqual(sizes.main + 1);
       await page.screenshot({ path: `${shots}/${width}-${colorScheme}-open.png` });
       await style(page).press("Enter");
@@ -59,4 +63,17 @@ test("touch reopens the narrow Style drawer and Escape closes it to its grip", a
     await expect(style(page)).toHaveAttribute("aria-valuenow", "0");
     await expect(style(page)).toBeFocused();
   } finally { await context.close(); }
+});
+
+test("a narrow drawer clamp never replaces the desktop Style width", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1440, height: 844 }); await load(page, baseURL);
+  if (await style(page).getAttribute("aria-valuenow") === "0") await style(page).press("Enter");
+  await style(page).press("End");
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "560");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await style(page).press("ArrowRight"); await style(page).press("End");
+  await page.reload();
+  await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 844 });
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "560");
 });
