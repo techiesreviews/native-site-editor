@@ -139,9 +139,15 @@ test("slotted body keeps page ownership and shared CSS stays live through undo a
   const bodyCrumb = page.getByRole("navigation", { name: "Selected element and its ancestors" })
     .getByRole("button", { name: "p.project-card__body", exact: true });
   await expect(bodyCrumb).toHaveAttribute("aria-current", "true");
+  await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
+  const bodyRule = page.locator("#secondary-rules button").filter({ hasText: ".project-card__body" });
+  await expect(bodyRule).toHaveCount(1);
+  await expect(bodyRule.locator(".code-pane__rule-file")).toHaveText("site.css");
+  await bodyRule.click();
   await expect(page.locator("#secondary-title")).toHaveText(cssPath);
   await expect(page.locator("#secondary-rules")).toContainText(".project-card__body");
   await expect.poll(() => copySelectedEditorText(page, "#content-secondary")).toContain(".project-card__body");
+  await expect.poll(() => editorSource(page, "#content-secondary")).toBe(cssSource);
 
   const redTitleCss = cssSource.replace(
     ".project-card__body {\n  margin: 0;\n  color: var(--muted);",
@@ -155,6 +161,9 @@ test("slotted body keeps page ownership and shared CSS stays live through undo a
     .toBe("rgb(190, 20, 40)");
   await expect
     .poll(() => frame.locator(".project-card__body").nth(1).evaluate((el) => getComputedStyle(el).color))
+    .toBe("rgb(190, 20, 40)");
+
+  await expect.poll(() => frame.locator(".project-card__body").nth(2).evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(190, 20, 40)");
 
   await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());

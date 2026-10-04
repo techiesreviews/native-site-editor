@@ -1305,7 +1305,12 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
     nativeEffectiveSource(componentCss) !== undefined ? componentCss : undefined;
   const css = fallbackCss ?? rules.find((rule) => rule.path !== page)?.path ??
     styles?.rules.find((rule) => rule.path !== page)?.path ?? defaultLinkedStyle()?.css ?? secondaryPath;
-  if (!reveal && css !== secondaryPath) return;
+  if (!reveal && css !== secondaryPath) {
+    // Code selection updates matching rules without moving the open CSS pane.
+    linkedStyle = { page, css: secondaryPath, rules };
+    renderLinkedStyle();
+    return;
+  }
   linkedStyle = { page, css, rules };
   const current = () => {
     const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
