@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { applyCollectionEdits, planBake } from "../../src/page-builder/collection-bake";
 import { deriveNativeRoutes } from "../../shared/native-routes";
@@ -128,4 +129,86 @@ test("a page changed after the fields opened refuses the move and keeps the newe
   await expect(settings.locator(".collections-panel__status")).toContainText("changed");
   expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual([POTTERY]);
   expect((await storedDraft(page, POTTERY))!.content).toBe(changed);
+});
+
+// Real await boundaries. Page settings opens only after every branch file is
+// read (ensureNativeTextIndex), and the editor reads files by Git blob SHA, so
+// that read is held at the network until the test releases it. Once open, the
+// move itself crosses no network read: the JSON and pages are already read and
+// the base of each edited file comes from the loaded tree. So the held await is
+// the one before the fields are pinned, and the move must plan from what is
+// true after it, keeping anything that arrived meanwhile.
+async function holdSidecarRead(page: Page, content: string) {
+  const bytes = Buffer.from(content);
+  const sha = createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes])).digest("hex");
+  let release!: () => void, asked = 0;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route((url) => url.pathname.startsWith("/api/file") && decodeURIComponent(url.search).includes(sha), async (route) => { asked++; await held; await route.fallback(); });
+  return { release, asked: () => asked };
+}
+async function loadHeld(page: Page, baseURL: string | undefined, path: string) {
+  await page.goto(`${baseURL}/`);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30_000 });
+  await expect(frame(page).locator("h1").first()).toBeVisible();
+}
+const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
+async function requestSettings(page: Page) {
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#page-settings-toggle").click();
+}
+const foreignEdit = (page: Page, text: string) => page.evaluate(async ({ path, text }) => {
+  const editor = await import("/src/components/code-editor.ts");
+  const before = editor.getMountedSource(path)!, at = before.indexOf("</head>");
+  editor.replaceActiveRange({ path, start: at, end: at, text, expected: "" });
+  return before.slice(0, at) + text + before.slice(at);
+}, { path: POTTERY, text });
+
+test("a foreign edit during the held read before the fields open is kept, and the move plans from it", async ({ page, baseURL }) => {
+  const files = seeded();
+  await seed(page, baseURL, { ...files, [SIDECAR]: existingJson });
+  const hold = await holdSidecarRead(page, existingJson);
+  await loadHeld(page, baseURL, POTTERY);
+  await expect.poll(hold.asked).toBeGreaterThan(0);
+  await requestSettings(page);
+  await page.waitForTimeout(300);
+  await expect(settingsDialog(page)).toHaveCount(0);
+  // Arrives during the await: a foreign comment and a foreign field meta.
+  const foreign = '<!-- foreign -->\n  <meta name="field:extra" content="Kept">\n';
+  const changed = await foreignEdit(page, foreign);
+  hold.release();
+  const settings = settingsDialog(page);
+  await settings.getByRole("tab", { name: "Fields", exact: true }).click();
+  await expect(settings.getByText("This page keeps the fields client, year, extra", { exact: false })).toBeVisible();
+  await moveButton(settings).click();
+  await expect.poll(async () => (await storedDraft(page, POTTERY))?.content).toBe(changed.replace(meta("client", "Harbour Ltd") + meta("year", "2024"), "").replace('  <meta name="field:extra" content="Kept">\n', ""));
+  expect((await storedDraft(page, POTTERY))!.content).toContain("<!-- foreign -->");
+  const json = JSON.parse((await storedDraft(page, SIDECAR))!.content);
+  expect(json.pages[POTTERY]).toEqual({ fields: { client: "Harbour Ltd", year: "2024", extra: "Kept" } });
+  expect(json.pages["about/index.html"]).toEqual({ fields: { mood: "calm" }, keep: { unknown: true } });
+  await page.unroute(() => true);
+});
+
+test("a conflicting value found only by the held JSON read refuses the move with no write", async ({ page, baseURL }) => {
+  const sidecar = JSON.stringify({ version: 1, pages: { [POTTERY]: { fields: { year: "1999" } } }, collections: {} }, null, 2) + "\n";
+  const files = seeded();
+  const sources: Record<string, string> = {};
+  for (const path of walk(starter)) if (/\.(html|json)$/.test(path)) sources[path] = readFileSync(`${starter}/${path}`, "utf8");
+  Object.assign(sources, files, { [SIDECAR]: sidecar });
+  await seed(page, baseURL, { ...files, [SIDECAR]: sidecar });
+  const hold = await holdSidecarRead(page, sidecar);
+  await loadHeld(page, baseURL, POTTERY);
+  await expect.poll(hold.asked).toBeGreaterThan(0);
+  await requestSettings(page);
+  await page.waitForTimeout(300);
+  hold.release();
+  const settings = settingsDialog(page);
+  await settings.getByRole("tab", { name: "Fields", exact: true }).click();
+  await moveButton(settings).click();
+  await expect(settings.locator(".collections-panel__status")).toContainText("year");
+  await expect(settings.locator(".collections-panel__status")).toContainText("Nothing was moved");
+  expect(await storedDrafts(page)).toEqual([]);
+  await page.unroute(() => true);
 });

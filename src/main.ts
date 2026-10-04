@@ -3009,21 +3009,33 @@ async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<strin
   const scope = setupScope(), epoch = generation;
   const source = nativeEffectiveSource(path);
   if (source === undefined) return "The page could not be read.";
-  if (pinned.has(path) && pinned.get(path) !== source) return "The page changed meanwhile. Reopen the fields and try again.";
-  const pinnedSidecar = pinned.has(EDITOR_PAGE_BUILDER_PATH);
-  const sidecarBefore = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-  if (pinnedSidecar && pinned.get(EDITOR_PAGE_BUILDER_PATH) !== sidecarBefore) return "The editor's page data changed meanwhile. Reopen the fields and try again.";
+  const files = nativeFiles().sort();
+  const pins = new Map(pinned);
+  pins.set(path, pins.has(path) ? pins.get(path) : source);
+  // Every pinned file must still have exactly the bytes it was planned from
+  // (or still be absent/unread): anything read or changed meanwhile refuses.
+  const verify = (): string | undefined => {
+    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
+    if (JSON.stringify(nativeFiles().sort()) !== JSON.stringify(files)) return "The site's files changed meanwhile. Nothing was moved; try again.";
+    for (const [file, expected] of pins) {
+      if (nativeEffectiveSource(file) === expected) continue;
+      return file === path ? "The page changed meanwhile. Nothing was moved; reopen the fields and try again."
+        : file === EDITOR_PAGE_BUILDER_PATH ? "The editor's page data changed meanwhile. Nothing was moved; reopen the fields and try again."
+        : `${file} changed meanwhile. Nothing was moved; reopen the fields and try again.`;
+    }
+    return undefined;
+  };
+  let refused = verify();
+  if (refused) return refused;
   // The editor's JSON must be read before it is changed: never written over unseen bytes.
-  if (sidecarBefore === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) {
+  if (nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) {
     const error = await ensureNativeTextIndex();
     if (error) return error;
-    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
-    if (nativeEffectiveSource(path) !== source) return "The page changed meanwhile. Reopen the fields and try again.";
-    if (pinnedSidecar && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== undefined) return "The editor's page data changed meanwhile. Reopen the fields and try again.";
+    refused = verify();
+    if (refused) return refused;
   }
   const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   if (sidecar === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) return `${EDITOR_PAGE_BUILDER_PATH} could not be read, so nothing was moved.`;
-  const files = nativeFiles().sort();
   let plan: ReturnType<typeof planLegacyPageFieldMigration>;
   try { plan = planLegacyPageFieldMigration({ files, pagePath: path, source, sidecarText: sidecar }); }
   catch (error) {
@@ -3042,7 +3054,7 @@ async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<strin
     if (created !== undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: created });
   }
   const names = Object.keys(plan.fields).join(", ");
-  const expectedSources = new Map<string, string | undefined>([...pinned, ...plan.expectedSources]);
+  const expectedSources = new Map<string, string | undefined>([...pins, ...plan.expectedSources]);
   return applyNativeCollectionOperation({
     expectedSources, edits, creates,
     current: sameGraph,
