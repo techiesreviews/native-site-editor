@@ -69,7 +69,7 @@ test("a saved record with the default id wins and JSON is untouched", () => {
 });
 
 test("refusals: bad version, unloaded JSON, rootClass and stylesheet conflicts, unsafe snapshots", () => {
-  bad(input({ documentText: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: {} } }), files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Unsupported reusable sections version.");
+  bad(input({ documentText: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } }), files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Unsupported reusable sections version.");
   bad(input({ files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), `Load ${EDITOR_PAGE_BUILDER_PATH} before saving a section.`);
   bad(input({ files: undefined }), `A complete file graph must prove ${EDITOR_PAGE_BUILDER_PATH} is absent.`);
   const clash = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { mine: { id: "mine", label: "Mine", rootClass: "section-intro", stylesheetPath: css, html: '<section class="section-intro"></section>', css: ".section-intro { margin: 0; }" } } } });
@@ -97,7 +97,7 @@ test("saved record is authoritative for list, preview and insert; stale plain id
 });
 
 test("invalid JSON or version never falls back to default list or preview", () => {
-  for (const text of ["{", JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: {} } })]) {
+  for (const text of ["{", JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } })]) {
     assert.ok("error" in (listDefaultSectionChoices(text) as object));
     assert.ok("error" in previewDefaultStaticSection(text, "static-section:intro"));
   }

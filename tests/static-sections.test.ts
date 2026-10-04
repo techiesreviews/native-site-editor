@@ -25,7 +25,7 @@ test("catalogue validates whole JSON, preserves unknown metadata and previews li
   assert.equal(writePageBuilderDocument(readPageBuilderDocument(text), text), text);
   assert.deepEqual(listSectionChoices(undefined), []);
   assert.deepEqual(previewStaticSection(undefined,"intro"), {error:"Choose a registered static section."});
-  for (const version of [2,"1"]) {
+  for (const version of [3,"1"]) {
     const parsed=JSON.parse(text);parsed.reusableSections.version=version;
     assert.throws(()=>readStaticSectionRecords(JSON.stringify(parsed)),{message:"Unsupported reusable sections version."});
   }
@@ -255,7 +255,7 @@ test("save refuses invalid JSON, versions, records, HTML and CSS without guessin
   saveFailure({ documentText: "{", files: saveFiles, record: section }, planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }).error!);
   assert.ok("error" in planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }));
   saveFailure({ documentText: JSON.stringify({version:2,pages:{},collections:{}}), files: saveFiles, record: section }, "Unsupported page builder document version.");
-  saveFailure({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:2,records:{}}}), files: saveFiles, record: section }, "Unsupported reusable sections version.");
+  saveFailure({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:3,records:{}}}), files: saveFiles, record: section }, "Unsupported reusable sections version.");
   saveFailure({ documentText: '{"version":1,"version":1,"pages":{},"collections":{}}', files: saveFiles, record: section }, "Duplicate JSON key: version.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, id: "Bad Id" } }, "Invalid static section identity, label, rootClass or stylesheet path.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, html: '<section class="intro-section"><script></script></section>' } }, "Static sections support ordinary HTML without scripts, embedded styles, custom tags, slots, templates or foreign markup.");

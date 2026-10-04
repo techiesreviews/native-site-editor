@@ -103,11 +103,12 @@ export function planSelectedStaticSectionSave(input: NativeSectionSaveInput): Na
 function saveIntoMaster(input: NativeSectionSaveInput, entry: StaticSectionMasterEntry, html: string): NativeSectionSavePlan {
   const path = entry.htmlPath;
   if (typeof input.master !== "string") reject(`Load ${path} before saving into this section's master.`);
-  if (input.files && !input.files.includes(path)) reject(`The master ${path} is missing; restore it or remove the saved section.`);
+  if (!input.files) reject("A complete file graph is needed to save into a master.");
+  if (!input.files.includes(path)) reject(`The master ${path} is missing; restore it or remove the saved section.`);
   const core = sectionCore(input.master);
   const master = input.master.slice(0, core.start) + html + input.master.slice(core.end);
   checkSavedSectionHtml(entry, master);
-  const json = moveLinkedCopyBasis({ documentText: input.documentText, pagePath: input.pagePath, pageSource: input.pageSource, range: input.range, basis: html });
+  const json = moveLinkedCopyBasis({ documentText: input.documentText, pagePath: input.pagePath, pageSource: input.pageSource, range: input.range, basis: html, recordId: entry.id });
   if (master === input.master && json === undefined) return { noop: true, recordId: entry.id };
   const edits = new Map<string, string>();
   if (master !== input.master) edits.set(path, master);

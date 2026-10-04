@@ -225,8 +225,6 @@ export function readSectionCatalog(documentText: string | undefined): Record<str
   plain(document.reusableSections.records, "Reusable section records");
   const entries: Record<string, StaticSectionEntry> = {};
   for (const [id, value] of Object.entries(document.reusableSections.records)) { validateEntry(value, id, version as number); entries[id] = value; }
-  // Version 2 exists only for master files: a v2 catalogue without one is not a format we wrote.
-  if (version === 2 && !Object.values(entries).some((entry) => Object.hasOwn(entry, "htmlPath"))) reject("Unsupported reusable sections version.");
   return entries;
 }
 /**

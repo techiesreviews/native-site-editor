@@ -283,6 +283,8 @@ export function planNativeSectionCopiesUpdate(input: {
     const html = input.record.html.slice(core.start, core.end);
     checkBasis(html, `Saved section ${input.record.id}`);
     const files = input.files && new Set(input.files);
+    const htmlPath = (input.record as Record<string, unknown>).htmlPath;
+    if (htmlPath !== undefined && (!input.master || input.master.path !== htmlPath)) fail("A saved section with a master needs that master pinned to update copies.");
     if (input.master) {
       if (typeof input.master.path !== "string" || typeof input.master.source !== "string" || input.master.source !== input.record.html) fail("The master source does not match the record being applied.");
       if (files && !files.has(input.master.path)) fail("Loaded sources do not match the file graph.");
@@ -431,14 +433,16 @@ export function deleteNativeSectionLink(documentText: string, page: string, key:
 /**
  * Editor JSON text with the link of the copy at exactly `range` on `pagePath` moved to `basis`
  * (the copy was just saved into its master, so it equals the master's new section). Undefined
- * when that copy is not linked. The page's links must all resolve; `basis` must be one section.
+ * when that copy is not linked to `recordId`. The page's links must all resolve; `basis` must be one section.
  * Throws on refusal; the caller wraps it in its own plan.
  */
-export function moveLinkedCopyBasis(input: { documentText: string | undefined; pagePath: string; pageSource: string; range: { start: number; end: number }; basis: string }): string | undefined {
+export function moveLinkedCopyBasis(input: { documentText: string | undefined; pagePath: string; pageSource: string; range: { start: number; end: number }; basis: string; recordId: string }): string | undefined {
   checkBasis(input.basis, "The saved section");
   const links = readNativeSectionLinks(input.documentText);
   const found = resolvePage(input.pagePath, input.pageSource, links[input.pagePath] ?? {}).find((entry) => entry.start === input.range.start && entry.end === input.range.end);
-  if (!found || found.link.basis === input.basis) return undefined;
+  // Only a link to the record just saved moves. A link to another record on the same copy keeps
+  // its basis: that copy is customised for it, and its next Update must leave it alone.
+  if (!found || found.link.recordId !== input.recordId || found.link.basis === input.basis) return undefined;
   const document = readPageBuilderDocument(input.documentText);
   const sections = document.pages[input.pagePath].sections!;
   sections[found.key] = { ...(sections[found.key] as Record<string, JsonValue>), basis: input.basis };

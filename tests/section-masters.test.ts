@@ -168,3 +168,55 @@ test("Update from a master syncs copies made from different versions, keeps a cu
   assert.ok("error" in planNativeSectionCopiesUpdate({ documentText: text, files: [...files, masterPath], sources, record: resolved, master: { path: masterPath, source: "other" } }));
   assert.ok("error" in planNativeSectionCopiesUpdate({ documentText: text, files, sources, record: resolved, master: { path: masterPath, source: newMaster } }));
 });
+
+// Saving a copy into one record's master must never bless another record's link on the same
+// copy: that customised copy would otherwise be overwritten by the other record's next Update.
+test("Save into a master moves only that record's link basis; another record's link stays", () => {
+  const { json } = made();
+  // The copy has an authored id, so its outro link still finds it after the class changes.
+  const outroS1 = { ...outro, html: `<section id="s1" class="outro"><p>Bye</p></section>` };
+  const home = page(outroS1.html);
+  const linkPlan = planNativeSectionLink({ documentText: json, pagePath: "index.html", pageSource: home, range: range(home, outroS1.html), record: outroS1 });
+  if ("error" in linkPlan) assert.fail(linkPlan.error);
+  const linked = linkPlan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!;
+  // The user rewrites the copy as an intro in their own words and saves it into the intro master.
+  const mine = `<section id="s1" class="intro"><p>My own words</p></section>`;
+  const edited = page(mine);
+  const save = planSelectedStaticSectionSave({ pagePath: "index.html", pageSource: edited, range: range(edited, mine), documentText: linked, files: [...files, masterPath], master: `${intro.html}\n`, recordId: "intro" });
+  if ("error" in save) assert.fail(save.error);
+  const after = save.noop ? linked : save.operation.edits.get(EDITOR_PAGE_BUILDER_PATH) ?? linked;
+  assert.equal(readNativeSectionLinks(after)["index.html"]["outro-1"].basis, outroS1.html);
+  // The outro's next Update leaves the user's words alone.
+  const update = planNativeSectionCopiesUpdate({ documentText: after, files: [...files, masterPath], sources: { "index.html": edited }, record: { ...outroS1, html: `<section id="s1" class="outro"><p>Later</p></section>` } });
+  if ("error" in update) assert.fail(update.error);
+  assert.deepEqual(update.diverged, [{ page: "index.html", key: "outro-1" }]);
+  assert.equal(update.operation, undefined);
+});
+
+// A version 2 catalogue stays usable when its last master is removed (all inline) or empty.
+test("a version 2 catalogue with no master left still reads, inserts and saves", () => {
+  const inline = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: { outro } } });
+  assert.deepEqual(readStaticSectionRecords(inline), { outro });
+  const insert = planStaticSectionInsert({ documentText: inline, sectionId: "outro", pagePath: "index.html", pageSource: page("<p>Keep</p>"), parent: [0], index: 1, stylesheetSources: { "styles/sections.css": "" }, files, cssPolicy: "reuse-current" });
+  assert.ok(!("error" in insert), "error" in insert ? insert.error : "");
+  const saved = planStaticSectionSave({ documentText: inline, files, record: { ...outro, html: `<section class="outro"><p>Later</p></section>` }, overwrite: { expected: outro } });
+  assert.ok(!("error" in saved), "error" in saved ? saved.error : "");
+  const empty = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: {} } });
+  assert.deepEqual(readStaticSectionRecords(empty), {});
+  assert.ok(!("error" in planStaticSectionSave({ documentText: empty, files, record: outro })));
+  // A future version still refuses.
+  assert.throws(() => readSectionCatalog(JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } })), /Unsupported/);
+});
+
+test("Update of a master record needs its master pinned at its own path; Save into a master needs it in the graph", () => {
+  const { json } = made();
+  const home = page(intro.html);
+  const linked = (planNativeSectionLink({ documentText: json, pagePath: "index.html", pageSource: home, range: range(home, intro.html), record: intro }) as { operation: { edits: Map<string, string> } }).operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!;
+  const newMaster = `<section class="intro"><h2>Newest</h2></section>`;
+  const resolved = readStaticSectionRecords(linked, { sources: { [masterPath]: newMaster }, files: [...files, masterPath] }).intro;
+  assert.match((planNativeSectionCopiesUpdate({ documentText: linked, files: [...files, masterPath], sources: { "index.html": home }, record: resolved }) as { error: string }).error, /master/i);
+  assert.ok("error" in planNativeSectionCopiesUpdate({ documentText: linked, files: [...files, masterPath, ".editor/sections/other.html"], sources: { "index.html": home }, record: resolved, master: { path: ".editor/sections/other.html", source: newMaster } }));
+  const edited = page(newMaster);
+  assert.ok("error" in planSelectedStaticSectionSave({ pagePath: "index.html", pageSource: edited, range: range(edited, newMaster), documentText: linked, master: intro.html }));
+  assert.ok("error" in planSelectedStaticSectionSave({ pagePath: "index.html", pageSource: edited, range: range(edited, newMaster), documentText: linked, files, master: intro.html }));
+});

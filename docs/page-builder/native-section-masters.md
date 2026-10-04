@@ -39,12 +39,15 @@ Save to master or Update copies yet.
 - Link, register and resolve as before. `planNativeSectionCopiesUpdate({ …, master? })` writes
   only the core into each copy still equal to its own basis (copies from older versions included),
   reports customised copies, and refuses when the master has a comment outside its section.
-- `moveLinkedCopyBasis(…)`: moves the basis of the copy that was just saved into its master.
+- `moveLinkedCopyBasis(…, recordId)`: moves the basis of the copy just saved into its master,
+  only for a link to that record; another record's link on the same copy is left as it is.
+- Updating copies of a record with a master requires `master` pinned at the record's `htmlPath`.
 
 `native-section-save.ts`
 - `planSelectedStaticSectionSave({ …, master? })`: for a record with a master, replaces only
   the master's `<section>` (its padding and comments stay) and, if the selected copy is linked,
-  moves its basis in the same operation. Version 1 saves are unchanged.
+  moves its basis in the same operation. It needs the master loaded and in the complete file
+  graph. Version 1 saves are unchanged.
 
 ## Guarantees
 
@@ -58,6 +61,10 @@ Save to master or Update copies yet.
 
 - A copy whose opening tag was edited (and has no id) can no longer be found; Update refuses
   until it is relinked. Copies on one page with the same opening tag can't be told apart.
-- A version 2 catalogue with no master left is refused (it is not a format the editor writes).
+- A version 2 catalogue stays valid with no master left (all inline, or empty); only an unknown
+  future version refuses.
+- `readStaticSectionRecords` with masters resolves every record, so one broken master refuses the
+  whole list. A host that should keep other sections usable resolves per entry with
+  `readSectionCatalog` + `resolveStaticSection` instead.
 - The host (`main.ts`) still reads saved sections without masters; it must pass `masters`
   before any master exists in a site.
