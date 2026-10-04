@@ -9,7 +9,7 @@ import { startTagAttribute } from "../../shared/html-source";
 import { attributeEdit, descendants, parseSource, type SourceElement } from "./component-model";
 import { applyCollectionEdits, bindCollectionTemplate, planCollectionChange, type BakePlan } from "./collection-bake";
 import { readPageFields, withCustomPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
-import { collectionRecords, makeGridCollection, validCollectionRoute } from "./collection-model";
+import { collectionRecords, makeGridCollection, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 
 interface CardSlot { slot: string; tag: string; open: string; text: string; href?: string }
@@ -168,10 +168,15 @@ export function planManualConversion(input: ManualConversionInput): ManualConver
   const template = first.gaps[0] + parts.map((part, index) => part + (index < parts.length - 1 ? first.gaps[index + 1] : "")).join("") + first.gaps[first.gaps.length - 1];
   const markup = first.open + template + `</${grid.tag}>`;
   try {
-    const matched = new Set(collectionRecords(sources as Record<string, string>, routes as Record<string, string>, identity, { folder: folders[0], folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path).map((record) => record.path));
+    const ordered = collectionRecords(sources as Record<string, string>, routes as Record<string, string>, identity, { folder: folders[0], folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path).map((record) => record.path);
+    const matched = new Set(ordered);
     const dropped = pages.find(({ page }) => !matched.has(page!));
     if (dropped) return fail(`The chosen folders leave out ${dropped.url}. Select its folder so no card is dropped.`);
-    if (matched.size > 500) return fail("The chosen folders have more than 500 pages.");
+    if (matched.size > MAX_COLLECTION_ITEMS) return fail(`The chosen folders have more than ${MAX_COLLECTION_ITEMS} pages.`);
+    // Records follow page order; refuse rather than silently reorder the current cards.
+    const cardPages = new Set(pages.map(({ page }) => page!));
+    if (ordered.filter((page) => cardPages.has(page)).some((page, index) => page !== pages[index].page))
+      return fail("These cards use a custom order. Choosing pages would reorder them, so nothing was changed.");
     const after: Record<string, string> = { ...sources };
     for (const [page, fields] of writes) for (const [field, value] of Object.entries(fields)) after[page] = withCustomPageField(after[page], field, value, identity);
     const converted = makeGridCollection(source, start, { folders, sort: "", filter: "", limit: "", template: markup });

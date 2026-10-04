@@ -57,6 +57,7 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
     // SEO head lines are untouched; only a grid field is added.
     for (const line of seo[index].split("\n").filter((line) => /<title>|name="description"|og:description/.test(line))) expect(draft).toContain(line);
   }
+  const pageDrafts = await Promise.all(work.map(async (slug) => (await storedDraft(page, `work/${slug}/index.html`))!.content));
   const components = await storedDrafts(page);
   expect(components.some((draft) => draft.path.startsWith("components/") || draft.path.startsWith("styles/"))).toBe(false);
   await page.locator(".code-editor__undo").first().click();
@@ -66,6 +67,7 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
   await expect.poll(async () => (await storedDrafts(page)).length).toBe(4);
+  for (const [index, slug] of work.entries()) expect((await storedDraft(page, `work/${slug}/index.html`))!.content).toBe(pageDrafts[index]);
   await expect(titles).toHaveCount(7);
 });
 
@@ -97,6 +99,24 @@ test("a card with rich text is refused with a reason and nothing changes", async
   const panel = inspector(page);
   await expect(panel).toContainText("Only plain text parts can be kept");
   await expect(panel.getByRole("button", { name: "Apply", exact: true })).toHaveCount(0);
+  expect(await mounted(page)).toBe(before);
+  expect(await storedDrafts(page)).toEqual([]);
+});
+
+test("cards in a custom order are refused with a reason and nothing changes", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const home = await file(page, baseURL, "index.html");
+  const cards = [...home.matchAll(/<card-project>[\s\S]*?<\/card-project>/g)].map((match) => match[0]);
+  expect(cards).toHaveLength(3);
+  const reversed = home.replace(cards.join("\n        "), [...cards].reverse().join("\n        "));
+  expect(reversed).not.toBe(home);
+  const before = await open(page, baseURL, [["index.html", reversed], ...extraPages]);
+  const panel = inspector(page);
+  await expect(panel).toContainText("These cards use a custom order. Choosing pages would reorder them, so nothing was changed.");
+  await expect(panel.getByRole("button", { name: "Apply", exact: true })).toBeDisabled();
+  await panel.getByRole("checkbox", { name: "/services/", exact: true }).check();
+  await expect(panel).toContainText("These cards use a custom order.");
+  await expect(panel.getByRole("button", { name: "Apply", exact: true })).toBeDisabled();
   expect(await mounted(page)).toBe(before);
   expect(await storedDrafts(page)).toEqual([]);
 });

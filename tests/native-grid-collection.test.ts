@@ -90,6 +90,16 @@ test("mixed folders add new records using native fallbacks", () => {
   assert.equal(home.split("Web builds")[0].split("<card-project>").pop()!.includes('slot="note"'), false);
 });
 
+test("refuses cards whose order differs from page order, even with other pages mixed in", () => {
+  const swapped = cards().replace(/(<card-project>[\s\S]*?<\/card-project>)(\s*)(<card-project>[\s\S]*?<\/card-project>)/, "$3$2$1");
+  const { sources, routes } = site(swapped);
+  assert.ok(swapped.indexOf("Harbour") < swapped.indexOf("Fern"));
+  for (const folders of [["/work/"], ["/articles/", "/work/", "/services/"]])
+    assert.equal((result(sources, routes, folders) as { error: string }).error, "These cards use a custom order. Choosing pages would reorder them, so nothing was changed.");
+  // Same relative order with extra records is allowed.
+  assert.ok(!("error" in result(site().sources, site().routes, ["/articles/", "/work/", "/services/"])));
+});
+
 test("refuses folders that would drop a current card, without writing", () => {
   const { sources, routes } = site();
   const converted = result(sources, routes, ["/services/"]);

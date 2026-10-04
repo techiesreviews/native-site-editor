@@ -247,7 +247,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       root.append(node("p", "collections-panel__scope", "These cards can't be turned into a page list yet, so nothing was changed."), node("p", "collections-panel__refusal", grid.error), status);
       return;
     }
-    root.append(node("p", "collections-panel__scope", `Show pages from folders here instead of ${grid.cards.length} hand-written cards. Each card stays as it looks now; pages you add later use their own title and description.`));
+    root.append(node("p", "collections-panel__scope", `Show pages from folders here instead of ${grid.cards.length} hand-written cards. Each card stays as it looks now; other pages use their own title and description.`));
     const token = newCollectionToken(saved.sources);
     const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
     const discovered = [...new Set(urls.flatMap((url) => {
@@ -275,8 +275,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       if ("error" in converted) { plan = converted; result.textContent = `${converted.error} Nothing will change.`; return; }
       plan = converted.plan;
       const changed = Object.keys(converted.plan.edits).filter((file) => file !== path);
-      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards, in page order. Apply changes this page${changed.length ? ` and ${changed.length} linked ${changed.length === 1 ? "page" : "pages"}` : ""} as one undo step.`;
-      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept as a page field of each linked page; SEO titles and descriptions stay as they are.`));
+      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page${changed.length ? ` and ${changed.length} linked ${changed.length === 1 ? "page" : "pages"}` : ""} as one undo step.`;
+      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept as a page field of the linked page; SEO titles and descriptions stay as they are.`));
       apply.disabled = false;
     };
     form.addEventListener("change", refresh);
