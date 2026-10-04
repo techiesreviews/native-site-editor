@@ -27,6 +27,8 @@ export interface MediaImportRequest {
 }
 export interface MediaPickerOptions {
   onPick?: (image: MediaImage) => void | Promise<void>;
+  /** The alt offered for the picked image, before the image's own default: the replaced image's alt. */
+  initialAlt?: string;
   /** MIME types, extensions or image/*, like a native file input's accept. */
   accept?: string;
   files?: File[];

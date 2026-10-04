@@ -360,7 +360,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       await adapter.rename(path, name.value); assets.clear(); await refresh(); sheet.hidden = true; tell("Image renamed and references updated as drafts.");
     })), button("Copy path", () => void task(async () => { await navigator.clipboard.writeText(`/${path}`); tell("Image path copied."); })), button("Optimise image…", () => showOptimise([new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]))), button("Delete image…", () => confirmDelete([path])));
     if (options.onPick) {
-      const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+      const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = options.initialAlt ?? (meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
       const image: MediaImage = { path, width: data.width, height: data.height, alt: insertionAlt.value, variants: mediaVariants(path, library.items.map((item) => item.path)) };
       const code = node("pre", "media-library__code", mediaImageMarkup(image));
       insertionAlt.addEventListener("input", () => { image.alt = insertionAlt.value; code.textContent = mediaImageMarkup(image); });

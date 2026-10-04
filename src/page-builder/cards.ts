@@ -435,8 +435,10 @@ export function createCards(deps: CardsDeps) {
         icon: "add",
         label: `Add ${grid.noun}`,
         title: grid.collection ? `New page and ${grid.noun} in ${grid.label}` : `Add ${aOr(grid.noun)} to ${grid.label}`,
+        // The grid report can arrive after the bar is built: read it at the press.
         onPress: () => {
-          if (reported && reported.parent.join(".") === grid.parent.join(".")) preview.addToSelectedGrid();
+          const now = deps.preview()?.selectedItemGrid();
+          if (now && now.parent.join(".") === grid.parent.join(".")) deps.preview()?.addToSelectedGrid();
           else void addCard(path, grid.parent);
         },
       },

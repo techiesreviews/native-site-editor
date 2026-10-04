@@ -74,7 +74,7 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import { configureMediaPicker, mountMediaLibrary, openMediaPicker, closeMediaPicker } from "./page-builder/media-picker";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext } from "./page-builder/media-workspace";
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
-import { mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
+import { mediaExistingAlt, mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import { createStylePanel, type StylePanelContext } from "./components/style-panel";
@@ -3646,13 +3646,16 @@ async function chooseMediaForImage(target: { path: string; node: number[]; width
   const initial = source === undefined ? undefined : locateNativeElementRange(source, target.node);
   if (!initial || initial.tag.name !== "img" || versionView) return;
   const expected = source!.slice(initial.tag.start, initial.tag.end);
-  await openMediaPicker({ files, accept: "image/*", onPick: async (image: MediaImage) => {
+  // The picker offers the replaced image's own alt (empty: decorative) first;
+  // left unchanged, the attribute stays exactly as written.
+  const initialAlt = mediaExistingAlt(expected);
+  await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
     if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Choose an image again.");
     if (currentPath !== target.path) await restoreFile(target.path, epoch, { linkDefaultStyle: false });
     const latest = nativeEffectiveSource(target.path);
     const range = latest === undefined ? undefined : locateNativeElementRange(latest, target.node);
     if (epoch !== generation || workspace !== setupScope() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
-    const markup = mediaImageMarkup(image, expected, target.width);
+    const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
     if (!applyNativeChange(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
   } }).catch(errorMessage);
 }

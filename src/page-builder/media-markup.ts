@@ -1,5 +1,6 @@
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
+import { decodeHtmlEntities } from "./html-entities";
 
 export interface MediaVariant { path: string; width: number }
 export interface MediaImage {
@@ -16,8 +17,24 @@ export function mediaSrcset(image: MediaImage): string | undefined {
   return [...variants].sort(([a], [b]) => a - b).map(([width, path]) => `${mediaUrl(path)} ${width}w`).join(", ");
 }
 
-/** Only media attributes change; classes, slots, styles and other attributes survive. */
-export function mediaImageMarkup(image: MediaImage, existing = "<img>", renderedWidth?: number): string {
+/**
+ * The alt text an existing `<img>` start tag holds, decoded ("" for a
+ * decorative image), or undefined when it has no alt attribute. A picker
+ * replacing that image offers it first, so a written alt survives.
+ */
+export function mediaExistingAlt(existing: string): string | undefined {
+  const tag = startTags(existing)[0];
+  if (!tag || tag.name !== "img") return undefined;
+  const attribute = startTagAttribute(existing, tag, "alt");
+  return attribute ? decodeHtmlEntities(attribute.value, true) : undefined;
+}
+
+/**
+ * Only media attributes change; classes, slots, styles and other attributes survive.
+ * `keepAlt` leaves an existing alt attribute exactly as written (the picker
+ * kept the page's alt unchanged), so its source is not re-escaped.
+ */
+export function mediaImageMarkup(image: MediaImage, existing = "<img>", renderedWidth?: number, keepAlt = false): string {
   const tag = startTags(existing)[0];
   if (!tag || tag.name !== "img") throw new Error("Choose an image element to replace.");
   if (existing[tag.end - 1] !== ">") throw new Error("This image's opening tag is incomplete.");
@@ -27,6 +44,7 @@ export function mediaImageMarkup(image: MediaImage, existing = "<img>", rendered
     src: mediaUrl(image.path), alt: image.alt, width: image.width ? String(image.width) : undefined,
     height: image.height ? String(image.height) : undefined, loading: "lazy", decoding: "async", srcset, sizes: srcset ? sizes : undefined,
   };
+  if (keepAlt && startTagAttribute(existing, tag, "alt")) delete attributes.alt;
   const edits = Object.entries(attributes).flatMap(([name, value]) => {
     const attribute = startTagAttribute(existing, tag, name);
     if (attribute) return [{ start: attribute.start, end: attribute.end, text: value === undefined ? "" : ` ${name}="${mediaEscape(value)}"` }];

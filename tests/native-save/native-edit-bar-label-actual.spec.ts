@@ -111,3 +111,35 @@ test("the selected sticky header is not kept clear of itself", async ({ page }) 
   expect(box.y).toBeGreaterThanOrEqual(area.y);
   expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
 });
+
+// Alt+Up pressed in the page moves the selected whole section, and one Undo
+// restores the source exactly; a paragraph inside it does not move. Narrow,
+// Style open, under the sticky header.
+test("Alt+arrows in the page move a whole section only, one exact undo", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
+  const before = await source();
+  const order = () => frame(page).locator("main > *").evaluateAll((els) => els.map((el) => el.tagName));
+  const start = await order();
+  // A paragraph of the feature section: Alt+Up in the page leaves it.
+  await frame(page).locator("section-feature p:visible").first().click();
+  await expect(bar(page)).toBeVisible();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.waitForTimeout(300);
+  expect(await source()).toBe(before);
+  // The whole feature section (picked in Structure), then Alt+Up with the
+  // focus in the page: it moves.
+  await page.getByRole("treeitem", { name: /^Section feature/ }).locator(".page-structure__label").click();
+  await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
+  await clearOfHeader(page);
+  const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
+  await page.locator(".native-preview-frame").focus();
+  await child!.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); document.body.focus(); });
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(order).not.toEqual(start);
+  if (shots) await page.screenshot({ path: `${shots}/actual-section-moved-style-open.png` });
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(source).toBe(before);
+  expect(await order()).toEqual(start);
+});
