@@ -19,38 +19,74 @@ test.beforeEach(async ({ page, baseURL }) => {
   await frame(page).locator("#moving").click({ position: { x: 5, y: 5 } });
 });
 
-test("ordinary sibling buttons and canvas Alt+Down move one step with exact Undo", async ({ page }) => {
+const FIRST = '<section id="first"><p id="moving">Moving paragraph</p><p id="second">Second paragraph</p></section>';
+const TARGET = '<section id="target"><p>Target paragraph</p></section>';
+const tree = (page: Page) => page.getByRole("tree", { name: "Page structure", exact: true });
+// Section rows are named "Section"; index 0 is the first in the page.
+const sectionRow = (page: Page, index: number) => tree(page).getByRole("treeitem", { name: "Section", exact: true }).nth(index);
+const frameFocused = (page: Page) => page.evaluate(() => document.activeElement?.classList.contains("native-preview-frame") ?? false);
+const order = (page: Page) => frame(page).locator("main > section");
+// The two sections swapped, byte for byte: nothing else in the page changes.
+const swapped = (before: string) => {
+  expect(before).toContain(`${FIRST}\n${TARGET}`);
+  return before.replace(`${FIRST}\n${TARGET}`, `${TARGET}\n${FIRST}`);
+};
+async function selectSection(page: Page, index: number) {
+  await sectionRow(page, index).click();
+  await expect(bar(page).getByRole("button", { name: "Move down", exact: true })).toBeVisible();
+}
+
+// Lex removed element moves from the bar and the canvas: only whole sections move there.
+test("a paragraph offers no Move up, Move down or Move to in the bar", async ({ page }) => {
   const before = await source(page);
+  await tree(page).getByRole("treeitem", { name: "Paragraph Moving paragraph", exact: true }).click();
+  await expect(bar(page)).toBeVisible();
+  for (const name of ["Move up", "Move down", "Move to"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  expect(await source(page)).toBe(before);
+});
+
+test("a section moves past its sibling from canvas Alt+Down, the bar and Structure Alt+Down, each with exact source and one Undo", async ({ page }) => {
+  const before = await source(page), moved = swapped(before);
+  // Canvas: beforeEach clicked the paragraph in the page; Escape selects its section and keys stay in the preview.
+  await frame(page).locator("#moving").press("Escape");
+  await expect(bar(page).getByRole("button", { name: "Move down", exact: true })).toBeVisible();
+  expect(await frameFocused(page)).toBe(true);
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => source(page)).toBe(moved);
+  await expect(order(page).first()).toHaveAttribute("id", "target");
+  await expect(order(page).last()).toHaveAttribute("id", "first");
+  await undo(page); await expect.poll(() => source(page)).toBe(before);
+  await expect(order(page).first()).toHaveAttribute("id", "first");
+
+  await selectSection(page, 0);
   await expect(bar(page).getByRole("button", { name: "Move up", exact: true })).toBeDisabled();
   await bar(page).getByRole("button", { name: "Move down", exact: true }).click();
-  await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "second");
-  await expect(frame(page).locator("#first > p").last()).toHaveAttribute("id", "moving");
+  await expect.poll(() => source(page)).toBe(moved);
   await undo(page); await expect.poll(() => source(page)).toBe(before);
-  await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "moving");
-  await frame(page).locator("#moving").click({ position: { x: 5, y: 5 } });
-  await frame(page).locator("#moving").press("Escape");
-  // Escape selects the parent; reselect the paragraph without opening a text caret.
-  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: "Paragraph Moving paragraph", exact: true }).click();
-  await expect(bar(page).getByRole("button", { name: "Move down", exact: true })).toBeVisible();
-  await frame(page).locator("body").press("Alt+ArrowDown");
-  await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "second");
+
+  const row = sectionRow(page, 0);
+  await row.focus(); await row.press("Alt+ArrowDown");
+  await expect.poll(() => source(page)).toBe(moved);
+  await expect(order(page).first()).toHaveAttribute("id", "target");
   await undo(page); await expect.poll(() => source(page)).toBe(before);
 });
 
-test("the keyboard Move to menu moves across containers and one Undo restores exact source", async ({ page }) => {
-  const before = await source(page);
-  const menu = bar(page).getByRole("button", { name: "Move to", exact: true });
-  await menu.focus(); await menu.press("Enter");
-  const destination = page.getByRole("menuitem", { name: /^Inside section#target, at the end/ });
-  await destination.focus(); await destination.press("Enter");
-  await expect(frame(page).locator("#target > #moving")).toBeVisible();
-  await expect(frame(page).locator("#first > #moving")).toHaveCount(0);
-  expect(await source(page)).toContain('<section id="target"><p>Target paragraph</p>');
+test("consecutive section moves are one Undo step each and return the exact source", async ({ page }) => {
+  const before = await source(page), moved = swapped(before);
+  await selectSection(page, 0);
+  await bar(page).getByRole("button", { name: "Move down", exact: true }).click();
+  await expect.poll(() => source(page)).toBe(moved);
+  // The moved section stays selected: now last, it moves back up.
+  await expect(bar(page).getByRole("button", { name: "Move down", exact: true })).toBeDisabled();
+  await bar(page).getByRole("button", { name: "Move up", exact: true }).click();
+  await expect.poll(() => source(page)).toBe(before);
+  await undo(page); await expect.poll(() => source(page)).toBe(moved);
   await undo(page); await expect.poll(() => source(page)).toBe(before);
-  await expect(frame(page).locator("#first > #moving")).toBeVisible();
+  await expect(order(page).first()).toHaveAttribute("id", "first");
 });
 
-test("a detached move callback refuses newer source and allows a fresh retry", async ({ page }) => {
+test("a detached section move callback refuses newer source and allows a fresh retry", async ({ page }) => {
+  await selectSection(page, 0);
   await bar(page).getByRole("button", { name: "Move down", exact: true }).evaluate(element => Object.assign(window, { oldNativeMove: element }));
   const changed = await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
@@ -59,12 +95,13 @@ test("a detached move callback refuses newer source and allows a fresh retry", a
     editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: next });
     return next;
   });
+  // The old button, held from before the change, is pressed after it.
   await page.evaluate(() => (window as unknown as { oldNativeMove: HTMLElement }).oldNativeMove.click());
   expect(await source(page)).toBe(changed);
   await expect(page.locator("#status")).toContainText("source or selection changed");
-  await frame(page).locator("#moving").click({ position: { x: 5, y: 5 } });
+  await selectSection(page, 0);
   await bar(page).getByRole("button", { name: "Move down", exact: true }).click();
-  await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "second");
+  await expect.poll(() => source(page)).toBe(swapped(changed));
   expect(await source(page)).toContain("<!-- agent changed move source -->");
 });
 
