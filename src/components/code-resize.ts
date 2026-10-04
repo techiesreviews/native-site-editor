@@ -37,15 +37,16 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   } catch {}
 
   function apply() {
-    if (collapsed && pane.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
     main.classList.toggle("code-collapsed", collapsed);
     const { minimum, maximum } = bounds();
     const px = Math.round(collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
+    const contentHidden = px <= 0;
+    if (contentHidden && pane.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
     main.style.setProperty("--code-height", `${px}px`);
     for (const child of pane.children) {
       if (!(child instanceof HTMLElement) || child === handle) continue;
-      child.inert = collapsed;
-      if (collapsed) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
+      child.inert = contentHidden;
+      if (contentHidden) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
     }
     handle.setAttribute("aria-valuemin", "0");
     handle.setAttribute("aria-valuemax", String(Math.round(maximum)));

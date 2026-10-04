@@ -10,13 +10,16 @@ async function load(page: Page, baseURL: string | undefined) {
   await expect(page.locator('#content .monaco-editor')).toBeAttached();
   await expect(grip(page)).toBeVisible();
 }
+async function paneState(page: Page, hidden: boolean) {
+  const expected = { inert: hidden, ariaHidden: hidden ? 'true' : null };
+  expect(await page.locator('#code-split > .code-pane').evaluateAll(panes => panes.map(el => ({ inert: (el as HTMLElement).inert, ariaHidden: el.getAttribute('aria-hidden') })))).toEqual([expected, expected]);
+}
 async function sourceViewport(page: Page) {
   const editor = page.locator('#content .monaco-editor');
   await expect(editor).toBeVisible();
   expect((await editor.boundingBox())!.height).toBeGreaterThan(0);
   await expect(page.locator('#content .view-line').first()).toBeVisible();
-  await expect(page.locator('#code-split > .code-pane').first()).not.toHaveAttribute('aria-hidden');
-  expect(await page.locator('#code-split > .code-pane').first().evaluate(el => (el as HTMLElement).inert)).toBe(false);
+  await paneState(page, false);
   await expect(grip(page)).toHaveAttribute('aria-valuetext', /^Code shown,/);
 }
 async function hiddenSource(page: Page) {
@@ -26,8 +29,7 @@ async function hiddenSource(page: Page) {
   await expect(grip(page)).toBeVisible();
   await expect(page.locator('#content .monaco-editor')).toBeAttached();
   await expect(page.locator('#content .monaco-editor')).toBeHidden();
-  await expect(page.locator('#code-split > .code-pane').first()).toHaveAttribute('aria-hidden', 'true');
-  expect(await page.locator('#code-split > .code-pane').first().evaluate(el => (el as HTMLElement).inert)).toBe(true);
+  await paneState(page, true);
   expect((await page.locator('#code-split').boundingBox())!.height).toBe(0);
 }
 async function moveGrip(page: Page, dy: number) {
@@ -173,9 +175,20 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 568, height: 320 }
       await expect(grip(page)).toHaveAttribute('aria-valuenow', '0');
       await expect(page.locator('#content .monaco-editor')).toBeAttached();
       expect((await page.locator('#code-split').boundingBox())!.height).toBe(0);
-      await expect(page.locator('#code-split > .code-pane').first()).not.toHaveAttribute('aria-hidden');
-      expect(await page.locator('#code-split > .code-pane').first().evaluate(el => (el as HTMLElement).inert)).toBe(false);
-      await page.keyboard.press('Home');
+      await paneState(page, true);
+      await grip(page).press('Tab');
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('.code-pane')))).toBe(false);
+      // Layout alone restores access when space returns, without changing the shown state.
+      await page.setViewportSize({ width: viewport.width, height: 650 });
+      await sourceViewport(page);
+      expect(await page.evaluate(async () => (await import('/src/components/code-editor.ts')).getMountedSource('index.html'))).toBe(source);
+      await page.locator('#content [role="textbox"]').first().focus();
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('.code-pane')))).toBe(true);
+      await page.setViewportSize(viewport);
+      await expect(grip(page)).toHaveAttribute('aria-valuenow', '0');
+      await expect(grip(page)).toBeFocused();
+      await paneState(page, true);
+      await grip(page).press('Home');
       await hiddenSource(page);
       // The real sidebar control frees space without replacing the mounted source.
       await page.getByRole('separator', { name: 'Resize page structure sidebar' }).press('Enter');
