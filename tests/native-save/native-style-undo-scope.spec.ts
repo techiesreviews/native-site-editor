@@ -103,6 +103,8 @@ test("explicit hover preserves important priority in its own focal rule", async 
   await openPreloadedFocus(page, baseURL, '\n.lead { background-image: url("../images/studio-desk.svg"); background-position: 20% 30%; }\n.lead:hover { background-position: 5% 5% !important; }\n');
   await style(page).getByRole("combobox", { name: "Style state" }).selectOption(":hover");
   const x = style(page).getByLabel("X (%)", { exact: true });
+  // Wait for the fields to show the hover rule, so typing is not overwritten by that render.
+  await expect(x).toHaveValue("5");
   await x.fill("42"); await x.press("Enter");
   await expect.poll(() => source(page)).toMatch(/\.lead:hover \{[^}]*background-position: 42% 5% !important/);
   await expect(page.locator("#notice")).not.toContainText("important image position");
