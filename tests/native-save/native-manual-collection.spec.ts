@@ -34,7 +34,6 @@ const extraPages = folders.map((folder): [string, string] => [`${folder}/one/ind
 
 test("Recent work cards become a five-folder page list, unchanged, in one Undo/Redo", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
-  const seo = await Promise.all(work.map((slug) => file(page, baseURL, `work/${slug}/index.html`)));
   const before = await open(page, baseURL, extraPages);
   const panel = inspector(page);
   await expect(panel.getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
@@ -49,15 +48,17 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
   await expect(frame(page).locator(".cards card-project").filter({ hasText: "New services" }).locator('a[slot="link"]')).toHaveText("Read about New services");
   await expect(frame(page).locator(".cards card-project").filter({ hasText: "New services" })).toContainText("About services.");
   const home = (await storedDraft(page, "index.html"))!.content;
-  expect(home).toMatch(/<div class="cards" data-each="\/work\/ \/articles\/ \/portfolio\/ \/services\/ \/videos\/" data-collection-id="g[0-9a-z]{5}" data-fields="[a-z0-9_ -]+"><template>/);
+  // Clean HTML: the finished cards only. The recipe and per-card text are in the editor's JSON.
+  expect(home).not.toMatch(/<template|data-each|data-collection-id|data-fields|data-if|\{title\}/);
   for (const text of ["Cafe · Identity and site · 2025", "A one-page site with a menu the owners change themselves before opening each morning.", 'href="/work/meadow-row-allotments/"', "Read about Harbour Lane Pottery"])
-    expect(home.split("</template>")[1]).toContain(text);
-  for (const [index, slug] of work.entries()) {
-    const draft = (await storedDraft(page, `work/${slug}/index.html`))!.content;
-    // SEO head lines are untouched; only a grid field is added.
-    for (const line of seo[index].split("\n").filter((line) => /<title>|name="description"|og:description/.test(line))) expect(draft).toContain(line);
-  }
-  const pageDrafts = await Promise.all(work.map(async (slug) => (await storedDraft(page, `work/${slug}/index.html`))!.content));
+    expect(home).toContain(text);
+  const sidecar = JSON.parse((await storedDraft(page, ".editor/page-builder.json"))!.content);
+  const [id] = Object.keys(sidecar.collections);
+  expect(id).toMatch(/^g[0-9a-z]{5}$/);
+  expect(sidecar.collections[id]).toMatchObject({ pagePath: "index.html", folders: ["/work/", "/articles/", "/portfolio/", "/services/", "/videos/"] });
+  // Page SEO and heads are untouched: no page draft at all.
+  for (const slug of work) expect(await storedDraft(page, `work/${slug}/index.html`)).toBeUndefined();
+  const sidecarText = (await storedDraft(page, ".editor/page-builder.json"))!.content;
   const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
   await expect(sort).toBeVisible();
   const labels = await sort.locator("option").allTextContents();
@@ -71,8 +72,8 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
   await expect(titles).toHaveCount(3);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
-  await expect.poll(async () => (await storedDrafts(page)).length).toBe(4);
-  for (const [index, slug] of work.entries()) expect((await storedDraft(page, `work/${slug}/index.html`))!.content).toBe(pageDrafts[index]);
+  await expect.poll(async () => (await storedDraft(page, ".editor/page-builder.json"))?.content).toBe(sidecarText);
+  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual([".editor/page-builder.json", "index.html"]);
   await expect(titles).toHaveCount(7);
 });
 
