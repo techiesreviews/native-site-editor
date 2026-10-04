@@ -7,7 +7,7 @@ import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConv
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
 import { locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
-import { EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -245,24 +245,48 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     let document: PageBuilderDocument;
     try { document = readSidecar(sidecar); } catch { return rows; }
     const files = new Set(deps.files?.() ?? Object.values(saved.routes));
+    const grid = (id: string) => {
+      const target = document.collections[id].target, tag = target.openingTagFingerprint;
+      const classes = /\sclass\s*=\s*["']?([^"'>]*)/i.exec(tag)?.[1].trim().split(/\s+/).filter(Boolean) ?? [];
+      return target.authoredId ? `${target.tag}#${target.authoredId}` : [target.tag, ...classes].join(".");
+    };
     for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
       const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === page).map(([id]) => id);
       const source = saved.sources[page];
-      let reason: string | undefined, detail = "";
-      if (source === undefined) { if (!files.has(page)) { reason = "This page no longer exists."; detail = `${page} is not in the repository.`; } }
-      else try { locatePageCollections(source, document, page); } catch (error) { reason = "Its grid was changed in Code, so the editor cannot tell which element it is."; detail = (error as Error).message; }
-      if (!reason) continue;
+      const broken = new Map<string, { reason: string; detail: string }>();
+      if (source === undefined) {
+        if (files.has(page)) continue;
+        for (const id of ids) broken.set(id, { reason: "This page no longer exists.", detail: `${page} is not in the repository.` });
+      } else {
+        try { locatePageCollections(source, document, page); continue; } catch (error) {
+          // Each recipe is located on its own: only the ones that fail are listed, never their healthy neighbours.
+          const found = new Map<string, { start: number; end: number }>();
+          for (const id of ids) {
+            const located = locateCollectionTarget(source, document.collections[id].target);
+            if ("error" in located) broken.set(id, { reason: "Its grid was changed in Code, so the editor cannot tell which element it is.", detail: located.error });
+            else found.set(id, { start: located.element.start, end: located.element.end });
+          }
+          for (const [id, a] of found) for (const [other, b] of found) if (id !== other && a.start <= b.start && a.end >= b.end)
+            for (const both of [id, other]) broken.set(both, { reason: "Two collections point at the same grid, so the editor cannot tell whose cards are whose.", detail: `Collections ${id} and ${other} resolve to overlapping elements.` });
+          if (!broken.size) for (const id of ids) broken.set(id, { reason: "The collections on this page cannot be found exactly.", detail: (error as Error).message });
+        }
+      }
       const url = Object.entries(saved.routes).find(([, file]) => file === page)?.[0];
       let title = "";
       try { if (source !== undefined && url) title = readPageFields(source, url, saved.identity).title ?? ""; } catch { title = ""; }
       const where = title ? `${title.split(/\s+[|·–—-]\s+/)[0]} (${url})` : url ?? page;
-      for (const id of ids) {
+      for (const [id, problem] of broken) {
         const recipe = document.collections[id];
         // An optional label kept in the JSON record names the grid; otherwise its pages describe it.
         const label = typeof recipe.label === "string" && recipe.label.trim() ? recipe.label.trim() : `Cards from ${recipe.folders.join(", ")}`;
-        rows.push({ id, page, label, where, reason, detail: `${detail} Recipe “${id}” in ${EDITOR_PAGE_BUILDER_PATH}, page ${page}.` });
+        rows.push({ id, page, label, where, reason: problem.reason, detail: `${problem.detail} Recipe “${id}” in ${EDITOR_PAGE_BUILDER_PATH}, page ${page}.` });
       }
     }
+    // Rows that would read the same say which grid they are, then their place in order: never an internal id.
+    const named = (row: (typeof rows)[number]) => `${row.label} on ${row.where}`;
+    const groups = () => [...rows.reduce((map, row) => map.set(named(row), [...(map.get(named(row)) ?? []), row]), new Map<string, typeof rows>()).values()].filter((group) => group.length > 1);
+    for (const group of groups()) for (const row of group) row.label = `${row.label}, grid ${grid(row.id)}`;
+    for (const group of groups()) group.forEach((row, index) => { row.label = `${row.label} (${index + 1} of ${group.length})`; });
     return rows;
   }
   /**

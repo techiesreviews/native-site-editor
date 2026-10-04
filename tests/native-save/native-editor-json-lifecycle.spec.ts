@@ -190,3 +190,59 @@ test("Structure marks cards a JSON collection made as generated, with no fields,
   await expect(grid).not.toHaveClass(/page-structure__row--generated/);
   expect(await storedDrafts(page)).toEqual([]);
 });
+
+test("with two JSON grids from the same pages, only the broken one is listed, rows are told apart, and Forget removes exactly its own recipe", async ({ page, baseURL }) => {
+  const { makeCollectionTarget } = await import("../../src/page-builder/page-builder-document");
+  const { home, sidecar } = await saved(page, baseURL);
+  // A second grid of the same cards from the same pages, with its own recipe and an unknown key.
+  const open = home.indexOf('<div class="cards">'), close = home.indexOf("</div>", home.lastIndexOf("</card-project>")) + 6;
+  const twin = home.slice(open, close).replace('<div class="cards">', '<div class="cards more">');
+  const both = home.slice(0, close) + "\n      " + twin + home.slice(close);
+  const document = JSON.parse(sidecar), [first] = Object.keys(document.collections);
+  document.collections.second = { ...document.collections[first], target: makeCollectionTarget(both, both.indexOf('<div class="cards more">')), keep: { unknown: true } };
+  const seeded = JSON.stringify(document, null, 2) + "\n";
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: both } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: seeded } });
+  await load(page, baseURL);
+  const edit = async (marker: string, text: string) => {
+    const source = (await storedDraft(page, "index.html"))?.content ?? both, at = source.indexOf(marker) + 4;
+    await page.evaluate(async ({ at, text }) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, text, expected: "" }), { at, text });
+    await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain(text.trim());
+  };
+  const openFields = async () => {
+    await pagesTab(page);
+    await page.locator("#page-settings-toggle").click();
+    const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
+    await settings.getByRole("tab", { name: "Fields", exact: true }).click();
+    return settings;
+  };
+  // Only the first grid changed in Code: one row, for it alone.
+  await edit('<div class="cards">', ' data-x="1"');
+  let settings = await openFields();
+  let rows = settings.getByRole("region", { name: "Collections that cannot be found" }).getByRole("listitem");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.locator(".collections-panel__recovery-reason")).toHaveText("Its grid was changed in Code, so the editor cannot tell which element it is.");
+  await expect(rows.locator("details p")).toContainText(`Recipe “${first}”`);
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  // Both changed: two rows that would read the same say which grid each is, with distinct action names.
+  await edit('<div class="cards more">', ' data-y="1"');
+  settings = await openFields();
+  rows = settings.getByRole("region", { name: "Collections that cannot be found" }).getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  const names = await rows.locator(".collections-panel__recovery-name").allTextContents();
+  expect(names.map((name) => name.replace(/ on .*$/, "")).sort()).toEqual(["Cards from /work/, /services/, grid div.cards", "Cards from /work/, /services/, grid div.cards.more"]);
+  const firstRow = rows.filter({ has: page.locator("details p", { hasText: `Recipe “${first}”` }) });
+  const name = (await firstRow.locator(".collections-panel__recovery-name").textContent())!;
+  await settings.getByRole("button", { name: `Forget recipe, keep cards: ${name}`, exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  const forgotten = (await storedDraft(page, SIDECAR))!.content;
+  const expected = JSON.parse(seeded); delete expected.collections[first];
+  expect(JSON.parse(forgotten)).toEqual(expected);
+  const page2 = (await storedDraft(page, "index.html"))!.content;
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, SIDECAR)).toBeUndefined();
+  expect((await storedDraft(page, "index.html"))!.content).toBe(page2);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(forgotten);
+});
