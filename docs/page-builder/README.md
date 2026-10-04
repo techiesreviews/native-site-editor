@@ -6,6 +6,12 @@ are borrowed from Webflow (Add panel, navigator, breakpoints), Framer (insert me
 live thumbnails, canvas that feels like a design tool) and Etch (native HTML and CSS,
 code always one step away). The page builder stays native:
 
+- **Static output is the goal.** Lex clarified on 2026-10-04 that the editor is an
+  easier way to create and modify static native HTML pages, with JavaScript used
+  only where needed. A direct HTTP test of the current starter with JavaScript
+  disabled loses the header/footer and component styling. Its native component
+  loader is therefore an unresolved rendering dependency. A separate ordinary
+  HTML/CSS composition prototype is being tested; it is not integrated yet.
 - **The source is the truth.** Every visual action is one readable edit to the site's
   own HTML or CSS files, shown in the code pane as it happens. Nothing is written that a
   person would not write by hand: no editor ids, no data attributes, no generated class
