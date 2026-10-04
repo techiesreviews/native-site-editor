@@ -109,3 +109,51 @@ test("subpage composition: relative stylesheet link with JSON create in the same
   assert.deepEqual(plan.operation.creates!.map((c) => c.path), [css, EDITOR_PAGE_BUILDER_PATH]);
   assert.deepEqual(plan.selection, { path: "work/a/index.html", node: [0, 1] });
 });
+
+test("after editing public CSS, re-adding a saved section reuses the live stylesheet without touching it", () => {
+  const first = good(input());
+  const page1 = first.operation.edits.get("index.html")!;
+  const json = first.operation.creates!.find((c) => c.path === EDITOR_PAGE_BUILDER_PATH)!.content;
+  const edited = first.operation.creates!.find((c) => c.path === css)!.content.replace("text-align: center;", "text-align: center; color: red;");
+  const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
+  const live = { stylesheetSources: { [css]: edited }, files };
+  // The strict leaf policy still refuses: proves the previous refusal.
+  bad(input({ documentText: json, pageSource: page1, files, stylesheetSources: { [css]: edited }, cssPolicy: "ensure-record" }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
+  const plan = good(input({ documentText: json, pageSource: page1, files, stylesheetSources: { [css]: edited }, index: 0 }));
+  assert.deepEqual([...plan.operation.edits.keys()], ["index.html"]);
+  assert.equal(plan.operation.creates, undefined);
+  assert.deepEqual(Object.fromEntries(plan.operation.expectedSources), { [css]: edited, "index.html": page1, [EDITOR_PAGE_BUILDER_PATH]: json });
+  assert.equal((plan.operation.edits.get("index.html")!.match(/<section class="section-intro">/g) ?? []).length, 2);
+  assert.equal((plan.operation.edits.get("index.html")!.match(/rel="stylesheet"/g) ?? []).length, 1);
+  const preview = previewDefaultStaticSection(json, "static-section:intro", live) as { css: string };
+  assert.equal(preview.css, edited); assert.match(preview.css, /color: red/);
+  assert.equal((previewDefaultStaticSection(json, "static-section:intro") as { css: string }).css, DEFAULT_STATIC_SECTIONS[0].css);
+
+  // A new default appends only its own rules and keeps the Intro edit.
+  const features = good(input({ documentText: json, pageSource: page1, files, stylesheetSources: { [css]: edited }, sectionId: "static-section:features" }));
+  assert.equal(features.operation.edits.get(css), edited + DEFAULT_STATIC_SECTIONS[1].css);
+  assert.equal(features.operation.expectedSources.get(EDITOR_PAGE_BUILDER_PATH), json);
+});
+
+test("reuse keeps intentionally empty CSS, seeds once when proven absent, and refuses unloaded or unproven sheets", () => {
+  const json = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: { ...DEFAULT_STATIC_SECTIONS[0] } } } });
+  const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
+  const empty = good(input({ documentText: json, files, stylesheetSources: { [css]: "" } }));
+  assert.equal(empty.operation.edits.has(css), false); assert.equal(empty.operation.expectedSources.get(css), "");
+  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: "" }, files }) as { css: string }).css, "");
+  const seeded = good(input({ documentText: json, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }));
+  assert.equal(seeded.operation.creates![0].content, DEFAULT_STATIC_SECTIONS[0].css);
+  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: undefined }, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }) as { css: string }).css, DEFAULT_STATIC_SECTIONS[0].css);
+  bad(input({ documentText: json, files, stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
+  bad(input({ documentText: json, files }), "A complete file graph must prove the new stylesheet is absent.");
+  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: {}, files }), { error: `Load ${css} or explicitly prove it is absent.` });
+  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: undefined }, files }), { error: "A complete file graph must prove the new stylesheet is absent." });
+  // Reuse allows ordinary cascade from other loaded sheets; imports must still be loaded.
+  const themed = page.replace("</head>", '<link rel="stylesheet" href="theme.css"></head>');
+  good(input({ documentText: json, pageSource: themed, files: [...files, "theme.css"], stylesheetSources: { [css]: "", "theme.css": ".section-intro { color: blue; }" } }));
+  bad(input({ documentText: json, pageSource: themed, files: [...files, "theme.css"], stylesheetSources: { [css]: "" } }), "Load theme.css before verifying section stylesheet links.");
+  bad(input({ documentText: json, pageSource: page.replace("</head>", '<style>@import "x.css";</style></head>'), files, stylesheetSources: { [css]: "" } }), "Load x.css before verifying inline stylesheet imports.");
+  // First-time seed keeps the strict unknown-collision refusal.
+  bad(input({ files: ["index.html", css], stylesheetSources: { [css]: ".section-intro { color: red; }" } }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
+  bad(input({ documentText: json, files, stylesheetSources: { [css]: "" }, cssPolicy: "bogus" as "reuse-current" }), "Unknown section CSS policy.");
+});

@@ -9,7 +9,11 @@ import { nativeMarkupInsertEdit } from "./native-operations";
 import { headTags } from "./site-head";
 import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument, type JsonValue } from "./page-builder-document";
 
-/** Editor-only catalogue. Published sections remain ordinary HTML and CSS. */
+/**
+ * Editor-only catalogue. Published sections remain ordinary HTML and CSS.
+ * A record's `css` is a portable initial seed, not the live stylesheet: once the public stylesheet
+ * exists, its loaded source is the authority (see `StaticSectionCssPolicy`).
+ */
 export interface StaticSectionRecord {
   id: string;
   label: string;
@@ -18,6 +22,18 @@ export interface StaticSectionRecord {
   css: string;
   stylesheetPath: string;
   [key: string]: JsonValue;
+}
+/**
+ * `ensure-record` (default): append the record's seed CSS unless identical rules exist; refuse unknown rootClass rules.
+ * `reuse-current`: a loaded stylesheet source (even empty) is authoritative and never written; other loaded
+ * stylesheets and inline rules may cascade over the section. Seed CSS is created only when the stylesheet is proven absent.
+ */
+export type StaticSectionCssPolicy = "ensure-record" | "reuse-current";
+/** Live public CSS snapshots for previews that must match `reuse-current` inserts. */
+export interface StaticSectionLiveCss {
+  cssPolicy?: StaticSectionCssPolicy;
+  stylesheetSources: Readonly<Record<string, string | undefined>>;
+  files?: readonly string[];
 }
 export interface SectionChoice { id: string; label: string; rootClass: string }
 export interface StaticSectionInsertInput {
@@ -32,6 +48,7 @@ export interface StaticSectionInsertInput {
   stylesheetSources: Readonly<Record<string, string | undefined>>;
   /** Complete file graph: required to prove a stylesheet is new. */
   files?: readonly string[];
+  cssPolicy?: StaticSectionCssPolicy;
 }
 /** Structural subset of the host's private NativeOperation, without host dependencies. */
 export interface StaticSectionOperation {
@@ -160,11 +177,20 @@ export function readStaticSectionRecords(documentText: string | undefined): Reco
 export function listSectionChoices(documentText: string | undefined): SectionChoice[] {
   return Object.values(readStaticSectionRecords(documentText)).map(({ id, label, rootClass }) => ({ id, label, rootClass }));
 }
-export function previewStaticSection(documentText: string | undefined, id: string): { html: string; css: string; rootClass: string } | { error: string } {
+/** Without `live`, previews the stored seed. With `reuse-current`, previews the exact loaded public stylesheet. */
+export function previewStaticSection(documentText: string | undefined, id: string, live?: StaticSectionLiveCss): { html: string; css: string; rootClass: string } | { error: string } {
   try {
     const records = readStaticSectionRecords(documentText);
     if (!Object.hasOwn(records, id)) reject("Choose a registered static section.");
     const record = records[id];
+    if (live && (live.cssPolicy ?? "reuse-current") === "reuse-current") {
+      plain(live.stylesheetSources, "Stylesheet sources");
+      const loaded = Object.hasOwn(live.stylesheetSources, record.stylesheetPath);
+      const source = live.stylesheetSources[record.stylesheetPath];
+      if (typeof source === "string") return { html: record.html, css: source, rootClass: record.rootClass };
+      if (!loaded || source !== undefined) reject(`Load ${record.stylesheetPath} or explicitly prove it is absent.`);
+      if (!live.files || live.files.includes(record.stylesheetPath)) reject("A complete file graph must prove the new stylesheet is absent.");
+    }
     return { html: record.html, css: record.css, rootClass: record.rootClass };
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 }
@@ -197,6 +223,8 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     const records = readStaticSectionRecords(input.documentText);
     if (!Object.hasOwn(records, input.sectionId)) reject("Choose a registered static section.");
     const record = records[input.sectionId];
+    if (input.cssPolicy !== undefined && input.cssPolicy !== "ensure-record" && input.cssPolicy !== "reuse-current") reject("Unknown section CSS policy.");
+    const reuse = input.cssPolicy === "reuse-current";
     plain(input.stylesheetSources, "Stylesheet sources");
     if (!Object.hasOwn(input.stylesheetSources, record.stylesheetPath)) reject(`Load ${record.stylesheetPath} or explicitly prove it is absent.`);
     for (const [path, source] of Object.entries(input.stylesheetSources)) if (!stylesheetPath.test(path) || source !== undefined && typeof source !== "string") reject("Provide safe stylesheet paths with strings or explicit absence.");
@@ -223,7 +251,7 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
       if (element.name === "style") {
         const inline = page.slice(element.tag.end, element.close?.start ?? element.tag.end);
         validateCssSource(inline);
-        if (scanCss(inline).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("An inline stylesheet already uses this section's rootClass.");
+        if (!reuse && scanCss(inline).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("An inline stylesheet already uses this section's rootClass.");
         for (const item of parseCssImports(inline).imports) {
           const imported = resolveImportPath(input.pagePath, item.url);
           if (imported === record.stylesheetPath) reject("The section stylesheet is already loaded indirectly.");
@@ -253,7 +281,7 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
         if (imported === record.stylesheetPath) reject("The section stylesheet is already loaded through a CSS import.");
         if (imported && typeof input.stylesheetSources[imported] !== "string") reject(`Load ${imported} before verifying section stylesheet imports.`);
       }
-      if (path !== record.stylesheetPath && scanCss(source).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("Another supplied stylesheet already uses this section's rootClass.");
+      if (!reuse && path !== record.stylesheetPath && scanCss(source).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("Another supplied stylesheet already uses this section's rootClass.");
     }
     if (!linked) {
       const from = input.pagePath.split("/").slice(0, -1), to = record.stylesheetPath.split("/");
@@ -262,7 +290,8 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
       const newline = page.includes("\r\n") ? "\r\n" : "\n";
       page = page.slice(0, head.end) + `${newline}  <link rel="stylesheet" href="${href}">${newline}` + page.slice(head.end);
     }
-    const stylesheet = nextCss(css ?? "", record);
+    // Reuse never rewrites a loaded public stylesheet; absent stylesheets are seeded once.
+    const stylesheet = reuse && css !== undefined ? css : nextCss(css ?? "", record);
     const expectedSources = new Map<string, string | undefined>(Object.entries(input.stylesheetSources));
     expectedSources.set(input.pagePath, input.pageSource); expectedSources.set(EDITOR_PAGE_BUILDER_PATH, input.documentText);
     const edits = new Map([[input.pagePath, page]]);
