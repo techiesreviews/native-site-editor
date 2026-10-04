@@ -272,6 +272,30 @@ actual("the page edited while Add waits in restoreFile: nothing is inserted and 
   await expect.poll(() => mounted(page)).toBe(before);
 });
 
+actual("added while a stylesheet is open in the editor: no notice, and one Undo takes back page, CSS and JSON", async ({ page, baseURL }) => {
+  // KNOWN BUG (expected to fail until fixed): opening the page swaps the secondary CSS pane
+  // (styles/elements.css), whose model proof the history receipt holds although its text never
+  // changes; the receipt then reports "The editor for styles/elements.css changed while opening the page."
+  // and (probed without this mark) one Undo leaves all three drafts: index.html, styles/sections.css, the JSON.
+  test.fail(true, "Secondary CSS pane remount is not part of the history receipt's UI transition (main.ts).");
+  await load(page, baseURL, "styles/site.css");
+  await expect(frame(page).locator("section.flow h2")).toBeVisible();
+  const before = await file(page, baseURL, "index.html");
+  await frame(page).locator("section.flow").hover();
+  await page.getByRole("button", { name: /^Add a section before “Recent work”/ }).first().dispatchEvent("click");
+  await panel(page).getByRole("option", { name: /^Intro HTML$/ }).click();
+  await expect(frame(page).locator("main > section.section-intro + section.flow")).toHaveCount(1);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await page.waitForTimeout(500);
+  const notice = await page.locator("#notice").isVisible() ? await page.locator("#notice").textContent() : "";
+  console.log(`HIST notice after a clean add: ${JSON.stringify(notice)}`);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(before);
+  expect(notice).toBe("");
+});
+
 for (const [label, scheme, width] of [["light", "light", 1440], ["dark", "dark", 1440], ["narrow", "light", 900]] as const) {
   actual(`Add panel screenshot on the real starter (${label}), with every console warning and error logged`, async ({ page, baseURL }) => {
     const logged: string[] = [];
