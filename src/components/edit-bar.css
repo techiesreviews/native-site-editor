@@ -2,20 +2,112 @@
    A pressed toggle (Bold, Italic, an open address, Ask agent) is solid
    (--pressed); the current item or chosen option in its menus is the
    tint every list uses (--current). */
+/* The bar is two stacked pieces: the selection's label (its name, and the
+   instance around it as `Component › element`) on top, and the panel of
+   controls under it, joined at the label's foot. The bar box itself is
+   see-through and lets the pointer pass, so the space beside the label
+   never blocks the page; only the label and the panel take the pointer. */
 .edit-bar {
   position: absolute;
   z-index: 30;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  color: var(--text);
+  font-size: var(--type-base);
+  pointer-events: none;
+}
+.edit-bar > * {
+  pointer-events: auto;
+}
+.edit-bar__label {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(320px, 100%);
+  min-width: 0;
+  height: 24px;
+  padding: 0 2px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-small);
+  font-size: var(--type-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* A label alone (no controls) is rounded all round. */
+.edit-bar__label:last-child {
+  border-radius: var(--radius);
+}
+/* One piece: a component's label is the component colour throughout. */
+.edit-bar__label:has(.edit-bar__context, .edit-bar__kind--component, .edit-bar__component-name) {
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.edit-bar__label > * {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.edit-bar__label > .edit-bar__context {
+  flex: 0 1000 auto;
+}
+.edit-bar__label :is(.edit-bar__kind, .edit-bar__context-name) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edit-bar__label > .edit-bar__kind {
+  padding: 0 6px;
+  color: inherit;
+}
+.edit-bar__label > :is(button, .edit-bar__component-name) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  background: transparent;
+  color: inherit;
+}
+.edit-bar__label > :is(button, .edit-bar__component-name):hover {
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+.edit-bar__label .edit-bar__kind--component,
+.edit-bar__label .edit-bar__component-name .edit-bar__kind,
+.edit-bar__label .edit-bar__grip .edit-bar__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.edit-bar__label > .edit-bar__grip {
+  padding: 0 6px 0 2px;
+}
+.edit-bar__label .edit-bar__component-edit {
+  background: linear-gradient(to right, transparent, var(--component-surface) 35%);
+}
+.edit-bar__controls {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 4px;
-  border-radius: var(--radius-panel);
+  border-radius: 0 var(--radius-panel) var(--radius-panel) var(--radius-panel);
   background: var(--panel-surface);
-  color: var(--text);
-  font-size: var(--type-base);
   box-shadow: var(--shadow);
+}
+.edit-bar__controls[hidden] {
+  display: none;
+}
+/* The first group starts the panel: no rule before it. */
+.edit-bar__controls > .edit-bar__group:first-child > .edit-bar__rule {
+  display: none;
 }
 .edit-bar[hidden] {
   display: none;
@@ -457,11 +549,6 @@
 
 .edit-bar__grip.edit-bar__component-name { cursor:grab; padding:4px 2px; }
 
-/* Component names keep one surface while the grip changes cursor during drag. */
-.edit-bar.is-dragging .edit-bar__grip.edit-bar__component-name,
-.edit-bar__kind--component {
-  background: var(--component-surface);
-}
 
 /* The bar's groups (style, content, arrange) after the name: each wraps to
    the next line as one unit, and only inside itself when wider than the bar. */
@@ -481,98 +568,6 @@
   margin: 4px 3px;
   background: var(--line);
 }
-
-/* The selection's name (and the instance around it, `section › element`)
-   reads as a label standing on top of the controls, like the page's outline
-   labels: the label row is drawn first, a zero-height break follows, and the
-   control groups take the second row on their own panel. The bar itself is
-   transparent so the label sits clear of that panel. A bar with no controls
-   is the label alone. */
-.edit-bar {
-  --edit-bar-label: 24px;
-  row-gap: 0;
-  padding: 0 4px 4px;
-  background: transparent;
-  box-shadow: none;
-}
-.edit-bar::before {
-  content: "";
-  order: 1;
-  flex: 0 0 100%;
-  height: 8px;
-}
-.edit-bar::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: calc(var(--edit-bar-label) + 4px) 0 0;
-  border-radius: var(--radius-panel);
-  background: var(--panel-surface);
-  box-shadow: var(--shadow);
-}
-.edit-bar:not(:has(> .edit-bar__group))::before,
-.edit-bar:not(:has(> .edit-bar__group))::after {
-  display: none;
-}
-.edit-bar > .edit-bar__group {
-  order: 2;
-}
-/* The first group starts the panel's row: no rule before it. */
-.edit-bar > .edit-bar__group:not(.edit-bar__group ~ .edit-bar__group) > .edit-bar__rule {
-  display: none;
-}
-.edit-bar > :is(.edit-bar__kind, .edit-bar__grip, .edit-bar__component-name, .edit-bar__context) {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: var(--edit-bar-label);
-  min-height: 0;
-  padding: 0 8px;
-  border-radius: var(--radius);
-  background: var(--panel-surface);
-  box-shadow: var(--shadow-small);
-  font-size: var(--type-small);
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-.edit-bar > :first-child {
-  margin-left: -4px;
-}
-.edit-bar > .edit-bar__kind {
-  color: var(--text);
-}
-.edit-bar > .edit-bar__grip:not(.edit-bar__component-name) {
-  padding: 0 8px 0 3px;
-}
-.edit-bar > .edit-bar__context {
-  background: var(--component-surface);
-  color: var(--component-text);
-}
-.edit-bar > .edit-bar__context:hover {
-  background: var(--component-surface);
-  filter: brightness(0.96);
-}
-.edit-bar > .edit-bar__component-name > .edit-bar__kind,
-.edit-bar > .edit-bar__grip > .edit-bar__kind {
-  padding: 0;
-  background: transparent;
-  color: inherit;
-}
-.edit-bar > .edit-bar__component-name > .edit-bar__kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.edit-bar > :is(.edit-bar__kind--component, .edit-bar__component-name, .edit-bar__grip.edit-bar__component-name) {
-  background: var(--component-surface);
-  color: var(--component-text);
-}
-.edit-bar > .edit-bar__grip.edit-bar__component-name {
-  padding: 4px 2px;
-}
-
 /* Address suggestions stay inside the popover's width: a long page title
    is cut with an ellipsis (its full text in the tooltip), never scrolled
    sideways. */

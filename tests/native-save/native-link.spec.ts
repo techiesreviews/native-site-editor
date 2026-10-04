@@ -66,7 +66,7 @@ test("Link wraps the selected word, its Address opens at once and applies as typ
   expect(await selectInLead(page, 5, 10)).toBe("plain");
   // After B and I, a Link button with the link icon.
   await expect(bar(page).getByRole("button", { name: "Link", exact: true })).toBeVisible();
-  const names = await bar(page).locator(":scope > button, :scope > .edit-bar__group > button").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label") ?? item.textContent));
+  const names = await bar(page).locator(":scope > .edit-bar__label > button, :scope > .edit-bar__controls > .edit-bar__group > button").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label") ?? item.textContent));
   expect(names.slice(names.indexOf("Bold"), names.indexOf("Bold") + 3)).toEqual(["Bold", "Italic", "Link"]);
   await expect(bar(page).getByRole("button", { name: "Link", exact: true }).locator("svg")).toHaveCount(1);
   await bar(page).getByRole("button", { name: "Link", exact: true }).click();

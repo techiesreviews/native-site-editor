@@ -19,15 +19,18 @@ test.beforeEach(async ({ page, baseURL }) => {
 
 async function labelAbove(page: Page) {
   const layout = await bar(page).evaluate((el) => {
-    const label = [...el.children].filter((item) => !item.classList.contains("edit-bar__group"));
+    const label = el.querySelector(":scope > .edit-bar__label")!;
+    const panel = el.querySelector(":scope > .edit-bar__controls")!;
     const controls = [...el.querySelectorAll(".edit-bar__group button, .edit-bar__group select")].filter((item) => item.getClientRects().length);
     return {
-      labelBottom: Math.max(...label.map((item) => item.getBoundingClientRect().bottom)),
+      labelBottom: label.getBoundingClientRect().bottom,
       controlTop: Math.min(...controls.map((item) => item.getBoundingClientRect().top)),
-      labels: label.map((item) => item.textContent?.trim()),
+      rightGap: panel.getBoundingClientRect().right - Math.max(...controls.map((item) => item.getBoundingClientRect().right)),
+      labels: [...label.children].map((item) => item.textContent?.trim()),
     };
   });
   expect(layout.labelBottom).toBeLessThanOrEqual(layout.controlTop);
+  expect(layout.rightGap).toBeLessThanOrEqual(6);
   const area = (await page.locator(".native-preview-frame").boundingBox())!;
   const box = (await bar(page).boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(area.y);
@@ -71,3 +74,20 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   }
 }
+
+// With the code pane hidden and the Style panel open, the hero's label and
+// panel still fit the canvas, and the root label is screenshotted against
+// the sticky header.
+test("section-hero with the code pane hidden and Style open", async ({ page }) => {
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
+  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
+  await frame(page).locator("section-hero h1:visible").first().click();
+  await expect(bar(page)).toBeVisible();
+  await labelAbove(page);
+  if (shots) await page.screenshot({ path: `${shots}/actual-child-style-open.png` });
+  await bar(page).locator(".edit-bar__context").click();
+  await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
+  await labelAbove(page);
+  if (shots) await page.screenshot({ path: `${shots}/actual-root-style-open.png` });
+  console.log(`console errors (style-open): ${consoleErrors.length}`);
+});

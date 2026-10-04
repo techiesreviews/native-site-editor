@@ -225,7 +225,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > .edit-bar__component-name > button:not([disabled]), :scope > select, :scope > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__group > select")];
+    return [...bar.querySelectorAll<HTMLElement>(":scope > .edit-bar__label > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > select")];
   }
 
   function closePopover(restoreFocus: boolean) {
@@ -372,12 +372,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       document.getSelection()?.removeAllRanges();
       closePopover(false);
       bar.classList.add("is-dragging");
-      for (const item of bar.children) if (item !== grip) item.setAttribute("inert", "");
-      // The grip can live inside the editable name wrapper. Keep only it active.
-      if (grip.parentElement !== bar) {
-        grip.parentElement?.removeAttribute("inert");
-        for (const item of grip.parentElement?.children ?? []) if (item !== grip) item.setAttribute("inert", "");
-      }
+      // Everything but the grip goes inert: its siblings at each level from
+      // the grip up to the bar (the label's chip, the controls panel).
+      for (let at: Element = grip; at !== bar && at.parentElement; at = at.parentElement)
+        for (const item of at.parentElement.children) if (item !== at) item.setAttribute("inert", "");
       drag?.start(framePoint(event));
       return;
     }
@@ -821,12 +819,18 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     onFormat = model.onFormat;
     onMove = model.draggable ? model.onMove : undefined;
     const controls = model.draggable ? model.controls : model.controls.filter((control) => !isMoveControl(control));
+    // The label (chip and name) above the panel of controls.
+    const label = node("div", "edit-bar__label");
+    const panel = node("div", "edit-bar__controls");
     let kindName: HTMLElement;
     if (model.draggable && drag) {
       gripName.textContent = model.kind;
       kindName = gripName;
-      bar.replaceChildren(grip);
-    } else bar.replaceChildren(kindName = node("span", "edit-bar__kind", model.kind));
+      label.replaceChildren(grip);
+    } else label.replaceChildren(kindName = node("span", "edit-bar__kind", model.kind));
+    bar.replaceChildren(label, panel);
+    // A long name is cut with an ellipsis; the whole of it stays in the tooltip.
+    label.title = model.context ? `${model.context.label} › ${model.kind}` : model.kind;
     kindName.classList.toggle("edit-bar__kind--component", Boolean(model.component));
     if (model.component) {
       kindName.prepend(componentIcon(12));
@@ -857,12 +861,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.append(componentIcon(12), node("span", "edit-bar__context-name", model.context.label), node("span", "edit-bar__context-caret", "›"));
       chip.setAttribute("aria-label", model.context.title);
       chip.title = model.context.title;
-      bar.prepend(chip);
+      label.prepend(chip);
     }
     // Controls fall into groups (name, style, content, arrange) with a thin
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";
-    let target: HTMLElement = bar;
+    let target: HTMLElement = panel;
     const groupOf = (control: EditBarControl) =>
       control.kind === "select" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
@@ -876,7 +880,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         const rule = node("span", "edit-bar__rule");
         rule.setAttribute("aria-hidden", "true");
         target.append(rule);
-        bar.append(target);
+        panel.append(target);
         group = next;
       }
       if (control.kind === "button") {
@@ -943,6 +947,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         target.append(select);
       }
     }
+    // A selection with no controls shows its label alone.
+    if (!panel.childElementCount) panel.remove();
     bar.dataset.model = "1";
     if (kept && popoverButton) placePopover(popoverButton);
     return opening;

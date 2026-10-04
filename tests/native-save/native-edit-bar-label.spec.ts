@@ -15,27 +15,29 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
 });
 
-// Label items are the bar's direct children before the groups; controls are
-// inside the groups. The label row must end above every control, and the
-// panel drawn behind the controls must start below the label.
+// The bar is a label (chip and name, one piece) stacked on a panel of
+// controls. The label ends above every control, the panel fits its controls
+// (about 4px after the last one, no label-wide empty tail), and the bar box
+// itself lets the pointer through.
 async function rows(toolbar: Locator) {
   return toolbar.evaluate((el) => {
     const box = (item: Element) => item.getBoundingClientRect();
-    const label = [...el.children].filter((item) => !item.classList.contains("edit-bar__group"));
+    const label = el.querySelector(":scope > .edit-bar__label")!;
+    const panel = el.querySelector(":scope > .edit-bar__controls");
     const controls = [...el.querySelectorAll(".edit-bar__group button, .edit-bar__group select")].filter((item) => item.getClientRects().length);
-    const panel = getComputedStyle(el, "::after");
-    const bar = box(el);
     return {
-      labels: label.map((item) => item.getAttribute("aria-label") ?? item.textContent ?? ""),
-      labelBottom: Math.max(...label.map((item) => box(item).bottom)),
-      labelTop: Math.min(...label.map((item) => box(item).top)),
+      labels: [...label.children].map((item) => item.getAttribute("aria-label") ?? item.textContent ?? ""),
+      labelBottom: box(label).bottom,
+      labelTop: box(label).top,
+      labelLeft: box(label).left,
       controlTop: controls.length ? Math.min(...controls.map((item) => box(item).top)) : Infinity,
       controls: controls.length,
-      panelTop: bar.top + parseFloat(panel.top),
-      panelDisplay: panel.display,
-      barBackground: getComputedStyle(el).backgroundColor,
+      panelTop: panel ? box(panel).top : Infinity,
+      panelLeft: panel ? box(panel).left : Infinity,
+      rightGap: panel && controls.length ? box(panel).right - Math.max(...controls.map((item) => box(item).right)) : 0,
+      barPointer: getComputedStyle(el).pointerEvents,
       firstRuleVisible: Boolean(el.querySelector(".edit-bar__group > .edit-bar__rule")?.getClientRects().length),
-      bar: { top: bar.top, bottom: bar.bottom, left: bar.left, right: bar.right },
+      bar: { top: box(el).top, bottom: box(el).bottom, left: box(el).left, right: box(el).right },
     };
   });
 }
@@ -43,9 +45,12 @@ async function rows(toolbar: Locator) {
 function expectLabelAbove(layout: Awaited<ReturnType<typeof rows>>) {
   expect(layout.controls).toBeGreaterThan(0);
   expect(layout.labelBottom).toBeLessThanOrEqual(layout.controlTop);
-  expect(layout.labelBottom).toBeLessThanOrEqual(layout.panelTop + 0.5);
-  expect(layout.panelDisplay).not.toBe("none");
-  expect(layout.barBackground).toBe("rgba(0, 0, 0, 0)");
+  // Joined: the panel starts where the label ends, at the same left edge.
+  expect(Math.abs(layout.panelTop - layout.labelBottom)).toBeLessThan(1);
+  expect(Math.abs(layout.panelLeft - layout.labelLeft)).toBeLessThan(1);
+  expect(layout.rightGap).toBeGreaterThanOrEqual(0);
+  expect(layout.rightGap).toBeLessThanOrEqual(6);
+  expect(layout.barPointer).toBe("none");
   expect(layout.firstRuleVisible).toBe(false);
 }
 
@@ -111,7 +116,7 @@ test("a section's grip is the label: the controls sit under it, it moves the sec
   await page.mouse.down();
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2 + 10, { steps: 2 });
   await expect(grip).not.toHaveAttribute("inert", "");
-  expect(await toolbar.locator(".edit-bar__group").evaluateAll((els) => els.every((el) => el.hasAttribute("inert")))).toBe(true);
+  expect(await toolbar.locator(".edit-bar__group").evaluateAll((els) => els.every((el) => el.closest("[inert]") !== null))).toBe(true);
   const hero = (await frame(page).locator("section.hero").boundingBox())!;
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 4, { steps: 8 });
   await page.mouse.up();
@@ -144,7 +149,7 @@ test("a component child's label reads instance › element with no edit icon; th
   const child = await rows(toolbar);
   expectLabelAbove(child);
   // Chip then element name on one label row.
-  const [chipBox, nameBox] = await Promise.all([chip.boundingBox(), toolbar.locator(":scope > .edit-bar__kind").boundingBox()]);
+  const [chipBox, nameBox] = await Promise.all([chip.boundingBox(), toolbar.locator(".edit-bar__label > .edit-bar__kind").boundingBox()]);
   expect(Math.abs(chipBox!.y - nameBox!.y)).toBeLessThan(2);
   expect(chipBox!.x).toBeLessThan(nameBox!.x);
   if (shots) await page.screenshot({ path: `${shots}/child-${await scheme(page)}.png` });
@@ -230,4 +235,80 @@ test("the address suggestions fit the field with no sideways scroll", async ({ p
   await expect(address).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(popover).toBeHidden();
+});
+
+// The component child's label is one piece: chip and name on one background.
+test("a component child's chip and name share one label background", async ({ page }) => {
+  const row = page.getByRole("treeitem", { name: "Section", exact: true });
+  await row.locator(".page-structure__toggle").click();
+  await page.getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
+  await frame(page).locator("project-card span[slot='title']").first().click();
+  const label = bar(page).locator(".edit-bar__label");
+  await expect(label.locator(".edit-bar__context")).toBeVisible();
+  const colours = await label.evaluate((el) => ({
+    label: getComputedStyle(el).backgroundColor,
+    chip: getComputedStyle(el.querySelector(".edit-bar__context")!).backgroundColor,
+    name: getComputedStyle(el.querySelector(".edit-bar__kind")!).backgroundColor,
+  }));
+  expect(colours.label).not.toBe("rgba(0, 0, 0, 0)");
+  expect(colours.chip).toBe("rgba(0, 0, 0, 0)");
+  expect(colours.name).toBe("rgba(0, 0, 0, 0)");
+  expect(await label.getAttribute("title")).toBe("Project card › Text");
+});
+
+// A long name is cut at 320px with an ellipsis and never widens the panel;
+// the see-through space beside the label lets a click reach the page.
+test("a long label is cut with an ellipsis and the space beside it clicks through", async ({ page }) => {
+  await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
+  const toolbar = bar(page);
+  await expect(toolbar.locator(".edit-bar__label")).toBeVisible();
+  // The click-through: a point right of the label, inside the bar's box, above the panel.
+  const point = await toolbar.evaluate((el) => {
+    const label = el.querySelector(".edit-bar__label")!.getBoundingClientRect();
+    const barBox = el.getBoundingClientRect();
+    return { x: (label.right + barBox.right) / 2, y: label.top + label.height / 2, room: barBox.right - label.right };
+  });
+  expect(point.room).toBeGreaterThan(8);
+  const under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className ?? "", point);
+  expect(under).not.toContain("edit-bar");
+  // A name too long for 320px.
+  await toolbar.locator(".edit-bar__label .edit-bar__kind").evaluate((el) => { el.textContent = "A very long section name ".repeat(8); });
+  const long = await toolbar.evaluate((el) => {
+    const label = el.querySelector(".edit-bar__label")! as HTMLElement;
+    const name = label.querySelector(".edit-bar__kind")! as HTMLElement;
+    return { width: label.getBoundingClientRect().width, height: label.getBoundingClientRect().height, cut: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow };
+  });
+  expect(long.width).toBeLessThanOrEqual(320.5);
+  expect(long.height).toBeLessThanOrEqual(24.5);
+  expect(long).toMatchObject({ cut: true, overflow: "ellipsis" });
+});
+
+// Ctrl/Cmd+B, I and K still format from the bar.
+test("Ctrl+B, Ctrl+I and Ctrl+K format from the bar", async ({ page }) => {
+  const lead = frame(page).locator(".hero p.lead");
+  await lead.click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
+  const select = () => child!.evaluate(() => {
+    const p = document.querySelector(".hero p.lead")!;
+    // A plain stretch of text not yet formatted.
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    let text = walker.nextNode();
+    while (text && (text.textContent!.length < 12 || text.parentElement !== p)) text = walker.nextNode();
+    const range = document.createRange();
+    range.setStart(text!, 6); range.setEnd(text!, 11);
+    getSelection()!.removeAllRanges(); getSelection()!.addRange(range);
+  });
+  await select();
+  await bar(page).getByRole("button", { name: "Bold", exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+b");
+  await expect(lead.locator("strong")).toHaveCount(1);
+  await select();
+  await bar(page).getByRole("button", { name: "Italic", exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+i");
+  await expect(lead.locator("em")).toHaveCount(1);
+  await select();
+  await bar(page).getByRole("button", { name: "Bold", exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(page.locator(".edit-bar__popover").getByRole("combobox", { name: "Address" })).toBeFocused();
 });
