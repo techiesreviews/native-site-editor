@@ -4,14 +4,22 @@ import { publishButton } from "./publish";
 
 // Plain HTML/CSS sections in the same Add panel: four curated defaults and
 // the records saved in .editor/page-builder.json. Adding one writes ordinary
-// HTML, a stylesheet link and styles/sections.css; the JSON is editor-only.
-// Runs on a copy of the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
+// HTML (and a stylesheet link only when the page does not load the section
+// stylesheet yet) and appends its rules to styles/sections.css; the JSON is
+// editor-only. Runs on a copy of the actual starter, unchanged:
+// ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
 const SIDECAR = ".editor/page-builder.json";
 const CSS = "styles/sections.css";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const mounted = (page: Page, path = "index.html") => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 const file = async (page: Page, baseURL: string | undefined, path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 const panel = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
+const OUT = process.env.STATIC_SECTIONS_OUT ?? ".scratch/native-static-add-host/spec";
+
+// STATIC_SECTIONS_FIXTURE=native runs the last group against the native static starter instead.
+const native = process.env.STATIC_SECTIONS_FIXTURE === "native";
+const actual = (name: string, body: (args: { page: Page; baseURL: string | undefined }) => Promise<void>) =>
+  test(name, async ({ page, baseURL }) => { test.skip(native, "Runs on the actual starter."); await body({ page, baseURL }); });
 
 async function load(page: Page, baseURL: string | undefined, path = "index.html") {
   await page.goto(`${baseURL}/`);
@@ -32,30 +40,16 @@ async function add(page: Page, name: RegExp) {
   await option.press("Enter");
 }
 
-test("the starter's own styles/sections.css import refuses default sections without writing anything", async ({ page, baseURL }) => {
+actual("on the real starter, defaults go into the stylesheet it already imports; one Undo; Save gives ready HTML that needs no editor", async ({ page, baseURL }) => {
   await load(page, baseURL);
-  await openAdd(page);
-  await add(page, /^Intro HTML$/);
-  await expect(page.locator("#notice")).toContainText("Intro was not added: The section stylesheet is already loaded through a CSS import.");
-  await expect(frame(page).locator("section.section-intro")).toHaveCount(0);
-  expect(await storedDrafts(page)).toEqual([]);
-});
-
-// An ordinary site whose stylesheets do not already use styles/sections.css.
-async function ordinary(page: Page, baseURL: string | undefined) {
-  await page.goto(baseURL!);
-  const site = await file(page, baseURL, "styles/site.css");
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/site.css", content: site.replace('@import url("sections.css");\n', "") } });
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: CSS, delete: true } });
-}
-
-test("four plain sections share the Add catalogue; adding one is one Undo over page, CSS and JSON, and saves ready HTML", async ({ page, baseURL }) => {
-  await ordinary(page, baseURL);
-  await load(page, baseURL);
+  const siteCss = await file(page, baseURL, "styles/site.css");
+  const sectionsCss = await file(page, baseURL, CSS);
+  expect(siteCss).toContain('@import url("sections.css");');
+  expect(sectionsCss).toContain("@layer sections");
   const before = await mounted(page);
   await openAdd(page);
+  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toBeVisible();
   for (const name of ["Intro", "Features", "Split", "Contact"]) await expect(panel(page).getByRole("option", { name: new RegExp(`^${name} HTML$`) })).toHaveCount(1);
-  // Sections only: no loose HTML elements join the catalogue.
   await panel(page).getByRole("searchbox").fill("Heading");
   await expect(panel(page).getByRole("option", { name: /HTML$/ })).toHaveCount(0);
   await add(page, /^Intro HTML$/);
@@ -63,12 +57,15 @@ test("four plain sections share the Add catalogue; adding one is one Undo over p
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   const home = await mounted(page);
   expect(home).toContain('<section class="section-intro"><h2>Section heading</h2>');
-  expect(home).toContain('<link rel="stylesheet" href="styles/sections.css">');
-  expect(home).not.toMatch(/static-section|saved-section|data-native|reusableSections/);
-  await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain(".section-intro {");
+  // site.css already imports styles/sections.css: no second link.
+  expect(home.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
+  expect(home).not.toMatch(/static-section|saved-section|data-native|reusableSections|<script[^>]*>[^<]*section-intro/);
+  await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain("@layer sections {\n  .section-intro {");
+  const css = (await storedDraft(page, CSS))!.content;
+  expect(css.startsWith(sectionsCss)).toBe(true);
+  expect(await storedDraft(page, "styles/site.css")).toBeUndefined();
   const sidecar = (await storedDraft(page, SIDECAR))!.content;
   expect(JSON.parse(sidecar).reusableSections.records.intro.rootClass).toBe("section-intro");
-  // Center aligned by the new stylesheet, in the live preview.
   await expect(frame(page).locator("section.section-intro")).toHaveCSS("text-align", "center");
 
   await page.locator(".code-editor__undo").first().click();
@@ -76,55 +73,79 @@ test("four plain sections share the Add catalogue; adding one is one Undo over p
   expect(await mounted(page)).toBe(before);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
+  await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(css);
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(sidecar);
+
+  // The site's own Text size (its utilities layer) wins over the section's layered seed.
+  await frame(page).locator("section.section-intro h2").click();
+  const size = page.getByRole("combobox", { name: "Text size" });
+  await size.selectOption({ label: "XL" });
+  await expect(frame(page).locator("section.section-intro h2")).toHaveCSS("font-size", "20px");
+  expect(await mounted(page)).toContain('<h2 class="text-xl">Section heading</h2>');
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(home);
+  expect((await storedDraft(page, CSS))?.content).toBe(css);
+
+  // Features through the plus between two sections: that very gap.
+  await frame(page).locator("section.flow").hover();
+  await page.getByRole("button", { name: /^Add a section before “Recent work”/ }).first().dispatchEvent("click");
+  await panel(page).getByRole("option", { name: /^Features HTML$/ }).click();
+  await expect(frame(page).locator("section.section-features + section.flow")).toHaveCount(1);
+  const withFeatures = (await storedDraft(page, CSS))!.content;
+  expect(withFeatures.startsWith(css)).toBe(true);
+  expect(withFeatures.match(/\.section-intro \{/g)?.length).toBe(1);
 
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   await page.keyboard.press("Escape");
-  expect(await file(page, baseURL, "index.html")).toBe(home);
-  const css = await file(page, baseURL, CSS);
-  expect(css).toContain(".section-intro {");
+  const published = await file(page, baseURL, "index.html");
+  expect(await file(page, baseURL, CSS)).toBe(withFeatures);
+  expect(await file(page, baseURL, "styles/site.css")).toBe(siteCss);
 
-  // Saved: listed once (as the saved record); adding it again leaves the stylesheet as it is.
-  await load(page, baseURL);
-  await openAdd(page);
-  await panel(page).getByRole("searchbox").fill("Intro");
-  await expect(panel(page).getByRole("option", { name: /^Intro HTML$/ })).toHaveCount(1);
-  await add(page, /^Intro HTML$/);
-  await expect(frame(page).locator("section.section-intro")).toHaveCount(2);
-  const twice = await mounted(page);
-  expect(twice.match(/href="styles\/sections\.css"/g)?.length).toBe(1);
-  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual(["index.html"]);
-
-  // Without the editor or any script, the published section reads and looks the same.
-  const site = await page.context().browser()!.newContext({ javaScriptEnabled: false });
+  // The added sections are ordinary HTML: no scripts, custom elements, slots or editor attributes.
+  for (const root of ["section-intro", "section-features"]) {
+    const start = published.indexOf(`<section class="${root}">`);
+    const html = published.slice(start, published.indexOf("</section>", start) + 10);
+    expect(html).not.toMatch(/<script|<slot|<template|<[a-z]+-[a-z-]+[\s>]|data-native|\son[a-z]+=/);
+  }
+  // Served as plain files, with scripts off and no .editor folder, they read and look the same.
+  // (The starter's own components still need its components.js; that part of the page is not claimed.)
+  const site = await page.context().browser()!.newContext({ javaScriptEnabled: false, viewport: { width: 1200, height: 900 } });
   const plain = await site.newPage();
-  const requests: string[] = [];
+  const errors: string[] = [], requests: string[] = [];
+  plain.on("pageerror", (error) => errors.push(String(error)));
+  plain.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await plain.route("http://site.test/**", async (route) => {
-    const path = new URL(route.request().url()).pathname.slice(1) || "index.html";
+    const path = decodeURIComponent(new URL(route.request().url()).pathname.slice(1)) || "index.html";
     requests.push(path);
-    const body = await file(page, baseURL, path);
-    await route.fulfill({ body, contentType: path.endsWith(".css") ? "text/css" : "text/html" });
+    if (path.startsWith(".editor/")) return route.fulfill({ status: 404, body: "" });
+    const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
+    if (!response.ok()) return route.fulfill({ status: 404, body: "" });
+    await route.fulfill({ body: await response.body(), contentType: path.endsWith(".css") ? "text/css" : path.endsWith(".svg") ? "image/svg+xml" : "text/html" });
   });
   await plain.goto("http://site.test/index.html");
   await expect(plain.locator("section.section-intro h2")).toHaveText("Section heading");
   await expect(plain.locator("section.section-intro")).toHaveCSS("text-align", "center");
-  expect(requests.some((path) => path.startsWith(".editor") || path.endsWith(".js"))).toBe(false);
+  await expect(plain.locator("section.section-features h3").first()).toHaveText("First feature");
+  await plain.locator("section.section-intro").scrollIntoViewIfNeeded();
+  await plain.screenshot({ path: `${OUT}-js-off.png` });
+  expect(requests.some((path) => path.startsWith(".editor"))).toBe(false);
+  expect(errors).toEqual([]);
   await site.close();
 });
 
-test("a saved custom section previews and inserts its own HTML with the live stylesheet; a subpage links relatively", async ({ page, baseURL }) => {
-  await ordinary(page, baseURL);
+actual("a saved custom section previews and inserts its own HTML with the live stylesheet; a subpage needs no new link", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
   const record = { id: "intro", label: "Intro", rootClass: "section-intro", stylesheetPath: CSS,
     html: '<section class="section-intro"><h2>Our custom intro</h2></section>', css: ".section-intro { color: teal; }" };
-  const live = ".section-intro { color: rgb(200, 0, 0); }\n";
+  const live = (await file(page, baseURL, CSS)) + ".section-intro { color: rgb(200, 0, 0); }\n";
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: record } } }, null, 2) + "\n" } });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: CSS, content: live } });
   await load(page, baseURL, "about/index.html");
+  const before = await mounted(page, "about/index.html");
   await openAdd(page, "main h1");
   const option = panel(page).getByRole("option", { name: /^Intro HTML$/ });
   await expect(option).toHaveCount(1);
-  await expect(option.locator("iframe")).toHaveCount(1);
   const thumb = option.frameLocator("iframe");
   await expect(thumb.locator("section.section-intro h2")).toHaveText("Our custom intro");
   await expect(thumb.locator("section.section-intro")).toHaveCSS("color", "rgb(200, 0, 0)");
@@ -133,16 +154,85 @@ test("a saved custom section previews and inserts its own HTML with the live sty
   await expect(frame(page).locator("section.section-intro")).toHaveCSS("color", "rgb(200, 0, 0)");
   const about = await mounted(page, "about/index.html");
   expect(about).toContain(record.html);
-  expect(about).toContain('href="../styles/sections.css"');
+  expect(about.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
   expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual(["about/index.html"]);
 });
 
-test("invalid editor JSON hides plain sections instead of falling back to defaults", async ({ page, baseURL }) => {
+actual("invalid editor JSON hides plain sections instead of falling back to defaults", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: "{ not json" } });
   await load(page, baseURL);
   await openAdd(page);
   await expect(panel(page).getByRole("option").first()).toBeVisible();
-  for (const name of ["Intro", "Features", "Split", "Contact"]) await expect(panel(page).getByRole("option", { name: new RegExp(`^${name} HTML$`) })).toHaveCount(0);
+  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
+});
+
+actual("adding a section beside a stored collection leaves its recipe and cards as they are", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "services/one/index.html", content: `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>` } });
+  await load(page, baseURL);
+  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
+  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
+  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
+  const details = page.locator(".selected-collection");
+  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
+  const inspector = page.getByRole("region", { name: "Collection settings", exact: true });
+  await inspector.getByRole("checkbox", { name: "/services/", exact: true }).check();
+  await inspector.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
+  const collections = JSON.parse((await storedDraft(page, SIDECAR))!.content).collections;
+  const cards = await frame(page).locator("card-project").count();
+  await openAdd(page);
+  await add(page, /^Contact HTML$/);
+  await expect(frame(page).locator("section.section-contact")).toHaveCount(1);
+  const after = JSON.parse((await storedDraft(page, SIDECAR))!.content);
+  expect(after.collections).toEqual(collections);
+  expect(after.reusableSections.records.contact.rootClass).toBe("section-contact");
+  await expect(frame(page).locator("card-project")).toHaveCount(cards);
+  await expect(page.locator("#notice")).not.toContainText("not added");
+});
+
+test.describe("native static starter", () => {
+  test.skip(!native, "Needs ASE_NATIVE_SAVE_FIXTURE pointing at the native static starter.");
+  test("Intro joins the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
+    await load(page, baseURL);
+    const before = await mounted(page);
+    const sectionsCss = await file(page, baseURL, CSS);
+    await openAdd(page);
+    await add(page, /^Intro HTML$/);
+    await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+    const home = await mounted(page);
+    expect(home.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
+    await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain(".section-intro {");
+    expect((await storedDraft(page, CSS))!.content.startsWith(sectionsCss)).toBe(true);
+    expect((await storedDrafts(page)).some((draft) => draft.path.startsWith(".editor/legacy"))).toBe(false);
+    // The starter already has its own .section-contact rules: the default Contact refuses rather than mixing them.
+    await add(page, /^Contact HTML$/);
+    await expect(page.locator("#notice")).toContainText("Contact was not added: Another supplied stylesheet already uses this section's rootClass.");
+    await publishButton(page).click();
+    await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+    await page.keyboard.press("Escape");
+    const site = await page.context().browser()!.newContext({ javaScriptEnabled: false, viewport: { width: 1200, height: 900 } });
+    const plain = await site.newPage();
+    const errors: string[] = [], requests: string[] = [];
+    plain.on("pageerror", (error) => errors.push(String(error)));
+    plain.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    await plain.route("http://site.test/**", async (route) => {
+      const path = decodeURIComponent(new URL(route.request().url()).pathname.slice(1)) || "index.html";
+      requests.push(path);
+      if (path.startsWith(".editor/")) return route.fulfill({ status: 404, body: "" });
+      const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
+      if (!response.ok()) return route.fulfill({ status: 404, body: "" });
+      await route.fulfill({ body: await response.body(), contentType: path.endsWith(".css") ? "text/css" : path.endsWith(".svg") ? "image/svg+xml" : "text/html" });
+    });
+    await plain.goto("http://site.test/index.html");
+    await expect(plain.locator("section.section-intro h2")).toHaveText("Section heading");
+    await expect(plain.locator("section.section-intro")).toHaveCSS("text-align", "center");
+    await expect(plain.locator("section.section-hero h1")).toBeVisible();
+    await plain.screenshot({ path: `${OUT}-native-js-off.png`, fullPage: true });
+    expect(requests.some((path) => path.startsWith(".editor") || path.endsWith(".js"))).toBe(false);
+    expect(errors).toEqual([]);
+    await site.close();
+  });
 });

@@ -108,7 +108,7 @@ for (const css of ['body {color:red}', '.intro-section-other {color:red}', '.int
 test("unsupported CSS at-rules and malformed CSS refuse explicitly", () => {
   failure(input({documentText:document({...section,css:'.intro-section ::slotted(h2) {color:red}'})}),"Shadow-only CSS is unsupported in static sections.");
   failure(input({documentText:document({...section,css:'@import "other.css"; .intro-section {color:red}'})}),"Standalone CSS at-rules are unsupported in section styles.");
-  failure(input({documentText:document({...section,css:'@font-face { font-family: x; src:url(x); }'})}),"Section styles support only rule-grouping @media, @supports and @container.");
+  failure(input({documentText:document({...section,css:'@font-face { font-family: x; src:url(x); }'})}),"Section styles support only rule-grouping @media, @supports, @container and @layer sections.");
   failure(input({documentText:document({...section,css:'.intro-section { color:red'})}),"The stylesheet has unbalanced CSS delimiters.");
 });
 
@@ -282,4 +282,35 @@ test("overwrite retains unknown record keys unless the new record sets them expl
   const plan = saved({ documentText: text, files: saveFiles, record: { ...required, label: "New", meta: "override" }, overwrite: { expected: stored } });
   const record = readStaticSectionRecords(plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)).intro;
   assert.equal(record.label, "New"); assert.equal(record.meta, "override"); assert.deepEqual(record.future, { nested: { keep: [1, 2] } });
+});
+
+test("a stylesheet the page already loads through unconditional imports counts as linked", () => {
+  const linkedPage = page.replace('</head>', '<link rel="stylesheet" href="/styles/site.css"></head>');
+  const site = '@layer tokens, sections;\n@import url("tokens.css");\n@import url("sections.css");\n';
+  const sheets = { 'styles/site.css': site, 'styles/tokens.css': ':root { --x: 1; }', 'styles/sections.css': '@layer sections { .hero { margin: 0; } }\n' };
+  const files = ['index.html', EDITOR_PAGE_BUILDER_PATH, ...Object.keys(sheets)];
+  const plan = good(input({ pageSource: linkedPage, stylesheetSources: sheets, files }));
+  const html = plan.operation.edits.get('index.html')!;
+  assert.equal(html.includes('sections.css"'), false);
+  assert.equal((html.match(/rel="stylesheet"/g) ?? []).length, 1);
+  assert.equal(plan.operation.edits.has('styles/site.css'), false);
+  assert.equal(plan.operation.edits.get('styles/sections.css'), sheets['styles/sections.css'] + section.css);
+  for (const [path, text] of Object.entries(sheets)) assert.equal(plan.operation.expectedSources.get(path), text);
+  // Every node of the chain must be loaded.
+  failure(input({ pageSource: linkedPage, stylesheetSources: { 'styles/site.css': '@import url("mid.css");', 'styles/sections.css': '' }, files: [...files, 'styles/mid.css'] }), 'Load styles/mid.css before verifying section stylesheet imports.');
+  // Conditional or layered imports of the section stylesheet refuse.
+  for (const condition of ['screen', 'supports(display: grid)', 'layer(sections)']) failure(input({ pageSource: linkedPage, stylesheetSources: { 'styles/site.css': `@import url("sections.css") ${condition};`, 'styles/sections.css': '' }, files }), 'The section stylesheet is imported conditionally or into a layer.');
+  // A cycle terminates; an import from a sheet the page does not load still refuses.
+  const cyclic = good(input({ pageSource: linkedPage, stylesheetSources: { 'styles/site.css': '@import url("a.css");\n@import url("sections.css");', 'styles/a.css': '@import url("site.css");', 'styles/sections.css': '' }, files: [...files, 'styles/a.css'] }));
+  assert.equal(cyclic.operation.edits.get('index.html')!.includes('sections.css'), false);
+  failure(input({ stylesheetSources: { 'styles/unused.css': '@import url("sections.css");', 'styles/sections.css': '' }, files: ['index.html', EDITOR_PAGE_BUILDER_PATH, 'styles/unused.css', 'styles/sections.css'] }), 'The section stylesheet is already loaded through a CSS import.');
+  // Linked directly and imported too: loaded twice.
+  failure(input({ pageSource: linkedPage.replace('</head>', '<link rel="stylesheet" href="styles/sections.css"></head>'), stylesheetSources: sheets, files }), 'The section stylesheet is loaded more than once.');
+});
+
+test("section CSS may use @layer sections only", () => {
+  const layered = { ...section, css: '@layer sections {\n  .intro-section { color: red; }\n  @media (min-width: 30rem) { .intro-section p { margin: 0; } }\n}\n' };
+  good(input({ documentText: document(layered) }));
+  for (const css of ['@layer utilities { .intro-section { color: red; } }', '@layer { .intro-section { color: red; } }', '@layer sections, utilities;\n.intro-section { color: red; }', '@layer sections { p { color: red; } }'])
+    assert.ok('error' in planStaticSectionInsert(input({ documentText: document({ ...section, css }) })), css);
 });

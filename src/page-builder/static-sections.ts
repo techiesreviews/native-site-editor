@@ -116,6 +116,12 @@ function sectionHtml(record: StaticSectionRecord): void {
   const ids = [...descendants(nodes)].map((element) => attribute(record.html, element, "id")).filter((id): id is string => id !== undefined && id !== "");
   if (new Set(ids).size !== ids.length) reject("A section cannot contain duplicate authored ids.");
 }
+/** A stylesheet link that always applies: no media condition, integrity, title, disabled state or handlers. */
+function unconditionalLink(page: string, element: SourceElement, href: string): boolean {
+  const attrs = startTagAttributes(page, element.tag);
+  return !attrs.some((attr) => ["integrity", "disabled", "title"].includes(attr.name) || /^on/.test(attr.name)) && !/[?#]/.test(href)
+    && [undefined, "", "all"].includes(attribute(page, element, "media")) && [undefined, "", "text/css"].includes(attribute(page, element, "type"));
+}
 function rootedSelector(selector: string, rootClass: string): boolean {
   // Literal root spelling and conservative selector syntax; no shadow/nesting translation.
   if (/[\\&]/.test(selector) || /:host\b|::(?:slotted|part)\b|\/\*/i.test(selector) || !selector.startsWith(`.${rootClass}`)) return false;
@@ -149,7 +155,7 @@ function sectionCss(record: StaticSectionRecord): CssBlock[] {
   for (const block of blocks) {
     if (/:host\b|::(?:slotted|part)\b/i.test(block.selector)) reject("Shadow-only CSS is unsupported in static sections.");
     if (block.selector.startsWith("@")) {
-      if (!/^@(media|supports|container)\b/i.test(block.selector) || block.declarations.length || block.parent && !block.parent.selector.startsWith("@")) reject("Section styles support only rule-grouping @media, @supports and @container.");
+      if (!(/^@(media|supports|container)\b/i.test(block.selector) || /^@layer\s+sections\s*$/i.test(block.selector)) || block.declarations.length || block.parent && !block.parent.selector.startsWith("@")) reject("Section styles support only rule-grouping @media, @supports, @container and @layer sections.");
       let at = block.open + 1;
       for (const child of block.children) { if (trivia(record.css.slice(at, child.start))) reject("Unsupported statement inside a section CSS group."); at = child.end; }
       if (trivia(record.css.slice(at, block.close))) reject("Unsupported statement inside a section CSS group.");
@@ -252,6 +258,8 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     const head = headTags(page), all = active(page);
     if (all.some((element) => element.name === "base" && attribute(page, element, "href") !== undefined)) reject("A base href prevents safe static section stylesheet linking.");
     let linked = false;
+    // Stylesheets the page itself loads unconditionally: the roots of the import graph below.
+    const roots: string[] = [];
     for (const element of all) {
       if (element.name === "style") {
         const inline = page.slice(element.tag.end, element.close?.start ?? element.tag.end);
@@ -272,6 +280,7 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
       if (resolved !== record.stylesheetPath) {
         if (rel.includes("stylesheet") && !resolved) reject("External stylesheet links cannot be verified for static section insertion.");
         if (rel.includes("stylesheet") && resolved && typeof input.stylesheetSources[resolved] !== "string") reject(`Load ${resolved} before verifying section stylesheet links.`);
+        if (rel.includes("stylesheet") && resolved && !rel.includes("alternate") && unconditionalLink(page, element, href)) roots.push(resolved);
         continue;
       }
       const attrs = startTagAttributes(page, element.tag);
@@ -279,15 +288,40 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
       if (linked) reject("The section stylesheet has duplicate active links.");
       linked = true;
     }
+    // The section stylesheet may already be loaded by the page through a chain of
+    // loaded, unconditional @imports from its own links: then it counts as linked.
+    const viaImport = new Set<string>();
+    if (css !== undefined) {
+      const seen = new Set<string>();
+      const queue = [...roots];
+      for (const root of roots) seen.add(root);
+      while (queue.length) {
+        const path = queue.shift()!;
+        const source = input.stylesheetSources[path];
+        if (typeof source !== "string") reject(`Load ${path} before verifying section stylesheet imports.`);
+        for (const item of parseCssImports(source).imports) {
+          const imported = resolveImportPath(path, item.url);
+          if (!imported || seen.has(imported)) continue;
+          if (imported === record.stylesheetPath) {
+            if (item.media !== undefined && !/^\s*(?:all)?\s*$/i.test(item.media) || item.supports !== undefined || item.layer !== undefined) reject("The section stylesheet is imported conditionally or into a layer.");
+            viaImport.add(path);
+          } else {
+            seen.add(imported); queue.push(imported);
+          }
+        }
+      }
+      if (viaImport.size > 1 || viaImport.size && linked) reject("The section stylesheet is loaded more than once.");
+    }
     for (const [path, source] of Object.entries(input.stylesheetSources)) {
       if (source === undefined) continue;
       for (const item of parseCssImports(source).imports) {
         const imported = resolveImportPath(path, item.url);
-        if (imported === record.stylesheetPath) reject("The section stylesheet is already loaded through a CSS import.");
+        if (imported === record.stylesheetPath && !viaImport.has(path)) reject("The section stylesheet is already loaded through a CSS import.");
         if (imported && typeof input.stylesheetSources[imported] !== "string") reject(`Load ${imported} before verifying section stylesheet imports.`);
       }
       if (!reuse && path !== record.stylesheetPath && scanCss(source).some((block) => new RegExp(`\\.${record.rootClass}(?![a-z0-9_-])`, "i").test(decodedCss(block.selector)))) reject("Another supplied stylesheet already uses this section's rootClass.");
     }
+    if (viaImport.size) linked = true;
     if (!linked) {
       const from = input.pagePath.split("/").slice(0, -1), to = record.stylesheetPath.split("/");
       while (from.length && from[0] === to[0]) { from.shift(); to.shift(); }
