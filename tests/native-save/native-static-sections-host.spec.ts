@@ -124,7 +124,7 @@ actual("on the real starter, defaults go into the stylesheet it already imports;
     await route.fulfill({ body: await response.body(), contentType: path.endsWith(".css") ? "text/css" : path.endsWith(".svg") ? "image/svg+xml" : "text/html" });
   });
   await plain.goto("http://site.test/index.html");
-  await expect(plain.locator("section.section-intro h2")).toHaveText("Section heading");
+  await expect(plain.locator("section.section-intro > h2")).toHaveText("Section heading");
   await expect(plain.locator("section.section-intro")).toHaveCSS("text-align", "center");
   await expect(plain.locator("section.section-features h3").first()).toHaveText("First feature");
   await plain.locator("section.section-intro").scrollIntoViewIfNeeded();
@@ -185,17 +185,17 @@ actual("adding a section beside a stored collection leaves its recipe and cards 
   const cards = await frame(page).locator("card-project").count();
   await openAdd(page);
   await add(page, /^Contact HTML$/);
-  await expect(frame(page).locator("section.section-contact")).toHaveCount(1);
+  await expect(frame(page).locator("section.contact-section")).toHaveCount(1);
   const after = JSON.parse((await storedDraft(page, SIDECAR))!.content);
   expect(after.collections).toEqual(collections);
-  expect(after.reusableSections.records.contact.rootClass).toBe("section-contact");
+  expect(after.reusableSections.records.contact.rootClass).toBe("contact-section");
   await expect(frame(page).locator("card-project")).toHaveCount(cards);
   await expect(page.locator("#notice")).not.toContainText("not added");
 });
 
 test.describe("native static starter", () => {
   test.skip(!native, "Needs ASE_NATIVE_SAVE_FIXTURE pointing at the native static starter.");
-  test("Intro joins the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
+  test("all four defaults join the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
     await load(page, baseURL);
     const before = await mounted(page);
     const sectionsCss = await file(page, baseURL, CSS);
@@ -207,9 +207,18 @@ test.describe("native static starter", () => {
     await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain(".section-intro {");
     expect((await storedDraft(page, CSS))!.content.startsWith(sectionsCss)).toBe(true);
     expect((await storedDrafts(page)).some((draft) => draft.path.startsWith(".editor/legacy"))).toBe(false);
-    // The starter already has its own .section-contact rules: the default Contact refuses rather than mixing them.
-    await add(page, /^Contact HTML$/);
-    await expect(page.locator("#notice")).toContainText("Contact was not added: Another supplied stylesheet already uses this section's rootClass.");
+    // The other three join too; Contact uses contact-section beside the starter's own .section-contact.
+    for (const [name, root] of [["Features", "section-features"], ["Split", "section-split"], ["Contact", "contact-section"]]) {
+      await add(page, new RegExp(`^${name} HTML$`));
+      await expect(frame(page).locator(`section.${root}`)).toHaveCount(1);
+    }
+    const four = await mounted(page), fourCss = (await storedDraft(page, CSS))!.content;
+    expect(four.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
+    await page.locator(".code-editor__undo").first().click();
+    await expect(frame(page).locator("section.contact-section")).toHaveCount(0);
+    await page.locator(".code-editor__redo").first().click();
+    await expect.poll(() => mounted(page)).toBe(four);
+    await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(fourCss);
     await publishButton(page).click();
     await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
     await page.keyboard.press("Escape");
@@ -227,9 +236,11 @@ test.describe("native static starter", () => {
       await route.fulfill({ body: await response.body(), contentType: path.endsWith(".css") ? "text/css" : path.endsWith(".svg") ? "image/svg+xml" : "text/html" });
     });
     await plain.goto("http://site.test/index.html");
-    await expect(plain.locator("section.section-intro h2")).toHaveText("Section heading");
+    await expect(plain.locator("section.section-intro > h2")).toHaveText("Section heading");
     await expect(plain.locator("section.section-intro")).toHaveCSS("text-align", "center");
     await expect(plain.locator("section.section-hero h1")).toBeVisible();
+    await expect(plain.locator("section.contact-section")).toHaveCSS("text-align", "center");
+    await expect(plain.locator("section.section-split .split-media")).toBeVisible();
     await plain.screenshot({ path: `${OUT}-native-js-off.png`, fullPage: true });
     expect(requests.some((path) => path.startsWith(".editor") || path.endsWith(".js"))).toBe(false);
     expect(errors).toEqual([]);

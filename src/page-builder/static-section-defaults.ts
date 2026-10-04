@@ -5,8 +5,8 @@ import { planStaticSectionInsert, previewStaticSection, planStaticSectionSave, r
 export const DEFAULT_SECTION_CHOICE_PREFIX = "static-section:";
 const STYLESHEET = "styles/sections.css";
 
-const record = (id: string, label: string, html: string, css: string): Readonly<StaticSectionRecord> =>
-  Object.freeze({ id, label, rootClass: `section-${id}`, stylesheetPath: STYLESHEET, html, css });
+const record = (id: string, label: string, html: string, css: string, rootClass = `section-${id}`): Readonly<StaticSectionRecord> =>
+  Object.freeze({ id, label, rootClass, stylesheetPath: STYLESHEET, html, css });
 
 /** Seed CSS sits in `@layer sections`: a site's own utilities layer (e.g. text-size classes) and unlayered rules win over it. */
 const layered = (rules: string) => `@layer sections {\n${rules.replace(/^(?=.)/gm, "  ")}}\n`;
@@ -37,12 +37,12 @@ export const DEFAULT_STATIC_SECTIONS: readonly Readonly<StaticSectionRecord>[] =
 @media (min-width: 40rem) { .section-split { grid-template-columns: 1fr 1fr; } }
 `)),
   record("contact", "Contact",
-    `<section class="section-contact"><h2>Get in touch</h2><p>Questions or ideas? Send a message.</p><p><a href="mailto:hello@example.com">hello@example.com</a></p></section>`,
-    layered(`.section-contact { padding: var(--section-space, 3rem) var(--section-gutter, 1.5rem); max-width: var(--section-width, 40rem); margin: 0 auto; text-align: center; }
-.section-contact h2 { margin: 0 0 0.75rem; }
-.section-contact p { margin: 0 0 0.75rem; line-height: 1.6; }
-.section-contact a { color: var(--accent, currentColor); }
-`)),
+    `<section class="contact-section"><h2>Get in touch</h2><p>Questions or ideas? Send a message.</p><p><a href="mailto:hello@example.com">hello@example.com</a></p></section>`,
+    layered(`.contact-section { padding: var(--section-space, 3rem) var(--section-gutter, 1.5rem); max-width: var(--section-width, 40rem); margin: 0 auto; text-align: center; }
+.contact-section h2 { margin: 0 0 0.75rem; }
+.contact-section p { margin: 0 0 0.75rem; line-height: 1.6; }
+.contact-section a { color: var(--accent, currentColor); }
+`), "contact-section"),
 ]);
 
 /** Only prefixed ids name defaults, so a stale saved id never silently falls back to a default. */
