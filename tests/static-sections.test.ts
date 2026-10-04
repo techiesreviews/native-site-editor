@@ -223,7 +223,9 @@ test("save edits only editor JSON and preserves pages, collections, future keys 
   assert.deepEqual(after.pages, before.pages); assert.deepEqual(after.collections, before.collections); assert.deepEqual(after.future, before.future);
   assert.deepEqual(after.reusableSections.future, ["unknown"]);
   assert.deepEqual(after.reusableSections.records, { outro: other, intro: section });
-  assert.equal(plan.operation.open, EDITOR_PAGE_BUILDER_PATH);
+  assert.equal("open" in plan.operation, false);
+  assert.equal("open" in saved({ documentText: undefined, files: ["index.html"], record: section }).operation, false);
+  assert.equal(good(input()).operation.open, "index.html");
   // Unloaded-graph caller still pins the source snapshot.
   assert.equal(saved({ documentText: rich, record: section }).expectedFiles, undefined);
 });
@@ -259,4 +261,25 @@ test("save refuses invalid JSON, versions, records, HTML and CSS without guessin
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, html: '<section class="intro-section"><script></script></section>' } }, "Static sections support ordinary HTML without scripts, embedded styles, custom tags, slots, templates or foreign markup.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: 'p { color: red; }' } }, "Every section style selector must be rooted in its literal rootClass without global leakage or nesting.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, future: undefined as unknown as string } }, planStaticSectionSave({ documentText: rich, files: saveFiles, record: { ...section, future: undefined as unknown as string } }).error!);
+});
+
+test("collision check reads selectors only: comments, content strings and url() never collide", () => {
+  for (const css of ['.outro-section { margin: 0; } /* pairs with .intro-section */', '.outro-section::after { content: ".intro-section"; }', '.outro-section { background: url(a.intro-section); }']) {
+    const text = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css}}}});
+    saved({ documentText: text, files: saveFiles, record: section });
+  }
+  const png = { ...section, id: "pic", rootClass: "png", html: '<section class="png"></section>', css: '.png { color: red; }' };
+  saved({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section { background: url(a.png); }'}}}}), files: saveFiles, record: png });
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section [class~="outro-section"] { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
+  saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section .OUTRO-SECTION { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
+});
+
+test("overwrite retains unknown record keys unless the new record sets them explicitly", () => {
+  const stored = { ...section, future: { nested: { keep: [1, 2] } }, meta: "old" };
+  const text = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{intro:stored}}});
+  saveFailure({ documentText: text, files: saveFiles, record: { ...section, label: "New" }, overwrite: { expected: { ...stored, future: { nested: { keep: [1] } } } } }, "The saved static section changed since it was loaded.");
+  const { future: _f, meta: _m, ...required } = stored;
+  const plan = saved({ documentText: text, files: saveFiles, record: { ...required, label: "New", meta: "override" }, overwrite: { expected: stored } });
+  const record = readStaticSectionRecords(plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)).intro;
+  assert.equal(record.label, "New"); assert.equal(record.meta, "override"); assert.deepEqual(record.future, { nested: { keep: [1, 2] } });
 });

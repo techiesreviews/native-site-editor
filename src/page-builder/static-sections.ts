@@ -38,7 +38,8 @@ export interface StaticSectionOperation {
   expectedSources: Map<string, string | undefined>;
   edits: Map<string, string>;
   creates?: { path: string; content: string }[];
-  open: string;
+  /** Page to show after applying; omitted when the host should stay on the current page. */
+  open?: string;
   done: string;
   undone: string;
 }
@@ -276,14 +277,25 @@ export interface StaticSectionSaveInput {
   files?: readonly string[];
   /** Complete caller-supplied record. Nothing is captured or inferred from pages. */
   record: StaticSectionRecord;
-  /** Explicit opt-in to replace an existing id, pinned to the record the caller last saw. */
+  /**
+   * Explicit opt-in to replace an existing id, pinned to the exact record the caller last saw.
+   * Unknown keys of the saved record are retained unless the new record sets them explicitly.
+   */
   overwrite?: { expected: StaticSectionRecord };
 }
 export interface StaticSectionSavePlan {
+  /** Editor-JSON-only operation without `open`: the host stays on the current page. */
   operation: StaticSectionOperation;
+  /** The consumer must compare this graph immediately before applying the operation. */
   expectedFiles?: readonly string[];
 }
 const canonical = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item);
+/** True when a rule selector targets the class literally or through a class attribute selector. Declaration values and comments never match. */
+function selectorsUseClass(css: string, className: string): boolean {
+  const literal = new RegExp(`\\.${className}(?![a-z0-9_-])`, "i");
+  const attribute = new RegExp(`\\[\\s*class\\b[^\\]]*${className}`, "i");
+  return scanCss(css).some((block) => { const selector = decodedCss(block.selector); return literal.test(selector) || attribute.test(selector); });
+}
 /** Plans an editor-JSON-only upsert of one explicit static section record. Pages and stylesheets are untouched. */
 export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSectionSavePlan | { error: string } {
   try {
@@ -293,19 +305,20 @@ export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSect
       if (files.has(EDITOR_PAGE_BUILDER_PATH)) reject(`Load ${EDITOR_PAGE_BUILDER_PATH} before saving a section.`);
     } else if (typeof input.documentText !== "string" || files && !files.has(EDITOR_PAGE_BUILDER_PATH)) reject("Loaded sources do not match the file graph.");
     plain(input.record, "Static section");
-    const record = structuredClone(input.record);
-    validateRecord(record, record.id);
+    validateRecord(structuredClone(input.record), input.record.id);
     const records = readStaticSectionRecords(input.documentText);
     const document = readPageBuilderDocument(input.documentText);
-    if (Object.hasOwn(records, record.id)) {
+    const id = input.record.id;
+    if (Object.hasOwn(records, id)) {
       if (!input.overwrite) reject("A static section with this id already exists; overwrite it explicitly.");
-      if (canonical(records[record.id]) !== canonical(input.overwrite.expected)) reject("The saved static section changed since it was loaded.");
+      if (canonical(records[id]) !== canonical(input.overwrite.expected)) reject("The saved static section changed since it was loaded.");
     } else if (input.overwrite) reject("There is no saved static section to overwrite.");
-    const classToken = new RegExp(`\\.${record.rootClass}(?![A-Za-z0-9_-])`);
+    const record: StaticSectionRecord = structuredClone(input.overwrite ? { ...records[id], ...input.record } : input.record);
+    validateRecord(record, id);
     for (const other of Object.values(records)) {
-      if (other.id === record.id) continue;
-      if (other.rootClass === record.rootClass) reject("Another static section already uses this rootClass.");
-      if (classToken.test(other.css) || new RegExp(`\\.${other.rootClass}(?![A-Za-z0-9_-])`).test(record.css)) reject("Section styles would collide with another static section's rootClass.");
+      if (other.id === id) continue;
+      if (other.rootClass.toLowerCase() === record.rootClass.toLowerCase()) reject("Another static section already uses this rootClass.");
+      if (selectorsUseClass(other.css, record.rootClass) || selectorsUseClass(record.css, other.rootClass)) reject("Section styles would collide with another static section's rootClass.");
     }
     const container = (document.reusableSections ?? { version: 1, records: {} }) as Record<string, JsonValue> & { records: Record<string, JsonValue> };
     container.records[record.id] = record;
@@ -318,7 +331,6 @@ export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSect
         expectedSources,
         edits: input.documentText === undefined ? new Map() : new Map([[EDITOR_PAGE_BUILDER_PATH, text]]),
         ...(input.documentText === undefined ? { creates: [{ path: EDITOR_PAGE_BUILDER_PATH, content: text }] } : {}),
-        open: EDITOR_PAGE_BUILDER_PATH,
         done: `${verb} section ${record.label}`,
         undone: `Reverted section ${record.label}`,
       },
