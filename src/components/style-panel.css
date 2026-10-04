@@ -84,3 +84,17 @@ main.has-preview > .style-panel { display: flex; }
 .style-panel .grid-editor button { border: 1px solid var(--control-line); background: var(--surface-input); padding: 4px 6px; }
 .style-panel .grid-editor__preview { background: var(--surface-input); }
 .style-panel .image-focal-point__preview { background: var(--surface); }
+
+/* One scroll area: element scope, classes and target scroll with the controls. */
+.style-panel__scroll { flex: 1 1 auto; }
+.style-panel__scroll > :is(.style-panel__scope, .style-panel__classes, .style-panel__add-class) { padding-left: 0; padding-right: 0; }
+.style-panel__scroll > .style-panel__scope { padding-top: 8px; }
+.style-panel__scroll > :is(.style-panel__target, .style-panel__shared-scope, .style-panel__hide) { margin-left: 0; margin-right: 0; }
+.style-panel__scroll > .style-panel__add-class { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.style-panel__class-suggestions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+.style-panel .style-panel__class-suggestion { padding: 2px 8px; border: 1px dashed var(--control-line); font-family: var(--font-mono); font-size: var(--type-small); opacity: .8; }
+.style-panel .style-panel__class-suggestion:is(:hover, :focus-visible) { opacity: 1; }
+.style-panel__variable-menu { width: min(260px, calc(100vw - 8px)); box-sizing: border-box; text-align: left; }
+.style-panel__variable-choice button:first-child { align-items: flex-start; }
+.style-panel__variable-choice strong { font-family: var(--font-mono); font-size: var(--type-small); overflow-wrap: anywhere; }
+.style-panel .style-panel__variable-definition { flex: none; width: var(--size-compact); display: grid; place-items: center; color: var(--muted); }

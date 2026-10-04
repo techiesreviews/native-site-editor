@@ -35,10 +35,13 @@ test("box model padding updates CSS and preview; shared undo restores both", asy
   await expect.poll(() => css(page)).not.toContain("padding-top: 24px");
 });
 
-test("site variable preset writes var() and global colours edit in place", async ({ page, baseURL }) => {
+test("typed variable completion writes var() and global colours edit in place", async ({ page, baseURL }) => {
   await open(page, baseURL); await select(page);
   await panel(page).getByText("Typography", { exact: true }).click();
-  await panel(page).getByRole("combobox", { name: "Text colour preset", exact: true }).selectOption("--accent");
+  const color = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
+  await color.fill("var(--acc");
+  await panel(page).getByRole("menu", { name: "Text colour variables" }).getByRole("menuitem", { name: /^--accent ·/ }).click();
+  await expect(color).toHaveValue("var(--accent)");
   await expect(frame(page).locator(".lead")).toHaveCSS("color", "rgb(47, 109, 58)");
   await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
   await panel(page).getByRole("button", { name: "Global styles", exact: true }).click();
@@ -162,7 +165,7 @@ test("an unfinished stylesheet rejects edits without changing its CSS draft", as
   expect(await css(page)).toBe(before);
 });
 
-test("focused selects and presets accept repeated own edits", async ({ page, baseURL }) => {
+test("focused selects and variable completions accept repeated own edits", async ({ page, baseURL }) => {
   await open(page, baseURL); await select(page);
   await panel(page).getByText("Layout", { exact: true }).click();
   const display = panel(page).getByRole("combobox", { name: "Display", exact: true });
@@ -174,12 +177,13 @@ test("focused selects and presets accept repeated own edits", async ({ page, bas
     await expect(frame(page).locator(".lead")).toHaveCSS("display", value);
   }
   await panel(page).getByText("Typography", { exact: true }).click();
-  const preset = panel(page).getByRole("combobox", { name: "Text colour preset", exact: true });
-  await preset.focus();
+  const color = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
+  await color.focus();
   for (const name of ["--accent", "--muted", "--accent"]) {
-    await preset.selectOption(name);
+    await color.fill(name);
+    await panel(page).getByRole("menu", { name: "Text colour variables" }).getByRole("menuitem", { name: new RegExp(`^${name} ·`) }).click();
     await expect.poll(() => css(page)).toContain(`color: var(${name});`);
-    await expect(preset).toBeFocused();
+    await expect(color).toBeFocused();
   }
 });
 
