@@ -59,7 +59,7 @@ import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { nativeComponentScopeSelection } from "./page-builder/native-component-selection";
-import { nativeElementMoveChoices, nativeElementMovePlan, nativeElementSiblingMove, type NativeElementMoveResult } from "./page-builder/native-move-choices";
+import { nativeElementSiblingMove } from "./page-builder/native-move-choices";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
@@ -2053,35 +2053,13 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
     });
   }
-  // An item of a card grid, or anything inside one: Move, Duplicate, Remove, Add card, Open page, Select card.
+  // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
+  // Only a whole section moves from the bar or the keyboard (Lex: "remove
+  // this on not the sections"), so a card's own move arrows are left out and
+  // no element move is offered here; the page structure still moves rows.
   if (cards && !isNativeSectionTag(selection.tag)) {
-    const items = cards.controls(selection, source);
-    controls.push(...items);
-    if (!onMove && items.some((control) => control.kind === "button" && control.icon === "duplicate"))
-      onMove = (direction) => { cards?.move(selection, direction); };
-  }
-  if (range && node && !selection.host && !onMove && !isNativeSectionTag(selection.tag)) {
-    const scope = draftScope(), epoch = generation, scopeKey = setupScope();
-    const proof = scope && editor.captureFileModelState(scope, path);
-    const applyMove = (result: NativeElementMoveResult) => {
-      if (!proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || currentPath !== path ||
-          lastNativeSelection?.path !== path || lastNativeSelection.node?.join(".") !== node.join(".") || nativeEffectiveSource(path) !== source) {
-        announce("The source or selection changed. Select the element again before moving it."); return;
-      }
-      if (result.status === "refused") { announce(result.error); return; }
-      if (result.status === "stayed") { announce("The element stayed in place."); return; }
-      applyNativeChange(path, source, [result.edit], result.selection, "Element moved");
-    };
-    onMove = direction => applyMove(nativeElementSiblingMove(source, node, direction));
-    for (const direction of ["up", "down"] as const) {
-      const result = nativeElementSiblingMove(source, node, direction);
-      controls.push({ kind: "button", icon: direction, label: `Move ${direction}`, disabled: result.status !== "moved",
-        title: result.status === "refused" ? result.error : result.status === "stayed" ? `Already at the ${direction === "up" ? "start" : "end"} of this container` : `Move ${direction}`,
-        onPress: () => applyMove(result) });
-    }
-    const choices = nativeElementMoveChoices(source, node);
-    if (choices.length) controls.push({ kind: "menu", label: "Move to", items: choices.map(choice => ({ label: choice.label,
-      onSelect: () => applyMove(nativeElementMovePlan(source, node, choice.destination)) })) });
+    controls.push(...cards.controls(selection, source).filter((control) =>
+      !(control.kind === "button" && (control.icon === "up" || control.icon === "down" || control.icon === "left" || control.icon === "right"))));
   }
   nativeElementMoveAction = onMove;
   // Edit component, Make component… (src/page-builder/components.ts).

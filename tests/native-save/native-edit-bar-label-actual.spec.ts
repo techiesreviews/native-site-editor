@@ -17,6 +17,13 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
 });
 
+// The bar never covers the page's sticky header (site-header sticks).
+async function clearOfHeader(page: Page) {
+  const header = (await frame(page).locator("site-header").boundingBox())!;
+  const box = (await bar(page).boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(header.y + header.height - 0.5);
+}
+
 async function labelAbove(page: Page) {
   const layout = await bar(page).evaluate((el) => {
     const label = el.querySelector(":scope > .edit-bar__label")!;
@@ -57,6 +64,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       const grip = bar(page).locator(".edit-bar__grip");
       await expect(grip).toBeVisible();
       await labelAbove(page);
+      await clearOfHeader(page);
       for (const move of ["Move up", "Move down"]) await expect(bar(page).getByRole("button", { name: move, exact: true })).toBeVisible();
       await grip.hover();
       if (shots) await page.screenshot({ path: `${shots}/actual-root-hover-${name}.png` });
@@ -88,6 +96,18 @@ test("section-hero with the code pane hidden and Style open", async ({ page }) =
   await bar(page).locator(".edit-bar__context").click();
   await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
   await labelAbove(page);
+  await clearOfHeader(page);
   if (shots) await page.screenshot({ path: `${shots}/actual-root-style-open.png` });
   console.log(`console errors (style-open): ${consoleErrors.length}`);
+});
+
+// The sticky header itself selected is not its own obstacle: its bar may
+// stand at the frame's top, still inside the frame.
+test("the selected sticky header is not kept clear of itself", async ({ page }) => {
+  await frame(page).locator("site-header").first().click({ position: { x: 5, y: 5 } });
+  await expect(bar(page)).toBeVisible();
+  const area = (await page.locator(".native-preview-frame").boundingBox())!;
+  const box = (await bar(page).boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(area.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
 });

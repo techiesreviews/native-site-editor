@@ -141,24 +141,22 @@ test("a card grid listing pages makes a new page and its card together, selected
   await expect(frame(page).locator("h1")).toHaveText("Oak & Ash");
 });
 
-test("a selected card moves left and right, duplicates and goes, and Card only adds one with no page", async ({ page, baseURL }) => {
+test("a selected card has no move arrows, duplicates and goes, and Card only adds one with no page", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const cards = frame(page).locator("card-project");
   await cards.nth(1).locator("h3[slot=title]").click();
   await expect(bar(page).getByRole("button", { name: "Select card" })).toBeVisible();
   await bar(page).getByRole("button", { name: "Select card" }).click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
-  await expect(bar(page).getByRole("button", { name: "Move right" })).toBeDisabled();
-  await bar(page).getByRole("button", { name: "Move left" }).click();
-  await expect(status(page)).toHaveText("Card moved left");
-  await expect(cards.locator("h3[slot=title]")).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
-  await expect(bar(page).getByRole("button", { name: "Move left" })).toBeDisabled();
+  // Only a whole section moves from the bar: a card has no move arrows.
+  for (const name of ["Move left", "Move right", "Move up", "Move down"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(cards.locator("h3[slot=title]")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
 
   await bar(page).getByRole("button", { name: "Duplicate" }).click();
-  await expect(cards.locator("h3[slot=title]")).toHaveText(["Harbour Lane Pottery", "Harbour Lane Pottery", "Fern & Kettle"]);
+  await expect(cards.locator("h3[slot=title]")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Harbour Lane Pottery"]);
   await bar(page).getByRole("button", { name: "Remove" }).click();
   await expect(status(page)).toHaveText("Card removed");
-  await expect(cards.locator("h3[slot=title]")).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  await expect(cards.locator("h3[slot=title]")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
 
   // Add card from the bar opens the same popover; Card only adds a placeholder card with no address.
   await bar(page).getByRole("button", { name: "Add card" }).click();
@@ -265,7 +263,7 @@ const nestedHome = `<!doctype html>
 </html>
 `;
 
-test("review: a card holding a grid of its own is its grid's card; Alt+arrows move it from the canvas; relative links count in the Pages tab", async ({ page, baseURL }) => {
+test("review: a card holding a grid of its own is its grid's card; Alt+arrows leave it in place; relative links count in the Pages tab", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await pasteInto(page, nestedHome);
   const cards = frame(page).locator("article.card");
@@ -277,10 +275,11 @@ test("review: a card holding a grid of its own is its grid's card; Alt+arrows mo
   await bar(page).getByRole("button", { name: "Add card" }).click();
   await expect(popover(page)).toBeVisible();
   await page.keyboard.press("Escape");
-  // Alt+Up pressed in the canvas moves the selected card.
+  // Alt+Up pressed in the canvas does not move a card: only sections move.
   await frame(page).locator("html").dispatchEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true });
-  await expect(status(page)).toHaveText("Card moved left");
-  await expect(cards.locator("h3")).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  await page.waitForTimeout(300);
+  await expect(status(page)).not.toHaveText("Card moved left");
+  await expect(cards.locator("h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
   // The Pages tab finds the grid through its relative links.
   await openPages(page);
   await item(page, "Work").hover();

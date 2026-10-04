@@ -196,8 +196,22 @@ test("a child of a section has no move controls; the section keeps them", async 
   await page.keyboard.press("Alt+ArrowUp");
   await page.waitForTimeout(300);
   expect(await order()).toEqual(before);
+  // Alt+Up with focus in the page does not move it either.
+  await frame(page).locator(".hero p.lead").click();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.waitForTimeout(300);
+  expect(await order()).toEqual(before);
   await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
   for (const name of ["Move up", "Move down"]) await expect(toolbar.getByRole("button", { name, exact: true })).toBeVisible();
+  // The section still moves with Alt+Down from the page, as one undo step.
+  const sections = () => frame(page).locator("main > section").evaluateAll((els) => els.map((el) => el.className));
+  const start = await sections();
+  await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).focus?.());
+  await toolbar.getByRole("button", { name: "Duplicate", exact: true }).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(sections).not.toEqual(start);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(sections).toEqual(start);
 });
 
 // The link's Address suggestions fit the popover: no sideways scroll, long
@@ -281,6 +295,8 @@ test("a long label is cut with an ellipsis and the space beside it clicks throug
   expect(long.width).toBeLessThanOrEqual(320.5);
   expect(long.height).toBeLessThanOrEqual(24.5);
   expect(long).toMatchObject({ cut: true, overflow: "ellipsis" });
+  // The name is a text box, not a flex box, so the ellipsis is drawn.
+  expect(await toolbar.locator(".edit-bar__label .edit-bar__kind").evaluate((el) => getComputedStyle(el).display)).toBe("block");
 });
 
 // Ctrl/Cmd+B, I and K still format from the bar.
@@ -311,4 +327,37 @@ test("Ctrl+B, Ctrl+I and Ctrl+K format from the bar", async ({ page }) => {
   await bar(page).getByRole("button", { name: "Bold", exact: true }).focus();
   await page.keyboard.press("ControlOrMeta+k");
   await expect(page.locator(".edit-bar__popover").getByRole("combobox", { name: "Address" })).toBeFocused();
+});
+
+// Roving focus skips a disabled control: the first section's Move up.
+test("roving focus from the grip skips the disabled Move up of the first section", async ({ page }) => {
+  await frame(page).locator("section.hero").evaluate((el) => (el as HTMLElement).click());
+  const toolbar = bar(page);
+  await expect(toolbar.getByRole("button", { name: "Move up", exact: true })).toBeDisabled();
+  await toolbar.getByRole("button", { name: "Drag to move" }).focus();
+  // Grip, then Label, then Move down: the disabled Move up between them is skipped.
+  await page.keyboard.press("ArrowRight");
+  await expect(toolbar.getByRole("button", { name: "Label", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(toolbar.getByRole("button", { name: "Move down", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(toolbar.getByRole("button", { name: "Label", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(toolbar.getByRole("button", { name: "Drag to move" })).toBeFocused();
+});
+
+// A card of a grid has no move arrows, and Alt+Right in the page does not move it.
+test("a card has no move arrows and the page's Alt+arrows leave it in place", async ({ page }) => {
+  const row = page.getByRole("treeitem", { name: "Section", exact: true });
+  await row.locator(".page-structure__toggle").click();
+  await page.getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
+  const toolbar = bar(page);
+  await expect(toolbar.getByRole("button", { name: "Duplicate", exact: true })).toBeVisible();
+  for (const name of ["Move up", "Move down", "Move left", "Move right", "Move to"]) await expect(toolbar.getByRole("button", { name, exact: true })).toHaveCount(0);
+  const cards = () => frame(page).locator("project-card").evaluateAll((els) => els.map((el) => el.textContent?.trim()));
+  const before = await cards();
+  await toolbar.getByRole("button", { name: "Duplicate", exact: true }).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.waitForTimeout(300);
+  expect(await cards()).toEqual(before);
 });

@@ -1034,6 +1034,45 @@
     return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
   }
 
+  // How far down the page's own sticky or fixed top bar (a site header)
+  // covers the viewport, so the editor's edit bar can stand clear of it.
+  // Only what touches the top edge counts: a few points just under it are
+  // probed (through component shadow roots) and their ancestors climbed to
+  // the first sticky/fixed one. The selected element's own bar, or one
+  // inside it, is not an obstacle. 0 when nothing covers the top.
+  function topInset(el) {
+    var width = document.documentElement.clientWidth;
+    var height = window.innerHeight;
+    var inset = 0;
+    [0.1, 0.5, 0.9].forEach(function (fraction) {
+      var x = width * fraction;
+      var hit = document.elementFromPoint(x, 1);
+      while (hit && hit.shadowRoot) {
+        var inner = hit.shadowRoot.elementFromPoint(x, 1);
+        if (!inner || inner === hit) break;
+        hit = inner;
+      }
+      for (var at = hit; at && at !== document.body && at !== document.documentElement; at = at.parentElement || (at.parentNode && at.parentNode.host)) {
+        var position = getComputedStyle(at).position;
+        if (position !== "sticky" && position !== "fixed") continue;
+        var box = at.getBoundingClientRect();
+        if (box.top <= 1 && at !== el && !composedContains(at, el) && !composedContains(el, at)) inset = Math.max(inset, box.bottom);
+        break;
+      }
+    });
+    return Math.max(0, Math.min(height, inset));
+  }
+  function composedContains(outer, inner) {
+    for (var at = inner; at; at = at.parentElement || (at.parentNode && at.parentNode.host)) if (at === outer) return true;
+    return false;
+  }
+  // The selected element's rectangle, with the top inset the bar keeps clear of.
+  function selectionRectOf(el) {
+    var rect = rectOf(el);
+    rect.inset = topInset(el);
+    return rect;
+  }
+
   // The selected element's frame-viewport rectangle, sent when it may have
   // moved (scroll, resize, render) and only when it actually changed.
   var rectFrame = 0;
@@ -1043,7 +1082,7 @@
     rectFrame = requestAnimationFrame(function () {
       rectFrame = 0;
       if (!selected || !selected.isConnected) { lastRect = ""; return; }
-      var rect = rectOf(selected);
+      var rect = selectionRectOf(selected);
       var key = JSON.stringify(rect);
       if (key === lastRect) return;
       lastRect = key;
@@ -1687,7 +1726,7 @@
       hostChain.push({ tag: owner.localName, selector: elementLocator(owner).selector, path: hostPath, node: hostNode, rect: rectOf(owner) });
     }
     if (hostChain.length) payload.hostChain = hostChain;
-    payload.rect = rectOf(el);
+    payload.rect = selectionRectOf(el);
     // Inside a component's template (or a template inside that): the page
     // element it renders in, which the Add panel inserts after.
     var outer = el;

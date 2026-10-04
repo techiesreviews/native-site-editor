@@ -29,7 +29,8 @@
   min-width: 0;
   height: 24px;
   padding: 0 2px;
-  border-radius: var(--radius) var(--radius) 0 0;
+  /* Square only where it meets the panel's square top-left corner. */
+  border-radius: var(--radius) var(--radius) var(--radius) 0;
   background: var(--panel-surface);
   box-shadow: var(--shadow-small);
   font-size: var(--type-small);
@@ -53,6 +54,7 @@
   flex: 0 1000 auto;
 }
 .edit-bar__label :is(.edit-bar__kind, .edit-bar__context-name) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -74,18 +76,30 @@
 .edit-bar__label > :is(button, .edit-bar__component-name):hover {
   background: color-mix(in oklch, currentColor 10%, transparent);
 }
+/* Names stay text boxes (not flex) so a long one ends in a drawn ellipsis;
+   the component mark sits inline before the text. */
 .edit-bar__label .edit-bar__kind--component,
 .edit-bar__label .edit-bar__component-name .edit-bar__kind,
 .edit-bar__label .edit-bar__grip .edit-bar__kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0;
   background: transparent;
   color: inherit;
 }
 .edit-bar__label > .edit-bar__grip {
   padding: 0 6px 0 2px;
+}
+.edit-bar__label > .edit-bar__grip.edit-bar__component-name {
+  cursor: grab;
+  padding: 4px 2px;
+}
+.edit-bar__label .edit-bar__kind > svg {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: -2px;
 }
 .edit-bar__label .edit-bar__component-edit {
   background: linear-gradient(to right, transparent, var(--component-surface) 35%);
@@ -547,7 +561,6 @@
   }
 }
 
-.edit-bar__grip.edit-bar__component-name { cursor:grab; padding:4px 2px; }
 
 
 /* The bar's groups (style, content, arrange) after the name: each wraps to

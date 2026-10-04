@@ -787,7 +787,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const rect = raw as Record<string, unknown>;
     const keys = ["top", "left", "width", "height", "bottom", "right"] as const;
     if (!keys.every((key) => typeof rect[key] === "number" && Number.isFinite(rect[key]))) return undefined;
-    return Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
+    const read = Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
+    // The page's own top bar over the viewport (src/components/edit-bar.ts):
+    // kept only when a finite, non-negative number.
+    if (typeof rect.inset === "number" && Number.isFinite(rect.inset) && rect.inset > 0) read.inset = rect.inset;
+    return read;
   }
   function readItemGrid(raw: unknown): ItemGridReport | null {
     if (!raw || typeof raw !== "object" || !site) return null;

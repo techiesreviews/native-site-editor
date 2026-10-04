@@ -18,6 +18,8 @@ export interface SelectionRect {
   height: number;
   bottom: number;
   right: number;
+  /** Height the page's own sticky/fixed top bar covers at the frame's top, kept clear by the edit bar. */
+  inset?: number;
 }
 
 export type EditBarControl =
@@ -121,15 +123,6 @@ const iconNames: Record<IconName, PhosphorName> = {
 };
 
 const arrangeIcons = new Set<IconName>(["up", "down", "left", "right", "add", "duplicate", "remove"]);
-const moveIcons = new Set<IconName>(["up", "down", "left", "right"]);
-
-// Only a whole section moves from the bar (its grip, arrows, Alt+Up/Down).
-// Any other selection drops its move controls here, so a heading or a card
-// inside a section never reads as something the bar moves.
-const isMoveControl = (control: EditBarControl) =>
-  control.kind === "button" && control.icon !== undefined && moveIcons.has(control.icon)
-  || control.kind === "menu" && control.label === "Move to";
-
 function icon(name: IconName) {
   return phosphorIcon(iconNames[name], 16, "edit-bar__icon");
 }
@@ -463,13 +456,17 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const gap = 8;
     // Clear of the selection and of the notes on it (its pins, Ask agent's note).
     const row = placeNote(rect, frameRect, frameLeft, frameTop);
+    // The page's sticky header is kept clear, unless it leaves no room for
+    // the bar at all (a tiny frame): then the frame's own top is used.
+    const covered = Math.min(rect.inset ?? 0, Math.max(0, frameRect.height - height - 8));
+    const ceiling = frameTop + covered + 4;
     const above = frameTop + Math.min(rect.top, row?.top ?? rect.top) - height - gap;
-    const below = frameTop + Math.max(rect.bottom, row?.bottom ?? rect.bottom) + gap;
+    const below = Math.max(ceiling, frameTop + Math.max(rect.bottom, row?.bottom ?? rect.bottom) + gap);
     let top = above;
     let side = "above";
-    if (above < frameTop + 4) {
+    if (above < ceiling) {
       if (below + height <= frameBottom - 4) { top = below; side = "below"; }
-      else { top = frameTop + 4; side = "pinned"; }
+      else { top = ceiling; side = "pinned"; }
     }
     bar.dataset.side = side;
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
@@ -817,8 +814,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (keptPrompt && note) note.control = keptPrompt;
     else closeNote(false);
     onFormat = model.onFormat;
-    onMove = model.draggable ? model.onMove : undefined;
-    const controls = model.draggable ? model.controls : model.controls.filter((control) => !isMoveControl(control));
+    onMove = model.onMove;
     // The label (chip and name) above the panel of controls.
     const label = node("div", "edit-bar__label");
     const panel = node("div", "edit-bar__controls");
@@ -871,7 +867,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       control.kind === "select" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
       : "content";
-    for (const control of controls) {
+    for (const control of model.controls) {
       const next = groupOf(control);
       if (next !== group) {
         // Each group wraps as one unit; its rule leads it, so a wrapped
