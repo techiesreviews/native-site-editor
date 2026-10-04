@@ -7123,7 +7123,7 @@ const agentSiteActions: AgentSiteActions = {
     editorModule.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
   },
   writeDraft: async (path, content, create) => {
-    if (!nativeSite && create) {
+    if (!nativeSite && !nativeEngaged && create) {
       const scope = draftScope(), repo = currentRepo, snap = snapshot;
       if (!scope || !repo || !snap) return "Open a repository first.";
       const epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
@@ -7132,7 +7132,7 @@ const agentSiteActions: AgentSiteActions = {
       const isCurrent = () => {
         const drafts = store.list(scope);
         return epoch === generation && key === setupScope() && currentRepo === repo && snapshot === snap &&
-          !nativeSite && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
+          !nativeSite && !nativeEngaged && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
       // Before a home page exists there is no mounted editor to anchor collection
