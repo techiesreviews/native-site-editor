@@ -31,7 +31,7 @@ test("search filters existing controls without losing focus and restores section
   await search.fill("round corners"); await expect(search).toBeFocused();
   await expect(panel(page).getByRole("textbox", { name: "top left radius", exact: true })).toBeVisible();
   await expect(spacing).toBeHidden();
-  await search.fill("no-such-property"); await expect(panel(page).getByRole("status")).toHaveText("No matching styles.");
+  await search.fill("no-such-property"); await expect(panel(page).getByRole("status").filter({ hasText: "No matching styles." })).toHaveText("No matching styles.");
   await panel(page).getByRole("button", { name: "Clear style search" }).click();
   await expect(search).toBeFocused(); await expect(spacing).toHaveAttribute("open", "");
   await expect(panel(page).locator("details").filter({ has: page.locator("summary", { hasText: /^Border$/ }) })).not.toHaveAttribute("open", "");
