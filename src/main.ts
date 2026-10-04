@@ -446,7 +446,8 @@ function mountWorkspace() {
     pageSource: (path) => nativeEffectiveSource(path),
     label: (item) => {
       const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
-      return { ...structureLabel(item, component), component, generated: nativeNodeGenerated(currentPath, item.node) };
+      const ownership = nativeNodeOwnership(currentPath, item.node);
+      return { ...structureLabel(item, component), component, generated: ownership === "generated", ownershipUnknown: ownership === "unknown" };
     },
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
     // Generated cards offer no slot or attribute fields: their HTML is rebuilt from page data.
@@ -2125,14 +2126,20 @@ function withoutCollectionRecipes<T extends { paintedSource?: string; items: Nat
   return { ...structure, items: keep(structure.items) };
 }
 
-function nativeNodeGenerated(path: string | undefined, node: readonly number[]) {
+// "generated": proven inside a collection's cards. "unknown": the editor's JSON
+// cannot be read or its collections located, so ownership cannot be checked.
+function nativeNodeOwnership(path: string | undefined, node: readonly number[]): "plain" | "generated" | "unknown" {
   const source = path === undefined ? undefined : nativeSources()[path];
   const range = source === undefined ? undefined : locateNativeElementRange(source, [...node]);
-  if (!range) return false;
-  if (generatedRegionAt(source!, range.tag.start)) return true;
-  // Cards a JSON collection made; while the JSON cannot be read, nothing on the page is offered as plain.
-  try { return Boolean(documentEditTouches(nativeDocumentRegions(path!, source!), [{ start: range.tag.start, end: range.tag.start }])); }
-  catch { return /\.html?$/i.test(path!); }
+  if (!range) return "plain";
+  if (generatedRegionAt(source!, range.tag.start)) return "generated";
+  try { return documentEditTouches(nativeDocumentRegions(path!, source!), [{ start: range.tag.start, end: range.tag.start }]) ? "generated" : "plain"; }
+  catch { return /\.html?$/i.test(path!) ? "unknown" : "plain"; }
+}
+
+// Cards a JSON collection made; while the JSON cannot be read, nothing on the page is offered as plain.
+function nativeNodeGenerated(path: string | undefined, node: readonly number[]) {
+  return nativeNodeOwnership(path, node) !== "plain";
 }
 
 // Component, Structure and card tools write through this view of the editor:
