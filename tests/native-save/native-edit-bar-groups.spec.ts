@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The edit bar reads as groups (name, style, content, arrange: moves, Move to,
 // duplicate, delete, add) split by thin
@@ -58,32 +58,50 @@ test("the bar's controls sit in groups split by decorative rules", async ({ page
   }
 });
 
+const editor = (page: Page) => ({
+  source: () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!),
+  undo: async () => expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true),
+});
+
+// An ordinary section: a paragraph with a real link, a sibling, and a second
+// section to move into.
+async function ordinaryMain(page: Page) {
+  await page.evaluate(async () => {
+    const code = await import("/src/components/code-editor.ts");
+    const before = code.getMountedSource("index.html")!;
+    const next = before.replace(/(<main[^>]*>)[\s\S]*?<\/main>/, '$1\n<section id="first"><p id="moving">Moving <a id="lnk" href="/">home link</a> text</p><p id="second">Second paragraph</p></section>\n<section id="target"><p>Target paragraph</p></section>\n</main>');
+    code.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: next });
+  });
+}
+
 test("in a 340px canvas between Structure and Style, groups wrap whole and keep keyboard order", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 900, height: 1000 });
   await page.goto(`${baseURL}/${nativeHash}`);
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await ordinaryMain(page);
+  await expect(frame.locator("#moving")).toBeVisible();
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
   await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
   const canvas = (await page.locator(".native-preview-frame").boundingBox())!;
   expect(canvas.width).toBeLessThan(400);
   const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
+  const { source, undo } = editor(page);
   let wrapped = 0;
 
-  for (const target of [frame.locator(".hero p").first(), frame.locator(".hero h1")]) {
-    await target.click({ position: { x: 4, y: 4 } });
+  async function check(mustShare: [string, string][]) {
     await expect(bar).toBeVisible();
     const layout = await groupLayout(bar);
     expectRulesAttached(layout);
+    if (new Set(layout.map((entry) => entry.top)).size > 1) wrapped++;
     const box = (await bar.boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
-    if (new Set(layout.map((entry) => entry.top)).size > 1) wrapped++;
     const labels = layout.map((entry) => entry.label);
-    if (labels.includes("Bold") && labels.includes("Italic")) expect(sameRow(layout, "Bold", "Italic")).toBe(true);
-    if (labels.includes("Move down") && labels.includes("Move to")) expect(sameRow(layout, "Move down", "Move to")).toBe(true);
-    if (labels.includes("Move up") && labels.includes("Move down")) expect(sameRow(layout, "Move up", "Move down")).toBe(true);
-
-    // Tab walks the controls in DOM order across group wrappers.
+    for (const [a, b] of mustShare) {
+      expect(labels).toContain(a); expect(labels).toContain(b);
+      expect(sameRow(layout, a, b), `${a} beside ${b}`).toBe(true);
+    }
+    // Tab walks the enabled controls in DOM order across group wrappers.
     const controls = await bar.evaluate((el) => [...el.querySelectorAll<HTMLElement>("button:not([disabled]), select")].map((c) => c.getAttribute("aria-label") ?? c.textContent));
     await bar.locator("button:not([disabled]), select").first().focus();
     const walked = [];
@@ -93,15 +111,32 @@ test("in a 340px canvas between Structure and Style, groups wrap whole and keep 
     }
     expect(walked).toEqual(controls);
   }
+
+  // The link: Bold, Italic and its Address stay one content group.
+  await frame.locator("#lnk").click();
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Link");
+  await check([["Bold", "Italic"], ["Italic", "Address"]]);
+
+  // The paragraph: Bold/Italic together, Move down beside Move to.
+  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await check([["Bold", "Italic"], ["Move up", "Move down"], ["Move down", "Move to"]]);
   // The narrow canvas really makes the bar wrap, so the checks above bite.
   expect(wrapped).toBeGreaterThan(0);
-  // Bold activates from the keyboard inside its group.
+
+  // Keyboard Bold changes source; one Undo restores it exactly.
+  const before = await source();
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
-  if (await bold.count()) {
-    const before = await bold.getAttribute("aria-pressed");
-    await bold.focus(); await bold.press("Enter");
-    await expect(bold).not.toHaveAttribute("aria-pressed", before ?? "");
-  }
+  await bold.focus(); await bold.press("Enter");
+  await expect.poll(source).not.toBe(before);
+  await undo(); await expect.poll(source).toBe(before);
+
+  // Keyboard Move down moves in source order; one Undo restores it exactly.
+  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
+  const down = bar.getByRole("button", { name: "Move down", exact: true });
+  await down.focus(); await down.press("Enter");
+  await expect(frame.locator("#first > p").first()).toHaveAttribute("id", "second");
+  await undo(); await expect.poll(source).toBe(before);
 });
 
 test("Move down and Move to share the arrange group and both still work", async ({ page, baseURL }) => {
