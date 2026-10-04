@@ -2,15 +2,20 @@
 // (<meta name="field:slug">) into editor-only JSON (.editor/page-builder.json,
 // pages[path].fields). Not wired into the host yet. Nothing here applies,
 // fetches or renders; callers receive NativeOperation-shaped plans.
-import { startTags } from "../../shared/html-source";
-import { startTagAttributes } from "./component-model";
+import { startTags, type StartTag } from "../../shared/html-source";
+import { nativePageRoute } from "../../shared/native-routes";
+import { descendants, parseSource, startTagAttributes } from "./component-model";
 import { builtinFields, fieldName } from "./collection-fields";
+import { decodeHtmlEntities } from "./html-entities";
 import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder-document";
 import { headTags } from "./site-head";
 
 export type NativePageFieldErrorCode =
   | "native-page-fields/malformed-source"
   | "native-page-fields/multiple-head"
+  | "native-page-fields/outside-head"
+  | "native-page-fields/invalid-path"
+  | "native-page-fields/file-graph"
   | "native-page-fields/duplicate-meta"
   | "native-page-fields/invalid-field"
   | "native-page-fields/reserved-field"
@@ -31,7 +36,7 @@ export interface EditorFieldMeta { field: string; value: string; start: number; 
 export interface NativePageFieldPlan {
   expectedSources: Map<string, string | undefined>;
   edits: Map<string, string>;
-  /** Paths the operation reads or writes, for file-graph guards. */
+  /** The whole file graph this plan was made against, for file-graph guards. */
   expectedFiles: string[];
   /** Fields moved into JSON (null-prototype map). */
   fields: Record<string, string>;
@@ -51,19 +56,30 @@ export function assertCustomFieldName(field: string): void {
   if (!fieldName.test(field)) fail("native-page-fields/invalid-field", `Invalid custom field name: ${field}.`);
 }
 
-/** Reads explicit editor-owned field: metas in the single <head>. Refuses ambiguity. */
+/** Decoded attributes, read like readPageFields (full entity table, attribute mode). */
+function decodedAttributes(source: string, tag: StartTag): { name: string; value: string }[] {
+  return startTagAttributes(source, tag).map((item) => {
+    const raw = source.slice(item.start, item.end);
+    const match = /^[\t\n\f\r ]+[^\t\n\f\r "'>\/=]+(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r "'=<>`]+)))?/.exec(raw);
+    return { name: item.name, value: decodeHtmlEntities(match?.[1] ?? match?.[2] ?? match?.[3] ?? "", true) };
+  });
+}
+
+/** Reads explicit editor-owned field: metas, direct children of the single <head>. Refuses ambiguity. */
 export function readEditorFieldMetas(source: string): EditorFieldMeta[] {
-  const heads = startTags(source).filter((tag) => tag.name === "head");
-  if (heads.length > 1) fail("native-page-fields/multiple-head", "This page has more than one <head>.");
-  let tags;
-  try { tags = headTags(source).tags; } catch { fail("native-page-fields/malformed-source", "This page needs one complete <head>."); }
+  const all = startTags(source);
+  if (all.filter((tag) => tag.name === "head").length > 1) fail("native-page-fields/multiple-head", "This page has more than one <head>.");
+  let end: number;
+  try { end = headTags(source).end; } catch { fail("native-page-fields/malformed-source", "This page needs one complete <head>."); }
+  if (all.some((tag) => tag.start < end && tag.end > end)) fail("native-page-fields/malformed-source", "A tag runs past </head>.");
   const metas: EditorFieldMeta[] = [];
   const seen = new Set<string>();
-  for (const tag of tags) {
-    if (tag.name !== "meta") continue;
-    const attributes = startTagAttributes(source, tag);
+  for (const element of descendants(parseSource(source))) {
+    if (element.name !== "meta") continue;
+    const attributes = decodedAttributes(source, element.tag);
     const names = attributes.filter((item) => item.name === "name");
     if (!names.some((item) => item.value.startsWith(prefix))) continue;
+    if (element.parent?.name !== "head") fail("native-page-fields/outside-head", "A field meta is outside the page <head> (body, template or noscript).");
     const contents = attributes.filter((item) => item.name === "content");
     if (names.length !== 1 || contents.length > 1 || attributes.some((item) => item.name === "property"))
       fail("native-page-fields/duplicate-meta", "A field meta has ambiguous attributes.");
@@ -71,9 +87,23 @@ export function readEditorFieldMetas(source: string): EditorFieldMeta[] {
     assertCustomFieldName(field);
     if (seen.has(field)) fail("native-page-fields/duplicate-meta", `Field ${field} appears more than once.`);
     seen.add(field);
-    metas.push({ field, value: contents[0]?.value ?? "", start: tag.start, end: tag.end });
+    metas.push({ field, value: contents[0]?.value ?? "", start: element.tag.start, end: element.tag.end });
   }
   return metas;
+}
+
+function assertPagePath(pagePath: string): void {
+  if (typeof pagePath !== "string" || pagePath.split("/").some((part) => unsafeKeys.has(part)) || nativePageRoute(pagePath) === undefined)
+    fail("native-page-fields/invalid-path", "Use a safe native HTML page path.");
+}
+/** The sidecar text must match the file graph: present means loaded, absent means missing. */
+function assertGraph(files: readonly string[], pagePath: string, sidecarText: string | undefined): string[] {
+  if (!Array.isArray(files)) fail("native-page-fields/file-graph", "Pass the current file graph.");
+  const graph = new Set(files);
+  if (!graph.has(pagePath)) fail("native-page-fields/file-graph", "The page is not in the current file graph.");
+  if (sidecarText === undefined && graph.has(EDITOR_PAGE_BUILDER_PATH)) fail("native-page-fields/file-graph", `Load ${EDITOR_PAGE_BUILDER_PATH} first.`);
+  if (sidecarText !== undefined && !graph.has(EDITOR_PAGE_BUILDER_PATH)) fail("native-page-fields/file-graph", "Editor JSON text does not match the file graph.");
+  return [...graph].sort();
 }
 
 function readSidecar(text: string | undefined): PageBuilderDocument {
@@ -90,15 +120,16 @@ function pageFields(document: PageBuilderDocument, pagePath: string): Record<str
   return Object.hasOwn(document.pages, pagePath) ? document.pages[pagePath].fields : undefined;
 }
 function withFields(document: PageBuilderDocument, pagePath: string, fields: Record<string, string>): PageBuilderDocument {
-  if (unsafeKeys.has(pagePath)) fail("native-page-fields/unsafe-key", "Unsafe page path.");
   const page = Object.hasOwn(document.pages, pagePath) ? document.pages[pagePath] : {};
   const merged = { ...(page.fields ?? {}), ...fields };
   return { ...document, pages: { ...document.pages, [pagePath]: { ...page, fields: merged } } };
 }
 
 /** JSON-only write of one custom page field. Same value is a noop (no Undo entry). */
-export function planPageFieldJsonWrite(sidecarText: string | undefined, pagePath: string, field: string, value: string): NativePageFieldResult {
+export function planPageFieldJsonWrite(files: readonly string[], sidecarText: string | undefined, pagePath: string, field: string, value: string): NativePageFieldResult {
   assertCustomFieldName(field);
+  assertPagePath(pagePath);
+  const expectedFiles = assertGraph(files, pagePath, sidecarText);
   if (typeof value !== "string") fail("native-page-fields/invalid-field", "Field values must be strings.");
   const document = readSidecar(sidecarText);
   const current = pageFields(document, pagePath);
@@ -110,7 +141,7 @@ export function planPageFieldJsonWrite(sidecarText: string | undefined, pagePath
     noop: false,
     expectedSources: new Map([[EDITOR_PAGE_BUILDER_PATH, sidecarText]]),
     edits: new Map([[EDITOR_PAGE_BUILDER_PATH, text]]),
-    expectedFiles: [EDITOR_PAGE_BUILDER_PATH],
+    expectedFiles,
     fields,
   };
 }
@@ -128,30 +159,43 @@ function removalRange(source: string, start: number, end: number): [number, numb
 }
 
 export interface LegacyPageFieldMigrationInput {
+  /** Every path in the current file graph, loaded or not. */
+  files: readonly string[];
   pagePath: string;
   source: string;
   sidecarText?: string;
-  /** Explicit values the caller accepts over conflicting JSON, by field. */
+  /** Explicit choices for current conflicts only, by field: the HTML or the JSON value. */
   expectedOverrides?: Record<string, string>;
 }
 
 /** Moves field: metas into JSON and deletes only those metas. Conflicts refuse the whole plan. */
 export function planLegacyPageFieldMigration(input: LegacyPageFieldMigrationInput): NativePageFieldResult {
   const { pagePath, source, sidecarText } = input;
+  assertPagePath(pagePath);
+  const expectedFiles = assertGraph(input.files, pagePath, sidecarText);
   const metas = readEditorFieldMetas(source);
-  if (!metas.length) return { noop: true };
+  const overrides = input.expectedOverrides ?? {};
+  if (!metas.length) {
+    if (Object.keys(overrides).length) fail("native-page-fields/conflict", "An override names a field that is not in conflict.");
+    return { noop: true };
+  }
   const document = readSidecar(sidecarText);
   const current = pageFields(document, pagePath);
-  const overrides = input.expectedOverrides ?? {};
   const fields = emptyMap();
+  const conflicts = new Map<string, { html: string; json: string }>();
   for (const meta of metas) {
     const existing = current && Object.hasOwn(current, meta.field) ? current[meta.field] : undefined;
-    if (existing !== undefined && existing !== meta.value) {
-      const accepted = Object.hasOwn(overrides, meta.field) ? overrides[meta.field] : undefined;
-      if (accepted === meta.value) fields[meta.field] = meta.value;
-      else if (accepted === existing) continue;
-      else fail("native-page-fields/conflict", `Field ${meta.field} differs between the page and editor JSON.`);
-    } else fields[meta.field] = meta.value;
+    if (existing !== undefined && existing !== meta.value) conflicts.set(meta.field, { html: meta.value, json: existing });
+    else fields[meta.field] = meta.value;
+  }
+  for (const key of Object.keys(overrides)) {
+    const conflict = conflicts.get(key);
+    if (!conflict || (overrides[key] !== conflict.html && overrides[key] !== conflict.json))
+      fail("native-page-fields/conflict", `The choice for ${key} does not match a current conflict.`);
+  }
+  for (const [field, conflict] of conflicts) {
+    if (!Object.hasOwn(overrides, field)) fail("native-page-fields/conflict", `Field ${field} differs between the page and editor JSON.`);
+    if (overrides[field] === conflict.html) fields[field] = conflict.html;
   }
   let html = source;
   for (const meta of [...metas].reverse()) {
@@ -165,7 +209,7 @@ export function planLegacyPageFieldMigration(input: LegacyPageFieldMigrationInpu
     noop: false,
     expectedSources: new Map<string, string | undefined>([[pagePath, source], [EDITOR_PAGE_BUILDER_PATH, sidecarText]]),
     edits,
-    expectedFiles: [pagePath, EDITOR_PAGE_BUILDER_PATH],
+    expectedFiles,
     fields,
   };
 }
