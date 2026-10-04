@@ -37,10 +37,8 @@ const sides = ["top", "right", "bottom", "left"];
 export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLElement) {
   const root = node("aside", "style-panel");
   root.setAttribute("aria-label", "Style panel");
-  const opener = button("Style", () => resize.expand(), "style-panel__opener");
-  opener.setAttribute("aria-label", "Open Style panel");
   const body = node("div", "style-panel__body");
-  root.append(opener, body);
+  root.append(body);
   const selectionHost = node("div", "style-panel__selection");
   const selectionPanel = handlers.selectionPanel?.(selectionHost);
   let collapsed = true, global = false, state: StyleState = "", key = "", busy = false;
@@ -103,7 +101,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (pending && !interacting && !restoringWidgetFocus && !root.contains(document.activeElement)) { pending = false; render(); }
   }));
   root.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { resize.collapse(); opener.focus(); }
+    // Collapsing moves focus to the resize separator, the only control left reachable.
+    if (event.key === "Escape") resize.collapse();
     const modifier = event.ctrlKey || event.metaKey;
     const direction = modifier && event.key.toLowerCase() === "z" ? (event.shiftKey ? "redo" : "undo")
       : event.ctrlKey && event.key.toLowerCase() === "y" ? "redo" : undefined;
@@ -408,7 +407,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   }
   function applyFold() {
     root.classList.toggle("is-collapsed", collapsed); root.parentElement?.classList.toggle("has-style-panel", !collapsed);
-    opener.hidden = !collapsed; opener.setAttribute("aria-expanded", String(!collapsed)); body.hidden = collapsed;
+    body.hidden = collapsed;
   }
   let pendingWidgetRestore: ((final?: boolean) => void) | undefined;
   // The context the mounted focal widget was built from, and a focused focal
@@ -451,7 +450,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     controlSnapshots.clear();
     body.replaceChildren();
     const header = node("div", "style-panel__header"); header.append(node("strong", "", "Style"));
-    const close = button("×", () => { resize.collapse(); opener.focus(); }, "style-panel__close"); close.setAttribute("aria-label", "Collapse Style panel"); header.append(close); body.append(header);
+    const close = button("×", () => resize.collapse(), "style-panel__close"); close.setAttribute("aria-label", "Collapse Style panel"); header.append(close); body.append(header);
     const tabs = node("div", "style-panel__tabs");
     for (const [label, value] of [["Element", false], ["Global styles", true]] as const) {
       const tab = button(label, () => { global = value; render(); }, ""); tab.setAttribute("aria-pressed", String(global === value)); tabs.append(tab);

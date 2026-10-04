@@ -67,7 +67,10 @@ for (const width of [1440, 390]) {
     await style(page).click();
     await expect.poll(() => metric(dock, "width")).toBe(0);
     await expect(dock.locator(".style-panel__body")).toBeHidden();
-    await expect(dock.locator(".style-panel__opener")).toBeHidden();
+    // Collapsed, the dock exposes no hidden controls: its resize separator is the only one reachable.
+    await expect(dock.getByRole("button")).toHaveCount(0);
+    await expect(dock.getByRole("textbox")).toHaveCount(0);
+    await expect(dock.getByRole("separator")).toHaveCount(1);
     await gripInside(page, style(page));
     await style(page).press("Tab");
     expect(await page.evaluate(() => document.activeElement?.closest("#style-dock")?.className ?? "")).not.toContain("style-panel");

@@ -125,7 +125,7 @@ test("a host that returns without changing source rejects widget acceptance and 
     const view=createStylePanel({context:()=>({key:"retry",tag:"div",className:"item",classes:["item"],target:{path:"test.css",selector:".item",start:0},files:{"test.css":source},computed:{display:"grid"}}),
       async write(properties){if(failNext){failNext=false;return;}source=writeCssProperties(source,{selector:".item",baseStart:0},properties);if(raceNext){raceNext=false;source+="\n.external { color:red; }";view.update();await Promise.resolve();}},
       variable:async()=>{},selectClass:()=>{},addClass:async()=>{},showCode:async()=>{},history:()=>{},error(message){host.dataset.error=message;}},host);
-    host.append(view.root);(view.root.querySelector(".style-panel__opener") as HTMLButtonElement).click();
+    host.append(view.root);{ const grip = view.root.querySelector<HTMLElement>('[role="separator"]')!; grip.focus(); grip.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); if (grip.getAttribute("aria-valuenow") === "0") throw new Error("The Style panel did not open from its separator."); }
     Object.assign(window,{styleRetry:{source:()=>source,fail:()=>{failNext=true;},race:()=>{raceNext=true;},dispose:()=>{view.dispose();host.remove();}}});
   });
   const panel=page.getByRole("complementary",{name:"Style panel"}).last();await panel.getByRole("searchbox",{name:"Search styles"}).fill("grid");

@@ -7,7 +7,6 @@ main.has-preview > .code-split { grid-column: 1 / -1; }
 main.has-preview > .style-panel { display: flex; }
 .style-panel__body { min-width: 0; width: 100%; display: flex; flex-direction: column; min-height: 0; }
 .style-panel [hidden] { display: none; }
-.style-panel__opener { align-self: flex-start; writing-mode: vertical-rl; min-width: 0; width: 100%; padding: 12px 6px; }
 .style-panel button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: var(--radius); cursor: pointer; min-height: var(--size-compact); }
 .style-panel button:hover { background: var(--hover); }
 .style-panel button[aria-pressed="true"] { background: var(--current); font-weight: 600; }

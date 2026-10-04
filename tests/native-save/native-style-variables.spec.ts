@@ -141,7 +141,7 @@ test("without a workspace Style does not suppress the browser context menu", asy
     const workspace = document.createElement("main"); workspace.className = "has-preview"; workspace.style.height = "500px"; document.body.append(workspace);
     const context = { key: "native-a", className: "a", classes: ["a"], files: { "site.css": ".a {}" }, computed: {}, target: { path: "site.css", selector: ".a" } };
     const view = createStylePanel({ context: () => context, write: async () => {}, variable: async () => {}, addClass: async () => {}, selectClass: () => {}, showCode: async () => {}, history: () => {}, error: () => {} }, workspace);
-    workspace.append(view.root); view.root.querySelector<HTMLButtonElement>(".style-panel__opener")!.click();
+    workspace.append(view.root); { const grip = view.root.querySelector<HTMLElement>('[role="separator"]')!; grip.focus(); grip.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); if (grip.getAttribute("aria-valuenow") === "0") throw new Error("The Style panel did not open from its separator."); }
     const input = view.root.querySelector<HTMLInputElement>('[data-property="color"]')!;
     const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); input.dispatchEvent(event);
     const prevented = event.defaultPrevented; view.dispose(); workspace.remove(); return prevented;
@@ -157,7 +157,7 @@ test("ordinary style field keydown does not request the variable workspace", asy
     const context = {key:"test",tag:"p",className:"test",classes:["test"],target:{path:"test.css",selector:".test",start:0},files:{"test.css":".test { color:red; }"},computed:{},get workspace(){ workspaceReads++; return undefined; }};
     const host = document.createElement("main"); document.body.append(host);
     const view = createStylePanel({context:()=>context,write:async()=>{},variable:async()=>{},selectClass:()=>{},addClass:async()=>{},showCode:async()=>{},history:()=>{},error:()=>{}},host);
-    host.append(view.root); (view.root.querySelector('.style-panel__opener') as HTMLButtonElement).click();
+    host.append(view.root); { const grip = view.root.querySelector<HTMLElement>('[role="separator"]')!; grip.focus(); grip.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); if (grip.getAttribute("aria-valuenow") === "0") throw new Error("The Style panel did not open from its separator."); }
     workspaceReads=0;
     view.root.querySelector('[data-property="margin-top"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"a",bubbles:true}));
     view.dispose();host.remove(); return workspaceReads;

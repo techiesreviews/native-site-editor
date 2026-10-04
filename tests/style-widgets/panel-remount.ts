@@ -1,5 +1,6 @@
 // The real Style panel with a controlled image-asset boundary: focalAsset
-// resolves only when the test says so, and writes are recorded, not applied.
+// resolves only when the test says so. Each write is recorded, then applied to
+// the harness CSS the way a host would apply it.
 import { createStylePanel, type StylePanelContext } from '../../src/components/style-panel';
 
 const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 200;

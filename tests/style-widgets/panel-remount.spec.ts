@@ -2,8 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { showStylePanel } from '../native-save/style-panel-controls';
 
 // The real Style panel (createStylePanel) on a harness page whose image-asset
-// boundary (focalAsset) resolves only on request and whose writes are only
-// recorded: this proves the panel's remount rules, not any host or network.
+// boundary (focalAsset) resolves only on request. Each write is recorded and
+// then applied to the harness CSS, as a host would apply it. This proves the
+// panel's remount rules, not any host or network behaviour.
 type Write = { properties: Record<string, string | null>; state: string; key?: string; revision?: string; source?: string };
 declare global { interface Window { panel: { writes: Write[]; errors: string[]; pending(): string[]; resolveAll(): void; bumpAsset(revision: string): void; setPosition(position: string): void; selectCard(): void } } }
 const x = (page: Page) => page.getByLabel('X (%)', { exact: true });

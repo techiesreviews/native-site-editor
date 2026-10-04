@@ -25,7 +25,7 @@ test.beforeEach(async ({ page, baseURL }) => {
       variable: async () => {}, selectClass: () => {}, addClass: async () => {},
       showCode: async () => {}, error: message => { host.dataset.error = message; },
     }, host);
-    host.append(view.root); (view.root.querySelector(".style-panel__opener") as HTMLButtonElement).click();
+    host.append(view.root); { const grip = view.root.querySelector<HTMLElement>('[role="separator"]')!; grip.focus(); grip.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); if (grip.getAttribute("aria-valuenow") === "0") throw new Error("The Style panel did not open from its separator."); }
     Object.assign(window, { retry: {
       source: () => source, writes: () => writes,
       historyRace: () => { historyRace = true; },

@@ -92,8 +92,9 @@ test("linked box sides and pixel scrub each commit one undo step", async ({ page
   await expect(frame(page).locator(".lead")).toHaveCSS("padding-left", "12px");
 });
 
-test("panel uses theme tokens in light and dark; collapses with Escape", async ({ page, baseURL }) => {
+test("panel uses theme tokens in light and dark; Escape and Collapse hand focus to the separator, Enter restores the width", async ({ page, baseURL }) => {
   await open(page, baseURL); await select(page);
+  const width = await grip(page).getAttribute("aria-valuenow");
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
     await page.screenshot({ path: `.scratch/style/panel-${colorScheme}.png` });
@@ -103,6 +104,20 @@ test("panel uses theme tokens in light and dark; collapses with Escape", async (
   await expect(grip(page)).toBeFocused();
   await expect(grip(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).not.toBeVisible();
+  // Collapsed, the dock exposes nothing but its separator.
+  await expect(panel(page).getByRole("button")).toHaveCount(0);
+  // Enter on the focused separator restores the last width and the same fields.
+  await page.keyboard.press("Enter");
+  await expect(grip(page)).toHaveAttribute("aria-valuenow", width!);
+  await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).toBeVisible();
+  // The header's Collapse button behaves the same.
+  await panel(page).getByRole("button", { name: "Collapse Style panel", exact: true }).click();
+  await expect(grip(page)).toBeFocused();
+  await expect(grip(page)).toHaveAttribute("aria-valuenow", "0");
+  await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).not.toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(grip(page)).toHaveAttribute("aria-valuenow", width!);
+  await expect(panel(page).getByRole("textbox", { name: "Padding top", exact: true })).toBeVisible();
 });
 
 test("transform fields write plain CSS in the selected media and state scope", async ({ page, baseURL }) => {
