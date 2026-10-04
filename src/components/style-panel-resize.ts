@@ -14,7 +14,10 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
   let requested = saved === 0 || saved >= 160 ? saved : 0;
   let last = savedLast >= 160 ? savedLast : requested || 280;
   let width = 0, disposed = false, drag: { x: number; width: number } | undefined;
-  const maximum = () => Math.max(0, Math.min(560, workspace.clientWidth - Math.min(360, workspace.clientWidth * .4)));
+  // Below this canvas width an open dock would squeeze the page into a sliver,
+  // so Style floats over the canvas as a drawer from the same right edge.
+  const overlayBelow = 560, overlay = () => workspace.clientWidth < overlayBelow;
+  const maximum = () => Math.max(0, Math.min(560, overlay() ? workspace.clientWidth - 48 : workspace.clientWidth - Math.min(360, workspace.clientWidth * .4)));
   const minimum = () => Math.min(160, maximum());
   const apply = (value: number, retain = true) => {
     if (disposed) return;
@@ -28,6 +31,7 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
       if (!width) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
     }
     workspace.classList.toggle("has-style-panel", width > 0);
+    workspace.classList.toggle("style-panel-overlay", overlay());
     handle.classList.toggle("is-collapsed", width === 0);
     handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(Math.round(maximum())));
     handle.setAttribute("aria-valuenow", String(width));
@@ -52,6 +56,10 @@ export function mountStylePanelResize(workspace: HTMLElement, panel: HTMLElement
     event.preventDefault();
     if (!values[event.key]) collapse(); else { apply(values[event.key]); last = width; save(); }
   });
+  panel.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !width || !overlay() || event.defaultPrevented || event.target === handle) return;
+    event.preventDefault(); collapse(); handle.focus();
+  });
   const observer = new ResizeObserver(() => apply(requested, false)); observer.observe(workspace); apply(requested);
-  return { collapse, expand, toggle, dispose() { disposed = true; observer.disconnect(); handle.remove(); for (const child of panel.children) { if (child instanceof HTMLElement) { child.inert = false; child.removeAttribute("aria-hidden"); } } workspace.classList.remove("style-panel-resizing", "has-style-panel"); workspace.style.removeProperty("--style-panel-width"); } };
+  return { collapse, expand, toggle, dispose() { disposed = true; observer.disconnect(); handle.remove(); for (const child of panel.children) { if (child instanceof HTMLElement) { child.inert = false; child.removeAttribute("aria-hidden"); } } workspace.classList.remove("style-panel-resizing", "has-style-panel", "style-panel-overlay"); workspace.style.removeProperty("--style-panel-width"); } };
 }

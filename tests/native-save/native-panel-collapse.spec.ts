@@ -134,12 +134,19 @@ test("a narrow clamped Style width retains its requested desktop restoration wid
   await load(page, baseURL);
   await style(page).click();
   await expect(style(page)).toHaveAttribute("aria-valuenow", "280");
+  await style(page).press("End");
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "560");
   await page.setViewportSize({ width: 390, height: 1000 });
-  await expect(style(page)).toHaveAttribute("aria-valuenow", "234");
-  await style(page).click();
+  // Narrow canvases float Style as a drawer clamped short of the canvas edge.
+  const room = await page.locator("#main").evaluate(element => element.clientWidth - 48);
+  await expect(style(page)).toHaveAttribute("aria-valuenow", String(room));
+  expect(await metric(page.locator(".preview-pane"), "width")).toBeGreaterThanOrEqual(await metric(page.locator("#main"), "width") - 1);
+  await page.locator("#style-dock .style-panel__body").press("Escape");
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "0");
+  await expect(style(page)).toBeFocused();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await style(page).click();
-  await expect(style(page)).toHaveAttribute("aria-valuenow", "280");
+  await expect(style(page)).toHaveAttribute("aria-valuenow", "560");
 });
 
 

@@ -108,14 +108,16 @@ test("Style splitter drags, folds, restores and persists one width through keybo
   await handle.press("End"); await expect(handle).toHaveAttribute("aria-valuenow", await handle.getAttribute("aria-valuemax") ?? "");
 });
 
-test("narrow widths clamp the dock and preserve canvas space without page overflow in both themes", async ({ page, baseURL }) => {
+test("narrow widths float the dock over a full-width canvas without page overflow in both themes", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await open(page, baseURL); await select(page);
   const handle = page.getByRole("separator", { name: "Resize Style panel", exact: true });
   await handle.press("End");
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
     const sizes = await page.locator("#main").evaluate(element => ({ main: element.clientWidth, panel: element.querySelector(".style-panel")!.getBoundingClientRect().width, preview: element.querySelector(".preview-pane")!.getBoundingClientRect().width, doc: document.documentElement.scrollWidth, viewport: innerWidth }));
-    expect(sizes.panel).toBeLessThanOrEqual(sizes.main * .6 + 1); expect(sizes.preview).toBeGreaterThan(0); expect(sizes.doc).toBeLessThanOrEqual(sizes.viewport);
+    // The drawer leaves a strip of canvas for the grip and never shrinks the page.
+    expect(sizes.panel).toBeLessThanOrEqual(sizes.main - 48 + 1); expect(sizes.preview).toBeGreaterThanOrEqual(sizes.main - 1); expect(sizes.doc).toBeLessThanOrEqual(sizes.viewport);
+    await expect(page.locator("#main")).toHaveClass(/style-panel-overlay/);
     await expect(panel(page).locator(".style-panel__selector")).toBeVisible();
   }
 });
