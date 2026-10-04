@@ -3,6 +3,7 @@ import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
 import { makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -162,6 +163,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     try { existing = readCollections(source).find((collection) => collection.element.start === sourceStart); }
     catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
     activeGrid = { path, start: sourceStart };
+    if (!existing && isManualCardGrid(source, el)) { openManualGrid(path, sourceStart, saved); return; }
     root.replaceChildren(node("h2", "", existing ? "Edit collection" : "Make this grid a collection"), node("p", "collections-panel__scope", "Choose which pages appear in this grid."));
     const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
     // Parent folders need no index page of their own. Keep route order stable.
@@ -233,6 +235,53 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     advanced.append(preview);
     form.append(result, advanced, button("Edit card design in source", () => deps.openPage(path)), apply, button("Cancel", () => { activeForm = undefined; update(); }));
     form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, existing ? "Collection saved" : "Grid made into a collection"); });
+    root.append(form, status); refresh(); track(form, saved);
+  }
+  /** Hand-written cards: keep every card exactly, or refuse; nothing changes until Apply. */
+  function openManualGrid(path: string, sourceStart: number, saved: ReturnType<typeof snapshot>) {
+    const source = saved.sources[path];
+    const form = node("form", "collections-panel__form");
+    root.replaceChildren(node("h2", "", "Choose pages for this grid"));
+    const grid = readManualGrid(source, sourceStart);
+    if ("error" in grid) {
+      root.append(node("p", "collections-panel__scope", "These cards can't be turned into a page list yet, so nothing was changed."), node("p", "collections-panel__refusal", grid.error), status);
+      return;
+    }
+    root.append(node("p", "collections-panel__scope", `Show pages from folders here instead of ${grid.cards.length} hand-written cards. Each card stays as it looks now; pages you add later use their own title and description.`));
+    const token = newCollectionToken(saved.sources);
+    const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
+    const discovered = [...new Set(urls.flatMap((url) => {
+      const segments = url.slice(1).split("/");
+      return segments.slice(0, -1).map((_, index) => `/${segments.slice(0, index + 1).join("/")}/`)
+        .filter((folder) => folder !== url && /^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)+$/.test(folder));
+    }))];
+    const selected = manualGridFolders(source, sourceStart, saved.routes);
+    const sourceGroup = node("fieldset", "collections-panel__sources");
+    sourceGroup.append(node("legend", "", "Pages from folders"));
+    const checks = [...new Set([...selected, ...discovered])].map((url) => {
+      const label = node("label", "collections-panel__source");
+      const input = node("input"); input.type = "checkbox"; input.value = url; input.checked = selected.includes(url);
+      label.append(input, document.createTextNode(url)); sourceGroup.append(label);
+      return input;
+    });
+    const result = node("p"); result.setAttribute("role", "status");
+    const kept = node("ul", "collections-panel__kept");
+    const apply = node("button", "button primary", "Apply"); apply.type = "submit";
+    let plan: BakeResult = { error: "Choose folders first." };
+    const refresh = () => {
+      apply.disabled = true; kept.replaceChildren();
+      const converted = planManualConversion({ sources: saved.sources, routes: saved.routes, identity: saved.identity, path, start: sourceStart, token,
+        folders: checks.filter((input) => input.checked).map((input) => input.value) });
+      if ("error" in converted) { plan = converted; result.textContent = `${converted.error} Nothing will change.`; return; }
+      plan = converted.plan;
+      const changed = Object.keys(converted.plan.edits).filter((file) => file !== path);
+      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards, in page order. Apply changes this page${changed.length ? ` and ${changed.length} linked ${changed.length === 1 ? "page" : "pages"}` : ""} as one undo step.`;
+      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept as a page field of each linked page; SEO titles and descriptions stay as they are.`));
+      apply.disabled = false;
+    };
+    form.addEventListener("change", refresh);
+    form.append(sourceGroup, result, kept, apply, button("Cancel", () => { activeForm = undefined; update(); }));
+    form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, "Grid now shows pages from folders"); });
     root.append(form, status); refresh(); track(form, saved);
   }
   if (options.grid) root.addEventListener("focusout", () => queueMicrotask(update));

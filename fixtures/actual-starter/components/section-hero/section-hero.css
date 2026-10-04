@@ -1,0 +1,85 @@
+:host {
+  display: block;
+}
+
+/* Each text slot holds a whole element (the page's own <h1 slot="title">).
+   components.js gives every rule a ::slotted() twin, so `h1` styles both the
+   template's fallback and what a page slots in. */
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  padding-block: var(--space-2xl);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 0;
+  max-width: 20ch;
+  font-size: var(--text-4xl);
+  line-height: 1.1;
+}
+
+.lead {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--text-l);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-m);
+}
+
+/* Both buttons: the template's own fallback links and the ones a page slots in. */
+.actions a {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-m);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.actions a:hover {
+  filter: brightness(0.92);
+}
+
+/* The second button is outlined: the template's fallback link inside the
+   secondary slot, and a page's own <a slot="secondary">. */
+slot[name="secondary"] a,
+.actions [slot="secondary"] {
+  background: transparent;
+  color: var(--accent);
+}
+
+slot[name="secondary"] a:hover,
+.actions [slot="secondary"]:hover {
+  background: var(--surface);
+  filter: none;
+}
+
+@media (max-width: 720px) {
+  section {
+    padding-block: var(--space-xl);
+  }
+
+  h1 {
+    font-size: var(--text-3xl);
+  }
+}

@@ -1,0 +1,67 @@
+/* The host sticks, not the header: a sticky element only travels inside its
+   parent, and the header's parent is this host. */
+:host {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+}
+
+/* The side padding lines the content up with the page's own width. */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3xs) max(var(--space-l), (100% - var(--page-width)) / 2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Off screen until it takes keyboard focus. It points at <main id="main">. */
+.skip {
+  position: absolute;
+  top: var(--space-2xs);
+  left: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-s);
+  border-radius: var(--radius-s);
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: var(--text-l);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  gap: var(--space-2xs);
+}
+
+/* Padded to a 48px tap target. */
+nav a {
+  padding: var(--space-xs) var(--space-2xs);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+nav a:hover {
+  color: var(--accent);
+}
+
+/* components.js marks the link for the page being shown. */
+nav a[aria-current="page"] {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}

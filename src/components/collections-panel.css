@@ -29,3 +29,4 @@
 @media (hover: none), (pointer: coarse) { .selected-collection .collections-panel__source { min-height: 44px; } }
 .collections-panel select { width: 100%; padding: .5rem; color: var(--text); background: var(--surface); font: inherit; box-sizing: border-box; }
 .collections-panel select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.collections-panel__kept { margin: 0; padding-left: 1.25rem; display: grid; gap: .25rem; }

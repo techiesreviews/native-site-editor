@@ -1,0 +1,46 @@
+:host {
+  display: block;
+}
+
+/* Each part is a whole element in a slot. components.js gives every rule a
+   ::slotted() twin, so a rule styles the template's fallback and what a page
+   slots in alike. An item whose title and text are both left out
+   hides itself. */
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--text-2xl);
+}
+
+.items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-m);
+}
+
+article {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-m);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+
+h3 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}

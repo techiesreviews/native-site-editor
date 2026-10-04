@@ -1,0 +1,42 @@
+:host {
+  display: block;
+}
+
+/* Each part is a whole element in a slot. components.js gives every rule a
+   ::slotted() twin, so a rule styles the template's fallback and what a page
+   slots in alike. */
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+p {
+  margin: 0;
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--text-3xl);
+  line-height: 1.2;
+  max-width: 28ch;
+}
+
+.eyebrow {
+  font-size: var(--text-s);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Deliberately the same name as a page lead paragraph, whose shared rule is
+   adopted into this shadow root too. The values restate it, so this section
+   keeps its look even if the page style changes. */
+.lead {
+  max-width: var(--reading-width);
+  font-size: var(--text-l);
+  line-height: 1.6;
+  color: var(--muted);
+}

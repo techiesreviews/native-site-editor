@@ -1,0 +1,16 @@
+/* A short label above a title: the type of work, a date. The type is set on
+   the host so the text inherits it wherever it comes from: this template's
+   fallback, the page's <p slot="text">, or a card-project's note that the
+   card passes through (a ::slotted() rule would not reach that one). */
+:host {
+  display: block;
+  font-size: var(--text-s);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+p {
+  margin: 0;
+}

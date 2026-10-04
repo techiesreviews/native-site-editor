@@ -109,7 +109,10 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
       if ((!VOID_ELEMENTS.has(node.name) && !node.close) || template[node.tag.end - 1] !== ">") throw new Error("The collection template contains incomplete markup.");
       if (node.name === "template" || attribute(template, node, "data-each") !== undefined) throw new Error("Nested collections and templates are not supported.");
       const condition = attribute(template, node, "data-if");
-      if (condition !== undefined && (!fieldName.test(condition) || !known.has(condition))) throw new Error(`Unknown or malformed collection condition: ${condition}.`);
+      // data-if="field" renders when the field has text; data-if="!field" only when it is empty.
+      const negated = condition?.startsWith("!") ?? false;
+      const conditionField = negated ? condition!.slice(1) : condition;
+      if (conditionField !== undefined && (!fieldName.test(conditionField) || !known.has(conditionField))) throw new Error(`Unknown or malformed collection condition: ${condition}.`);
       let tag = template.slice(node.start, node.tag.end);
       const edits: CollectionEdit[] = [];
       // Attribute scanner covers quoted > and unquoted values. Attribute names cannot be bindings.
@@ -139,7 +142,7 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
         inner = template.slice(node.tag.end, node.close?.start ?? node.tag.end);
         if (/[{}]/.test(inner)) throw new Error(`Bindings are not supported inside ${node.name}.`);
       } else inner = render(node.children, node.tag.end, node.close?.start ?? node.tag.end);
-      if (condition !== undefined && !ownPageField(fields, condition).trim()) continue;
+      if (conditionField !== undefined && !ownPageField(fields, conditionField).trim() !== negated) continue;
       output += tag + inner + (node.close ? template.slice(node.close.start, node.close.end) : "");
     }
     return output + template.slice(cursor, to);

@@ -1,0 +1,13 @@
+# Files in the repository that are not part of the site. wrangler deploy
+# uploads everything else in the repository root.
+.git
+.github
+.editor
+.wrangler
+.gitignore
+.assetsignore
+node_modules
+README.md
+AGENTS.md
+CLAUDE.md
+wrangler.jsonc
