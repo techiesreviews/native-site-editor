@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { publishButton, showPublish } from "./publish";
 
 // Uploading images and other binary files (src/uploads.ts): the image
-// Address's Upload image… and drop, the Files tab's Upload files… and drop
+// chooser's Upload images… and drop, the Files tab's Upload files… and drop
 // on a folder. An upload is an A draft whose bytes this browser keeps in
 // IndexedDB; the preview shows it at once; Save sends the bytes as a GitHub
 // blob (worker/blobs.ts) and commits it, byte for byte, to the fake GitHub
@@ -29,7 +29,7 @@ const pngUrl = `data:image/png;base64,${png.toString("base64")}`;
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
-const popover = (page: Page) => page.locator(".edit-bar__popover");
+const chooser = (page: Page) => page.getByRole("dialog", { name: "Choose image", exact: true });
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
@@ -53,11 +53,25 @@ async function editorText(page: Page) {
   return text;
 }
 
-async function openAddress(page: Page) {
-  await frame(page).locator(".hero img").evaluate((el) => (el as HTMLElement).click());
+async function openChooser(page: Page) {
+  await frame(page).locator(".hero img").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
-  await bar(page).getByRole("button", { name: "Address" }).click();
-  await expect(popover(page).getByRole("button", { name: "Upload image…" })).toBeVisible();
+  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await expect(chooser(page)).toBeVisible();
+  await expect(chooser(page).getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
+}
+
+async function addOriginalAndUse(page: Page, path: string) {
+  // Byte-exact uploads explicitly retain the original instead of re-encoding it.
+  await chooser(page).getByRole("checkbox", { name: "Keep original", exact: true }).check();
+  await chooser(page).getByRole("button", { name: "Preview optimisation", exact: true }).click();
+  await expect(chooser(page).getByRole("button", { name: "Add to library", exact: true })).toBeEnabled();
+  await chooser(page).getByRole("button", { name: "Add to library", exact: true }).click();
+  await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
+  await chooser(page).getByRole("button", { name: `Details for ${path}`, exact: true }).click();
+  await chooser(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(chooser(page)).toBeHidden();
 }
 
 // Files dropped from the desktop onto `selector`, as the browser delivers them.
@@ -90,15 +104,18 @@ async function committed(page: Page, path: string) {
   return response.ok() ? Buffer.from(await response.body()) : undefined;
 }
 
-test("Upload image… in the image's Address uploads to images/, shows it at once, survives a reload and saves byte for byte", async ({ page, baseURL }) => {
+test("Upload images… in the image chooser uploads to images/, shows it at once, survives a reload and saves byte for byte", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await openAddress(page);
-  await popover(page).locator(".edit-bar__upload-input").setInputFiles({ name: "Team Photo.PNG", mimeType: "image/png", buffer: png });
+  await openChooser(page);
+  const upload = page.waitForEvent("filechooser");
+  await chooser(page).getByRole("button", { name: "Upload images…", exact: true }).click();
+  await (await upload).setFiles({ name: "Team Photo.PNG", mimeType: "image/png", buffer: png });
+  await addOriginalAndUse(page, "images/team-photo.png");
 
   // The image points at the new file, its alt follows the name, and the preview shows the bytes.
-  await expect.poll(() => editorText(page)).toContain(`<img class="hero-image" src="/images/team-photo.png" data-key="hero-image" alt="Team photo">`);
+  await expect.poll(() => editorText(page)).toContain(`<img alt="team photo" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.png" data-key="hero-image">`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", pngUrl);
-  await expect(popover(page)).toBeHidden();
+  await expect(chooser(page)).toBeHidden();
 
   // It is an A change, uploaded, with the page's edit beside it.
   await showPublish(page);
@@ -113,9 +130,10 @@ test("Upload image… in the image's Address uploads to images/, shows it at onc
   // A reload keeps the draft, its bytes and the preview.
   await page.reload();
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", pngUrl, { timeout: 30_000 });
-  // The Address now suggests it with the repository's images.
-  await openAddress(page);
-  await expect(popover(page).getByRole("option", { name: "/images/team-photo.png" })).toHaveAttribute("aria-selected", "true");
+  // The chooser now lists the draft image beside the repository's images.
+  await openChooser(page);
+  await chooser(page).getByRole("button", { name: "Details for images/team-photo.png", exact: true }).click();
+  await expect(chooser(page).getByRole("textbox", { name: "Alt text for insertion", exact: true })).toHaveValue("team photo");
   await page.keyboard.press("Escape");
 
   // Saved: the bytes on GitHub are the file's, and the browser lets its copy go.
@@ -130,10 +148,11 @@ test("Upload image… in the image's Address uploads to images/, shows it at onc
   await expect(saveTrigger(page)).toBeDisabled();
 });
 
-test("a file dropped on the image's Address uploads it; Discard in the Save panel removes it and its bytes", async ({ page, baseURL }) => {
+test("a file dropped on the image chooser uploads it; Discard in the Save panel removes it and its bytes", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await openAddress(page);
-  await dropFiles(page, ".edit-bar__popover", [{ name: "placeholder.svg", type: "image/png", base64: png.toString("base64") }]);
+  await openChooser(page);
+  await dropFiles(page, "dialog.media-library", [{ name: "placeholder.svg", type: "image/png", base64: png.toString("base64") }]);
+  await addOriginalAndUse(page, "images/placeholder-2.svg");
   // The name is taken on the branch: a suffix, never an overwrite.
   await expect.poll(() => editorText(page)).toContain(`src="/images/placeholder-2.svg"`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
