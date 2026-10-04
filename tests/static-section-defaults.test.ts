@@ -84,7 +84,7 @@ test("saved record is authoritative for list, preview and insert; stale plain id
   const custom = { ...DEFAULT_STATIC_SECTIONS[0], label: "My intro", html: '<section class="section-intro"><h2>Custom heading</h2></section>', css: ".section-intro { color: teal; }" };
   const text = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: custom } } });
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH];
-  const union = [...listSectionChoices(text), ...(listDefaultSectionChoices(text) as { id: string }[])];
+  const union = [...listSectionChoices(text), ...(listDefaultSectionChoices(text) as { id: string; rootClass: string }[])];
   assert.equal(union.filter((c) => c.rootClass === "section-intro").length, 1);
   assert.deepEqual(union.map((c) => c.id), ["intro", "static-section:features", "static-section:split", "static-section:contact"]);
   const preview = previewDefaultStaticSection(text, "static-section:intro");
