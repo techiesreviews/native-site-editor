@@ -16,7 +16,7 @@ const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true 
 const record = (title: string, date: string) => `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>${title}</title>\n  <meta name="date" content="${date}">\n  <meta property="og:image" content="/images/studio-desk.svg">\n</head>\n<body>\n<main><h1>${title}</h1></main>\n</body>\n</html>\n`;
 
 /** Home with a JSON collection on a plain grid, baked by the editor's own planner, plus the JSON. */
-function seed(): [string, string][] {
+function seed(template = '<article class="card"><img src="{image}" alt=""><img src="{photo}" data-if="photo" alt=""><h3>{title}</h3></article>'): [string, string][] {
   const sources: Record<string, string> = {};
   for (const file of files(fixture)) if (/\.html?$/i.test(file)) sources[relative(fixture, file)] = readFileSync(file, "utf8");
   sources["work/one/index.html"] = record("One", "2025-01-01");
@@ -25,7 +25,7 @@ function seed(): [string, string][] {
   const routes = deriveNativeRoutes(Object.keys(sources)), identity = { name: "" };
   const origin = planSidecarRecipe({ sources, routes, identity }, "index.html", sources["index.html"].indexOf('<section class="cards"'), {
     folders: ["/work/"], sort: "-date", filter: "", limit: 10, fields: ["photo"],
-    template: '<article class="card"><img src="{image}" alt=""><img src="{photo}" data-if="photo" alt=""><h3>{title}</h3></article>',
+    template,
     overrides: { "work/one/index.html": { photo: "/images/studio-desk.svg" } },
   });
   const plan = planNativeCollectionOperation({ sources, routes, files: Object.keys(sources), revision: "seed", identity, origin: { ...origin, acceptCollections: undefined, done: "", undone: "" } });
@@ -65,4 +65,49 @@ test("renaming an image moves it in JSON cards, their recorded output and overri
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, SIDECAR)).toBeUndefined();
   await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+});
+
+test("a literal image in the card template follows a rename, so a later title rebuild never brings the old path back", async ({ page, baseURL }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });
+  const seeded = seed('<article class="card"><img src="/images/studio-desk.svg" alt=""><h3>{title}</h3></article>');
+  await page.goto(`${baseURL}/`);
+  for (const [path, content] of seeded) await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Images", exact: true });
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByLabel("New image filename", { exact: true }).fill("garden-desk.svg");
+  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain("garden-desk.svg");
+  const renamedJson = (await storedDraft(page, SIDECAR))!.content;
+  const [record] = Object.values(JSON.parse(renamedJson).collections) as { template: string }[];
+  expect(record.template).toBe('<article class="card"><img src="/images/garden-desk.svg" alt=""><h3>{title}</h3></article>');
+  // A listed page's new title rebuilds the cards from the JSON template: the old image path must not return.
+  await page.keyboard.press("Escape");
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=work/one/index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/one/index.html", { timeout: 30_000 });
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#explorer").getByRole("treeitem", { name: "One", exact: true }).locator(".pages-label").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await page.getByRole("textbox", { name: "Title of One" }).fill("One renamed");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain("<h3>One renamed</h3>");
+  const rebuilt = (await storedDraft(page, "index.html"))!.content, rebuiltJson = (await storedDraft(page, SIDECAR))!.content;
+  expect(rebuilt).not.toContain("studio-desk.svg");
+  expect(rebuilt.match(/<img src="\/images\/garden-desk\.svg" alt="">/g)?.length).toBe(2);
+  expect(rebuiltJson).not.toContain("studio-desk.svg");
+  // Undo takes back the title step only; Redo restores it exactly.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").not.toContain("One renamed");
+  expect((await storedDraft(page, SIDECAR))!.content).toBe(renamedJson);
+  expect((await storedDraft(page, "index.html"))!.content).not.toContain("studio-desk.svg");
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(rebuilt);
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(rebuiltJson);
+  expect(errors).toEqual([]);
 });

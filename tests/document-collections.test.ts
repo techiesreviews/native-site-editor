@@ -130,3 +130,21 @@ test('an image rename carries a clean JSON collection output, its overrides and 
   assert.equal(planDocumentMediaBatch({ 'about.html': '<p></p>' }, sidecar, new Map([['about.html', '<p>x</p>']]), []), undefined);
   assert.equal(planDocumentMediaBatch({}, undefined, new Map(), []), undefined);
 });
+
+test('an image rename moves literal template references, relative and suffixed values, and leaves bindings, external and unrelated values alone', async () => {
+  const { planDocumentMediaBatch } = await import('../src/page-builder/document-collections');
+  const { makeCollectionTarget, writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document');
+  const home = '<html><body><main><div class="cards"></div></main></body></html>';
+  const template = '<a style="background-image: url(\'../images/a.jpg?v=2#x\')"><img src="/images/a.jpg" alt=""><img src="{photo}" data-if="photo" alt=""><img src="https://cdn.example/images/a.jpg" alt=""><img src="data:image/png;base64,AA" alt=""><img src="/images/other.jpg" alt="">{label}</a>';
+  const sidecar = writePageBuilderDocument({ version: 1, keep: { unknown: [1] },
+    pages: { 'work/one/index.html': { fields: { hero: '../../images/a.jpg?v=3', far: 'https://x.example/images/a.jpg', mood: 'calm' } } },
+    collections: { work: { pagePath: 'blog/index.html', target: makeCollectionTarget(home, home.indexOf('<div class="cards">')), folders: ['/work/'], sort: '', filter: '', limit: 10, template, fields: ['photo', 'label'],
+      overrides: { 'work/one/index.html': { photo: '../images/a.jpg#top', label: 'images/a.jpg' } } } } } as never);
+  const text = planDocumentMediaBatch({}, sidecar, new Map(), [{ from: 'images/a.jpg', to: 'images/b.jpg' }]);
+  assert.ok(text);
+  const doc = readPageBuilderDocument(text!);
+  assert.equal(doc.collections.work.template, template.replace("../images/a.jpg?v=2#x", "/images/b.jpg?v=2#x").replace('src="/images/a.jpg"', 'src="/images/b.jpg"'));
+  assert.deepEqual(doc.collections.work.overrides['work/one/index.html'], { photo: '/images/b.jpg#top', label: 'images/a.jpg' });
+  assert.deepEqual(doc.pages['work/one/index.html'].fields, { hero: '/images/b.jpg?v=3', far: 'https://x.example/images/a.jpg', mood: 'calm' });
+  assert.deepEqual((doc as Record<string, unknown>).keep, { unknown: [1] });
+});

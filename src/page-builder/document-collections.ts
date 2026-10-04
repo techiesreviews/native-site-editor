@@ -1,4 +1,6 @@
 import { applyCollectionEdits, bindCollectionTemplate } from "./collection-bake";
+import { mediaResolvePath, rewriteMediaReferences } from "./media-references";
+import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
 import { builtinFields, ownPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, collectionSpec, knownCollectionField, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
@@ -202,15 +204,22 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
  * including inside cards a JSON collection made. This carries that change
  * into the editor's JSON in the same batch: a collection whose cards matched
  * what the editor wrote records the rewritten cards as its output again, and
- * stored values naming a moved image (per-card overrides, page fields) follow
- * it. Cards that were already edited by hand stay recorded as edited. Returns
+ * references to a moved image follow it: literal ones in the card template,
+ * and stored values (per-card overrides, page fields), page-relative or not. Cards that were already edited by hand stay recorded as edited. Returns
  * the JSON text to write, or undefined when nothing in it changes.
  */
 export function planDocumentMediaBatch(sources: Readonly<Record<string, string | undefined>>, sidecar: string | undefined, edits: ReadonlyMap<string, string>, moves: readonly { from: string; to: string }[]): string | undefined {
   if (sidecar === undefined) return undefined;
   const document = readSidecar(sidecar);
-  const renamed = new Map(moves.flatMap(({ from, to }) => [[from, to], [`/${from}`, `/${to}`]] as [string, string][]));
-  const follow = (value: string) => renamed.get(value) ?? value;
+  const renamed = new Map(moves.map(({ from, to }) => [from, to]));
+  // Template references are rewritten one move at a time, so a chain (a to b, b to c) could move twice.
+  if (moves.some(({ to }) => renamed.has(to))) throw new Error("These image moves overlap (one moves onto another that also moves). Move them one at a time.");
+  // A stored value is one URL, resolved against the page it appears on, as the page HTML rewriter resolves
+  // it: only a repository image that moved changes (keeping its ?query/#hash); external and data URLs never.
+  const follow = (value: string, file: string) => {
+    const path = mediaResolvePath(value, file), to = path === undefined ? undefined : renamed.get(path);
+    return to === undefined ? value : mediaUrl(to) + (/[?#].*$/.exec(value.trim())?.[0] ?? "");
+  };
   const next = structuredClone(document);
   for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
     const before = sources[page], after = edits.get(page);
@@ -219,9 +228,13 @@ export function planDocumentMediaBatch(sources: Readonly<Record<string, string |
     for (const [id, item] of Object.entries(old))
       if (document.collections[id].outputFingerprint === item.text) next.collections[id].outputFingerprint = now[id].text;
   }
-  for (const collection of Object.values(next.collections))
-    for (const fields of Object.values(collection.overrides)) for (const [name, value] of Object.entries(fields)) fields[name] = follow(value);
-  for (const page of Object.values(next.pages)) if (page.fields) for (const [name, value] of Object.entries(page.fields)) page.fields[name] = follow(value);
+  for (const collection of Object.values(next.collections)) {
+    // Literal image references in the card template (attributes, srcset, inline CSS url()) move with the same
+    // matcher the page HTML uses, resolved against the collection's page; {bindings} are not image paths.
+    for (const { from, to } of moves) collection.template = rewriteMediaReferences(collection.pagePath, collection.template, from, to);
+    for (const fields of Object.values(collection.overrides)) for (const [name, value] of Object.entries(fields)) fields[name] = follow(value, collection.pagePath);
+  }
+  for (const [file, page] of Object.entries(next.pages)) if (page.fields) for (const [name, value] of Object.entries(page.fields)) page.fields[name] = follow(value, file);
   const text = writePageBuilderDocument(next, sidecar);
   return text === sidecar ? undefined : text;
 }
