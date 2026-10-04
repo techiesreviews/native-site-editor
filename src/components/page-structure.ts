@@ -501,6 +501,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     isolate(actions);
     return actions.childElementCount ? actions : undefined;
   }
+  // A slot row's actions sit at the row's far right, after the badge, which
+  // steps aside while they show. A row that already carries the component
+  // actions keeps the slot actions inside its label instead.
+  function hostSlotActions(row: HTMLElement, label: HTMLElement, actions: HTMLElement) {
+    if (row.classList.contains("row-action-host")) { label.classList.add("row-action-host"); label.append(actions); return; }
+    row.classList.add("row-action-host", "page-structure__row--slot-host");
+    row.style.setProperty("--slot-action-count", String(actions.childElementCount));
+    row.append(actions);
+  }
   // Keep row controls from starting a drag, choosing the row or moving focus by arrow keys.
   function isolate(control: Element) {
     for (const type of ["pointerdown", "click", "keydown"]) control.addEventListener(type, event => event.stopPropagation());
@@ -530,12 +539,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.append(label, badge);
     if (slot.filled) {
       const actions = slotActions(model, slot, edit);
-      if (actions) { label.classList.add("row-action-host"); label.append(actions); }
+      if (actions) hostSlotActions(el, label, actions);
     } else {
       // Missing: an optional slot's Show stays visible; a defaulted slot's pencil fades in.
       const show = visibilityControl(model, slot);
       if (show) { isolate(show); el.append(show); }
-      else if (editable(slot)) { const actions = node("div", "row-action-overlay page-structure__slot-actions"); actions.append(iconAction(`Edit ${slot.label}`, "edit", edit)); isolate(actions); label.classList.add("row-action-host"); label.append(actions); }
+      else if (editable(slot)) { const actions = node("div", "row-action-overlay page-structure__slot-actions"); actions.append(iconAction(`Edit ${slot.label}`, "edit", edit)); isolate(actions); hostSlotActions(el, label, actions); }
     }
     el.addEventListener("click", () => { if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); } });
     el.addEventListener("keydown", event => {
@@ -702,8 +711,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (!editable(slot)) badge.title = `Select ${slot.label}`;
       isolate(badge);
       const actions = slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext));
-      if (actions) { label.classList.add("row-action-host"); label.append(actions); }
       el.append(badge);
+      if (actions) hostSlotActions(el, label, actions);
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;

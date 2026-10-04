@@ -169,10 +169,15 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       for (const group of addCatalog(choices)) {
         const groupRoot = node("div", "pb-add-group");
         groupRoot.setAttribute("role", "group");
-        const heading = node("h3", "pb-add-group__title", group.name);
-        heading.id = `${id}-group-${groups.length}`;
-        groupRoot.setAttribute("aria-labelledby", heading.id);
-        groupRoot.append(heading);
+        // The site's own plain sections lead the list without a visible
+        // heading; assistive tech still hears a plain group name.
+        if (group.items.every((item) => item.kind === "native")) groupRoot.setAttribute("aria-label", "Sections");
+        else {
+          const heading = node("h3", "pb-add-group__title", group.name);
+          heading.id = `${id}-group-${groups.length}`;
+          groupRoot.setAttribute("aria-labelledby", heading.id);
+          groupRoot.append(heading);
+        }
         for (const item of group.items) groupRoot.append(buildItem(item));
         groups.push({ root: groupRoot, tags: group.items.map((item) => item.tag) });
         list.append(groupRoot);

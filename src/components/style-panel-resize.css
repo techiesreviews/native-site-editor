@@ -1,6 +1,8 @@
 @import "./resize-handle.css";
 .style-panel { position: relative; }
-.style-panel-resize { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; z-index: 3; cursor: col-resize; touch-action: none; }
+.style-panel-resize { position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; z-index: 3; cursor: col-resize; touch-action: none;
+  /* Same widening as Structure's grip (sidebar-resize.css), mirrored to the left edge. */
+  transition: width 120ms ease, left 120ms ease; }
 .style-panel-resize:is(:hover, :focus-visible), .style-panel-resizing .style-panel-resize { left: -9px; width: 18px; }
 .style-panel-resize:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .style-panel-resizing { cursor: col-resize; user-select: none; }

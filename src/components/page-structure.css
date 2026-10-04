@@ -329,3 +329,26 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, min(40%, 96px)) minmax(0, 1fr); }
 .page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }
+
+/* A slot row hosts its own actions at its far right, after the badge. Nothing
+   sits under them: while they show, the badge steps left by their width and
+   the label gives up the room, so no fade is needed over the text. */
+.page-structure__row--slot-host {
+  --slot-actions-width: calc(var(--slot-action-count, 1) * 22px + (var(--slot-action-count, 1) - 1) * 2px);
+}
+.page-structure__row--slot-host > .row-action-overlay { padding: 0 4px; }
+.page-structure__row--slot-host > .row-action-overlay::before,
+.page-structure__row--slot-host > .row-action-overlay::after { display: none; }
+.page-structure__row--slot-host > .page-structure__slot-actions > .page-structure__hit { width: 22px; height: 22px; }
+.page-structure__row--slot-host > .page-structure__slot-badge { transition: margin-right 140ms ease-out; }
+.page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: var(--slot-actions-width); }
+.page-structure__row--slot-host:focus-within > .page-structure__slot-badge { transition: none; }
+@media (hover: none), (pointer: coarse) {
+  /* Actions already take their own room after the badge. */
+  .page-structure__row--slot-host > .page-structure__slot-actions > .page-structure__hit { width: auto; height: auto; }
+  .page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: 0; }
+  .page-structure__row--slot-host > .page-structure__slot-badge { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-structure__row--slot-host > .page-structure__slot-badge { transition: none; }
+}

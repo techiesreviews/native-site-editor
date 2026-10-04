@@ -362,16 +362,17 @@ for (const colorScheme of ['light','dark'] as const) test(`the fade ends opaque 
  for(const [row,node] of [[root,'0'],[title,'0.0']] as const){
   await row.hover();await gapMatchesRow(page,node);                      // hover
  }
- // Negatives on the hovered title row: without the base layer the ink shows
- // through, and a base of the wrong surface ends in the wrong colour.
+ // Negatives on the hovered instance row (a slot row's actions sit beside its
+ // badge, over no text): without the base layer the ink shows through, and a
+ // base of the wrong surface ends in the wrong colour.
  for(const [label,rule] of [['no base','display:none'],['wrong base','background:linear-gradient(to right,transparent,var(--panel-surface) 20px)']] as const){
   await page.evaluate(rule=>{const style=document.createElement('style');style.id='negative';style.textContent=`aside.sidebar .page-structure__row .row-action-overlay::after{${rule} !important}`;document.head.append(style);},rule);
-  await title.hover();const p=await samplePixels(page,'0.0');
+  await root.hover();const p=await samplePixels(page,'0');
   expect(distance(p),`${label}: gap ${p.gap} plain ${p.plain}`).toBeGreaterThan(12);
-  await page.evaluate(()=>document.getElementById('negative')!.remove());await gapMatchesRow(page,'0.0');
+  await page.evaluate(()=>document.getElementById('negative')!.remove());await gapMatchesRow(page,'0');
  }
- // Ink is really under the sample: at rest (actions hidden) the gap shows the title's text.
- await page.mouse.move(0,0);const atRest=await samplePixels(page,'0.0');
+ // Ink is really under the sample: at rest (actions hidden) the gap shows the row's text.
+ await page.mouse.move(0,0);const atRest=await samplePixels(page,'0');
  expect(distance(atRest),`rest: gap ${atRest.gap} plain ${atRest.plain}`).toBeGreaterThan(40);
  await page.mouse.move(0,0);await root.focus();await page.keyboard.press('ArrowDown');await expect(title).toBeFocused();
  await gapMatchesRow(page,'0.0');                                          // keyboard focus
