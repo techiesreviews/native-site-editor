@@ -169,9 +169,7 @@ test("a selected link inside a paragraph gets Address and Remove link", async ({
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => editorText(page)).toBe(linked("/"));
-  // A heading elsewhere first (the hero's own heading would put its bar,
-  // kept clear of the sticky header, over this link), then a real click.
-  await frame.locator("section.cards h2, section.filler h2").first().click();
+  await frame.locator(".hero h1").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await frame.locator(".hero p.lead a").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");

@@ -131,7 +131,10 @@ test("in a 340px canvas between Structure and Style, groups wrap whole and keep 
 
   // Keyboard Bold changes source; one Undo restores it exactly.
   const before = await source();
-  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
+  // The section's bar is pinned under the sticky header over the section's
+  // top; the paragraph is clicked at its lower right, clear of it.
+  const moving = (await frame.locator("#moving").boundingBox())!;
+  await frame.locator("#moving").click({ position: { x: moving.width - 4, y: moving.height - 3 } });
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
   await bold.focus(); await bold.press("Enter");
   await expect.poll(source).not.toBe(before);

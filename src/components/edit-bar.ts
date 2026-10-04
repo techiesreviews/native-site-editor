@@ -465,7 +465,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     let top = above;
     let side = "above";
     if (above < ceiling) {
-      if (below + height <= frameBottom - 4) { top = below; side = "below"; }
+      // Under a sticky header the bar pins just below it, over the selection's
+      // top, rather than dropping below the selection onto what follows it.
+      if (covered <= 0 && below + height <= frameBottom - 4) { top = below; side = "below"; }
       else { top = ceiling; side = "pinned"; }
     }
     bar.dataset.side = side;

@@ -28,16 +28,24 @@ async function sendRect(page: Page, inset: unknown) {
 test("the bar keeps clear of a reported top inset and ignores invalid ones", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
   await expect(bar(page)).toBeVisible();
+  // Let the runtime's own reports settle before sending ours.
+  await page.waitForTimeout(800);
   // A rectangle with no inset is the reference place.
   const plain = await sendRect(page, undefined);
   for (const invalid of [-40, Number.NaN, Number.POSITIVE_INFINITY, "120", null]) expect(await sendRect(page, invalid)).toEqual(plain);
   const heading = (await frame(page).locator(".hero h1").boundingBox())!;
   const area = (await page.locator(".native-preview-frame").boundingBox())!;
-  const headingTop = heading.y - area.y;
-  // An inset reaching past the space above the heading moves the bar below it, or pins it under the inset.
-  const inset = Math.max(1, headingTop - 10);
-  const cleared = await sendRect(page, inset);
-  expect(cleared.top).toBeGreaterThanOrEqual(inset);
+  // The fixture's site-header sticks. The runtime's own report for the
+  // hero heading (right under it) pins the bar just under the header, over
+  // the heading's top, never below the heading onto the lead paragraph.
+  await frame(page).locator(".hero p.lead").click();
+  await frame(page).locator(".hero h1").click();
+  await page.waitForTimeout(300);
+  const header = (await frame(page).locator("site-header").boundingBox())!;
+  const box = (await bar(page).boundingBox())!;
+  expect(await bar(page).getAttribute("data-side")).toBe("pinned");
+  expect(box.y).toBeGreaterThanOrEqual(header.y + header.height - 0.5);
+  expect(box.y).toBeLessThan(heading.y + heading.height);
   // An inset taller than the frame: the bar still fits inside the frame.
   const huge = await sendRect(page, 100_000);
   expect(huge.top).toBeGreaterThanOrEqual(0);
