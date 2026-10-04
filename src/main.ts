@@ -4808,7 +4808,12 @@ function flushExplorerImagesRefresh() {
 }
 
 function mountExplorerTabs() {
-  element("explorer").addEventListener("toggle", () => { if (explorerImagesVisible() && explorerTab === "images") ensureExplorerImages(); });
+  const explorer = element("explorer");
+  explorer.addEventListener("toggle", () => {
+    // Closing a popover queues its toggle; session expiry may detach it before dispatch.
+    if (!explorer.isConnected) return;
+    if (explorerImagesVisible() && explorerTab === "images") ensureExplorerImages();
+  });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
     tab.addEventListener("click", () => selectExplorerTab(name));

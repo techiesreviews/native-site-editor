@@ -291,12 +291,18 @@ test("a source edit while the palette is open rejects a stale Duplicate", async 
 test("session expiry disposes palette listeners before editor remount", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  const images = page.getByRole("region", { name: "Images", exact: true });
+  await expect(images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await page.route("**/api/snapshot?**", (route) => route.fulfill({
     status: 401,
     contentType: "application/json",
     body: JSON.stringify({ error: "Session expired for palette test" }),
   }));
-  await page.locator("#refresh").evaluate((button) => (button as HTMLButtonElement).click());
+  await page.locator(".repository-menu__trigger").click();
+  await page.locator('.repository-menu__repo[aria-current="true"]').hover();
+  await page.getByRole("menu", { name: "Branches" }).getByRole("menuitem", { name: "Refresh from GitHub" }).click();
   await expect(page.locator("#app")).toHaveClass(/login-page/);
   await expect(palette(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+K");
@@ -312,6 +318,15 @@ test("session expiry disposes palette listeners before editor remount", async ({
   await expect(palette(page)).toBeVisible();
   await expect(search(page)).toBeFocused();
   await expect(palette(page)).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await expect(images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(images).toBeHidden();
+  await page.locator("#explorer-toggle").click();
+  await expect(images).toBeVisible();
+  await expect(images).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
@@ -347,6 +362,11 @@ test("typing in a nested component keeps question mark, undo and Shift+Enter ins
   const frame = page.frameLocator(".native-preview-frame");
   const text = frame.locator("project-card").first().locator("card-note").locator("p.card-note");
   await text.click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await text.click();
+  await bar.getByRole("button", { name: "Edit Card note component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
   // A template-owned text node (rather than assigned slot text) is editable inside both shadow roots.
   await page.locator("#content [role='textbox']").first().focus();
