@@ -306,6 +306,9 @@ test("a stylesheet the page already loads through unconditional imports counts a
   failure(input({ stylesheetSources: { 'styles/unused.css': '@import url("sections.css");', 'styles/sections.css': '' }, files: ['index.html', EDITOR_PAGE_BUILDER_PATH, 'styles/unused.css', 'styles/sections.css'] }), 'The section stylesheet is already loaded through a CSS import.');
   // Linked directly and imported too: loaded twice.
   failure(input({ pageSource: linkedPage.replace('</head>', '<link rel="stylesheet" href="styles/sections.css"></head>'), stylesheetSources: sheets, files }), 'The section stylesheet is loaded more than once.');
+  // Imported twice by the same sheet (each @import loads it again), and through a cycle back to that sheet: loaded twice; the cycle alone counts once.
+  failure(input({ pageSource: linkedPage, stylesheetSources: { 'styles/site.css': '@import url("sections.css");\n@import "sections.css";', 'styles/sections.css': '' }, files }), 'The section stylesheet is loaded more than once.');
+  failure(input({ pageSource: linkedPage, stylesheetSources: { 'styles/site.css': '@import url("a.css");\n@import url("sections.css");', 'styles/a.css': '@import url("site.css");\n@import url("sections.css");', 'styles/sections.css': '' }, files: [...files, 'styles/a.css'] }), 'The section stylesheet is loaded more than once.');
 });
 
 test("section CSS may use @layer sections only", () => {

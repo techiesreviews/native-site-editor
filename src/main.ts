@@ -2414,8 +2414,9 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
   const source = path && nativeEffectiveSource(path);
   if (!path || source === undefined) return;
   const destinations = selected?.path === path && selected.node ? nativeDestinations(source, path, selected.node) : [];
-  const candidates = mode !== "click" ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
-  if (fallback?.path === path) candidates.push({ point: fallback, description: `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
+  // A whole section goes where a section component would (the page's section gap); never inside the selected element's parent.
+  const candidates = mode !== "click" || isStatic ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
+  if (fallback?.path === path) candidates.push({ point: fallback, description: isStatic ? positionText(fallback) : `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
   const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
   if (!found) return;
   const point = { ...found.point, parent: [...found.point.parent] };
@@ -2620,7 +2621,9 @@ async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   // Unread files are read now; the choice was made without them, so it is made again.
   if (filesList.includes(EDITOR_PAGE_BUILDER_PATH) && docBefore === undefined || nativeStaticStylesheetSources("").unloaded) {
     const error = await ensureNativeTextIndex();
-    errorMessage(new Error(error ?? `The site's styles were still loading. Choose ${choice.label} again.`));
+    // Nothing is added from a choice made before the sources were read; a successful read is news, not an error.
+    if (error) errorMessage(new Error(error));
+    else element("status").textContent = `The site's styles have loaded. Choose ${choice.label} again to add it.`;
     return;
   }
   if (currentPath !== path || !editorModule?.isMounted(path)) {

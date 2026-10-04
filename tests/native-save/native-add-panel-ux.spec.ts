@@ -21,7 +21,7 @@ test("section thumbnails show the whole section at the canvas's width, with no c
       const root = element.querySelector<HTMLElement>(".pb-thumb")!, frame = root.querySelector("iframe")!;
       const section = frame.contentDocument!.querySelector("main")!.firstElementChild!;
       const whole = Math.min(1000, section.getBoundingClientRect().height) * new DOMMatrix(getComputedStyle(frame).transform).a;
-      return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole) - 3; // thumbnail.ts sizes the bordered box: 2px of section padding hide under its border
+      return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole);
     })).toBe(true);
   }
   await expect(add.getByRole("option", { name: /^(Heading|List|Image|Grid) HTML$/ })).toHaveCount(0);

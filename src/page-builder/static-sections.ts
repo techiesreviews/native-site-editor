@@ -291,6 +291,7 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     // The section stylesheet may already be loaded by the page through a chain of
     // loaded, unconditional @imports from its own links: then it counts as linked.
     const viaImport = new Set<string>();
+    let imports = 0;
     if (css !== undefined) {
       const seen = new Set<string>();
       const queue = [...roots];
@@ -304,13 +305,14 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
           if (!imported || seen.has(imported)) continue;
           if (imported === record.stylesheetPath) {
             if (item.media !== undefined && !/^\s*(?:all)?\s*$/i.test(item.media) || item.supports !== undefined || item.layer !== undefined) reject("The section stylesheet is imported conditionally or into a layer.");
-            viaImport.add(path);
+            viaImport.add(path); imports++;
           } else {
             seen.add(imported); queue.push(imported);
           }
         }
       }
-      if (viaImport.size > 1 || viaImport.size && linked) reject("The section stylesheet is loaded more than once.");
+      // Twice from one sheet counts too: every import loads it again.
+      if (imports > 1 || imports && linked) reject("The section stylesheet is loaded more than once.");
     }
     for (const [path, source] of Object.entries(input.stylesheetSources)) {
       if (source === undefined) continue;
