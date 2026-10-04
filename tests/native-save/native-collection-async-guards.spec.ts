@@ -21,8 +21,9 @@ async function seed(p: Page, baseURL: string | undefined, supplier: boolean) {
   ];
   const two = page("Two", `<meta name="field:series-name" content="Clay"><meta name="field:release-year" content="2026">`);
   if (supplier) files.push(["work/two/index.html", two]);
-  for (const [path, content] of files) await p.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
-  if (!supplier) await p.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "work/two/index.html", delete: true } });
+  const edits: Record<string, unknown>[] = files.map(([path, content]) => ({ path, content }));
+  if (!supplier) edits.push({ path: "work/two/index.html", delete: true });
+  for (const data of edits) expect((await p.request.post(`${baseURL}/__demo/external-edit`, { data })).ok()).toBeTruthy();
   await p.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(p.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(p.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
@@ -50,6 +51,7 @@ test("a declared sort keeps its friendly label after the last page supplying the
     const panel = await seed(p, baseURL, supplier);
     const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
     expect(await selected(sort)).toEqual(["release-year", "Release year"]);
+    if (!supplier) await expect(sort.locator('option[value="release-year"]')).toHaveCount(1);
     await expect(panel.getByRole("combobox", { name: "Order", exact: true })).toHaveValue("descending");
   }
 });
