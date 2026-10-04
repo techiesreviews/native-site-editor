@@ -26,8 +26,8 @@ async function seed(page: Page, baseURL: string | undefined) {
 async function selectGrid(page: Page) {
   await frame(page).locator('[data-key="mixed-list"]').click({ position: { x: 5, y: 5 } });
   await page.getByRole("button", { name: "section.collection-grid", exact: true }).click();
-  if (await page.getByRole("button", { name: "Open Style panel", exact: true }).isVisible())
-    await page.getByRole("button", { name: "Open Style panel", exact: true }).click();
+  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
+  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
   await page.locator(".selected-collection > summary").click();
   await expect(inspector(page).getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
 }
