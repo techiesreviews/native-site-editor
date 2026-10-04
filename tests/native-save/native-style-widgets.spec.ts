@@ -74,7 +74,7 @@ test("detached grid controls cannot write after breakpoint or selection changes"
   await style(page).getByRole("searchbox",{name:"Search styles"}).fill("grid");
   const grid = style(page).getByRole("region",{name:"Grid layout"}); await expect(grid).toBeVisible();
   await grid.getByLabel("Columns",{exact:true}).fill("4");
-  await page.evaluate(() => { (window as any).oldGridButton = [...document.querySelectorAll<HTMLButtonElement>(".grid-editor button")].find(button => button.textContent === "Replace with 4 equal columns"); });
+  await page.evaluate(() => { (window as any).oldGridButton = [...document.querySelectorAll<HTMLButtonElement>(".grid-editor button")].find(button => button.getAttribute("aria-label") === "Replace with 4 equal columns"); });
   await style(page).getByRole("combobox",{name:"Style breakpoint"}).selectOption("mobile");
   await page.evaluate(() => (window as any).oldGridButton.click());
   expect(await source(page)).not.toContain("repeat(4, minmax(0, 1fr))");
