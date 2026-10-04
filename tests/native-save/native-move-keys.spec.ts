@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Alt+Up and Alt+Down move the selected section one sibling position from
 // the preview, the edit bar and the page structure sidebar: one undo step,
-// nothing at the ends, nothing for an atom.
+// nothing at the ends; ordinary elements also move among their siblings.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -97,13 +97,19 @@ test("Alt+Up/Down with focus in the edit bar moves the section and keeps focus o
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // A paragraph's bar has no move: the keys do nothing there.
+  // Ordinary paragraphs move among their siblings without moving the section.
   await select(page, "section.filler p:nth-of-type(2)");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await status(page).evaluate((el) => { el.textContent = ""; });
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect(status(page)).toHaveText("");
+  await expect(status(page)).toHaveText("Element moved");
+  await expect(bar(page).getByRole("button", { name: "Bold" })).toBeFocused();
+  await expect.poll(() => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")))).toEqual(["filler-2", "filler-1", "filler-3", "filler-4", "filler-5"]);
+  const first = indexSource.match(/<p data-key="filler-1">[^<]*<\/p>/)![0];
+  const second = indexSource.match(/<p data-key="filler-2">[^<]*<\/p>/)![0];
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource.replace(`${first}\n    ${second}`, `${second}\n    ${first}\n    `));
+  await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
@@ -120,10 +126,14 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await expect(row(page, "Section")).toBeFocused();
   await expect(row(page, "Section")).toHaveAttribute("aria-selected", "true");
   // Last already: nothing happens and focus stays put.
+  const edgeSource = await editorText(page, "#content");
+  await row(page, "Section").focus();
   await status(page).evaluate((el) => { el.textContent = ""; });
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
   await expect(status(page)).toHaveText("");
+  await expect.poll(() => editorText(page, "#content")).toBe(edgeSource);
+  await row(page, "Section").focus();
   await expect(row(page, "Section")).toBeFocused();
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
@@ -133,25 +143,27 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // A heading's row: no move; the arrow walks the rows as it always does.
+  // Ordinary heading moves consume the key and preserve the selected row.
   await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
   await row(page, "Heading A native browser preview").click();
   await status(page).evaluate((el) => { el.textContent = ""; });
   await page.keyboard.press("Alt+ArrowDown");
-  await expect(status(page)).toHaveText("");
-  await expect(row(page, "Heading A native browser preview")).not.toBeFocused();
-  await expect(frame(page).locator("section.hero > h1:first-child")).toHaveCount(1);
+  await expect(status(page)).toHaveText("Element moved");
+  await expect(row(page, "Heading A native browser preview")).toBeFocused();
+  await expect(frame(page).locator("section.hero > p:first-child + h1")).toHaveCount(1);
+  const heading = indexSource.match(/    <h1[^>]*>[^<]*<\/h1>\n/)![0];
+  const paragraph = indexSource.match(/    <p[^>]*class="lead"[^>]*>[^<]*<\/p>\n/)![0];
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource.replace(heading + paragraph, "    \n" + paragraph + heading));
+  await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
 test("Alt+Down on a page structure row while a component file is open opens the page first, then moves the section", async ({ page }) => {
-  // A click inside a card opens the card's template: the page is no longer the open file.
-  const handle = await page.locator(".native-preview-frame").elementHandle();
-  const child = await handle!.contentFrame();
-  await child!.evaluate(() => {
-    const card = document.querySelector("project-card") as HTMLElement;
-    (card.shadowRoot!.querySelector(".project-card__body") as HTMLElement).click();
-  });
+  // Shared parts open their template only after explicit Edit component intent.
+  await row(page, "Section").locator(".page-structure__toggle").click();
+  await tree(page).getByRole("treeitem", { name: /^Project card Reusable cards(?: Edit component Disconnect this instance)?$/ }).locator(".page-structure__label").click();
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await frame(page).locator("project-card article").first().click({position:{x:5,y:5}});
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   await expect(tree(page)).toBeVisible();
   // Focus the section's row without clicking it (a click would open the page by itself).
