@@ -86,10 +86,12 @@ the card text is stored as a custom page field `<id>-<slot>` on that page, with 
 Conversion is refused, with a readable reason and no writes, for rich or image parts,
 mixed card shapes, external or duplicate links, folders that would drop a current
 card, or cards in a custom order that page order would change. The grid also persists
-its custom field names in native `data-fields`, an ASCII-space-separated list. This
+its custom field names in native `data-fields`, an ASCII-whitespace-separated list. This
 keeps those exact names valid when the last page supplying a value moves or is
 deleted. Declarations apply only to that grid; undeclared or misspelled names still
-fail validation. Sort and filter controls show friendly names such as “Card note”
+fail validation. The list is additive: unused declarations remain until the author
+edits the attribute. Existing collections without a list are not changed automatically.
+Sort and filter controls show friendly names such as “Card note”
 while retaining the stored field name. Native planning and actual-starter browser
 tests cover the schema and labels; the last-supplying-page deletion is covered at
 the native-operation planning layer.

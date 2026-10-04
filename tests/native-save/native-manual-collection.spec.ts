@@ -62,7 +62,7 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
   await expect(sort).toBeVisible();
   const labels = await sort.locator("option").allTextContents();
   expect(labels).toContain("Card note");
-  expect(labels.some((label) => /^G[0-9a-z]{5}-/.test(label))).toBe(false);
+  expect(labels.some((label) => /^G[0-9a-z]{5}[ -]/.test(label))).toBe(false);
   const components = await storedDrafts(page);
   expect(components.some((draft) => draft.path.startsWith("components/") || draft.path.startsWith("styles/"))).toBe(false);
   await page.locator(".code-editor__undo").first().click();
