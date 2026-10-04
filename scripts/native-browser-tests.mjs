@@ -1,6 +1,7 @@
 import { readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fixtureKind } from "../tests/native-save/fixture-contract.ts";
 
 const actualOnly = new Set([
@@ -44,7 +45,7 @@ try {
     console.log(`Fixture: ${group} (${resolve(env.ASE_NATIVE_SAVE_FIXTURE)})\n${files.join("\n")}`);
   } else {
     if (!forwarded.includes("--list") && !existsSync(resolve(env.ASE_NATIVE_SAVE_FIXTURE))) throw new Error(`Fixture does not exist: ${resolve(env.ASE_NATIVE_SAVE_FIXTURE)}. --check can inspect the selection without a server.`);
-    const result = spawnSync(process.execPath, ["node_modules/@playwright/test/cli.js", "test", "-c", "playwright.native-save.config.ts", ...files, ...forwarded], { env, stdio: "inherit" });
+    const result = spawnSync(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", "-c", "playwright.native-save.config.ts", ...files, ...forwarded], { env, stdio: "inherit" });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;
   }

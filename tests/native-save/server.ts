@@ -149,7 +149,8 @@
 import { createHash } from "node:crypto";
 import sodium from "libsodium-wrappers";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { realpathSync } from "node:fs";
 import { createServer, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
@@ -1353,7 +1354,7 @@ async function main() {
       allowedHosts: process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN
         ? [new URL(process.env.ASE_NATIVE_SAVE_PUBLIC_ORIGIN).hostname]
         : undefined,
-      fs: { allow: [projectRoot, realpathSync(join(projectRoot, "node_modules"))] },
+      fs: { allow: [projectRoot, realpathSync(resolve(dirname(createRequire(import.meta.url).resolve("vite/package.json")), ".."))] },
     },
   });
   await app.listen();
