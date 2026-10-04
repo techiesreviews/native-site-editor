@@ -15,8 +15,8 @@ const page = `<!doctype html><html><head><title>T</title><link rel="stylesheet" 
 const css = `.intro h2 { color: rgb(200, 0, 0); }\n`;
 const master = (h2: string, extra = "") => `<!-- intro master -->\n<section class="intro"><h2>${h2}</h2><p>Master text${extra}</p></section>\n`;
 const masterPath = ".editor/sections/intro.html";
-const sources = { "index.html": page, "about/index.html": page.replace("Before", "About"), "styles/site.css": css };
-const site = { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} };
+const sources = { "components/x-note.html": `<p>Note</p>`, "index.html": page, "about/index.html": page.replace("Before", "About"), "styles/site.css": css };
+const site = { routes: { "/": "index.html", "/about/": "about/index.html" }, components: { "x-note": "components/x-note.html" } };
 const input = (masterSource: string, session = "s1") => ({ session, pagePath: "index.html", pageSource: page, node: [1, 1], basis: copy, masterPath, masterSource });
 
 test.beforeAll(async () => {
@@ -47,6 +47,7 @@ const pageHtml = (inner: Frame) => inner.evaluate(() => document.getElementById(
 test("master session renders in place, maps selection, typing and Code edits to the master, and Done restores the copy", async ({ page }) => {
   const { frame, inner } = await open(page);
   const before = await pageHtml(inner);
+  await clearEvents(page);
   const status = await page.evaluate(([i]) => (window as any).setMaster(i), [input(master("Master"))] as const);
   expect(status).toEqual({ active: true, session: "s1", pagePath: "index.html", masterPath });
   await expect(frame.locator("section.intro h2")).toHaveText("Master");
@@ -58,13 +59,16 @@ test("master session renders in place, maps selection, typing and Code edits to 
   // Public CSS still styles the master section.
   await expect(frame.locator("section.intro h2")).toHaveCSS("color", "rgb(200, 0, 0)");
 
+  // The page structure stops at the master's section, at its page place.
+  await expect.poll(async () => (await events(page, "structure")).length).toBeGreaterThan(0);
+  const items = (await events(page, "structure")).at(-1).structure.items;
+  expect(items[1].tag).toBe("main");
+  expect(items[1].children[1]).toMatchObject({ tag: "section", node: [1, 1], children: [] });
+
   // A click on the master's heading selects it as the master file, from its root.
   await clearEvents(page);
   await frame.locator("section.intro h2").click();
   await expect.poll(async () => (await events(page, "select")).at(-1)).toMatchObject({ path: masterPath, node: [0, 0], tag: "h2", reason: "click", paintedSource: master("Master"), masterSession: "s1" });
-  // The page structure stops at the master's section, at its page place.
-  const structure = (await events(page, "structure")).at(-1);
-  if (structure) expect(JSON.stringify(structure.structure.items)).not.toContain(`"node":[0,0]`);
 
   // Real typing emits a master text edit for this session.
   await frame.locator("section.intro h2").click();
@@ -157,4 +161,68 @@ test("invalid sessions are refused without rendering a wrong DOM; scripts and ha
   expect(markup).not.toMatch(/script|onclick|javascript:/i);
   await frame.locator("section.intro a").click();
   expect(await inner.evaluate(() => (window as any).pwned)).toBeUndefined();
+});
+
+const option = (page: Page) => page.locator(".pb-add-panel .pb-add-item__option").filter({ hasText: "Note" });
+async function openAdd(page: Page) {
+  if (!(await option(page).isVisible())) await page.locator("#add").click();
+}
+async function chooseNote(page: Page) {
+  await openAdd(page);
+  await expect(option(page)).toBeVisible();
+  await option(page).focus();
+  await page.keyboard.press("Enter");
+}
+
+test("Add inserts on the page without a master; a master session disables and closes it, and Done restores it", async ({ page }) => {
+  const { frame } = await open(page);
+  // Control: the real Add button and choice insert into the page.
+  await frame.locator("p.before").click();
+  await chooseNote(page);
+  await expect.poll(() => events(page, "insert")).toEqual([{ type: "insert", point: { path: "index.html", parent: [1], index: 2 }, tag: "x-note" }]);
+  await clearEvents(page);
+
+  // A panel left open when a session starts closes, and its stale option inserts nothing.
+  await openAdd(page);
+  await expect(option(page)).toBeVisible();
+  const stale = await option(page).elementHandle();
+  await page.evaluate(([i]) => (window as any).setMaster(i), [input(master("Master"))] as const);
+  await expect(frame.locator("section.intro h2")).toHaveText("Master");
+  await expect(page.locator(".pb-add-panel:visible")).toHaveCount(0);
+  await expect(page.locator("#add")).toBeDisabled();
+  await stale!.evaluate((el: HTMLElement) => el.click());
+  await stale!.evaluate((el: HTMLElement) => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  // The button stays inert while the session lasts.
+  await frame.locator("p.before").click();
+  await page.locator("#add").click({ force: true });
+  await expect(page.locator(".pb-add-panel:visible")).toHaveCount(0);
+  await page.waitForTimeout(200);
+  expect(await events(page, "insert")).toEqual([]);
+
+  // Done: Add is back and inserts again.
+  await page.evaluate(() => (window as any).setMaster(undefined));
+  await expect(frame.locator("section.intro h2")).toHaveText("Hello");
+  await expect(page.locator("#add")).toBeEnabled();
+  await chooseNote(page);
+  await expect.poll(async () => (await events(page, "insert")).length).toBe(1);
+});
+
+test("a route change restores Add; History keeps it off after a session ends", async ({ page }) => {
+  const { frame } = await open(page);
+  await page.evaluate(([i]) => (window as any).setMaster(i), [input(master("Master"))] as const);
+  await expect(page.locator("#add")).toBeDisabled();
+  await page.evaluate(() => (window as any).preview.follow("/about/"));
+  await expect(frame.locator("p.before")).toHaveText("About");
+  await expect(page.locator("#add")).toBeEnabled();
+
+  // History on show, then a session starts and ends: Add stays off until History closes.
+  await page.evaluate(() => (window as any).preview.follow("/"));
+  await expect(frame.locator("p.before")).toHaveText("Before");
+  await page.evaluate(() => (window as any).preview.setViewing(document.createElement("div")));
+  await expect(page.locator("#add")).toBeDisabled();
+  await page.evaluate(([i]) => (window as any).setMaster(i), [input(master("Master"))] as const);
+  await page.evaluate(() => (window as any).setMaster(undefined));
+  await expect(page.locator("#add")).toBeDisabled();
+  await page.evaluate(() => (window as any).preview.setViewing(undefined));
+  await expect(page.locator("#add")).toBeEnabled();
 });

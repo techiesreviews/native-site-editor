@@ -390,7 +390,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,
     // An earlier version on show (History) is not edited: its places are not the source's.
-    insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
+    // Nor is a page while a master session is on show: only the master is edited then.
+    insert: (point, choice) => { if (!viewing && !master) handlers.onInsert?.(point, choice); },
     prepare: (tags) => {
       const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
       if (wanted.length) handlers.onComponentStyles?.(wanted);
@@ -510,6 +511,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
     }
     if (before && (!master || master.token !== before.token)) codeLink.cancel();
+    syncAddLock();
+  }
+  // "+ Add" and its docked panel: unavailable while History shows an earlier
+  // version or a master session is on show; back only when neither is.
+  let addLocked = false;
+  let addButtonEl: HTMLButtonElement | undefined;
+  function syncAddLock() {
+    const locked = Boolean(viewing) || Boolean(master && !alone);
+    if (locked !== addLocked) {
+      addLocked = locked;
+      pageBuilder.setViewing(locked);
+    }
+    if (addButtonEl && locked && !viewing) addButtonEl.title = "Finish editing the saved section to add sections to the page";
   }
   const masterPath = () => (master && !alone ? master.composition.input.masterPath : undefined);
   function schedule() {
@@ -1103,7 +1117,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       viewing?.remove();
       viewing = bar;
       pane.classList.toggle("is-viewing", Boolean(bar));
-      pageBuilder.setViewing(Boolean(bar));
+      syncAddLock();
       if (bar) {
         pane.insertBefore(bar, canvas.bar);
         canvas.setCrumbs([]);
@@ -1116,8 +1130,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** The top bar's "+ Add" opens the Add panel (src/page-builder/add-panel.ts). */
     attachAddButton(addButton: HTMLButtonElement) {
+      addButtonEl = addButton;
       pageBuilder.attachAddButton(addButton);
       pageBuilder.setActive(mounted);
+      if (addLocked) pageBuilder.setViewing(true);
+      syncAddLock();
     },
     /** The grid of repeated items around the selection, as the runtime last reported it. */
     selectedItemGrid() {
@@ -1169,6 +1186,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       editableTemplatePath = undefined;
       masterInput = undefined;
       master = undefined;
+      syncAddLock();
       componentStyles = {};
       loadError = false;
       insertControls.clear();

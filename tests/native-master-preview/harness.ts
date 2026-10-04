@@ -7,7 +7,16 @@ const preview = createNativePreview(document.getElementById("host")!, {
   onSelect: (selection) => events.push({ type: "select", path: selection.path, node: selection.node, tag: selection.tag, reason: selection.reason, paintedSource: selection.paintedSource, masterSession: selection.masterSession }),
   onTextEdit: (edit) => events.push({ type: "text-edit", ...edit }),
   onStructure: (structure) => events.push({ type: "structure", structure }),
+  // One Add choice, inserted after the page's first section place, as main's pointFor would.
+  insertChoices: () => [{ tag: "x-note", label: "Note" }],
+  insertPointFor: () => ({ path: "index.html", parent: [1], index: 2, top: 0, left: 0, width: 100, before: "" }),
+  onInsert: (point, choice) => events.push({ type: "insert", point: { path: point.path, parent: point.parent, index: point.index }, tag: choice.tag }),
 });
+const add = document.createElement("button");
+add.id = "add";
+add.textContent = "+ Add";
+document.body.prepend(add);
+preview.attachAddButton(add);
 Object.assign(window, {
   events,
   preview,
