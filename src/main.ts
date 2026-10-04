@@ -404,7 +404,7 @@ function mountWorkspace() {
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
-      if (!structure) { pageStructure?.update(undefined); return; }
+      if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
       const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
       const proof = scope && editorModule?.captureFileModelState(scope, path);
       const capture = (item: NativeStructureItem) => {
@@ -422,6 +422,7 @@ function mountWorkspace() {
       };
       const shown = withoutCollectionRecipes(structure);
       shown.items.forEach(capture);
+      nativeShownStructure = shown;
       pageStructure?.update(shown);
     },
     onMove: (direction) => nativeElementMoveAction?.(direction),
@@ -2847,7 +2848,8 @@ function nativeComponentFieldsRevision() {
   const sources = nativeSources();
   // Without a scope or the editor module there are no model proofs, so nothing would ever mark this
   // snapshot stale: whether proofs exist belongs to the key, or Structure keeps its pre-editor fields.
-  const key = JSON.stringify([generation, setupScope(), currentPath, nativeSite?.components, sources, Boolean(scope && editorModule)]);
+  // The editor's page data decides which rows are generated, so its arrival is a new revision too.
+  const key = JSON.stringify([generation, setupScope(), currentPath, nativeSite?.components, sources, nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) ?? null, Boolean(scope && editorModule)]);
   if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
   nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
   return String(++nativeComponentFieldToken);
@@ -2855,6 +2857,15 @@ function nativeComponentFieldsRevision() {
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
+// The structure last shown, so collection ownership can be repainted once the
+// editor's page data loads without waiting for the preview to paint again.
+let nativeShownStructure: Parameters<NonNullable<typeof pageStructure>["update"]>[0];
+
+function repaintNativeStructureOwnership() {
+  const shown = nativeShownStructure;
+  if (!shown?.path || shown.path !== currentPath || shown.paintedSource === undefined || nativeEffectiveSource(shown.path) !== shown.paintedSource) return;
+  pageStructure?.update(shown);
+}
 // Card grids: Add card, New page and card, and their edit bar (src/page-builder/cards.ts).
 let cards: Cards | undefined;
 // The loaded native site: its pages by route and its components by tag,
@@ -3956,13 +3967,16 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
   }
   const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
   if (!live() || nativeSite !== site) return false;
-  let loaded = false;
+  let loaded = false, sidecar = false;
   for (const source of sources) {
     if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path)) continue;
     nativeBaseSources.set(source.path, contents[source.sha]);
     loaded = true;
+    if (source.path === EDITOR_PAGE_BUILDER_PATH && contents[source.sha] !== undefined) sidecar = true;
   }
   if (loaded) updateNativePreviewSources();
+  // Structure drew its rows while ownership could not be checked; draw them again now it can.
+  if (sidecar) repaintNativeStructureOwnership();
   return true;
 }
 
