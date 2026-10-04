@@ -214,3 +214,23 @@ test("an update that would replace or contain a collection's element is refused 
   assert.ok(!("error" in ok), "error" in ok ? ok.error : "");
   assert.ok(ok.operation);
 });
+
+// A collection outside the copy, without an id, is found by its opening tag. New record HTML
+// carrying the same opening tag would make it ambiguous after the update: refused before writing.
+test("an update that would make an outside collection ambiguous is refused", () => {
+  const list = `<ul class="list" data-each="/work/" data-limit="3"><template><li></li></template></ul>`;
+  const home = page(`${oldHtml}${list}`);
+  const linked = JSON.parse(link(baseJson, "index.html", home, range(home, oldHtml)).text);
+  linked.collections.work = {
+    pagePath: "index.html", target: { path: [1, 0, 1], tag: "ul", openingTagFingerprint: `<ul class="list">` },
+    folders: ["/work/"], sort: "", filter: "", limit: 3, template: "<li></li>", fields: [], overrides: {},
+  };
+  const documentText = JSON.stringify(linked);
+  const clashing = `<section class="hero"><h2>Hello</h2><ul class="list"><li>x</li></ul></section>`;
+  const plan = planNativeSectionCopiesUpdate({ documentText, sources: { "index.html": home }, record: record(clashing) });
+  assert.match((plan as { error: string }).error, /After the update, index\.html: .*ambiguous/);
+  // The same collection with record HTML that does not clash updates, and the collection stays put.
+  const fine = planNativeSectionCopiesUpdate({ documentText, sources: { "index.html": home }, record: record(newHtml) });
+  assert.ok(!("error" in fine), "error" in fine ? fine.error : "");
+  assert.equal(fine.operation!.edits.get("index.html"), page(`${newHtml}${list}`));
+});

@@ -274,7 +274,7 @@ export function planNativeSectionCopiesUpdate(input: {
     for (const page of new Set(updated.map((entry) => entry.page))) {
       const before = input.sources[page]!;
       const replace = updated.filter((entry) => entry.page === page).sort((a, b) => b.start - a.start);
-      checkCollections(page, before, replace, document);
+      const collections = checkCollections(page, before, replace, document);
       let after = before;
       for (const entry of replace) after = after.slice(0, entry.start) + input.record.html + after.slice(entry.end);
       checkReplacedPage(page, after, input.record);
@@ -296,6 +296,7 @@ export function planNativeSectionCopiesUpdate(input: {
         const old = sections[entry.key] as unknown as NativeSectionLink;
         sections[entry.key] = { ...old, target, ...(isUpdated ? { basis: input.record.html } : {}) } as unknown as JsonValue;
       }
+      checkCollectionsAfter(page, after, collections, replace, input.record.html.length, document);
       edits.set(page, after);
     }
     edits.set(EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument(document, input.documentText));
@@ -310,15 +311,35 @@ export function planNativeSectionCopiesUpdate(input: {
  * The page's collections (editor JSON) must all be found, uniquely, and none may sit inside, be,
  * or contain a copy about to be replaced: its recipe would vanish or rebind silently.
  */
-function checkCollections(page: string, source: string, replaced: ResolvedNativeSectionLink[], document: PageBuilderDocument): void {
-  const records = Object.fromEntries(Object.entries(document.collections).filter(([, record]) => record.pagePath === page));
-  if (!Object.keys(records).length) return;
+function pageCollections(page: string, document: PageBuilderDocument) {
+  return Object.fromEntries(Object.entries(document.collections).filter(([, record]) => record.pagePath === page));
+}
+function checkCollections(page: string, source: string, replaced: ResolvedNativeSectionLink[], document: PageBuilderDocument): Record<string, { start: number; end: number }> {
+  const records = pageCollections(page, document);
+  if (!Object.keys(records).length) return {};
   const located = locateCollections(source, records);
   if ("error" in located) fail(`${page}: ${located.error}`);
   for (const [id, { element }] of Object.entries(located.collections)) {
     for (const copy of replaced) {
       if (element.start < copy.end && copy.start < element.end) fail(`Collection ${id} on ${page} is inside or around a copy to update; update it by hand.`);
     }
+  }
+  return Object.fromEntries(Object.entries(located.collections).map(([id, { element }]) => [id, { start: element.start, end: element.end }]));
+}
+/**
+ * After the update every collection of the page is still found, uniquely, at exactly its old
+ * range shifted by the replaced copies before it: new HTML may not make a target ambiguous or
+ * rebind it to another element.
+ */
+function checkCollectionsAfter(page: string, after: string, before: Record<string, { start: number; end: number }>, replaced: ResolvedNativeSectionLink[], length: number, document: PageBuilderDocument): void {
+  const records = pageCollections(page, document);
+  if (!Object.keys(records).length) return;
+  const located = locateCollections(after, records);
+  if ("error" in located) fail(`After the update, ${page}: ${located.error}`);
+  for (const [id, range] of Object.entries(before)) {
+    const shift = replaced.filter((copy) => copy.end <= range.start).reduce((sum, copy) => sum + length - (copy.end - copy.start), 0);
+    const element = located.collections[id]?.element;
+    if (!element || element.start !== range.start + shift || element.end !== range.end + shift) fail(`After the update, collection ${id} on ${page} would point at another element.`);
   }
 }
 function findElement(source: string, start: number, end: number): SourceElement | undefined {
