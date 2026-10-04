@@ -17,6 +17,12 @@
   var editing = null;
   var editingText = "";
   var editingHtml = "";
+  // Who owned the element being typed in when typing began: its file and,
+  // inside a master session, that session. A commit after either changed is dropped.
+  var editingOwner = null;
+  // A native master session (editor-only): the page element its <section> was
+  // rendered into, found again after every render. Never marked in the DOM.
+  var masterRoot = null;
   // Shared stylesheets as constructed sheets: one CSSStyleSheet per sheet
   // the page links (and each file those import) for the whole document, adopted by the document and by every
   // component shadow root, so a token declared once at document level is
@@ -270,6 +276,35 @@
     });
   }
 
+  // A master session from the host: its file, session token, the copy's page
+  // path, and the master's <section> markup it rendered there.
+  function readMaster(payload) {
+    var m = payload && payload.master;
+    if (!m || typeof m !== "object") return null;
+    if (typeof m.path !== "string" || !/^\.editor\/sections\/[a-z][a-z0-9_-]*\.html$/.test(m.path)) return null;
+    if (typeof m.session !== "string" || !m.session || typeof m.section !== "string") return null;
+    if (!Array.isArray(m.node) || !m.node.length || m.node.length > 500 || !m.node.every(function (i) { return typeof i === "number" && i >= 0 && Math.floor(i) === i; })) return null;
+    return { path: m.path, session: m.session, node: m.node.slice(), section: m.section };
+  }
+  // The element tree's tag names, which fix every element's index path.
+  function tagShape(el) {
+    return el.localName + "(" + Array.prototype.filter.call(el.children, function (c) { return !injectedStyle(c); }).map(tagShape).join(",") + ")";
+  }
+  // The page element showing the master's <section>, only when it is exactly
+  // where the host put it and has the master's element tree; else none, and
+  // nothing on the page is editable while the session lasts.
+  function findMasterRoot() {
+    if (!state || !state.master || !pageEl) return null;
+    var el = walkNodePath(pageEl, state.master.node);
+    if (!el || el.localName !== "section") { reportError("The master could not be shown on this page."); return null; }
+    var expected = makeTemplate(state.master.section).content.firstElementChild;
+    if (!expected || tagShape(expected) !== tagShape(el)) { reportError("The master could not be shown on this page."); return null; }
+    return el;
+  }
+  function inMaster(el) {
+    return !!(masterRoot && el && masterRoot.isConnected && (el === masterRoot || masterRoot.contains(el)));
+  }
+
   function renderPage() {
     if (!state || !pageEl) return;
     var html = state.pages[state.route];
@@ -278,6 +313,7 @@
       html = keys.length ? state.pages[keys[0]] : "";
     }
     reconcileChildren(pageEl, freshContent(html));
+    masterRoot = findMasterRoot();
     renderInstances();
     updateBoxes();
     scheduleInsertPoints();
@@ -407,6 +443,10 @@
     hadError = false;
     renderDepth = 0;
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
+    var nextMaster = readMaster(payload);
+    // A master session that ends or changes drops typing not yet sent: it belongs to that session.
+    if ((state && state.master ? state.master.session : "") !== (nextMaster ? nextMaster.session : "")) stopEditing(false);
+    masterRoot = null;
     state = {
       pages: payload.pages || {},
       pagePaths: payload.pagePaths || {},
@@ -420,7 +460,8 @@
       route: payload.route || "/",
       base: typeof payload.base === "string" ? payload.base : "/",
       sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
-      context: String(payload.context || "")
+      context: String(payload.context || ""),
+      master: nextMaster
     };
     Object.keys(state.components).forEach(defineTag);
     // Typing not yet sent survives this render (see reconcileNode).
@@ -646,7 +687,8 @@
 
   function insertPoints() {
     var out = [];
-    if (!pageEl || !state) return out;
+    // A master session offers no places on the page.
+    if (!pageEl || !state || state.master) return out;
     [pageEl].concat(Array.prototype.slice.call(pageEl.querySelectorAll("*"))).forEach(function (container) {
       var children = Array.prototype.slice.call(container.children);
       if (!children.some(sectionLike)) return;
@@ -922,7 +964,7 @@
       var underPointer = hovered && hovered.isConnected ? gridItemOf(hovered) : null;
       if (underPointer) recentGrid = underPointer;
       if (trackedGrid && (!trackedGrid.container.isConnected || !pageEl.contains(trackedGrid.container))) trackedGrid = null;
-      var report = {
+      var report = state.master ? { hover: null, selected: null } : {
         hover: gridReport(trackedGrid || underPointer),
         selected: gridReport(selected && selected.isConnected ? gridItemOf(selected) : null)
       };
@@ -952,7 +994,9 @@
     for (var i = 0; i < children.length && out.length < 500; i++) {
       var child = children[i];
       if (injectedStyle(child)) continue;
-      var path = elementIndexPath(child);
+      var isMaster = child === masterRoot && state && state.master;
+      // The master's <section> keeps its place on the page; what is inside it belongs to the master file.
+      var path = isMaster ? state.master.node.slice() : elementIndexPath(child);
       if (!path) continue;
       var heading = ownHeading(child);
       out.push({
@@ -961,7 +1005,7 @@
         text: (child.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
         heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",
         slot: child.getAttribute("slot") || "",
-        children: textRun(child) ? [] : structureItems(child, depth + 1)
+        children: isMaster || textRun(child) ? [] : structureItems(child, depth + 1)
       });
     }
     return out;
@@ -1208,6 +1252,11 @@
     if (!state || !request || !Array.isArray(request.node)) return null;
     var path = String(request.path || "");
     var root = null;
+    // The master's elements count from its file's root, where its <section> is [0].
+    if (state.master && path === state.master.path) {
+      if (!masterRoot || !masterRoot.isConnected || request.node[0] !== 0) return null;
+      return request.node.length === 1 ? masterRoot : walkNodePath(masterRoot, request.node.slice(1));
+    }
     if (state.pagePaths[state.route] === path) root = pageEl;
     else {
       var tag = Object.keys(state.componentPaths || {}).find(function (t) { return state.componentPaths[t] === path; });
@@ -1267,6 +1316,7 @@
       var tag = root.host && root.host.localName;
       return String(state.componentPaths && state.componentPaths[tag] || "");
     }
+    if (state.master && inMaster(el)) return state.master.path;
     return String(state.pagePaths && state.pagePaths[state.route] || "");
   }
 
@@ -1918,6 +1968,8 @@
     var out = [];
     var current = el;
     while (current) {
+      // Inside a master session's <section>: counted from the master file's root.
+      if (current === masterRoot && state && state.master) { out.unshift(0); return out; }
       var parentNode = current.parentNode;
       if (!parentNode) return null;
       var index = 0;
@@ -2118,7 +2170,10 @@
   var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
   var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
   function editableText(el) {
-    if (!el || !state || (ownerPath(el) !== state.pagePaths[state.route] && ownerPath(el) !== state.editableTemplatePath)) return false;
+    if (!el || !state) return false;
+    // A master session: only the master's own elements take typing.
+    if (state.master) { if (!inMaster(el) || ownerPath(el) !== state.master.path) return false; }
+    else if (ownerPath(el) !== state.pagePaths[state.route] && ownerPath(el) !== state.editableTemplatePath) return false;
     if (!(TEXT_TAGS.test(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
     var all = el.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
@@ -2143,6 +2198,7 @@
     stopEditing(true);
     if (!editableText(el)) return;
     editing = el;
+    editingOwner = { path: ownerPath(el), session: state && state.master ? state.master.session : "" };
     editingText = el.textContent;
     editingHtml = el.innerHTML;
     el.setAttribute("contenteditable", "plaintext-only");
@@ -2168,7 +2224,12 @@
     var before = editingText;
     editingText = after;
     editingHtml = editing.innerHTML;
-    emit("text-edit", { path: ownerPath(editing), node: elementIndexPath(editing), before: before, after: after });
+    var session = state && state.master ? state.master.session : "";
+    var path = ownerPath(editing);
+    if (!editingOwner || editingOwner.path !== path || editingOwner.session !== session) return;
+    var edit = { path: path, node: elementIndexPath(editing), before: before, after: after };
+    if (session) edit.session = session;
+    emit("text-edit", edit);
   }
   function onEditingKey(e) {
     if (e.key === "Enter") {
@@ -2302,7 +2363,7 @@
   // else (no selection, not a section, text being typed) cancels at once.
   function startSectionDrag(y) {
     endSectionDrag();
-    var container = selected && selected.isConnected && sectionLike(selected) && !editing ? selected.parentElement : null;
+    var container = selected && selected.isConnected && sectionLike(selected) && !editing && !(state && state.master) ? selected.parentElement : null;
     var parentPath = container && pageEl && (container === pageEl || pageEl.contains(container))
       ? (container === pageEl ? [] : elementIndexPath(container))
       : null;
