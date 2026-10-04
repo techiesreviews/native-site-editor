@@ -14,12 +14,19 @@ const page = (body: string) => `<!doctype html><html><head><title>T</title></hea
 const masterPath = sectionMasterPath("intro");
 
 function makeHost(files: Record<string, string>) {
-  const state = { files: { ...files }, revision: "r1", applied: 0, opened: [] as string[], selected: [] as string[], said: [] as string[], openDelay: undefined as undefined | (() => void), afterApply: undefined as undefined | (() => void), currentPath: "index.html", selection: undefined as MasterSelection | undefined };
+  const state = { files: { ...files }, revision: "r1", applied: 0, opened: [] as string[], selected: [] as string[], said: [] as string[], openDelay: undefined as undefined | (() => void), afterApply: undefined as undefined | (() => void), beforeCommit: undefined as undefined | (() => void), currentPath: "index.html", selection: undefined as MasterSelection | undefined };
   const host = {
     snapshot: () => ({ revision: state.revision, files: Object.keys(state.files).sort(), source: (path: string) => state.files[path], currentPath: state.currentPath, selection: state.selection }),
     async open(path: string, revision: string) { if (revision !== state.revision) return false; state.opened.push(path); state.openDelay?.(); return state.revision === revision; },
     select(path: string, range: { start: number; end: number }) { state.selected.push(`${path}@${range.start}`); },
-    apply(operation: StaticSectionOperation, expectedFiles?: readonly string[]) {
+    // As the editor's transaction: awaits (here one tick, plus a hook to change things meanwhile),
+    // then re-checks `current()` and every pin before the final write.
+    async apply(operation: StaticSectionOperation, expectedFiles: readonly string[] | undefined, current: () => boolean) {
+      if (!current()) return false;
+      await Promise.resolve();
+      state.beforeCommit?.();
+      await Promise.resolve();
+      if (!current()) return false;
       if (expectedFiles && JSON.stringify([...expectedFiles].sort()) !== JSON.stringify(Object.keys(state.files).sort())) return false;
       for (const [path, expected] of operation.expectedSources) if (state.files[path] !== expected) return false;
       for (const [path, text] of operation.edits) state.files[path] = text;
@@ -133,7 +140,7 @@ test("Update copies rewrites only unchanged copies, keeps customised ones, in on
   const newer = `\n<section class="intro"><h2>Newer</h2></section>\n`;
   state.files[masterPath] = newer;
   const before = state.applied;
-  const result = controller.updateCopies();
+  const result = await controller.updateCopies();
   assert.deepEqual(result, { changed: 1, skipped: 1 });
   assert.equal(state.applied, before + 1);
   assert.equal(state.files["index.html"], page(`<section class="intro"><h2>Newer</h2></section>`));
@@ -142,12 +149,12 @@ test("Update copies rewrites only unchanged copies, keeps customised ones, in on
   // An invalid master, or a link to a page that isn't loaded, refuses with no writes.
   state.files[masterPath] = "<div></div>";
   const count = state.applied;
-  assert.ok("error" in controller.updateCopies());
+  assert.ok("error" in await controller.updateCopies());
   state.files[masterPath] = newer;
   const linked = JSON.parse(state.files[EDITOR_PAGE_BUILDER_PATH]);
   linked.pages["gone/index.html"] = { sections: { x: { kind: "native-section", recordId: "intro", basis: intro.html, target: { path: [1], tag: "section", openingTagFingerprint: `<section class="intro">` } } } };
   state.files[EDITOR_PAGE_BUILDER_PATH] = JSON.stringify(linked);
-  assert.ok("error" in controller.updateCopies());
+  assert.ok("error" in await controller.updateCopies());
   assert.equal(state.applied, count);
 });
 
@@ -205,4 +212,49 @@ test("an unresolvable link elsewhere does not claim this section is unlinked", (
   broken.pages["gone/index.html"] = { sections: { x: { kind: "native-section", recordId: "intro", basis: intro.html, target: { path: [1], tag: "section", openingTagFingerprint: `<section class="intro">` } } } };
   const { state, controller } = makeHost({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: JSON.stringify(broken) });
   assert.equal(controller.identity(select(state.files, "index.html", intro.html, state)), undefined);
+});
+
+// The editor applies operations asynchronously. Nothing may count as done, or open, before the
+// transaction ends, and a change while it waits refuses it through `current()`.
+test("an Edit waits for its operation; a change before the commit writes and opens nothing", async () => {
+  const home = page(intro.html);
+  for (const change of ["selection", "revision", "source", "graph"] as const) {
+    const outro = `<section class="outro"><p>Bye</p></section>`;
+    const { state, controller } = makeHost({ "index.html": page(intro.html + outro), [EDITOR_PAGE_BUILDER_PATH]: json });
+    const identity = controller.identity(select(state.files, "index.html", intro.html, state))!;
+    state.beforeCommit = () => {
+      if (change === "selection") select(state.files, "index.html", outro, state);
+      if (change === "revision") state.revision = "r2";
+      if (change === "source") state.files[EDITOR_PAGE_BUILDER_PATH] = json.replace('"Intro"', '"Intro!"');
+      if (change === "graph") state.files["new.html"] = "<p></p>";
+    };
+    await identity.onEdit();
+    assert.equal(state.applied, 0, change);
+    assert.equal(state.files[masterPath], undefined, change);
+    assert.deepEqual(state.opened, [], change);
+    assert.equal(controller.context(), undefined, change);
+  }
+  // Success: the master is opened only after the operation has committed, from the new graph.
+  const { state, controller } = makeHost({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: json });
+  let committedWhenOpened = false;
+  state.openDelay = () => { committedWhenOpened = state.applied === 1 && state.files[masterPath] === intro.html; };
+  await controller.identity(select(state.files, "index.html", intro.html, state))!.onEdit();
+  assert.equal(committedWhenOpened, true);
+});
+
+test("Update copies awaits its operation and reports nothing changed when it is refused", async () => {
+  const home = page(intro.html);
+  const { state, controller } = makeHost({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: json });
+  await controller.edit(select(state.files, "index.html", intro.html, state));
+  state.files[masterPath] = `<section class="intro"><h2>Newer</h2></section>`;
+  const applied = state.applied;
+  state.beforeCommit = () => { state.files["index.html"] = page(`<p>typed</p>${intro.html}`); };
+  const refused = await controller.updateCopies();
+  assert.ok("error" in refused);
+  assert.equal(state.applied, applied);
+  state.beforeCommit = undefined;
+  state.files["index.html"] = home;
+  const done = await controller.updateCopies();
+  assert.deepEqual(done, { changed: 1, skipped: 0 });
+  assert.equal(state.files["index.html"], page(`<section class="intro"><h2>Newer</h2></section>`));
 });

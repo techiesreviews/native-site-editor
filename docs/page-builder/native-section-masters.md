@@ -85,8 +85,10 @@ Save to master or Update copies yet.
   the host's revision equals `revision`, checked before and during the open (the host's file
   restore must carry this epoch guard); resolves to whether it opened.
 - `select(path, range)`: select the element at that range on the open page.
-- `apply(operation, expectedFiles?)`: apply atomically as one Undo after comparing every expected
-  source and the graph; return false and write nothing otherwise.
+- `apply(operation, expectedFiles, current)`: a promise, as the editor's transaction. It compares
+  every expected source and the graph, calls `current()` after each await and right before the
+  final write, and resolves to true once committed (one Undo), or false with nothing written.
+  The controller waits for it: the master opens only after the commit, from the new graph.
 - `announce(message)`.
 
 It returns:
@@ -105,7 +107,7 @@ It returns:
   when the master can't be read now), for a banner.
 - `done()`: back to the page; re-selects the copy only when the page bytes are unchanged; never
   writes. A changed revision opens nothing.
-- `updateCopies()`: explicit; plans with `planNativeSectionCopiesUpdate`, pinned to the loaded
+- `updateCopies()` (async): explicit; plans with `planNativeSectionCopiesUpdate`, pinned to the loaded
   master, and applies one operation. Returns `{ changed, skipped }` or `{ error }`.
 
 Conservative limits: a link anywhere that can't be resolved (a page not loaded, an ambiguous or

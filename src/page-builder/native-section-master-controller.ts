@@ -50,10 +50,12 @@ export interface MasterControllerHost {
   /** Selects the element at `range` on the open page. */
   select(path: string, range: { start: number; end: number }): void;
   /**
-   * Applies one operation atomically as one undo step after comparing every expected source and
-   * the file graph. Returns false (and writes nothing) when anything no longer matches.
+   * Applies one operation atomically as one undo step, as the editor's transaction does: it compares
+   * every expected source and the file graph, and calls `current()` after each await and right
+   * before the final write. Resolves to true once committed; false (nothing written) when anything
+   * no longer matches or `current()` is false. The controller waits for it before going on.
    */
-  apply(operation: StaticSectionOperation, expectedFiles?: readonly string[]): boolean;
+  apply(operation: StaticSectionOperation, expectedFiles: readonly string[] | undefined, current: () => boolean): Promise<boolean>;
   announce(message: string): void;
 }
 /** What the edit bar shows on a whole saved section, and its explicit Edit. */
@@ -148,7 +150,9 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
           operation.expectedSources.set(selection.path, selection.paintedSource);
         }
       }
-      if (!host.apply(operation, made.expectedFiles)) { host.announce("The page or its saved sections changed. Select the section again."); return; }
+      // Still this selection, on this page, in this repository, at every step of the write.
+      const current = () => { const now = host.snapshot(); return now.revision === start.revision && stillSelected(now, selection); };
+      if (!await host.apply(operation, made.expectedFiles, current)) { host.announce("The page or its saved sections changed. Select the section again."); return; }
     }
     // After any operation, capture again: the master must now be readable from the graph.
     // A committed operation stays (it is one Undo); only the open is refused.
@@ -210,23 +214,24 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
      * Explicit Update copies from the open master: only copies still equal to their basis change;
      * customised ones are counted as skipped. One operation; nothing is written on refusal.
      */
-    updateCopies(): CopiesUpdateResult {
-      const current = session;
+    async updateCopies(): Promise<CopiesUpdateResult> {
+      const active = session;
       const fail = (error: string) => { host.announce(error); return { error }; };
-      if (!current) return fail("Open a saved section's master first.");
+      if (!active) return fail("Open a saved section's master first.");
       const snapshot = host.snapshot();
-      if (snapshot.revision !== current.revision) { session = undefined; return fail("The repository changed. Open the master again."); }
+      if (snapshot.revision !== active.revision) { session = undefined; return fail("The repository changed. Open the master again."); }
       try {
         const json = snapshot.source(EDITOR_PAGE_BUILDER_PATH);
         if (json === undefined) return fail(`Load ${EDITOR_PAGE_BUILDER_PATH} first.`);
-        const entry = readSectionCatalog(json)[current.recordId];
-        if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== current.htmlPath) return fail("The saved section no longer has this master.");
+        const entry = readSectionCatalog(json)[active.recordId];
+        if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== active.htmlPath) return fail("The saved section no longer has this master.");
         const record = masterRecord(snapshot, entry);
         const pages = Object.keys(readNativeSectionLinks(json));
-        const plan = planNativeSectionCopiesUpdate({ documentText: json, files: snapshot.files, sources: sources(snapshot, pages), record, master: { path: current.htmlPath, source: record.html } });
+        const plan = planNativeSectionCopiesUpdate({ documentText: json, files: snapshot.files, sources: sources(snapshot, pages), record, master: { path: active.htmlPath, source: record.html } });
         if ("error" in plan) return fail(plan.error);
         if (!plan.operation) { host.announce(`No copies to update; ${plan.diverged.length} customised.`); return { changed: 0, skipped: plan.diverged.length }; }
-        if (!host.apply(plan.operation, plan.expectedFiles)) return fail("The pages or the master changed. Nothing was updated.");
+        const current = () => session === active && host.snapshot().revision === active.revision;
+        if (!await host.apply(plan.operation, plan.expectedFiles, current)) return fail("The pages or the master changed. Nothing was updated.");
         host.announce(`Updated ${plan.updated.length}; ${plan.diverged.length} customised left as they are.`);
         return { changed: plan.updated.length, skipped: plan.diverged.length };
       } catch (error) {
