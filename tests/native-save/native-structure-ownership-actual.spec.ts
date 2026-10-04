@@ -1,6 +1,7 @@
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
+import { publishButton } from "./publish";
 
 requireActualFixture();
 
@@ -89,4 +90,42 @@ test("with a readable sidecar, cards a collection made are still flagged generat
   await convert(page);
   await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
   await expectKnownCards(page);
+});
+
+test("while the sidecar is still loading rows read as unchecked; once it arrives cards are flagged and plain instances get their tools back", async ({ page, baseURL }) => {
+  await load(page, baseURL, [["services/one/index.html", servicesPage]]);
+  await convert(page);
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  // The sidecar's blob on the branch (fetched through /api/files?shas=):
+  // hold its real request until released.
+  const snapshot = await (await page.request.get(`${baseURL}/api/snapshot?${new URLSearchParams({ repo: "native-demo-user/native-demo", branch: "main" })}`)).json();
+  const sha = (snapshot.tree as { path: string; sha: string }[]).find((entry) => entry.path === SIDECAR)?.sha;
+  expect(sha).toBeTruthy();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let held = 0;
+  await page.route("**/api/**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if ([params.get("sha"), ...(params.get("shas") ?? "").split(",")].includes(sha!)) { held++; await released; }
+    await route.continue();
+  });
+  await page.goto(`${baseURL}/`);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
+  await expect(tree(page)).toBeVisible();
+  await expect(tree(page).locator(`[title="${UNKNOWN}"]`).first()).toBeVisible();
+  await expect(tree(page).locator(".page-structure__row--generated")).toHaveCount(0);
+  await expect(tree(page).locator(".page-structure__row--instance")).toHaveCount(0);
+  expect(held).toBeGreaterThan(0);
+  const before = await mounted(page);
+  release();
+  // No typing, no source change: the tree repaints once the JSON arrives.
+  await expect(tree(page).locator(`[title="${UNKNOWN}"]`)).toHaveCount(0);
+  await expectKnownCards(page);
+  expect(await mounted(page)).toBe(before);
+  expect(await storedDrafts(page)).toEqual([]);
+  await page.unroute("**/api/**");
 });
