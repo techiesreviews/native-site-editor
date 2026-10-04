@@ -1,7 +1,7 @@
 import { descendants, parseSource, startTagAttributes, type RangeEdit, type SourceElement, type SourceNode } from "./component-model";
 import { attribute, collectionSpec, readCollections, collectionRecords, type SourceCollection } from "./collection-model";
-import { builtinFields, fieldName, type CollectionIdentity } from "./collection-fields";
-import { applyCollectionEdits, bindCollectionTemplate } from "./collection-bake";
+import { builtinFields, fieldName, resolvePageFields, type CollectionIdentity } from "./collection-fields";
+import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords } from "./collection-bake";
 import { escapeText } from "./site-head";
 import { nativePageRoute } from "../../shared/native-routes";
 
@@ -242,7 +242,10 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
         if (ids.has(id)) fail(`Duplicate collection id: ${id}.`);
         ids.add(id);
         const markup = source.slice(collection.template.tag.end, collection.template.close!.start);
-        const records = collectionRecords(input.sources, input.routes, input.identity, collection.spec, pagePath, collection.fields);
+        // Fields as every bake reads them: the page's HTML, then this JSON's page records.
+        const all = collectionRecords(input.sources, input.routes, input.identity, { ...collection.spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, pagePath)
+          .map((record) => ({ ...record, fields: resolvePageFields(record.fields, Object.hasOwn(document.pages, record.path) ? document.pages[record.path] : undefined) }));
+        const records = selectCollectionRecords(all, collection.spec, collection.fields);
         const known = [...new Set([...collection.fields, ...records.flatMap((record) => Object.keys(record.fields))])];
         bindCollectionTemplate(markup, Object.fromEntries(known.map((field) => [field, ""])), known);
         for (const record of records) expectedSources[record.path] = input.sources[record.path];

@@ -4,7 +4,7 @@ import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
-import { planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
+import { bakePageData, planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
 import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
@@ -67,13 +67,13 @@ export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapsh
  * so legitimate metadata changes still rebuild clean listings. Listings whose
  * recipe cannot be baked are left to the bake's own error.
  */
-function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin): GeneratedDrift[] {
+function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin, files: readonly string[]): GeneratedDrift[] {
   const accepted = origin.acceptGeneratedDrift ?? [];
   for (const entry of accepted) {
     if (!origin.expectedSources?.has(entry.path) || origin.expectedSources.get(entry.path) !== own(sources, entry.path))
       throw Error(`Pin ${entry.path} before replacing its cards.`);
   }
-  const all = generatedDrift(sources, routes, identity);
+  const all = generatedDrift(sources, routes, identity, files);
   const isAccepted = (item: { path: string; start: number }) => accepted.some(entry => entry.path === item.path && entry.start === item.start);
   for (const entry of accepted) {
     if (!all.some(item => item.path === entry.path && item.start === entry.start))
@@ -81,6 +81,8 @@ function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, 
   }
   const blocked = all.filter(item => item.kind !== 'unchecked' && !isAccepted(item));
   const edited = [...new Set(blocked.filter(item => item.kind === 'edited').map(item => item.path))];
+  const moved = [...new Set(blocked.filter(item => item.kind === 'edited' && item.pageData).map(item => item.path))];
+  if (moved.length) throw Error(movedPageDataMessage(moved));
   if (edited.length) throw Error(`The cards in ${edited.join(", ")} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
   const unbuilt = [...new Set(blocked.map(item => item.path))];
   if (unbuilt.length) throw Error(`The cards in ${unbuilt.join(", ")} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
@@ -88,11 +90,17 @@ function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, 
   return all.filter(item => item.kind === 'unchecked' && !isAccepted(item));
 }
 
+/** Cards built from page HTML whose values now come from the editor's data. */
+export function movedPageDataMessage(paths: readonly string[]): string {
+  return `The cards in ${paths.join(", ")} still show page values from before they moved to the editor's data, and some of those values differ now. Select the collection and choose “Rebuild cards from page data” to show the editor's values, or “Use manual cards” to keep the cards as they are.`;
+}
 export interface GeneratedDrift {
   path: string;
   start: number;
   /** edited: cards differ by hand; unbuilt: no cards yet; unchecked: this listing's recipe cannot be baked as it is. */
   kind: 'edited' | 'unbuilt' | 'unchecked';
+  /** Edited only because page data in the editor's JSON differs: the cards still match the page HTML alone. */
+  pageData?: true;
 }
 /**
  * Legacy inline listings (recipe still in the page HTML). When the whole graph
@@ -100,13 +108,15 @@ export interface GeneratedDrift {
  * holds a listing (readable or not) is "unchecked": any bake that would then
  * change that page is refused after the fact, page by page.
  */
-export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): GeneratedDrift[] {
+/** `files`: every path in the graph, read or not, so an unread editor JSON is never taken as absent. */
+export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, files?: readonly string[]): GeneratedDrift[] {
   const listingPages = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))]
     .filter(path => sources[path] !== undefined && /data-each/i.test(sources[path]));
   if (!listingPages.length) return [];
   let baked: ReturnType<typeof planBake>;
-  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }); } catch (error) { baked = { error: String(error) }; }
+  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }, bakePageData(sources, files)); } catch (error) { baked = { error: String(error) }; }
   const drift: GeneratedDrift[] = [];
+  let htmlOnly: ReturnType<typeof planBake> | undefined;
   for (const path of listingPages) {
     const source = sources[path];
     let collections: ReturnType<typeof readCollections> | undefined;
@@ -116,7 +126,10 @@ export function generatedDrift(sources: Readonly<Record<string, string>>, routes
       if ('error' in baked) { drift.push({ path, start: collection.element.start, kind: 'unchecked' }); continue; }
       if (!(baked.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end)) continue;
       const region = source.slice(collection.template.end, collection.element.close!.start);
-      drift.push({ path, start: collection.element.start, kind: region.trim() ? 'edited' : 'unbuilt' });
+      if (!region.trim()) { drift.push({ path, start: collection.element.start, kind: 'unbuilt' }); continue; }
+      htmlOnly ??= planBake({ ...sources }, { ...routes }, { name: identity.name });
+      const pageData = !('error' in htmlOnly) && !(htmlOnly.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end);
+      drift.push({ path, start: collection.element.start, kind: 'edited', ...(pageData ? { pageData: true as const } : {}) });
     }
   }
   return drift;
@@ -145,7 +158,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (own(sources, path) !== value) throw Error(`Source changed: ${path}.`);
       expected.set(path, value);
     }
-    const unchecked = assertGeneratedCardsCurrent(sources, routes, identity, origin);
+    const unchecked = assertGeneratedCardsCurrent(sources, routes, identity, origin, input.files);
     const moves = (origin.moves ?? []).map(move => ({ ...move }));
     const deletes = [...(origin.deletes ?? [])];
     const creates = (origin.creates ?? []).map(create => ({ ...create }));
@@ -224,7 +237,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       candidate.set(path, source);
     }
     const candidateSources = Object.fromEntries(candidate);
-    const baked = planBake(candidateSources, afterRoutes, candidateIdentity);
+    const baked = planBake(candidateSources, afterRoutes, candidateIdentity, bakePageData(candidateSources, [...afterFiles]));
     if ('error' in baked) {
       const listings = Object.entries(afterRoutes).filter(([url, path]) => validCollectionRoute(url, path) && readCollections(candidateSources[path]).length).map(([, path]) => path);
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };

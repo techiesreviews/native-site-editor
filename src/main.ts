@@ -91,13 +91,13 @@ import { planSelectedStaticSectionSave } from "./page-builder/native-section-sav
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
-import { generatedDrift, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
-import { documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
+import { bakePageData, documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
 import { sidecarCollectionAt } from "./page-builder/collection-origins";
 import { documentEditTouches, documentRegions, editTouchesGenerated, planDocumentTargetEdit, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
 import { readCollections, validCollectionRoute } from "./page-builder/collection-model";
@@ -1419,8 +1419,10 @@ function mountNativeSelectedCollection(host: HTMLElement) {
         return true;
       }
       // Applying settings rebuilds cards; hand-edited ones are only replaced by the explicit rebuild.
-      const drift = generatedDrift(saved.sources, saved.routes, saved.identity).filter((item) => Object.hasOwn(plan.edits, item.path));
+      const drift = generatedDrift(saved.sources, saved.routes, saved.identity, saved.files).filter((item) => Object.hasOwn(plan.edits, item.path));
       const named = (kind: string) => [...new Set(drift.filter((item) => item.kind === kind).map((item) => item.path))].join(", ");
+      const moved = [...new Set(drift.filter((item) => item.kind === "edited" && item.pageData).map((item) => item.path))];
+      if (moved.length) throw new Error(movedPageDataMessage(moved));
       if (named("edited")) throw new Error(`The cards in ${named("edited")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
       if (named("unbuilt")) throw new Error(`The cards in ${named("unbuilt")} have not been built yet. Choose “Build cards from page data” first.`);
       if (named("unchecked")) throw new Error(`The cards in ${named("unchecked")} cannot be checked against page data. Choose “Use manual cards” to keep them first.`);
@@ -1451,11 +1453,12 @@ function mountNativeSelectedCollection(host: HTMLElement) {
         if (!generatedRegions(source).some((region) => region.host === target.start)) return undefined;
         const snapshot = nativeCollectionSnapshot();
         // Not judged until every page is loaded: never a false "clean".
-        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) {
+        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)
+          || (snapshot.files.includes(EDITOR_PAGE_BUILDER_PATH) && snapshot.sources[EDITOR_PAGE_BUILDER_PATH] === undefined)) {
           void ensureNativeTextIndex().then(() => selectedCollectionView?.update());
           return "checking";
         }
-        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity).find((item) => item.path === target.path && item.start === target.start)?.kind ?? "clean";
+        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity, snapshot.files).find((item) => item.path === target.path && item.start === target.start)?.kind ?? "clean";
       },
       async keepManual(target) {
         const source = nativeEffectiveSource(target.path);
@@ -2302,16 +2305,19 @@ function documentCardSource(path: string, source: string, region: { host: number
   return index < 0 ? undefined : { path: preview.records[index].path, url: preview.records[index].url };
 }
 function generatedCardSource(path: string, source: string, region: GeneratedRegion, at: number) {
-  const routes = deriveNativeRoutes(nativeFiles().sort());
+  const files = nativeFiles().sort();
+  const routes = deriveNativeRoutes(files);
   const sources: Record<string, string> = {};
-  for (const file of nativeFiles()) {
-    if (!/\.html?$/i.test(file) && file !== NATIVE_CONFIG_PATH) continue;
+  for (const file of files) {
+    if (!/\.html?$/i.test(file) && file !== NATIVE_CONFIG_PATH && file !== EDITOR_PAGE_BUILDER_PATH) continue;
     const text = nativeEffectiveSource(file);
     if (text !== undefined) sources[file] = text;
   }
+  // Cards read page fields from the editor's JSON too: no record until it is read.
   if (Object.values(routes).some((file) => sources[file] === undefined)) return undefined;
+  if (files.includes(EDITOR_PAGE_BUILDER_PATH) && sources[EDITOR_PAGE_BUILDER_PATH] === undefined) return undefined;
   const identity = { name: readSiteIdentity(sources[NATIVE_CONFIG_PATH], sources[routes["/"]] ?? "").name };
-  const baked = planBake(sources, routes, identity);
+  const baked = planBake(sources, routes, identity, bakePageData(sources, files));
   if ("error" in baked) return undefined;
   return generatedCardRecord(source, region, baked.collections.find((item) => item.path === path && item.start === region.host), at);
 }
@@ -3004,7 +3010,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
 // rebuilt from the same values in the same step (one draft write, one Undo).
 // The page and JSON are pinned as the caller saw them; a conflicting value,
 // an unreadable JSON or any change made during a load refuses, writing nothing.
-async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<string, string | undefined> = new Map()): Promise<string | undefined> {
+async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<string, string | undefined> = new Map(), choices: Record<string, string> = {}): Promise<string | undefined> {
   if (!nativeRouteForPath(path)) return "This page has no URL in the site.";
   const scope = setupScope(), epoch = generation;
   const source = nativeEffectiveSource(path);
@@ -3037,11 +3043,14 @@ async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<strin
   const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   if (sidecar === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) return `${EDITOR_PAGE_BUILDER_PATH} could not be read, so nothing was moved.`;
   let plan: ReturnType<typeof planLegacyPageFieldMigration>;
-  try { plan = planLegacyPageFieldMigration({ files, pagePath: path, source, sidecarText: sidecar }); }
+  // Explicit choices only for current conflicts; the planner refuses one that no longer matches.
+  const expectedOverrides: Record<string, string> = Object.create(null);
+  for (const [field, value] of Object.entries(choices)) if (typeof value === "string") expectedOverrides[field] = value;
+  try { plan = planLegacyPageFieldMigration({ files, pagePath: path, source, sidecarText: sidecar, expectedOverrides }); }
   catch (error) {
     const message = error instanceof Error ? error.message : "The fields could not be moved.";
     return error instanceof NativePageFieldError && error.code === "native-page-fields/conflict"
-      ? `${message} Nothing was moved. Edit that field below so it has one value, apply, then move the legacy fields again.` : `${message} Nothing was moved.`;
+      ? `${message} Nothing was moved. Choose “Keep page value” or “Keep editor value” for it, then move the fields.` : `${message} Nothing was moved.`;
   }
   if (plan.noop) { element("status").textContent = "This page has no legacy fields to move."; return undefined; }
   // The planner's file list is a proof of the whole graph; the operation itself does not check it.
@@ -3146,7 +3155,7 @@ function nativeSettingsController() {
         announce,
         files: () => nativeFiles(),
         forget: forgetNativeCollection,
-        migrateFields: async (page) => stale() || sourcesChanged() ? changed : applied(await migrateNativeLegacyFields(page, expectedSources)),
+        migrateFields: async (page, choices) => stale() || sourcesChanged() ? changed : applied(await migrateNativeLegacyFields(page, expectedSources, choices)),
       }, { settings: true });
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),

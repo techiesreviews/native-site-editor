@@ -5,6 +5,8 @@ import { applyCollectionEdits, planBake } from "../src/page-builder/collection-b
 import { planSidecarRecipe } from "../src/page-builder/collection-origins.ts";
 import { planNativeCollectionOperation, type NativeCollectionOrigin } from "../src/page-builder/native-collection-host.ts";
 import { NativePageFieldError, planLegacyPageFieldMigration } from "../src/page-builder/native-page-fields.ts";
+import { bakePageData } from "../src/page-builder/document-collections.ts";
+import { generatedDrift } from "../src/page-builder/native-collection-host.ts";
 import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument } from "../src/page-builder/page-builder-document.ts";
 import { deriveNativeRoutes } from "../shared/native-routes.ts";
 
@@ -38,7 +40,7 @@ function plan(sources: Record<string, string>, origin: NativeCollectionOrigin) {
   return { next, planned };
 }
 function bakeLegacy(sources: Record<string, string>) {
-  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity);
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
   if ("error" in baked) throw new Error(baked.error);
   const next = { ...sources };
   for (const [path, edits] of Object.entries(baked.edits)) next[path] = applyCollectionEdits(next[path], edits);
@@ -139,7 +141,7 @@ test("a JSON value that differs from the page refuses, naming the field", () => 
 test("legacy listings read JSON page fields over the page's own, as JSON recipes do", () => {
   const sources = site(false);
   sources[EDITOR_PAGE_BUILDER_PATH] = JSON.stringify({ version: 1, pages: { [fern]: { fields: { client: "Zed Cafe" } } }, collections: {} }) + "\n";
-  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity);
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
   if ("error" in baked) throw new Error(baked.error);
   const output = baked.collections.find((item) => item.path === "index.html")!.output;
   assert.match(output, /Fern &amp; Kettle<\/a> for Zed Cafe/);
@@ -150,15 +152,70 @@ test("legacy listings read JSON page fields over the page's own, as JSON recipes
 test("an invalid JSON refuses a legacy rebuild instead of guessing", () => {
   const sources = site(false);
   sources[EDITOR_PAGE_BUILDER_PATH] = "{ not json";
-  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity);
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
   assert.ok("error" in baked && /not valid/.test(baked.error));
   // A page without legacy listings never reads it.
   const plain = load();
   plain[EDITOR_PAGE_BUILDER_PATH] = "{ not json";
-  assert.ok(!("error" in planBake(plain, deriveNativeRoutes(Object.keys(plain)), identity)));
+  assert.ok(!("error" in planBake(plain, deriveNativeRoutes(Object.keys(plain)), identity, bakePageData(plain, Object.keys(plain)))));
 });
 
 test("a page without old field metas is a no-op", () => {
   const sources = load();
   assert.deepEqual(planLegacyPageFieldMigration({ files: Object.keys(sources).sort(), pagePath: fern, source: sources[fern] }), { noop: true });
+});
+
+const migrateAll = (sources: Record<string, string>) => {
+  for (const page of [fern, pottery, "work/meadow-row-allotments/index.html"]) sources = migrate(sources, page).next;
+  return sources;
+};
+
+test("after every page's fields moved, a JSON recipe on any grid imports the inline listing with its fields known", () => {
+  // No data-fields declared: client is known only from the editor's JSON.
+  const sources = migrateAll(site());
+  assert.doesNotMatch(sources["index.html"], /data-fields/);
+  sources["about/index.html"] = sources["about/index.html"].replace("</main>", '<div class="second-grid"></div>\n</main>');
+  const start = sources["about/index.html"].indexOf('<div class="second-grid">');
+  const origin = planSidecarRecipe({ sources, routes: deriveNativeRoutes(Object.keys(sources)), identity }, "about/index.html", start,
+    { folders: ["/work/"], sort: "client", filter: "", limit: 6, template: "<p>{title} {client}</p>", fields: ["client"] });
+  const { next } = plan(sources, { ...origin, done: "", undone: "" });
+  const document = readPageBuilderDocument(next[EDITOR_PAGE_BUILDER_PATH]);
+  const imported = Object.values(document.collections).find((collection) => collection.pagePath === "index.html")!;
+  assert.ok(imported.fields.includes("client"));
+  // The imported listing keeps its exact cards, now from the JSON recipe; the inline recipe left the page.
+  assert.doesNotMatch(next["index.html"], /data-each|<template>/);
+  assert.match(next["index.html"], /Fern &amp; Kettle<\/a> for Fern Co/);
+  assert.match(next["about/index.html"], /<p>Fern &amp; Kettle Fern Co<\/p>/);
+});
+
+test("page data for a bake: an unread JSON refuses, a truly absent one is empty", () => {
+  const sources = migrateAll(site(false));
+  const routes = deriveNativeRoutes(Object.keys(sources));
+  const { [EDITOR_PAGE_BUILDER_PATH]: json, ...unread } = sources;
+  assert.ok(json);
+  // The JSON exists in the graph but is not read: refused, never baked from HTML alone.
+  const refused = planBake(unread, routes, identity, bakePageData(unread, Object.keys(sources)));
+  assert.ok("error" in refused && /Load \.editor\/page-builder\.json/.test(refused.error));
+  // Truly absent (not in the graph): HTML fields only, which after the move no longer have client.
+  const absent = planBake(unread, routes, identity, bakePageData(unread, Object.keys(unread)));
+  assert.ok("error" in absent && /Unknown collection field: client/.test(absent.error));
+  // Loaded: the effective JSON fields bake the same cards as before the move.
+  const loaded = planBake(sources, routes, identity, bakePageData(sources, Object.keys(sources)));
+  assert.ok(!("error" in loaded));
+  assert.deepEqual(loaded.edits, {});
+  // Drift reads the graph the same way: unread JSON leaves the listing unchecked, never "clean" or edited.
+  assert.deepEqual(generatedDrift(sources, routes, identity, Object.keys(sources)), []);
+  assert.ok(generatedDrift(unread, routes, identity, Object.keys(sources)).every((item) => item.kind === "unchecked"));
+});
+
+test("legacy cards whose JSON value differs from their HTML-built output show as drift, not a silent rebuild", () => {
+  const sources = site(false);
+  sources[EDITOR_PAGE_BUILDER_PATH] = JSON.stringify({ version: 1, pages: { [fern]: { fields: { client: "Zed Cafe" } } }, collections: {} }) + "\n";
+  const files = Object.keys(sources);
+  const drift = generatedDrift(sources, deriveNativeRoutes(files), identity, files);
+  assert.deepEqual(drift.map((item) => [item.path, item.kind, item.pageData]), [["index.html", "edited", true]]);
+  // Any change that would rebake them refuses with the specific reason; nothing is rebuilt silently.
+  const result = planNativeCollectionOperation({ sources, routes: deriveNativeRoutes(files), files: files.sort(), revision: "r", identity,
+    origin: { edits: new Map([[fern, sources[fern].replace("</h1>", " Cafe</h1>")]]), done: "", undone: "" } });
+  assert.ok("error" in result && /moved to the editor's data/.test(result.error) && /Rebuild cards from page data/.test(result.error));
 });

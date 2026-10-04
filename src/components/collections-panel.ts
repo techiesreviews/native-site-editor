@@ -6,7 +6,7 @@ import { attribute, collectionSpec, readCollections, validCollectionRoute } from
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
-import { locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
+import { bakePageData, locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
 import { readEditorFieldMetas } from "../page-builder/native-page-fields";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
@@ -35,7 +35,7 @@ export interface CollectionsDeps {
    * Moves the open page's old `field:` metadata into the editor's JSON as one
    * undoable step. Resolves to a refusal, if any.
    */
-  migrateFields?(path: string): Promise<string | undefined>;
+  migrateFields?(path: string, choices: Record<string, string>): Promise<string | undefined>;
 }
 export interface CollectionsPanel {
   update(): void;
@@ -201,7 +201,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     }
     track(form, saved);
     root.append(form, ...(options.settings ? [] : [node("h2", "", "Collections")]));
-    const baked = planBake(saved.sources, saved.routes, saved.identity);
+    const baked = planBake(saved.sources, saved.routes, saved.identity, bakePageData(saved.sources, deps.files?.()));
     // Collections stored in the editor's JSON are listed from their recipe, with the cards the host would bake.
     let fromJson: { folders: string[]; template: string; records: DocumentCollectionPreview["records"] }[] = [];
     try {
@@ -232,29 +232,56 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!options.grid) appendUnlocatable(saved);
     root.append(status);
   }
-  /** Old custom fields kept as page metadata: one inline action moves them into the editor's data. */
+  /**
+   * Old custom fields kept as page metadata: one inline action moves them into
+   * the editor's data. A field whose editor value differs offers two inline
+   * choices; Move stays off until each is chosen. Choices belong to this view
+   * only: any change redraws the panel and clears them.
+   */
   function appendLegacyFields(path: string, saved: ReturnType<typeof snapshot>) {
     if (!deps.migrateFields) return;
-    let names: string[];
-    try { names = readEditorFieldMetas(saved.sources[path]).map((meta) => meta.field); }
+    let metas: { field: string; value: string }[];
+    try { metas = readEditorFieldMetas(saved.sources[path]); }
     catch (error) { root.append(node("p", "collections-panel__refusal", error instanceof Error ? error.message : "This page's old fields could not be read.")); return; }
-    if (!names.length) return;
+    if (!metas.length) return;
+    let stored: Record<string, unknown> = {};
+    try { const fields = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).pages[path]?.fields; if (fields) stored = fields; }
+    catch { stored = {}; }
+    const conflicts = metas.filter((meta) => Object.hasOwn(stored, meta.field) && typeof stored[meta.field] === "string" && stored[meta.field] !== meta.value)
+      .map((meta) => ({ field: meta.field, page: meta.value, editor: stored[meta.field] as string }));
     const row = node("div", "collections-panel__legacy");
-    const list = names.join(", ");
-    row.append(node("p", "collections-panel__hint", `This page keeps ${names.length === 1 ? "the field" : "the fields"} ${list} in its published HTML. Move ${names.length === 1 ? "it" : "them"} to the editor's data so visitors get clean pages; cards and values stay the same.`));
+    const names = metas.map((meta) => meta.field), list = names.join(", ");
+    row.append(node("p", "collections-panel__hint", `This page keeps ${names.length === 1 ? "the field" : "the fields"} ${list} in its published HTML. Move ${names.length === 1 ? "it" : "them"} to the editor's data so visitors get clean pages.`
+      + (conflicts.length ? " Where the two differ, choose which value to keep; cards then show that value." : " Cards and values stay the same.")));
+    const choices: Record<string, string> = Object.create(null);
+    const shown = (value: string) => value === "" ? "(empty)" : `“${value}”`;
     const move = button("Move legacy fields to editor data", async () => {
       if (applying || destroyed) return;
       if (dirty()) { report("Apply or cancel your field changes first, then move the legacy fields."); return; }
       if (!current(saved)) { report("The page or repository changed. Reopen the fields before moving them."); return; }
+      if (conflicts.some((conflict) => !Object.hasOwn(choices, conflict.field))) { report("Choose which value to keep for each field first."); return; }
       applying = true; move.disabled = true;
       let error: string | undefined;
-      try { error = await deps.migrateFields!(path); }
+      try { error = await deps.migrateFields!(path, { ...choices }); }
       catch (caught) { error = caught instanceof Error ? caught.message : "The fields could not be moved."; }
       finally { applying = false; }
       if (destroyed) return;
       if (error) { move.disabled = false; report(error); return; }
       activeForm = undefined; update(); report(`Moved ${list} to the editor's data. Undo puts them back.`);
     });
+    for (const conflict of conflicts) {
+      const group = node("fieldset", "collections-panel__conflict");
+      group.append(node("legend", "", `${conflict.field}: the page has ${shown(conflict.page)}, the editor's data has ${shown(conflict.editor)}`));
+      for (const [label, value] of [["Keep page value", conflict.page], ["Keep editor value", conflict.editor]] as const) {
+        const wrap = node("label", "collections-panel__source");
+        const input = node("input"); input.type = "radio"; input.name = `legacy-${conflict.field}`;
+        input.setAttribute("aria-label", `${label} for ${conflict.field}`);
+        input.addEventListener("change", () => { if (input.checked) choices[conflict.field] = value; move.disabled = conflicts.some((item) => !Object.hasOwn(choices, item.field)); });
+        wrap.append(input, document.createTextNode(label)); group.append(wrap);
+      }
+      row.append(group);
+    }
+    move.disabled = conflicts.length > 0;
     row.append(move);
     root.append(row);
   }

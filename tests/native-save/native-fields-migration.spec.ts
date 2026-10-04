@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { applyCollectionEdits, planBake } from "../../src/page-builder/collection-bake";
 import { deriveNativeRoutes } from "../../shared/native-routes";
+import { bakePageData } from "../../src/page-builder/document-collections";
 import { storedDraft, storedDrafts } from "./drafts";
 
 // Moving old `field:` page metadata into the editor's JSON from Page settings ›
@@ -26,7 +27,7 @@ function seeded(): Record<string, string> {
   add(POTTERY, meta("client", "Harbour Ltd") + meta("year", "2024"));
   add("work/meadow-row-allotments/index.html", meta("client", "Meadow Trust"));
   sources["index.html"] = sources["index.html"].replace("</main>", `${legacyList}\n</main>`);
-  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity);
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
   if ("error" in baked) throw new Error(baked.error);
   for (const [path, edits] of Object.entries(baked.edits)) sources[path] = applyCollectionEdits(sources[path], edits);
   return { "index.html": sources["index.html"], "work/fern-and-kettle/index.html": sources["work/fern-and-kettle/index.html"], [POTTERY]: sources[POTTERY], "work/meadow-row-allotments/index.html": sources["work/meadow-row-allotments/index.html"] };
@@ -91,27 +92,89 @@ test("a missing JSON is created by the move, and Undo removes it again", async (
   await moveButton(settings).click();
   await expect.poll(async () => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}").pages?.["work/fern-and-kettle/index.html"]).toEqual({ fields: { client: "Fern Co" } });
   expect(await storedDraft(page, "index.html")).toBeUndefined();
+  const created = { page: (await storedDraft(page, "work/fern-and-kettle/index.html"))!.content, json: (await storedDraft(page, SIDECAR))!.content };
   await settings.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+  // Redo brings back both drafts exactly: the page without its meta and the created JSON.
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(created.json);
+  expect((await storedDraft(page, "work/fern-and-kettle/index.html"))?.content).toBe(created.page);
+  expect((await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "work/fern-and-kettle/index.html"].sort());
 });
 
-test("a value that differs in the JSON refuses with the field name and writes nothing", async ({ page, baseURL }) => {
+test("a value that differs in the JSON shows both values; keeping the page value is one Undo over page, JSON and cards", async ({ page, baseURL }) => {
   const sidecar = JSON.stringify({ version: 1, pages: { [POTTERY]: { fields: { client: "Someone else" } } }, collections: {} }, null, 2) + "\n";
   const files = seeded();
   // The listing already shows the JSON value, as every listing reads it.
   const sources: Record<string, string> = {};
   for (const path of walk(starter)) if (/\.(html|json)$/.test(path)) sources[path] = readFileSync(`${starter}/${path}`, "utf8");
   Object.assign(sources, files, { [SIDECAR]: sidecar });
-  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity);
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
   if ("error" in baked) throw new Error(baked.error);
   await seed(page, baseURL, { ...files, "index.html": applyCollectionEdits(sources["index.html"], baked.edits["index.html"] ?? []), [SIDECAR]: sidecar });
   await load(page, baseURL, POTTERY);
   const settings = await openFields(page);
-  await moveButton(settings).click();
-  await expect(settings.locator(".collections-panel__status")).toContainText("client");
-  await expect(settings.locator(".collections-panel__status")).toContainText("Nothing was moved");
+  // Both values show inline; Move waits for an explicit choice and nothing is written meanwhile.
+  await expect(settings.locator(".collections-panel__conflict legend")).toHaveText("client: the page has “Harbour Ltd”, the editor's data has “Someone else”");
+  await expect(moveButton(settings)).toBeDisabled();
   expect(await storedDrafts(page)).toEqual([]);
+  const home = (await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text());
+  expect(home).toContain("Harbour Lane Pottery</a> for Someone else");
+  await settings.getByRole("radio", { name: "Keep page value for client" }).check();
+  await moveButton(settings).click();
+  // One step: the page loses its metas, the JSON keeps the chosen page value, the Home cards show it.
+  await expect.poll(async () => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}").pages?.[POTTERY]).toEqual({ fields: { client: "Harbour Ltd", year: "2024" } });
+  expect((await storedDraft(page, POTTERY))!.content).toBe(files[POTTERY].replace(meta("client", "Harbour Ltd") + meta("year", "2024"), ""));
+  const cards = (await storedDraft(page, "index.html"))!.content;
+  expect(cards).toContain("Harbour Lane Pottery</a> for Harbour Ltd");
+  expect(cards).not.toContain("Someone else");
+  // Only the listing changed: everything outside it is byte-identical.
+  const outside = (text: string) => text.slice(0, text.indexOf('<ul class="legacy-list"')) + text.slice(text.indexOf("</ul>", text.indexOf('<ul class="legacy-list"')));
+  expect(outside(cards)).toBe(outside(home));
+  const after = (await storedDrafts(page)).map((draft) => [draft.path, draft.content]);
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual(after);
+});
+
+test("keeping the editor value, and a stale choice refuses with no write", async ({ page, baseURL }) => {
+  const sidecar = JSON.stringify({ version: 1, pages: { [POTTERY]: { fields: { client: "Someone & \"else\"" } } }, collections: {} }, null, 2) + "\n";
+  const files = seeded();
+  const sources: Record<string, string> = {};
+  for (const path of walk(starter)) if (/\.(html|json)$/.test(path)) sources[path] = readFileSync(`${starter}/${path}`, "utf8");
+  Object.assign(sources, files, { [SIDECAR]: sidecar });
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), identity, bakePageData(sources, Object.keys(sources)));
+  if ("error" in baked) throw new Error(baked.error);
+  await seed(page, baseURL, { ...files, "index.html": applyCollectionEdits(sources["index.html"], baked.edits["index.html"] ?? []), [SIDECAR]: sidecar });
+  await load(page, baseURL, POTTERY);
+  let settings = await openFields(page);
+  await settings.getByRole("radio", { name: "Keep editor value for client" }).check();
+  // A foreign edit after the choice: the panel redraws, the choice is gone, and Move waits again.
+  const changed = await page.evaluate(async (path) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource(path)!;
+    editor.replaceActiveRange({ path, start: 0, end: 0, text: "<!-- foreign -->\n", expected: "" });
+    return "<!-- foreign -->\n" + before;
+  }, POTTERY);
+  await expect.poll(async () => (await storedDraft(page, POTTERY))?.content).toBe(changed);
+  if (await moveButton(settings).isEnabled()) {
+    await moveButton(settings).click();
+    await expect(settings.locator(".collections-panel__status")).toContainText("changed");
+  }
+  expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual([POTTERY]);
+  expect((await storedDraft(page, POTTERY))!.content).toBe(changed);
+  // Reopened on the newer page, the editor's value is kept exactly, entities and quotes included.
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  settings = await openFields(page);
+  await settings.getByRole("radio", { name: "Keep editor value for client" }).check();
+  await moveButton(settings).click();
+  await expect.poll(async () => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}").pages?.[POTTERY]).toEqual({ fields: { client: "Someone & \"else\"", year: "2024" } });
+  expect((await storedDraft(page, POTTERY))!.content).toContain("<!-- foreign -->");
+  expect((await storedDraft(page, POTTERY))!.content).not.toContain("field:");
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
 });
 
 test("a page changed after the fields opened refuses the move and keeps the newer text", async ({ page, baseURL }) => {
@@ -191,7 +254,7 @@ test("a foreign edit during the held read before the fields open is kept, and th
   await page.unroute(() => true);
 });
 
-test("a conflicting value found only by the held JSON read refuses the move with no write", async ({ page, baseURL }) => {
+test("a conflicting value found only by the held JSON read waits for a choice, with no write", async ({ page, baseURL }) => {
   const sidecar = JSON.stringify({ version: 1, pages: { [POTTERY]: { fields: { year: "1999" } } }, collections: {} }, null, 2) + "\n";
   const files = seeded();
   const sources: Record<string, string> = {};
@@ -206,9 +269,54 @@ test("a conflicting value found only by the held JSON read refuses the move with
   hold.release();
   const settings = settingsDialog(page);
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
-  await moveButton(settings).click();
-  await expect(settings.locator(".collections-panel__status")).toContainText("year");
-  await expect(settings.locator(".collections-panel__status")).toContainText("Nothing was moved");
+  await expect(settings.locator(".collections-panel__conflict legend")).toHaveText("year: the page has “2024”, the editor's data has “1999”");
+  await expect(moveButton(settings)).toBeDisabled();
   expect(await storedDrafts(page)).toEqual([]);
   await page.unroute(() => true);
+});
+
+test("a branch switch during the held read before the fields open opens nothing for the old branch; the new branch moves only what it shows", async ({ page, baseURL }) => {
+  const files = seeded();
+  await seed(page, baseURL, { ...files, [SIDECAR]: existingJson });
+  // The feature branch differs in a field no listing shows, so its cards stay current.
+  const featurePage = files[POTTERY].replace('content="2024"', 'content="2025"');
+  expect((await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: POTTERY, content: featurePage } })).ok()).toBeTruthy();
+  const hold = await holdSidecarRead(page, existingJson);
+  await loadHeld(page, baseURL, POTTERY);
+  await expect.poll(hold.asked).toBeGreaterThan(0);
+  await requestSettings(page);
+  await page.waitForTimeout(300);
+  await expect(settingsDialog(page)).toHaveCount(0);
+  await page.goto(`${baseURL}/#repo=501&branch=feature&file=${encodeURIComponent(POTTERY)}`);
+  hold.release();
+  await expect(frame(page).locator("h1").first()).toBeVisible();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", POTTERY, { timeout: 30_000 });
+  await page.waitForTimeout(500);
+  // The main-branch request never opens over the feature branch.
+  await expect(settingsDialog(page)).toHaveCount(0);
+  expect(await storedDrafts(page)).toEqual([]);
+  await page.unroute(() => true);
+  const settings = await openFields(page);
+  await expect(settings.getByLabel("Year", { exact: true })).toHaveValue("2025");
+  await moveButton(settings).click();
+  await expect.poll(async () => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}").pages?.[POTTERY]).toEqual({ fields: { client: "Harbour Ltd", year: "2025" } });
+  expect((await storedDraft(page, POTTERY))!.content).toBe(featurePage.replace(meta("client", "Harbour Ltd") + meta("year", "2025"), ""));
+});
+
+test("after every page's fields moved, a legacy card still says where it comes from and opens its page", async ({ page, baseURL }) => {
+  const files = seeded();
+  const pages: Record<string, { fields: Record<string, string> }> = {};
+  const moved: Record<string, string> = { "index.html": files["index.html"] };
+  for (const [path, value] of [["work/fern-and-kettle/index.html", "Fern Co"], [POTTERY, "Harbour Ltd"], ["work/meadow-row-allotments/index.html", "Meadow Trust"]] as const) {
+    moved[path] = readFileSync(`${starter}/${path}`, "utf8");
+    pages[path] = { fields: path === POTTERY ? { client: value, year: "2024" } : { client: value } };
+  }
+  await seed(page, baseURL, { ...moved, [SIDECAR]: JSON.stringify({ version: 1, pages, collections: {} }, null, 2) + "\n" });
+  await load(page, baseURL, "index.html");
+  const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
+  await frame(page).locator(".legacy-list a", { hasText: "Fern & Kettle" }).click();
+  await expect(bar).toContainText("From /work/fern-and-kettle/");
+  await bar.getByRole("button", { name: "Edit page data", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+  expect(await storedDrafts(page)).toEqual([]);
 });

@@ -76,3 +76,19 @@ export function withCustomPageField(source: string, field: string, value: string
 export function ownPageField(fields: PageFields, name: string): string {
   return Object.hasOwn(fields, name) ? fields[name] : "";
 }
+
+/** One page's record in the editor's JSON, as far as collection fields read it. */
+export interface PageDataRecord { date?: unknown; fields?: unknown }
+/**
+ * A page's collection fields: its own HTML fields, an authored JSON date only
+ * where the page has none, then the JSON custom fields, which are
+ * authoritative. Built-in names in JSON fields never override the page.
+ */
+export function resolvePageFields(html: PageFields, page: PageDataRecord | undefined): PageFields {
+  const fields: PageFields = { ...html };
+  if (typeof page?.date === "string" && !fields.date) fields.date = page.date;
+  const custom = page?.fields;
+  if (custom && typeof custom === "object" && !Array.isArray(custom))
+    for (const [key, value] of Object.entries(custom)) if (typeof value === "string" && !builtinFields.includes(key as never)) fields[key] = value;
+  return fields;
+}

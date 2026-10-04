@@ -1,8 +1,8 @@
-import { applyCollectionEdits, bindCollectionTemplate, resolvePageFields, selectCollectionRecords } from "./collection-bake";
+import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords, type BakePageData } from "./collection-bake";
 import { mediaResolvePath, rewriteMediaReferences } from "./media-references";
 import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
-import { builtinFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { builtinFields, resolvePageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, collectionSpec, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, type LocatedCollectionTarget, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 
@@ -37,6 +37,20 @@ export interface DocumentBakePlan {
 
 const SIDECAR_INVALID = (error: unknown) =>
   `The editor's page data file ${EDITOR_PAGE_BUILDER_PATH} is not valid (${error instanceof Error ? error.message : String(error)}). Fix it in Code; the editor changes no collection until it is valid, and never removes your page data.`;
+
+/**
+ * Page data for a bake, from the whole file graph: `files` lists every path
+ * that exists, read or not. A JSON that exists but is not read (or is invalid)
+ * refuses; it is never taken as absent. Without `files`, a JSON missing from
+ * `sources` is taken as absent (standalone callers that pass every file).
+ */
+export function bakePageData(sources: Readonly<Record<string, string | undefined>>, files?: readonly string[]): BakePageData {
+  return () => {
+    const text = Object.hasOwn(sources, EDITOR_PAGE_BUILDER_PATH) ? sources[EDITOR_PAGE_BUILDER_PATH] : undefined;
+    if (text === undefined && files?.includes(EDITOR_PAGE_BUILDER_PATH)) throw new Error(`Load ${EDITOR_PAGE_BUILDER_PATH} before rebuilding collections.`);
+    return { pages: readSidecar(text).pages };
+  };
+}
 
 /** Reads the sidecar or throws a user-facing reason; absence is an empty document. */
 export function readSidecar(text: string | undefined): PageBuilderDocument {
