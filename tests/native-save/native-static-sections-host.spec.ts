@@ -170,7 +170,12 @@ actual("a saved custom section previews and inserts its own HTML with the live s
   const sidecarAfter = (await storedDraft(page, SIDECAR))!.content;
   const documentBefore = JSON.parse(sidecarBefore), documentAfter = JSON.parse(sidecarAfter);
   const link = documentAfter.pages["about/index.html"].sections["intro-1"];
-  expect(link).toMatchObject({ kind: "native-section", recordId: record.id, basis: record.html });
+  const expectedLink = {
+    kind: "native-section", recordId: record.id, basis: record.html,
+    target: { path: [0, 1, 1, 1], tag: "section", openingTagFingerprint: '<section class="section-intro">' },
+  };
+  expect(link).toEqual(expectedLink);
+  expect(documentAfter.pages["about/index.html"]).toEqual({ sections: { "intro-1": expectedLink } });
   const located = locateCollectionTarget(about!, link.target);
   expect(located).not.toHaveProperty("error");
   if (!("error" in located)) expect(about!.slice(located.element.start, located.element.end)).toBe(record.html);
