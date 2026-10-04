@@ -21,15 +21,18 @@ function files(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]);
 }
 /** The seeded site, with the Home listing baked exactly as the editor bakes it. */
-function bakedSeed(template = cardTemplate): [string, string][] {
+function bakedSeed(template = cardTemplate, withAbout = false): [string, string][] {
   const sources: Record<string, string> = {};
   for (const file of files(fixture)) if (/\.html?$/i.test(file)) sources[relative(fixture, file)] = readFileSync(file, "utf8");
   sources["work/one/index.html"] = record("One", "2025-01-01");
   sources["work/two/index.html"] = record("Two", "2026-01-01");
   sources["index.html"] = sources["index.html"].replace('<section class="filler"', `${listingWith(template)}\n  <section class="filler"`);
+  if (withAbout) sources["about/index.html"] = sources["about/index.html"].replace('<main class="page" data-key="main">', `<main class="page" data-key="main">${listingWith(cardTemplate).replace('data-key="work-list"', 'data-key="about-list"')}`);
   const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), { name: "" });
   if ("error" in baked) throw new Error(baked.error);
   const home = applyCollectionEdits(sources["index.html"], baked.edits["index.html"] ?? []);
+  if (withAbout) return [["work/one/index.html", sources["work/one/index.html"]], ["work/two/index.html", sources["work/two/index.html"]], ["index.html", home],
+    ["about/index.html", applyCollectionEdits(sources["about/index.html"], baked.edits["about/index.html"] ?? [])]];
   if (template === cardTemplate && !home.includes("<h3>Two</h3><time>2026-01-01</time></article>\n<article class=\"card\"><h3>One</h3>")) throw new Error("Unexpected bake");
   return [["work/one/index.html", sources["work/one/index.html"]], ["work/two/index.html", sources["work/two/index.html"]], ["index.html", home]];
 }
@@ -202,4 +205,58 @@ test("a clean listing still rebakes on a page title change in one Undo", async (
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain("<h3>One renamed</h3>");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+});
+
+test("renaming a listed page from the Pages tab rebuilds its card in the same step, leaving no false hand-edit warning", async ({ page, baseURL }) => {
+  const seed = bakedSeed();
+  await open(page, baseURL, seed, "work/one/index.html");
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.locator("#explorer").getByRole("treeitem", { name: "One", exact: true }).locator(".pages-label").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await page.getByRole("textbox", { name: "Title of One" }).fill("One renamed");
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain("<h3>One renamed</h3>");
+  expect((await storedDraft(page, "work/one/index.html"))!.content).toContain("<title>One renamed</title>");
+  const renamed = (await storedDraft(page, "index.html"))!.content;
+  // One Undo takes back the title and its card together; Redo writes both again.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "work/one/index.html")).toBeUndefined();
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(renamed);
+  await open(page, baseURL, [], "index.html");
+  const details = await openCollection(page);
+  await expect(details.getByRole("button", { name: "Use manual cards", exact: true })).toBeVisible();
+  await expect(details).not.toContainText("edited by hand");
+  await expect(details).not.toContainText("Checking");
+});
+
+test("Structure hides only the collection recipe and offers no fields on a generated component card", async ({ page, baseURL }) => {
+  await open(page, baseURL, bakedSeed(`<card-note>{title}</card-note>`));
+  const before = await mounted(page, "index.html");
+  await frame(page).locator('section[data-key="work-list"] card-note', { hasText: "One" }).click();
+  const tree = page.getByRole("tree", { name: "Page structure" });
+  const generated = tree.locator(".page-structure__row--generated");
+  await expect(generated.first()).toBeVisible();
+  // No template row for the recipe; no slot or attribute editors on generated rows.
+  await expect(tree.getByRole("treeitem", { name: /^Template/ })).toHaveCount(0);
+  await expect(tree.locator(".page-structure__row--generated .page-structure__slot-toggle, .page-structure__row--generated input")).toHaveCount(0);
+  await expect(page.locator(".page-structure input[aria-label=\"New attribute name\"]")).toHaveCount(0);
+  expect(await mounted(page, "index.html")).toBe(before);
+});
+
+test("a refused recovery keeps its reason on screen", async ({ page, baseURL }) => {
+  const seed = bakedSeed(cardTemplate, true);
+  const home = seed[2][1].replace("<h3>One</h3>", "<h3>One, mine</h3>");
+  const about = seed[3][1].replace("<h3>Two</h3>", "<h3>Two, mine</h3>");
+  await open(page, baseURL, [seed[0], seed[1], ["index.html", home], ["about/index.html", about]]);
+  const details = await openCollection(page);
+  await details.getByRole("button", { name: "Rebuild cards from page data", exact: true }).click();
+  // The other hand-edited listing blocks the operation; the reason stays visible.
+  await expect(details.locator(".selected-collection__note")).toContainText("about/index.html were edited by hand");
+  await page.waitForTimeout(500);
+  await expect(details.locator(".selected-collection__note")).toContainText("about/index.html were edited by hand");
+  expect(await storedDrafts(page)).toEqual([]);
+  expect(await mounted(page, "index.html")).toBe(home);
 });

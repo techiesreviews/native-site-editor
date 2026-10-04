@@ -284,3 +284,12 @@ test('a listing whose cards were never built is named as not built, not hand edi
  const built=good({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start}]},before);
  assert.ok(built.operation.edits!.get('index.html')!.includes('>First</a>'));
 });
+test('two listings on one page, one invalid: fixing it never discards the other listing\'s hand edits',()=>{
+ const before=snapshot();
+ const valid=before.sources['index.html'].match(/<div data-each="\/work\/">[\s\S]*?<\/div>/)![0].replace('>First</a>','>Mine</a>');
+ const broken='<div data-each="/work/"><template><a>{nope}</a></template></div>';
+ before.sources['index.html']=page('Home',valid+broken);
+ const fixed=page('Home',valid+'<div data-each="/work/"><template><a>{title}</a></template></div>');
+ const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['index.html',fixed]])})});
+ assert.ok('error'in result);assert.match(result.error,/index\.html/);
+});

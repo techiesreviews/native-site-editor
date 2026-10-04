@@ -47,10 +47,15 @@ export function editTouchesGenerated(source: string, edits: readonly { start: nu
   for (const edit of edits) {
     for (const region of regions) {
       if (edit.start <= region.host && edit.end >= region.hostEnd) continue;
-      const inside = edit.start === edit.end
-        ? edit.start >= region.start && edit.start <= region.end
-        : edit.start < region.end && edit.end > region.start;
-      if (inside) return region;
+      // A bake replaces everything inside the listing except the template:
+      // the cards after it and anything before it.
+      const { element, template } = region.collection;
+      const ranges = [[element.tag.end, template.start], [region.start, region.end]];
+      const inside = ranges.some(([from, to]) => edit.start === edit.end
+        ? edit.start >= from && edit.start <= to
+        : edit.start < to && edit.end > from);
+      const withinTemplate = edit.start >= template.tag.end && edit.end <= (template.close?.start ?? template.end);
+      if (inside && !withinTemplate) return region;
     }
   }
   return undefined;

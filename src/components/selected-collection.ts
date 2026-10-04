@@ -7,7 +7,7 @@ export interface SelectedCollectionDeps extends CollectionsDeps {
   prepare(target: SelectedCollection): Promise<void>;
   /** Recovery for listings whose cards were edited by hand; each action is one undo step. */
   generated?: {
-    state(target: SelectedCollection): "clean" | "edited" | "unbuilt" | "unchecked" | undefined;
+    state(target: SelectedCollection): "clean" | "edited" | "unbuilt" | "unchecked" | "checking" | undefined;
     keepManual(target: SelectedCollection): Promise<string | undefined>;
     rebuild(target: SelectedCollection): Promise<string | undefined>;
   };
@@ -33,16 +33,27 @@ export function mountSelectedCollection(host: HTMLElement, deps: SelectedCollect
     const act = (button: HTMLButtonElement, run: () => Promise<string | undefined>) => button.addEventListener("click", async () => {
       if (busy) return;
       busy = true;
-      try {
-        const error = await run();
-        if (error) message.textContent = error;
-      } finally { busy = false; recoveryKey = undefined; update(); }
+      let error: string | undefined;
+      try { error = await run(); }
+      catch (caught) { error = caught instanceof Error ? caught.message : "The cards could not be changed."; }
+      finally {
+        busy = false; recoveryKey = undefined; update();
+        // The area is redrawn; the refusal stays in its note and is announced.
+        if (error) {
+          const note = recovery.querySelector(".selected-collection__note");
+          if (note) note.textContent = error;
+          else recovery.prepend(node("p", "selected-collection__note", error));
+          deps.announce(error);
+        }
+      }
     });
     const message = node("p", "selected-collection__note");
     message.textContent = state === "edited" ? "The cards here were edited by hand and no longer match the page data. Keep them as they are, or rebuild them from the pages."
       : state === "unbuilt" ? "These cards have not been built from page data yet."
       : state === "unchecked" ? "These cards cannot be checked against page data until the collection is fixed. Keep them as they are, or fix the collection in Code." : "";
+    if (state === "checking") message.textContent = "Checking these cards against page data…";
     recovery.append(message);
+    if (state === "checking") return;
     if (state !== "unbuilt") {
       const keep = node("button", "", "Use manual cards") as HTMLButtonElement;
       keep.type = "button";

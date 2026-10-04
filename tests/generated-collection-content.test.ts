@@ -28,6 +28,8 @@ test('edits inside cards are refused; whole-listing and outside edits are not',(
  assert.equal(editTouchesGenerated(source,[{start:after,end:after+5}]),undefined);
  const tpl=source.indexOf('{title}');
  assert.equal(editTouchesGenerated(source,[{start:tpl,end:tpl+7}]),undefined,'template edits stay allowed');
+ const tplStart=source.indexOf('<template>');
+ assert.ok(editTouchesGenerated(source,[{start:tplStart,end:tplStart}]),'insert before the template is rebaked away too');
 });
 test('card provenance names the source page only when the listing is canonical',()=>{
  const [region]=generatedRegions(source);

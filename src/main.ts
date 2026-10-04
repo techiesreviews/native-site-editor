@@ -91,7 +91,7 @@ import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
 import { editTouchesGenerated, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
-import { validCollectionRoute } from "./page-builder/collection-model";
+import { readCollections, validCollectionRoute } from "./page-builder/collection-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
 import { fetchWithReadRetry } from "./read-retry";
@@ -404,8 +404,9 @@ function mountWorkspace() {
         });
         item.children.forEach(capture);
       };
-      structure.items.forEach(capture);
-      pageStructure?.update(structure);
+      const shown = withoutCollectionRecipes(structure);
+      shown.items.forEach(capture);
+      pageStructure?.update(shown);
     },
     onMove: (direction) => nativeElementMoveAction?.(direction),
     onSectionDrag: (gap) => {
@@ -1271,13 +1272,14 @@ function nativeSelectedCollection(): SelectedCollection | undefined {
   }
   return undefined;
 }
+let selectedCollectionView: { update(): void } | undefined;
 function mountNativeSelectedCollection(host: HTMLElement) {
   const sources = () => Object.fromEntries(nativeFiles().filter(path => /\.html?$/i.test(path) || path === NATIVE_CONFIG_PATH)
     .flatMap(path => { const source = nativeEffectiveSource(path); return source === undefined ? [] : [[path, source]]; }));
   const routes = () => deriveNativeRoutes(nativeFiles().sort());
   const identity = () => ({ name: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(routes()["/"]) ?? "").name });
   const revision = () => `${setupScope()}\n${generation}\n${nativeSelectedCollection()?.key ?? ""}`;
-  return mountSelectedCollection(host, {
+  return selectedCollectionView = mountSelectedCollection(host, {
     target: nativeSelectedCollection, sources,
     routes, identity,
     revision, page: () => nativeSelectedCollection()?.path,
@@ -1313,7 +1315,11 @@ function mountNativeSelectedCollection(host: HTMLElement) {
         const source = nativeEffectiveSource(target.path);
         if (source === undefined || !generatedRegions(source).some((region) => region.host === target.start)) return undefined;
         const snapshot = nativeCollectionSnapshot();
-        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) return "clean";
+        // Not judged until every page is loaded: never a false "clean".
+        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) {
+          void ensureNativeTextIndex().then(() => selectedCollectionView?.update());
+          return "checking";
+        }
         return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity).find((item) => item.path === target.path && item.start === target.start)?.kind ?? "clean";
       },
       async keepManual(target) {
@@ -1321,7 +1327,10 @@ function mountNativeSelectedCollection(host: HTMLElement) {
         if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
         let next: string;
         try { next = manualCardsSource(source, target.start); } catch (error) { return (error as Error).message; }
+        if (await ensureNativeTextIndex()) return "The pages could not be loaded to check these cards. Try again.";
+        if (nativeEffectiveSource(target.path) !== source || nativeSelectedCollection()?.key !== target.key) return "The source or selection changed. Select the collection again.";
         const state = this.state(target);
+        if (state === "checking") return "The pages could not be loaded to check these cards. Try again.";
         return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), edits: new Map([[target.path, next]]),
           ...(state && state !== "clean" ? { acceptGeneratedDrift: [{ path: target.path, start: target.start }] } : {}),
           done: "Kept the cards as hand-written HTML. Save to GitHub to keep it.", undone: "Undid keeping the cards as hand-written HTML." });
@@ -1949,6 +1958,23 @@ function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
   });
 }
 
+// A collection's own <template> is its recipe, edited through the collection:
+// Structure leaves it out. Authored templates elsewhere stay listed.
+function withoutCollectionRecipes<T extends { paintedSource?: string; items: NativeStructureItem[] }>(structure: T): T {
+  const source = structure.paintedSource;
+  if (source === undefined || !/data-each/i.test(source)) return structure;
+  const recipes = new Set(generatedRegions(source).map((region) => region.collection.template.start));
+  if (!recipes.size) return structure;
+  const keep = (items: NativeStructureItem[]): NativeStructureItem[] => items.flatMap((item) => {
+    if (item.tag === "template") {
+      const range = locateNativeElementRange(source, [...item.node]);
+      if (range && recipes.has(range.tag.start)) return [];
+    }
+    return [{ ...item, children: keep(item.children) }];
+  });
+  return { ...structure, items: keep(structure.items) };
+}
+
 function nativeNodeGenerated(path: string | undefined, node: readonly number[]) {
   const source = path === undefined ? undefined : nativeSources()[path];
   const range = source === undefined ? undefined : locateNativeElementRange(source, [...node]);
@@ -2439,6 +2465,22 @@ function nativeTitles(site: NativeSite) {
 // edit goes into its editor (`group` joins the field's keystrokes into one
 // undo step until it closes); another page's is one operation over the
 // drafts. Resolves to an error.
+async function nativePageIsListed(path: string): Promise<boolean> {
+  let snapshot = nativeCollectionSnapshot();
+  if (Object.values(snapshot.routes).some((file) => snapshot.sources[file] === undefined)) {
+    if (await ensureNativeTextIndex()) return true;
+    snapshot = nativeCollectionSnapshot();
+  }
+  const route = Object.entries(snapshot.routes).find(([, file]) => file === path)?.[0];
+  if (!route) return false;
+  return Object.entries(snapshot.routes).some(([url, file]) => {
+    const source = snapshot.sources[file];
+    if (file === path || source === undefined || !/data-each/i.test(source) || !validCollectionRoute(url, file)) return false;
+    try { return readCollections(source).some((collection) => collection.spec.folders.some((folder) => route.startsWith(folder) && route !== folder)); }
+    catch { return true; }
+  });
+}
+
 async function writeNativePageMeta(path: string, field: PageMetaField, value: string, group = true): Promise<string | undefined> {
   if (!nativeRouteForPath(path)) return "This page has no URL in the site.";
   const source = nativeEffectiveSource(path);
@@ -2448,7 +2490,9 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
   if (!edit) return undefined;
   const label = field === "title" ? "Title" : "Description";
   const done = value.trim() ? `${label} updated` : `${label} removed`;
-  if (editorModule?.isMounted(path)) {
+  // A page that a collection lists rebuilds those cards in the same step, so
+  // the listing never goes stale (a stale listing would read as hand-edited).
+  if (editorModule?.isMounted(path) && !(await nativePageIsListed(path))) {
     try {
       editorModule.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, group);
     } catch (error) {
