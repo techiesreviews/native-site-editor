@@ -127,10 +127,10 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   await expect(row.locator(".collections-panel__recovery-name")).toHaveText(/^Cards from \/work\/, \/services\/ on .+ \(\/\)$/);
   await expect(row.locator(".collections-panel__recovery-reason")).toHaveText("Its grid was changed in Code, so the editor cannot tell which element it is.");
   // The long error appears once, inside the row's closed details.
-  await expect(settings.getByText(/can no longer be found exactly/)).toHaveCount(1);
+  await expect(settings.getByText(/Collection target is missing or ambiguous/)).toHaveCount(1);
   await expect(row.locator("details p")).toBeHidden();
   await row.getByText("Technical details").click();
-  await expect(row.locator("details p")).toHaveText(`The collections on index.html can no longer be found exactly (Collection target is missing or ambiguous.). Undo the change that moved them, or open Page settings › Fields and forget the recipe there; its cards stay as they are. Recipe “${id}” in ${SIDECAR}, page index.html.`);
+  await expect(row.locator("details p")).toHaveText(`Collection target is missing or ambiguous. Recipe “${id}” in ${SIDECAR}, page index.html.`);
   await row.getByRole("button", { name: /^Forget recipe, keep cards: Cards from / }).click();
   await expect.poll(async () => Object.keys((await json(page)).collections ?? { pending: 1 })).toEqual([]);
   const forgotten = (await storedDraft(page, SIDECAR))!.content;
