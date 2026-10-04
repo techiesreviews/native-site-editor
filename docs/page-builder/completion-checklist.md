@@ -91,6 +91,6 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 - [ ] Keep the edit-bar label clear of the sticky header at the top of the page. Connected/content-width candidate afcc088 has actual5/default128 passing but is not integrated until independent review.
 
 - [x] Cache repeated native source lookups privately by exact bytes. Integrated876707f after independent Claude review; parseMarked remains fresh, two bounded entries, no published output change. Bench covers repeated lookup only, not click latency.
-- [ ] Keep unpicked-variable cancellation notices inline in Style, avoiding the misleading global failed-request status and full-width error alert. Observed in real shared browser; no CSS write or new Undo occurs.
+- [x] Keep unpicked-variable cancellation notices inline in Style, avoiding the misleading global failed-request status and full-width error alert. Observed in real shared browser; no CSS write or new Undo occurs.
 
 - [ ] Verify missing Structure slot/action controls in the shared real-starter browser. Pure Structure tests and the actual editor model pass; the earlier base-URL module import was a separate Vite module and gave a misleading mounted=false result. Investigate render readiness/memoization without bypassing source/model guards.
