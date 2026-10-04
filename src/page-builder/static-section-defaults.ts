@@ -1,5 +1,5 @@
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";
-import { planStaticSectionInsert, planStaticSectionSave, readStaticSectionRecords, type SectionChoice, type StaticSectionInsertInput, type StaticSectionInsertPlan, type StaticSectionRecord } from "./static-sections";
+import { planStaticSectionInsert, previewStaticSection, planStaticSectionSave, readStaticSectionRecords, type SectionChoice, type StaticSectionInsertInput, type StaticSectionInsertPlan, type StaticSectionRecord } from "./static-sections";
 
 /** Prefix that keeps default choices distinct when listed beside saved sections. */
 export const DEFAULT_SECTION_CHOICE_PREFIX = "static-section:";
@@ -42,16 +42,28 @@ export const DEFAULT_STATIC_SECTIONS: readonly Readonly<StaticSectionRecord>[] =
 `),
 ]);
 
-const byId = (id: string) => DEFAULT_STATIC_SECTIONS.find((section) => section.id === (id.startsWith(DEFAULT_SECTION_CHOICE_PREFIX) ? id.slice(DEFAULT_SECTION_CHOICE_PREFIX.length) : id));
+/** Only prefixed ids name defaults, so a stale saved id never silently falls back to a default. */
+const byChoiceId = (id: string) => id.startsWith(DEFAULT_SECTION_CHOICE_PREFIX) ? DEFAULT_STATIC_SECTIONS.find((section) => section.id === id.slice(DEFAULT_SECTION_CHOICE_PREFIX.length)) : undefined;
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-/** Default choices with prefixed ids, suitable for the existing Add list. */
-export function listDefaultSectionChoices(): SectionChoice[] {
-  return DEFAULT_STATIC_SECTIONS.map(({ id, label, rootClass }) => ({ id: DEFAULT_SECTION_CHOICE_PREFIX + id, label, rootClass }));
+/**
+ * Default choices not already saved under the same id, for the existing Add list beside `listSectionChoices`.
+ * `documentText` undefined means the editor JSON is proven absent; hosts must use the file graph to tell that from unloaded.
+ * Invalid JSON refuses rather than falling back to defaults.
+ */
+export function listDefaultSectionChoices(documentText: string | undefined): SectionChoice[] | { error: string } {
+  let saved: Record<string, StaticSectionRecord>;
+  try { saved = readStaticSectionRecords(documentText); } catch (error) { return { error: message(error) }; }
+  return DEFAULT_STATIC_SECTIONS.filter(({ id }) => !Object.hasOwn(saved, id)).map(({ id, label, rootClass }) => ({ id: DEFAULT_SECTION_CHOICE_PREFIX + id, label, rootClass }));
 }
-/** Literal preview of a default by plain or prefixed id. */
-export function previewDefaultStaticSection(id: string): { html: string; css: string; rootClass: string } | { error: string } {
-  const section = byId(id);
-  return section ? { html: section.html, css: section.css, rootClass: section.rootClass } : { error: "Choose a default static section." };
+/** Preview of exactly what `planDefaultStaticSectionInsert` would insert: the saved record when one exists, else the default. */
+export function previewDefaultStaticSection(documentText: string | undefined, choiceId: string): { html: string; css: string; rootClass: string } | { error: string } {
+  const section = byChoiceId(choiceId);
+  if (!section) return { error: "Choose a default static section." };
+  let saved: Record<string, StaticSectionRecord>;
+  try { saved = readStaticSectionRecords(documentText); } catch (error) { return { error: message(error) }; }
+  if (Object.hasOwn(saved, section.id)) return previewStaticSection(documentText, section.id);
+  return { html: section.html, css: section.css, rootClass: section.rootClass };
 }
 
 /**
@@ -59,10 +71,10 @@ export function previewDefaultStaticSection(id: string): { html: string; css: st
  * otherwise the default is saved to editor JSON in the same operation. Expected sources are the original bytes.
  */
 export function planDefaultStaticSectionInsert(input: StaticSectionInsertInput): StaticSectionInsertPlan | { error: string } {
-  const section = byId(input.sectionId);
+  const section = byChoiceId(input.sectionId);
   if (!section) return { error: "Choose a default static section." };
   let records: Record<string, StaticSectionRecord>;
-  try { records = readStaticSectionRecords(input.documentText); } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+  try { records = readStaticSectionRecords(input.documentText); } catch (error) { return { error: message(error) }; }
   if (Object.hasOwn(records, section.id)) return planStaticSectionInsert({ ...input, sectionId: section.id });
   const save = planStaticSectionSave({ documentText: input.documentText, files: input.files, record: structuredClone(section) as StaticSectionRecord });
   if ("error" in save) return save;

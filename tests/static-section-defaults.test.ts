@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document.ts";
 import { DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "../src/page-builder/static-section-defaults.ts";
-import { readStaticSectionRecords, type StaticSectionInsertInput } from "../src/page-builder/static-sections.ts";
+import { listSectionChoices, readStaticSectionRecords, type StaticSectionInsertInput } from "../src/page-builder/static-sections.ts";
 
 const page = '<!doctype html><html><head><title>Site</title></head><body><main><p>Keep</p></main></body></html>';
 const css = "styles/sections.css";
@@ -14,16 +14,16 @@ function bad(value: StaticSectionInsertInput, reason: string) { const before = s
 const existing = JSON.stringify({ version: 1, pages: { "index.html": { fields: { tagline: "Hi" } } }, collections: {}, future: { kept: true }, reusableSections: { version: 1, future: [1], records: { other: { id: "other", label: "Other", rootClass: "other-box", stylesheetPath: css, html: '<section class="other-box"></section>', css: ".other-box { margin: 0; }" } } } });
 
 test("every default is plain, valid and insertable", () => {
-  assert.deepEqual(listDefaultSectionChoices().map((c) => c.id), ["static-section:intro", "static-section:features", "static-section:split", "static-section:contact"]);
+  assert.deepEqual((listDefaultSectionChoices(undefined) as { id: string }[]).map((c) => c.id), ["static-section:intro", "static-section:features", "static-section:split", "static-section:contact"]);
   assert.ok(Object.isFrozen(DEFAULT_STATIC_SECTIONS) && Object.isFrozen(DEFAULT_STATIC_SECTIONS[0]));
   for (const section of DEFAULT_STATIC_SECTIONS) {
-    assert.deepEqual(previewDefaultStaticSection("static-section:" + section.id), { html: section.html, css: section.css, rootClass: section.rootClass });
+    assert.deepEqual(previewDefaultStaticSection(undefined, "static-section:" + section.id), { html: section.html, css: section.css, rootClass: section.rootClass });
     assert.doesNotMatch(section.html, /<script|<template|<slot|<style|\sid=|data-|<[a-z]+-[a-z]/i);
     assert.doesNotMatch(section.html, /src=|href="(?!mailto:)/);
     const plan = good(input({ sectionId: "static-section:" + section.id }));
     assert.ok(plan.operation.edits.get("index.html")!.includes(section.html));
   }
-  assert.deepEqual(previewDefaultStaticSection("nope"), { error: "Choose a default static section." });
+  assert.deepEqual(previewDefaultStaticSection(undefined, "nope"), { error: "Choose a default static section." });
   bad(input({ sectionId: "nope" }), "Choose a default static section.");
 });
 
@@ -44,7 +44,7 @@ test("absent JSON and CSS: one operation creates both and inserts the literal se
 
 test("existing JSON is edited in place, pinned to original bytes, keeping everything else", () => {
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
-  const plan = good(input({ documentText: existing, files, sectionId: "features", index: 0, stylesheetSources: { [css]: "body { margin: 0; }\n" } }));
+  const plan = good(input({ documentText: existing, files, sectionId: "static-section:features", index: 0, stylesheetSources: { [css]: "body { margin: 0; }\n" } }));
   const op = plan.operation;
   assert.equal(op.creates, undefined);
   assert.deepEqual([...op.edits.keys()].sort(), [EDITOR_PAGE_BUILDER_PATH, "index.html", css].sort());
@@ -78,4 +78,34 @@ test("refusals: bad version, unloaded JSON, rootClass and stylesheet conflicts, 
   bad(input({ stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
   bad(input({ files: ["index.html", css] }), "A complete file graph must prove the new stylesheet is absent.");
   bad(input({ documentText: "{", files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), (planDefaultStaticSectionInsert(input({ documentText: "{", files: ["index.html", EDITOR_PAGE_BUILDER_PATH] })) as { error: string }).error);
+});
+
+test("saved record is authoritative for list, preview and insert; stale plain ids never fall back", () => {
+  const custom = { ...DEFAULT_STATIC_SECTIONS[0], label: "My intro", html: '<section class="section-intro"><h2>Custom heading</h2></section>', css: ".section-intro { color: teal; }" };
+  const text = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: custom } } });
+  const files = ["index.html", EDITOR_PAGE_BUILDER_PATH];
+  const union = [...listSectionChoices(text), ...(listDefaultSectionChoices(text) as { id: string }[])];
+  assert.equal(union.filter((c) => c.rootClass === "section-intro").length, 1);
+  assert.deepEqual(union.map((c) => c.id), ["intro", "static-section:features", "static-section:split", "static-section:contact"]);
+  const preview = previewDefaultStaticSection(text, "static-section:intro");
+  assert.deepEqual(preview, { html: custom.html, css: custom.css, rootClass: custom.rootClass });
+  const plan = good(input({ documentText: text, files }));
+  assert.ok(plan.operation.edits.get("index.html")!.includes((preview as { html: string }).html));
+  assert.equal(plan.operation.creates!.find((c) => c.path === css)!.content, (preview as { css: string }).css);
+  bad(input({ documentText: text, files, sectionId: "intro" }), "Choose a default static section.");
+  assert.deepEqual(previewDefaultStaticSection(undefined, "intro"), { error: "Choose a default static section." });
+});
+
+test("invalid JSON or version never falls back to default list or preview", () => {
+  for (const text of ["{", JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: {} } })]) {
+    assert.ok("error" in (listDefaultSectionChoices(text) as object));
+    assert.ok("error" in previewDefaultStaticSection(text, "static-section:intro"));
+  }
+});
+
+test("subpage composition: relative stylesheet link with JSON create in the same operation", () => {
+  const plan = good(input({ pagePath: "work/a/index.html", files: ["work/a/index.html"] }));
+  assert.ok(plan.operation.edits.get("work/a/index.html")!.includes('href="../../styles/sections.css"'));
+  assert.deepEqual(plan.operation.creates!.map((c) => c.path), [css, EDITOR_PAGE_BUILDER_PATH]);
+  assert.deepEqual(plan.selection, { path: "work/a/index.html", node: [0, 1] });
 });
