@@ -193,7 +193,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       }
     }
     for (const input of body.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-property]")) {
-      if (input === document.activeElement) continue;
+      // Focused fields and typed text pending in an open variable menu keep their text.
+      if (input === document.activeElement || input.dataset.pendingVariable) continue;
       const property = input.dataset.property!, value = own[property] ?? "";
       input.classList.toggle("is-computed", !value);
       if (input instanceof HTMLInputElement) { input.value = value; input.placeholder = context?.computed[property] || "—"; }
@@ -332,12 +333,13 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const scope = variableScope();
       if (!scope) return;
       const { expected, workspace, isCurrent, offered, choose: use } = scope;
+      if (rawVariable(control.value)) control.dataset.pendingVariable = "true";
       const menu = node("div", "style-panel__variable-menu"); variableMenu = menu; variableMenuOrigin = { key: expected.key, property: field.property };
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", `${field.label} variables`);
       if (!offered.length) menu.append(node("p", "style-panel__hint", "No compatible variables."));
       for (const declaration of offered) {
         const row = node("div", "style-panel__variable-choice"); row.setAttribute("role", "none");
-        const choose = button("", () => { use(declaration.name); closeVariableMenu(); if (control.isConnected) control.focus(); });
+        const choose = button("", () => { delete control.dataset.pendingVariable; use(declaration.name); closeVariableMenu(); if (control.isConnected) control.focus(); });
         choose.setAttribute("role", "menuitem"); choose.tabIndex = -1; choose.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
         choose.append(node("strong", "", declaration.name), node("span", "style-panel__variable-provenance", `${declaration.value} · ${declaration.path}`));
         const definition = button("", () => {
@@ -371,6 +373,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     /** Leaving without a choice never keeps an unwritten raw --name in the field.
      *  A re-render or new selection removed this field: never restore onto another one. */
     function settleRaw() {
+      if (document.activeElement !== control) delete control.dataset.pendingVariable;
       if (!(control instanceof HTMLInputElement) || !control.isConnected || document.activeElement === control || !rawVariable(control.value)) return;
       control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
       report("Variable not applied. Choose one from the list to write var(--name).");

@@ -123,31 +123,39 @@ test("an unapplied typed variable after a real edit: click-away and Tab restore 
   expect(await css(page)).toBe(original);
 });
 
-test("Shift+F10 on typed --text keeps it pending: no false notice, Use writes var() with one Undo, Escape then Tab restores", async ({ page, baseURL }) => {
+test("Shift+F10 on typed --text keeps it pending through a refresh: no false notice, Escape then Tab restores, Use writes var() with one Undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const color = await colour(page);
-  const original = await css(page), originalValue = await color.inputValue();
+  const originalValue = await color.inputValue();
   await color.fill(""); await color.pressSequentially("--acc");
   await color.press("Shift+F10");
   const menu = panel(page).getByRole("menu", { name: "Text colour variables" });
   await expect(menu).toBeVisible(); await expect(list(page)).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Go to --accent in styles/site.css", exact: true })).toBeVisible();
+  // An external stylesheet change refreshes the panel's values while the menu is open.
+  const source = (await css(page));
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts"); const text = editor.getMountedSource("styles/site.css")!;
+    editor.replaceActiveRange({ path: "styles/site.css", start: text.length, end: text.length, expected: "", text: "\n/* external */\n" });
+  });
+  await expect.poll(() => css(page)).toContain("/* external */");
+  const refreshed = await css(page); expect(refreshed).not.toBe(source);
   await page.waitForTimeout(200);
   await expect(page.locator("#notice")).not.toContainText("Variable not applied");
-  await expect(color).toHaveValue("--acc"); expect(await css(page)).toBe(original);
+  await expect(color).toHaveValue("--acc");
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0); await expect(color).toBeFocused(); await expect(color).toHaveValue("--acc");
   await color.press("Tab");
   await expect(color).toHaveValue(originalValue);
   await expect(page.locator("#notice")).toContainText("Variable not applied");
-  expect(await css(page)).toBe(original);
-  // Explicit choice from the context menu writes once.
+  expect(await css(page)).toBe(refreshed);
+  // An explicit choice from the context menu writes once.
   await color.fill(""); await color.pressSequentially("--acc"); await color.press("Shift+F10");
   await menu.getByRole("menuitem", { name: /^--accent ·/ }).click();
   await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: var\(--accent\);/s);
   await expect(color).toHaveValue("var(--accent)");
   await color.press("ControlOrMeta+Z");
-  await expect.poll(() => css(page)).toBe(original);
+  await expect.poll(() => css(page)).toBe(refreshed);
 });
 
 test("selecting another element while suggesting closes the list without restoring onto the new field", async ({ page, baseURL }) => {
