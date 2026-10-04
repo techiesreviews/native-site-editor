@@ -17,7 +17,10 @@
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test -c playwright.native-save.config.ts",
     "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
-    "deploy:preview": "wrangler deploy --config wrangler.preview.jsonc"
+    "deploy:preview": "wrangler deploy --config wrangler.preview.jsonc",
+    "test:browser:default": "node --import tsx scripts/native-browser-tests.mjs default",
+    "test:browser:actual": "node --import tsx scripts/native-browser-tests.mjs actual",
+    "test:browser:native-static": "node --import tsx scripts/native-browser-tests.mjs native-static"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",

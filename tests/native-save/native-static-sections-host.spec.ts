@@ -1,6 +1,9 @@
+import { requireStaticFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
+
+requireStaticFixture();
 
 // Plain HTML/CSS sections in the same Add panel: four curated defaults and
 // the records saved in .editor/page-builder.json. Adding one writes ordinary

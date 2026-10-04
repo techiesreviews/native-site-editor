@@ -1,3 +1,4 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -5,6 +6,8 @@ import { applyCollectionEdits, planBake } from "../../src/page-builder/collectio
 import { deriveNativeRoutes } from "../../shared/native-routes";
 import { bakePageData } from "../../src/page-builder/document-collections";
 import { storedDraft, storedDrafts } from "./drafts";
+
+requireActualFixture();
 
 // Moving old `field:` page metadata into the editor's JSON from Page settings ›
 // Fields, on a copy of the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.

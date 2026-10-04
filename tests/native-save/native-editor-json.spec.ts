@@ -1,6 +1,9 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
+
+requireActualFixture();
 
 // Collections keep their recipes in .editor/page-builder.json; the page HTML
 // holds finished cards only. Runs on a copy of the actual starter:

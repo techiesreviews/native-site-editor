@@ -1,11 +1,14 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
 
+requireActualFixture();
+
 // The card popover's folders for a collection kept in .editor/page-builder.json
 // (src/page-builder/cards.ts with the editor's JSON host). Runs on a copy of
 // the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
-test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE?.endsWith("actual-starter"), "Set ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.");
+
 
 const SIDECAR = ".editor/page-builder.json";
 const pageErrors: string[] = [];

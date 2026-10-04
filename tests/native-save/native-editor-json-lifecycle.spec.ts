@@ -1,6 +1,9 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
+
+requireActualFixture();
 
 // The lifecycle of a collection kept in .editor/page-builder.json, through
 // ordinary editor actions on its grid and its pages. Runs on a copy of the

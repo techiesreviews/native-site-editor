@@ -1,11 +1,14 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { storedDraft } from "./drafts";
 
+requireActualFixture();
+
 // Against the real starter (read-only checkout given by ASE_NATIVE_SAVE_FIXTURE;
 // the fake GitHub holds every change in memory): the card popover's folder
 // chooser, and how editor panels' text fields look (src/ui/inline-field.css).
-test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE, "Set ASE_NATIVE_SAVE_FIXTURE to the starter checkout.");
+
 
 const pageErrors: string[] = [];
 test.beforeEach(async ({ page, baseURL }) => {

@@ -1,8 +1,11 @@
+import { requireActualFixture } from "./fixture-contract";
 import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
 import { showStylePanel } from "./style-panel-controls";
+
+requireActualFixture();
 
 // Update saved section: the edit bar of a page's own plain <section> root that
 // matches one saved section ("Update Intro") saves its

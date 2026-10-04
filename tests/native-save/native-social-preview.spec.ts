@@ -1,4 +1,7 @@
+import { requireActualFixture } from "./fixture-contract";
 import { expect, test } from "@playwright/test";
+
+requireActualFixture();
 
 // The share card preview in Page settings shows the page's social image without
 // loading anything from another site: an absolute URL at the site's own canonical
