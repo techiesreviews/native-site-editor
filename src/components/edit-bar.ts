@@ -850,7 +850,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     let group = "name";
     const groupOf = (control: EditBarControl) =>
       control.kind === "select" ? "style"
-      : control.kind === "button" && control.icon && arrangeIcons.has(control.icon) ? "arrange"
+      : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
       : "content";
     for (const control of model.controls) {
       const next = groupOf(control);
