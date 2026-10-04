@@ -1,5 +1,13 @@
 # Collections and page fields
 
+**Storage migration in progress (2026-10-04).** The implementation described below
+uses the legacy inline format. Lex's current requirement supersedes that format:
+collection recipes and editor-only page/section fields belong in deletable
+`.editor` JSON. Published HTML contains finished content, without collection
+bindings, authoring attributes or recipe templates. Migration must preserve
+ordinary source, existing native Web Component behavior, atomic Save and Undo.
+See [the current native contract](README.md#collections-editor-recipes-ordinary-website-html).
+
 A collection lives in a page's HTML. `data-each="/work/"` selects pages strictly
 below that folder. A mixed collection uses an HTML ASCII whitespace token list,
 for example `data-each="/work/ /services/ /portfolio/ /articles/ /videos/"`.

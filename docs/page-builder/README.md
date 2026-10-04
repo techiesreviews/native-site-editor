@@ -37,45 +37,42 @@ Wave 1 (cards, Add panel, components, canvas, palette) makes the editor feel lik
 builder. Wave 2 covers what a site builder needs beyond that, still without a build step
 or editor runtime in the site.
 
-### Loops: collection lists baked into the HTML
+### Collections: editor recipes, ordinary website HTML
 
-A loop is declared in the page itself and its output is plain HTML, so the live site
-needs no JavaScript and search engines see every item:
+Lex clarified the storage contract on 2026-10-04: editor-only page, section and
+collection information belongs in deletable `.editor` JSON. Collection recipes,
+bindings, filters and custom authoring fields must not be embedded in published
+HTML. This supersedes the earlier `data-each` and inline `<template>` design.
+The existing implementation still uses that legacy format; migration is active
+work, not a completed feature.
 
-```html
-<div class="cards" data-each="/work/" data-sort="-date" data-limit="6">
-  <template>
-    <card-project>
-      <a slot="link" href="{url}">{title}</a>
-      <p slot="text">{description}</p>
-      <img slot="image" src="{image}" alt="" data-if="image">
-    </card-project>
-  </template>
-  <card-project>…one per page, written by the editor…</card-project>
-</div>
-```
+The editor writes finished cards into the page as ordinary HTML. Published pages
+must require no collection renderer, framework compiler or editor build step.
+Deleting `.editor` must leave the rendered website working; it removes authoring
+recipes, not the website's content.
 
-- **Items** are the subpages of a folder (`/work/`). **Fields** come from each page's own
-  head and body, so a page is its own record: `title` (the `<title>` minus the site
-  suffix, or the first `h1`), `description`, `image` (`og:image`), `date`
-  (`<meta name="date">` or the first `<time datetime>`), `url`, and any
-  `<meta name="field:…">` the site adds (`category`, `price`…).
-- The editor **re-bakes** the items as drafts whenever a page in the folder is added,
-  renamed, moved, deleted or has a field changed, or the template changes. The baked
-  items are ordinary markup that a person or an agent could also write by hand.
-- `data-sort` (a field, `-` for descending), `data-limit` and `data-filter="category=Pottery"`
-  cover the common lists (latest three posts, all projects in a category).
+- Collection sources can combine folders such as `/work/`, `/services/`,
+  `/portfolio/`, `/articles/` and `/videos/`.
+- Real page content and useful SEO remain in HTML. Custom editor fields, collection
+  bindings, sort/filter/limit settings and section bookkeeping belong in `.editor`.
+- Changes to recipes and affected website files must save and undo together.
+- Classes, links, image attributes and the site's native Web Component slot
+  attributes remain functional website source.
+
+`<template>` itself is a browser standard. It does not render its contents without
+JavaScript. Its native status does not make our binding expressions a browser
+feature; collection authoring expressions belong only in the editor's recipes.
 
 ### Conditions
 
-- `data-if="field"` in a loop template keeps an element only for items with that field,
-  with the same meaning as `data-if` on slots in the starter's components
-  (`components/components.js`).
+- Editor collection conditions are evaluated before writing finished HTML. No
+  collection condition interpreter is required on the published website.
 - Visibility per breakpoint (hide on mobile) is CSS the style panel writes
   (`@media … { .x { display: none } }`), never a script.
 
-Attributes like `data-each` and `data-if` are allowed because they describe the site's
-own content and the site works without the editor. They are not editor bookkeeping.
+Existing native Web Component behavior is a separate part of the site's code.
+Migration must preserve its functional attributes and user-authored markup;
+removing editor metadata is not permission to strip arbitrary `data-*` attributes.
 
 ### Wave 2 slices
 
