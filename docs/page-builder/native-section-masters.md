@@ -68,3 +68,35 @@ Save to master or Update copies yet.
   `readSectionCatalog` + `resolveStaticSection` instead.
 - The host (`main.ts`) still reads saved sections without masters; it must pass `masters`
   before any master exists in a site.
+
+## Controller (`native-section-master-controller.ts`, not wired yet)
+
+`createNativeSectionMasterController(host)` holds the master editing session. The host provides:
+
+- `snapshot()`: `{ revision, files, source(path) }`. `revision` is the repository, branch and
+  editor-session identity; `files` the complete graph; `source` the effective text of any file,
+  drafts and `.editor/` files included.
+- `open(path)`: open a file in Code (a master keeps the preview on its page).
+- `select(path, range)`: select the element at that range on the open page.
+- `apply(operation, expectedFiles?)`: apply atomically as one Undo after comparing every expected
+  source and the graph; return false and write nothing otherwise.
+- `announce(message)`.
+
+It returns:
+
+- `identity(selection)`: for a whole saved section only (by its link, else its one matching
+  `rootClass`), `{ recordId, label, master, linked, onEdit }`. Wire `label` and `onEdit` as the edit
+  bar's existing purple component Edit. Children get nothing. `selection` is
+  `{ path, node, range, paintedSource }`, the exact painted page bytes and the section's range.
+- `edit(selection)`: the explicit Edit. A v1 record first becomes a master (master file and editor
+  JSON only); the selected copy is linked in the same operation only when it equals the record's
+  section exactly. Then the master opens. A changed page, graph or revision refuses.
+- `context()`: the open session (`recordId`, `label`, `htmlPath`, `pagePath`, and `masterError`
+  when the master can't be read now), for a banner.
+- `done()`: back to the page; re-selects the copy only when the page bytes are unchanged; never
+  writes. A changed revision opens nothing.
+- `updateCopies()`: explicit; plans with `planNativeSectionCopiesUpdate`, pinned to the loaded
+  master, and applies one operation. Returns `{ changed, skipped }` or `{ error }`.
+
+Not done here: wiring in `main.ts` (edit bar identity, banner with Done and Update copies,
+master sources for Add and Save into master, registering inserted copies).
