@@ -9,6 +9,8 @@ import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
 export interface NativeCollectionOrigin {
+  /** Host routing intent only; does not authorize replacing customised cards. */
+  refreshCollections?: true;
   expectedSources?: Map<string, string | undefined>;
   moves?: FileMove[];
   /** Explicit filesystem folder relocation intent; prefixes end in slash. */
@@ -286,7 +288,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
+    const { refreshCollections: _refresh, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
     return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections };
