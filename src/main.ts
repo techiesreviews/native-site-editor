@@ -24,7 +24,7 @@ import { mountSidebarResize, type SidebarResize } from "./components/sidebar-res
 import { createNativePreview, routeStylesheets, type NativeFormat, type NativePreviewSelection, type NativeStructureItem, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
-import { escapeText, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
+import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
@@ -2811,8 +2811,19 @@ function nativeSettingsController() {
     },
     async imageUrl(value) {
       if (stale() || !value.trim()) return undefined;
-      if (/^https?:\/\//i.test(value)) return value;
-      const path = resolveImportPath(currentPath ?? "index.html", value);
+      // An absolute URL is previewed only when it is this site's own address (its canonical
+      // origin), from the repository file at that path; the editor never loads other sites' images.
+      const page = currentPath ?? "index.html";
+      let own: string | undefined;
+      if (/^https?:\/\//i.test(value)) {
+        let url: URL, origin: string | undefined;
+        // Another site's image is not loaded: the preview says it is unavailable (the dialog shows that for a refusal).
+        const unavailable = () => { throw new Error("Images from other sites are not previewed."); };
+        try { url = new URL(value.trim()); origin = new URL(readHeadSettings(nativeEffectiveSource(page) ?? "").canonical || "x:").origin; } catch { return unavailable(); }
+        if (!origin || origin === "null" || url.origin !== origin) return unavailable();
+        try { own = decodeURIComponent(url.pathname).replace(/^\//, ""); } catch { return unavailable(); }
+      }
+      const path = own ?? resolveImportPath(page, value);
       if (!path || !isImagePath(path)) return undefined;
       await loadNativeAssets({ "index.html": `<img src="/${escapeText(path).replace(/"/g, "&quot;")}">` }, () => {});
       return stale() || sourcesChanged() ? undefined : nativeAssets.get(path);
