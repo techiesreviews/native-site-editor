@@ -73,10 +73,17 @@ Save to master or Update copies yet.
 
 `createNativeSectionMasterController(host)` holds the master editing session. The host provides:
 
-- `snapshot()`: `{ revision, files, source(path) }`. `revision` is the repository, branch and
-  editor-session identity; `files` the complete graph; `source` the effective text of any file,
-  drafts and `.editor/` files included.
-- `open(path)`: open a file in Code (a master keeps the preview on its page).
+- `snapshot()`: `{ revision, files, source(path), currentPath, selection }`.
+  - `revision`: the repository, branch and editor-session identity. It must also change when the
+    source model's generation changes (the same bytes in a new model version), since the controller
+    has no other proof of that.
+  - `files`: the complete graph. `source`: the effective text of any file, drafts and `.editor/`
+    files included.
+  - `currentPath`: the file open now. `selection`: what is selected now on the open page, as
+    `{ path, node, range, paintedSource }`, or undefined.
+- `open(path, revision)`: open a file in Code (a master keeps the preview on its page) only while
+  the host's revision equals `revision`, checked before and during the open (the host's file
+  restore must carry this epoch guard); resolves to whether it opened.
 - `select(path, range)`: select the element at that range on the open page.
 - `apply(operation, expectedFiles?)`: apply atomically as one Undo after comparing every expected
   source and the graph; return false and write nothing otherwise.
@@ -88,15 +95,21 @@ It returns:
   `rootClass`), `{ recordId, label, master, linked, onEdit }`. Wire `label` and `onEdit` as the edit
   bar's existing purple component Edit. Children get nothing. `selection` is
   `{ path, node, range, paintedSource }`, the exact painted page bytes and the section's range.
-- `edit(selection)`: the explicit Edit. A v1 record first becomes a master (master file and editor
-  JSON only); the selected copy is linked in the same operation only when it equals the record's
-  section exactly. Then the master opens. A changed page, graph or revision refuses.
+- `edit(selection)`: the explicit Edit. It runs only while `selection` is still the current
+  selection on the open page (same path, node, range and painted bytes). A v1 record first
+  becomes a master (master file and editor JSON only); the selected copy is linked in the same
+  operation only when it equals the record's section exactly. Before the master opens, the
+  selection and revision are checked again: an operation already applied stays (it is one Undo),
+  but a changed selection, page or repository opens nothing.
 - `context()`: the open session (`recordId`, `label`, `htmlPath`, `pagePath`, and `masterError`
   when the master can't be read now), for a banner.
 - `done()`: back to the page; re-selects the copy only when the page bytes are unchanged; never
   writes. A changed revision opens nothing.
 - `updateCopies()`: explicit; plans with `planNativeSectionCopiesUpdate`, pinned to the loaded
   master, and applies one operation. Returns `{ changed, skipped }` or `{ error }`.
+
+Conservative limits: a link anywhere that can't be resolved (a page not loaded, an ambiguous or
+missing copy) gives no identity and refuses Update, rather than treating a section as unlinked.
 
 Not done here: wiring in `main.ts` (edit bar identity, banner with Done and Update copies,
 master sources for Add and Save into master, registering inserted copies).

@@ -29,13 +29,24 @@ export interface MasterHostSnapshot {
   files: readonly string[];
   /** Effective source of a file (drafts included, `.editor/` files too); undefined when not loaded or absent. */
   source(path: string): string | undefined;
+  /** The file open now (Code and preview): a page, or a master or other file. */
+  currentPath: string;
+  /**
+   * What is selected now on the open page, as painted, or undefined. An Edit built for an older
+   * selection refuses unless this still equals it (path, node, range and painted bytes).
+   */
+  selection: MasterSelection | undefined;
 }
 /** The selected element as painted: its page, node and exact range in the painted page bytes. */
 export interface MasterSelection { path: string; node: number[]; range: { start: number; end: number }; paintedSource: string }
 export interface MasterControllerHost {
   snapshot(): MasterHostSnapshot;
-  /** Opens a file in Code (a master keeps the preview on its page; a page shows it). */
-  open(path: string): Promise<void>;
+  /**
+   * Opens a file in Code (a master keeps the preview on its page; a page shows it), only while
+   * the host's revision still equals `revision`, checked before and while opening. Resolves to
+   * false when it did not open.
+   */
+  open(path: string, revision: string): Promise<boolean>;
   /** Selects the element at `range` on the open page. */
   select(path: string, range: { start: number; end: number }): void;
   /**
@@ -52,6 +63,11 @@ export type CopiesUpdateResult = { changed: number; skipped: number } | { error:
 
 interface Session { revision: string; recordId: string; label: string; htmlPath: string; pagePath: string; pageSource: string; range: { start: number; end: number } }
 
+const sameSelection = (a: MasterSelection | undefined, b: MasterSelection) => Boolean(a) && a!.path === b.path && a!.paintedSource === b.paintedSource
+  && a!.range.start === b.range.start && a!.range.end === b.range.end && JSON.stringify(a!.node) === JSON.stringify(b.node);
+/** The selection is still the one the action was built for, on the page open now. */
+const stillSelected = (snapshot: MasterHostSnapshot, selection: MasterSelection) =>
+  snapshot.currentPath === selection.path && sameSelection(snapshot.selection, selection) && snapshot.source(selection.path) === selection.paintedSource;
 const sources = (snapshot: MasterHostSnapshot, paths: Iterable<string>) => Object.fromEntries([...paths].map((path) => [path, snapshot.source(path)]));
 
 /** The ordinary, complete `<section>` at exactly `range`, at the page level (not in a component or template). */
@@ -84,12 +100,13 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
     if (!element) return undefined;
     const catalog = readSectionCatalog(json);
     const links = readNativeSectionLinks(json);
+    // Links that can't all be resolved prove nothing about this section: no identity rather
+    // than wrongly treating it as unlinked.
     const resolved = resolveNativeSectionLinks({ documentText: json, sources: sources(snapshot, Object.keys(links)) });
-    if (!("error" in resolved)) {
-      const own = resolved.links.filter((link) => link.page === selection.path && link.start === element.start && link.end === element.end && Object.hasOwn(catalog, link.link.recordId));
-      if (own.length === 1) return { id: own[0].link.recordId, entry: catalog[own[0].link.recordId], linked: true };
-      if (own.length > 1) return undefined;
-    }
+    if ("error" in resolved) return undefined;
+    const own = resolved.links.filter((link) => link.page === selection.path && link.start === element.start && link.end === element.end && Object.hasOwn(catalog, link.link.recordId));
+    if (own.length === 1) return { id: own[0].link.recordId, entry: catalog[own[0].link.recordId], linked: true };
+    if (own.length > 1) return undefined;
     const classes = new Set((attribute(selection.paintedSource, element, "class") ?? "").split(/[\t\n\f\r ]+/).filter(Boolean).map((name) => name.toLowerCase()));
     const matches = Object.entries(catalog).filter(([, entry]) => classes.has(entry.rootClass.toLowerCase()));
     return matches.length === 1 ? { id: matches[0][0], entry: matches[0][1], linked: false } : undefined;
@@ -108,6 +125,7 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
    */
   async function edit(selection: MasterSelection): Promise<void> {
     const start = host.snapshot();
+    if (!stillSelected(start, selection)) { host.announce("Select the section again to edit its master."); return; }
     const found = (() => { try { return recordFor(selection, start); } catch { return undefined; } })();
     if (!found) { host.announce("Select the whole saved section to edit its master."); return; }
     const json = start.source(EDITOR_PAGE_BUILDER_PATH)!;
@@ -116,7 +134,9 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
       const made = planMakeSectionMaster({ documentText: json, files: start.files, id: found.id });
       if ("error" in made) { host.announce(made.error); return; }
       htmlPath = made.htmlPath;
-      const operation = made.operation;
+      // The controller opens the master itself, behind its own checks; the operation never does.
+      const operation = { ...made.operation };
+      delete operation.open;
       const record = found.entry as StaticSectionRecord;
       const core = (() => { try { const at = sectionCore(record.html); return record.html.slice(at.start, at.end); } catch { return undefined; } })();
       // Link only a copy that is exactly the record's section: a customised copy stays unlinked,
@@ -131,15 +151,16 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
       if (!host.apply(operation, made.expectedFiles)) { host.announce("The page or its saved sections changed. Select the section again."); return; }
     }
     // After any operation, capture again: the master must now be readable from the graph.
+    // A committed operation stays (it is one Undo); only the open is refused.
     const after = host.snapshot();
-    if (after.revision !== start.revision || after.source(selection.path) !== selection.paintedSource) { host.announce("The page changed. Select the section again."); return; }
+    if (after.revision !== start.revision || !stillSelected(after, selection)) { host.announce("The selection or page changed. Select the section again."); return; }
     const entry = (() => { try { return readSectionCatalog(after.source(EDITOR_PAGE_BUILDER_PATH))[found.id]; } catch { return undefined; } })();
     if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== htmlPath || !after.files.includes(htmlPath)) { host.announce("The saved section's master could not be found."); return; }
     session = { revision: start.revision, recordId: found.id, label: entry.label, htmlPath, pagePath: selection.path, pageSource: selection.paintedSource, range: { ...selection.range } };
     const opening = session;
-    await host.open(htmlPath);
+    const opened = await host.open(htmlPath, opening.revision);
     if (session !== opening) return;
-    if (host.snapshot().revision !== opening.revision) { session = undefined; host.announce("The repository changed. The master was not opened."); }
+    if (!opened || host.snapshot().revision !== opening.revision) { session = undefined; host.announce("The repository changed. The master was not opened."); }
   }
 
   return {
@@ -179,7 +200,7 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
       const snapshot = host.snapshot();
       if (snapshot.revision !== current.revision) { host.announce("The repository changed. Open the page again."); return; }
       if (nativePageRoute(current.pagePath) === undefined || !snapshot.files.includes(current.pagePath)) { host.announce("The page is gone."); return; }
-      await host.open(current.pagePath);
+      if (!await host.open(current.pagePath, current.revision)) return;
       const now = host.snapshot();
       if (now.revision !== current.revision) return;
       if (now.source(current.pagePath) === current.pageSource) host.select(current.pagePath, current.range);
