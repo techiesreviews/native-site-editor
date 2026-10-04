@@ -77,8 +77,11 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const control = [...body.querySelectorAll<HTMLElement>("[data-property]")].find(item => item.dataset.property === property);
     const wrapper = control?.closest(".style-panel__control");
     if (!wrapper) return;
-    const notice = node("p", "style-panel__field-notice", notApplied); notice.dataset.noticeFor = property;
-    wrapper.after(notice); if (speak) announce(notApplied);
+    // Spacing box fields sit inside the box grid: put the notice below the box,
+    // naming the field, so the margin and padding rings keep their size.
+    const box = wrapper.closest(".style-panel__box--margin");
+    const notice = node("p", "style-panel__field-notice", box ? `${control!.getAttribute("aria-label")}: ${notApplied}` : notApplied); notice.dataset.noticeFor = property;
+    (box ?? wrapper).after(notice); if (speak) announce(notApplied);
   }
   root.addEventListener("pointerdown", () => { interacting = true; }, true);
   const gestureEvents = new AbortController();
@@ -445,7 +448,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       control.setAttribute("aria-autocomplete", "list");
       control.title = "Type -- for site variables.";
       control.addEventListener("input", () => {
-        wrapper.nextElementSibling?.classList.contains("style-panel__field-notice") && wrapper.nextElementSibling.remove();
+        // New typing supersedes the cancellation: forget it, not just its DOM.
+        clearFieldNotices();
         const typed = /^(?:var\(\s*)?(--[\w-]*)$/.exec(control.value.trim())?.[1];
         if (typed && handlers.context()?.workspace) openSuggestions(typed);
         else if (suggestionsOpen()) { closeVariableMenu(); announce("Variable suggestions closed."); }

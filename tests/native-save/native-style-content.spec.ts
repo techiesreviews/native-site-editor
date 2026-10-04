@@ -303,3 +303,53 @@ test("a real refusal still uses the global error, not the inline cancellation no
   await expect(page.locator("#notice")).toContainText("Enter a valid text colour value.");
   await expect(inline(page)).toHaveCount(0);
 });
+
+test("new typing forgets a cancellation: a same-element redraw without a source write does not bring the notice back", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const color = await colour(page);
+  const original = await css(page), colourValue = await color.inputValue();
+  await color.fill(""); await color.pressSequentially("--acc"); await color.press("Tab");
+  await cancelledInline(page, "color");
+  // New input in the field supersedes the notice.
+  await color.focus(); await color.fill(colourValue);
+  await expect(inline(page)).toHaveCount(0);
+  // Redraw the same element twice (breakpoint there and back), with no source write.
+  await page.evaluate(async () => { const { setCurrentBreakpoint } = await import("/src/page-builder/breakpoints.ts"); setCurrentBreakpoint("tablet"); });
+  await page.evaluate(async () => { const { setCurrentBreakpoint } = await import("/src/page-builder/breakpoints.ts"); setCurrentBreakpoint("all"); });
+  await expect(panel(page).getByRole("combobox", { name: "Style breakpoint" })).toHaveValue("all");
+  await page.waitForTimeout(200);
+  await expect(inline(page)).toHaveCount(0); await noGlobalError(page);
+  expect(await css(page)).toBe(original);
+  // A later successful write still records exactly one Undo step.
+  await panel(page).getByRole("searchbox", { name: "Search styles" }).fill("text colour");
+  const fresh = panel(page).getByRole("textbox", { name: "Text colour", exact: true });
+  await fresh.fill("purple"); await fresh.press("Enter");
+  await expect.poll(() => css(page)).toMatch(/\.lead \{[^}]*color: purple;/s);
+  await fresh.press("ControlOrMeta+Z");
+  await expect.poll(() => css(page)).toBe(original);
+});
+
+test("a spacing-box cancellation shows its notice below the box, naming the field; the box keeps its size", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await expect(panel(page).getByText("Spacing", { exact: true })).toBeVisible();
+  const box = panel(page).locator(".style-panel__box--margin");
+  const before = (await box.boundingBox())!;
+  const original = await css(page);
+  const top = panel(page).getByRole("textbox", { name: "Margin top", exact: true });
+  const value = await top.inputValue();
+  await top.fill(""); await top.pressSequentially("--acc"); await top.press("Tab");
+  await expect(top).toHaveValue(value);
+  await expect(inline(page)).toHaveCount(1);
+  await expect(inline(page)).toHaveText(/^Margin top: Variable not applied/);
+  await expect(inline(page)).toHaveAttribute("data-notice-for", "margin-top");
+  await noGlobalError(page);
+  // The notice is the box's next sibling, outside both rings.
+  expect(await box.evaluate(element => element.nextElementSibling?.classList.contains("style-panel__field-notice"))).toBe(true);
+  await expect(box.locator(".style-panel__field-notice")).toHaveCount(0);
+  const after = (await box.boundingBox())!;
+  expect([after.width, after.height]).toEqual([before.width, before.height]);
+  const notice = (await inline(page).boundingBox())!;
+  expect(notice.y).toBeGreaterThanOrEqual(after.y + after.height);
+  expect(notice.x + notice.width).toBeLessThanOrEqual(after.x + after.width + 1);
+  expect(await css(page)).toBe(original);
+});
