@@ -627,6 +627,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return result;
   }
 
+  let rowNameSeq = 0;
   function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext): HTMLElement[] {
     const id = key(item.node);
     if (insideMain) inMain.add(id);
@@ -662,6 +663,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
     if (slotModel) {
+      // The row is named by its kind and preview only; its action buttons keep their own names.
+      kindName.id = `page-structure-kind-${++rowNameSeq}`;
+      const parts = [kindName.id];
+      const preview = label.querySelector<HTMLElement>(":scope > .page-structure__text");
+      if (preview) { preview.id = `page-structure-text-${rowNameSeq}`; parts.push(preview.id); }
+      el.setAttribute("aria-labelledby", parts.join(" "));
       el.classList.add("page-structure__row--instance");
       el.classList.add("row-action-host");
       const actions = node("div", "row-action-overlay page-structure__component-actions");
