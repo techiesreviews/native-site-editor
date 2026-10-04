@@ -718,17 +718,19 @@ function nativeSectionSavePlan(selection: NativePreviewSelection) {
   const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   if (source === undefined || !range || docText === undefined) return undefined;
-  const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort(), master: nativeSaveMaster(docText, source, range) });
+  const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort(), master: nativeSaveMaster(docText, source, selection.node) });
   if ("error" in plan) return undefined;
   const entry = readSectionCatalog(docText)[plan.recordId];
   return entry ? { plan, label: entry.label, master: Object.hasOwn(entry, "htmlPath") } : undefined;
 }
 // The loaded master of the one saved section with a master file whose rootClass the selected
 // section carries: Save then writes into that master. Undefined otherwise (a v1 save, or none).
-function nativeSaveMaster(docText: string, source: string, range: { start: number; end: number }): string | undefined {
-  const opening = source.slice(range.start, source.indexOf(">", range.start) + 1);
-  const classes = new Set((/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(opening)?.slice(1).find(value => value !== undefined) ?? "").split(/\s+/).filter(Boolean).map(name => name.toLowerCase()));
-  const masters = Object.values(readSectionCatalog(docText)).filter((entry): entry is StaticSectionMasterEntry => Object.hasOwn(entry, "htmlPath") && classes.has(entry.rootClass.toLowerCase()));
+// Classes come from the parsed, decoded class attribute; names compare exactly, as CSS does.
+function nativeSaveMaster(docText: string, source: string, node: number[]): string | undefined {
+  const tag = locateNativeElement(source, node);
+  if (!tag) return undefined;
+  const classes = new Set(decodeHtmlEntities(startTagAttribute(source, tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean));
+  const masters = Object.values(readSectionCatalog(docText)).filter((entry): entry is StaticSectionMasterEntry => Object.hasOwn(entry, "htmlPath") && classes.has(entry.rootClass));
   return masters.length === 1 ? nativeEffectiveSource(masters[0].htmlPath) : undefined;
 }
 let nativeSectionSaveLoading: Promise<unknown> | undefined;
@@ -782,13 +784,13 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     else element("status").textContent = "Saved sections have loaded. Select the section again to update it.";
     return;
   }
-  const masterSource = docText === undefined ? undefined : nativeSaveMaster(docText, source, range);
+  const masterSource = docText === undefined ? undefined : nativeSaveMaster(docText, source, node);
   const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files, master: masterSource });
   if ("error" in plan) { errorMessage(new Error(`Section not saved: ${plan.error}`)); return; }
   const savedEntry = docText === undefined ? undefined : readSectionCatalog(docText)[plan.recordId];
   const label = savedEntry?.label;
   const intoMaster = savedEntry !== undefined && Object.hasOwn(savedEntry, "htmlPath");
-  if (plan.noop) { announce(`${label ?? "The saved section"} already matches this section; future inserts use it.`); return; }
+  if (plan.noop) { announce(intoMaster ? `The ${label} master already matches this section.` : `${label ?? "The saved section"} already matches this section; future inserts use it.`); return; }
   const expectedFiles = (plan.expectedFiles ?? files).join("\n");
   const current = () => !versionView && generation === epoch && setupScope() === scopeKey && proof.isCurrent()
     && currentPath === path && Boolean(editorModule?.isMounted(path)) && nativeEffectiveSource(path) === source
@@ -807,8 +809,11 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
 // always selects the page's own copy; only the explicit purple Edit on a whole saved section
 // opens its master. The host below gives the controller this editor's state and transactions.
 const masterRevision = () => `${setupScope()}:${generation}`;
-// The page's source model as it was when an Edit started, checked by its transaction to the end.
+// The selected page's source model as it was when the edit bar offered Edit (persistent: it
+// survives the page leaving Code for its master), checked before and through the transaction.
 let masterPageProof: { isCurrent(): boolean } | undefined;
+// Code was collapsed when Edit opened a master: Done collapses it again.
+let masterRevealedCode = false;
 // Nodes of selections the controller may select again (it remembers ranges).
 const masterNodes = new Map<string, number[]>();
 function nativeMasterSelection(selection = lastNativeSelection): MasterSelection | undefined {
@@ -853,7 +858,11 @@ function renderMasterBanner() {
     const content = document.getElementById("content");
     if (!content) return;
     masterBanner = createMasterBanner(content, {
-      done: () => void masterController.done().then(renderMasterBanner),
+      done: () => void masterController.done().then(() => {
+        if (masterRevealedCode && !masterController.context() && !element("main").classList.contains("code-collapsed")) codeResize?.toggle();
+        masterRevealedCode = false;
+        renderMasterBanner();
+      }),
       update: () => void masterController.updateCopies().then(renderMasterBanner),
     });
   }
@@ -865,14 +874,24 @@ function nativeMasterIdentity(selection: NativePreviewSelection) {
   const at = nativeMasterSelection(selection);
   const identity = at && masterController.identity(at);
   if (!identity) return undefined;
-  const scope = draftScope();
+  const scope = draftScope(), revision = masterRevision();
+  // Captured as the bar renders: an Edit pressed later on a replaced model (even with the same
+  // bytes) or in another scope refuses before anything is written.
+  const proof = scope && editorModule ? editorModule.captureFileModelState(scope, at.path, true) : undefined;
   return {
     kind: identity.label,
     component: {
       tag: "section",
       onEdit: () => {
-        masterPageProof = scope && editorModule ? editorModule.captureFileModelState(scope, at!.path, true) : undefined;
-        void identity.onEdit().finally(() => { masterPageProof = undefined; renderMasterBanner(); });
+        if (!proof || !proof.isCurrent() || masterRevision() !== revision) { announce("The page changed. Select the section again."); return; }
+        masterPageProof = proof;
+        const collapsed = element("main").classList.contains("code-collapsed");
+        void identity.onEdit().finally(() => {
+          masterPageProof = undefined;
+          // The master is usable only with Code showing: reveal it, and remember to fold it back.
+          if (masterController.context() && collapsed && element("main").classList.contains("code-collapsed")) { codeResize?.toggle(); masterRevealedCode = true; }
+          renderMasterBanner();
+        });
       },
     },
   };
@@ -2905,6 +2924,9 @@ function registerNativeCopy(path: string, pageAfter: string, node: number[], ope
     const record = resolveStaticSection(catalog[recordId], nativeMasterContext(filesAfter));
     const registered = record && registerInsertedNativeSection({ documentText: jsonAfter, files: filesAfter, pagePath: path, pageSourceAfter: pageAfter, range, record });
     if ("error" in registered) return { error: registered.error };
+    // The copy was made from the master as loaded now: pin it with the page and the JSON.
+    const htmlPath = (catalog[recordId] as StaticSectionMasterEntry).htmlPath;
+    if (htmlPath !== undefined) operation.expectedSources.set(htmlPath, record.html);
     if (created) created.content = registered.documentText;
     else operation.edits.set(EDITOR_PAGE_BUILDER_PATH, registered.documentText);
     if (!operation.expectedSources.has(EDITOR_PAGE_BUILDER_PATH)) operation.expectedSources.set(EDITOR_PAGE_BUILDER_PATH, docText);
@@ -7083,6 +7105,8 @@ async function mountSource(
       renderDraftFiles();
       commitHistory?.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
+      // The master line shows at once whether the master can update copies.
+      if (masterBanner && !masterBanner.element.hidden) renderMasterBanner();
       // An open template's banner counts its instances again.
       componentTools?.refresh();
       // The Page fields follow the page's head (typed, undone or redone).

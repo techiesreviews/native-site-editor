@@ -74,10 +74,18 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   // The child has no Edit.
   await frame(page).locator("section.section-intro h2").click();
   await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
-  await selectSection(page, "section.section-intro");
+  // Natural route: the Structure row selects the whole section; Code is folded away first.
+  await page.getByRole("treeitem", { name: /^Section Section heading/ }).locator(".page-structure__label").first().click();
+  await expect(bar(page).locator(".edit-bar__label")).toContainText("Intro");
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
+  await expect(page.locator("main.code-collapsed, #main.code-collapsed, .code-collapsed").first()).toBeAttached();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/root-label-code-folded.png` });
   await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
   await expect(banner(page)).toBeVisible();
   await expect(banner(page)).toContainText("Editing Intro master");
+  // Code is shown for the master, the line and its buttons are usable.
+  await expect(page.locator(".code-collapsed")).toHaveCount(0);
+  await expect(banner(page).getByRole("button", { name: "Update copies" })).toBeVisible();
   // The master is open in Code; the preview stays on the page.
   await expect(page.locator("#primary-title")).toHaveText(MASTER);
   await expect(frame(page).locator("section.section-intro")).toBeVisible();
@@ -112,17 +120,20 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   expect(await effective(page, baseURL, "about/index.html")).toBe(aboutCustom);
   expect(await effective(page, baseURL, "styles/sections.css")).toBe(cssAfterAdds);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-update.png` });
-  // One Undo puts the page and the links back; Redo applies them again.
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  // One Undo (the keyboard, outside the code) puts the page and the links back; Redo applies them again.
+  await banner(page).getByRole("button", { name: "Update copies" }).focus();
+  await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(async () => effective(page, baseURL, "index.html")).toBe(homeLinked);
   await expect.poll(async () => effective(page, baseURL, JSON_PATH)).toBe(jsonBeforeUpdate);
   expect(await effective(page, baseURL, MASTER)).toContain("<h2>Section intro</h2>");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect.poll(async () => (await effective(page, baseURL, "index.html")) ?? "").toContain("<h2>Section intro</h2>");
-  // Done: back to the page.
+  // Done: back to the page, and Code folds away again as it was.
   await banner(page).getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("index.html");
   await expect(banner(page)).toBeHidden();
+  await expect(page.locator(".code-collapsed").first()).toBeAttached();
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
   // The published page: plain HTML, no editor attributes or scripts added.
   const home = (await effective(page, baseURL, "index.html"))!;
   const count = (text: string, pattern: RegExp) => (text.match(pattern) ?? []).length;
@@ -151,8 +162,8 @@ test("a broken master can still be left with Done; Update copies refuses; other 
   await expect.poll(async () => effective(page, baseURL, MASTER)).toBe("broken");
   // Update copies refuses with a reason and writes nothing.
   const json = await effective(page, baseURL, JSON_PATH);
-  await banner(page).getByRole("button", { name: "Update copies" }).click();
-  await expect(page.getByText(/exactly one complete <section>|not a valid|section/i).first()).toBeVisible();
+  await expect(banner(page).getByRole("button", { name: "Update copies" })).toBeDisabled();
+  await expect(banner(page).getByRole("status")).not.toBeEmpty();
   expect(await effective(page, baseURL, "index.html")).toBe(home);
   expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
   await banner(page).getByRole("button", { name: "Done" }).click();
@@ -165,4 +176,55 @@ test("a broken master can still be left with Done; Update copies refuses; other 
   await panel(page).getByRole("searchbox").fill("");
   await expect(panel(page).getByRole("option", { name: /^Features HTML$/ })).toBeVisible();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/broken-master-add.png` });
+});
+
+test("Update Intro saves the page's section into the master as written; pages and CSS stay; the banner shows a broken master at once", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await addIntro(page, "main > section h2");
+  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  await selectSection(page, "section.section-intro");
+  await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
+  await expect(banner(page)).toBeVisible();
+  // Typing a broken master: the line says so at once, Update copies is off, Done still works.
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" stray");
+  await expect(banner(page).getByRole("button", { name: "Update copies" })).toBeDisabled();
+  await expect(banner(page).getByRole("status")).not.toBeEmpty();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(banner(page).getByRole("button", { name: "Update copies" })).toBeEnabled();
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText("index.html");
+  // An unlinked copy on About with an attribute holding ">" before its class, a comment and quotes.
+  await load(page, baseURL, "about/index.html");
+  const tricky = `<section data-note="a &gt; b" class="section-intro"><!-- kept --><h2>Section 'heading' &amp; "more"</h2></section>`;
+  const raw = `<section data-note="a > b" class="section-intro"><h2>Raw</h2></section>`;
+  await page.evaluate(async (html) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("about/index.html")!;
+    const next = before.replace("</main>", `${html}</main>`);
+    editor.replaceActiveRange({ path: "about/index.html", start: 0, end: before.length, expected: before, text: next });
+  }, tricky + raw);
+  const css = await effective(page, baseURL, "styles/sections.css");
+  const home = (await effective(page, baseURL, "about/index.html"))!;
+  await selectSection(page, "section[data-note] >> nth=0");
+  await bar(page).getByRole("button", { name: "Update Intro", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Saved this section into the Intro master. Copies on pages change only with Update copies.");
+  expect(home).toContain(tricky);
+  expect(await effective(page, baseURL, MASTER)).toBe(tricky);
+  expect(await effective(page, baseURL, "about/index.html")).toBe(home);
+  expect(await effective(page, baseURL, "styles/sections.css")).toBe(css);
+  // A raw ">" inside an attribute is refused by the saved-section rules: no save is offered and
+  // the master stays as it is (refused, never cut at the ">").
+  const savedMaster = await effective(page, baseURL, MASTER);
+  await selectSection(page, "section[data-note] >> nth=1");
+  await expect(bar(page).locator(".edit-bar__label")).toContainText("Intro");
+  await expect(bar(page).getByRole("button", { name: "Update Intro", exact: true })).toHaveCount(0);
+  expect(await effective(page, baseURL, MASTER)).toBe(savedMaster);
+  // Saving the same bytes again changes nothing and says so.
+  const master = await effective(page, baseURL, MASTER);
+  await selectSection(page, "section[data-note] >> nth=0");
+  await bar(page).getByRole("button", { name: "Update Intro", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("already matches");
+  expect(await effective(page, baseURL, MASTER)).toBe(master);
 });
