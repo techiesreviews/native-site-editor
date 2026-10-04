@@ -125,6 +125,8 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   apply();
   return {
     toggle,
+    /** The pane's own state as the person left it (a copy): hidden or not, and its height as a share of the workspace. */
+    state: () => ({ collapsed, height }),
     destroy() {
       observer.disconnect();
       handle.remove();

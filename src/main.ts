@@ -812,8 +812,10 @@ const masterRevision = () => `${setupScope()}:${generation}`;
 // The selected page's source model as it was when the edit bar offered Edit (persistent: it
 // survives the page leaving Code for its master), checked before and through the transaction.
 let masterPageProof: { isCurrent(): boolean } | undefined;
-// Code was collapsed when Edit opened a master: Done collapses it again.
-let masterRevealedCode = false;
+// Code was collapsed when Edit opened a master and was revealed for it: the pane's state right
+// after that reveal. Done folds Code back only while that state is unchanged; a resize or fold the
+// person made meanwhile is theirs and stays.
+let masterRevealedCode: { collapsed: boolean; height: number } | undefined;
 // Nodes of selections the controller may select again (it remembers ranges).
 const masterNodes = new Map<string, number[]>();
 function nativeMasterSelection(selection = lastNativeSelection): MasterSelection | undefined {
@@ -864,8 +866,10 @@ function renderMasterBanner() {
     if (!content) return;
     masterBanner = createMasterBanner(content, {
       done: () => void masterController.done().then(() => {
-        if (masterRevealedCode && !masterController.context() && !element("main").classList.contains("code-collapsed")) codeResize?.toggle();
-        masterRevealedCode = false;
+        const revealed = masterRevealedCode, now = codeResize?.state();
+        masterRevealedCode = undefined;
+        // Only the session's own Done after an automatic reveal the person left as it was.
+        if (revealed && now && !masterController.context() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
         renderMasterBanner();
       }),
       update: () => void masterController.updateCopies().then(renderMasterBanner),
@@ -896,7 +900,10 @@ function nativeMasterIdentity(selection: NativePreviewSelection) {
         void identity.onEdit().finally(() => {
           masterPageProof = undefined;
           // The master is usable only with Code showing: reveal it, and remember to fold it back.
-          if (masterController.context() && collapsed && element("main").classList.contains("code-collapsed")) { codeResize?.toggle(); masterRevealedCode = true; }
+          if (masterController.context() && collapsed && element("main").classList.contains("code-collapsed") && codeResize) {
+            codeResize.toggle();
+            masterRevealedCode = codeResize.state();
+          }
           renderMasterBanner();
         });
       },

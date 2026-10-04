@@ -261,3 +261,36 @@ test("the master line hides on other files, comes back on the master, and is reb
   await banner(page).getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("index.html");
 });
+
+test("Done folds Code back only when the person left the revealed pane as it was", async ({ page, baseURL }) => {
+  const grip = page.getByRole("separator", { name: "Resize code pane", exact: true });
+  await load(page, baseURL);
+  await addIntro(page, "main > section h2");
+  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  // Code already showing: Edit and Done never fold it.
+  await selectSection(page, "section.section-intro");
+  await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
+  await expect(banner(page)).toBeVisible();
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText("index.html");
+  await expect(grip).not.toHaveAttribute("aria-valuetext", "Code hidden");
+  // Code folded, revealed by Edit, then resized by the person with the keyboard: Done keeps it.
+  await grip.click();
+  await expect(grip).toHaveAttribute("aria-valuetext", "Code hidden");
+  await selectSection(page, "section.section-intro");
+  await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
+  await expect(banner(page)).toBeVisible();
+  await expect(grip).not.toHaveAttribute("aria-valuetext", "Code hidden");
+  const revealed = Number(await grip.getAttribute("aria-valuenow"));
+  await grip.focus();
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(async () => Number(await grip.getAttribute("aria-valuenow"))).toBeGreaterThan(revealed);
+  const chosen = Number(await grip.getAttribute("aria-valuenow"));
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText("index.html");
+  await expect(grip).toHaveAttribute("aria-valuenow", String(chosen));
+  // It is the person's choice, kept for the next visit too.
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await expect(grip).toHaveAttribute("aria-valuenow", String(chosen));
+});
