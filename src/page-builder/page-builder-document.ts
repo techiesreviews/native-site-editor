@@ -3,10 +3,11 @@ import { attribute, collectionSpec, readCollections, collectionRecords, type Sou
 import { builtinFields, fieldName, type CollectionIdentity } from "./collection-fields";
 import { applyCollectionEdits, bindCollectionTemplate } from "./collection-bake";
 import { escapeText } from "./site-head";
+import { nativePageRoute } from "../../shared/native-routes";
 
 export const EDITOR_PAGE_BUILDER_PATH = ".editor/page-builder.json";
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-export interface PageBuilderPage { [key: string]: JsonValue | undefined; fields?: { [key: string]: JsonValue }; sections?: { [key: string]: JsonValue } }
+export interface PageBuilderPage { [key: string]: JsonValue | undefined; fields?: { [key: string]: string }; sections?: { [key: string]: JsonValue } }
 export interface CollectionTarget { authoredId?: string; path: number[]; tag: string; openingTagFingerprint: string; [key: string]: JsonValue | undefined }
 export interface PageBuilderCollection {
   pagePath: string;
@@ -27,6 +28,7 @@ export interface PageBuilderDocument {
   collections: Record<string, PageBuilderCollection>;
   [key: string]: unknown;
 }
+// Unknown JSON keys are preserved except these globally reserved prototype names.
 const unsafeKeys = new Set(["__proto__", "prototype", "constructor"]);
 const recipeAttributes = new Set(["data-each", "data-sort", "data-filter", "data-limit", "data-fields", "data-collection-id"]);
 function fail(message: string): never { throw new Error(message); }
@@ -45,6 +47,10 @@ function json(value: unknown): void {
 function repositoryPath(path: unknown): asserts path is string {
   if (typeof path !== "string" || !path || path.startsWith("/") || /[\\\x00-\x1f?#:]/.test(path) || path.split("/").some((part) => !part || part === "." || part === ".." || unsafeKeys.has(part))) fail("Use a safe relative repository path.");
 }
+function pagePath(value: unknown): asserts value is string {
+  repositoryPath(value);
+  if (nativePageRoute(value) === undefined) fail("Collection metadata must refer to a native HTML page.");
+}
 function targetValid(value: unknown): asserts value is CollectionTarget {
   object(value, "Collection target");
   if (!Array.isArray(value.path) || !value.path.length || value.path.some((index) => !Number.isSafeInteger(index) || index < 0)) fail("Collection target needs an element-child path.");
@@ -54,21 +60,24 @@ function targetValid(value: unknown): asserts value is CollectionTarget {
   const nodes = parseSource(value.openingTagFingerprint);
   const element = nodes[0];
   if (nodes.length !== 1 || element?.type !== "element" || element.name !== value.tag || element.tag.end !== value.openingTagFingerprint.length || !value.openingTagFingerprint.endsWith(">")) fail("Fingerprint must be one opening tag of the target kind.");
-  if (attribute(value.openingTagFingerprint, element, "id") !== value.authoredId) fail("Target id and fingerprint must agree.");
+  if ((attribute(value.openingTagFingerprint, element, "id") || undefined) !== value.authoredId) fail("Target id and fingerprint must agree.");
 }
 function validate(document: unknown): asserts document is PageBuilderDocument {
   json(document); object(document, "Page builder document");
   if (document.version !== 1) fail("Unsupported page builder document version.");
   object(document.pages, "Pages"); object(document.collections, "Collections");
   for (const [path, page] of Object.entries(document.pages)) {
-    repositoryPath(path); object(page, "Page metadata");
-    if (page.fields !== undefined) object(page.fields, "Page fields");
+    pagePath(path); object(page, "Page metadata");
+    if (page.fields !== undefined) {
+      object(page.fields, "Page fields");
+      for (const [name, value] of Object.entries(page.fields)) if (!fieldName.test(name) || builtinFields.some((field) => field === name) || typeof value !== "string") fail("Page fields must use custom field names and string values.");
+    }
     if (page.sections !== undefined) object(page.sections, "Page sections");
   }
   const targets = new Set<string>();
   for (const [id, record] of Object.entries(document.collections)) {
     if (!id || /[\s\x00-\x1f]/.test(id) || unsafeKeys.has(id)) fail("Invalid collection id.");
-    object(record, "Collection"); repositoryPath(record.pagePath); targetValid(record.target);
+    object(record, "Collection"); pagePath(record.pagePath); targetValid(record.target);
     if (!Array.isArray(record.folders) || record.folders.some((folder) => typeof folder !== "string") || typeof record.sort !== "string" || typeof record.filter !== "string" || !Number.isSafeInteger(record.limit)) fail("Invalid collection specification.");
     const spec = collectionSpec({ folders: record.folders, sort: record.sort, filter: record.filter, limit: String(record.limit) });
     if (spec.folders.length !== record.folders.length) fail("Duplicate collection folders.");
@@ -76,14 +85,13 @@ function validate(document: unknown): asserts document is PageBuilderDocument {
     bindCollectionTemplate(record.template, Object.fromEntries(record.fields.map((field) => [field, ""])), record.fields);
     object(record.overrides, "Collection overrides");
     for (const [path, fields] of Object.entries(record.overrides)) {
-      repositoryPath(path); object(fields, "Record overrides");
+      pagePath(path); object(fields, "Record overrides");
       for (const [field, value] of Object.entries(fields)) if (!record.fields.includes(field) || typeof value !== "string") fail("Override must use a registered string field.");
     }
     if (record.outputFingerprint !== undefined && typeof record.outputFingerprint !== "string") fail("Invalid output fingerprint.");
-    const key = `${record.pagePath}:${JSON.stringify(record.target.path)}`;
-    const authoredKey = record.target.authoredId ? `${record.pagePath}:id:${record.target.authoredId}` : undefined;
-    if (targets.has(key) || authoredKey && targets.has(authoredKey)) fail("Duplicate collection target.");
-    targets.add(key); if (authoredKey) targets.add(authoredKey);
+    const key = JSON.stringify([record.pagePath, record.target.authoredId ? ["id", record.target.authoredId] : ["signature", record.target.tag, record.target.openingTagFingerprint]]);
+    if (targets.has(key)) fail("Duplicate collection target.");
+    targets.add(key);
   }
 }
 function stable(value: unknown): string {
@@ -138,7 +146,8 @@ export function makeCollectionTarget(source: string, target: number | SourceElem
   const authoredId = attribute(source, found.element, "id");
   return { ...(authoredId ? { authoredId } : {}), path: found.path, tag: found.element.name, openingTagFingerprint: fingerprint(source, found.element) };
 }
-export type CollectionTargetLocation = { element: SourceElement; target: CollectionTarget; rebound: boolean } | { error: string };
+export interface LocatedCollectionTarget { element: SourceElement; target: CollectionTarget; rebound: boolean }
+export type CollectionTargetLocation = LocatedCollectionTarget | { error: string };
 export function locateCollectionTarget(source: string, target: CollectionTarget): CollectionTargetLocation {
   try {
     json(target); targetValid(target);
@@ -149,6 +158,27 @@ export function locateCollectionTarget(source: string, target: CollectionTarget)
     if (found.element.name !== target.tag || !found.element.close) fail("Collection target kind changed or is incomplete.");
     const current = makeCollectionTarget(source, found.element);
     return { element: found.element, target: { ...target, ...current }, rebound: JSON.stringify(found.path) !== JSON.stringify(target.path) };
+  } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+}
+
+export type CollectionsLocation = { collections: Record<string, LocatedCollectionTarget> } | { error: string };
+/** Resolve the entire page together: stale paths never prove targets are disjoint. */
+export function locateCollections(source: string, records: Record<string, PageBuilderCollection>): CollectionsLocation {
+  try {
+    validate({ version: 1, pages: {}, collections: records });
+    if (new Set(Object.values(records).map((record) => record.pagePath)).size > 1) fail("Locate collections for one page at a time.");
+    const collections: Record<string, LocatedCollectionTarget> = {};
+    for (const [id, record] of Object.entries(records)) {
+      const found = locateCollectionTarget(source, record.target);
+      if ("error" in found) fail(found.error);
+      for (const [otherId, other] of Object.entries(collections)) {
+        if (found.element.start === other.element.start) fail(`Collections ${otherId} and ${id} resolve to the same element.`);
+        const a = found.element, b = other.element;
+        if (a.start < b.start && a.end >= b.end || b.start < a.start && b.end >= a.end) fail(`Collection targets ${otherId} and ${id} overlap.`);
+      }
+      collections[id] = found;
+    }
+    return { collections };
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 }
 
@@ -176,7 +206,7 @@ function privateFields(source: string, collection: SourceCollection, id: string 
     const withoutCondition = (node: SourceElement) => applyCollectionEdits(source.slice(node.tag.start, node.tag.end), startTagAttributes(source, node.tag).filter((attr) => attr.name === "data-if").map((attr) => ({ start: attr.start - node.tag.start, end: attr.end - node.tag.start, text: "" })));
     if (fallback) {
       const next = parts[parts.indexOf(part) + 1];
-      if (sameSlot.length !== 2 || !next?.close || attribute(source, next, "data-if") !== `!${field}` || elements(next.children).length || source.slice(next.tag.end, next.close.start) !== fallback || withoutCondition(next) !== withoutCondition(part) || href !== undefined && href !== "{url}") fail(`Cannot prove fallback for private field ${field}.`);
+      if (sameSlot.length !== 2 || !next?.close || attribute(source, next, "data-if") !== `!${field}` || elements(next.children).length || !/^[\t\n\f\r ]*$/.test(source.slice(part.end, next.start)) || source.slice(next.tag.end, next.close.start) !== fallback || withoutCondition(next) !== withoutCondition(part) || href !== undefined && href !== "{url}") fail(`Cannot prove fallback for private field ${field}.`);
     } else if (sameSlot.length !== 1) fail(`Cannot prove private field ${field}.`);
   }
   return fields;
@@ -196,11 +226,10 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
     for (const [pagePath, source] of Object.entries(input.sources)) {
       repositoryPath(pagePath);
       if (typeof source !== "string") fail("Sources must contain strings.");
-      if (!pagePath.endsWith(".html")) continue;
+      if (nativePageRoute(pagePath) === undefined) continue;
       expectedSources[pagePath] = source;
       const collections = readCollections(source);
       if (!collections.length) continue;
-      expectedSources[pagePath] = source;
       for (const collection of collections) {
         if (startTagAttributes(source, collection.template.tag).length) fail("A recipe template with authored attributes cannot be removed safely.");
         if (collection.fields.some((field) => builtinFields.some((builtin) => builtin === field))) fail("Collection field declarations cannot replace builtin fields.");
@@ -228,7 +257,7 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
     }
     const overrides = new Map<typeof discovered[number], Record<string, Record<string, string>>>();
     for (const [pagePath, source] of Object.entries(input.sources)) {
-      if (!pagePath.endsWith(".html")) continue;
+      if (nativePageRoute(pagePath) === undefined) continue;
       const seen = new Set<string>();
       for (const element of descendants(parseSource(source))) {
         if (element.name !== "meta") continue;
@@ -246,7 +275,10 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
         (records[pagePath] ??= {})[field] = value;
         overrides.set(owner, records);
         expectedSources[pagePath] = source;
-        (edits[pagePath] ??= []).push({ start: element.start, end: element.end, text: "" });
+        const newline = source.includes("\r\n") ? "\r\n" : "\n";
+        // Remove only the exact indentation/newline inserted by withPageField.
+        const generatedWhitespace = source.slice(element.start - 2, element.start) === "  " && source.slice(element.end, element.end + newline.length) === newline;
+        (edits[pagePath] ??= []).push({ start: generatedWhitespace ? element.start - 2 : element.start, end: generatedWhitespace ? element.end + newline.length : element.end, text: "" });
       }
     }
     for (const item of discovered) {
@@ -258,6 +290,14 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
       document.collections[item.id] = { pagePath: item.pagePath, target, folders: item.collection.spec.folders, sort: item.collection.spec.sort, filter: item.collection.spec.filter, limit: item.collection.spec.limit, template: item.source.slice(item.collection.template.tag.end, item.collection.template.close!.start), fields: item.fields, overrides: overrides.get(item) ?? {} };
     }
     validate(document);
+    for (const path of new Set(Object.values(document.collections).map((record) => record.pagePath))) {
+      if (!Object.hasOwn(input.sources, path) || typeof input.sources[path] !== "string") fail(`Load ${path} before locating its collections.`);
+      expectedSources[path] = input.sources[path];
+      const records = Object.fromEntries(Object.entries(document.collections).filter(([, record]) => record.pagePath === path));
+      const located = locateCollections(applyCollectionEdits(input.sources[path], edits[path] ?? []), records);
+      if ("error" in located) fail(located.error);
+      for (const [id, location] of Object.entries(located.collections)) document.collections[id].target = location.target;
+    }
     // Validate every edit before returning any of them, including overlap guards.
     for (const [path, changes] of Object.entries(edits)) applyCollectionEdits(input.sources[path], changes);
     const sidecarText = writePageBuilderDocument(document, previous);
