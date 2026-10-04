@@ -109,3 +109,24 @@ test('same-page collections are located together: nested, duplicate or missing t
  const r=plan(twoSources,{acceptCollections:['work'],expectedSources:pins(twoSources)});
  assert.ok('error'in r);assert.match(r.error,/can no longer be found exactly/);
 });
+
+test('an image rename carries a clean JSON collection output, its overrides and page fields along; hand-edited cards stay edited', async () => {
+  const { planDocumentMediaBatch } = await import('../src/page-builder/document-collections');
+  const { makeCollectionTarget, writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document');
+  const cards = '<a><img src="/images/a.jpg">One</a>';
+  const home = `<html><body><div class="cards">${cards}</div><div class="other"><b>x</b></div></body></html>`;
+  const base = { pagePath: 'index.html', folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<a><img src="{photo}">{label}</a>', fields: ['photo', 'label'], overrides: { 'work/one/index.html': { photo: '/images/a.jpg', label: 'Keep' } } };
+  const sidecar = writePageBuilderDocument({ version: 1, pages: { 'work/one/index.html': { fields: { hero: '/images/a.jpg', mood: 'calm' } } },
+    collections: { clean: { ...base, target: makeCollectionTarget(home, home.indexOf('<div class="cards">')), outputFingerprint: cards },
+      edited: { ...base, target: makeCollectionTarget(home, home.indexOf('<div class="other">')), outputFingerprint: '<b>y</b>' } } } as never);
+  const after = home.replace('/images/a.jpg', '/images/b.jpg');
+  const text = planDocumentMediaBatch({ 'index.html': home }, sidecar, new Map([['index.html', after]]), [{ from: 'images/a.jpg', to: 'images/b.jpg' }]);
+  assert.ok(text);
+  const doc = readPageBuilderDocument(text!);
+  assert.equal(doc.collections.clean.outputFingerprint, '<a><img src="/images/b.jpg">One</a>');
+  assert.equal(doc.collections.edited.outputFingerprint, '<b>y</b>');
+  assert.deepEqual(doc.collections.clean.overrides['work/one/index.html'], { photo: '/images/b.jpg', label: 'Keep' });
+  assert.deepEqual(doc.pages['work/one/index.html'].fields, { hero: '/images/b.jpg', mood: 'calm' });
+  assert.equal(planDocumentMediaBatch({ 'about.html': '<p></p>' }, sidecar, new Map([['about.html', '<p>x</p>']]), []), undefined);
+  assert.equal(planDocumentMediaBatch({}, undefined, new Map(), []), undefined);
+});

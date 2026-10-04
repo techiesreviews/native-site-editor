@@ -91,7 +91,7 @@ import { mountSelectedCollection, type SelectedCollection } from "./components/s
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
-import { documentDrift, readSidecar } from "./page-builder/document-collections";
+import { documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
 import { sidecarCollectionAt } from "./page-builder/collection-origins";
 import { documentEditTouches, documentRegions, editTouchesGenerated, planDocumentTargetEdit, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
 import { readCollections, validCollectionRoute } from "./page-builder/collection-model";
@@ -3238,6 +3238,12 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
       if (!editor || !currentPath) throw new Error("Open a page before changing images.");
       const historyPath = currentPath, historyHost = editor.captureHistoryHost(currentPath);
       if (!historyHost) throw new Error("Open an editable page before changing images.");
+      // Cards a JSON collection made follow the image change in the same batch (and Undo).
+      if (nativeDocumentLoading()) throw new Error(DOCUMENT_LOADING);
+      const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH, scope);
+      const sources = Object.fromEntries([...batch.edits.keys()].map((path) => [path, batch.expectedSources.has(path) ? batch.expectedSources.get(path) : nativeEffectiveSource(path, scope)]));
+      const json = planDocumentMediaBatch(sources, sidecar, batch.edits, batch.moves);
+      if (json !== undefined) batch = { ...batch, edits: new Map([...batch.edits, [EDITOR_PAGE_BUILDER_PATH, json]]), expectedSources: new Map([...batch.expectedSources, [EDITOR_PAGE_BUILDER_PATH, sidecar]]) };
       await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
         scope, store: draftStore(), bytes: uploadBytes(), assertLive,
         paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),

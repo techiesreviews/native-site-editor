@@ -196,3 +196,32 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     return { error: error instanceof Error ? error.message : "The collections could not be baked." };
   }
 }
+
+/**
+ * An image batch (rename, move, delete) rewrites references in page HTML,
+ * including inside cards a JSON collection made. This carries that change
+ * into the editor's JSON in the same batch: a collection whose cards matched
+ * what the editor wrote records the rewritten cards as its output again, and
+ * stored values naming a moved image (per-card overrides, page fields) follow
+ * it. Cards that were already edited by hand stay recorded as edited. Returns
+ * the JSON text to write, or undefined when nothing in it changes.
+ */
+export function planDocumentMediaBatch(sources: Readonly<Record<string, string | undefined>>, sidecar: string | undefined, edits: ReadonlyMap<string, string>, moves: readonly { from: string; to: string }[]): string | undefined {
+  if (sidecar === undefined) return undefined;
+  const document = readSidecar(sidecar);
+  const renamed = new Map(moves.flatMap(({ from, to }) => [[from, to], [`/${from}`, `/${to}`]] as [string, string][]));
+  const follow = (value: string) => renamed.get(value) ?? value;
+  const next = structuredClone(document);
+  for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
+    const before = sources[page], after = edits.get(page);
+    if (before === undefined || after === undefined || after === before) continue;
+    const old = locatePageCollections(before, document, page), now = locatePageCollections(after, document, page);
+    for (const [id, item] of Object.entries(old))
+      if (document.collections[id].outputFingerprint === item.text) next.collections[id].outputFingerprint = now[id].text;
+  }
+  for (const collection of Object.values(next.collections))
+    for (const fields of Object.values(collection.overrides)) for (const [name, value] of Object.entries(fields)) fields[name] = follow(value);
+  for (const page of Object.values(next.pages)) if (page.fields) for (const [name, value] of Object.entries(page.fields)) page.fields[name] = follow(value);
+  const text = writePageBuilderDocument(next, sidecar);
+  return text === sidecar ? undefined : text;
+}
