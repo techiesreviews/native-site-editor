@@ -7016,7 +7016,8 @@ async function openComponentLinkedStyle(page: string) {
   const current = () => {
     const draft = draftStore().get(scope, css);
     return request === linkedStyleRequest && epoch === generation && currentPath === page &&
-      linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque;
+      linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque &&
+      Boolean(entry || (draft && draft.baseSha === null));
   };
   if (!(await openSecondary(css, current))) return false;
   if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
