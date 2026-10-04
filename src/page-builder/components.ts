@@ -119,6 +119,12 @@ export interface ComponentDeps {
   codeTitle: HTMLElement;
   /** The page file the preview shows (for Done, back from a template). */
   previewPage: () => string | undefined;
+  /**
+   * Native-first page actions for a plain element of a page (not a template or instance).
+   * When provided, these replace the Make component fallback: a native page is never turned
+   * into a component from the edit bar. Explicit component instances and templates are unaffected.
+   */
+  nativePageActions?: (selection: NativePreviewSelection) => EditBarControl[];
 }
 
 /** An instance found for a selection: where it is written and what it holds. */
@@ -370,6 +376,10 @@ export function createComponentTools(deps: ComponentDeps) {
       return out;
     }
     // A part of a page (not inside a template) can become a component.
+    if (deps.nativePageActions) {
+      if (!selection.host && selection.node && !tagOfFile(selection.path)) out.push(...deps.nativePageActions(selection));
+      return out;
+    }
     if (!selection.host && selection.node && CONTAINERS.has(selection.tag) && !tagOfFile(selection.path)) {
       out.push({ kind: "button", label: "Make component…", title: "Turn this element into a component the site can reuse", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
     }

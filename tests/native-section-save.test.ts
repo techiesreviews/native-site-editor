@@ -50,7 +50,7 @@ test("saves the exact edited section HTML into the matching record only, as a JS
 });
 
 test("uses the host range, not source path counting: scripts and meta refresh before the target", () => {
-  const target = `<section class="section-contact"><h2>Write</h2></section>`;
+  const target = `<section class="${contact.rootClass}"><h2>Write</h2></section>`;
   const body = `<script>document.write("<section class='section-intro'></section>")</script><meta http-equiv="refresh" content="9"><section class="section-intro"><h2>A</h2></section>${target}`;
   const r = saved(on(body, target));
   assert.equal(r.recordId, "contact");
@@ -73,9 +73,9 @@ test("an unclosed paragraph before the section: the exact AST range is accepted,
 
 test("explicit record id and range are checked", () => {
   assert.equal(good(input({ recordId: "intro" })).recordId, "intro");
-  bad(input({ recordId: "contact" }), /does not carry the class section-contact/);
+  bad(input({ recordId: "contact" }), new RegExp(`does not carry the class ${contact.rootClass}`));
   bad(input({ recordId: "gone" }), /no longer exists/);
-  const both = `<section class="section-intro SECTION-CONTACT"><h2>x</h2></section>`;
+  const both = `<section class="section-intro ${contact.rootClass.toUpperCase()}"><h2>x</h2></section>`;
   bad(on(both, both, { recordId: "intro" }), /another saved section's class/);
   bad(on(both, both), /more than one/);
 });

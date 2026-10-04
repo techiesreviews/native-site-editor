@@ -86,6 +86,7 @@ import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls 
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
 import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readStaticSectionRecords, type StaticSectionInsertPlan } from "./page-builder/static-sections";
+import { planSelectedStaticSectionSave } from "./page-builder/native-section-save";
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
@@ -695,7 +696,51 @@ function mountComponentTools() {
       const route = nativePreview?.route();
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
+    nativePageActions: nativeSectionSaveControls,
   });
+}
+
+// Save section: a page's own plain <section> root updates its saved section in the editor JSON.
+// The page, its stylesheets and copies already on pages are never written.
+function nativeSectionSaveControls(selection: NativePreviewSelection): EditBarControl[] {
+  if (!nativeSite || versionView || selection.tag !== "section" || selection.host || !selection.path || !selection.node?.length) return [];
+  if (!Object.values(nativeSite.routes).includes(selection.path)) return [];
+  return [{ kind: "button", label: "Save section", className: "edit-bar__component-action",
+    title: "Save this section's HTML to its saved section, for future Add only. This page and copies already on pages stay as they are.",
+    onPress: () => void saveNativeStaticSection(selection) }];
+}
+async function saveNativeStaticSection(selection: NativePreviewSelection) {
+  // Everything the plan reads is pinned here, before the first await.
+  const path = selection.path, node = selection.node ? [...selection.node] : undefined;
+  const scope = draftScope(), epoch = generation, scopeKey = setupScope();
+  if (!path || !node || !scope || versionView || currentPath !== path || !editorModule?.isMounted(path)) { announce("Open the page and select its section again."); return; }
+  if (lastNativeSelection?.path !== path || lastNativeSelection.node?.join(".") !== node.join(".")) { announce("Select the section again."); return; }
+  const proof = editorModule.captureFileModelState(scope, path);
+  const source = nativeEffectiveSource(path);
+  const files = nativeFiles().sort();
+  const filesKey = files.join("\n");
+  const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  const range = source === undefined ? undefined : locateNativeElementRange(source, node);
+  if (source === undefined || !range) { announce("The section could not be matched to its source. Select it again."); return; }
+  if (files.includes(EDITOR_PAGE_BUILDER_PATH) && docText === undefined) {
+    // Read the editor JSON, then let the person choose again rather than saving from a stale choice.
+    const error = await ensureNativeTextIndex();
+    if (error) errorMessage(new Error(error));
+    else element("status").textContent = "Saved sections have loaded. Choose Save section again.";
+    return;
+  }
+  const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files });
+  if ("error" in plan) { errorMessage(new Error(`Section not saved: ${plan.error}`)); return; }
+  if (plan.noop) { element("status").textContent = "The saved section already matches this section."; return; }
+  const expectedFiles = (plan.expectedFiles ?? files).join("\n");
+  const current = () => !versionView && generation === epoch && setupScope() === scopeKey && proof.isCurrent()
+    && currentPath === path && Boolean(editorModule?.isMounted(path)) && nativeEffectiveSource(path) === source
+    && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === docText && nativeFiles().sort().join("\n") === expectedFiles && expectedFiles === filesKey
+    && lastNativeSelection?.path === path && lastNativeSelection.node?.join(".") === node.join(".");
+  if (!current()) { errorMessage(new Error("The page or the editor's JSON changed. Select the section and save again.")); return; }
+  const { open: _open, creates: _creates, ...operation } = plan.operation;
+  const error = await applyNativeOperation({ ...operation, current });
+  if (error) errorMessage(new Error(error));
 }
 
 let commitHistory: ReturnType<typeof createCommitHistory> | undefined;
