@@ -1,11 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyCollectionEdits } from "../src/page-builder/collection-bake.ts";
-import { planManualConversion } from "../src/page-builder/native-grid-collection.ts";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, planLegacyCollectionImport, readPageBuilderDocument, writePageBuilderDocument } from "../src/page-builder/page-builder-document.ts";
 
+interface LegacyFixture { original: Record<string, string>; sources: Record<string, string>; routes: Record<string, string> }
+// Frozen real legacy output from planManualConversion, token gabc12, captured once.
+// d150832b35d041ada56513f041cb2dfc2a0d4aed and 40c12efa6bc16be326089957b5d0d492ced6f420
+// share converter blob 72d077f72b3b10e6795ff9deb82c59dfad8aa58c (also this branch's legacy base).
+// Complete fixture JSON SHA-256: ec989f5953e0cea5f396c933bf2e2f68a45509f92e58b22436812e5e521e858b.
+// Do not regenerate with the current converter: these fixtures exercise importing old HTML recipes.
+const legacyFixtures: Record<"note" | "fallback", LegacyFixture> = {
+  "note": {
+    "original": {
+      "index.html": "<html><head><title>Home · Site</title></head><body><div class=\"cards\"><card-project><h3 slot=\"title\">A</h3><p slot=\"note\">Alpha note</p><a slot=\"link\" href=\"/work/a/\">Read about A</a></card-project><card-project><h3 slot=\"title\">B</h3><p slot=\"note\">Beta note</p><a slot=\"link\" href=\"/work/b/\">Read about B</a></card-project></div></body></html>",
+      "work/a/index.html": "<html><head><title>A · Site</title><meta name=\"description\" content=\"SEO A\"></head><body><h1>A</h1></body></html>",
+      "work/b/index.html": "<html><head><title>B · Site</title><meta name=\"description\" content=\"SEO B\"></head><body><h1>B</h1></body></html>"
+    },
+    "sources": {
+      "index.html": "<html><head><title>Home · Site</title></head><body><div class=\"cards\" data-each=\"/work/\" data-collection-id=\"gabc12\" data-fields=\"gabc12-note\"><template><card-project><h3 slot=\"title\">{title}</h3><p slot=\"note\" data-if=\"gabc12-note\">{gabc12-note}</p><a slot=\"link\" href=\"{url}\">Read about {title}</a></card-project></template><card-project><h3 slot=\"title\">A</h3><p slot=\"note\" data-if=\"gabc12-note\">Alpha note</p><a slot=\"link\" href=\"/work/a/\">Read about A</a></card-project>\n<card-project><h3 slot=\"title\">B</h3><p slot=\"note\" data-if=\"gabc12-note\">Beta note</p><a slot=\"link\" href=\"/work/b/\">Read about B</a></card-project></div></body></html>",
+      "work/a/index.html": "<html><head><title>A · Site</title><meta name=\"description\" content=\"SEO A\">  <meta name=\"field:gabc12-note\" content=\"Alpha note\">\n</head><body><h1>A</h1></body></html>",
+      "work/b/index.html": "<html><head><title>B · Site</title><meta name=\"description\" content=\"SEO B\">  <meta name=\"field:gabc12-note\" content=\"Beta note\">\n</head><body><h1>B</h1></body></html>"
+    },
+    "routes": {
+      "/": "index.html",
+      "/work/a/": "work/a/index.html",
+      "/work/b/": "work/b/index.html"
+    }
+  },
+  "fallback": {
+    "original": {
+      "index.html": "<html><head><title>Home · Site</title></head><body><div class=\"cards\"><card-project><h3 slot=\"title\">Custom A</h3><a slot=\"link\" href=\"/work/a/\">Explore A</a></card-project><card-project><h3 slot=\"title\">B</h3><a slot=\"link\" href=\"/work/b/\">Read about B</a></card-project></div></body></html>",
+      "work/a/index.html": "<html><head><title>A · Site</title><meta name=\"description\" content=\"SEO A\"></head><body><h1>A</h1></body></html>",
+      "work/b/index.html": "<html><head><title>B · Site</title><meta name=\"description\" content=\"SEO B\"></head><body><h1>B</h1></body></html>"
+    },
+    "sources": {
+      "index.html": "<html><head><title>Home · Site</title></head><body><div class=\"cards\" data-each=\"/work/\" data-collection-id=\"gabc12\" data-fields=\"gabc12-title gabc12-link\"><template><card-project><h3 slot=\"title\" data-if=\"gabc12-title\">{gabc12-title}</h3><h3 slot=\"title\" data-if=\"!gabc12-title\">{title}</h3><a slot=\"link\" href=\"{url}\" data-if=\"gabc12-link\">{gabc12-link}</a><a slot=\"link\" href=\"{url}\" data-if=\"!gabc12-link\">Read about {title}</a></card-project></template><card-project><h3 slot=\"title\" data-if=\"gabc12-title\">Custom A</h3><a slot=\"link\" href=\"/work/a/\" data-if=\"gabc12-link\">Explore A</a></card-project>\n<card-project><h3 slot=\"title\" data-if=\"!gabc12-title\">B</h3><a slot=\"link\" href=\"/work/b/\" data-if=\"!gabc12-link\">Read about B</a></card-project></div></body></html>",
+      "work/a/index.html": "<html><head><title>A · Site</title><meta name=\"description\" content=\"SEO A\">  <meta name=\"field:gabc12-title\" content=\"Custom A\">\n  <meta name=\"field:gabc12-link\" content=\"Explore A\">\n</head><body><h1>A</h1></body></html>",
+      "work/b/index.html": "<html><head><title>B · Site</title><meta name=\"description\" content=\"SEO B\"></head><body><h1>B</h1></body></html>"
+    },
+    "routes": {
+      "/": "index.html",
+      "/work/a/": "work/a/index.html",
+      "/work/b/": "work/b/index.html"
+    }
+  }
+};
+
 const identity = { name: "Site" };
-const page = (title: string) => `<html><head><title>${title} · Site</title><meta name="description" content="SEO ${title}"></head><body><h1>${title}</h1></body></html>`;
 function imported(sources: Record<string, string>, routes: Record<string, string> = {}) {
   const result = planLegacyCollectionImport({ sources, routes, identity });
   if ("error" in result) assert.fail(result.error);
@@ -85,13 +126,7 @@ test("invalid or nested second collection refuses the entire atomic plan", () =>
 });
 
 test("conversion import relocates proven private overrides without changing SEO or baked cards", () => {
-  const card = (title: string, note: string, href: string) => `<card-project><h3 slot="title">${title}</h3><p slot="note">${note}</p><a slot="link" href="${href}">Read about ${title}</a></card-project>`;
-  const home = `<html><head><title>Home · Site</title></head><body><div class="cards">${card('A', 'Alpha note', '/work/a/')}${card('B', 'Beta note', '/work/b/')}</div></body></html>`;
-  const original = { "index.html": home, "work/a/index.html": page('A'), "work/b/index.html": page('B') };
-  const routes = { "/": "index.html", "/work/a/": "work/a/index.html", "/work/b/": "work/b/index.html" };
-  const conversion = planManualConversion({ sources: original, routes, identity, path: "index.html", start: home.indexOf('<div'), folders: ["/work/"], token: "gabc12" });
-  if ("error" in conversion) assert.fail(conversion.error);
-  const sources = Object.fromEntries(Object.entries(original).map(([path, source]) => [path, applyCollectionEdits(source, conversion.plan.edits[path] ?? [])]));
+  const { original, sources, routes } = structuredClone(legacyFixtures.note);
   const result = imported(sources, routes);
   const record = result.document.collections.gabc12;
   assert.deepEqual(record.overrides, { "work/a/index.html": { "gabc12-note": "Alpha note" }, "work/b/index.html": { "gabc12-note": "Beta note" } });
@@ -201,15 +236,8 @@ test("whole-page resolution refuses actual nested targets after rebinding and pe
   if (!('error' in located)) { assert.deepEqual(located.collections.outer.target.path, [0]); assert.deepEqual(located.collections.inner.target.path, [1]); }
 });
 
-function fallbackConversion() {
-  const card = (title: string, link: string, href: string) => `<card-project><h3 slot="title">${title}</h3><a slot="link" href="${href}">${link}</a></card-project>`;
-  const home = `<html><head><title>Home · Site</title></head><body><div class="cards">${card('Custom A', 'Explore A', '/work/a/')}${card('B', 'Read about B', '/work/b/')}</div></body></html>`;
-  const original = { 'index.html': home, 'work/a/index.html': page('A'), 'work/b/index.html': page('B') };
-  const routes = { '/': 'index.html', '/work/a/': 'work/a/index.html', '/work/b/': 'work/b/index.html' };
-  const conversion = planManualConversion({ sources: original, routes, identity, path: 'index.html', start: home.indexOf('<div'), folders: ['/work/'], token: 'gabc12' });
-  if ('error' in conversion) assert.fail(conversion.error);
-  const sources = Object.fromEntries(Object.entries(original).map(([path, source]) => [path, applyCollectionEdits(source, conversion.plan.edits[path] ?? [])]));
-  return { original, sources, routes };
+function fallbackConversion(): LegacyFixture {
+  return structuredClone(legacyFixtures.fallback);
 }
 
 test("generated custom title and link overrides retain exact native fallbacks and native output", () => {
