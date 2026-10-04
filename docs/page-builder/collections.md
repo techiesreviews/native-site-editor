@@ -85,9 +85,14 @@ the card text is stored as a custom page field `<id>-<slot>` on that page, with 
 `data-collection-id` on the grid. SEO title and description are never rewritten.
 Conversion is refused, with a readable reason and no writes, for rich or image parts,
 mixed card shapes, external or duplicate links, folders that would drop a current
-card, or cards in a custom order that page order would change. Known gap: a field
-used only by removed or moved pages makes later bakes report an unknown field; a
-persisted field registry is separate work.
+card, or cards in a custom order that page order would change. The grid also persists
+its custom field names in native `data-fields`, an ASCII-space-separated list. This
+keeps those exact names valid when the last page supplying a value moves or is
+deleted. Declarations apply only to that grid; undeclared or misspelled names still
+fail validation. Sort and filter controls show friendly names such as “Card note”
+while retaining the stored field name. Native planning and actual-starter browser
+tests cover the schema and labels; the last-supplying-page deletion is covered at
+the native-operation planning layer.
 
 ## Host integration contract
 

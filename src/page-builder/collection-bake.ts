@@ -164,12 +164,12 @@ export function planBake(sources: Record<string, string>, routes: Record<string,
       for (const collection of readCollections(source)) {
         const { element, template, spec } = collection;
         const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path);
-        const known = [...new Set(all.flatMap((record) => Object.keys(record.fields)))];
+        const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
         validateTemplate(source.slice(template.start, template.end));
         const markup = source.slice(template.tag.end, template.close!.start);
         // An empty list still validates its template instead of silently accepting a typo.
         bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
-        const records = collectionRecords(sources, routes, identity, spec, path);
+        const records = collectionRecords(sources, routes, identity, spec, path, collection.fields);
         const newline = source.includes("\r\n") ? "\r\n" : "\n";
         const output = records.map((record) => bindCollectionTemplate(markup, record.fields, known)).join(newline);
         const text = source.slice(template.start, template.end) + output;

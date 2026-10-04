@@ -9,7 +9,7 @@ import { startTagAttribute } from "../../shared/html-source";
 import { attributeEdit, descendants, parseSource, type SourceElement } from "./component-model";
 import { applyCollectionEdits, bindCollectionTemplate, planCollectionChange, type BakePlan } from "./collection-bake";
 import { readPageFields, withCustomPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
-import { collectionRecords, makeGridCollection, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
+import { collectionRecords, declaredCollectionFields, makeGridCollection, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 
 interface CardSlot { slot: string; tag: string; open: string; text: string; href?: string }
@@ -137,6 +137,7 @@ export function planManualConversion(input: ManualConversionInput): ManualConver
   if (Object.values(sources).some((text) => text.includes(`data-collection-id="${token}"`))) return fail("This collection id is already used.");
   const grid = readManualGrid(source, start);
   if ("error" in grid) return grid;
+  if (startTagAttribute(source, grid.element.tag, "data-collection-id")) return fail("This grid already has a collection id, so choosing pages will not replace it.");
   const pages = grid.cards.map((card) => {
     const href = card.slots.find((slot) => slot.href !== undefined)!.href!;
     return { card, url: href, page: Object.hasOwn(routes, href) && validCollectionRoute(href, routes[href]) ? routes[href] : undefined };
@@ -181,7 +182,10 @@ export function planManualConversion(input: ManualConversionInput): ManualConver
     for (const [page, fields] of writes) for (const [field, value] of Object.entries(fields)) after[page] = withCustomPageField(after[page], field, value, identity);
     const converted = makeGridCollection(source, start, { folders, sort: "", filter: "", limit: "", template: markup });
     const host = [...descendants(parseSource(converted))].find((item) => item.start === start)!;
-    after[path] = applyCollectionEdits(converted, [attributeEdit(converted, host.tag, "data-collection-id", token)]);
+    const declared = [...new Set([...declaredCollectionFields(source, grid.element), ...[...writes.values()].flatMap((fields) => Object.keys(fields))])];
+    const identified = applyCollectionEdits(converted, [attributeEdit(converted, host.tag, "data-collection-id", token)]);
+    const identifiedHost = [...descendants(parseSource(identified))].find((item) => item.start === start)!;
+    after[path] = applyCollectionEdits(identified, [attributeEdit(identified, identifiedHost.tag, "data-fields", declared.length ? declared.join(" ") : undefined)]);
     const plan = planCollectionChange(sources as Record<string, string>, after, routes as Record<string, string>, identity);
     if ("error" in plan) return plan;
     const collection = plan.collections.find((item) => item.path === path && item.start === start);

@@ -2,7 +2,7 @@ import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
-import { makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { attribute, makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import "./collections-panel.css";
 
@@ -183,8 +183,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       return input;
     });
     form.append(sourceGroup);
-    const fieldNames = [...new Set(["title", "date", "url", ...Object.entries(saved.routes).flatMap(([url, file]) =>
+    const fieldNames = [...new Set(["title", "date", "url", ...(existing?.fields ?? []), ...Object.entries(saved.routes).flatMap(([url, file]) =>
       saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
+    const namespace = existing && attribute(source, existing.element, "data-collection-id");
+    const fieldLabel = (name: string) => {
+      const text = namespace && name.startsWith(`${namespace}-`) ? `Card ${name.slice(namespace.length + 1)}` : name;
+      return text.replace(/[_-]/g, " ").replace(/^./, (first) => first.toUpperCase());
+    };
     const select = (label: string, choices: [string, string][], value: string) => {
       const wrap = node("label", "collections-panel__field"); wrap.append(node("span", "", label));
       const input = node("select");
@@ -192,11 +197,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       input.value = value; wrap.append(input); form.append(wrap); return input;
     };
     const sortValue = existing?.spec.sort ?? "-date";
-    const sort = select("Sort by", [["", "Page order"], ...fieldNames.map((name): [string, string] => [name, name[0].toUpperCase() + name.slice(1)])], sortValue.replace(/^-/, ""));
+    const sort = select("Sort by", [["", "Page order"], ...fieldNames.map((name): [string, string] => [name, fieldLabel(name)])], sortValue.replace(/^-/, ""));
     const direction = select("Order", [["ascending", "Ascending"], ["descending", "Descending"]], sortValue.startsWith("-") ? "descending" : "ascending");
     const filterValue = existing?.spec.filter ?? "", equals = filterValue.indexOf("=");
     const filterName = equals < 0 ? "" : filterValue.slice(0, equals);
-    const filter = select("Filter by", [["", "All pages"], ...[...new Set([...fieldNames, ...(filterName ? [filterName] : [])])].map((name): [string, string] => [name, name[0].toUpperCase() + name.slice(1)])], filterName);
+    const filter = select("Filter by", [["", "All pages"], ...[...new Set([...fieldNames, ...(filterName ? [filterName] : [])])].map((name): [string, string] => [name, fieldLabel(name)])], filterName);
     const filterMatch = control(form, "Matches exactly", equals < 0 ? "" : filterValue.slice(equals + 1));
     filterMatch.parentElement!.hidden = !filter.value;
     // Preserve an authored custom sort even when no current page defines it.

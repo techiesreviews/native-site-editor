@@ -52,13 +52,27 @@ test("default folders are the ones the current cards live in", () => {
   assert.deepEqual(manualGridFolders(sources["index.html"], start(sources["index.html"]), routes), ["/work/"]);
 });
 
+test("conversion preserves existing declarations and refuses to overwrite a collection id", () => {
+  const original = cards().replace('<div class="cards">', '<div class="cards" data-fields="legacy" data-other="quoted &gt;">');
+  const { sources, routes } = site(original);
+  const converted = planManualConversion({ sources, routes, identity, path: "index.html", start: original.indexOf('<div class="cards"'), folders: ["/work/"], token: "gabc12" });
+  if ("error" in converted) assert.fail(converted.error);
+  const home = applyCollectionEdits(original, converted.plan.edits["index.html"]);
+  assert.ok(home.includes('data-other="quoted &gt;"'));
+  assert.ok(home.includes('data-fields="legacy gabc12-note gabc12-body"'));
+  const named = site(cards().replace('<div class="cards">', '<div class="cards" data-collection-id="keepme">'));
+  const refused = planManualConversion({ sources: named.sources, routes: named.routes, identity, path: "index.html", start: named.sources["index.html"].indexOf('<div class="cards"'), folders: ["/work/"], token: "gabc12" });
+  assert.ok("error" in refused);
+  assert.match(refused.error, /will not replace it/);
+});
+
 test("conversion keeps every card's text, attributes and link, and leaves SEO alone", () => {
   const { sources, routes } = site();
   const converted = result(sources, routes, ["/work/"]);
   if ("error" in converted) assert.fail(converted.error);
   const final = (path: string) => applyCollectionEdits(converted.plan.expectedSources[path], converted.plan.edits[path] ?? []);
   const home = final("index.html");
-  assert.match(home, /<div class="cards" data-each="\/work\/" data-collection-id="gabc12"><template>/);
+  assert.match(home, /<div class="cards" data-each="\/work\/" data-collection-id="gabc12" data-fields="gabc12-note gabc12-body"><template>/);
   for (const text of ["Cafe · Identity and site · 2025", "Fern &amp; Kettle", "A one-page site with a menu.", 'href="/work/fern-and-kettle/"', "Read about Fern &amp; Kettle", "Harbour Lane Pottery", "A quiet portfolio.", 'class="body"'])
     assert.ok(home.split("</template>")[1].includes(text), text);
   // Title matches the page: bare {title}. Body differs on one card: override + fallback.
