@@ -1,5 +1,5 @@
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";
-import { planStaticSectionInsert, previewStaticSection, planStaticSectionSave, readStaticSectionRecords, type SectionChoice, type StaticSectionInsertInput, type StaticSectionInsertPlan, type StaticSectionLiveCss, type StaticSectionRecord } from "./static-sections";
+import { planStaticSectionInsert, previewStaticSection, planStaticSectionSave, readSectionCatalog, type SectionChoice, type SectionMasterContext, type StaticSectionEntry, type StaticSectionInsertInput, type StaticSectionInsertPlan, type StaticSectionLiveCss, type StaticSectionRecord } from "./static-sections";
 
 /** Prefix that keeps default choices distinct when listed beside saved sections. */
 export const DEFAULT_SECTION_CHOICE_PREFIX = "static-section:";
@@ -55,20 +55,21 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
  * Invalid JSON refuses rather than falling back to defaults.
  */
 export function listDefaultSectionChoices(documentText: string | undefined): SectionChoice[] | { error: string } {
-  let saved: Record<string, StaticSectionRecord>;
-  try { saved = readStaticSectionRecords(documentText); } catch (error) { return { error: message(error) }; }
+  // Which ids are saved needs no HTML: a saved section with a master file is listed without reading it.
+  let saved: Record<string, StaticSectionEntry>;
+  try { saved = readSectionCatalog(documentText); } catch (error) { return { error: message(error) }; }
   return DEFAULT_STATIC_SECTIONS.filter(({ id }) => !Object.hasOwn(saved, id)).map(({ id, label, rootClass }) => ({ id: DEFAULT_SECTION_CHOICE_PREFIX + id, label, rootClass }));
 }
 /**
  * Preview of exactly what `planDefaultStaticSectionInsert` would insert: the saved record when one exists, else the default seed.
  * Hosts should pass `live` so a saved section previews the current public stylesheet (`reuse-current`).
  */
-export function previewDefaultStaticSection(documentText: string | undefined, choiceId: string, live?: StaticSectionLiveCss): { html: string; css: string; rootClass: string } | { error: string } {
+export function previewDefaultStaticSection(documentText: string | undefined, choiceId: string, live?: StaticSectionLiveCss, masters?: SectionMasterContext): { html: string; css: string; rootClass: string } | { error: string } {
   const section = byChoiceId(choiceId);
   if (!section) return { error: "Choose a default static section." };
-  let saved: Record<string, StaticSectionRecord>;
-  try { saved = readStaticSectionRecords(documentText); } catch (error) { return { error: message(error) }; }
-  if (Object.hasOwn(saved, section.id)) return previewStaticSection(documentText, section.id, live);
+  let saved: Record<string, StaticSectionEntry>;
+  try { saved = readSectionCatalog(documentText); } catch (error) { return { error: message(error) }; }
+  if (Object.hasOwn(saved, section.id)) return previewStaticSection(documentText, section.id, live, masters);
   return { html: section.html, css: section.css, rootClass: section.rootClass };
 }
 
@@ -80,8 +81,8 @@ export function previewDefaultStaticSection(documentText: string | undefined, ch
 export function planDefaultStaticSectionInsert(input: StaticSectionInsertInput): StaticSectionInsertPlan | { error: string } {
   const section = byChoiceId(input.sectionId);
   if (!section) return { error: "Choose a default static section." };
-  let records: Record<string, StaticSectionRecord>;
-  try { records = readStaticSectionRecords(input.documentText); } catch (error) { return { error: message(error) }; }
+  let records: Record<string, StaticSectionEntry>;
+  try { records = readSectionCatalog(input.documentText); } catch (error) { return { error: message(error) }; }
   if (Object.hasOwn(records, section.id)) return planStaticSectionInsert({ ...input, sectionId: section.id, cssPolicy: input.cssPolicy ?? "reuse-current" });
   const save = planStaticSectionSave({ documentText: input.documentText, files: input.files, record: structuredClone(section) as StaticSectionRecord });
   if ("error" in save) return save;

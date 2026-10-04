@@ -86,7 +86,10 @@ import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
-import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readStaticSectionRecords, type StaticSectionInsertPlan } from "./page-builder/static-sections";
+import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readSectionCatalog, resolveStaticSection, SECTION_MASTER_FOLDER, type SectionMasterContext, type StaticSectionInsertPlan, type StaticSectionMasterEntry } from "./page-builder/static-sections";
+import { registerInsertedNativeSection } from "./page-builder/native-section-links";
+import { createNativeSectionMasterController, type MasterSelection } from "./page-builder/native-section-master-controller";
+import { createMasterBanner } from "./components/master-banner";
 import { planSelectedStaticSectionSave } from "./page-builder/native-section-save";
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
@@ -715,10 +718,18 @@ function nativeSectionSavePlan(selection: NativePreviewSelection) {
   const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   if (source === undefined || !range || docText === undefined) return undefined;
-  const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort() });
+  const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort(), master: nativeSaveMaster(docText, source, range) });
   if ("error" in plan) return undefined;
-  const label = readStaticSectionRecords(docText)[plan.recordId]?.label;
-  return label ? { plan, label } : undefined;
+  const entry = readSectionCatalog(docText)[plan.recordId];
+  return entry ? { plan, label: entry.label, master: Object.hasOwn(entry, "htmlPath") } : undefined;
+}
+// The loaded master of the one saved section with a master file whose rootClass the selected
+// section carries: Save then writes into that master. Undefined otherwise (a v1 save, or none).
+function nativeSaveMaster(docText: string, source: string, range: { start: number; end: number }): string | undefined {
+  const opening = source.slice(range.start, source.indexOf(">", range.start) + 1);
+  const classes = new Set((/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(opening)?.slice(1).find(value => value !== undefined) ?? "").split(/\s+/).filter(Boolean).map(name => name.toLowerCase()));
+  const masters = Object.values(readSectionCatalog(docText)).filter((entry): entry is StaticSectionMasterEntry => Object.hasOwn(entry, "htmlPath") && classes.has(entry.rootClass.toLowerCase()));
+  return masters.length === 1 ? nativeEffectiveSource(masters[0].htmlPath) : undefined;
 }
 let nativeSectionSaveLoading: Promise<unknown> | undefined;
 function nativeSectionSaveControls(selection: NativePreviewSelection): EditBarControl[] {
@@ -746,7 +757,9 @@ function nativeSectionSaveControls(selection: NativePreviewSelection): EditBarCo
   }
   const label = eligible.label.length > 24 ? "Update saved section" : `Update ${eligible.label}`;
   return [{ kind: "button", label, className: "edit-bar__component-action",
-    title: `Update the saved section “${eligible.label}” with this section's HTML, for future inserts only. This page and copies already on pages stay as they are.`,
+    title: eligible.master
+      ? `Save this section's HTML into the “${eligible.label}” master. Copies on pages change only with Update copies.`
+      : `Update the saved section “${eligible.label}” with this section's HTML, for future inserts only. This page and copies already on pages stay as they are.`,
     onPress: () => void saveNativeStaticSection(selection) }];
 }
 async function saveNativeStaticSection(selection: NativePreviewSelection) {
@@ -769,9 +782,12 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     else element("status").textContent = "Saved sections have loaded. Select the section again to update it.";
     return;
   }
-  const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files });
+  const masterSource = docText === undefined ? undefined : nativeSaveMaster(docText, source, range);
+  const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files, master: masterSource });
   if ("error" in plan) { errorMessage(new Error(`Section not saved: ${plan.error}`)); return; }
-  const label = docText === undefined ? undefined : readStaticSectionRecords(docText)[plan.recordId]?.label;
+  const savedEntry = docText === undefined ? undefined : readSectionCatalog(docText)[plan.recordId];
+  const label = savedEntry?.label;
+  const intoMaster = savedEntry !== undefined && Object.hasOwn(savedEntry, "htmlPath");
   if (plan.noop) { announce(`${label ?? "The saved section"} already matches this section; future inserts use it.`); return; }
   const expectedFiles = (plan.expectedFiles ?? files).join("\n");
   const current = () => !versionView && generation === epoch && setupScope() === scopeKey && proof.isCurrent()
@@ -780,9 +796,86 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     && lastNativeSelection?.path === path && lastNativeSelection.node?.join(".") === node.join(".");
   if (!current()) { errorMessage(new Error("The page or the editor's JSON changed. Select the section and save again.")); return; }
   const { open: _open, creates: _creates, ...operation } = plan.operation;
-  const done = `Updated ${label ?? "the saved section"} for future inserts. This page and copies already on pages stay as they are.`;
+  const done = intoMaster
+    ? `Saved this section into the ${label} master. Copies on pages change only with Update copies.`
+    : `Updated ${label ?? "the saved section"} for future inserts. This page and copies already on pages stay as they are.`;
   const error = await applyNativeOperation({ ...operation, ...(label ? { done } : {}), current });
   if (error) errorMessage(new Error(error));
+}
+
+// Saved-section masters (src/page-builder/native-section-master-controller.ts). A page click
+// always selects the page's own copy; only the explicit purple Edit on a whole saved section
+// opens its master. The host below gives the controller this editor's state and transactions.
+const masterRevision = () => `${setupScope()}:${generation}`;
+// The page's source model as it was when an Edit started, checked by its transaction to the end.
+let masterPageProof: { isCurrent(): boolean } | undefined;
+// Nodes of selections the controller may select again (it remembers ranges).
+const masterNodes = new Map<string, number[]>();
+function nativeMasterSelection(selection = lastNativeSelection): MasterSelection | undefined {
+  if (!selection?.path || !selection.node || selection.host) return undefined;
+  const source = nativeEffectiveSource(selection.path);
+  const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
+  if (!range || source === undefined) return undefined;
+  const painted = selection.paintedSource ?? source;
+  masterNodes.set(`${selection.path}:${range.start}:${range.end}`, [...selection.node]);
+  return { path: selection.path, node: [...selection.node], range: { start: range.start, end: range.end }, paintedSource: painted };
+}
+const masterController = createNativeSectionMasterController({
+  snapshot: () => ({
+    revision: masterRevision(), files: nativeFiles().sort(), source: (path) => nativeEffectiveSource(path),
+    currentPath: currentPath ?? "", selection: currentPath && lastNativeSelection?.path === currentPath ? nativeMasterSelection() : undefined,
+  }),
+  async open(path, revision) {
+    if (versionView || masterRevision() !== revision) return false;
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: () => masterRevision() === revision });
+    return masterRevision() === revision && currentPath === path;
+  },
+  select(path, range) {
+    const node = masterNodes.get(`${path}:${range.start}:${range.end}`);
+    if (node) nativePreview?.selectNode({ path, node });
+  },
+  async apply(operation, expectedFiles, current) {
+    const files = expectedFiles?.join("\n");
+    const proof = masterPageProof;
+    const error = await applyNativeOperation({
+      ...operation,
+      current: () => !versionView && current() && (files === undefined || nativeFiles().sort().join("\n") === files) && (!proof || proof.isCurrent()),
+    });
+    if (error) { errorMessage(new Error(error)); return false; }
+    return true;
+  },
+  announce,
+});
+let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
+function renderMasterBanner() {
+  if (!masterBanner) {
+    const content = document.getElementById("content");
+    if (!content) return;
+    masterBanner = createMasterBanner(content, {
+      done: () => void masterController.done().then(renderMasterBanner),
+      update: () => void masterController.updateCopies().then(renderMasterBanner),
+    });
+  }
+  masterBanner.show(masterController.context());
+}
+// The edit bar's label and purple Edit for a whole saved section, or nothing.
+function nativeMasterIdentity(selection: NativePreviewSelection) {
+  if (versionView || !isNativeSectionTag(selection.tag) || selection.tag.includes("-")) return undefined;
+  const at = nativeMasterSelection(selection);
+  const identity = at && masterController.identity(at);
+  if (!identity) return undefined;
+  const scope = draftScope();
+  return {
+    kind: identity.label,
+    component: {
+      tag: "section",
+      onEdit: () => {
+        masterPageProof = scope && editorModule ? editorModule.captureFileModelState(scope, at!.path, true) : undefined;
+        void identity.onEdit().finally(() => { masterPageProof = undefined; renderMasterBanner(); });
+      },
+    },
+  };
 }
 
 let commitHistory: ReturnType<typeof createCommitHistory> | undefined;
@@ -2109,7 +2202,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable, ...componentTools?.identity(selection) };
+  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable, ...componentTools?.identity(selection), ...nativeMasterIdentity(selection) };
   nativeEditBarModel = model;
   preview.showEditBar(model, rect, nativeTextSelection);
   componentTools?.show(selection);
@@ -2635,10 +2728,19 @@ function nativeStaticCssSnapshot(): string {
   const { sources, unloaded } = nativeStaticStylesheetSources("");
   return JSON.stringify([unloaded, Object.entries(sources).sort(([a], [b]) => a < b ? -1 : 1)]);
 }
+// Saved sections' master files (.editor/sections/), as loaded now (drafts included), with the graph.
+function nativeMasterContext(files = nativeFiles()): SectionMasterContext {
+  return { sources: Object.fromEntries(files.filter(path => path.startsWith(SECTION_MASTER_FOLDER)).map(path => [path, nativeEffectiveSource(path)])), files };
+}
+// One saved section, resolved on its own: a broken master refuses only that section.
+function nativeSavedRecord(id: string, text: string | undefined) {
+  const catalog = readSectionCatalog(text);
+  return Object.hasOwn(catalog, id) ? resolveStaticSection(catalog[id], nativeMasterContext()) : undefined;
+}
 function nativeStaticRecord(tag: string, text: string | undefined) {
-  if (tag.startsWith(SAVED_SECTION_PREFIX)) return readStaticSectionRecords(text)[tag.slice(SAVED_SECTION_PREFIX.length)];
+  if (tag.startsWith(SAVED_SECTION_PREFIX)) return nativeSavedRecord(tag.slice(SAVED_SECTION_PREFIX.length), text);
   const id = tag.slice(DEFAULT_SECTION_CHOICE_PREFIX.length);
-  return readStaticSectionRecords(text)[id] ?? DEFAULT_STATIC_SECTIONS.find(section => section.id === id);
+  return nativeSavedRecord(id, text) ?? DEFAULT_STATIC_SECTIONS.find(section => section.id === id);
 }
 // What adding `tag` would insert now: the saved record with the live public CSS, or a default's seed.
 function nativeStaticSectionPreview(tag: string): { html: string; css: string; stylesheetPath: string; seed: boolean } | undefined {
@@ -2650,9 +2752,9 @@ function nativeStaticSectionPreview(tag: string): { html: string; css: string; s
     const { sources } = nativeStaticStylesheetSources(record.stylesheetPath);
     const live = { cssPolicy: "reuse-current" as const, stylesheetSources: sources, files: nativeFiles() };
     const shown = tag.startsWith(SAVED_SECTION_PREFIX)
-      ? previewStaticSection(text, record.id, live)
-      : previewDefaultStaticSection(text, tag, live);
-    const seed = !tag.startsWith(SAVED_SECTION_PREFIX) && !Object.hasOwn(readStaticSectionRecords(text), record.id);
+      ? previewStaticSection(text, record.id, live, nativeMasterContext())
+      : previewDefaultStaticSection(text, tag, live, nativeMasterContext());
+    const seed = !tag.startsWith(SAVED_SECTION_PREFIX) && !Object.hasOwn(readSectionCatalog(text), record.id);
     return "error" in shown ? undefined : { html: shown.html, css: shown.css, stylesheetPath: record.stylesheetPath, seed };
   } catch { return; }
 }
@@ -2757,16 +2859,18 @@ async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   if (!preview) return;
   let plan: StaticSectionInsertPlan | { error: string };
   let docText: string | undefined;
+  let recordId = "";
   try {
     docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
     const record = nativeStaticRecord(choice.tag, docText);
     if (!record) { errorMessage(new Error(`${choice.label} is no longer available. Choose a section again.`)); return; }
+    recordId = record.id;
     const { sources, unloaded } = nativeStaticStylesheetSources(record.stylesheetPath);
     if (unloaded) { errorMessage(new Error("Some stylesheets could not be read. Refresh the repository and try again.")); return; }
     const input = { documentText: docText, pagePath: path, pageSource: sourceBefore, parent: point.parent, index: point.index, stylesheetSources: sources, files: filesList };
     plan = choice.tag.startsWith(SAVED_SECTION_PREFIX)
-      ? planStaticSectionInsert({ ...input, sectionId: record.id, cssPolicy: "reuse-current" })
-      : planDefaultStaticSectionInsert({ ...input, sectionId: choice.tag });
+      ? planStaticSectionInsert({ ...input, sectionId: record.id, cssPolicy: "reuse-current", masters: nativeMasterContext(filesList).sources })
+      : planDefaultStaticSectionInsert({ ...input, sectionId: choice.tag, masters: nativeMasterContext(filesList).sources });
   } catch (error) { errorMessage(error); return; }
   if ("error" in plan) { errorMessage(new Error(`${choice.label} was not added: ${plan.error}`)); return; }
   const pageAfter = plan.operation.edits.get(path);
@@ -2778,9 +2882,34 @@ async function insertStaticSection(point: InsertPoint, choice: InsertChoice) {
   const current = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && [...nativeFiles()].sort().join("\n") === expectedFiles;
   if (!current()) { changed(); return; }
   const { open: _open, ...operation } = plan.operation;
+  // Link the new copy to its saved section in the same operation (editor JSON only), from the
+  // page and editor JSON as this operation leaves them. A copy that can't be told apart from
+  // another on the page is added unlinked.
+  const linked = registerNativeCopy(path, pageAfter!, plan.selection.node, operation, docText, filesList, recordId);
+  if (linked.error) announce(`${choice.label} is added without a link to its saved section: ${linked.error}`);
   preview.selectAfterUpdate({ path, node: plan.selection.node }, { reveal: "center" });
   const error = await applyNativeOperation({ ...operation, current, selection: { before: { path, node: selectedBefore }, after: { path, node: plan.selection.node } } });
   if (error) { preview.selectAfterUpdate(undefined); errorMessage(new Error(error)); }
+}
+
+function registerNativeCopy(path: string, pageAfter: string, node: number[], operation: { edits: Map<string, string>; creates?: { path: string; content: string }[]; expectedSources: Map<string, string | undefined> }, docText: string | undefined, files: string[], recordId: string): { error?: string } {
+  try {
+    const created = operation.creates?.find(file => file.path === EDITOR_PAGE_BUILDER_PATH);
+    const jsonAfter = operation.edits.get(EDITOR_PAGE_BUILDER_PATH) ?? created?.content ?? docText;
+    if (jsonAfter === undefined) return { error: "there is no editor JSON" };
+    const filesAfter = [...new Set([...files, ...(operation.creates ?? []).map(file => file.path)])].sort();
+    const range = locateNativeElementRange(pageAfter, node);
+    if (!range) return { error: "the new section was not found" };
+    const catalog = readSectionCatalog(jsonAfter);
+    if (!Object.hasOwn(catalog, recordId)) return { error: "its saved section is not in the editor JSON" };
+    const record = resolveStaticSection(catalog[recordId], nativeMasterContext(filesAfter));
+    const registered = record && registerInsertedNativeSection({ documentText: jsonAfter, files: filesAfter, pagePath: path, pageSourceAfter: pageAfter, range, record });
+    if ("error" in registered) return { error: registered.error };
+    if (created) created.content = registered.documentText;
+    else operation.edits.set(EDITOR_PAGE_BUILDER_PATH, registered.documentText);
+    if (!operation.expectedSources.has(EDITOR_PAGE_BUILDER_PATH)) operation.expectedSources.set(EDITOR_PAGE_BUILDER_PATH, docText);
+    return {};
+  } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 }
 
 function refuseNativeSelection(selection: NativePreviewSelection, message: string) {

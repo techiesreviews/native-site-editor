@@ -4,8 +4,9 @@ Saved sections can keep their HTML in a master file. The website stays plain HTM
 page holds its own full copy of each section, and deleting `.editor/` leaves a complete site.
 Nothing here is a runtime, a framework or a marker in the published HTML.
 
-Status: pure model and unit tests only. The editor does not offer Make master, Edit master,
-Save to master or Update copies yet.
+Status: wired into the editor (`src/main.ts`): the purple Edit on a whole saved section opens its
+master, a compact line over the code offers Done and Update copies, Add links each new copy, and
+Update saved section saves into the master when there is one.
 
 ## Files
 
@@ -113,5 +114,8 @@ It returns:
 Conservative limits: a link anywhere that can't be resolved (a page not loaded, an ambiguous or
 missing copy) gives no identity and refuses Update, rather than treating a section as unlinked.
 
-Not done here: wiring in `main.ts` (edit bar identity, banner with Done and Update copies,
-master sources for Add and Save into master, registering inserted copies).
+In the editor: the host adapter in `main.ts` uses `setupScope():generation` as the revision, the
+open file and last native selection, `restoreFile` with an epoch guard for `open`, and
+`applyNativeOperation` (one Undo) for `apply`, adding the file graph and the page model proof
+captured at Edit to `current`. Saved sections are resolved one by one, so a broken master hides
+only its own section.
