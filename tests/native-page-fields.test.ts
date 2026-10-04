@@ -153,3 +153,13 @@ test("CRLF lines are removed whole, other bytes kept", () => {
   assert.ok(!plan.noop);
   assert.equal(plan.edits.get("index.html"), "<html><head>\r\n  <title>T</title>\r\n  <meta name=\"keep\">\r\n</head></html>");
 });
+
+test("refuses field metas whose attributes do not parse exactly", () => {
+  code(() => readEditorFieldMetas("<html><head><meta name=\"field:a\"content=\"x\"></head></html>"), "native-page-fields/malformed-source");
+  code(() => readEditorFieldMetas("<html><head><meta name=field:a content=a=b></head></html>"), "native-page-fields/malformed-source");
+  assert.deepEqual(readEditorFieldMetas("<html><head><meta name=\"field:a\" content=\"x\" /></head></html>").map((meta) => meta.value), ["x"]);
+});
+
+test("refuses property=field: metas instead of skipping them", () => {
+  code(() => readEditorFieldMetas("<html><head><meta property=\"field:a\" content=\"1\"></head></html>"), "native-page-fields/invalid-field");
+});

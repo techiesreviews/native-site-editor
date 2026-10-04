@@ -65,6 +65,17 @@ function decodedAttributes(source: string, tag: StartTag): { name: string; value
   });
 }
 
+/** Whether parsed attributes, whitespace and "/" cover the whole start tag; else a value could be lost. */
+function fullyParsed(source: string, tag: StartTag): boolean {
+  let cursor = tag.nameEnd;
+  const gap = (to: number) => /^[\t\n\f\r /]*$/.test(source.slice(cursor, to));
+  for (const item of startTagAttributes(source, tag)) {
+    if (item.start < cursor || !gap(item.start)) return false;
+    cursor = item.end;
+  }
+  return gap(tag.end - 1) && source[tag.end - 1] === ">";
+}
+
 /** Reads explicit editor-owned field: metas, direct children of the single <head>. Refuses ambiguity. */
 export function readEditorFieldMetas(source: string): EditorFieldMeta[] {
   const all = startTags(source);
@@ -78,7 +89,14 @@ export function readEditorFieldMetas(source: string): EditorFieldMeta[] {
     if (element.name !== "meta") continue;
     const attributes = decodedAttributes(source, element.tag);
     const names = attributes.filter((item) => item.name === "name");
-    if (!names.some((item) => item.value.startsWith(prefix))) continue;
+    if (attributes.some((item) => item.name === "property" && item.value.startsWith(prefix)) && !names.some((item) => item.value.startsWith(prefix)))
+      fail("native-page-fields/invalid-field", "Field metas must use name=\"field:…\", not property.");
+    if (!names.some((item) => item.value.startsWith(prefix))) {
+      if (source.slice(element.tag.start, element.tag.end).includes(prefix) && !fullyParsed(source, element.tag))
+        fail("native-page-fields/malformed-source", "A meta that may hold a field has attributes that cannot be read exactly.");
+      continue;
+    }
+    if (!fullyParsed(source, element.tag)) fail("native-page-fields/malformed-source", "A field meta has attributes that cannot be read exactly.");
     if (element.parent?.name !== "head") fail("native-page-fields/outside-head", "A field meta is outside the page <head> (body, template or noscript).");
     const contents = attributes.filter((item) => item.name === "content");
     if (names.length !== 1 || contents.length > 1 || attributes.some((item) => item.name === "property"))
