@@ -312,18 +312,45 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   const frame = page.frameLocator('.native-preview-frame');
   await frame.locator('.hero h1').click();
   await expect(current(page)).toHaveText('h1');
+  // Canvas selection reveals its folded source; unfold through Monaco's real shortcut.
+  const editor = page.locator('#content .monaco-editor');
+  await expect(editor).toBeVisible();
+  await editor.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+K');
+  await page.keyboard.press('ControlOrMeta+J');
   const line = page.locator('#content .view-line').filter({ hasText: '<section class="hero"' });
+  await expect(line).toBeVisible();
   const box = (await line.boundingBox())!;
   await page.mouse.move(box.x + 30, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 150, box.y + box.height / 2, { steps: 4 });
   await page.waitForTimeout(180);
   await page.mouse.up();
+  await expect(editor.locator('.selected-text').first()).toBeVisible();
   await page.waitForTimeout(180);
   await expect(current(page)).toHaveText('h1');
-  // Queue a cursor event then clear through the real canvas-clear path before its debounce fires.
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'cursor', source: '<main><section><h1>Title</h1></section></main>', offset: 16, stale: () => false } })));
-  await crumbs(page).first().click();
+  // A real code click queues cursor selection; a real body crumb click wins before 120ms.
+  const clear = crumbs(page).first();
+  const clearBox = (await clear.boundingBox())!;
+  const timing = await page.evaluateHandle(() => {
+    const result = { cursor: 0, clear: 0, source: '' };
+    window.addEventListener('native-code-pointer', event => {
+      const pointer = (event as CustomEvent).detail;
+      if (pointer.kind === 'cursor') { result.cursor = performance.now(); result.source = pointer.source; }
+    }, { once: false });
+    window.addEventListener('click', event => {
+      if ((event.target as Element).closest('.canvas-crumb')) result.clear = performance.now();
+    }, { capture: true });
+    return result;
+  });
+  await page.mouse.click(box.x + 30, box.y + box.height / 2);
+  await page.mouse.click(clearBox.x + clearBox.width / 2, clearBox.y + clearBox.height / 2);
+  const measured = await timing.jsonValue();
+  expect(measured.source).toContain('<section class="hero"');
+  expect(measured.cursor).toBeGreaterThan(0);
+  expect(measured.clear - measured.cursor).toBeGreaterThanOrEqual(0);
+  expect(measured.clear - measured.cursor).toBeLessThan(120);
+  await timing.dispose();
   await expect(crumbs(page)).toHaveText(['body']);
   await page.waitForTimeout(180);
   await expect(crumbs(page)).toHaveText(['body']);
