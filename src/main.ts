@@ -4901,6 +4901,12 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): P
     const { folders: _none, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...plain } = origin;
     return applyNativeOperation(plain);
   }
+  // The editor's JSON drives every stored listing: pin its bytes (or absence) as
+  // they are now, before any await, so a newer JSON is refused, never re-planned.
+  if (!expectedSources.has(EDITOR_PAGE_BUILDER_PATH)) {
+    const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+    if (sidecar !== undefined || !nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) expectedSources.set(EDITOR_PAGE_BUILDER_PATH, sidecar);
+  }
   // Listings bake from every page: load the whole text index when any page
   // source is missing, then plan from the fresh state.
   const scope = setupScope(), epoch = generation;

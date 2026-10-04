@@ -39,7 +39,10 @@ export function mountSelectedCollection(host: HTMLElement, deps: SelectedCollect
       finally {
         busy = false; recoveryKey = undefined; update();
         // The area is redrawn; the refusal stays in its note and is announced.
-        if (error) {
+        // A refusal for a collection that is no longer selected is only announced:
+        // it never lands in another selection's note.
+        if (error && deps.target()?.key !== target.key) deps.announce(error);
+        else if (error) {
           const note = recovery.querySelector(".selected-collection__note");
           if (note) note.textContent = error;
           else recovery.prepend(node("p", "selected-collection__note", error));
