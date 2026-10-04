@@ -36,6 +36,42 @@ export function parseMarked(html: string) {
   return { tags, root: template.content, end };
 }
 
+// Selection lookups repeatedly read the same bytes. Keep DOM private and leave
+// parseMarked fresh for callers that own and may mutate their parsed fragment.
+type ParsedSource = ReturnType<typeof parseMarked> & { ranges: Map<Element, ElementRange | undefined> };
+const parsedSources = new Map<string, ParsedSource>();
+const MAX_CACHED_SOURCE_BYTES = 1024 * 1024;
+
+function parsedSource(html: string) {
+  const cached = parsedSources.get(html);
+  if (cached) {
+    parsedSources.delete(html);
+    parsedSources.set(html, cached);
+    return cached;
+  }
+  const parsed: ParsedSource = { ...parseMarked(html), ranges: new Map() };
+  parsed.tags.forEach(Object.freeze);
+  if (html.length <= MAX_CACHED_SOURCE_BYTES && new TextEncoder().encode(html).length <= MAX_CACHED_SOURCE_BYTES) {
+    parsedSources.set(html, parsed);
+    if (parsedSources.size > 2) parsedSources.delete(parsedSources.keys().next().value!);
+  }
+  return parsed;
+}
+
+function frozenRange(range: ElementRange | undefined): ElementRange | undefined {
+  if (!range) return undefined;
+  Object.freeze(range.tag);
+  if (range.close) Object.freeze(range.close);
+  return Object.freeze(range);
+}
+
+function sourceRange(html: string, parsed: ParsedSource, el: Element): ElementRange | undefined {
+  if (parsed.ranges.has(el)) return parsed.ranges.get(el);
+  const range = frozenRange(markedRange(html, parsed.tags, parsed.root, el, parsed.end));
+  parsed.ranges.set(el, range);
+  return range;
+}
+
 function tagOf(tags: StartTag[], el: Element | null | undefined) {
   if (!el?.hasAttribute(MARK)) return undefined;
   return tags[Number(el.getAttribute(MARK))];
@@ -45,7 +81,7 @@ function tagOf(tags: StartTag[], el: Element | null | undefined) {
 // of `html`), or of its deepest ancestor the parser kept a source tag for.
 export function locateNativeElement(html: string, path: number[]): StartTag | undefined {
   if (!path.length) return undefined;
-  const { tags, root } = parseMarked(html);
+  const { tags, root } = parsedSource(html);
   let parent: ParentNode = root;
   let found: StartTag | undefined;
   for (const index of path) {
@@ -63,7 +99,8 @@ export function locateNativeElement(html: string, path: number[]): StartTag | un
 // tag map to the source unambiguously.
 export function locateNativeElementRange(html: string, path: number[]): ElementRange | undefined {
   if (!path.length) return undefined;
-  const { tags, root, end } = parseMarked(html);
+  const parsed = parsedSource(html);
+  const { root } = parsed;
   let parent: ParentNode = root;
   let el: Element | undefined;
   for (const index of path) {
@@ -72,13 +109,13 @@ export function locateNativeElementRange(html: string, path: number[]): ElementR
     el = child;
     parent = child;
   }
-  return el ? markedRange(html, tags, root, el, end) : undefined;
+  return el ? sourceRange(html, parsed, el) : undefined;
 }
 
 // The element-child index path, from the root of `html`, of the element
 // whose start tag begins at `start` (the inverse of the lookups above).
 export function elementPathAt(html: string, start: number): number[] | undefined {
-  const { tags, root } = parseMarked(html);
+  const { tags, root } = parsedSource(html);
   const index = tags.findIndex((tag) => tag.start === start);
   let el = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
   if (!el) return undefined;
@@ -104,7 +141,8 @@ export function markedRange(html: string, tags: StartTag[], root: ParentNode, el
 // The innermost element named in `names` around the text offset `at` of the
 // inner source `inner` (offsets as in the element's DOM text content).
 export function wrapperAround(inner: string, at: number, names: string[]): ElementRange | undefined {
-  const { tags, root, end } = parseMarked(inner);
+  const parsed = parsedSource(inner);
+  const { root } = parsed;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let seen = 0;
   let node: Node | null = null;
@@ -116,6 +154,6 @@ export function wrapperAround(inner: string, at: number, names: string[]): Eleme
   }
   let el = node?.parentElement ?? null;
   while (el && !names.includes(el.localName)) el = el.parentElement;
-  return el ? markedRange(inner, tags, root, el, end) : undefined;
+  return el ? sourceRange(inner, parsed, el) : undefined;
 }
 
