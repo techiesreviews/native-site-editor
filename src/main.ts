@@ -7127,12 +7127,19 @@ const agentSiteActions: AgentSiteActions = {
       const scope = draftScope(), repo = currentRepo, snap = snapshot;
       if (!scope || !repo || !snap) return "Open a repository first.";
       const epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
+      // Snapshot/draft presence stays authoritative before native activation starts.
+      const hasHome = () => {
+        const home = store.get(scope, NATIVE_HOME_PAGE);
+        return snap.entries.some(entry => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") ||
+          Boolean(home && home.baseSha === null && !home.deleted);
+      };
+      if (hasHome()) return "Open a native site first.";
       const graph = JSON.stringify(snap.tree ?? snap.entries);
       const before = new Map(store.list(scope).map(draft => [draft.path, draft]));
       const isCurrent = () => {
         const drafts = store.list(scope);
         return epoch === generation && key === setupScope() && currentRepo === repo && snapshot === snap &&
-          !nativeSite && !nativeEngaged && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
+          !nativeSite && !nativeEngaged && !hasHome() && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
       // Before a home page exists there is no mounted editor to anchor collection
