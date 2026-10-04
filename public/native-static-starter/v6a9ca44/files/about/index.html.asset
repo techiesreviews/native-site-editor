@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About · Larkspur Studio</title>
+  <meta name="description" content="Larkspur is run by a designer and a front-end developer who build small websites by hand in Frome, Somerset. Get in touch about a project.">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="https://native-site-editor-starter-test.lexvd.workers.dev/about/">
+  <meta name="theme-color" content="#2f6d3a">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Larkspur Studio">
+  <meta property="og:title" content="About · Larkspur Studio">
+  <meta property="og:description" content="Larkspur is run by a designer and a front-end developer who build small websites by hand in Frome, Somerset. Get in touch about a project.">
+  <meta property="og:url" content="https://native-site-editor-starter-test.lexvd.workers.dev/about/">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:image" content="https://native-site-editor-starter-test.lexvd.workers.dev/images/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Larkspur Studio: small, editable websites for independent businesses, Frome, Somerset">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/styles/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="skip" href="#main">Skip to content</a>
+    <a class="brand" href="/">Larkspur</a>
+    <nav aria-label="Main">
+      <a href="/#work">Work</a>
+      <a href="/about/" aria-current="page">About</a>
+    </nav>
+  </header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <h1>About Larkspur</h1>
+      <p class="lead">Larkspur is run by two people, a designer and a front-end developer, from a shared studio above a bookshop in Frome, Somerset. We have worked together since 2019.</p>
+    </section>
+    <section class="prose flow">
+      <p>We take on a handful of projects each year so that each one gets real attention. Most of our clients are small businesses and local organisations around Somerset who have been putting off their website for a while.</p>
+      <p>We prefer plain HTML and CSS over frameworks, system fonts over webfonts, and a few well-chosen photographs over stock imagery. Sites load quickly and keep working for years without maintenance.</p>
+      <p>Every site is handed over with a short written guide and a walkthrough, so that the people who own it can also look after it.</p>
+    </section>
+    <section class="contact flow" id="contact">
+      <h2>Get in touch</h2>
+      <p>We are usually booking two to three months ahead. If you have a project in mind, write to us with a few lines about what you need and when you hope to launch.</p>
+      <p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <address>
+      <p>Larkspur Studio, Frome, Somerset. Designed and built by hand.</p>
+      <p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+    </address>
+    <nav aria-label="Footer">
+      <a href="/#work">Work</a>
+      <a href="/about/" aria-current="page">About</a>
+    </nav>
+  </footer>
+</body>
+</html>

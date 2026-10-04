@@ -1,0 +1,14 @@
+/* The site's shared styles, in cascade order. The layer order comes first
+   (tokens.css declares it too), so each file's @layer block lands in its
+   place whatever order the rules are read in. The imports are not put in a
+   layer themselves: each file wraps its rules in its own layer, except
+   components.css (header, footer, page sections, cards), which this import
+   puts in the components layer. Utilities come last, so a text-size class the
+   editor writes wins over a section's own heading size. */
+@layer tokens, elements, layout, sections, components, utilities;
+@import url("tokens.css");
+@import url("elements.css");
+@import url("layout.css");
+@import url("sections.css");
+@import url("components.css") layer(components);
+@import url("utilities.css");

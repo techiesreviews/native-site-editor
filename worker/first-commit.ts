@@ -9,7 +9,7 @@ import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../s
 import type { Repository, StarterFile } from "../shared/types";
 import { base64Bytes } from "./blobs";
 import { GitHub, HttpError } from "./github";
-import { starterFiles } from "./starter";
+import { starterFiles, type StarterProvider } from "./starter";
 
 const encoder = new TextEncoder();
 /** One git/trees request stays small. */
@@ -37,8 +37,12 @@ export interface FirstCommit {
 }
 
 /** The files of a starting point for a site named `siteName`. */
-export async function startingPointFiles(point: StartingPoint, siteName: string, fetcher: typeof fetch = fetch): Promise<StarterFile[]> {
-  if (point === "starter") return starterFiles(siteName, fetcher);
+export async function startingPointFiles(
+  point: StartingPoint,
+  siteName: string,
+  starter: StarterProvider = (name) => starterFiles(name, fetch),
+): Promise<StarterFile[]> {
+  if (point === "starter") return starter(siteName);
   return blankSiteFiles(siteName).map((file) => ({ path: file.path, content: file.content }));
 }
 

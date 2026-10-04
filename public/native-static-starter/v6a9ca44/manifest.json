@@ -1,0 +1,97 @@
+{
+  "version": "6a9ca44",
+  "source": "techiesreviews/native-site-editor-starter@6a9ca44",
+  "files": [
+    {
+      "path": "404.html",
+      "size": 2119,
+      "sha256": "21b01150db4dc2bbf6fe4e338ed72d3c0af5b549ef0913c08453f01eb78959eb"
+    },
+    {
+      "path": "index.html",
+      "size": 6086,
+      "sha256": "3eb395028478ff1c522e6d9f9e7fb1779400a03a9c6b909fb470cb724640b1b5"
+    },
+    {
+      "path": "about/index.html",
+      "size": 3492,
+      "sha256": "b8c97a50e18567242f16c3b4a42e1bc6eb6877e090593bc59727e6075ee94dcd"
+    },
+    {
+      "path": "work/fern-and-kettle/index.html",
+      "size": 3530,
+      "sha256": "4c4a88126591f6b25c3333a5a8f183c9d5248314df24050cd36d80f74c92bff0"
+    },
+    {
+      "path": "work/harbour-lane-pottery/index.html",
+      "size": 3492,
+      "sha256": "dc168ba884920a3f18ee48304909d2cc98f86e2eed6fa921f183588cd31903f9"
+    },
+    {
+      "path": "work/meadow-row-allotments/index.html",
+      "size": 3547,
+      "sha256": "ec81ea31a9a0c3f4b8298573129aec35f7dd7ff8c76e93170b09cb476856610c"
+    },
+    {
+      "path": "styles/components.css",
+      "size": 6254,
+      "sha256": "4d9e5ede908b2b98717e7d9ad39d734b4345efe5764c82c554837353a74a6dea"
+    },
+    {
+      "path": "styles/elements.css",
+      "size": 1097,
+      "sha256": "5ea8d4cff02173e6b29da5f61fa5a3c6d6888d55f3324a8ca58da3039fa4d2d6"
+    },
+    {
+      "path": "styles/layout.css",
+      "size": 667,
+      "sha256": "564f25e4de3c8774096f5cba708d3e7f72ed665b1da51dcca267542b7bcb78f2"
+    },
+    {
+      "path": "styles/sections.css",
+      "size": 1859,
+      "sha256": "440c65fe41ab37b911f06dcd46330119533d10c797067f2bc3781c81ba6f6268"
+    },
+    {
+      "path": "styles/site.css",
+      "size": 769,
+      "sha256": "d7982d9b073ea8a1eac3ba233ac3852fd251509acce3babfb4f3812c58716a6a"
+    },
+    {
+      "path": "styles/tokens.css",
+      "size": 1110,
+      "sha256": "8dec0c3a3730bf722109b34b3127c8bbcc9a95c57c70f15f037af9f442b1f780"
+    },
+    {
+      "path": "styles/utilities.css",
+      "size": 575,
+      "sha256": "f34e00a5a7a1c8a813cea0f359b5f7bc0bc9425e9644c83e174789511bc8746b"
+    },
+    {
+      "path": "images/favicon.svg",
+      "size": 203,
+      "sha256": "0ba846bfb3bb07cf881db892e5b6a645b98889d489e416477538c0f45e87beed"
+    },
+    {
+      "path": "images/social-card.png",
+      "size": 59044,
+      "sha256": "db3d738fe69f31a55b7b746cb2d8706b65f5fdfd1ec3c62a932750cca3837a48"
+    },
+    {
+      "path": "images/studio-desk.svg",
+      "size": 2162,
+      "sha256": "c6dd75fbd7bddec0250c274d8da3901c9929b026cca1bc16e0922ca8f7754651"
+    },
+    {
+      "path": "robots.txt",
+      "size": 76,
+      "sha256": "93da3eae798d9a0f2d4e6b32468cecd4d7669c83c111c40335291082621b995e"
+    }
+  ],
+  "inline": [
+    {
+      "path": ".editor/config.json",
+      "content": "{\n  \"site\": {\n    \"name\": \"Larkspur Studio\",\n    \"url\": \"https://native-site-editor-starter-test.lexvd.workers.dev\"\n  }\n}\n"
+    }
+  ]
+}

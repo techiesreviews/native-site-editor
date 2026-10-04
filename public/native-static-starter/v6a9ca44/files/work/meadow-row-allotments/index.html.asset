@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meadow Row Allotments · Larkspur Studio</title>
+  <meta name="description" content="Rules, a plot map, seasonal notices and a committee contact page for a forty-plot allotment site.">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="https://native-site-editor-starter-test.lexvd.workers.dev/work/meadow-row-allotments/">
+  <meta name="theme-color" content="#2f6d3a">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Larkspur Studio">
+  <meta property="og:title" content="Meadow Row Allotments · Larkspur Studio">
+  <meta property="og:description" content="Rules, a plot map, seasonal notices and a committee contact page for a forty-plot allotment site.">
+  <meta property="og:url" content="https://native-site-editor-starter-test.lexvd.workers.dev/work/meadow-row-allotments/">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:image" content="https://native-site-editor-starter-test.lexvd.workers.dev/images/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Larkspur Studio: small, editable websites for independent businesses, Frome, Somerset">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/styles/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="skip" href="#main">Skip to content</a>
+    <a class="brand" href="/">Larkspur</a>
+    <nav aria-label="Main">
+      <a href="/#work">Work</a>
+      <a href="/about/">About</a>
+    </nav>
+  </header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <p class="card-note">Community group · Notices and rules · 2024</p>
+      <h1>Meadow Row Allotments</h1>
+      <p class="lead">A small site for forty plot holders: rules, a plot map, seasonal notices, and a way to reach the committee.</p>
+    </section>
+    <section class="prose flow">
+      <h2>The brief</h2>
+      <p>The allotment committee kept its rules in a folder of photocopies and its notices on a board by the gate. New plot holders often missed both, and the committee changes every few years, so whatever we built had to be easy to hand on.</p>
+      <h2>What we built</h2>
+      <p>A short site with the rules on one page, a plot map drawn as a simple image, a notices page ordered by season, and a contact page that names the current committee. A one-page guide explains how to change each of them.</p>
+      <h2>Since launch</h2>
+      <p>The site has already passed to a new committee secretary, who took it over using the written guide alone.</p>
+      <p><a href="/#work">Back to all work</a></p>
+    </section>
+    <section class="section-contact">
+      <h2>Need something similar?</h2>
+      <p class="body">Tell us what your site needs to do and we will reply within a few days.</p>
+      <p class="action"><a href="/about/#contact">Start a project</a></p>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <address>
+      <p>Larkspur Studio, Frome, Somerset. Designed and built by hand.</p>
+      <p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+    </address>
+    <nav aria-label="Footer">
+      <a href="/#work">Work</a>
+      <a href="/about/">About</a>
+    </nav>
+  </footer>
+</body>
+</html>

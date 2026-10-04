@@ -26,7 +26,7 @@ import { requestBytes, uploadBlob } from "./blobs";
 import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
 import { publishHosts } from "./hosts";
-import { starterFiles } from "./starter";
+import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError } from "./github";
 import {
@@ -83,6 +83,8 @@ export interface Env {
   OWNER_GITHUB?: string;
   EDITOR_ORIGIN?: string;
   EDITOR_ALIASES?: string;
+  /** Where the Starter site comes from: unset for the template repository, "native-static" for the vendored native starter. */
+  STARTER_SOURCE?: string;
 }
 
 async function config(env: Env) {
@@ -863,7 +865,7 @@ async function route(
       // the editor falls back to Start your site (drafts) for it.
       let built: string[] = [];
       try {
-        const files = await startingPointFiles(point, startingSiteName(data?.siteName, repository.name), fetcher);
+        const files = await startingPointFiles(point, startingSiteName(data?.siteName, repository.name), starterProvider(env, fetcher));
         built = files.map((file) => file.path);
         const commit = await commitStartingPoint(
           github,
@@ -894,7 +896,7 @@ async function route(
     // Start your site: the Starter site's files, named for the site.
     if (path === "/api/starter") {
       const name = (url.searchParams.get("name") ?? "").trim().slice(0, 100);
-      return json({ files: await starterFiles(name || "My site", fetcher) });
+      return json({ files: await starterProvider(env, fetcher)(name || "My site") });
     }
     if (
       ![

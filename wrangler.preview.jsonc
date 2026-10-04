@@ -17,6 +17,8 @@
   "vars": {
     "EDITOR_ORIGIN": "https://preview-editor.techies.tools",
     "OWNER_GITHUB": "techiesreviews",
+    // New sites start from the vendored native static Starter (worker/starter.ts).
+    "STARTER_SOURCE": "native-static",
   },
   "assets": {
     "directory": "./dist",

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harbour Lane Pottery · Larkspur Studio</title>
+  <meta name="description" content="A quiet portfolio for a working potter, with large photographs and a dates page for kiln openings.">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="https://native-site-editor-starter-test.lexvd.workers.dev/work/harbour-lane-pottery/">
+  <meta name="theme-color" content="#2f6d3a">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Larkspur Studio">
+  <meta property="og:title" content="Harbour Lane Pottery · Larkspur Studio">
+  <meta property="og:description" content="A quiet portfolio for a working potter, with large photographs and a dates page for kiln openings.">
+  <meta property="og:url" content="https://native-site-editor-starter-test.lexvd.workers.dev/work/harbour-lane-pottery/">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:image" content="https://native-site-editor-starter-test.lexvd.workers.dev/images/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Larkspur Studio: small, editable websites for independent businesses, Frome, Somerset">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/styles/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="skip" href="#main">Skip to content</a>
+    <a class="brand" href="/">Larkspur</a>
+    <nav aria-label="Main">
+      <a href="/#work">Work</a>
+      <a href="/about/">About</a>
+    </nav>
+  </header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <p class="card-note">Ceramics studio · Portfolio · 2025</p>
+      <h1>Harbour Lane Pottery</h1>
+      <p class="lead">A quiet portfolio for a working potter, with large photographs and a dates page for kiln openings.</p>
+    </section>
+    <section class="prose flow">
+      <h2>The brief</h2>
+      <p>The studio sold most of its work at kiln openings, but news of the dates travelled by word of mouth and a mailing list kept in a notebook. The potter wanted somewhere calm to show finished pieces without running an online shop.</p>
+      <h2>What we built</h2>
+      <p>A portfolio of large photographs with short captions, grouped by glaze, and a dates page that lists the next openings with directions to the studio. Adding a date is one line of text.</p>
+      <h2>Since launch</h2>
+      <p>Openings are now announced a month ahead, and the potter adds new pieces after each firing without asking us.</p>
+      <p><a href="/#work">Back to all work</a></p>
+    </section>
+    <section class="section-contact">
+      <h2>Need something similar?</h2>
+      <p class="body">Tell us what your site needs to do and we will reply within a few days.</p>
+      <p class="action"><a href="/about/#contact">Start a project</a></p>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <address>
+      <p>Larkspur Studio, Frome, Somerset. Designed and built by hand.</p>
+      <p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+    </address>
+    <nav aria-label="Footer">
+      <a href="/#work">Work</a>
+      <a href="/about/">About</a>
+    </nav>
+  </footer>
+</body>
+</html>

@@ -119,3 +119,114 @@ export async function starterFiles(siteName: string, fetcher: typeof fetch = fet
     throw new HttpError(502, "The starter site has no home page. Start from a blank page instead.");
   return prepareStarterFiles(files, siteName).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
+
+/**
+ * The native static Starter: plain HTML and CSS pages vendored into the
+ * editor's own assets at one fixed version (public/native-static-starter),
+ * read through the ASSETS binding only, never from the network. Each file
+ * is stored as `files/<path>.asset` so asset HTML handling cannot redirect
+ * or rewrite it; the manifest lists every file with its size and SHA-256,
+ * and small dot files (`.editor/config.json`) inline, so serving them does
+ * not depend on dot paths.
+ */
+export const NATIVE_STARTER_VERSION = "v6a9ca44";
+const NATIVE_STARTER_BASE = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
+const NATIVE_MAX_FILES = 100;
+const NATIVE_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const NATIVE_MAX_TOTAL_BYTES = 8 * 1024 * 1024;
+
+export interface AssetFetcher {
+  fetch(request: Request): Promise<Response>;
+}
+
+interface NativeManifest {
+  version: string;
+  files: { path: string; size: number; sha256: string }[];
+  inline: { path: string; content: string }[];
+}
+
+const broken = (detail: string) => new HttpError(500, `The native starter site is damaged (${detail}). Start from a blank page instead.`);
+
+function safeStarterPath(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    path.length > 0 &&
+    path.length <= 200 &&
+    /^[A-Za-z0-9._\-/]+$/.test(path) &&
+    !path.startsWith("/") &&
+    path.split("/").every((part) => part && part !== "." && part !== "..")
+  );
+}
+
+/** The manifest checked: a known version, safe unique paths, and sizes within bounds. */
+export function parseNativeManifest(value: unknown): NativeManifest {
+  const manifest = value as Partial<NativeManifest> | null;
+  if (!manifest || typeof manifest !== "object" || `v${manifest.version}` !== NATIVE_STARTER_VERSION) throw broken("unexpected manifest version");
+  const files = manifest.files;
+  const inline = manifest.inline ?? [];
+  if (!Array.isArray(files) || !Array.isArray(inline)) throw broken("manifest lists no files");
+  if (files.length + inline.length > NATIVE_MAX_FILES) throw broken("too many files");
+  const seen = new Set<string>();
+  let total = 0;
+  for (const file of [...files, ...inline] as { path: unknown }[]) {
+    if (!file || typeof file !== "object" || !safeStarterPath(file.path)) throw broken("unsafe path");
+    if (seen.has(file.path)) throw broken(`${file.path} listed twice`);
+    seen.add(file.path);
+  }
+  for (const file of files) {
+    if (!Number.isSafeInteger(file.size) || file.size < 0 || file.size > NATIVE_MAX_FILE_BYTES) throw broken(`${file.path} has a bad size`);
+    if (typeof file.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(file.sha256)) throw broken(`${file.path} has a bad checksum`);
+    total += file.size;
+  }
+  for (const file of inline) if (typeof file.content !== "string") throw broken(`${file.path} has no content`);
+  if (total > NATIVE_MAX_TOTAL_BYTES) throw broken("too large");
+  if (!seen.has("index.html")) throw broken("no home page");
+  return { version: manifest.version!, files, inline };
+}
+
+async function readAsset(assets: AssetFetcher, path: string): Promise<Uint8Array> {
+  // Fixed internal namespace: the host never comes from input, and paths are checked first.
+  const url = new URL(path, `https://assets.invalid${NATIVE_STARTER_BASE}`);
+  if (!url.pathname.startsWith(NATIVE_STARTER_BASE)) throw broken("unsafe path");
+  const response = await assets.fetch(new Request(url, { redirect: "manual" })).catch(() => {
+    throw new HttpError(502, "The native starter site could not be read. Try again, or start from a blank page.");
+  });
+  if (response.status !== 200 || !response.body) throw broken(`${path} is missing`);
+  return readAll(response.body, NATIVE_MAX_FILE_BYTES);
+}
+
+const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** The native static Starter site's files for a site named `siteName`, read fresh for each caller. */
+export async function nativeStarterFiles(siteName: string, assets: AssetFetcher): Promise<StarterFile[]> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(decoder.decode(await readAsset(assets, "manifest.json")));
+  } catch (error) {
+    throw error instanceof HttpError ? error : broken("manifest is not JSON");
+  }
+  const manifest = parseNativeManifest(raw);
+  const files: StarterFile[] = await Promise.all(
+    manifest.files.map(async (entry) => {
+      const bytes = await readAsset(assets, `files/${entry.path}.asset`);
+      if (bytes.length !== entry.size || hex(await crypto.subtle.digest("SHA-256", bytes)) !== entry.sha256)
+        throw broken(`${entry.path} does not match the manifest`);
+      return starterFile(entry.path, bytes);
+    }),
+  );
+  for (const entry of manifest.inline) files.push({ path: entry.path, content: entry.content });
+  return prepareStarterFiles(files, siteName).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** The starter sources an editor can be configured with (`STARTER_SOURCE`). Absent: the template repository. */
+export type StarterProvider = (siteName: string) => Promise<StarterFile[]>;
+
+/** The Starter site source for this editor: shared by Create site and Start your site. */
+export function starterProvider(env: { STARTER_SOURCE?: string; ASSETS: AssetFetcher }, fetcher: typeof fetch = fetch): StarterProvider {
+  const source = env.STARTER_SOURCE;
+  if (source === undefined) return (siteName) => starterFiles(siteName, fetcher);
+  if (source === "native-static") return (siteName) => nativeStarterFiles(siteName, env.ASSETS);
+  return async () => {
+    throw new HttpError(500, `The editor's STARTER_SOURCE "${String(source).slice(0, 40)}" is not known. Use "native-static" or leave it unset.`);
+  };
+}
