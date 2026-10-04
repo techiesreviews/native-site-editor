@@ -273,11 +273,6 @@ actual("the page edited while Add waits in restoreFile: nothing is inserted and 
 });
 
 actual("added while a stylesheet is open in the editor: no notice, and one Undo takes back page, CSS and JSON", async ({ page, baseURL }) => {
-  // KNOWN BUG (expected to fail until fixed): opening the page swaps the secondary CSS pane
-  // (styles/elements.css), whose model proof the history receipt holds although its text never
-  // changes; the receipt then reports "The editor for styles/elements.css changed while opening the page."
-  // and (probed without this mark) one Undo leaves all three drafts: index.html, styles/sections.css, the JSON.
-  test.fail(true, "Secondary CSS pane remount is not part of the history receipt's UI transition (main.ts).");
   await load(page, baseURL, "styles/site.css");
   await expect(frame(page).locator("section.flow h2")).toBeVisible();
   const before = await file(page, baseURL, "index.html");
@@ -290,10 +285,20 @@ actual("added while a stylesheet is open in the editor: no notice, and one Undo 
   await page.waitForTimeout(500);
   const notice = await page.locator("#notice").isVisible() ? await page.locator("#notice").textContent() : "";
   console.log(`HIST notice after a clean add: ${JSON.stringify(notice)}`);
+  expect(notice).toBe("");
+  const added = await mounted(page), drafts = (await storedDrafts(page)).map((draft) => [draft.path, draft.content]);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);
   expect(await mounted(page)).toBe(before);
-  expect(notice).toBe("");
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual(drafts);
+  expect(await mounted(page)).toBe(added);
+  await expect(page.locator("#notice")).toBeHidden();
+  await page.screenshot({ path: `${OUT}-history-redo.png` });
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  expect(await file(page, baseURL, "index.html")).toBe(added);
 });
 
 for (const [label, scheme, width] of [["light", "light", 1440], ["dark", "dark", 1440], ["narrow", "light", 900]] as const) {

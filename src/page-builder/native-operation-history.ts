@@ -145,15 +145,18 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     return (owned: ReadonlyMap<string, Proof>) => {
       const draft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
       const source = [...texts].find(([path, text]) => host.source(path) !== text);
-      const unrelated = [...proofs].find(([path, proof]) => !changed.has(path) && !proof.isCurrent());
-      const own = [...changed].find(path => proofs.has(path) && !owned.get(path)?.isCurrent());
+      // Besides the declared paths, a model the host proved at its own mount boundary during
+      // this transition (`owned`) is the host's: it must still be current, like a declared one.
+      const mountedOwn = [...owned.keys()].filter(path => !changed.has(path) && proofs.has(path));
+      const unrelated = [...proofs].find(([path, proof]) => !changed.has(path) && !mountedOwn.includes(path) && !proof.isCurrent());
+      const own = [...changed, ...mountedOwn].find(path => proofs.has(path) && !owned.get(path)?.isCurrent());
       if (state !== phase || !host.isLive() || draft || source || !sources.isCurrent() || unrelated || own) {
         lastError = !host.isLive() ? "The repository changed while opening the page." : draft ? `The draft for ${draft[0]} changed while opening the page.` : source ? `The source for ${source[0]} changed while opening the page.` : unrelated ? `The editor for ${unrelated[0]} changed while opening the page.` : own ? `The new editor for ${own} changed while opening the page.` : "The owned source step changed while opening the page.";
         return false;
       }
       // Proofs are captured synchronously at our mount/eviction boundary, never
       // read afresh after an await. Unrelated model proofs stay untouched.
-      for (const path of changed) if (proofs.has(path)) {
+      for (const path of [...changed, ...mountedOwn]) if (proofs.has(path)) {
         proofs.set(path, owned.get(path)!);
         if (host.mounted(path)) mounted.set(path, true);
       }
