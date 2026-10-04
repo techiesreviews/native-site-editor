@@ -341,7 +341,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         choose.setAttribute("role", "menuitem"); choose.tabIndex = -1; choose.setAttribute("aria-label", `${declaration.name} · ${declaration.value} · ${declaration.path}`);
         choose.append(node("strong", "", declaration.name), node("span", "style-panel__variable-provenance", `${declaration.value} · ${declaration.path}`));
         const definition = button("", () => {
-          const current = isCurrent(); closeVariableMenu();
+          const current = isCurrent(); closeVariableMenu(); settleRaw();
           if (current) void workspace.openDefinition(declaration.path, declaration.start, declaration.end, workspace.revision).then(ok => { if (!ok) report("The variable source changed. Open its definition again."); }).catch(report);
         }); definition.setAttribute("role", "menuitem"); definition.tabIndex = -1; definition.setAttribute("aria-label", `Go to ${declaration.name} in ${declaration.path}`);
         definition.classList.add("style-panel__variable-definition"); definition.append(icon("arrow-up-right", 14));
@@ -363,10 +363,17 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       });
       menu.addEventListener("focusout", event => {
         if (event.relatedTarget instanceof Node && menu.contains(event.relatedTarget)) return;
-        setTimeout(() => { if (variableMenu === menu && !menu.contains(document.activeElement)) closeVariableMenu(); }, 0);
+        setTimeout(() => { if (variableMenu === menu && !menu.contains(document.activeElement)) { closeVariableMenu(); settleRaw(); } }, 0);
       });
       menu.tabIndex = -1; root.append(menu); place(menu, x, y);
       const first = menu.querySelector<HTMLButtonElement>("button"); if (first) first.tabIndex = 0; (first ?? menu).focus();
+    }
+    /** Leaving without a choice never keeps an unwritten raw --name in the field.
+     *  A re-render or new selection removed this field: never restore onto another one. */
+    function settleRaw() {
+      if (!(control instanceof HTMLInputElement) || !control.isConnected || document.activeElement === control || !rawVariable(control.value)) return;
+      control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
+      report("Variable not applied. Choose one from the list to write var(--name).");
     }
     // Typing "--" or "var(--" shows a listbox of matching variables. Focus stays
     // in the field; aria-activedescendant names the option Enter will choose.
@@ -379,7 +386,6 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       options.forEach((option, i) => { option.setAttribute("aria-selected", String(i === suggestionIndex)); option.classList.toggle("is-active", i === suggestionIndex); });
       const active = options[suggestionIndex];
       control.setAttribute("aria-activedescendant", active.id); active.scrollIntoView({ block: "nearest" });
-      announce(`${active.dataset.name} selected, ${suggestionIndex + 1} of ${options.length}.`);
     }
     function openSuggestions(typed: string) {
       const scope = variableScope();
@@ -388,7 +394,6 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       const rank = (name: string) => bare(name) === bare(typed) ? 0 : bare(name).startsWith(bare(typed)) ? 1 : 2;
       offered.sort((a, b) => rank(a.name) - rank(b.name));
       if (!scope || !offered.length) { if (suggestionsOpen()) { closeVariableMenu(); announce("No matching variables."); } return; }
-      const reopened = suggestionsOpen();
       closeVariableMenu();
       const list = node("div", "style-panel__variable-menu style-panel__variable-list"); variableMenu = list;
       variableMenuOrigin = { key: scope.expected.key, property: field.property, control };
@@ -406,7 +411,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
       root.append(list);
       const rect = control.getBoundingClientRect(); place(list, rect.left, rect.bottom + 2);
       control.setAttribute("aria-controls", list.id);
-      if (!reopened) announce(`${offered.length} variable${offered.length === 1 ? "" : "s"} available.`);
+      // The count is the only live message; aria-activedescendant announces the option.
+      announce(`${offered.length} variable${offered.length === 1 ? "" : "s"} available.`);
       highlight(0);
     }
     if (control instanceof HTMLInputElement) {
@@ -424,16 +430,18 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
         else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeVariableMenu(); announce("Variable suggestions closed."); }
         else if (event.key === "Tab") closeVariableMenu();
       });
-      control.addEventListener("blur", () => setTimeout(() => {
-        // A re-render or new selection removed this field: never restore onto another one.
-        if (document.activeElement === control || !control.isConnected) return;
-        if (suggestionsOpen()) closeVariableMenu();
-        // Leaving without a choice never keeps an unwritten raw --name in the field.
-        if (rawVariable(control.value)) {
-          control.value = ownValues()[field.property] ?? ""; control.classList.toggle("is-computed", !control.value);
-          report("Variable not applied. Choose one from the list to write var(--name).");
-        }
-      }, 0));
+      control.addEventListener("blur", () => {
+        const wasRaw = rawVariable(control.value), fieldKey = snapshot.expected?.key;
+        setTimeout(() => {
+          // The right-click / Shift+F10 menu keeps the typed text pending until it closes.
+          if (variableMenu?.contains(document.activeElement)) return;
+          if (suggestionsOpen() && document.activeElement !== control) closeVariableMenu();
+          // A same-element re-render already showed the source value; still say why.
+          // A new selection is a different field: say nothing about the old text.
+          if (!control.isConnected) { if (wasRaw && fieldKey && handlers.context()?.key === fieldKey) report("Variable not applied. Choose one from the list to write var(--name)."); return; }
+          settleRaw();
+        }, 0);
+      });
     }
     control.addEventListener("contextmenu", event => { if (!handlers.context()?.workspace) return; event.preventDefault(); if (event instanceof MouseEvent) openVariableMenu(event.clientX, event.clientY); });
     control.addEventListener("keydown", event => {
@@ -517,7 +525,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const highlight = (index: number) => {
       const all = options(); active = index;
       all.forEach((option, i) => { option.setAttribute("aria-selected", String(i === index)); option.classList.toggle("is-active", i === index); });
-      if (all[index]) { input.setAttribute("aria-activedescendant", all[index].id); announce(`${all[index].dataset.name} selected, ${index + 1} of ${all.length}.`); }
+      // aria-activedescendant announces the option itself; no extra live message per arrow.
+      if (all[index]) input.setAttribute("aria-activedescendant", all[index].id);
       else input.removeAttribute("aria-activedescendant");
     };
     const choose = (name: string) => { input.value = name; hide(); input.focus(); form.requestSubmit(add); };
