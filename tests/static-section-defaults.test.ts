@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document.ts";
 import { DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "../src/page-builder/static-section-defaults.ts";
-import { listSectionChoices, readStaticSectionRecords, type StaticSectionInsertInput } from "../src/page-builder/static-sections.ts";
+import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readStaticSectionRecords, type StaticSectionLiveCss, type StaticSectionInsertInput } from "../src/page-builder/static-sections.ts";
 
 const page = '<!doctype html><html><head><title>Site</title></head><body><main><p>Keep</p></main></body></html>';
 const css = "styles/sections.css";
@@ -74,8 +74,8 @@ test("refusals: bad version, unloaded JSON, rootClass and stylesheet conflicts, 
   bad(input({ files: undefined }), `A complete file graph must prove ${EDITOR_PAGE_BUILDER_PATH} is absent.`);
   const clash = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { mine: { id: "mine", label: "Mine", rootClass: "section-intro", stylesheetPath: css, html: '<section class="section-intro"></section>', css: ".section-intro { margin: 0; }" } } } });
   bad(input({ documentText: clash, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Another static section already uses this rootClass.");
-  bad(input({ stylesheetSources: { [css]: ".section-intro { color: red; }" }, files: ["index.html", css] }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
-  bad(input({ stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
+  bad(input({ cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: ".section-intro { color: red; }" }, files: ["index.html", css] }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
+  bad(input({ cssPolicy: "reuse-current" as const, stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
   bad(input({ files: ["index.html", css] }), "A complete file graph must prove the new stylesheet is absent.");
   bad(input({ documentText: "{", files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), (planDefaultStaticSectionInsert(input({ documentText: "{", files: ["index.html", EDITOR_PAGE_BUILDER_PATH] })) as { error: string }).error);
 });
@@ -116,7 +116,7 @@ test("after editing public CSS, re-adding a saved section reuses the live styles
   const json = first.operation.creates!.find((c) => c.path === EDITOR_PAGE_BUILDER_PATH)!.content;
   const edited = first.operation.creates!.find((c) => c.path === css)!.content.replace("text-align: center;", "text-align: center; color: red;");
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
-  const live = { stylesheetSources: { [css]: edited }, files };
+  const live = { cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: edited }, files };
   // The strict leaf policy still refuses: proves the previous refusal.
   bad(input({ documentText: json, pageSource: page1, files, stylesheetSources: { [css]: edited }, cssPolicy: "ensure-record" }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
   const plan = good(input({ documentText: json, pageSource: page1, files, stylesheetSources: { [css]: edited }, index: 0 }));
@@ -140,14 +140,14 @@ test("reuse keeps intentionally empty CSS, seeds once when proven absent, and re
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
   const empty = good(input({ documentText: json, files, stylesheetSources: { [css]: "" } }));
   assert.equal(empty.operation.edits.has(css), false); assert.equal(empty.operation.expectedSources.get(css), "");
-  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: "" }, files }) as { css: string }).css, "");
+  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: "" }, files }) as { css: string }).css, "");
   const seeded = good(input({ documentText: json, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }));
   assert.equal(seeded.operation.creates![0].content, DEFAULT_STATIC_SECTIONS[0].css);
-  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: undefined }, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }) as { css: string }).css, DEFAULT_STATIC_SECTIONS[0].css);
+  assert.equal((previewDefaultStaticSection(json, "static-section:intro", { cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: undefined }, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }) as { css: string }).css, DEFAULT_STATIC_SECTIONS[0].css);
   bad(input({ documentText: json, files, stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
   bad(input({ documentText: json, files }), "A complete file graph must prove the new stylesheet is absent.");
-  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: {}, files }), { error: `Load ${css} or explicitly prove it is absent.` });
-  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { stylesheetSources: { [css]: undefined }, files }), { error: "A complete file graph must prove the new stylesheet is absent." });
+  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { cssPolicy: "reuse-current" as const, stylesheetSources: {}, files }), { error: `Load ${css} or explicitly prove it is absent.` });
+  assert.deepEqual(previewDefaultStaticSection(json, "static-section:intro", { cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: undefined }, files }), { error: "A complete file graph must prove the new stylesheet is absent." });
   // Reuse allows ordinary cascade from other loaded sheets; imports must still be loaded.
   const themed = page.replace("</head>", '<link rel="stylesheet" href="theme.css"></head>');
   good(input({ documentText: json, pageSource: themed, files: [...files, "theme.css"], stylesheetSources: { [css]: "", "theme.css": ".section-intro { color: blue; }" } }));
@@ -156,4 +156,26 @@ test("reuse keeps intentionally empty CSS, seeds once when proven absent, and re
   // First-time seed keeps the strict unknown-collision refusal.
   bad(input({ files: ["index.html", css], stylesheetSources: { [css]: ".section-intro { color: red; }" } }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
   bad(input({ documentText: json, files, stylesheetSources: { [css]: "" }, cssPolicy: "bogus" as "reuse-current" }), "Unknown section CSS policy.");
+});
+
+test("preview and insert agree under the same explicit policy", () => {
+  const custom = { ...DEFAULT_STATIC_SECTIONS[0], id: "mine", label: "Mine", rootClass: "mine-box", html: '<section class="mine-box"><h2>Mine</h2></section>', css: ".mine-box { color: teal; }" };
+  const json = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { mine: custom } } });
+  const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
+  for (const live of ["", ".mine-box { color: red; }"]) {
+    const sources = { [css]: live };
+    const preview = previewStaticSection(json, "mine", { cssPolicy: "reuse-current", stylesheetSources: sources, files }) as { css: string };
+    const plan = planStaticSectionInsert({ ...input({ documentText: json, files, stylesheetSources: sources }), sectionId: "mine", cssPolicy: "reuse-current" });
+    if ("error" in plan) assert.fail(plan.error);
+    assert.equal(preview.css, live); assert.equal(plan.operation.edits.has(css), false);
+  }
+  const sources = { [css]: "" };
+  assert.equal((previewStaticSection(json, "mine", { cssPolicy: "ensure-record", stylesheetSources: sources, files }) as { css: string }).css, custom.css);
+  const strict = planStaticSectionInsert({ ...input({ documentText: json, files, stylesheetSources: sources }), sectionId: "mine" });
+  if ("error" in strict) assert.fail(strict.error);
+  assert.equal(strict.operation.edits.get(css), custom.css);
+  assert.deepEqual(previewStaticSection(json, "mine", { cssPolicy: "bogus" as "reuse-current", stylesheetSources: sources, files }), { error: "Unknown section CSS policy." });
+  // @ts-expect-error live CSS requires an explicit policy
+  const untyped: StaticSectionLiveCss = { stylesheetSources: sources };
+  assert.deepEqual(previewStaticSection(json, "mine", untyped), { error: "Unknown section CSS policy." });
 });

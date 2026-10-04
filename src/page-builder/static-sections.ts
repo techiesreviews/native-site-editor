@@ -29,9 +29,12 @@ export interface StaticSectionRecord {
  * stylesheets and inline rules may cascade over the section. Seed CSS is created only when the stylesheet is proven absent.
  */
 export type StaticSectionCssPolicy = "ensure-record" | "reuse-current";
-/** Live public CSS snapshots for previews that must match `reuse-current` inserts. */
+/**
+ * Live public CSS snapshots for previews. The policy is required and must equal the one passed to the insert:
+ * hosts use `reuse-current` for saved sections (preview and insert alike) and `ensure-record` for a fresh default seed.
+ */
 export interface StaticSectionLiveCss {
-  cssPolicy?: StaticSectionCssPolicy;
+  cssPolicy: StaticSectionCssPolicy;
   stylesheetSources: Readonly<Record<string, string | undefined>>;
   files?: readonly string[];
 }
@@ -48,6 +51,7 @@ export interface StaticSectionInsertInput {
   stylesheetSources: Readonly<Record<string, string | undefined>>;
   /** Complete file graph: required to prove a stylesheet is new. */
   files?: readonly string[];
+  /** Defaults to `ensure-record` for compatibility. Saved-section hosts pass `reuse-current` explicitly, matching the preview. */
   cssPolicy?: StaticSectionCssPolicy;
 }
 /** Structural subset of the host's private NativeOperation, without host dependencies. */
@@ -177,13 +181,14 @@ export function readStaticSectionRecords(documentText: string | undefined): Reco
 export function listSectionChoices(documentText: string | undefined): SectionChoice[] {
   return Object.values(readStaticSectionRecords(documentText)).map(({ id, label, rootClass }) => ({ id, label, rootClass }));
 }
-/** Without `live`, previews the stored seed. With `reuse-current`, previews the exact loaded public stylesheet. */
+/** Without `live` or with `ensure-record`, previews the stored seed. With `reuse-current`, previews the exact loaded public stylesheet. */
 export function previewStaticSection(documentText: string | undefined, id: string, live?: StaticSectionLiveCss): { html: string; css: string; rootClass: string } | { error: string } {
   try {
     const records = readStaticSectionRecords(documentText);
     if (!Object.hasOwn(records, id)) reject("Choose a registered static section.");
     const record = records[id];
-    if (live && (live.cssPolicy ?? "reuse-current") === "reuse-current") {
+    if (live && live.cssPolicy !== "ensure-record" && live.cssPolicy !== "reuse-current") reject("Unknown section CSS policy.");
+    if (live?.cssPolicy === "reuse-current") {
       plain(live.stylesheetSources, "Stylesheet sources");
       const loaded = Object.hasOwn(live.stylesheetSources, record.stylesheetPath);
       const source = live.stylesheetSources[record.stylesheetPath];
