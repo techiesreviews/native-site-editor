@@ -7,7 +7,7 @@ export interface SelectedCollectionDeps extends CollectionsDeps {
   prepare(target: SelectedCollection): Promise<void>;
   /** Recovery for listings whose cards were edited by hand; each action is one undo step. */
   generated?: {
-    state(target: SelectedCollection): "clean" | "edited" | undefined;
+    state(target: SelectedCollection): "clean" | "edited" | "unbuilt" | "unchecked" | undefined;
     keepManual(target: SelectedCollection): Promise<string | undefined>;
     rebuild(target: SelectedCollection): Promise<string | undefined>;
   };
@@ -39,16 +39,22 @@ export function mountSelectedCollection(host: HTMLElement, deps: SelectedCollect
       } finally { busy = false; recoveryKey = undefined; update(); }
     });
     const message = node("p", "selected-collection__note");
-    if (state === "edited") message.textContent = "The cards here were edited by hand and no longer match the page data. Keep them as they are, or rebuild them from the pages.";
-    const keep = node("button", "", "Use manual cards") as HTMLButtonElement;
-    keep.type = "button";
-    keep.title = "Keep these cards exactly as they are and stop making them from page data.";
-    act(keep, () => generated.keepManual(target));
-    recovery.append(message, keep);
-    if (state === "edited") {
-      const rebuild = node("button", "", "Rebuild cards from page data") as HTMLButtonElement;
+    message.textContent = state === "edited" ? "The cards here were edited by hand and no longer match the page data. Keep them as they are, or rebuild them from the pages."
+      : state === "unbuilt" ? "These cards have not been built from page data yet."
+      : state === "unchecked" ? "These cards cannot be checked against page data until the collection is fixed. Keep them as they are, or fix the collection in Code." : "";
+    recovery.append(message);
+    if (state !== "unbuilt") {
+      const keep = node("button", "", "Use manual cards") as HTMLButtonElement;
+      keep.type = "button";
+      keep.title = "Keep these cards exactly as they are and stop making them from page data.";
+      act(keep, () => generated.keepManual(target));
+      recovery.append(keep);
+    }
+    if (state === "edited" || state === "unbuilt") {
+      const label = state === "edited" ? "Rebuild cards from page data" : "Build cards from page data";
+      const rebuild = node("button", "", label) as HTMLButtonElement;
       rebuild.type = "button";
-      rebuild.title = "Replaces the hand edits in these cards with what the pages say.";
+      rebuild.title = state === "edited" ? "Replaces the hand edits in these cards with what the pages say." : "Makes the cards from the pages this collection lists.";
       act(rebuild, () => generated.rebuild(target));
       recovery.append(rebuild);
     }

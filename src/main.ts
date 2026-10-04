@@ -429,10 +429,11 @@ function mountWorkspace() {
     pageSource: (path) => nativeEffectiveSource(path),
     label: (item) => {
       const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
-      return { ...structureLabel(item, component), component };
+      return { ...structureLabel(item, component), component, generated: nativeNodeGenerated(currentPath, item.node) };
     },
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
-    componentSlots: (path, node) => componentTools?.structure(path, node),
+    // Generated cards offer no slot or attribute fields: their HTML is rebuilt from page data.
+    componentSlots: (path, node) => nativeNodeGenerated(path, node) ? undefined : componentTools?.structure(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
     pageMeta: nativePageMeta,
     onPageSettings: (path) => void openNativePageSettings(path),
@@ -640,7 +641,7 @@ function mountComponentTools() {
     site: () => nativeSite,
     sources: () => nativeSources(),
     structureFields: true,
-    editor: () => editorModule,
+    editor: () => guardedEditor(editorModule),
     preview: () => nativePreview,
     currentPath: () => currentPath,
     selection: () => lastNativeSelection,
@@ -1292,8 +1293,11 @@ function mountNativeSelectedCollection(host: HTMLElement) {
       const target = nativeSelectedCollection(), saved = nativeCollectionSnapshot();
       if (!target || revision() !== expectedRevision) throw new Error("The selection changed. Reopen the collection before applying.");
       // Applying settings rebuilds cards; hand-edited ones are only replaced by the explicit rebuild.
-      const edited = generatedDrift(saved.sources, saved.routes, saved.identity).filter((item) => Object.hasOwn(plan.edits, item.path));
-      if (edited.length) throw new Error(`The cards in ${[...new Set(edited.map((item) => item.path))].join(", ")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
+      const drift = generatedDrift(saved.sources, saved.routes, saved.identity).filter((item) => Object.hasOwn(plan.edits, item.path));
+      const named = (kind: string) => [...new Set(drift.filter((item) => item.kind === kind).map((item) => item.path))].join(", ");
+      if (named("edited")) throw new Error(`The cards in ${named("edited")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
+      if (named("unbuilt")) throw new Error(`The cards in ${named("unbuilt")} have not been built yet. Choose “Build cards from page data” first.`);
+      if (named("unchecked")) throw new Error(`The cards in ${named("unchecked")} cannot be checked against page data. Choose “Use manual cards” to keep them first.`);
       const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
         JSON.stringify(nativeCollectionSnapshot().routes) === JSON.stringify(saved.routes) &&
         JSON.stringify(nativeCollectionSnapshot().identity) === JSON.stringify(saved.identity);
@@ -1310,23 +1314,23 @@ function mountNativeSelectedCollection(host: HTMLElement) {
         if (source === undefined || !generatedRegions(source).some((region) => region.host === target.start)) return undefined;
         const snapshot = nativeCollectionSnapshot();
         if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) return "clean";
-        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity).some((item) => item.path === target.path && item.start === target.start) ? "edited" : "clean";
+        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity).find((item) => item.path === target.path && item.start === target.start)?.kind ?? "clean";
       },
       async keepManual(target) {
         const source = nativeEffectiveSource(target.path);
         if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
         let next: string;
         try { next = manualCardsSource(source, target.start); } catch (error) { return (error as Error).message; }
-        const edited = this.state(target) === "edited";
+        const state = this.state(target);
         return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), edits: new Map([[target.path, next]]),
-          ...(edited ? { acceptGeneratedDrift: [{ path: target.path, start: target.start }] } : {}),
+          ...(state && state !== "clean" ? { acceptGeneratedDrift: [{ path: target.path, start: target.start }] } : {}),
           done: "Kept the cards as hand-written HTML. Save to GitHub to keep it.", undone: "Undid keeping the cards as hand-written HTML." });
       },
       async rebuild(target) {
         const source = nativeEffectiveSource(target.path);
         if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
         return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), acceptGeneratedDrift: [{ path: target.path, start: target.start }],
-          done: "Rebuilt the cards from page data. Save to GitHub to keep it.", undone: "Undid rebuilding the cards." });
+          done: "Built the cards from page data. Save to GitHub to keep it.", undone: "Undid building the cards." });
       },
     },
   });
@@ -1945,6 +1949,37 @@ function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
   });
 }
 
+function nativeNodeGenerated(path: string | undefined, node: readonly number[]) {
+  const source = path === undefined ? undefined : nativeSources()[path];
+  const range = source === undefined ? undefined : locateNativeElementRange(source, [...node]);
+  return Boolean(range && generatedRegionAt(source!, range.tag.start));
+}
+
+// Component, Structure and card tools write through this view of the editor:
+// the same module, with each range write rechecked against generated cards.
+// One wrapper per module keeps identity checks (`deps.editor() === editor`) true.
+type EditorModule = NonNullable<typeof editorModule>;
+const guardedEditors = new WeakMap<EditorModule, EditorModule>();
+function guardedEditor(editor: EditorModule | undefined): EditorModule | undefined {
+  if (!editor) return undefined;
+  let guarded = guardedEditors.get(editor);
+  if (!guarded) {
+    guarded = {
+      ...editor,
+      replaceActiveRange: ((range, ...rest) => {
+        assertNotGenerated(range.path, [range]);
+        return editor.replaceActiveRange(range, ...rest);
+      }) as EditorModule["replaceActiveRange"],
+      replaceActiveRanges: ((ranges, ...rest) => {
+        for (const range of ranges) assertNotGenerated(range.path, [range]);
+        return editor.replaceActiveRanges(ranges, ...rest);
+      }) as EditorModule["replaceActiveRanges"],
+    };
+    guardedEditors.set(editor, guarded);
+  }
+  return guarded;
+}
+
 // Every visual write rechecks the live source at write time: a stale bar,
 // field or toolbar handler must not change cards a collection rebuilds.
 function assertNotGenerated(path: string, edits: readonly { start: number; end: number }[]) {
@@ -1969,6 +2004,8 @@ function renderGeneratedCardBar(selection: NativePreviewSelection, source: strin
   const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
   const model: EditBarModel = {
     origin: { path, source, revision: `${setupScope()}:${generation}`, node: selection.node?.slice() }, kind, controls,
+    // A shared component's own root keeps its explicit Edit (the shared template); its parts do not.
+    ...(componentTools?.identity(selection).component ? { component: componentTools.identity(selection).component } : {}),
     context: { label: record ? `From ${record.url}` : "Made from page data",
       title: "This card is made from page data. Changes made here would be replaced, so edit the page or the collection instead.", onSelect: selectCollection },
   };
@@ -4298,7 +4335,7 @@ function mountCards() {
     site: () => nativeSite,
     source: (path) => nativeEffectiveSource(path),
     isSection: isNativeSectionTag,
-    editor: () => editorModule,
+    editor: () => guardedEditor(editorModule),
     preview: () => nativePreview,
     ensureOpen: async (path) => {
       if (currentPath === path && editorModule?.isMounted(path)) return true;

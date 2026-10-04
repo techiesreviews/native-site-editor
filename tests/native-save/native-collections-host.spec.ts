@@ -1,4 +1,8 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { deriveNativeRoutes } from "../../shared/native-routes";
+import { applyCollectionEdits, planBake } from "../../src/page-builder/collection-bake";
 import { storedDraft } from "./drafts";
 
 // Collections through the real host: Monaco, native preview, drafts, Undo/Redo.
@@ -9,14 +13,26 @@ const record = (title: string, date: string, extra = "") =>
   `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>${title}</title>\n  <meta name="date" content="${date}">${extra}\n  <link rel="stylesheet" href="/styles/site.css">\n</head>\n<body>\n<main><h1>${title}</h1></main>\n</body>\n</html>\n`;
 const listing = `<section class="cards" data-key="work-list" data-each="/work/" data-sort="-date"><template><article><a href="{url}">{title}</a><time>{date}</time></article></template></section>`;
 
+const fixtureFiles = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? fixtureFiles(join(dir, entry.name)) : [join(dir, entry.name)]);
+/** Home with the listing already baked, as the editor would have saved it: hand-free, canonical cards. */
+function bakedHome(home: string, pages: [string, string][]) {
+  const root = "fixtures/native-starter";
+  const sources: Record<string, string> = {};
+  for (const file of fixtureFiles(root)) if (/\.html?$/i.test(file)) sources[relative(root, file)] = readFileSync(file, "utf8");
+  for (const [path, content] of pages) sources[path] = content;
+  sources["index.html"] = home;
+  const baked = planBake(sources, deriveNativeRoutes(Object.keys(sources)), { name: "" });
+  if ("error" in baked) throw new Error(baked.error);
+  return applyCollectionEdits(home, baked.edits["index.html"] ?? []);
+}
 async function seed(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/`);
   const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
-  const edits: [string, string][] = [
+  const pages: [string, string][] = [
     ["work/one/index.html", record("One", "2025-01-01")],
     ["work/two/index.html", record("Two", "2026-01-01")],
-    ["index.html", home.replace('<section class="filler"', `${listing}\n  <section class="filler"`)],
   ];
+  const edits: [string, string][] = [...pages, ["index.html", bakedHome(home.replace('<section class="filler"', `${listing}\n  <section class="filler"`), pages)]];
   for (const [path, content] of edits) await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
 }
 async function open(page: Page, baseURL: string | undefined, file: string) {
@@ -173,16 +189,9 @@ test("deleting a collection page folder drops its card in the same Undo/Redo", a
 
 test("Add on an automatic listing creates only the page; the bake adds exactly one card, one Undo/Redo", async ({ page, baseURL }) => {
   await seed(page, baseURL);
-  // Bake the listing once through Page settings, so its cards are on Home.
-  await open(page, baseURL, "work/two/index.html");
-  const panel = await openPageSettings(page);
-  await panel.getByLabel("Title", { exact: true }).fill("Two");
-  await panel.getByLabel("Description", { exact: true }).fill("Second");
-  await panel.getByRole("button", { name: "Apply page settings" }).click();
-  await expect(panel).not.toBeVisible();
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
-  const baked = await homeDraft(page);
+  // The seeded listing is already baked, so its cards are on Home.
+  await open(page, baseURL, "index.html");
+  const baked = await mounted(page, "index.html");
   expect(listingOf(baked)).toContain('href="/work/one/"');
   const articles = frame(page).locator('[data-key="work-list"] article');
   await expect(articles).toHaveCount(2);
@@ -199,7 +208,8 @@ test("Add on an automatic listing creates only the page; the bake adds exactly o
   await expect(articles).toHaveCount(3);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, "work/three/index.html")).toBeUndefined();
-  await expect.poll(() => homeDraft(page)).toBe(baked);
+  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  expect(await mounted(page, "index.html")).toBe(baked);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(() => homeDraft(page)).toBe(home);
   expect((await storedDraft(page, "work/three/index.html"))?.content).toBe(three);

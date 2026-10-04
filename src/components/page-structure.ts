@@ -62,7 +62,8 @@ export interface PageStructureHandlers {
    * whether it is a component instance (its row wears the component mark,
    * and the rows inside it the accent's rail).
    */
-  label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
+  /** `generated`: a card a collection makes from page data; it is shown, not edited, here. */
+  label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean; generated?: boolean };
   /** A row was chosen: select this element in the preview. */
   onSelect: (path: string, node: number[]) => void;
   /**
@@ -640,7 +641,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.style.setProperty("--depth", String(level - 1));
     const toggle = node("span", "page-structure__toggle");
     toggle.setAttribute("aria-hidden", "true");
-    const { kind, text, component } = handlers.label(item);
+    const { kind, text, component, generated } = handlers.label(item);
+    if (generated) {
+      el.classList.add("page-structure__row--generated");
+      el.title = "Made from page data. Edit the page it comes from, or the collection.";
+    }
     const slotModel = structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
     // A slot opened before its element existed (Show, or a defaulted slot's
     // first edit) settles on its first actual assigned root.

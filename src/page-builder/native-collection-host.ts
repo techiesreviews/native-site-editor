@@ -4,6 +4,7 @@ import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
+import { generatedRegions } from './generated-collection-content';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
 export interface NativeCollectionOrigin {
@@ -61,34 +62,57 @@ export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapsh
  * so legitimate metadata changes still rebuild clean listings. Listings whose
  * recipe cannot be baked are left to the bake's own error.
  */
-function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin) {
+function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin): GeneratedDrift[] {
   const accepted = origin.acceptGeneratedDrift ?? [];
   for (const entry of accepted) {
     if (!origin.expectedSources?.has(entry.path) || origin.expectedSources.get(entry.path) !== own(sources, entry.path))
       throw Error(`Pin ${entry.path} before replacing its cards.`);
   }
-  const drifted = generatedDrift(sources, routes, identity);
+  const all = generatedDrift(sources, routes, identity);
+  const isAccepted = (item: { path: string; start: number }) => accepted.some(entry => entry.path === item.path && entry.start === item.start);
   for (const entry of accepted) {
-    if (!drifted.some(item => item.path === entry.path && item.start === entry.start))
+    if (!all.some(item => item.path === entry.path && item.start === entry.start))
       throw Error(`The cards in ${entry.path} already match their page data.`);
   }
-  const blocked = drifted.filter(item => !accepted.some(entry => entry.path === item.path && entry.start === item.start));
-  if (blocked.length) {
-    const paths = [...new Set(blocked.map(item => item.path))].join(", ");
-    throw Error(`The cards in ${paths} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
-  }
+  const blocked = all.filter(item => item.kind !== 'unchecked' && !isAccepted(item));
+  const edited = [...new Set(blocked.filter(item => item.kind === 'edited').map(item => item.path))];
+  if (edited.length) throw Error(`The cards in ${edited.join(", ")} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+  const unbuilt = [...new Set(blocked.map(item => item.path))];
+  if (unbuilt.length) throw Error(`The cards in ${unbuilt.join(", ")} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
+  // Listings that cannot be baked as they are: checked again after the bake.
+  return all.filter(item => item.kind === 'unchecked' && !isAccepted(item));
 }
 
-/** Existing listings whose current cards differ from a fresh bake of the same graph. */
-export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): { path: string; start: number }[] {
-  let baked: ReturnType<typeof planBake>;
-  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }); } catch { return []; }
-  if ('error' in baked) return [];
-  const drift: { path: string; start: number }[] = [];
-  for (const [path, edits] of Object.entries(baked.edits)) {
+export interface GeneratedDrift {
+  path: string;
+  start: number;
+  /** edited: cards differ by hand; unbuilt: no cards yet; unchecked: this listing's recipe cannot be baked as it is. */
+  kind: 'edited' | 'unbuilt' | 'unchecked';
+}
+const DATA_EACH = /[\t\n\f\r ]data-each(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >]*))?/gi;
+/**
+ * Each listing page is checked on its own, with every other page's listings
+ * set aside, so one invalid collection elsewhere never hides hand edits here.
+ */
+export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): GeneratedDrift[] {
+  const listingPages = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))]
+    .filter(path => sources[path] !== undefined && /data-each/i.test(sources[path]));
+  const drift: GeneratedDrift[] = [];
+  for (const path of listingPages) {
     const source = sources[path];
-    for (const collection of readCollections(source)) {
-      if (edits.some(edit => edit.start === collection.element.tag.end)) drift.push({ path, start: collection.element.start });
+    const regions = generatedRegions(source);
+    if (!regions.length) continue;
+    const alone: Record<string, string> = {};
+    for (const [file, text] of Object.entries(sources)) alone[file] = file === path || !/data-each/i.test(text) ? text : text.replace(DATA_EACH, "");
+    let baked: ReturnType<typeof planBake>;
+    try { baked = planBake(alone, { ...routes }, { name: identity.name }); } catch (error) { baked = { error: String(error) }; }
+    if ('error' in baked) {
+      for (const region of regions) drift.push({ path, start: region.host, kind: 'unchecked' });
+      continue;
+    }
+    for (const region of regions) {
+      if (!(baked.edits[path] ?? []).some(edit => edit.start === region.collection.element.tag.end)) continue;
+      drift.push({ path, start: region.host, kind: source.slice(region.start, region.end).trim() ? 'edited' : 'unbuilt' });
     }
   }
   return drift;
@@ -115,7 +139,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (own(sources, path) !== value) throw Error(`Source changed: ${path}.`);
       expected.set(path, value);
     }
-    assertGeneratedCardsCurrent(sources, routes, identity, origin);
+    const unchecked = assertGeneratedCardsCurrent(sources, routes, identity, origin);
     const moves = (origin.moves ?? []).map(move => ({ ...move }));
     const deletes = [...(origin.deletes ?? [])];
     const creates = (origin.creates ?? []).map(create => ({ ...create }));
@@ -199,6 +223,18 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };
     }
     for (const [path, ranges] of Object.entries(baked.edits)) candidate.set(path, applyCollectionEdits(candidate.get(path)!, ranges));
+    // A listing that could not be checked before must not lose its cards now
+    // that the bake succeeds: refuse unless its generated text is unchanged.
+    for (const item of unchecked) {
+      const target = moves.find(move => move.from === item.path)?.to ?? item.path;
+      const beforeRegions = generatedRegions(sources[item.path]);
+      const index = beforeRegions.findIndex(region => region.host === item.start);
+      const after = candidate.get(target);
+      const afterRegion = after === undefined ? undefined : generatedRegions(after)[index];
+      const was = sources[item.path].slice(beforeRegions[index].start, beforeRegions[index].end);
+      if (afterRegion && after!.slice(afterRegion.start, afterRegion.end) !== was && was.trim())
+        throw Error(`The cards in ${item.path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+    }
     const finalEdits = new Map<string, string>();
     const createdPaths = new Set(creates.map(create => create.path));
     const oldFor = new Map(moves.map(move => [move.to, move.from]));

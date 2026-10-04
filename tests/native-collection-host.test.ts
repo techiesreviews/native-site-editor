@@ -204,11 +204,14 @@ test('candidate identity bakes renamed titles once while guarding the before ide
  assert.equal(result.operation.edits!.get('work/a/index.html'),page('Renamed | New Studio'));
 });
 test('omitting candidate identity keeps legacy suffix baking and an already baked no-op',()=>{
- const before=snapshot();before.sources['work/a/index.html']=page('First | Studio');rebake(before);
- const legacy=planNativeCollectionOperation({...before,origin:origin({})});
+ const before=snapshot();
+ // A real origin change: the record's new title carries the site suffix, which the bake strips.
+ const change={edits:new Map([['work/a/index.html',page('Second | Studio')]])};
+ const legacy=planNativeCollectionOperation({...before,origin:origin(change)});
  if('error'in legacy)assert.fail(legacy.error);
- assert.ok(text(legacy,before,'index.html').includes('>First</a>'));
- const explicit=planNativeCollectionOperation({...before,candidateIdentity:{name:'Studio'},origin:origin({})});
+ assert.ok(legacy.operation.edits!.get('index.html')!.includes('>Second</a>'));
+ assert.equal(legacy.operation.edits!.get('index.html')!.includes('Second | Studio'),false);
+ const explicit=planNativeCollectionOperation({...before,candidateIdentity:{name:'Studio'},origin:origin(change)});
  if('error'in explicit)assert.fail(explicit.error);
  assert.deepEqual(explicit,legacy);
  const baked={...before,sources:{...before.sources,...Object.fromEntries(legacy.operation.edits!)}};
@@ -256,4 +259,28 @@ test('clean listings still rebuild on metadata changes and unbaked new recipes s
  assert.ok(plan.operation.edits!.get('index.html')!.includes('>Fresh</a>'));
  const fresh=good({edits:new Map([['unrelated.html',page('Unrelated',list())]])});
  assert.ok(fresh.operation.edits!.get('unrelated.html')!.includes('>First</a>'));
+});
+test('an invalid collection elsewhere never hides hand edits in a valid listing',()=>{
+ const before=snapshot();
+ before.sources['index.html']=before.sources['index.html'].replace('>First</a>','>Mine</a>');
+ before.sources['unrelated.html']=page('Unrelated','<div data-each="/work/"><template><a>{nope}</a></template></div>');
+ // The origin fixes the broken listing; the hand-edited one must still refuse.
+ const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['unrelated.html',page('Unrelated',list())]])})});
+ assert.ok('error'in result);assert.match(result.error,/index\.html were edited by hand/);
+});
+test('a listing that cannot be checked keeps its cards when an origin fixes its recipe',()=>{
+ const before=snapshot();
+ before.sources['index.html']=page('Home','<div data-each="/work/"><template><a href="{url}">{nope}</a></template><a>Hand made</a></div>');
+ const fix=page('Home','<div data-each="/work/"><template><a href="{url}">{title}</a></template><a>Hand made</a></div>');
+ const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['index.html',fix]])})});
+ assert.ok('error'in result);assert.match(result.error,/could not be checked/);
+});
+test('a listing whose cards were never built is named as not built, not hand edited',()=>{
+ const before=snapshot();
+ before.sources['index.html']=page('Home',list().replace('<p>Old</p>',''));
+ const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['work/a/index.html',page('Renamed')]])})});
+ assert.ok('error'in result);assert.match(result.error,/have not been built/);assert.match(result.error,/Build cards from page data/);
+ const start=before.sources['index.html'].indexOf('<div data-each');
+ const built=good({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start}]},before);
+ assert.ok(built.operation.edits!.get('index.html')!.includes('>First</a>'));
 });
