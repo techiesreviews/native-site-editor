@@ -2,7 +2,8 @@ import { nativePageRoute } from "../../shared/native-routes";
 import { parseSource, type SourceElement } from "./component-model";
 import { attribute } from "./collection-model";
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";
-import { planStaticSectionSave, readStaticSectionRecords, type StaticSectionOperation, type StaticSectionRecord } from "./static-sections";
+import { moveLinkedCopyBasis, sectionCore } from "./native-section-links";
+import { checkSavedSectionHtml, planStaticSectionSave, readSectionCatalog, type StaticSectionEntry, type StaticSectionMasterEntry, type StaticSectionOperation, type StaticSectionRecord } from "./static-sections";
 
 /**
  * Saves the exact current markup of one selected ordinary `<section>` back into its existing
@@ -27,6 +28,12 @@ export interface NativeSectionSaveInput {
   files?: readonly string[];
   /** Explicit record id; otherwise exactly one saved rootClass must match the section's classes. */
   recordId?: string;
+  /**
+   * The loaded source of the record's master file, for a saved section with one (v2). The save
+   * then replaces only the master's `<section>` (its padding and comments stay) and, when the
+   * selected copy is linked, moves that link's basis to the new section in the same operation.
+   */
+  master?: string;
 }
 export type NativeSectionSavePlan =
   | { noop: true; recordId: string }
@@ -65,10 +72,10 @@ export function planSelectedStaticSectionSave(input: NativeSectionSaveInput): Na
     if (!element.close) reject("The selected section needs an explicit closing tag.");
     const html = input.pageSource.slice(element.start, element.end);
     const classes = new Set((attribute(input.pageSource, element, "class") ?? "").split(/[\t\n\f\r ]+/).filter(Boolean));
-    const records = readStaticSectionRecords(input.documentText);
+    const records = readSectionCatalog(input.documentText);
     const lowered = new Set([...classes].map((name) => name.toLowerCase()));
     const carried = Object.values(records).filter((record) => lowered.has(record.rootClass.toLowerCase()));
-    let old: StaticSectionRecord;
+    let old: StaticSectionEntry;
     if (input.recordId !== undefined) {
       if (!Object.hasOwn(records, input.recordId)) reject("That saved section no longer exists.");
       old = records[input.recordId];
@@ -80,14 +87,40 @@ export function planSelectedStaticSectionSave(input: NativeSectionSaveInput): Na
       if (matches.length > 1) reject("This section matches more than one saved section. Choose which one to update.");
       old = matches[0];
     }
-    const record: StaticSectionRecord = { ...structuredClone(old), html };
-    const save = planStaticSectionSave({ documentText: input.documentText, files: input.files, record, overwrite: { expected: old } });
+    if (Object.hasOwn(old, "htmlPath")) return saveIntoMaster(input, old as StaticSectionMasterEntry, html);
+    const record: StaticSectionRecord = { ...structuredClone(old as StaticSectionRecord), html };
+    const save = planStaticSectionSave({ documentText: input.documentText, files: input.files, record, overwrite: { expected: old as StaticSectionRecord } });
     if ("error" in save) return save;
-    if (old.html === html) return { noop: true, recordId: old.id };
+    if ((old as StaticSectionRecord).html === html) return { noop: true, recordId: old.id };
     const expectedSources = new Map(save.operation.expectedSources);
     expectedSources.set(input.pagePath, input.pageSource);
     return { noop: false, recordId: old.id, operation: { ...save.operation, expectedSources }, ...(save.expectedFiles ? { expectedFiles: save.expectedFiles } : {}) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function saveIntoMaster(input: NativeSectionSaveInput, entry: StaticSectionMasterEntry, html: string): NativeSectionSavePlan {
+  const path = entry.htmlPath;
+  if (typeof input.master !== "string") reject(`Load ${path} before saving into this section's master.`);
+  if (input.files && !input.files.includes(path)) reject(`The master ${path} is missing; restore it or remove the saved section.`);
+  const core = sectionCore(input.master);
+  const master = input.master.slice(0, core.start) + html + input.master.slice(core.end);
+  checkSavedSectionHtml(entry, master);
+  const json = moveLinkedCopyBasis({ documentText: input.documentText, pagePath: input.pagePath, pageSource: input.pageSource, range: input.range, basis: html });
+  if (master === input.master && json === undefined) return { noop: true, recordId: entry.id };
+  const edits = new Map<string, string>();
+  if (master !== input.master) edits.set(path, master);
+  if (json !== undefined) edits.set(EDITOR_PAGE_BUILDER_PATH, json);
+  return {
+    noop: false,
+    recordId: entry.id,
+    operation: {
+      expectedSources: new Map<string, string | undefined>([[EDITOR_PAGE_BUILDER_PATH, input.documentText], [input.pagePath, input.pageSource], [path, input.master]]),
+      edits,
+      done: `Saved ${entry.label} to its master`,
+      undone: `Reverted ${entry.label}'s master`,
+    },
+    ...(input.files ? { expectedFiles: [...input.files].sort() } : {}),
+  };
 }

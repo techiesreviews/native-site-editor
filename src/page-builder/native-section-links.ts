@@ -73,7 +73,24 @@ function checkOrdinary(element: SourceElement): void {
     if (name.includes("-") || foreignAncestors.includes(name)) fail("Sections inside components or templates cannot be linked.");
   }
 }
-/** Exactly one complete `<section>`, first byte to last: the only HTML a basis can hold. */
+/**
+ * The saved section's own `<section>` inside record or master HTML: the unique top-level, complete
+ * section element. Outside it only whitespace and comments may appear (a hand-written master file
+ * usually ends with a newline); anything else refuses. A link's basis is always exactly this core,
+ * so a padded record links and updates while the stored basis stays one section, byte for byte.
+ */
+export function sectionCore(html: string): { start: number; end: number; outsideComment: boolean } {
+  const nodes = parseSource(html);
+  const roots = nodes.filter((node): node is SourceElement => node.type === "element");
+  if (roots.length !== 1 || roots[0].name !== "section" || !roots[0].close) fail("A saved section must hold exactly one complete <section>.");
+  const outside = html.slice(0, roots[0].start) + html.slice(roots[0].end);
+  if (outside.replace(/<!--[\s\S]*?-->/g, "").trim()) fail("Only whitespace and comments may surround a saved section's <section>.");
+  const outsideComment = outside.includes("<!--");
+  return { start: roots[0].start, end: roots[0].end, outsideComment };
+}
+const coreOf = (html: string) => { const core = sectionCore(html); return html.slice(core.start, core.end); };
+
+/** Exactly one complete `<section>`, first byte to last: the only HTML a stored basis can hold. */
 function checkBasis(html: string, label: string): void {
   const roots = parseSource(html).filter((node): node is SourceElement => node.type === "element");
   if (roots.length !== 1 || roots[0].name !== "section" || !roots[0].close || roots[0].start !== 0 || roots[0].end !== html.length) fail(`${label} must be exactly one section, with nothing around it.`);
@@ -164,7 +181,8 @@ function writeJson(document: PageBuilderDocument, documentText: string | undefin
 
 function addLink(input: { documentText: string | undefined; pagePath: string; pageSource: string; element: SourceElement; record: StaticSectionRecord; key?: string }) {
   checkPage(input.pagePath);
-  checkBasis(input.record.html, `Saved section ${input.record.id}`);
+  const basis = coreOf(input.record.html);
+  checkBasis(basis, `Saved section ${input.record.id}`);
   const document = readPageBuilderDocument(input.documentText);
   const existing = readNativeSectionLinks(input.documentText);
   // The page's other links must still resolve, and none may already be this section.
@@ -179,7 +197,7 @@ function addLink(input: { documentText: string | undefined; pagePath: string; pa
   if (key === undefined) { let n = 1; while (Object.hasOwn(sections, `${input.record.id}-${n}`)) n++; key = `${input.record.id}-${n}`; }
   checkKey(key);
   if (Object.hasOwn(sections, key)) fail(`A section entry ${key} already exists on ${input.pagePath}.`);
-  const link: NativeSectionLink = { kind: NATIVE_SECTION_KIND, recordId: input.record.id, target, basis: input.record.html };
+  const link: NativeSectionLink = { kind: NATIVE_SECTION_KIND, recordId: input.record.id, target, basis };
   sections[key] = link as unknown as JsonValue;
   return { document, key };
 }
@@ -229,7 +247,7 @@ export function registerInsertedNativeSection(input: {
   return result(() => {
     if (input.files && !input.files.includes(input.pagePath)) fail("Loaded sources do not match the file graph.");
     const element = sectionAt(input.pageSourceAfter, input.range);
-    if (input.pageSourceAfter.slice(element.start, element.end) !== input.record.html) fail("The inserted section does not match its saved record.");
+    if (input.pageSourceAfter.slice(element.start, element.end) !== coreOf(input.record.html)) fail("The inserted section does not match its saved record.");
     const { document, key } = addLink({ documentText: input.documentText, pagePath: input.pagePath, pageSource: input.pageSourceAfter, element, record: input.record, key: input.key });
     return { key, documentText: writeJson(document, input.documentText, input.files), create: input.documentText === undefined };
   });
@@ -249,21 +267,32 @@ export interface NativeSectionCopiesUpdatePlan {
  * record's HTML, and moves those links' basis to it. Customised copies are listed and left
  * byte for byte. `sources` must hold every page that has links; all links are resolved first and
  * any missing, ambiguous or overlapping one refuses the whole plan. `record` is the new record,
- * validated by the caller. Stylesheets are not touched.
+ * validated by the caller. Stylesheets are not touched. Copies receive only the record's
+ * `sectionCore`; whitespace around it is ignored, and a comment outside it refuses (it could not be
+ * applied to copies and would otherwise be dropped silently).
  */
 export function planNativeSectionCopiesUpdate(input: {
   documentText: string; files?: readonly string[]; sources: Readonly<Record<string, string | undefined>>; record: StaticSectionRecord;
+  /** The record's master file, when it has one: pinned with the exact bytes its HTML was read from. */
+  master?: { path: string; source: string };
 }): NativeSectionCopiesUpdatePlan | { error: string } {
   return result(() => {
     if (typeof input.documentText !== "string") fail(`Load ${EDITOR_PAGE_BUILDER_PATH} before updating copies.`);
-    checkBasis(input.record.html, `Saved section ${input.record.id}`);
+    const core = sectionCore(input.record.html);
+    if (core.outsideComment) fail("The master has a comment outside the section; move it inside or delete it. Comments outside can't be applied to copies.");
+    const html = input.record.html.slice(core.start, core.end);
+    checkBasis(html, `Saved section ${input.record.id}`);
     const files = input.files && new Set(input.files);
+    if (input.master) {
+      if (typeof input.master.path !== "string" || typeof input.master.source !== "string" || input.master.source !== input.record.html) fail("The master source does not match the record being applied.");
+      if (files && !files.has(input.master.path)) fail("Loaded sources do not match the file graph.");
+    }
     if (files && !files.has(EDITOR_PAGE_BUILDER_PATH)) fail("Loaded sources do not match the file graph.");
     const links = readNativeSectionLinks(input.documentText);
     for (const page of Object.keys(links)) if (files && !files.has(page)) fail(`${page} has section links but is not in the file graph.`);
     const resolved = resolveAll(links, input.sources);
     const mine = resolved.filter((entry) => entry.link.recordId === input.record.id);
-    const updated = mine.filter((entry) => entry.unchanged && entry.link.basis !== input.record.html);
+    const updated = mine.filter((entry) => entry.unchanged && entry.link.basis !== html);
     const diverged = mine.filter((entry) => !entry.unchanged);
     const report = { updated: updated.map(({ page, key }) => ({ page, key })), diverged: diverged.map(({ page, key }) => ({ page, key })) };
     if (!updated.length) return report;
@@ -271,13 +300,14 @@ export function planNativeSectionCopiesUpdate(input: {
     const edits = new Map<string, string>();
     const expectedSources = new Map<string, string | undefined>([[EDITOR_PAGE_BUILDER_PATH, input.documentText]]);
     for (const page of Object.keys(links)) expectedSources.set(page, input.sources[page]);
+    if (input.master) expectedSources.set(input.master.path, input.master.source);
     for (const page of new Set(updated.map((entry) => entry.page))) {
       const before = input.sources[page]!;
       const replace = updated.filter((entry) => entry.page === page).sort((a, b) => b.start - a.start);
       const collections = checkCollections(page, before, replace, document);
       let after = before;
-      for (const entry of replace) after = after.slice(0, entry.start) + input.record.html + after.slice(entry.end);
-      checkReplacedPage(page, after, input.record);
+      for (const entry of replace) after = after.slice(0, entry.start) + html + after.slice(entry.end);
+      checkReplacedPage(page, after, { ...input.record, html });
       // Re-locate every link of the page in the new bytes: each copy is found again by its new
       // locator, uniquely, and the updated ones take the record's HTML as their basis.
       const sections = document.pages[page].sections!;
@@ -286,17 +316,17 @@ export function planNativeSectionCopiesUpdate(input: {
       for (const entry of shifted) {
         const isUpdated = replace.includes(entry);
         const start = entry.start + delta;
-        const end = isUpdated ? start + input.record.html.length : entry.end + delta;
-        if (isUpdated) delta += input.record.html.length - (entry.end - entry.start);
+        const end = isUpdated ? start + html.length : entry.end + delta;
+        if (isUpdated) delta += html.length - (entry.end - entry.start);
         const element = findElement(after, start, end);
         if (!element) fail(`Section link ${entry.key} on ${page} could not be found after the update.`);
         const target = makeCollectionTarget(after, element);
         const located = locateCollectionTarget(after, target);
         if ("error" in located || located.element.start !== start) fail(`After the update, section link ${entry.key} on ${page} would be ambiguous. Give the sections ids.`);
         const old = sections[entry.key] as unknown as NativeSectionLink;
-        sections[entry.key] = { ...old, target, ...(isUpdated ? { basis: input.record.html } : {}) } as unknown as JsonValue;
+        sections[entry.key] = { ...old, target, ...(isUpdated ? { basis: html } : {}) } as unknown as JsonValue;
       }
-      checkCollectionsAfter(page, after, collections, replace, input.record.html.length, document);
+      checkCollectionsAfter(page, after, collections, replace, html.length, document);
       edits.set(page, after);
     }
     edits.set(EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument(document, input.documentText));
@@ -396,4 +426,21 @@ export function deleteNativeSectionLink(documentText: string, page: string, key:
     if (!Object.keys(document.pages[page]).length) delete document.pages[page];
     return writePageBuilderDocument(document, documentText);
   });
+}
+
+/**
+ * Editor JSON text with the link of the copy at exactly `range` on `pagePath` moved to `basis`
+ * (the copy was just saved into its master, so it equals the master's new section). Undefined
+ * when that copy is not linked. The page's links must all resolve; `basis` must be one section.
+ * Throws on refusal; the caller wraps it in its own plan.
+ */
+export function moveLinkedCopyBasis(input: { documentText: string | undefined; pagePath: string; pageSource: string; range: { start: number; end: number }; basis: string }): string | undefined {
+  checkBasis(input.basis, "The saved section");
+  const links = readNativeSectionLinks(input.documentText);
+  const found = resolvePage(input.pagePath, input.pageSource, links[input.pagePath] ?? {}).find((entry) => entry.start === input.range.start && entry.end === input.range.end);
+  if (!found || found.link.basis === input.basis) return undefined;
+  const document = readPageBuilderDocument(input.documentText);
+  const sections = document.pages[input.pagePath].sections!;
+  sections[found.key] = { ...(sections[found.key] as Record<string, JsonValue>), basis: input.basis };
+  return writePageBuilderDocument(document, input.documentText);
 }

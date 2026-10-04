@@ -24,6 +24,27 @@ export interface StaticSectionRecord {
   [key: string]: JsonValue;
 }
 /**
+ * A saved section whose HTML lives in a master file in the editor folder (`reusableSections`
+ * version 2). The master file `.editor/sections/<id>.html` is the only authority for its HTML:
+ * the JSON holds `htmlPath` and never a copy of the HTML. A stored entry holds `html` (v1)
+ * xor `htmlPath` (v2); a record with both was resolved from a master and can't be written.
+ */
+export interface StaticSectionMasterEntry {
+  id: string;
+  label: string;
+  rootClass: string;
+  htmlPath: string;
+  css: string;
+  stylesheetPath: string;
+  [key: string]: JsonValue;
+}
+/** A catalogue entry exactly as stored. */
+export type StaticSectionEntry = StaticSectionRecord | StaticSectionMasterEntry;
+/** Loaded master sources (drafts included) and the complete file graph, to resolve v2 entries. */
+export interface SectionMasterContext { sources: Readonly<Record<string, string | undefined>>; files?: readonly string[] }
+export const SECTION_MASTER_FOLDER = ".editor/sections/";
+export const sectionMasterPath = (id: string) => `${SECTION_MASTER_FOLDER}${id}.html`;
+/**
  * `ensure-record` (default): append the record's seed CSS unless identical rules exist; refuse unknown rootClass rules.
  * `reuse-current`: a loaded stylesheet source (even empty) is authoritative and never written; other loaded
  * stylesheets and inline rules may cascade over the section. Seed CSS is created only when the stylesheet is proven absent.
@@ -53,6 +74,8 @@ export interface StaticSectionInsertInput {
   files?: readonly string[];
   /** Defaults to `ensure-record` for compatibility. Saved-section hosts pass `reuse-current` explicitly, matching the preview. */
   cssPolicy?: StaticSectionCssPolicy;
+  /** Loaded master sources, for a saved section with a master file (`files` must prove it exists). */
+  masters?: Readonly<Record<string, string | undefined>>;
 }
 /** Structural subset of the host's private NativeOperation, without host dependencies. */
 export interface StaticSectionOperation {
@@ -171,28 +194,84 @@ function sectionCss(record: StaticSectionRecord): CssBlock[] {
 }
 function validateRecord(value: unknown, id: string): asserts value is StaticSectionRecord {
   plain(value, "Static section");
+  if (Object.hasOwn(value, "htmlPath")) reject("A saved section holds either html or htmlPath, never both; a section resolved from its master can't be written.");
   if (!identifier.test(id) || value.id !== id || typeof value.label !== "string" || !value.label.trim() || typeof value.rootClass !== "string" || !identifier.test(value.rootClass) || typeof value.html !== "string" || typeof value.css !== "string" || typeof value.stylesheetPath !== "string" || !stylesheetPath.test(value.stylesheetPath)) reject("Invalid static section identity, label, rootClass or stylesheet path.");
   sectionHtml(value as StaticSectionRecord); sectionCss(value as StaticSectionRecord);
 }
-export function readStaticSectionRecords(documentText: string | undefined): Record<string, StaticSectionRecord> {
+function validateMasterEntry(value: unknown, id: string): asserts value is StaticSectionMasterEntry {
+  plain(value, "Static section");
+  if (Object.hasOwn(value, "html")) reject("A saved section holds either html or htmlPath, never both; a section resolved from its master can't be written.");
+  if (!identifier.test(id) || value.id !== id || typeof value.label !== "string" || !value.label.trim() || typeof value.rootClass !== "string" || !identifier.test(value.rootClass) || typeof value.css !== "string" || typeof value.stylesheetPath !== "string" || !stylesheetPath.test(value.stylesheetPath)) reject("Invalid static section identity, label, rootClass or stylesheet path.");
+  if (value.htmlPath !== sectionMasterPath(id)) reject(`A saved section's master must be ${sectionMasterPath(id)}.`);
+  sectionCss(value as unknown as StaticSectionRecord);
+}
+function validateEntry(value: unknown, id: string, version: number): asserts value is StaticSectionEntry {
+  plain(value, "Static section");
+  if (Object.hasOwn(value, "htmlPath")) {
+    if (version < 2) reject("A saved section with a master file needs reusable sections version 2.");
+    validateMasterEntry(value, id);
+  } else validateRecord(value, id);
+}
+/**
+ * The saved sections exactly as stored: v1 entries with `html`, v2 entries with `htmlPath`. Never
+ * reads a master. Writers spread only these raw entries, so nothing derived reaches the JSON.
+ */
+export function readSectionCatalog(documentText: string | undefined): Record<string, StaticSectionEntry> {
   const document = readPageBuilderDocument(documentText);
   if (document.reusableSections === undefined) return {};
   plain(document.reusableSections, "Reusable sections");
-  if (document.reusableSections.version !== 1) reject("Unsupported reusable sections version.");
+  const version = document.reusableSections.version;
+  if (version !== 1 && version !== 2) reject("Unsupported reusable sections version.");
   plain(document.reusableSections.records, "Reusable section records");
+  const entries: Record<string, StaticSectionEntry> = {};
+  for (const [id, value] of Object.entries(document.reusableSections.records)) { validateEntry(value, id, version as number); entries[id] = value; }
+  // Version 2 exists only for master files: a v2 catalogue without one is not a format we wrote.
+  if (version === 2 && !Object.values(entries).some((entry) => Object.hasOwn(entry, "htmlPath"))) reject("Unsupported reusable sections version.");
+  return entries;
+}
+/**
+ * An ephemeral record for an entry: a v1 entry as it is; a v2 entry with `html` read from its
+ * master's current loaded source (a draft included). Missing graph, missing or unloaded master,
+ * or HTML that is not a valid saved section refuse. The result keeps `htmlPath`, so writing it
+ * back is refused: it is for reading, previewing and inserting only.
+ */
+export function resolveStaticSection(entry: StaticSectionEntry, context?: SectionMasterContext): StaticSectionRecord {
+  if (!Object.hasOwn(entry, "htmlPath")) return entry as StaticSectionRecord;
+  const path = (entry as StaticSectionMasterEntry).htmlPath;
+  if (!context?.files) reject("A complete file graph is needed to read the master.");
+  if (!context.files.includes(path)) reject(`The master ${path} is missing; restore it or remove the saved section.`);
+  const source = Object.hasOwn(context.sources, path) ? context.sources[path] : undefined;
+  if (typeof source !== "string") reject(`Load ${path} before using its saved section.`);
+  const record = { ...entry, html: source } as StaticSectionRecord;
+  sectionHtml(record);
+  return record;
+}
+/**
+ * Saved sections with their HTML. v1-only documents behave as before. A v2 entry needs `masters`
+ * to resolve (see `resolveStaticSection`); without it that entry refuses rather than guessing.
+ */
+export function readStaticSectionRecords(documentText: string | undefined, masters?: SectionMasterContext): Record<string, StaticSectionRecord> {
   const records: Record<string, StaticSectionRecord> = {};
-  for (const [id, value] of Object.entries(document.reusableSections.records)) { validateRecord(value, id); records[id] = value; }
+  for (const [id, entry] of Object.entries(readSectionCatalog(documentText))) {
+    if (Object.hasOwn(entry, "htmlPath") && !masters) reject(`Saved section ${id} has a master file; load it first.`);
+    records[id] = resolveStaticSection(entry, masters);
+  }
   return records;
 }
 export function listSectionChoices(documentText: string | undefined): SectionChoice[] {
-  return Object.values(readStaticSectionRecords(documentText)).map(({ id, label, rootClass }) => ({ id, label, rootClass }));
+  return Object.values(readSectionCatalog(documentText)).map(({ id, label, rootClass }) => ({ id, label, rootClass }));
+}
+/** Checks HTML as the saved section `entry` would hold it (a new master), without writing anything. */
+export function checkSavedSectionHtml(entry: StaticSectionEntry, html: string): void {
+  const { htmlPath: _path, ...rest } = entry as StaticSectionMasterEntry;
+  sectionHtml({ ...rest, html } as StaticSectionRecord);
 }
 /** Without `live` or with `ensure-record`, previews the stored seed. With `reuse-current`, previews the exact loaded public stylesheet. */
-export function previewStaticSection(documentText: string | undefined, id: string, live?: StaticSectionLiveCss): { html: string; css: string; rootClass: string } | { error: string } {
+export function previewStaticSection(documentText: string | undefined, id: string, live?: StaticSectionLiveCss, masters?: SectionMasterContext): { html: string; css: string; rootClass: string } | { error: string } {
   try {
-    const records = readStaticSectionRecords(documentText);
-    if (!Object.hasOwn(records, id)) reject("Choose a registered static section.");
-    const record = records[id];
+    const catalog = readSectionCatalog(documentText);
+    if (!Object.hasOwn(catalog, id)) reject("Choose a registered static section.");
+    const record = resolveStaticSection(catalog[id], masters);
     if (live && live.cssPolicy !== "ensure-record" && live.cssPolicy !== "reuse-current") reject("Unknown section CSS policy.");
     if (live?.cssPolicy === "reuse-current") {
       plain(live.stylesheetSources, "Stylesheet sources");
@@ -231,9 +310,10 @@ function nextCss(existing: string, record: StaticSectionRecord): string {
 export function planStaticSectionInsert(input: StaticSectionInsertInput): StaticSectionInsertPlan | { error: string } {
   try {
     if (nativePageRoute(input.pagePath) === undefined || typeof input.pageSource !== "string") reject("Load a native HTML page before inserting a section.");
-    const records = readStaticSectionRecords(input.documentText);
-    if (!Object.hasOwn(records, input.sectionId)) reject("Choose a registered static section.");
-    const record = records[input.sectionId];
+    const catalog = readSectionCatalog(input.documentText);
+    if (!Object.hasOwn(catalog, input.sectionId)) reject("Choose a registered static section.");
+    const record = resolveStaticSection(catalog[input.sectionId], input.masters ? { sources: input.masters, files: input.files } : undefined);
+    const masterPath = Object.hasOwn(catalog[input.sectionId], "htmlPath") ? (catalog[input.sectionId] as StaticSectionMasterEntry).htmlPath : undefined;
     if (input.cssPolicy !== undefined && input.cssPolicy !== "ensure-record" && input.cssPolicy !== "reuse-current") reject("Unknown section CSS policy.");
     const reuse = input.cssPolicy === "reuse-current";
     plain(input.stylesheetSources, "Stylesheet sources");
@@ -335,6 +415,8 @@ export function planStaticSectionInsert(input: StaticSectionInsertInput): Static
     const stylesheet = reuse && css !== undefined ? css : nextCss(css ?? "", record);
     const expectedSources = new Map<string, string | undefined>(Object.entries(input.stylesheetSources));
     expectedSources.set(input.pagePath, input.pageSource); expectedSources.set(EDITOR_PAGE_BUILDER_PATH, input.documentText);
+    // The master's exact bytes the section was read from.
+    if (masterPath) expectedSources.set(masterPath, record.html);
     const edits = new Map([[input.pagePath, page]]);
     if (css !== undefined && stylesheet !== css) edits.set(record.stylesheetPath, stylesheet);
     return { operation: { expectedSources, edits, ...(css === undefined ? { creates: [{ path: record.stylesheetPath, content: stylesheet }] } : {}), open: input.pagePath, done: `Added ${record.label}`, undone: `Removed ${record.label}` }, selection: { path: input.pagePath, node: [...input.parent, input.index] }, ...(files ? { expectedFiles: [...files].sort() } : {}) };
@@ -376,10 +458,11 @@ export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSect
     } else if (typeof input.documentText !== "string" || files && !files.has(EDITOR_PAGE_BUILDER_PATH)) reject("Loaded sources do not match the file graph.");
     plain(input.record, "Static section");
     validateRecord(structuredClone(input.record), input.record.id);
-    const records = readStaticSectionRecords(input.documentText);
+    const records = readSectionCatalog(input.documentText);
     const document = readPageBuilderDocument(input.documentText);
     const id = input.record.id;
     if (Object.hasOwn(records, id)) {
+      if (Object.hasOwn(records[id], "htmlPath")) reject("This saved section has a master file; save into its master.");
       if (!input.overwrite) reject("A static section with this id already exists; overwrite it explicitly.");
       if (canonical(records[id]) !== canonical(input.overwrite.expected)) reject("The saved static section changed since it was loaded.");
     } else if (input.overwrite) reject("There is no saved static section to overwrite.");
@@ -409,4 +492,43 @@ export function planStaticSectionSave(input: StaticSectionSaveInput): StaticSect
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * Turns a v1 saved section into a master file: one operation creates
+ * `.editor/sections/<id>.html` with the record's exact HTML and replaces the entry's `html` with
+ * `htmlPath` (the catalogue becomes version 2; other v1 entries stay as they are). The file graph
+ * must be complete and prove the master path free (any case); the JSON and the master's absence
+ * are pinned. Pages and stylesheets are untouched.
+ */
+export function planMakeSectionMaster(input: { documentText: string; files: readonly string[]; id: string }): { operation: StaticSectionOperation; expectedFiles: readonly string[]; htmlPath: string } | { error: string } {
+  try {
+    if (typeof input.documentText !== "string") reject(`Load ${EDITOR_PAGE_BUILDER_PATH} before making a master.`);
+    if (!Array.isArray(input.files) || !input.files.includes(EDITOR_PAGE_BUILDER_PATH)) reject("A complete file graph is needed to make a master.");
+    if (typeof input.id !== "string" || !identifier.test(input.id) || ["__proto__", "prototype", "constructor"].includes(input.id)) reject("Invalid saved section id.");
+    const catalog = readSectionCatalog(input.documentText);
+    if (!Object.hasOwn(catalog, input.id)) reject("That saved section no longer exists.");
+    const entry = catalog[input.id];
+    if (Object.hasOwn(entry, "htmlPath")) reject("This saved section already has a master file.");
+    const htmlPath = sectionMasterPath(input.id);
+    if (input.files.some((path) => path.toLowerCase() === htmlPath.toLowerCase())) reject(`${htmlPath} already exists; it is not this saved section's master.`);
+    const document = readPageBuilderDocument(input.documentText);
+    const container = document.reusableSections as Record<string, JsonValue> & { records: Record<string, JsonValue> };
+    const { html, ...rest } = entry as StaticSectionRecord;
+    container.records[input.id] = { ...rest, htmlPath } as JsonValue;
+    container.version = 2;
+    const text = writePageBuilderDocument(document, input.documentText);
+    readSectionCatalog(text);
+    return {
+      htmlPath,
+      operation: {
+        expectedSources: new Map<string, string | undefined>([[EDITOR_PAGE_BUILDER_PATH, input.documentText], [htmlPath, undefined]]),
+        edits: new Map([[EDITOR_PAGE_BUILDER_PATH, text]]),
+        creates: [{ path: htmlPath, content: html }],
+        done: `Made a master for ${entry.label}`,
+        undone: `Removed the master for ${entry.label}`,
+      },
+      expectedFiles: [...input.files].sort(),
+    };
+  } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 }

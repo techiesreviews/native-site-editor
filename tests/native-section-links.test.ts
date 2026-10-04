@@ -162,10 +162,10 @@ test("rename and delete touch only native links and keep foreign entries", () =>
   assert.ok(typeof deleteNativeSectionLink(text, "index.html", "foreign") === "object");
 });
 
-// Records the catalogue accepts but whose HTML is not exactly one section from
-// first to last byte: linking, registering or updating with them is refused
-// before any JSON is written, so the links stay readable.
-test("records with padding or a trailing comment are refused before writing a link", async () => {
+// Records the catalogue accepts with whitespace or a comment around the section (a master file
+// ending in a newline): the link's basis is the section itself, so the links stay readable.
+// Update ignores the whitespace and refuses an outside comment it could not apply to copies.
+test("padded records link with their section as basis; an outside comment refuses Update", async () => {
   const { readStaticSectionRecords } = await import("../src/page-builder/static-sections");
   for (const html of [`\n${oldHtml}\n`, `  ${oldHtml}`, `${oldHtml}<!-- note -->`]) {
     const catalogue = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { hero: record(html) } } });
@@ -173,15 +173,26 @@ test("records with padding or a trailing comment are refused before writing a li
     assert.equal(accepted.html, html, "the catalogue accepts this record");
     const home = page(oldHtml);
     const linked = planNativeSectionLink({ documentText: baseJson, pagePath: "index.html", pageSource: home, range: range(home, oldHtml), record: accepted });
-    assert.ok("error" in linked, JSON.stringify(html));
+    assert.ok(!("error" in linked), JSON.stringify(html));
+    const text = linked.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!;
+    assert.equal(readNativeSectionLinks(text)["index.html"]["hero-1"].basis, oldHtml);
+    assert.ok(!("error" in resolveNativeSectionLinks({ documentText: text, sources: { "index.html": home } })));
+    // A literal insert keeps the padding on the page; only the section is registered.
     const inserted = page(html);
-    const at = range(inserted, oldHtml);
-    assert.ok("error" in registerInsertedNativeSection({ documentText: baseJson, pagePath: "index.html", pageSourceAfter: inserted, range: at, record: accepted }));
-    // An update to such a record writes nothing either.
-    const ok = link(baseJson, "index.html", home, range(home, oldHtml)).text;
-    const update = planNativeSectionCopiesUpdate({ documentText: ok, sources: { "index.html": home }, record: accepted });
-    assert.ok("error" in update);
+    const registered = registerInsertedNativeSection({ documentText: baseJson, pagePath: "index.html", pageSourceAfter: inserted, range: range(inserted, oldHtml), record: accepted });
+    assert.ok(!("error" in registered));
+    // Update to a padded new version: only the section bytes reach the copy; a comment outside refuses.
+    const padded = html.replace(oldHtml, newHtml);
+    const update = planNativeSectionCopiesUpdate({ documentText: text, sources: { "index.html": home }, record: record(padded) });
+    if (html.includes("<!--")) assert.match((update as { error: string }).error, /comment outside the section/);
+    else {
+      assert.ok(!("error" in update), "error" in update ? update.error : "");
+      assert.equal(update.operation!.edits.get("index.html"), page(newHtml));
+      assert.equal(readNativeSectionLinks(update.operation!.edits.get(EDITOR_PAGE_BUILDER_PATH)!)["index.html"]["hero-1"].basis, newHtml);
+    }
   }
+  // Text outside the section is not padding: refused before any write.
+  assert.ok("error" in planNativeSectionLink({ documentText: baseJson, pagePath: "index.html", pageSource: page(oldHtml), range: range(page(oldHtml), oldHtml), record: record(`x${oldHtml}`) }));
 });
 
 test("register needs the page in the file graph; a copy later wrapped in a component is refused", () => {
