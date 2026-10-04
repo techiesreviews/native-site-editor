@@ -105,6 +105,22 @@ test("a detached section move callback refuses newer source and allows a fresh r
   expect(await source(page)).toContain("<!-- agent changed move source -->");
 });
 
+test("an old section's Move down, pressed after another section is selected, refuses with the same source", async ({ page }) => {
+  const before = await source(page);
+  await selectSection(page, 0);
+  await bar(page).getByRole("button", { name: "Move down", exact: true }).evaluate(element => Object.assign(window, { oldNativeMove: element }));
+  // A real selection of the other section; the page's bytes do not change.
+  await sectionRow(page, 1).click();
+  await expect(bar(page).getByRole("button", { name: "Move up", exact: true })).toBeEnabled();
+  expect(await source(page)).toBe(before);
+  // Replays the old button's closure (a detached element, not a pointer press).
+  await page.evaluate(() => (window as unknown as { oldNativeMove: HTMLElement }).oldNativeMove.click());
+  await expect(page.locator("#status")).toContainText("source or selection changed");
+  expect(await source(page)).toBe(before);
+  expect(await storedDraft(page, "index.html").then((draft) => draft?.content)).toBe(before);
+  await expect(order(page).first()).toHaveAttribute("id", "first");
+});
+
 test("Page structure Alt+Down uses the painted element's source proof and one Undo", async ({ page }) => {
   const before = await source(page);
   const row = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: "Paragraph Moving paragraph", exact: true });

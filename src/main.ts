@@ -473,7 +473,7 @@ function mountWorkspace() {
       }
       if (!isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
-      if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction) ?? "stayed";
+      if (currentPath === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction, sectionMoveProof(paintedSource, item.node, false)) ?? "stayed";
       void moveNativeSectionAfterOpening(target, direction, paintedSource);
       return "pending";
     },
@@ -2038,21 +2038,24 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const index = node[node.length - 1];
     const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
     const after = locateNativeElementRange(source, [...parent, index + 1]);
-    onMove = (direction) => moveNativeSection(selection, direction);
+    // Only the source this selection was painted from moves; a newer one, or another selection, refuses.
+    const proof = selection.paintedSource === source ? sectionMoveProof(source, node, true) : undefined;
+    const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (announce(SECTION_MOVE_STALE), "stayed" as const);
+    onMove = move;
     draggable = true;
     controls.push({
       kind: "button",
       icon: "up",
       label: "Move up",
       disabled: !before,
-      onPress: () => moveNativeSection(selection, "up"),
+      onPress: () => move("up"),
     });
     controls.push({
       kind: "button",
       icon: "down",
       label: "Move down",
       disabled: !after,
-      onPress: () => moveNativeSection(selection, "down"),
+      onPress: () => move("down"),
     });
     controls.push({
       kind: "button",
@@ -2363,10 +2366,27 @@ function isNativeSectionTag(tag: string) {
 // preview and the page structure all come here. "stayed" at the first or
 // last position; nothing for anything but a section, when the page is not
 // the mounted file, or when the edit could not be made.
-function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down"): "moved" | "stayed" | undefined {
+// What a section move was offered against: the exact source painted for it,
+// the setup it was painted in, and (from the bar) the selection it was for.
+type SectionMoveProof = { source: string; epoch: number; scope: ReturnType<typeof setupScope>; node: readonly number[]; model?: { isCurrent(): boolean }; selected: boolean };
+const SECTION_MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
+
+function sectionMoveProof(source: string, node: readonly number[], selected: boolean): SectionMoveProof {
+  const scope = draftScope();
+  return { source, epoch: generation, scope: setupScope(), node: [...node], selected,
+    model: scope && editorModule ? editorModule.captureFileModelState(scope, currentPath ?? "") : undefined };
+}
+
+function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down", proof: SectionMoveProof): "moved" | "stayed" | undefined {
   const { path, node } = target;
   if (!path || !node?.length || currentPath !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-  const source = nativeSources()[path] ?? "";
+  const selected = lastNativeSelection;
+  if (proof.epoch !== generation || proof.scope !== setupScope() || versionView || nativeSources()[path] !== proof.source
+    || proof.node.join(".") !== node.join(".") || (proof.model && !proof.model.isCurrent())
+    || (proof.selected && (selected?.path !== path || selected.node?.join(".") !== node.join(".")))) {
+    announce(SECTION_MOVE_STALE); return "stayed";
+  }
+  const source = proof.source;
   const range = locateNativeElementRange(source, node);
   if (!range) return undefined;
   const parent = node.slice(0, -1);
@@ -2392,7 +2412,7 @@ async function moveNativeSectionAfterOpening(target: { path: string; node: numbe
     updateNativePreviewSources();
     announce("The source changed while its editor opened. Select the section again before moving it."); return;
   }
-  if (!moveNativeSection(target, direction)) element("status").textContent = "The section could not be moved";
+  if (!moveNativeSection(target, direction, sectionMoveProof(paintedSource, target.node, false))) element("status").textContent = "The section could not be moved";
 }
 
 // Moves a whole section to another gap among its siblings (`index` counted
