@@ -39,14 +39,14 @@ test("selected collection mixes five page folders, filters and sorts native card
   await expect(panel.getByLabel("Card template HTML")).not.toBeVisible();
   for (const folder of ["services", "portfolio", "articles", "videos"])
     await panel.getByRole("checkbox", { name: `/${folder}/`, exact: true }).check();
-  await panel.getByLabel("Sort by", { exact: true }).selectOption("date");
-  await panel.getByLabel("Order", { exact: true }).selectOption("descending");
+  await panel.getByRole("combobox", { name: "Sort by", exact: true }).selectOption("date");
+  await panel.getByRole("combobox", { name: "Order", exact: true }).selectOption("descending");
   await panel.getByLabel("Maximum items (1–500)").fill("5");
   await panel.getByRole("button", { name: "Save collection", exact: true }).click();
   const links = frame(page).locator('[data-key="mixed-list"] article a');
   await expect(links).toHaveText(["videos", "articles", "portfolio", "services", "Work"]);
   const union = (await storedDraft(page, "index.html"))!.content;
-  expect(union).toContain('data-each="/work/ /services/ /portfolio/ /articles/ /videos/"');
+  expect(union).toContain('data-each="/work/ /articles/ /portfolio/ /services/ /videos/"');
   expect(union).toContain('<template><article><a href="{url}">{title}</a></article></template>');
   expect(union).not.toContain(">Folder index</a>");
   await page.locator(".code-editor__undo").first().click();
@@ -56,7 +56,7 @@ test("selected collection mixes five page folders, filters and sorts native card
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(union);
   await expect(links).toHaveCount(5);
-  await panel.getByLabel("Filter by", { exact: true }).selectOption("category");
+  await panel.getByRole("combobox", { name: "Filter by", exact: true }).selectOption("category");
   await panel.getByLabel("Matches exactly").fill("Featured");
   await panel.getByLabel("Maximum items (1–500)").fill("2");
   await panel.getByRole("button", { name: "Save collection", exact: true }).click();
@@ -77,7 +77,7 @@ test("foreign native source edit retains the collection form and refuses stale A
   // The actual mounted editor changes while a collection recipe is still unsubmitted.
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
-    editor.replaceActiveRange("index.html", 0, 0, "<!-- foreign native edit -->\n");
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: 0, expected: "", text: "<!-- foreign native edit -->\n" });
   });
   const foreign = await mounted(page);
   await expect(panel.getByLabel("Maximum items (1–500)")).toHaveValue("3");
