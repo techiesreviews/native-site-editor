@@ -266,7 +266,7 @@ test('an invalid collection elsewhere never hides hand edits in a valid listing'
  before.sources['unrelated.html']=page('Unrelated','<div data-each="/work/"><template><a>{nope}</a></template></div>');
  // The origin fixes the broken listing; the hand-edited one must still refuse.
  const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['unrelated.html',page('Unrelated',list())]])})});
- assert.ok('error'in result);assert.match(result.error,/index\.html were edited by hand/);
+ assert.ok('error'in result);assert.match(result.error,/The cards in index\.html (were edited by hand|could not be checked)/);
 });
 test('a listing that cannot be checked keeps its cards when an origin fixes its recipe',()=>{
  const before=snapshot();

@@ -2,8 +2,11 @@ import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
-import { attribute, makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { attribute, collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
+import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
+import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
+import type { DocumentCollectionPreview } from "../page-builder/document-collections";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -12,8 +15,11 @@ export interface CollectionsDeps {
   identity(): CollectionIdentity;
   revision(): string;
   page(): string | undefined;
-  /** Host verifies revision and every expected source, then applies all files as one undo step. */
-  apply(plan: BakePlan, expectedRevision: string, label: string): boolean | Promise<boolean>;
+  /**
+   * Host verifies revision and every expected source, then applies all files as one undo step.
+   * A sidecar origin is planned again by the host, which bakes the cards from the JSON recipe.
+   */
+  apply(plan: BakePlan | SidecarOrigin, expectedRevision: string, label: string): boolean | Promise<boolean>;
   openPage(path: string): void;
   announce(message: string): void;
 }
@@ -52,7 +58,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   const status = node("p", "collections-panel__status");
   status.setAttribute("role", "status");
   const report = (message: string) => { const changed = status.textContent !== message; status.textContent = message; if (changed) deps.announce(message); };
-  const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult, label: string) => {
+  const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult | SidecarOrigin | { error: string }, label: string) => {
     if (destroyed || applying) return;
     if ("error" in plan) { report(plan.error); return; }
     if (!current(saved)) { report("The page or repository changed. Reopen the collection panel before applying."); return; }
@@ -68,6 +74,15 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       else report(`${label}. Newer input was kept; reopen before applying again.`);
     }
   };
+  /** Plans a sidecar change against the saved graph, exactly as the host will: cards and JSON in one step. */
+  function previewSidecar(saved: ReturnType<typeof snapshot>, origin: SidecarOrigin, path: string): DocumentCollectionPreview {
+    const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files: Object.keys(saved.sources), revision: saved.revision, identity: saved.identity,
+      origin: { ...origin, done: "", undone: "" } });
+    if ("error" in planned) throw new Error(planned.error);
+    const preview = planned.documentCollections.find((item) => item.path === path);
+    if (!preview) throw new Error("The grid could not be read back after this change.");
+    return preview;
+  }
   function control(form: HTMLElement, label: string, value: string, multiline = false) {
     const wrap = node("label", "collections-panel__field");
     wrap.append(node("span", "", label));
@@ -159,8 +174,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!el?.close) { report("Choose a complete grid in the page source."); return; }
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
     const form = node("form", "collections-panel__form");
-    let existing;
-    try { existing = readCollections(source).find((collection) => collection.element.start === sourceStart); }
+    let existing: { spec: { folders: string[]; sort: string; filter: string; limit: number }; fields: string[]; template: string; namespace?: string } | undefined;
+    try {
+      const stored = sidecarCollectionAt(saved.sources, path, sourceStart);
+      const inline = stored ? undefined : readCollections(source).find((collection) => collection.element.start === sourceStart);
+      existing = stored ? { spec: stored.collection, fields: stored.collection.fields, template: stored.collection.template, namespace: stored.id }
+        : inline ? { spec: inline.spec, fields: inline.fields, template: source.slice(inline.template.tag.end, inline.template.close!.start), namespace: attribute(source, inline.element, "data-collection-id") } : undefined;
+    }
     catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
     activeGrid = { path, start: sourceStart };
     if (!existing && isManualCardGrid(source, el)) { openManualGrid(path, sourceStart, saved); return; }
@@ -185,7 +205,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     form.append(sourceGroup);
     const fieldNames = [...new Set(["title", "date", "url", ...(existing?.fields ?? []), ...Object.entries(saved.routes).flatMap(([url, file]) =>
       saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
-    const namespace = existing && attribute(source, existing.element, "data-collection-id");
+    const namespace = existing?.namespace;
     const fieldLabel = (name: string) => {
       const text = namespace && name.startsWith(`${namespace}-`) ? `Card ${name.slice(namespace.length + 1)}` : name;
       return text.replace(/[_-]/g, " ").replace(/^./, (first) => first.toUpperCase());
@@ -211,13 +231,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
     const advanced = node("details", "collections-panel__advanced");
     advanced.append(node("summary", "", "Advanced"));
-    const template = control(advanced, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
-    const originalTemplate = existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : template.value;
+    const template = control(advanced, "Card template HTML", existing ? existing.template : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
+    const originalTemplate = existing ? existing.template : template.value;
     const displayedTemplate = template.value;
     advanced.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
     const preview = node("pre", "collections-panel__preview");
     const result = node("p"); result.setAttribute("role", "status");
-    let plan: BakeResult = { error: "Preview the collection first." };
+    let plan: SidecarOrigin | { error: string } = { error: "Preview the collection first." };
     const refresh = () => {
       apply.disabled = true;
       filterMatch.parentElement!.hidden = !filter.value;
@@ -225,10 +245,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       try {
         const folders = checks.filter((input) => input.checked).map((input) => input.value);
         if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
-        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value ? `${direction.value === "descending" ? "-" : ""}${sort.value}` : "", filter: filter.value ? `${filter.value}=${filterMatch.value}` : "", limit: limit.value, template: template.value === displayedTemplate ? originalTemplate : template.value });
-        plan = planCollectionChange(saved.sources, { ...saved.sources, [path]: converted }, saved.routes, saved.identity);
-        if ("error" in plan) { result.textContent = plan.error; preview.textContent = ""; return; }
-        const collection = plan.collections.find((item) => item.path === path && item.start === sourceStart);
+        // Validates the settings exactly as an inline recipe would, then stores them as JSON only.
+        const spec = collectionSpec({ folders, sort: sort.value ? `${direction.value === "descending" ? "-" : ""}${sort.value}` : "", filter: filter.value ? `${filter.value}=${filterMatch.value}` : "", limit: limit.value });
+        plan = planSidecarRecipe({ sources: saved.sources, routes: saved.routes, identity: saved.identity }, path, sourceStart,
+          { folders: spec.folders, sort: spec.sort, filter: spec.filter, limit: spec.limit, template: template.value === displayedTemplate ? originalTemplate : template.value });
+        const collection = previewSidecar(saved, plan, path);
         result.textContent = `${collection?.records.length ?? 0} matching ${collection?.records.length === 1 ? "page" : "pages"}. Apply updates the grid and its dependent listings as one undo step.`;
         preview.textContent = collection?.output ?? "";
         apply.disabled = false;
@@ -272,16 +293,18 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const result = node("p"); result.setAttribute("role", "status");
     const kept = node("ul", "collections-panel__kept");
     const apply = node("button", "button primary", "Apply"); apply.type = "submit";
-    let plan: BakeResult = { error: "Choose folders first." };
+    let plan: SidecarOrigin | { error: string } = { error: "Choose folders first." };
     const refresh = () => {
       apply.disabled = true; kept.replaceChildren();
       const converted = planManualConversion({ sources: saved.sources, routes: saved.routes, identity: saved.identity, path, start: sourceStart, token,
         folders: checks.filter((input) => input.checked).map((input) => input.value) });
       if ("error" in converted) { plan = converted; result.textContent = `${converted.error} Nothing will change.`; return; }
-      plan = converted.plan;
-      const changed = Object.keys(converted.plan.edits).filter((file) => file !== path);
-      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page${changed.length ? ` and ${changed.length} linked ${changed.length === 1 ? "page" : "pages"}` : ""} as one undo step.`;
-      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept as a page field of the linked page; SEO titles and descriptions stay as they are.`));
+      try {
+        plan = planSidecarRecipe({ sources: saved.sources, routes: saved.routes, identity: saved.identity }, path, sourceStart, converted.recipe, converted.id);
+        previewSidecar(saved, plan, path);
+      } catch (error) { plan = { error: error instanceof Error ? error.message : "The pages could not be chosen." }; result.textContent = `${plan.error} Nothing will change.`; return; }
+      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page and the editor's page data as one undo step.`;
+      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept in the editor's page data; the pages' own titles, descriptions and SEO stay as they are.`));
       apply.disabled = false;
     };
     form.addEventListener("change", refresh);

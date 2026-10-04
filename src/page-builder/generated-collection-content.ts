@@ -2,6 +2,8 @@ import { startTagAttribute } from "../../shared/html-source";
 import { readCollections, type SourceCollection } from "./collection-model";
 import type { CollectionPreview } from "./collection-bake";
 import type { SourceElement } from "./component-model";
+import { readSidecar } from "./document-collections";
+import { locateCollectionTarget } from "./page-builder-document";
 
 /**
  * Cards a collection generates live after its template, inside the listing
@@ -105,4 +107,32 @@ export function manualCardsSource(source: string, host: number): string {
   let tag = source.slice(element.tag.start, element.tag.end);
   for (const item of found) tag = tag.slice(0, item.start - element.tag.start) + tag.slice(item.end - element.tag.start);
   return source.slice(0, element.tag.start) + tag + source.slice(element.tag.end, removeStart) + source.slice(removeEnd);
+}
+
+/** Cards of a collection whose recipe is in the editor's page data file. */
+export interface DocumentRegion { id: string; host: number; hostEnd: number; start: number; end: number }
+/**
+ * The regions the sidecar's collections own in `path`. Throws when the sidecar
+ * is invalid or a target cannot be found exactly: callers refuse to write then.
+ */
+export function documentRegions(source: string, path: string, sidecar: string | undefined): DocumentRegion[] {
+  if (sidecar === undefined) return [];
+  const document = readSidecar(sidecar);
+  const regions: DocumentRegion[] = [];
+  for (const [id, collection] of Object.entries(document.collections)) {
+    if (collection.pagePath !== path) continue;
+    const located = locateCollectionTarget(source, collection.target);
+    if ("error" in located) throw new Error(`The cards of collection “${id}” can no longer be found exactly in ${path}. Undo the change that moved them, or remove the collection.`);
+    const { element } = located;
+    regions.push({ id, host: element.start, hostEnd: element.end, start: element.tag.end, end: element.close!.start });
+  }
+  return regions;
+}
+export function documentEditTouches(regions: readonly DocumentRegion[], edits: readonly { start: number; end: number }[]): DocumentRegion | undefined {
+  for (const edit of edits) for (const region of regions) {
+    if (edit.start <= region.host && edit.end >= region.hostEnd) continue;
+    const inside = edit.start === edit.end ? edit.start >= region.start && edit.start <= region.end : edit.start < region.end && edit.end > region.start;
+    if (inside) return region;
+  }
+  return undefined;
 }

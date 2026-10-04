@@ -4,7 +4,8 @@ import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
-import { generatedRegions } from './generated-collection-content';
+import { planDocumentBake, type DocumentCollectionPreview } from './document-collections';
+import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
 export interface NativeCollectionOrigin {
@@ -26,6 +27,8 @@ export interface NativeCollectionOrigin {
    * path must also be pinned in expectedSources. Not a blanket bypass.
    */
   acceptGeneratedDrift?: { path: string; start: number }[];
+  /** Sidecar collection ids whose hand-edited or unbuilt cards this change may replace. */
+  acceptCollections?: string[];
 }
 export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
@@ -42,6 +45,8 @@ export interface NativeCollectionPlan {
   expectedRoutes: Readonly<Record<string, string>>;
   afterRoutes: Readonly<Record<string, string>>;
   collections: CollectionPreview[];
+  /** Sidecar collections as baked for the candidate graph. */
+  documentCollections: DocumentCollectionPreview[];
 }
 const own = (sources: Readonly<Record<string, string>>, path: string) => Object.hasOwn(sources, path) ? sources[path] : undefined;
 const sameRoutes = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
@@ -89,30 +94,29 @@ export interface GeneratedDrift {
   /** edited: cards differ by hand; unbuilt: no cards yet; unchecked: this listing's recipe cannot be baked as it is. */
   kind: 'edited' | 'unbuilt' | 'unchecked';
 }
-const DATA_EACH = /[\t\n\f\r ]data-each(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >]*))?/gi;
 /**
- * Each listing page is checked on its own, with every other page's listings
- * set aside, so one invalid collection elsewhere never hides hand edits here.
+ * Legacy inline listings (recipe still in the page HTML). When the whole graph
+ * bakes, each listing is compared exactly. When it does not, every page that
+ * holds a listing (readable or not) is "unchecked": any bake that would then
+ * change that page is refused after the fact, page by page.
  */
 export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): GeneratedDrift[] {
   const listingPages = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))]
     .filter(path => sources[path] !== undefined && /data-each/i.test(sources[path]));
+  if (!listingPages.length) return [];
+  let baked: ReturnType<typeof planBake>;
+  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }); } catch (error) { baked = { error: String(error) }; }
   const drift: GeneratedDrift[] = [];
   for (const path of listingPages) {
     const source = sources[path];
-    const regions = generatedRegions(source);
-    if (!regions.length) continue;
-    const alone: Record<string, string> = {};
-    for (const [file, text] of Object.entries(sources)) alone[file] = file === path || !/data-each/i.test(text) ? text : text.replace(DATA_EACH, "");
-    let baked: ReturnType<typeof planBake>;
-    try { baked = planBake(alone, { ...routes }, { name: identity.name }); } catch (error) { baked = { error: String(error) }; }
-    if ('error' in baked) {
-      for (const region of regions) drift.push({ path, start: region.host, kind: 'unchecked' });
-      continue;
-    }
-    for (const region of regions) {
-      if (!(baked.edits[path] ?? []).some(edit => edit.start === region.collection.element.tag.end)) continue;
-      drift.push({ path, start: region.host, kind: source.slice(region.start, region.end).trim() ? 'edited' : 'unbuilt' });
+    let collections: ReturnType<typeof readCollections> | undefined;
+    try { collections = readCollections(source); } catch { collections = undefined; }
+    if (!collections) { drift.push({ path, start: -1, kind: 'unchecked' }); continue; }
+    for (const collection of collections) {
+      if ('error' in baked) { drift.push({ path, start: collection.element.start, kind: 'unchecked' }); continue; }
+      if (!(baked.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end)) continue;
+      const region = source.slice(collection.template.end, collection.element.close!.start);
+      drift.push({ path, start: collection.element.start, kind: region.trim() ? 'edited' : 'unbuilt' });
     }
   }
   return drift;
@@ -130,6 +134,8 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     const files = new Set(input.files);
     if (Object.keys(sources).some(path => !files.has(path))) throw Error("Loaded source is absent from the file graph.");
     if (!sameRoutes(routes, deriveNativeRoutes(files))) throw Error('Load the complete current route graph before planning collections.');
+    // The editor's page data file is a planning input: loaded, and pinned by its bytes or absence.
+    if (files.has(EDITOR_PAGE_BUILDER_PATH) && own(sources, EDITOR_PAGE_BUILDER_PATH) === undefined) throw Error(`Load ${EDITOR_PAGE_BUILDER_PATH} before planning collections.`);
     const before = new Map(Object.entries(sources));
     const candidate = new Map(before);
     const afterFiles = new Set(files);
@@ -175,6 +181,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     }
     const afterRoutes = deriveNativeRoutes(afterFiles);
     for (const path of new Set([...Object.values(routes), ...Object.values(afterRoutes)])) guard(path);
+    guard(EDITOR_PAGE_BUILDER_PATH);
     const movedFiles = new Map(moves.map(move => [move.from, move.to]));
     const folders = (origin.folders ?? []).map(folder => ({ ...folder }));
     const folderPrefix = (path: string) => path.endsWith("/") && !/[\\\x00-\x1f\x7f]/.test(path) &&
@@ -223,17 +230,31 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };
     }
     for (const [path, ranges] of Object.entries(baked.edits)) candidate.set(path, applyCollectionEdits(candidate.get(path)!, ranges));
-    // A listing that could not be checked before must not lose its cards now
-    // that the bake succeeds: refuse unless its generated text is unchanged.
-    for (const item of unchecked) {
-      const target = moves.find(move => move.from === item.path)?.to ?? item.path;
-      const beforeRegions = generatedRegions(sources[item.path]);
-      const index = beforeRegions.findIndex(region => region.host === item.start);
-      const after = candidate.get(target);
-      const afterRegion = after === undefined ? undefined : generatedRegions(after)[index];
-      const was = sources[item.path].slice(beforeRegions[index].start, beforeRegions[index].end);
-      if (afterRegion && after!.slice(afterRegion.start, afterRegion.end) !== was && was.trim())
-        throw Error(`The cards in ${item.path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+    // A page whose listings could not be checked before must not be rebaked now.
+    for (const path of new Set(unchecked.map(item => item.path))) {
+      const target = moves.find(move => move.from === path)?.to ?? path;
+      if ((baked.edits[target] ?? []).length)
+        throw Error(`The cards in ${path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or fix the collection in Code first.`);
+    }
+    // Sidecar collections: recipes only in JSON, finished cards only in HTML.
+    const document = planDocumentBake({
+      identity: candidateIdentity,
+      before: { sources, routes },
+      candidate: { sources: Object.fromEntries(candidate), routes: afterRoutes },
+      moves: new Map(moves.map(move => [move.from, move.to])),
+      deletes,
+      relocateFolder: relocatedFolder,
+      accept: origin.acceptCollections,
+    });
+    if ('error' in document) return { error: document.error };
+    for (const [path, text] of document.texts) {
+      if (text === undefined) {
+        candidate.delete(path);
+        if (files.has(path) && !deletes.includes(path)) deletes.push(path);
+        continue;
+      }
+      candidate.set(path, text);
+      if (!files.has(path) && !creates.some(create => create.path === path)) creates.push({ path, content: text });
     }
     const finalEdits = new Map<string, string>();
     const createdPaths = new Set(creates.map(create => create.path));
@@ -242,10 +263,10 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { folders: _folderIntent, acceptGeneratedDrift: _drift, ...nativeOrigin } = origin;
+    const { folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
-    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };
+    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Collection operation could not be planned.' };
   }
