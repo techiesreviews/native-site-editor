@@ -51,7 +51,9 @@ and attribute escaping. URL bindings permit relative URLs and HTTP/HTTPS, reject
 script/data schemes and protocol-relative URLs. Binding event attributes, inline
 style, srcdoc, srcset or raw script/style/textarea/title contents is rejected.
 Comments remain literal. `data-if="image"` tests nonblank field presence and omits
-the complete element when absent. Conditions outside loop templates remain intact;
+the complete element when absent; `data-if="!field"` renders the element only when
+the field is blank. Negation exists only in native collection templates, not in
+component template conditions. Conditions outside loop templates remain intact;
 component conditions keep their existing meaning. Source outside collection
 contents remains unchanged. Reapplying a collection retains template wrapper attributes
 and unchanged template body bytes, including CRLF line endings. Whitespace outside
@@ -69,6 +71,23 @@ Checkbox order determines serialized source order. Existing grids use Edit colle
 and Save collection controls; summaries separate folder URLs with commas. Existing
 collection items offer Edit page, separately from Edit card design in source. The panel keeps an immutable source,
 route, identity and repository revision snapshot; stale controls reject Apply.
+
+### Choosing pages for a hand-written card grid
+
+A grid of two or more same-tag custom-element cards without `data-each` offers
+"Choose pages for this grid" (`src/page-builder/native-grid-collection.ts`). Opening it
+or changing folders writes nothing; Apply converts the grid, the linked pages' fields
+and the baked output as one native operation and one Undo step. Each card must link
+to a distinct page of this site, and every part must be a named slot with plain text.
+Title and body parts use `{title}` / `{description}` when they match the page; otherwise
+the card text is stored as a custom page field `<id>-<slot>` on that page, with a
+`data-if="!<id>-<slot>"` fallback to the built-in. The id is persisted as
+`data-collection-id` on the grid. SEO title and description are never rewritten.
+Conversion is refused, with a readable reason and no writes, for rich or image parts,
+mixed card shapes, external or duplicate links, folders that would drop a current
+card, or cards in a custom order that page order would change. Known gap: a field
+used only by removed or moved pages makes later bakes report an unknown field; a
+persisted field registry is separate work.
 
 ## Host integration contract
 
