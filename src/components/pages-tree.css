@@ -202,7 +202,7 @@
 .explorer-tab { flex: 1; min-width: 0; padding-inline: 8px; }
 
 /* The action strip overlays text only while it is in use. */
-.pages-row.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); }
+.pages-row.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); --row-action-base: var(--panel-surface); }
 .pages-row.row-action-host:hover { --row-action-background: var(--hover); }
 .pages-row.row-action-host.is-current { --row-action-background: var(--current); }
 .pages-item:focus-visible > .pages-row.row-action-host { --row-action-background: var(--hover); }
@@ -212,4 +212,5 @@
 /* The focused tree item owns the row's actions, revealed immediately. */
 .pages-item:focus-visible > .pages-row > .row-action-overlay > * { opacity: 1; pointer-events: auto; transition: none; }
 .pages-item:focus-visible > .pages-row > .row-action-overlay::before,
+.pages-item:focus-visible > .pages-row > .row-action-overlay::after,
 .pages-item:focus-visible > .pages-row > .row-action-overlay > * > * { opacity: 1; transform: none; transition: none; }

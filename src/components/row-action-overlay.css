@@ -4,7 +4,7 @@
    the section/component overlay; button boxes never move, so a revealed
    button stays under the pointer. At rest the buttons are disabled for the
    pointer, and the fade and padding always pass clicks through to the row. */
-.row-action-host { position: relative; --row-action-background: var(--surface); }
+.row-action-host { position: relative; --row-action-background: var(--surface); --row-action-base: var(--surface); }
 .row-action-overlay {
   position: absolute;
   inset: 0 0 0 auto;
@@ -25,15 +25,30 @@
   background: linear-gradient(to right, transparent, var(--row-action-background) 20px);
   pointer-events: none;
 }
+/* Row tints (--hover, --current) are translucent. An opaque base, the host's
+   real parent surface (--row-action-base), sits under the tint so the fade
+   ends on the row's composited colour and hides the text beneath it. */
+.row-action-host > .row-action-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  background: linear-gradient(to right, transparent, var(--row-action-base) 20px);
+  pointer-events: none;
+}
 .row-action-host > .row-action-overlay::before,
+.row-action-host > .row-action-overlay::after,
 .row-action-host > .row-action-overlay > * > * { opacity: 0; transform: translateX(40%); transition: transform 140ms ease-out, opacity 140ms ease-out; }
 .row-action-host > .row-action-overlay > * { opacity: 0; pointer-events: none; transition: opacity 140ms ease-out; }
 
 .row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
 .row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay::before,
+.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay::after,
 .row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay > * > * { opacity: 1; transform: none; }
 /* Keyboard access is immediate. */
 .row-action-host:focus-within > .row-action-overlay::before,
+.row-action-host:focus-within > .row-action-overlay::after,
 .row-action-host:focus-within > .row-action-overlay > *,
 .row-action-host:focus-within > .row-action-overlay > * > * { transition: none; }
 .row-action-host > .row-action-overlay > button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
@@ -42,7 +57,8 @@
      never sit over a name or URL. */
   .row-action-host { min-height: 44px; }
   .row-action-host > .row-action-overlay { position: static; flex-shrink: 0; padding: 0; }
-  .row-action-host > .row-action-overlay::before { display: none; }
+  .row-action-host > .row-action-overlay::before,
+  .row-action-host > .row-action-overlay::after { display: none; }
   .row-action-host > .row-action-overlay > button { min-width: 44px; min-height: 44px; }
   .row-action-host > .row-action-overlay::before,
   .row-action-host > .row-action-overlay > *,
@@ -51,6 +67,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .row-action-host > .row-action-overlay::before,
+  .row-action-host > .row-action-overlay::after,
   .row-action-host > .row-action-overlay > *,
   .row-action-host > .row-action-overlay > * > * { transition: none; }
   .row-action-host > .row-action-overlay > * > * { transform: none; }

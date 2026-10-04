@@ -256,3 +256,105 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(paint.fade).toContain(paint.row);
   });
 }
+
+// Pixel proof that each fade ends opaque on the row's real composited colour.
+// Region: the fade's solid part (past its 20px lead-in), inset from the focus ring.
+// "plain" is the same host with its text, icons and actions made invisible (colour
+// and opacity only: backgrounds, geometry, hover and focus stay real).
+type Shot = { width: number; height: number; data: number[] };
+async function regionShot(page: Page, overlay: Locator, css: string): Promise<Shot> {
+  const box = (await overlay.boundingBox())!;
+  const style = await page.addStyleTag({ content: css });
+  await page.waitForTimeout(250);
+  const clip = { x: Math.ceil(box.x + 22), y: Math.ceil(box.y + 3), width: Math.floor(box.width - 25), height: Math.floor(box.height - 6) };
+  const png = (await page.screenshot({ clip, animations: "disabled" })).toString("base64");
+  await style.evaluate((el) => el.remove());
+  return page.evaluate(async (src) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${src}`;
+    await img.decode();
+    const canvas = Object.assign(document.createElement("canvas"), { width: img.width, height: img.height });
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    return { width: img.width, height: img.height, data: [...ctx.getImageData(0, 0, img.width, img.height).data] };
+  }, png);
+}
+function differing(a: Shot, b: Shot, tolerance = 4) {
+  expect([a.width, a.height]).toEqual([b.width, b.height]);
+  let count = 0;
+  for (let i = 0; i < a.data.length; i += 4)
+    if ([0, 1, 2].some((c) => Math.abs(a.data[i + c] - b.data[i + c]) > tolerance)) count++;
+  return count;
+}
+async function fadeCheck(page: Page, host: Locator, label: string, { textBeneath = true, tinted = true } = {}) {
+  const mark = `fade-${Math.random().toString(36).slice(2)}`;
+  await host.evaluate((el, mark) => el.setAttribute("data-fade-check", mark), mark);
+  const sel = `[data-fade-check="${mark}"]`;
+  const overlay = host.locator(".row-action-overlay");
+  const hideText = `${sel}, ${sel} * { color: transparent !important; text-decoration-color: transparent !important; } ${sel} :is(img, svg) { opacity: 0 !important; }`;
+  const plain = await regionShot(page, overlay, `${hideText} ${sel} > .row-action-overlay { display: none !important; }`);
+  const actual = await regionShot(page, overlay, `${sel} > .row-action-overlay > * { opacity: 0 !important; }`);
+  expect(differing(actual, plain), `${label}: fade end matches the plain row`).toBe(0);
+  if (textBeneath) {
+    const bare = await regionShot(page, overlay, `${sel} > .row-action-overlay { opacity: 0 !important; }`);
+    expect(differing(bare, plain), `${label}: there is text beneath the fade`).toBeGreaterThan(20);
+  }
+  // Negative control: without the opaque base, text shows through and tints double.
+  // An untinted row already fades to an opaque surface, so it has no control.
+  if (!tinted) return;
+  const thin = await regionShot(page, overlay, `${sel} > .row-action-overlay > * { opacity: 0 !important; } ${sel} { --row-action-base: transparent !important; }`);
+  expect(differing(thin, plain), `${label}: the check fails without the opaque base`).toBeGreaterThan(20);
+}
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`${scheme}: manager fades end opaque on each row's real colour (hover, current, keyboard, drop)`, async ({ page, baseURL }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await open(page, baseURL);
+    const explorer = page.locator("#explorer");
+    await explorer.getByRole("tab", { name: "Pages", exact: true }).click();
+    const other = page.locator(".pages-row.row-action-host:not(.is-current)").filter({ has: page.locator(".pages-url") }).filter({ visible: true }).first();
+    const current = page.locator(".pages-row.is-current").first();
+    await other.hover();
+    await fadeCheck(page, other, `${scheme} pages hover`);
+    await current.hover();
+    await fadeCheck(page, current, `${scheme} pages current hover`);
+    await page.mouse.move(1400, 900);
+    await other.locator("..").focus();
+    await page.keyboard.press("Shift");
+    await expect(other.locator("..")).toBeFocused();
+    await fadeCheck(page, other, `${scheme} pages keyboard focus`);
+    await other.evaluate((el) => el.classList.add("is-drop-target"));
+    await fadeCheck(page, other, `${scheme} pages drop target`);
+    await other.evaluate((el) => el.classList.remove("is-drop-target"));
+
+    await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+    const lines = page.locator("#explorer .file-row-line.row-action-host:not(.is-folder)").filter({ visible: true });
+    // Fixture file and image names stop short of the actions; Pages routes run beneath them.
+    const filePath = (await lines.filter({ hasNot: page.locator(".file-row.selected") }).first().locator(".file-row").getAttribute("data-path"))!;
+    const file = page.locator(`#explorer .file-row-line:has(> .file-row[data-path="${filePath}"])`);
+    await file.hover();
+    await fadeCheck(page, file, `${scheme} files hover`, { textBeneath: false });
+    await page.mouse.move(1400, 900);
+    await file.locator(".file-row").focus();
+    await page.keyboard.press("Shift");
+    await fadeCheck(page, file, `${scheme} files keyboard focus`, { textBeneath: false });
+    await file.evaluate((el) => el.classList.add("is-drop-target"));
+    await fadeCheck(page, file, `${scheme} files drop target`, { textBeneath: false });
+    await file.evaluate((el) => el.classList.remove("is-drop-target"));
+    await file.locator(".file-row").click();
+    if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+    await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+    await expect(file.locator(".file-row")).toHaveClass(/selected/);
+    await file.hover();
+    await fadeCheck(page, file, `${scheme} files current hover`, { textBeneath: false });
+
+    await explorer.getByRole("tab", { name: "Images", exact: true }).click();
+    const card = page.locator(".media-library__card").first();
+    const name = card.locator(".media-library__name-line");
+    await card.hover();
+    await fadeCheck(page, name, `${scheme} images hover`, { textBeneath: false, tinted: false });
+    await card.getByRole("checkbox").check();
+    await card.hover();
+    await fadeCheck(page, name, `${scheme} images checked hover`, { textBeneath: false });
+  });
+}
