@@ -3,7 +3,8 @@ import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
 import { showStylePanel } from "./style-panel-controls";
 
-// Save section: the edit bar of a page's own plain <section> root saves its
+// Update saved section: the edit bar of a page's own plain <section> root that
+// matches one saved section ("Update Intro") saves its
 // exact HTML back to the matching saved section in .editor/page-builder.json.
 // Only that JSON changes; the page, its stylesheets and copies already on
 // pages stay as they are, and future Adds use the saved HTML. Runs on a copy
@@ -34,7 +35,7 @@ async function addIntro(page: Page, select: string) {
   await option.press("Enter");
 }
 
-test("Save section updates only the saved JSON record; one Undo; future Adds use it; copies stay", async ({ page, baseURL }) => {
+test("Update Intro updates only the saved JSON record; one Undo; future Adds use it; copies stay", async ({ page, baseURL }) => {
   await load(page, baseURL);
   const sectionsCss = await file(page, baseURL, CSS);
   await addIntro(page, "section.flow h2");
@@ -54,32 +55,34 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
   const edited = (await mounted(page))!;
   const css = (await storedDraft(page, CSS))?.content;
 
-  // A child element: no Save section, and no Make component either.
+  // A child element: no Update action, and no Make component either.
   await heading.click();
   await expect(bar(page)).toBeVisible();
-  await expect(bar(page).getByRole("button", { name: "Save section" })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
 
   // The section root.
   await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
-  const save = bar(page).getByRole("button", { name: "Save section", exact: true });
+  const save = bar(page).getByRole("button", { name: "Update Intro", exact: true });
   await expect(save).toBeVisible();
-  await expect(save).toHaveAttribute("title", /future Add only.*stay as they are/);
+  await expect(save).toHaveAttribute("title", /saved section “Intro”.*future inserts only.*stay as they are/);
   await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
+  // Screenshots without the Add panel's overlay.
+  if (await panel(page).isVisible()) await panel(page).getByRole("button", { name: /close/i }).click();
+  await expect(panel(page)).toBeHidden();
+  await expect(save).toBeInViewport();
   await page.screenshot({ path: `${OUT}/save-section-light.png` });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: `${OUT}/save-section-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 820, height: 1000 });
-  // The Add panel would cover the narrow page; close it and bring the bar into view.
-  if (await panel(page).isVisible()) await panel(page).getByRole("button", { name: /close/i }).click();
-  await expect(panel(page)).toBeHidden();
   await frame(page).locator("section.section-intro").scrollIntoViewIfNeeded();
   await expect(save).toBeInViewport();
   await page.screenshot({ path: `${OUT}/save-section-narrow.png` });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await save.click();
   await expect.poll(async () => records((await storedDraft(page, SIDECAR))?.content).intro.html).toBe(sectionOf(edited, "section-intro"));
+  await expect(page.locator("#status")).toHaveText("Updated Intro for future inserts. This page and copies already on pages stay as they are.");
   const savedText = (await storedDraft(page, SIDECAR))!.content;
   const savedJson = JSON.parse(savedText);
   expect(savedJson.reusableSections.records.intro.css).toBe(seededJson.reusableSections.records.intro.css);
@@ -90,7 +93,7 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
 
   // Saving again with nothing new is a no-op: no write, no history entry.
   await save.click();
-  await expect(page.locator("#status")).toContainText("already matches");
+  await expect(page.locator("#status")).toHaveText("Intro already matches this section; future inserts use it.");
   expect((await storedDraft(page, SIDECAR))!.content).toBe(savedText);
 
   // One Undo puts the JSON back and keeps the page edit; one Redo saves again.
@@ -101,17 +104,17 @@ test("Save section updates only the saved JSON record; one Undo; future Adds use
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(savedText);
   expect(await mounted(page)).toBe(edited);
 
-  // A section without a saved record refuses inline and writes nothing.
+  // A section without a saved record offers no Update action and nothing is written.
   await frame(page).locator("section.flow h2").click();
   await page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByText("section.flow", { exact: true }).click();
-  await bar(page).getByRole("button", { name: "Save section", exact: true }).click();
-  await expect(page.locator("#notice")).toContainText("Section not saved");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
   expect((await storedDraft(page, SIDECAR))!.content).toBe(savedText);
 
-  // A component instance root: neither Save section nor Make component.
+  // A component instance root: neither Update nor Make component.
   await frame(page).locator("section-hero h1").first().click();
   await page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByText("section-hero", { exact: true }).click();
-  await expect(bar(page).getByRole("button", { name: "Save section", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
 
   // Future Adds use the saved HTML; the first copy stays byte for byte.
@@ -250,6 +253,9 @@ async function addWithPane(page: Page, baseURL: string | undefined) {
 
 test("Monaco Undo and Redo keys in the page editor run the whole Add", async ({ page, baseURL }) => {
   const { before, added, drafts } = await addWithPane(page, baseURL);
+  // A valid shared history: Undo is available with its plain title.
+  await expect(page.locator(".code-editor__undo").first()).toBeEnabled();
+  await expect(page.locator(".code-editor__undo").first()).toHaveAttribute("title", "Undo");
   await focusPrimary(page);
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => storedDrafts(page)).toEqual([]);
@@ -337,6 +343,8 @@ test("Monaco Undo and Redo keys in the page editor follow a Style panel edit mad
   const styled = (await mounted(page, CSS))!;
   await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(styled);
   const styledDrafts = strip(await storedDrafts(page));
+  await expect(page.locator(".code-editor__undo").first()).toBeEnabled();
+  await expect(page.locator(".code-editor__undo").first()).toHaveAttribute("title", "Undo");
   const addedCss = drafts.find((draft) => draft.path === CSS)!.content;
 
   // First Ctrl+Z undoes the style only; the Add's three drafts stay.
@@ -362,4 +370,23 @@ test("Monaco Undo and Redo keys in the page editor follow a Style panel edit mad
   await expect.poll(async () => strip(await storedDrafts(page))).toEqual(styledDrafts);
   await expect(refusal(page)).toHaveCount(0);
   await page.screenshot({ path: `${OUT}/keyboard-style-redo.png` });
+});
+
+// After a fresh load the editor JSON is only on the branch: selecting the added
+// section reads it, then offers Update for that same selection only.
+test("after a fresh load, Update appears once the editor JSON is read", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await addIntro(page, "section.flow h2");
+  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain("section-intro");
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await load(page, baseURL);
+  expect(await storedDrafts(page)).toEqual([]);
+  await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
+  await expect(bar(page).getByRole("button", { name: "Update Intro", exact: true })).toBeVisible();
+  await frame(page).locator("section.flow h2").click();
+  await page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByText("section.flow", { exact: true }).click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
+  expect(await storedDrafts(page)).toEqual([]);
 });

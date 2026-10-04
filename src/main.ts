@@ -702,13 +702,38 @@ function mountComponentTools() {
   });
 }
 
-// Save section: a page's own plain <section> root updates its saved section in the editor JSON.
-// The page, its stylesheets and copies already on pages are never written.
+// Update saved section: a page's own plain <section> root that matches exactly one record of the
+// loaded editor JSON updates that record. The page, its stylesheets and copies already on pages
+// are never written. Any other section shows no action: nothing is guessed or loaded on press.
+function nativeSectionSavePlan(selection: NativePreviewSelection) {
+  if (!nativeSite || versionView || selection.tag !== "section" || selection.host || !selection.path || !selection.node?.length) return undefined;
+  if (!Object.values(nativeSite.routes).includes(selection.path) || currentPath !== selection.path || !editorModule?.isMounted(selection.path)) return undefined;
+  const source = nativeEffectiveSource(selection.path);
+  const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
+  const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  if (source === undefined || !range || docText === undefined) return undefined;
+  const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort() });
+  if ("error" in plan) return undefined;
+  const label = readStaticSectionRecords(docText)[plan.recordId]?.label;
+  return label ? { plan, label } : undefined;
+}
+let nativeSectionSaveLoading = false;
 function nativeSectionSaveControls(selection: NativePreviewSelection): EditBarControl[] {
-  if (!nativeSite || versionView || selection.tag !== "section" || selection.host || !selection.path || !selection.node?.length) return [];
-  if (!Object.values(nativeSite.routes).includes(selection.path)) return [];
-  return [{ kind: "button", label: "Save section", className: "edit-bar__component-action",
-    title: "Save this section's HTML to its saved section, for future Add only. This page and copies already on pages stay as they are.",
+  const eligible = nativeSectionSavePlan(selection);
+  if (!eligible) {
+    // The editor JSON exists but is not read yet: read it once, then redraw this same selection.
+    if (selection.tag === "section" && !nativeSectionSaveLoading && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH) && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === undefined) {
+      nativeSectionSaveLoading = true;
+      void ensureNativeTextIndex().finally(() => {
+        nativeSectionSaveLoading = false;
+        if (lastNativeSelection === selection && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== undefined) renderNativeEditBar(selection);
+      });
+    }
+    return [];
+  }
+  const label = eligible.label.length > 24 ? "Update saved section" : `Update ${eligible.label}`;
+  return [{ kind: "button", label, className: "edit-bar__component-action",
+    title: `Update the saved section “${eligible.label}” with this section's HTML, for future inserts only. This page and copies already on pages stay as they are.`,
     onPress: () => void saveNativeStaticSection(selection) }];
 }
 async function saveNativeStaticSection(selection: NativePreviewSelection) {
@@ -728,12 +753,13 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     // Read the editor JSON, then let the person choose again rather than saving from a stale choice.
     const error = await ensureNativeTextIndex();
     if (error) errorMessage(new Error(error));
-    else element("status").textContent = "Saved sections have loaded. Choose Save section again.";
+    else element("status").textContent = "Saved sections have loaded. Select the section again to update it.";
     return;
   }
   const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files });
   if ("error" in plan) { errorMessage(new Error(`Section not saved: ${plan.error}`)); return; }
-  if (plan.noop) { element("status").textContent = "The saved section already matches this section."; return; }
+  const label = docText === undefined ? undefined : readStaticSectionRecords(docText)[plan.recordId]?.label;
+  if (plan.noop) { announce(`${label ?? "The saved section"} already matches this section; future inserts use it.`); return; }
   const expectedFiles = (plan.expectedFiles ?? files).join("\n");
   const current = () => !versionView && generation === epoch && setupScope() === scopeKey && proof.isCurrent()
     && currentPath === path && Boolean(editorModule?.isMounted(path)) && nativeEffectiveSource(path) === source
@@ -741,7 +767,8 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     && lastNativeSelection?.path === path && lastNativeSelection.node?.join(".") === node.join(".");
   if (!current()) { errorMessage(new Error("The page or the editor's JSON changed. Select the section and save again.")); return; }
   const { open: _open, creates: _creates, ...operation } = plan.operation;
-  const error = await applyNativeOperation({ ...operation, current });
+  const done = `Updated ${label ?? "the saved section"} for future inserts. This page and copies already on pages stay as they are.`;
+  const error = await applyNativeOperation({ ...operation, ...(label ? { done } : {}), current });
   if (error) errorMessage(new Error(error));
 }
 

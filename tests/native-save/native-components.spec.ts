@@ -321,22 +321,21 @@ test("Detach replaces an instance with the markup it shows, after showing it", a
   await expect(frame(page).locator("section.cards > project-card")).toHaveCount(3);
 });
 
-test("native-first: a plain page section offers Save section, never Make component; unsupported Save writes nothing", async ({ page }) => {
+test("native-first: a plain page section without a saved record offers no Update and never Make component", async ({ page }) => {
   // Native pages stay plain HTML: the edit bar does not convert sections or their children into components.
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
   const before = await editorText(page);
-  // This section was not added from a saved section, so Save section refuses and writes nothing.
-  await bar(page).getByRole("button", { name: "Save section", exact: true }).click();
-  await expect(page.locator("#notice")).toContainText("Section not saved");
+  // This section was not added from a saved section, so there is nothing to update.
+  await expect(bar(page).getByRole("button", { name: /^Update |Save section/ })).toHaveCount(0);
   expect(await editorText(page)).toBe(before);
   expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
   expect(await storedDraft(page, indexPath)).toBeUndefined();
   expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
   // A child of the section: neither action.
   await frame(page).locator("section.hero h1").first().click();
-  await expect(bar(page).getByRole("button", { name: /Make component|Save section/ })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: /Make component|^Update |Save section/ })).toHaveCount(0);
 });
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {
@@ -444,9 +443,9 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
   expect(text).toBe("Hello  world");
 });
 
-// A page change made while Save section awaits the editor JSON's branch text
+// A page change made while Update Intro awaits the editor JSON's branch text
 // must not let the save land: the JSON is not written and the change stays.
-test("Save section refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
+test("Update Intro refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
   const sidecar = ".editor/page-builder.json";
   const addPanel = page.getByRole("dialog", { name: "Add to the page" });
   await select(page, "section.hero");
@@ -473,7 +472,7 @@ test("Save section refuses a page change made while it reads the editor JSON", a
   const mounted = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   await expect.poll(mounted).toContain("<h2>Edited heading</h2>");
   await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
-  const save = bar(page).getByRole("button", { name: "Save section", exact: true });
+  const save = bar(page).getByRole("button", { name: "Update Intro", exact: true });
   await expect(save).toBeVisible();
 
   // Press Save, then in the same turn (while it awaits the JSON's branch text)

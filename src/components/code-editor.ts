@@ -1235,8 +1235,8 @@ export function mountCodeEditor(
     refreshDiscard(changed);
     undo.disabled = !!file.readOnly || !canRunVisualHistory(session, "undo", current.model);
     redo.disabled = !!file.readOnly || !canRunVisualHistory(session, "redo", current.model);
-    undo.title = crossesReceipt(current.model, "undo") ? `Undo: ${receiptRefusal}` : "Undo";
-    redo.title = crossesReceipt(current.model, "redo") ? `Redo: ${receiptRefusal}` : "Redo";
+    undo.title = undo.disabled && !file.readOnly && crossesReceipt(current.model, "undo") ? `Undo: ${receiptRefusal}` : "Undo";
+    redo.title = redo.disabled && !file.readOnly && crossesReceipt(current.model, "redo") ? `Redo: ${receiptRefusal}` : "Redo";
     syncHistoryKeys();
     reportContext(changes);
   }
