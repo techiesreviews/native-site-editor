@@ -4,6 +4,12 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page, path = "index.html") => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure", exact: true });
 const firstCard = (page: Page) => tree(page).getByRole("treeitem", { name: /^Project card Reusable cards/ }).first();
+// Compact Structure opens a slot's fields only from its badge, as an inline disclosure under the
+// row. Only the first card is expanded, so its Title badge is the one in the tree.
+const openTitle = async (page: Page) => {
+  await tree(page).locator(".page-structure__slot-badge").and(page.getByRole("button", { name: "Edit Title", exact: true })).click();
+  return tree(page).getByRole("textbox", { name: "Title: Text", exact: true });
+};
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -19,7 +25,7 @@ test("Structure edits the page's slotted text in one Undo and keeps shared templ
   const templateDraftBefore = await storedDraft(page, templatePath);
   await firstCard(page).click();
   await expect(page.getByRole("region", { name: "Component properties" })).toHaveCount(0);
-  const title = tree(page).getByRole("textbox", { name: "Title: Text", exact: true }).first();
+  const title = await openTitle(page);
   await title.fill("A page-specific card title");
   await title.press("Enter");
   await expect(frame(page).locator("project-card").first().locator('[slot="title"]')).toHaveText("A page-specific card title");
@@ -86,7 +92,7 @@ test("a component selected while CSS is primary routes to its real page before a
   const card = firstCard(page);
   await expect(card).toHaveAttribute("aria-selected", "true");
   if (await card.getAttribute("aria-expanded") === "false") await card.locator(".page-structure__toggle").click();
-  const title = tree(page).getByRole("textbox", { name: "Title: Text", exact: true }).first();
+  const title = await openTitle(page);
   await title.fill("CSS-to-page instance edit"); await title.press("Enter");
   await expect(frame(page).locator("project-card").first().locator('[slot="title"]')).toHaveText("CSS-to-page instance edit");
   expect(await source(page)).toContain("CSS-to-page instance edit");
