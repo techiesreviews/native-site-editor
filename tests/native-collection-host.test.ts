@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveNativeRoutes } from '../shared/native-routes';
+import { applyCollectionEdits, planBake } from '../src/page-builder/collection-bake';
 import { planNativeCollectionOperation, nativeCollectionPlanIsCurrent, type NativeCollectionOrigin } from '../src/page-builder/native-collection-host';
 const page=(title:string,body='')=>`<html><head><title>${title}</title></head><body>${body}</body></html>`;
 const list=(folders='/work/')=>`<div data-each="${folders}"><template><a href="{url}">{title}</a></template><p>Old</p></div>`;
-const sources={'index.html':page('Home',list()),'other.html':page('Other',list('/work/ /news/')),'work/index.html':page('Work'),'work/a/index.html':page('First'),'news/b/index.html':page('News'),'unrelated.html':page('Unrelated')};
+// Fixtures start as canonical baked listings: hand-edited cards are refused.
+const canonical=(raw:Record<string,string>,name='Studio')=>{const baked=planBake(raw,deriveNativeRoutes(Object.keys(raw)),{name});if('error'in baked)throw Error(baked.error);return Object.fromEntries(Object.entries(raw).map(([p,t])=>[p,applyCollectionEdits(t,baked.edits[p]??[])]));};
+const sources=canonical({'index.html':page('Home',list()),'other.html':page('Other',list('/work/ /news/')),'work/index.html':page('Work'),'work/a/index.html':page('First'),'news/b/index.html':page('News'),'unrelated.html':page('Unrelated')});
+const rebake=(before:ReturnType<typeof snapshot>)=>{before.sources=canonical(before.sources);return before;};
+const text=(plan:{operation:{edits?:Map<string,string>}},before:{sources:Record<string,string>},path:string)=>plan.operation.edits!.get(path)??before.sources[path];
 const snapshot=()=>({sources:{...sources},routes:deriveNativeRoutes(Object.keys(sources)),revision:'scope:1',files:Object.keys(sources),identity:{name:'Studio'}});
 const origin=(extra:Partial<NativeCollectionOrigin>):NativeCollectionOrigin=>({done:'Done',undone:'Undone',...extra});
 function good(extra:Partial<NativeCollectionOrigin>,before=snapshot()){
@@ -83,7 +88,7 @@ test('new target collision invalidates a prepared plan; snapshots and origin con
  assert.equal(Object.hasOwn(plan.expectedRoutes,'/injected/'),false);
 });
 test('root 404 remains guarded and is excluded from collection records',()=>{
- const before=snapshot();Object.assign(before.sources,{'404.html':page('Not found'),'index.html':page('Home',list('/'))});before.files.push('404.html');before.routes=deriveNativeRoutes(Object.keys(before.sources));
+ const before=snapshot();Object.assign(before.sources,{'404.html':page('Not found'),'index.html':page('Home',list('/'))});before.files.push('404.html');before.routes=deriveNativeRoutes(Object.keys(before.sources));rebake(before);
  const plan=good({edits:new Map([['work/a/index.html',page('New title')]])},before);
  assert.equal(plan.operation.expectedSources.get('404.html'),page('Not found'));
  assert.equal(plan.operation.edits!.get('index.html')!.includes('href="/404.html"'),false);
@@ -101,7 +106,7 @@ test('opaque folder members move without invented text and occupied unloaded tar
 });
 test('no-index folder moves rewrite mixed and nested scopes from all descendant routes',()=>{
  const before=snapshot();delete (before.sources as Record<string,string>)['work/index.html'];before.files=before.files.filter(path=>path!=='work/index.html');
- Object.assign(before.sources,{'work/2024/a/index.html':page('Year'),'index.html':page('Home',list('/work/ /news/')+list('/work/2024/'))});before.files.push('work/2024/a/index.html');before.routes=deriveNativeRoutes(before.files);
+ Object.assign(before.sources,{'work/2024/a/index.html':page('Year'),'index.html':page('Home',list('/work/ /news/')+list('/work/2024/'))});before.files.push('work/2024/a/index.html');before.routes=deriveNativeRoutes(before.files);rebake(before);
  const plan=good({folders:[{from:'work/',to:'portfolio/'}],moves:[{from:'work/a/index.html',to:'portfolio/a/index.html'},{from:'work/2024/a/index.html',to:'portfolio/2024/a/index.html'}]},before);
  assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/portfolio/ /news/"'));
  assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/portfolio/2024/"'));
@@ -109,12 +114,13 @@ test('no-index folder moves rewrite mixed and nested scopes from all descendant 
 });
 test('index-only moves and folder pages moved to html never redirect the collection scope',()=>{
  const partial=good({moves:[{from:'work/index.html',to:'portfolio/index.html'}]});
- assert.ok(partial.operation.edits!.get('index.html')!.includes('data-each="/work/"'));
- assert.ok(partial.operation.edits!.get('index.html')!.includes('/work/a/'));
+ assert.ok(text(partial,snapshot(),'index.html').includes('data-each="/work/"'));
+ assert.ok(text(partial,snapshot(),'index.html').includes('/work/a/'));
  const before=snapshot();delete (before.sources as Record<string,string>)['work/a/index.html'];before.files=before.files.filter(path=>path!=='work/a/index.html');before.routes=deriveNativeRoutes(before.files);
+ rebake(before);
  const plan=good({moves:[{from:'work/index.html',to:'work.html'}]},before);
- assert.ok(plan.operation.edits!.get('index.html')!.includes('data-each="/work/"'));
- assert.equal(plan.operation.edits!.get('index.html')!.includes('data-each="/work.html"'),false);
+ assert.ok(text(plan,before,'index.html').includes('data-each="/work/"'));
+ assert.equal(text(plan,before,'index.html').includes('data-each="/work.html"'),false);
 });
 test('first redirect edit creates a vacant guarded text file without changing host operation shape',()=>{
  const plan=good({edits:new Map([['_redirects','/old/ /work/a/ 301\n']])});
@@ -129,7 +135,7 @@ test('file graph and identity are independently checked against supplied route g
  assert.equal(nativeCollectionPlanIsCurrent(plan,{...before,files:[...before.files,'new/index.html'],routes:before.routes}),false);
 });
 test('deleting the last custom-field record aborts and names the listing inputs',()=>{
- const before=snapshot();before.sources['index.html']=page('Home',list().replace('{title}','{price}'));before.sources['work/a/index.html']=page('First').replace('</head>','<meta name="field:price" content="10"></head>');
+ const before=snapshot();before.sources['index.html']=page('Home',list().replace('{title}','{price}'));before.sources['work/a/index.html']=page('First').replace('</head>','<meta name="field:price" content="10"></head>');rebake(before);
  const result=planNativeCollectionOperation({...before,origin:origin({deletes:['work/a/index.html']})});
  assert.ok('error'in result);assert.match(result.error,/index\.html/);assert.match(result.error,/Unknown collection field/);
 });
@@ -198,10 +204,10 @@ test('candidate identity bakes renamed titles once while guarding the before ide
  assert.equal(result.operation.edits!.get('work/a/index.html'),page('Renamed | New Studio'));
 });
 test('omitting candidate identity keeps legacy suffix baking and an already baked no-op',()=>{
- const before=snapshot();before.sources['work/a/index.html']=page('First | Studio');
+ const before=snapshot();before.sources['work/a/index.html']=page('First | Studio');rebake(before);
  const legacy=planNativeCollectionOperation({...before,origin:origin({})});
  if('error'in legacy)assert.fail(legacy.error);
- assert.ok(legacy.operation.edits!.get('index.html')!.includes('>First</a>'));
+ assert.ok(text(legacy,before,'index.html').includes('>First</a>'));
  const explicit=planNativeCollectionOperation({...before,candidateIdentity:{name:'Studio'},origin:origin({})});
  if('error'in explicit)assert.fail(explicit.error);
  assert.deepEqual(explicit,legacy);
@@ -210,4 +216,44 @@ test('omitting candidate identity keeps legacy suffix baking and an already bake
  if('error'in noop)assert.fail(noop.error);
  assert.equal(noop.operation.edits!.size,0);
  assert.equal(nativeCollectionPlanIsCurrent(noop,baked),true);
+});
+test('hand-edited generated cards refuse later operations instead of being rebaked away',()=>{
+ const before=snapshot();
+ const edited=before.sources['index.html'].replace('>First</a>','>My own words</a>');
+ assert.notEqual(edited,before.sources['index.html']);
+ before.sources['index.html']=edited;
+ for(const extra of [{edits:new Map([['work/a/index.html',page('Retitled')]])},{deletes:['work/a/index.html']},{creates:[{path:'work/z/index.html',content:page('Z')}]},{edits:new Map([['unrelated.html',page('Unrelated 2')]])}] as Partial<NativeCollectionOrigin>[]){
+  const result=planNativeCollectionOperation({...before,origin:origin(extra)});
+  assert.ok('error'in result);assert.match(result.error,/index\.html/);assert.match(result.error,/Use manual cards/);assert.match(result.error,/Rebuild cards from page data/);
+ }
+ assert.equal(before.sources['index.html'],edited);
+});
+test('only an explicit, pinned, listing-scoped acceptance rebuilds hand-edited cards',()=>{
+ const before=snapshot();
+ before.sources['index.html']=before.sources['index.html'].replace('>First</a>','>Mine</a>');
+ const start=before.sources['index.html'].indexOf('<div data-each');
+ const unpinned=planNativeCollectionOperation({...before,origin:origin({acceptGeneratedDrift:[{path:'index.html',start}]})});
+ assert.ok('error'in unpinned);
+ const wrong=planNativeCollectionOperation({...before,origin:origin({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start:start+1}]})});
+ assert.ok('error'in wrong);
+ const clean=planNativeCollectionOperation({...before,origin:origin({expectedSources:new Map([['other.html',before.sources['other.html']],['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start},{path:'other.html',start:before.sources['other.html'].indexOf('<div data-each')}]})});
+ assert.ok('error'in clean);assert.match(clean.error,/already match/);
+ const plan=good({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start}]},before);
+ assert.equal(plan.operation.edits!.get('index.html'),snapshot().sources['index.html']);
+ assert.equal('acceptGeneratedDrift'in plan.operation,false);
+});
+test('detaching hand-edited cards keeps them and drops only the recipe',()=>{
+ const before=snapshot();
+ before.sources['index.html']=before.sources['index.html'].replace('>First</a>','>Mine</a>');
+ const start=before.sources['index.html'].indexOf('<div data-each');
+ const manual=before.sources['index.html'].replace(/<div data-each="[^"]*"><template>.*?<\/template>/,'<div>');
+ const plan=good({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start}],edits:new Map([['index.html',manual]])},before);
+ assert.equal(plan.operation.edits!.get('index.html'),manual);
+ assert.ok(manual.includes('>Mine</a>'));
+});
+test('clean listings still rebuild on metadata changes and unbaked new recipes still bake',()=>{
+ const plan=good({edits:new Map([['work/a/index.html',page('Fresh')]])});
+ assert.ok(plan.operation.edits!.get('index.html')!.includes('>Fresh</a>'));
+ const fresh=good({edits:new Map([['unrelated.html',page('Unrelated',list())]])});
+ assert.ok(fresh.operation.edits!.get('unrelated.html')!.includes('>First</a>'));
 });

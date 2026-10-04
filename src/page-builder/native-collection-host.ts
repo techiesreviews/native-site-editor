@@ -18,6 +18,13 @@ export interface NativeCollectionOrigin {
   done: string;
   undone: string;
   focus?: { file?: string; route?: string };
+  /**
+   * Listings whose current generated cards may be replaced or detached even
+   * though they differ from what the template and page data produce. Each
+   * entry names one existing listing by source path and element start; the
+   * path must also be pinned in expectedSources. Not a blanket bypass.
+   */
+  acceptGeneratedDrift?: { path: string; start: number }[];
 }
 export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
@@ -48,6 +55,45 @@ export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapsh
     [...plan.operation.expectedSources].every(([path, expected]) => own(snapshot.sources, path) === expected);
 }
 
+/**
+ * Fails closed when an existing listing's cards were edited by hand: a later
+ * bake would silently replace that text. Only the before graph is compared,
+ * so legitimate metadata changes still rebuild clean listings. Listings whose
+ * recipe cannot be baked are left to the bake's own error.
+ */
+function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin) {
+  const accepted = origin.acceptGeneratedDrift ?? [];
+  for (const entry of accepted) {
+    if (!origin.expectedSources?.has(entry.path) || origin.expectedSources.get(entry.path) !== own(sources, entry.path))
+      throw Error(`Pin ${entry.path} before replacing its cards.`);
+  }
+  const drifted = generatedDrift(sources, routes, identity);
+  for (const entry of accepted) {
+    if (!drifted.some(item => item.path === entry.path && item.start === entry.start))
+      throw Error(`The cards in ${entry.path} already match their page data.`);
+  }
+  const blocked = drifted.filter(item => !accepted.some(entry => entry.path === item.path && entry.start === item.start));
+  if (blocked.length) {
+    const paths = [...new Set(blocked.map(item => item.path))].join(", ");
+    throw Error(`The cards in ${paths} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+  }
+}
+
+/** Existing listings whose current cards differ from a fresh bake of the same graph. */
+export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): { path: string; start: number }[] {
+  let baked: ReturnType<typeof planBake>;
+  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }); } catch { return []; }
+  if ('error' in baked) return [];
+  const drift: { path: string; start: number }[] = [];
+  for (const [path, edits] of Object.entries(baked.edits)) {
+    const source = sources[path];
+    for (const collection of readCollections(source)) {
+      if (edits.some(edit => edit.start === collection.element.tag.end)) drift.push({ path, start: collection.element.start });
+    }
+  }
+  return drift;
+}
+
 /** Apply the origin to a candidate graph, bake once, and return one operation. */
 export function planNativeCollectionOperation(input: NativeCollectionSnapshot & {
   origin: NativeCollectionOrigin;
@@ -69,6 +115,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (own(sources, path) !== value) throw Error(`Source changed: ${path}.`);
       expected.set(path, value);
     }
+    assertGeneratedCardsCurrent(sources, routes, identity, origin);
     const moves = (origin.moves ?? []).map(move => ({ ...move }));
     const deletes = [...(origin.deletes ?? [])];
     const creates = (origin.creates ?? []).map(create => ({ ...create }));
@@ -159,7 +206,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { folders: _folderIntent, ...nativeOrigin } = origin;
+    const { folders: _folderIntent, acceptGeneratedDrift: _drift, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
     return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };

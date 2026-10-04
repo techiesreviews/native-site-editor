@@ -84,12 +84,13 @@ import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
-import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { generatedDrift, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
-import { applyCollectionEdits } from "./page-builder/collection-bake";
+import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
+import { editTouchesGenerated, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
 import { validCollectionRoute } from "./page-builder/collection-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
@@ -1290,6 +1291,9 @@ function mountNativeSelectedCollection(host: HTMLElement) {
     async apply(plan, expectedRevision, label) {
       const target = nativeSelectedCollection(), saved = nativeCollectionSnapshot();
       if (!target || revision() !== expectedRevision) throw new Error("The selection changed. Reopen the collection before applying.");
+      // Applying settings rebuilds cards; hand-edited ones are only replaced by the explicit rebuild.
+      const edited = generatedDrift(saved.sources, saved.routes, saved.identity).filter((item) => Object.hasOwn(plan.edits, item.path));
+      if (edited.length) throw new Error(`The cards in ${[...new Set(edited.map((item) => item.path))].join(", ")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
       const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
         JSON.stringify(nativeCollectionSnapshot().routes) === JSON.stringify(saved.routes) &&
         JSON.stringify(nativeCollectionSnapshot().identity) === JSON.stringify(saved.identity);
@@ -1300,6 +1304,31 @@ function mountNativeSelectedCollection(host: HTMLElement) {
       return true;
     },
     openPage: (path) => { void restoreFile(path, generation); }, announce,
+    generated: {
+      state(target) {
+        const source = nativeEffectiveSource(target.path);
+        if (source === undefined || !generatedRegions(source).some((region) => region.host === target.start)) return undefined;
+        const snapshot = nativeCollectionSnapshot();
+        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)) return "clean";
+        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity).some((item) => item.path === target.path && item.start === target.start) ? "edited" : "clean";
+      },
+      async keepManual(target) {
+        const source = nativeEffectiveSource(target.path);
+        if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
+        let next: string;
+        try { next = manualCardsSource(source, target.start); } catch (error) { return (error as Error).message; }
+        const edited = this.state(target) === "edited";
+        return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), edits: new Map([[target.path, next]]),
+          ...(edited ? { acceptGeneratedDrift: [{ path: target.path, start: target.start }] } : {}),
+          done: "Kept the cards as hand-written HTML. Save to GitHub to keep it.", undone: "Undid keeping the cards as hand-written HTML." });
+      },
+      async rebuild(target) {
+        const source = nativeEffectiveSource(target.path);
+        if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
+        return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), acceptGeneratedDrift: [{ path: target.path, start: target.start }],
+          done: "Rebuilt the cards from page data. Save to GitHub to keep it.", undone: "Undid rebuilding the cards." });
+      },
+    },
   });
 }
 
@@ -1426,6 +1455,10 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   }
   const source = nativeSources()[path] ?? "";
   const range = node ? locateNativeElementRange(source, node) : undefined;
+  // A card the page's collection made: its HTML is rebuilt from page data, so
+  // the bar points to where the change belongs instead of editing it.
+  const generated = range ? generatedRegionAt(source, range.tag.start) : undefined;
+  if (generated && range) { renderGeneratedCardBar(selection, source, range.tag.start, generated); return; }
   const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
   // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
   if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
@@ -1575,6 +1608,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
           preview.selectAfterUpdate({ path, node });
           try {
             editor.closeActiveEditGroup(path);
+            assertNotGenerated(path, [{ start, end }]);
             editor.replaceActiveRange({ path, start, end, text: wrap.edit.text, expected: source.slice(start, end) }, true);
             announce("Link added");
           } catch (error) {
@@ -1612,7 +1646,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     preview.selectAfterUpdate({ path, node });
     try {
       // Later edits first, so earlier offsets stay valid.
-      for (const edit of ordered(build(latest, tag)).reverse())
+      const built = ordered(build(latest, tag));
+      assertNotGenerated(path, built);
+      for (const edit of built.reverse())
         editor.replaceActiveRange({ path, ...edit, expected: latest.slice(edit.start, edit.end) }, true);
       announce(message);
     } catch (error) {
@@ -1704,6 +1740,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       const next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
       preview.selectAfterUpdate({ path, node });
       try {
+        assertNotGenerated(path, [edit]);
         editor.replaceActiveRange({ path, ...edit, expected: state.source.slice(edit.start, edit.end) }, grouped);
         if (generation !== epoch || setupScope() !== scopeKey || nativeEffectiveSource(path) !== next) throw new Error("The source changed while applying this field.");
         expectedSource = next;
@@ -1908,6 +1945,54 @@ function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
   });
 }
 
+// Every visual write rechecks the live source at write time: a stale bar,
+// field or toolbar handler must not change cards a collection rebuilds.
+function assertNotGenerated(path: string, edits: readonly { start: number; end: number }[]) {
+  const source = nativeSources()[path];
+  if (source !== undefined && editTouchesGenerated(source, edits)) throw new Error(GENERATED_EDIT_REFUSED);
+}
+
+// The bar for a card a collection made: where it comes from, and the two
+// places a change to it belongs. Nothing here writes the card's HTML.
+function renderGeneratedCardBar(selection: NativePreviewSelection, source: string, at: number, region: GeneratedRegion) {
+  const preview = nativePreview;
+  const path = selection.path;
+  if (!preview || !path || !selection.rect) return;
+  nativeFormatActions = {};
+  const hostNode = elementPathAt(source, region.host);
+  const selectCollection = () => { if (hostNode) preview.selectNode({ path, node: hostNode }); };
+  const record = generatedCardSource(path, source, region, at);
+  const controls: EditBarControl[] = [];
+  if (record) controls.push({ kind: "button", label: "Edit page data", title: `This card shows the page ${record.url}. Open that page to change what the card says.`,
+    onPress: () => { void restoreFile(record.path, generation); } });
+  controls.push({ kind: "button", label: "Edit collection", title: "Change the collection to change every card it makes.", onPress: selectCollection });
+  const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
+  const model: EditBarModel = {
+    origin: { path, source, revision: `${setupScope()}:${generation}`, node: selection.node?.slice() }, kind, controls,
+    context: { label: record ? `From ${record.url}` : "Made from page data",
+      title: "This card is made from page data. Changes made here would be replaced, so edit the page or the collection instead.", onSelect: selectCollection },
+  };
+  nativeEditBarModel = model;
+  preview.showEditBar(model, selection.rect, nativeTextSelection);
+  componentTools?.show(undefined);
+}
+
+// The page a generated card shows, when that can be told without guessing.
+function generatedCardSource(path: string, source: string, region: GeneratedRegion, at: number) {
+  const routes = deriveNativeRoutes(nativeFiles().sort());
+  const sources: Record<string, string> = {};
+  for (const file of nativeFiles()) {
+    if (!/\.html?$/i.test(file) && file !== NATIVE_CONFIG_PATH) continue;
+    const text = nativeEffectiveSource(file);
+    if (text !== undefined) sources[file] = text;
+  }
+  if (Object.values(routes).some((file) => sources[file] === undefined)) return undefined;
+  const identity = { name: readSiteIdentity(sources[NATIVE_CONFIG_PATH], sources[routes["/"]] ?? "").name };
+  const baked = planBake(sources, routes, identity);
+  if ("error" in baked) return undefined;
+  return generatedCardRecord(source, region, baked.collections.find((item) => item.path === path && item.start === region.host), at);
+}
+
 // One verified source change to the mounted page `path`, as one undo step;
 // `next` is the element to select once the preview has rendered it.
 function applyNativeChange(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
@@ -1916,6 +2001,10 @@ function applyNativeChange(path: string, source: string, edits: { start: number;
   if (!preview || !editor) return false;
   if (nativeSources()[path] !== source) {
     announce("The source changed. Select the element again and try again.");
+    return false;
+  }
+  if (editTouchesGenerated(source, edits)) {
+    announce(GENERATED_EDIT_REFUSED);
     return false;
   }
   preview.selectAfterUpdate(next ? { path, node: next } : undefined);
@@ -2047,6 +2136,7 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   const edit = { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
   preview.selectAfterUpdate({ path, node });
   try {
+    assertNotGenerated(path, [edit]);
     editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
     element("status").textContent = "Text changed";
   } catch (error) {
@@ -2116,6 +2206,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   }
   preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
   try {
+    assertNotGenerated(path, [edit]);
     editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
     element("status").textContent = `${choice.label} added`;
   } catch (error) {
@@ -4625,9 +4716,9 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): P
   // Only HTML (pages, components, templates), the site config and folder
   // relocations can change a listing; anything else (CSS, images, scripts)
   // is applied as it was, without reading or baking other pages.
-  const listingInput = Boolean(origin.folders?.length) || touched.some((path) => path === NATIVE_CONFIG_PATH || /\.html?$/i.test(path));
+  const listingInput = Boolean(origin.folders?.length) || Boolean(origin.acceptGeneratedDrift?.length) || touched.some((path) => path === NATIVE_CONFIG_PATH || /\.html?$/i.test(path));
   if (!listingInput) {
-    const { folders: _none, ...plain } = origin;
+    const { folders: _none, acceptGeneratedDrift: _drift, ...plain } = origin;
     return applyNativeOperation(plain);
   }
   // Listings bake from every page: load the whole text index when any page
