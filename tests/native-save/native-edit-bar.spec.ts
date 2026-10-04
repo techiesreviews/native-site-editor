@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDrafts } from "./drafts";
 
 // The edit bar over the native preview: anchored to the selection, with
 // heading level, text size, Bold, Italic and the link Address editing the source.
@@ -183,17 +184,43 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await child!.evaluate(() => window.scrollTo(0, 0));
   await expect(bar(page)).toBeVisible();
 
-  // Roving focus along the bar: Heading level, Text size, B, I. A heading has no section icons.
+  // Heading controls include arrangement; roving focus skips the disabled first move.
   await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
-  await bar(page).getByRole("button", { name: "Italic" }).focus();
+  expect(await bar(page).locator("button, select").evaluateAll(controls => controls.map(control => ({
+    name: control.getAttribute("aria-label") ?? control.textContent?.trim(), disabled: (control as HTMLButtonElement | HTMLSelectElement).disabled,
+  })))).toEqual([
+    { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
+    { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
+    { name: "Move up", disabled: true }, { name: "Move down", disabled: false }, { name: "Move to", disabled: false },
+  ]);
+  // Tab walks every enabled control; native selects retain their own arrow keys.
+  await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
+  for (const control of [
+    bar(page).getByRole("combobox", { name: "Text size", exact: true }),
+    bar(page).getByRole("button", { name: "Bold", exact: true }),
+    bar(page).getByRole("button", { name: "Italic", exact: true }),
+    bar(page).getByRole("button", { name: "Move down", exact: true }),
+    bar(page).getByRole("button", { name: "Move to", exact: true }),
+  ]) {
+    await page.keyboard.press("Tab");
+    await expect(control).toBeFocused();
+  }
+  await bar(page).getByRole("button", { name: "Bold" }).focus();
+  for (const name of ["Italic", "Move down", "Move to"]) {
+    await page.keyboard.press("ArrowRight");
+    await expect(bar(page).getByRole("button", { name, exact: true })).toBeFocused();
+  }
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
+  await bar(page).getByRole("button", { name: "Bold" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(bar(page).getByRole("combobox", { name: "Text size" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Home");
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
-  await expect(bar(page).getByRole("button", { name: "Italic" })).toBeFocused();
+  await expect(bar(page).getByRole("button", { name: "Move to", exact: true })).toBeFocused();
 
   // A section gets a bar without text controls; the page's main container none at all.
   await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());
@@ -208,7 +235,15 @@ test("a selected link takes an address as typed with page suggestions, and the b
   // A link's Address applies as typed: pages of the site are suggested, and
   // any other text is the address itself. No Page menu, no Follow link, no Apply.
   await frame.getByRole("link", { name: "About", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Site header");
+  await expect(page.getByRole("treeitem", { name: "Site header", exact: true })).toHaveAttribute("aria-selected", "true");
+  expect(await editorText(page, "#content")).toBe(indexSource);
+  expect(await storedDrafts(page)).toEqual([]);
+  // Enter the shared template explicitly before editing its nav link.
+  await bar(page).getByRole("button", { name: "Edit Site header component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
+  await frame.getByRole("link", { name: "About", exact: true }).click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page).getByRole("button", { name: "Follow link" })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Page" })).toHaveCount(0);

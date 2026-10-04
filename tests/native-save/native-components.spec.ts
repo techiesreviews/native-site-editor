@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
-// properties panel that edits an instance's slots and attributes as page
+// Structure controls that edit an instance's slots and attributes as page
 // source, Edit component with its banner and Used on, Detach and Make
 // component. The fixture's index page has three <project-card>s (title and
 // body filled; an optional link slot and an unnamed slot with no fallback).
@@ -15,6 +15,7 @@ const nativeHash = (file = indexPath) => `#repo=501&branch=main&file=${encodeURI
 async function open(page: Page, baseURL: string | undefined, file = indexPath) {
   await page.goto(`${baseURL}/${nativeHash(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
+  await expect(page.locator("#content [role=textbox]").first()).toBeAttached();
   await expect(page.frameLocator(".native-preview-frame").locator("main")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -26,11 +27,16 @@ test.beforeEach(async ({ page, baseURL }) => {
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
-const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", { name, exact: typeof name === "string" });
-const panel = (page: Page) => page.getByRole("region", { name: "Component properties" });
+const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", {
+  name,
+  exact: typeof name === "string",
+});
+const panel = (page: Page) => page.locator("#structure");
 const status = (page: Page) => page.locator("#status");
 const select = (page: Page, selector: string) =>
-  frame(page).locator(selector).first().evaluate((el) => (el as HTMLElement).click());
+  selector === "section.hero"
+    ? row(page, "Section A native browser preview").locator(".page-structure__label").click()
+    : frame(page).locator(selector).first().click({position:{x:5,y:5}});
 
 async function editorText(page: Page) {
   const textbox = page.locator(`#content [role="textbox"]`).first();
@@ -61,8 +67,28 @@ const box = (page: Page, name: string) => frame(page).locator(`[data-native-sele
 
 async function selectFirstCard(page: Page) {
   await row(page, "Section").locator(".page-structure__toggle").click();
-  await row(page, "Project card Reusable cards").click();
+  await row(page, "Project card Reusable cards").locator(".page-structure__label").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
+  await expandInstance(page, row(page, "Project card Reusable cards"));
+}
+async function expandInstance(page: Page, instance: import('@playwright/test').Locator) {
+  if (await instance.getAttribute('aria-expanded') === 'false') await instance.locator('.page-structure__toggle').click();
+}
+const slot = (page: Page, name: string) => panel(page).locator(`.page-structure__slot[data-slot-name="${name}"]:visible`);
+async function editSlot(page: Page, name: string) {
+  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  await tree(page).locator(".page-structure__slot-badge").filter({ hasText: new RegExp(`^${label}$`) }).first().click();
+}
+async function openSlotDetails(page: Page, name: string) {
+  if (!await slot(page, name).count()) await editSlot(page, name);
+  const details = slot(page, name).locator('details');
+  if (!await details.evaluate(el => (el as HTMLDetailsElement).open)) await details.locator('summary').click();
+}
+async function uploadImage(page: Page) {
+  await openSlotDetails(page, 'image');
+  const chooser = page.waitForEvent('filechooser');
+  await slot(page, 'image').getByRole('button', {name:'Upload image…',exact:true}).click();
+  await (await chooser).setFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
 }
 
 test("an instance wears the component accent in the bar, the page structure and the canvas", async ({ page }) => {
@@ -71,9 +97,16 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(row(page, "Project card Reusable cards")).toHaveClass(/page-structure__row--component/);
   await expect(row(page, "Project card Reusable cards").locator("svg.component-mark")).toHaveCount(1);
   // What the page slots in names its slot, outside the row's own name.
-  await row(page, "Project card Reusable cards").locator(".page-structure__toggle").click();
-  await expect(row(page, "Text Reusable cards")).toHaveAttribute("data-slot", "title");
+  await expect(tree(page).locator("[data-slot=title]:visible").first()).toHaveAttribute("data-slot", "title");
+  await expect(tree(page).locator("[data-slot=title]:visible .page-structure__text").first()).toHaveText("Reusable cards");
   await expect(row(page, /^Paragraph This card/)).toHaveAttribute("data-slot", "body");
+  await editSlot(page, "title");
+  await expect(slot(page, "title")).toHaveAttribute("data-slot-name", "title");
+  await expect(slot(page, "title").getByRole("textbox", {name:"Title: Text",exact:true})).toHaveValue("Reusable cards");
+  await editSlot(page, "body");
+  await expect(slot(page, "body")).toHaveAttribute("data-slot-name", "body");
+  await expect(slot(page, "body").getByRole("textbox", {name:"Body: Text",exact:true})).toHaveValue(/^This card/);
+  await row(page, "Project card Reusable cards").locator(".page-structure__label").click();
   // The bar's name: the mark and the accent, the tag in its tooltip.
   const kind = bar(page).locator(".edit-bar__kind");
   await expect(kind).toHaveClass(/edit-bar__kind--component/);
@@ -106,7 +139,7 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(box(page, "instance")).toBeVisible();
   await expect(box(page, "instance")).toHaveCSS("border-top-style", "dashed");
   await expect.poll(() => box(page, "selected").evaluate((el) => getComputedStyle(el).borderTopColor)).not.toBe(accent);
-  await expect(row(page, "Text Reusable cards")).toHaveAttribute("aria-selected", "true");
+  await expect(tree(page).locator("[data-slot=title][aria-selected=true]")).toHaveCount(1);
   await chip.locator(".edit-bar__context-caret").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
   await expect(row(page, "Project card Reusable cards")).toHaveAttribute("aria-selected", "true");
@@ -114,7 +147,12 @@ test("an instance wears the component accent in the bar, the page structure and 
 
   // Inside a template: the chip goes back to the instance on the page.
   await select(page, "project-card:nth-of-type(2)");
-  await frame(page).locator("project-card").nth(1).locator("card-note").evaluate((el) => (el as HTMLElement).click());
+  // Ordinary template parts keep the page instance selected until explicit Edit.
+  await frame(page).locator("project-card").nth(1).locator("card-note").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect(row(page, "Project card Shared chrome")).toHaveAttribute("aria-selected", "true");
+  await bar(page).getByRole("button", {name:"Edit Project card component",exact:true}).click();
+  await frame(page).locator("project-card").nth(1).locator("card-note").click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card note");
   await expect(bar(page).getByRole("button", { name: "Select this Project card instance" })).toBeVisible();
@@ -125,14 +163,18 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(row(page, "Project card Shared chrome")).toHaveAttribute("aria-selected", "true");
 });
 
-test("the properties panel edits an instance's slots and attributes as page source", async ({ page }) => {
+test("Structure edits an instance's slots and attributes as page source", async ({ page }) => {
   await selectFirstCard(page);
   await expect(panel(page)).toBeVisible();
-  await expect(panel(page).locator(".component-panel__name")).toHaveText("Project card");
-  await expect(panel(page)).toContainText("One of 3 instances on 1 page");
-  const title = panel(page).getByRole("textbox", { name: "Title", exact: true });
+  await expect(row(page, "Project card Reusable cards")).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, "Project card Reusable cards").getByRole("button", {name:"Edit component",exact:true})).toBeVisible();
+  await expect(frame(page).locator("project-card")).toHaveCount(3);
+  await editSlot(page, "title");
+  const title = panel(page).getByRole("textbox", { name: "Title: Text", exact: true });
   await expect(title).toHaveValue("Reusable cards");
-  await expect(panel(page).getByRole("textbox", { name: "Body", exact: true })).toHaveValue(/^This card and the next one share a single template/);
+  await editSlot(page, "body");
+  await expect(panel(page).getByRole("textbox", { name: "Body: Text", exact: true })).toHaveValue(/^This card and the next one share a single template/);
+  await editSlot(page, "title");
 
   // Typing writes the page's own slotted text, one undo step until the field is left.
   await title.fill("Reusable card sets");
@@ -142,28 +184,32 @@ test("the properties panel edits an instance's slots and attributes as page sour
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
 
   // An optional part: the link paragraph shows only when the page gives it a link.
-  const link = panel(page).getByRole("switch", { name: "Show link" });
-  await expect(link).toHaveAttribute("aria-checked", "false");
+  const link = panel(page).getByRole("checkbox", { name: "Show Link" });
+  await expect(link).not.toBeChecked();
   await link.click();
-  await expect(link).toHaveAttribute("aria-checked", "true");
+  await expect(link).toBeChecked();
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
-  // Switched on, the slot's address is ready to type in.
-  const address = panel(page).locator(".component-slot[data-slot='link']").getByRole("combobox", { name: "Address" });
-  await expect(address).toBeFocused();
+  // Show immediately focuses the button text field.
+  await expect(slot(page, "link").getByRole("textbox", {name:"Link: Button text"})).toBeFocused();
+  await openSlotDetails(page, "link");
+  const address = slot(page, "link").getByRole("combobox", { name: "Link: Link / URL" });
   await address.fill("/about/");
   await address.press("Enter");
-  await panel(page).locator(".component-slot[data-slot='link']").getByRole("textbox", { name: "Text" }).fill("About the studio");
+  await slot(page, "link").getByRole("textbox", { name: "Link: Button text" }).fill("About the studio");
   let source = await editorText(page);
   expect(source).toMatch(/<p slot="body">[^\n]*<\/p>\n {6}<a slot="link" href="\/about\/">About the studio<\/a>\n {4}<\/project-card>/);
+  await tree(page).locator("[data-slot=link]").first().hover();
   await link.click();
-  await expect(link).toHaveAttribute("aria-checked", "false");
+  await expect(link).not.toBeChecked();
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveCount(0);
   expect(await editorText(page)).not.toContain(`slot="link"`);
 
   // A filled slot resets to the template's fallback.
-  await panel(page).getByRole("button", { name: "Reset title to the component's default" }).click();
+  await tree(page).locator("[data-slot=title]").first().hover();
+  await tree(page).getByRole("button", { name: "Reset Title to default", exact: true }).click();
+  await editSlot(page, "title");
   await expect(frame(page).locator("project-card").first().locator("span[slot='title']")).toHaveCount(0);
-  await expect(panel(page).locator(".component-slot[data-slot='title'] .component-slot__badge")).toHaveText("Default");
+  await expect(frame(page).locator("project-card .project-card__title").first()).toHaveText("Untitled project");
   await expect(title).toHaveValue("Untitled project");
   // Typing into the default copies it into the page, in the template's order.
   await title.fill("Back again");
@@ -172,14 +218,16 @@ test("the properties panel edits an instance's slots and attributes as page sour
   expect(source).toMatch(/<project-card title="Reusable cards" data-key="card-1">\n {6}<span slot="title">Back again<\/span>\n {6}<p slot="body">/);
 
   // Attributes of the instance tag.
-  const titleAttribute = panel(page).getByRole("textbox", { name: "title", exact: true });
+  await row(page, "Project card Back again").hover();
+  await row(page, "Project card Back again").getByRole("button", { name: "Attributes", exact: true }).click();
+  const titleAttribute = panel(page).getByRole("textbox", { name: "Attribute: title", exact: true });
   await expect(titleAttribute).toHaveValue("Reusable cards");
   await titleAttribute.fill("Cards");
   await titleAttribute.press("Enter");
   await panel(page).getByRole("textbox", { name: "New attribute name" }).fill("data-variant");
   await panel(page).getByRole("textbox", { name: "New attribute value" }).fill("wide");
   await panel(page).getByRole("textbox", { name: "New attribute value" }).press("Enter");
-  await expect(panel(page).getByRole("textbox", { name: "data-variant", exact: true })).toHaveValue("wide");
+  await expect(panel(page).getByRole("textbox", { name: "Attribute: data-variant", exact: true })).toHaveValue("wide");
   expect(await editorText(page)).toContain(`<project-card title="Cards" data-key="card-1" data-variant="wide">`);
   await panel(page).getByRole("button", { name: "Remove data-variant" }).click();
   expect(await editorText(page)).toContain(`<project-card title="Cards" data-key="card-1">`);
@@ -196,7 +244,8 @@ test("the properties panel edits an instance's slots and attributes as page sour
 test("Edit component from its root opens the template, says what an edit changes, and goes back", async ({ page }) => {
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
-  await expect(panel(page).getByRole("button", { name: /^Edit component/ })).toHaveCount(0);
+  await expect(tree(page).locator("[data-slot=title][aria-selected=true]")).toHaveCount(1);
+  await expect(slot(page, "title").getByRole("button", { name: /^Edit component/ })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Edit enclosing Project card component", exact: true })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "In the title slot of Project card: select the instance", exact: true }).click();
   await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).focus();
@@ -251,8 +300,9 @@ test("Used on opens the page instance that shows a nested component", async ({ p
 
 test("Detach replaces an instance with the markup it shows, after showing it", async ({ page }) => {
   await row(page, "Section").locator(".page-structure__toggle").click();
-  await row(page, "Project card Shared chrome").click();
-  await panel(page).getByRole("button", { name: "Detach instance…" }).click();
+  await row(page, "Project card Shared chrome").locator(".page-structure__label").click();
+  await row(page, "Project card Shared chrome").hover();
+  await row(page, "Project card Shared chrome").getByRole("button", { name: "Disconnect this instance",exact:true }).click();
   const dialog = page.getByRole("dialog", { name: "Detach this Project card?" });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("pre")).toContainText(`<h3 class="project-card__title" data-key="card-title">Shared chrome</h3>`);
@@ -319,22 +369,25 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").click();
+  await expandInstance(page, row(page, "Media card"));
   await expect(panel(page)).toBeVisible();
-  const image = panel(page).locator(".component-slot[data-slot='image']");
-  await expect(image.locator(".component-slot__badge")).toHaveText("Default");
-  await expect(image.getByRole("combobox", { name: "Address" })).toHaveValue("/images/placeholder.svg");
-  await image.getByRole("combobox", { name: "Address" }).fill("/images/studio-desk.svg");
-  await image.getByRole("combobox", { name: "Address" }).press("Enter");
-  await image.getByRole("textbox", { name: "Alt text" }).fill("A desk");
-  await image.getByRole("textbox", { name: "Alt text" }).press("Enter");
+  const image = slot(page, "image");
+  await expect(frame(page).locator("media-card img")).toHaveAttribute("alt", "Placeholder");
+  await expect(frame(page).locator("media-card img")).toBeVisible();
+  await openSlotDetails(page, "image");
+  await expect(image.getByRole("combobox", { name: "Image: Image" })).toHaveValue("/images/placeholder.svg");
+  await image.getByRole("combobox", { name: "Image: Image" }).fill("/images/studio-desk.svg");
+  await image.getByRole("combobox", { name: "Image: Image" }).press("Enter");
+  await image.getByRole("textbox", { name: "Image: Alt text" }).fill("A desk");
+  await image.getByRole("textbox", { name: "Image: Alt text" }).press("Enter");
   expect(await editorText(page)).toContain(`<media-card>\n    <img slot="image" src="/images/studio-desk.svg" alt="A desk">\n  </media-card>`);
   await expect(frame(page).locator("media-card > img")).toHaveAttribute("alt", "A desk");
   // The caption is optional (data-if): off until switched on.
-  const caption = panel(page).getByRole("switch", { name: "Show caption" });
-  await expect(caption).toHaveAttribute("aria-checked", "false");
+  const caption = panel(page).getByRole("checkbox", { name: "Show Caption" });
+  await expect(caption).not.toBeChecked();
   await caption.click();
-  await panel(page).getByRole("textbox", { name: "Caption", exact: true }).fill("Where it happens");
-  await panel(page).getByRole("textbox", { name: "Caption", exact: true }).press("Enter");
+  await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).fill("Where it happens");
+  await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).press("Enter");
   expect(await editorText(page)).toContain(`<span slot="caption">Where it happens</span>`);
   await expect.poll(() => frame(page).locator("media-card").evaluate((el) => {
     const figcaption = el.shadowRoot?.querySelector("figcaption");
@@ -349,8 +402,9 @@ test("image upload finishes on the instance that started it", async ({ page, bas
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").first().click();
+  await expandInstance(page, row(page, "Media card").first());
   await pauseUpload(page);
-  await panel(page).locator(".component-slot[data-slot='image'] input[type='file']").setInputFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
+  await uploadImage(page);
   await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
   await row(page, "Media card").nth(1).click();
   await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
@@ -381,8 +435,9 @@ for (const action of ["delete", "reorder"] as const) {
     await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: source } });
     await open(page, baseURL, "about/index.html");
     await row(page, "Media card").first().click();
+    await expandInstance(page, row(page, "Media card").first());
     await pauseUpload(page);
-    await panel(page).locator(".component-slot[data-slot='image'] input[type='file']").setInputFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
+    await uploadImage(page);
     await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
     const changed = source.replace(`${first}${second}`, action === "delete" ? second : `${second}${first}`);
     await page.locator(`#content [role="textbox"]`).first().focus();

@@ -15,7 +15,10 @@ test.beforeEach(async ({ page, baseURL }) => {
 });
 
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
-const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", { name, exact: typeof name === "string" });
+const row = (page: Page, name: string | RegExp) => tree(page).getByRole("treeitem", {
+  name,
+  exact: typeof name === "string",
+});
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const unfold = (page: Page, name: string) => row(page, name).locator(".page-structure__toggle").click();
 const select = (page: Page, selector: string) =>
@@ -24,17 +27,31 @@ const select = (page: Page, selector: string) =>
 test("the sidebar lists the page's elements and marks the one selected in the preview", async ({ page }) => {
   // Top level: the header component, main, the footer component.
   const top = tree(page).locator("[role='treeitem'][aria-level='1']");
-  await expect(top).toHaveText(["Site header", "Main", "Site footer"]);
+  await expect(top.locator(":scope > .page-structure__label")).toHaveText(["Site header", "Main", "Site footer"]);
   // Sections are named by their first heading; one without a heading by its kind alone.
   const sections = tree(page).locator("[role='treeitem'][aria-level='2']");
   await expect(sections).toHaveText(["Section A native browser preview", "Section", "Section Scroll to verify"]);
   // Everything inside <main> starts folded, so the page reads as its sections.
   for (const section of await sections.all()) await expect(section).toHaveAttribute("aria-expanded", "false");
-  await expect(row(page, "Project card Reusable cards")).toHaveCount(0);
+  const card = tree(page).getByRole("treeitem", {name:/^Project card Reusable cards$/});
+  await expect(card).toHaveCount(0);
   await unfold(page, "Section");
   // A component instance is named by the heading in its shadow root, with the page's slotted text.
-  await expect(row(page, "Project card Reusable cards")).toBeVisible();
-  await expect(row(page, "Project card Reusable cards").locator("+ [role='group'] [role='treeitem']")).toHaveText(["Text Reusable cards", /^Paragraph/]);
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("aria-level", "3");
+  await card.locator(".page-structure__toggle").click();
+  const slots = card.locator("+ [role='group'] > [role=treeitem]");
+  await expect(slots.locator(".page-structure__slot-badge")).toHaveText(["Title", "Body", "Content", "Link"]);
+  const title = slots.filter({ has: page.locator(".page-structure__slot-badge").filter({hasText:/^Title$/}) });
+  await title.locator(".page-structure__label").click();
+  await expect(title).toHaveAttribute("aria-selected", "true");
+  await expect(bar(page).locator('.edit-bar__kind')).toHaveText('Text');
+  await expect(bar(page).getByRole('button',{name:'In the title slot of Project card: select the instance',exact:true})).toBeVisible();
+  await title.press("F2");
+  await expect(tree(page).getByRole('textbox',{name:'Title: Text',exact:true})).toHaveValue('Reusable cards');
+  await tree(page).locator(".page-structure__slot-badge").filter({hasText:/^Body$/}).first().click();
+  await expect(tree(page).getByRole('textbox',{name:'Body: Text',exact:true})).toHaveValue(/^This card/);
+  await expect(page.frameLocator('.native-preview-frame').locator('project-card [slot=title]').first()).toHaveText('Reusable cards');
   await unfold(page, "Section A native browser preview");
   await expect(row(page, /^Image/)).toHaveAttribute("aria-level", "3");
 
@@ -124,7 +141,7 @@ test("a section component names itself, not <main>; formatting inside a line of 
 
   await expect(row(page, "Feature block Slotted feature")).toBeVisible();
   const top = tree(page).locator("[role='treeitem'][aria-level='1']");
-  await expect(top).toHaveText(["Site header", "Main", "Site footer"]);
+  await expect(top.locator(":scope > .page-structure__label")).toHaveText(["Site header", "Main", "Site footer"]);
   // The paragraph is summed up by all its text, bold and link included, with no rows inside.
   await unfold(page, "Section Scroll to verify");
   const paragraph = row(page, /^Paragraph This section adds enough height/);

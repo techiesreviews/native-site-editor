@@ -49,7 +49,7 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
   await expect(frame(page).locator(".cards card-project").filter({ hasText: "New services" }).locator('a[slot="link"]')).toHaveText("Read about New services");
   await expect(frame(page).locator(".cards card-project").filter({ hasText: "New services" })).toContainText("About services.");
   const home = (await storedDraft(page, "index.html"))!.content;
-  expect(home).toMatch(/<div class="cards" data-each="\/work\/ \/articles\/ \/portfolio\/ \/services\/ \/videos\/" data-collection-id="g[0-9a-z]{5}"><template>/);
+  expect(home).toMatch(/<div class="cards" data-each="\/work\/ \/articles\/ \/portfolio\/ \/services\/ \/videos\/" data-collection-id="g[0-9a-z]{5}" data-fields="[a-z0-9_ -]+"><template>/);
   for (const text of ["Cafe · Identity and site · 2025", "A one-page site with a menu the owners change themselves before opening each morning.", 'href="/work/meadow-row-allotments/"', "Read about Harbour Lane Pottery"])
     expect(home.split("</template>")[1]).toContain(text);
   for (const [index, slug] of work.entries()) {
@@ -58,6 +58,11 @@ test("Recent work cards become a five-folder page list, unchanged, in one Undo/R
     for (const line of seo[index].split("\n").filter((line) => /<title>|name="description"|og:description/.test(line))) expect(draft).toContain(line);
   }
   const pageDrafts = await Promise.all(work.map(async (slug) => (await storedDraft(page, `work/${slug}/index.html`))!.content));
+  const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
+  await expect(sort).toBeVisible();
+  const labels = await sort.locator("option").allTextContents();
+  expect(labels).toContain("Card note");
+  expect(labels.some((label) => /^G[0-9a-z]{5}[ -]/.test(label))).toBe(false);
   const components = await storedDrafts(page);
   expect(components.some((draft) => draft.path.startsWith("components/") || draft.path.startsWith("styles/"))).toBe(false);
   await page.locator(".code-editor__undo").first().click();

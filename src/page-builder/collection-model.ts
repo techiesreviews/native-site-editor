@@ -17,11 +17,20 @@ export interface SourceCollection {
   element: SourceElement;
   template: SourceElement;
   spec: CollectionSpec;
+  fields: string[];
 }
 export const MAX_COLLECTION_ITEMS = 500;
 export function attribute(source: string, el: SourceElement, name: string): string | undefined {
   const found = startTagAttribute(source, el.tag, name);
   return found ? decodeHtmlEntities(found.value, true) : undefined;
+}
+/** Explicit custom fields remain known when the last page supplying them leaves. */
+export function declaredCollectionFields(source: string, element: SourceElement): string[] {
+  const value = attribute(source, element, "data-fields");
+  if (value === undefined) return [];
+  const fields = value.split(/[\t\n\f\r ]+/).filter(Boolean);
+  if (fields.some((field) => !fieldName.test(field))) throw new Error("Declare collection fields as space-separated field names.");
+  return [...new Set(fields)];
 }
 export interface CollectionInput { folder?: string; folders?: readonly string[]; sort?: string; filter?: string; limit?: string }
 /** HTML token lists split only on ASCII whitespace; each token remains a canonical URL. */
@@ -56,7 +65,7 @@ export function readCollections(source: string): SourceCollection[] {
       if (el !== template && el.name === "template") throw new Error("Nested templates are not supported in collections.");
     }
     const spec = collectionSpec({ folder, sort: attribute(source, element, "data-sort"), filter: attribute(source, element, "data-filter"), limit: attribute(source, element, "data-limit") });
-    result.push({ element, template, spec });
+    result.push({ element, template, spec, fields: declaredCollectionFields(source, element) });
   }
   return result;
 }
@@ -69,7 +78,7 @@ export function validCollectionRoute(url: string, path: string): boolean {
   } catch { return false; }
 }
 /** Stable route order breaks equal sort values; self and every selected folder index are excluded. */
-export function collectionRecords(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, spec: Omit<CollectionSpec, "folders"> & { folders?: readonly string[] }, self: string): CollectionRecord[] {
+export function collectionRecords(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, spec: Omit<CollectionSpec, "folders"> & { folders?: readonly string[] }, self: string, declared: readonly string[] = []): CollectionRecord[] {
   const folders = collectionFolders(spec);
   const paths = new Set<string>();
   let records = Object.entries(routes).filter(([url, path]) => {
@@ -84,14 +93,14 @@ export function collectionRecords(sources: Record<string, string>, routes: Recor
   if (spec.filter) {
     const at = spec.filter.indexOf("=");
     const field = spec.filter.slice(0, at);
-    if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
+    if (!knownCollectionField(field, knownRecords, declared)) throw new Error(`Unknown collection field: ${field}.`);
     const value = spec.filter.slice(at + 1);
     records = records.filter((record) => ownPageField(record.fields, field) === value);
   }
   if (spec.sort) {
     const descending = spec.sort.startsWith("-");
     const field = descending ? spec.sort.slice(1) : spec.sort;
-    if (!knownCollectionField(field, knownRecords)) throw new Error(`Unknown collection field: ${field}.`);
+    if (!knownCollectionField(field, knownRecords, declared)) throw new Error(`Unknown collection field: ${field}.`);
     records = records.map((record, index) => ({ record, index })).sort((a, b) => {
       const av = ownPageField(a.record.fields, field), bv = ownPageField(b.record.fields, field);
       const comparison = av < bv ? -1 : av > bv ? 1 : 0;
@@ -100,8 +109,8 @@ export function collectionRecords(sources: Record<string, string>, routes: Recor
   }
   return records.slice(0, spec.limit);
 }
-export function knownCollectionField(field: string, records: CollectionRecord[]): boolean {
-  return fieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
+export function knownCollectionField(field: string, records: CollectionRecord[], declared: readonly string[] = []): boolean {
+  return fieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || declared.includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
 }
 
 export function makeGridCollection(source: string, start: number, input: CollectionInput & { template: string }): string {
