@@ -34,7 +34,7 @@ export interface DocumentBakePlan {
 }
 
 const SIDECAR_INVALID = (error: unknown) =>
-  `The editor's page data file ${EDITOR_PAGE_BUILDER_PATH} is not valid (${error instanceof Error ? error.message : String(error)}). Fix it in Code, or delete it to keep the cards as plain HTML.`;
+  `The editor's page data file ${EDITOR_PAGE_BUILDER_PATH} is not valid (${error instanceof Error ? error.message : String(error)}). Fix it in Code; the editor changes no collection until it is valid, and never removes your page data.`;
 
 /** Reads the sidecar or throws a user-facing reason; absence is an empty document. */
 export function readSidecar(text: string | undefined): PageBuilderDocument {
@@ -49,7 +49,7 @@ export function locatePageCollections(source: string, document: PageBuilderDocum
   const records = Object.fromEntries(Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath));
   if (!Object.keys(records).length) return {};
   const found = locateCollections(source, records);
-  if ("error" in found) throw new Error(`The collections on ${pagePath} can no longer be found exactly (${found.error}). Undo the change that moved them, or remove a collection.`);
+  if ("error" in found) throw new Error(`The collections on ${pagePath} can no longer be found exactly (${found.error}). Undo the change that moved them, or open Page settings › Fields and forget the recipe there; its cards stay as they are.`);
   return Object.fromEntries(Object.entries(found.collections).map(([id, located]) => [id, { located, start: located.element.tag.end, end: located.element.close!.start, text: source.slice(located.element.tag.end, located.element.close!.start) }]));
 }
 
@@ -59,7 +59,7 @@ export function documentDrift(sources: Readonly<Record<string, string>>, documen
   for (const pagePath of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
     const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath).map(([id]) => id);
     const source = sources[pagePath];
-    if (source === undefined) { for (const id of ids) drift.push({ id, kind: "missing", reason: `Load ${pagePath} before changing its collection.` }); continue; }
+    if (source === undefined) { for (const id of ids) drift.push({ id, kind: "missing", reason: `${pagePath} is not loaded or no longer exists. If it was moved or deleted, open Page settings › Fields and forget the recipe of “${id}”; its cards are not affected.` }); continue; }
     let located: ReturnType<typeof locatePageCollections>;
     try { located = locatePageCollections(source, document, pagePath); }
     catch (error) { for (const id of ids) drift.push({ id, kind: "missing", reason: (error as Error).message }); continue; }

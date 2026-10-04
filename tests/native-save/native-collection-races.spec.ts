@@ -72,8 +72,8 @@ test("two listings on one page: rebuilding one edited listing never clobbers the
 });
 
 for (const [name, json, reason] of [
-  ["invalid JSON", "{ not json", "The editor's page data file .editor/page-builder.json is not valid (Expected property name or '}' in JSON at position 2 (line 1 column 3)). Fix it in Code, or delete it to keep the cards as plain HTML."],
-  ["a target that is missing", JSON.stringify({ version: 1, pages: {}, collections: { lost: { pagePath: "index.html", target: { path: [9, 9, 9], tag: "section", openingTagFingerprint: '<section class="cards">' }, folders: ["/work/"], sort: "", filter: "", limit: 10, template: "<article>{title}</article>", fields: [], overrides: {} } } }, null, 2) + "\n", "The collections on index.html can no longer be found exactly (Collection target is missing or ambiguous.). Undo the change that moved them, or remove a collection."],
+  ["invalid JSON", "{ not json", "The editor's page data file .editor/page-builder.json is not valid (Expected property name or '}' in JSON at position 2 (line 1 column 3)). Fix it in Code; the editor changes no collection until it is valid, and never removes your page data."],
+  ["a target that is missing", JSON.stringify({ version: 1, pages: {}, collections: { lost: { pagePath: "index.html", target: { path: [9, 9, 9], tag: "section", openingTagFingerprint: '<section class="cards">' }, folders: ["/work/"], sort: "", filter: "", limit: 10, template: "<article>{title}</article>", fields: [], overrides: {} } } }, null, 2) + "\n", "The collections on index.html can no longer be found exactly (Collection target is missing or ambiguous.). Undo the change that moved them, or open Page settings › Fields and forget the recipe there; its cards stay as they are."],
 ] as const) test(`${name} in the editor's JSON refuses collection changes without writes or fallback`, async ({ page, baseURL }) => {
   await seed(page, baseURL, [...bakedSeed(), [SIDECAR, json]]);
   const details = await select(page, "work-list");

@@ -3,6 +3,7 @@ import { readCollections, type SourceCollection } from "./collection-model";
 import type { CollectionPreview } from "./collection-bake";
 import type { SourceElement } from "./component-model";
 import { locatePageCollections, readSidecar } from "./document-collections";
+import { locateCollections, makeCollectionTarget, writePageBuilderDocument } from "./page-builder-document";
 
 /**
  * Cards a collection generates live after its template, inside the listing
@@ -127,4 +128,55 @@ export function documentEditTouches(regions: readonly DocumentRegion[], edits: r
     if (inside) return region;
   }
   return undefined;
+}
+
+/**
+ * What a page edit does to the collections the editor's JSON keeps on that
+ * page. An edit that leaves every grid findable needs nothing. An edit made
+ * only inside a grid's own opening tag (a class, style or attribute change)
+ * keeps the grid where it is in the page, so its stored target is rewritten
+ * from that same element and returned as the JSON to write with the edit.
+ * Anything else that would leave a grid missing or ambiguous (deleting it,
+ * duplicating it, pasting an identical opening tag) is refused with the
+ * reason: a stale position is never taken as proof of which grid is which.
+ */
+export function planDocumentTargetEdit(source: string, path: string, sidecar: string | undefined, edits: readonly { start: number; end: number; text: string }[]): { sidecar?: string } | { error: string } {
+  if (sidecar === undefined || !edits.length) return {};
+  const document = readSidecar(sidecar);
+  const records = Object.fromEntries(Object.entries(document.collections).filter(([, collection]) => collection.pagePath === path));
+  if (!Object.keys(records).length) return {};
+  const before = locatePageCollections(source, document, path);
+  const ordered = [...edits].sort((a, b) => a.start - b.start);
+  for (let index = 1; index < ordered.length; index++) if (ordered[index].start < ordered[index - 1].end) return { error: "Overlapping edits cannot be checked against the page's collections." };
+  let candidate = source;
+  for (const edit of [...ordered].reverse()) candidate = candidate.slice(0, edit.start) + edit.text + candidate.slice(edit.end);
+  if (!("error" in locateCollections(candidate, records))) return {};
+  // Each edit must lie strictly inside one grid's opening tag (after its name, before its closing bracket).
+  const shift = (at: number) => ordered.reduce((delta, edit) => edit.end <= at ? delta + edit.text.length - (edit.end - edit.start) : delta, 0);
+  const changed = new Set<string>();
+  for (const edit of ordered) {
+    const owner = Object.entries(before).find(([, item]) => {
+      const tag = item.located.element.tag;
+      return edit.start > tag.start + 1 + item.located.element.name.length && edit.end < tag.end;
+    });
+    if (!owner) return { error: refusal(path, locateCollections(candidate, records)) };
+    changed.add(owner[0]);
+  }
+  const updated = structuredClone(document);
+  try {
+    for (const id of changed) {
+      const element = before[id].located.element;
+      const target = makeCollectionTarget(candidate, element.start + shift(element.start));
+      if (target.tag !== element.name || JSON.stringify(target.path) !== JSON.stringify(before[id].located.target.path)) return { error: refusal(path) };
+      updated.collections[id] = { ...updated.collections[id], target };
+    }
+  } catch (error) { return { error: refusal(path, { error: (error as Error).message }) }; }
+  const after = locateCollections(candidate, Object.fromEntries(Object.entries(updated.collections).filter(([, collection]) => collection.pagePath === path)));
+  if ("error" in after) return { error: refusal(path, after) };
+  for (const id of changed) if (after.collections[id].element.start !== before[id].located.element.start + shift(before[id].located.element.start)) return { error: refusal(path) };
+  return { sidecar: writePageBuilderDocument(updated, sidecar) };
+}
+function refusal(path: string, found?: { error: string } | object) {
+  const reason = found && "error" in found ? ` (${(found as { error: string }).error})` : "";
+  return `This change would leave a collection on ${path} without one exact grid to fill${reason}, so nothing was changed. Give the grid a unique id first, or keep its cards with “Use manual cards”.`;
 }

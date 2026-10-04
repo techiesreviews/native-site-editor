@@ -6,7 +6,7 @@ import { attribute, collectionSpec, readCollections, validCollectionRoute } from
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
-import { readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
+import { locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
 import { EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
@@ -23,6 +23,13 @@ export interface CollectionsDeps {
   apply(plan: BakePlan | SidecarOrigin, expectedRevision: string, label: string): boolean | Promise<boolean>;
   openPage(path: string): void;
   announce(message: string): void;
+  /** Every file on the branch, loaded or not: tells a page that is gone from one not read yet. */
+  files?(): readonly string[];
+  /**
+   * Removes one collection's recipe from the editor's JSON (pinned at `sidecar`),
+   * keeping the page's cards and all other page data. Resolves to a refusal, if any.
+   */
+  forget?(id: string, sidecar: string): Promise<string | undefined>;
 }
 export interface CollectionsPanel {
   update(): void;
@@ -130,8 +137,9 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     for (const [name, value] of Object.entries(storedPage.fields ?? {})) if (typeof value === "string") jsonFields[name] = value;
     if (typeof storedPage.date === "string" && !Object.hasOwn(htmlFields, "date")) jsonFields.date = storedPage.date;
     if (!Object.hasOwn(htmlFields, "date") && !Object.hasOwn(jsonFields, "date")) jsonFields.date = "";
-    const fields: Record<string, string> = { ...jsonFields, ...htmlFields };
-    const inHtml = (name: string) => Object.hasOwn(htmlFields, name) && name !== "url";
+    // Same precedence as the bake: a JSON custom value stands over the page's own; a JSON date only where the page has none.
+    const fields: Record<string, string> = { ...htmlFields, ...jsonFields };
+    const inHtml = (name: string) => Object.hasOwn(htmlFields, name) && !Object.hasOwn(jsonFields, name) && name !== "url";
     const form = node(options.settings ? "div" : "form", "collections-panel__form");
     const inputs = Object.entries(fields).filter(([name]) => name !== "url" && (!options.settings || !["title", "description", "image"].includes(name))).map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
     const customName = control(form, "New custom field name", "");
@@ -210,7 +218,59 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       block.append(advanced);
       root.append(block);
     }
+    if (!options.grid) appendUnlocatable(saved);
     root.append(status);
+  }
+  /** Custom field names (and an authored date) the editor's JSON keeps for the site's pages: the bake reads them too. */
+  function jsonFieldNames(saved: ReturnType<typeof snapshot>): string[] {
+    try {
+      const pages = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).pages, routed = new Set(Object.values(saved.routes));
+      return Object.entries(pages).filter(([file]) => routed.has(file))
+        .flatMap(([, page]) => [...Object.keys(page.fields ?? {}), ...(typeof page.date === "string" ? ["date"] : [])]);
+    } catch { return []; }
+  }
+  /**
+   * Collections anywhere on the site whose grid cannot be found exactly (or
+   * whose page is gone). Each can be forgotten on its own: only its recipe
+   * leaves the JSON; the cards stay in the page, as do all other page data.
+   */
+  function appendUnlocatable(saved: ReturnType<typeof snapshot>) {
+    const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH];
+    if (sidecar === undefined || !deps.forget) return;
+    let document: PageBuilderDocument;
+    try { document = readSidecar(sidecar); } catch { return; }
+    const files = new Set(deps.files?.() ?? Object.values(saved.routes));
+    const rows: { id: string; page: string; reason: string }[] = [];
+    for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
+      const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === page).map(([id]) => id);
+      const source = saved.sources[page];
+      let reason: string | undefined;
+      if (source === undefined) reason = files.has(page) ? undefined : `${page} no longer exists.`;
+      else try { locatePageCollections(source, document, page); } catch (error) { reason = (error as Error).message; }
+      if (reason) for (const id of ids) rows.push({ id, page, reason });
+    }
+    if (!rows.length) return;
+    const section = node("section", "collections-panel__unlocatable");
+    section.setAttribute("aria-label", "Collections that cannot be found");
+    section.append(node("h3", "", "Collections that cannot be found"),
+      node("p", "", "Their cards are kept in the page. Fix the page in Code, or forget a recipe: its cards stay as they are, and every other page field is kept."));
+    for (const row of rows) {
+      const item = node("div", "collections-panel__collection");
+      const forget = button(`Forget recipe “${row.id}”, keep cards`, async () => {
+        if (applying || destroyed) return;
+        applying = true; forget.disabled = true;
+        let error: string | undefined;
+        try { error = await deps.forget!(row.id, sidecar); }
+        catch (caught) { error = caught instanceof Error ? caught.message : "The recipe could not be forgotten."; }
+        finally { applying = false; }
+        if (destroyed) return;
+        if (error) { forget.disabled = false; report(error); return; }
+        update(); report(`Forgot the recipe of “${row.id}”; its cards stay as they are.`);
+      });
+      item.append(node("h4", "", `“${row.id}” on ${row.page}`), node("p", "", row.reason), forget);
+      section.append(item);
+    }
+    root.append(section);
   }
   function openGrid(path: string, sourceStart: number) {
     if (destroyed) return;
@@ -253,7 +313,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     });
     form.append(sourceGroup);
     const fieldNames = [...new Set(["title", "date", "url", ...(existing?.fields ?? []), ...Object.entries(saved.routes).flatMap(([url, file]) =>
-      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
+      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity))), ...jsonFieldNames(saved)])];
     const namespace = existing?.namespace;
     const fieldLabel = (name: string) => {
       const text = namespace && name.startsWith(`${namespace}-`) ? `Card ${name.slice(namespace.length + 1)}` : name;

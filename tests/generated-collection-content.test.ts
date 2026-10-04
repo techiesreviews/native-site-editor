@@ -50,3 +50,45 @@ test('manual cards keep cards and unknown attributes, drop only the recipe',()=>
  assert.equal(/template|data-each|data-sort|data-limit/.test(manual),false);
  assert.ok(manual.includes('<p>After</p></section>'));
 });
+
+// A JSON collection on a grid with no id: found by its exact opening tag.
+{
+ const { planDocumentTargetEdit } = await import('../src/page-builder/generated-collection-content');
+ const { makeCollectionTarget, writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document');
+ const home = page('Home', '<main><div class="cards"><a>One</a></div><p>Other</p></main>');
+ const grid = home.indexOf('<div class="cards">');
+ const recipe = { pagePath: 'index.html', target: makeCollectionTarget(home, grid), folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<a>{title}</a>', fields: [], overrides: {}, outputFingerprint: '<a>One</a>' };
+ const sidecar = writePageBuilderDocument({ version: 1, pages: { 'index.html': { fields: { mood: 'calm' } } }, collections: { work: recipe, other: { ...recipe, pagePath: 'about/index.html' } } } as never);
+ const classAt = home.indexOf('cards"') + 5;
+ test('a class added to a JSON grid moves its stored target with the edit, keeping everything else', () => {
+  const result = planDocumentTargetEdit(home, 'index.html', sidecar, [{ start: classAt, end: classAt, text: ' wide' }]);
+  assert.ok('sidecar' in result && result.sidecar);
+  const before = readPageBuilderDocument(sidecar), after = readPageBuilderDocument(result.sidecar!);
+  assert.equal(after.collections.work.target.openingTagFingerprint, '<div class="cards wide">');
+  assert.deepEqual(after.collections.work.target.path, before.collections.work.target.path);
+  assert.deepEqual({ ...after.collections.work, target: null }, { ...before.collections.work, target: null });
+  assert.deepEqual(after.collections.other, before.collections.other);
+  assert.deepEqual(after.pages, before.pages);
+ });
+ test('an edit that keeps every grid findable leaves the JSON alone', () => {
+  const at = home.indexOf('Other');
+  assert.deepEqual(planDocumentTargetEdit(home, 'index.html', sidecar, [{ start: at, end: at + 5, text: 'Else' }]), {});
+  assert.deepEqual(planDocumentTargetEdit(home, 'about/index.html', sidecar, [{ start: 0, end: 0, text: '' }]), {});
+ });
+ test('duplicating the grid, pasting an identical opening tag or deleting it refuses with the reason', () => {
+  const end = home.indexOf('<p>');
+  const copy = home.slice(grid, end);
+  for (const edit of [{ start: end, end, text: copy }, { start: end, end, text: '<div class="cards"></div>' }, { start: grid, end, text: '' }]) {
+   const result = planDocumentTargetEdit(home, 'index.html', sidecar, [edit]);
+   assert.ok('error' in result);
+   assert.match(result.error, /^This change would leave a collection on index\.html without one exact grid to fill \(Collection target is missing or ambiguous\.\), so nothing was changed\. Give the grid a unique id first/);
+  }
+ });
+ test('a class edit that would make the grid identical to another element refuses', () => {
+  const twin = page('Home', '<main><div class="cards"><a>One</a></div><div class="wide"></div></main>');
+  const twinSidecar = writePageBuilderDocument({ version: 1, pages: {}, collections: { work: { ...recipe, target: makeCollectionTarget(twin, twin.indexOf('<div class="cards">')) } } } as never);
+  const at = twin.indexOf('"cards"') + 1;
+  const result = planDocumentTargetEdit(twin, 'index.html', twinSidecar, [{ start: at, end: at + 5, text: 'wide' }]);
+  assert.ok('error' in result);
+ });
+}
