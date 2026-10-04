@@ -63,7 +63,21 @@ export interface MasterIdentity { recordId: string; label: string; master: boole
 export interface MasterContext { recordId: string; label: string; htmlPath: string; pagePath: string; masterError?: string }
 export type CopiesUpdateResult = { changed: number; skipped: number } | { error: string };
 
-interface Session { revision: string; recordId: string; label: string; htmlPath: string; pagePath: string; pageSource: string; range: { start: number; end: number } }
+/**
+ * What a master preview needs, read-only: the session it belongs to (an opaque token, the same for
+ * the whole session), the page and its exact bytes, the selected copy's body-relative node and
+ * outer HTML, and the master's path and current source.
+ */
+export interface MasterPreviewInput { session: string; pagePath: string; pageSource: string; node: number[]; basis: string; masterPath: string; masterSource: string }
+
+interface Session {
+  token: string; revision: string; recordId: string; label: string; htmlPath: string;
+  /** The page bytes the session knows (painted at Edit, or as its own Update left them) and the copy's range there. */
+  pagePath: string; pageSource: string; range: { start: number; end: number };
+  /** The selected copy's link, only when proven (resolved, or created by this Edit). */
+  linkKey?: string;
+}
+let sessions = 0;
 
 const sameSelection = (a: MasterSelection | undefined, b: MasterSelection) => Boolean(a) && a!.path === b.path && a!.paintedSource === b.paintedSource
   && a!.range.start === b.range.start && a!.range.end === b.range.end && JSON.stringify(a!.node) === JSON.stringify(b.node);
@@ -91,11 +105,42 @@ function sectionAt(source: string, range: { start: number; end: number }): Sourc
   return undefined;
 }
 
+/** The range of link `key` (to `recordId`) on `page`, resolving every link with `page` given as `pageSource`. */
+function linkRange(snapshot: MasterHostSnapshot, json: string | undefined, page: string, pageSource: string, key: string, recordId: string, override: Record<string, string> = {}): { start: number; end: number } | undefined {
+  if (json === undefined) return undefined;
+  try {
+    const all = sources(snapshot, Object.keys(readNativeSectionLinks(json)));
+    const resolved = resolveNativeSectionLinks({ documentText: json, sources: { ...all, ...override, [page]: pageSource } });
+    if ("error" in resolved) return undefined;
+    const found = resolved.links.filter((link) => link.page === page && link.key === key && link.link.recordId === recordId);
+    return found.length === 1 ? { start: found[0].start, end: found[0].end } : undefined;
+  } catch { return undefined; }
+}
+function linkedAt(snapshot: MasterHostSnapshot, json: string | undefined, page: string, pageSource: string, key: string, recordId: string, range: { start: number; end: number }) {
+  const at = linkRange(snapshot, json, page, pageSource, key, recordId);
+  return Boolean(at) && at!.start === range.start && at!.end === range.end;
+}
+/** Element-child indexes from `<body>` to the ordinary section at exactly `range`; undefined otherwise. */
+function bodyNode(source: string, range: { start: number; end: number }): number[] | undefined {
+  const element = sectionAt(source, range);
+  if (!element) return undefined;
+  const node: number[] = [];
+  let at: SourceElement = element;
+  while (at.parent && at.parent.name.toLowerCase() !== "body") {
+    const siblings = at.parent.children.filter((child): child is SourceElement => child.type === "element");
+    node.unshift(siblings.indexOf(at));
+    at = at.parent;
+  }
+  if (!at.parent) return undefined;
+  node.unshift(at.parent.children.filter((child): child is SourceElement => child.type === "element").indexOf(at));
+  return node.every((index) => index >= 0) ? node : undefined;
+}
+
 export function createNativeSectionMasterController(host: MasterControllerHost) {
   let session: Session | undefined;
 
   /** The saved section a whole selected section belongs to: its link, else its one matching rootClass. */
-  function recordFor(selection: MasterSelection, snapshot: MasterHostSnapshot): { id: string; entry: StaticSectionEntry; linked: boolean } | undefined {
+  function recordFor(selection: MasterSelection, snapshot: MasterHostSnapshot): { id: string; entry: StaticSectionEntry; linked: boolean; key?: string } | undefined {
     const json = snapshot.source(EDITOR_PAGE_BUILDER_PATH);
     if (json === undefined || snapshot.source(selection.path) !== selection.paintedSource) return undefined;
     const element = sectionAt(selection.paintedSource, selection.range);
@@ -107,7 +152,7 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
     const resolved = resolveNativeSectionLinks({ documentText: json, sources: sources(snapshot, Object.keys(links)) });
     if ("error" in resolved) return undefined;
     const own = resolved.links.filter((link) => link.page === selection.path && link.start === element.start && link.end === element.end && Object.hasOwn(catalog, link.link.recordId));
-    if (own.length === 1) return { id: own[0].link.recordId, entry: catalog[own[0].link.recordId], linked: true };
+    if (own.length === 1) return { id: own[0].link.recordId, entry: catalog[own[0].link.recordId], linked: true, key: own[0].key };
     if (own.length > 1) return undefined;
     const classes = new Set((attribute(selection.paintedSource, element, "class") ?? "").split(/[\t\n\f\r ]+/).filter(Boolean).map((name) => name.toLowerCase()));
     const matches = Object.entries(catalog).filter(([, entry]) => classes.has(entry.rootClass.toLowerCase()));
@@ -132,6 +177,7 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
     if (!found) { host.announce("Select the whole saved section to edit its master."); return; }
     const json = start.source(EDITOR_PAGE_BUILDER_PATH)!;
     let htmlPath = (found.entry as StaticSectionMasterEntry).htmlPath;
+    let linkKey = found.key;
     if (htmlPath === undefined) {
       const made = planMakeSectionMaster({ documentText: json, files: start.files, id: found.id });
       if ("error" in made) { host.announce(made.error); return; }
@@ -146,6 +192,7 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
       if (!found.linked && core !== undefined && selection.paintedSource.slice(selection.range.start, selection.range.end) === core) {
         const link = planNativeSectionLink({ documentText: operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!, files: start.files, pagePath: selection.path, pageSource: selection.paintedSource, range: selection.range, record });
         if (!("error" in link)) {
+          linkKey = link.key;
           operation.edits.set(EDITOR_PAGE_BUILDER_PATH, link.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!);
           operation.expectedSources.set(selection.path, selection.paintedSource);
         }
@@ -160,7 +207,9 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
     if (after.revision !== start.revision || !stillSelected(after, selection)) { host.announce("The selection or page changed. Select the section again."); return; }
     const entry = (() => { try { return readSectionCatalog(after.source(EDITOR_PAGE_BUILDER_PATH))[found.id]; } catch { return undefined; } })();
     if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== htmlPath || !after.files.includes(htmlPath)) { host.announce("The saved section's master could not be found."); return; }
-    session = { revision: start.revision, recordId: found.id, label: entry.label, htmlPath, pagePath: selection.path, pageSource: selection.paintedSource, range: { ...selection.range } };
+    // The key stays only if this copy is still exactly that link's copy now.
+    if (linkKey !== undefined && !linkedAt(after, after.source(EDITOR_PAGE_BUILDER_PATH), selection.path, selection.paintedSource, linkKey, found.id, selection.range)) linkKey = undefined;
+    session = { token: `master-session-${++sessions}`, revision: start.revision, recordId: found.id, label: entry.label, htmlPath, pagePath: selection.path, pageSource: selection.paintedSource, range: { ...selection.range }, ...(linkKey !== undefined ? { linkKey } : {}) };
     const opening = session;
     const opened = await host.open(htmlPath, opening.revision);
     if (session !== opening) return;
@@ -181,6 +230,27 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
       } catch { return undefined; }
     },
     edit,
+    /**
+     * The input of a master preview, only while it is exact: same revision, the master open and
+     * valid, the page loaded with the very bytes the session knows (painted at Edit, or as its own
+     * verified Update left them), and the copy at its range an ordinary section under `<body>`.
+     * Any other page change is not adopted. Returns fresh objects.
+     */
+    previewInput(): MasterPreviewInput | undefined {
+      const current = session;
+      if (!current) return undefined;
+      const snapshot = host.snapshot();
+      if (snapshot.revision !== current.revision || snapshot.currentPath !== current.htmlPath) return undefined;
+      try {
+        const entry = readSectionCatalog(snapshot.source(EDITOR_PAGE_BUILDER_PATH))[current.recordId];
+        if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== current.htmlPath) return undefined;
+        const master = masterRecord(snapshot, entry);
+        if (snapshot.source(current.pagePath) !== current.pageSource) return undefined;
+        const node = bodyNode(current.pageSource, current.range);
+        if (!node) return undefined;
+        return { session: current.token, pagePath: current.pagePath, pageSource: current.pageSource, node, basis: current.pageSource.slice(current.range.start, current.range.end), masterPath: current.htmlPath, masterSource: master.html };
+      } catch { return undefined; }
+    },
     /** The open master session for a banner, or undefined. `masterError` when the master can't be read now. */
     context(): MasterContext | undefined {
       if (!session) return undefined;
@@ -232,6 +302,16 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
         if (!plan.operation) { host.announce(`No copies to update; ${plan.diverged.length} customised.`); return { changed: 0, skipped: plan.diverged.length }; }
         const current = () => session === active && host.snapshot().revision === active.revision;
         if (!await host.apply(plan.operation, plan.expectedFiles, current)) return fail("The pages or the master changed. Nothing was updated.");
+        // The session follows its page only through this operation's own, verified output: every
+        // written file holds exactly the planned text, and the selected copy is found again by its
+        // link. Anything else keeps the old page bytes, so the mapping is not adopted.
+        const after = host.snapshot();
+        const exact = after.revision === active.revision && [...plan.operation.edits].every(([path, text]) => after.source(path) === text);
+        const newPage = plan.operation.edits.get(active.pagePath);
+        if (exact && session === active && newPage !== undefined && active.linkKey !== undefined && active.pageSource === plan.operation.expectedSources.get(active.pagePath)) {
+          const range = linkRange(after, plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH), active.pagePath, newPage, active.linkKey, active.recordId, Object.fromEntries(plan.operation.edits));
+          if (range) session = { ...active, pageSource: newPage, range };
+        }
         host.announce(`Updated ${plan.updated.length}; ${plan.diverged.length} customised left as they are.`);
         return { changed: plan.updated.length, skipped: plan.diverged.length };
       } catch (error) {

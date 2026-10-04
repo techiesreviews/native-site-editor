@@ -258,3 +258,114 @@ test("Update copies awaits its operation and reports nothing changed when it is 
   assert.deepEqual(done, { changed: 1, skipped: 0 });
   assert.equal(state.files["index.html"], page(`<section class="intro"><h2>Newer</h2></section>`));
 });
+
+// --- The master preview input: exact, read-only, and following only the session's own update. ---
+const copyA = `<section class="intro" id="a"><h2>Hello</h2></section>`;
+const copyB = `<section class="intro" id="b"><h2>Hello</h2></section>`;
+const masterJson = (links: Record<string, unknown>) => JSON.stringify({
+  version: 1, pages: { "index.html": { sections: links } }, collections: {},
+  reusableSections: { version: 2, records: { intro: { id: "intro", label: "Intro", rootClass: "intro", stylesheetPath: "styles/sections.css", css: "", htmlPath: masterPath } } },
+});
+const linkTo = (id: string, basis: string) => ({ kind: "native-section", recordId: "intro", basis, target: { authoredId: id, path: [1], tag: "section", openingTagFingerprint: `<section class="intro" id="${id}">` } });
+// After Edit, Code shows the master (as the editor does when it opens it).
+async function openMaster(files: Record<string, string>, html: string) {
+  const made = makeHost(files);
+  const host = made.host as unknown as { open: (path: string, revision: string) => Promise<boolean> };
+  const open = host.open.bind(made.host);
+  host.open = async (path, revision) => { const ok = await open(path, revision); if (ok) made.state.currentPath = path; return ok; };
+  await made.controller.edit(select(made.state.files, "index.html", html, made.state));
+  return made;
+}
+
+test("previewInput: one token for the session, exact page bytes and body node, fresh objects; master typing keeps the token", async () => {
+  const master = `<section class="intro"><h2>Hello</h2></section>`;
+  const home = page(copyA + copyB);
+  const { state, controller } = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", master), b: linkTo("b", master) }), [masterPath]: master }, copyB);
+  const input = controller.previewInput()!;
+  assert.equal(input.pagePath, "index.html");
+  assert.equal(input.pageSource, home);
+  assert.deepEqual(input.node, [0, 1]);
+  assert.equal(input.basis, copyB);
+  assert.equal(input.masterPath, masterPath);
+  assert.equal(input.masterSource, master);
+  input.node.push(9);
+  assert.deepEqual(controller.previewInput()!.node, [0, 1]);
+  state.files[masterPath] = `<section class="intro"><h2>Typed</h2></section>`;
+  const typed = controller.previewInput()!;
+  assert.equal(typed.session, input.session);
+  assert.equal(typed.masterSource, state.files[masterPath]);
+  // Not on the master, an invalid master, another revision: nothing.
+  state.currentPath = "index.html";
+  assert.equal(controller.previewInput(), undefined);
+  state.currentPath = masterPath;
+  state.files[masterPath] = "<div>no</div>";
+  assert.equal(controller.previewInput(), undefined);
+  state.files[masterPath] = master;
+  assert.ok(controller.previewInput());
+  state.revision = "r2";
+  assert.equal(controller.previewInput(), undefined);
+});
+
+test("after its own Update the session follows the selected copy by its link; Done selects its new range; Undo is not adopted", async () => {
+  const old = `<section class="intro"><h2>Hello</h2></section>`;
+  const a = `<section class="intro" id="a"><h2>Hello</h2></section>`;
+  const b = `<section class="intro" id="b"><h2>Mine</h2></section>`;
+  const home = page(a + b);
+  const { state, controller } = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", a), b: linkTo("b", old) }), [masterPath]: old }, b);
+  // The master grows; copy a (unchanged) follows and gets longer; copy b (customised) stays.
+  state.files[masterPath] = `<section class="intro" id="a"><h2>Hello, a much longer heading</h2></section>`;
+  const before = controller.previewInput()!;
+  assert.deepEqual(await controller.updateCopies(), { changed: 1, skipped: 1 });
+  const after = controller.previewInput()!;
+  assert.equal(after.session, before.session);
+  assert.notEqual(after.pageSource, home);
+  assert.equal(after.basis, b);
+  assert.deepEqual(after.node, [0, 1]);
+  const start = after.pageSource.indexOf(b);
+  await controller.done();
+  assert.deepEqual(state.selected.at(-1), `index.html@${start}`);
+  // Undo of that update elsewhere: the bytes the session knew are gone; nothing is adopted.
+  const again = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", a), b: linkTo("b", old) }), [masterPath]: old }, b);
+  again.state.files[masterPath] = `<section class="intro" id="a"><h2>Longer</h2></section>`;
+  await again.controller.updateCopies();
+  assert.ok(again.controller.previewInput());
+  again.state.files["index.html"] = home;
+  assert.equal(again.controller.previewInput(), undefined);
+});
+
+test("an unlinked selected copy is not followed once the page changes; Done still exits", async () => {
+  const master = `<section class="intro"><h2>Hello</h2></section>`;
+  const a = `<section class="intro" id="a"><h2>Hello</h2></section>`;
+  const mine = `<section class="intro" id="mine"><h2>Mine</h2></section>`;
+  const home = page(a + mine);
+  const { state, controller } = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", a) }), [masterPath]: master }, mine);
+  assert.ok(controller.previewInput());
+  state.files[masterPath] = `<section class="intro" id="a"><h2>Hello, longer</h2></section>`;
+  assert.deepEqual(await controller.updateCopies(), { changed: 1, skipped: 0 });
+  assert.equal(controller.previewInput(), undefined);
+  await controller.done();
+  assert.deepEqual(state.selected, []);
+  assert.match(state.said.at(-1)!, /Select the section again/);
+});
+
+test("an Update the host reports applied but with other bytes does not move the session", async () => {
+  const a = `<section class="intro" id="a"><h2>Hello</h2></section>`;
+  const home = page(a);
+  const { state, controller } = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", a) }), [masterPath]: a }, a);
+  state.files[masterPath] = `<section class="intro" id="a"><h2>New</h2></section>`;
+  // The page ends up with someone else's bytes right after the write.
+  state.afterApply = () => { state.files["index.html"] = page(`<section class="intro" id="a"><h2>Foreign</h2></section>`); };
+  await controller.updateCopies();
+  assert.equal(controller.previewInput(), undefined);
+});
+
+test("Done after the session's own Update re-selects the linked copy at its moved range", async () => {
+  const a = `<section class="intro" id="a"><h2>Hello</h2></section>`;
+  const b = `<section class="intro" id="b"><h2>Hello</h2></section>`;
+  const home = page(a + b);
+  const { state, controller } = await openMaster({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", a), b: linkTo("b", `<section class="intro"><h2>Old</h2></section>`) }), [masterPath]: a }, b);
+  state.files[masterPath] = `<section class="intro" id="a"><h2>Hello, now longer</h2></section>`;
+  assert.deepEqual(await controller.updateCopies(), { changed: 1, skipped: 1 });
+  await controller.done();
+  assert.deepEqual(state.selected, [`index.html@${state.files["index.html"].indexOf(b)}`]);
+});

@@ -108,6 +108,15 @@ It returns:
   when the master can't be read now), for a banner.
 - `done()`: back to the page; re-selects the copy only when the page bytes are unchanged; never
   writes. A changed revision opens nothing.
+- `previewInput()`: for a master preview, read-only and only while exact:
+  `{ session, pagePath, pageSource, node, basis, masterPath, masterSource }`. `session` is an opaque
+  token that stays the same for the whole session (typing in the master changes only
+  `masterSource`); `node` is the copy's element path from `<body>`; `basis` its outer HTML. It is
+  undefined unless the master is the open file and valid, the revision is the session's, and the
+  page holds exactly the bytes the session knows. Those are the painted bytes at Edit, or the bytes
+  the session's own Update wrote, verified file by file after the write, with the selected copy found
+  again by its link key. A copy with no proven link is not followed once its page changes; Undo or
+  any other change is never adopted. Done re-selects the copy at that range.
 - `updateCopies()` (async): explicit; plans with `planNativeSectionCopiesUpdate`, pinned to the loaded
   master, and applies one operation. Returns `{ changed, skipped }` or `{ error }`.
 
