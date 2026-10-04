@@ -581,8 +581,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const suggestions = node("datalist"); suggestions.id = `collections-folders-${token}`;
     for (const url of discovered) { const option = node("option"); option.value = url; suggestions.append(option); }
     folderInput.setAttribute("list", suggestions.id);
-    const folderProblem = node("span", "collections-panel__refusal");
-    const addFolder = button("Add folder", () => {
+    const folderProblem = node("span", "collections-panel__refusal collections-panel__source-problem");
+    const add = () => {
       const raw = folderInput.value.trim();
       const url = raw && !raw.endsWith("/") ? `${raw}/` : raw;
       if (!/^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)+$/.test(url)) { folderProblem.textContent = "Type a folder like /work/."; return; }
@@ -592,6 +592,12 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       if (found) found.checked = true; else addCheck(url, true);
       folderInput.value = "";
       refresh();
+    };
+    const addFolder = button("Add folder", add);
+    // Enter adds the typed folder; it must never submit the form (Convert). Escape keeps the text.
+    folderInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); add(); }
+      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); }
     });
     adder.append(folderInput, suggestions, addFolder, folderProblem);
     sourceGroup.append(adder);

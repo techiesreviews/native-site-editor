@@ -14,7 +14,12 @@ register("data:text/javascript," + encodeURIComponent(`
     return next(specifier, context);
   }`));
 
-class FakeEvent { defaultPrevented = false; target: FakeNode | undefined; constructor(public type: string) {} preventDefault() { this.defaultPrevented = true; } }
+class FakeEvent {
+  defaultPrevented = false; propagationStopped = false; target: FakeNode | undefined;
+  constructor(public type: string, public key = "") {}
+  preventDefault() { this.defaultPrevented = true; }
+  stopPropagation() { this.propagationStopped = true; }
+}
 class FakeNode {
   parentElement: FakeElement | null = null;
   childNodes: FakeNode[] = [];
@@ -43,10 +48,22 @@ class FakeElement extends FakeNode {
   addEventListener(type: string, listener: (event: FakeEvent) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
   dispatchEvent(event: FakeEvent) {
     event.target ??= this;
-    for (let at: FakeElement | null = this; at; at = at.parentElement) for (const listener of at.listeners.get(event.type) ?? []) listener(event);
+    for (let at: FakeElement | null = this; at && !event.propagationStopped; at = at.parentElement) for (const listener of at.listeners.get(event.type) ?? []) listener(event);
     return !event.defaultPrevented;
   }
   click() { this.dispatchEvent(new FakeEvent("click")); if (this.localName === "button" && this.type === "submit") this.closest("form")?.dispatchEvent(new FakeEvent("submit")); }
+  /**
+   * A key pressed in this element, with the browser's implicit submission: Enter
+   * in a text field submits its form through the form's first enabled submit
+   * button, unless the keydown was prevented.
+   */
+  press(key: string) {
+    const allowed = this.dispatchEvent(new FakeEvent("keydown", key));
+    const form = this.closest("form");
+    const submitter = form?.all().find((el) => el.localName === "button" && el.type === "submit");
+    if (allowed && key === "Enter" && this instanceof FakeInput && this.type === "text" && form && submitter && !submitter.disabled) form.dispatchEvent(new FakeEvent("submit"));
+    return allowed;
+  }
   closest(name: string): FakeElement | null { for (let at: FakeElement | null = this; at; at = at.parentElement) if (at.localName === name) return at; return null; }
   all(): FakeElement[] { return this.children.flatMap((child) => [child, ...child.all()]); }
   querySelectorAll(selector: string) { const names = selector.split(",").map((name) => name.trim()); return this.all().filter((el) => names.includes(el.localName)); }
@@ -165,6 +182,47 @@ test("cards from mixed folders select every current folder; other local folders 
   await view.convert();
   assert.equal(view.applied.length, 1);
   assert.equal(view.applied[0].plan.expectedSources.get("videos/epsilon/index.html"), site.sources["videos/epsilon/index.html"]);
+});
+
+test("Enter in the folder field adds the folder and never converts; Escape keeps the typed text", async () => {
+  const site = mixed(twoCards);
+  const view = open(site);
+  const checked = () => view.checks().filter((input) => input.checked).map((input) => input.value).sort();
+  const typed = view.root.all().find((el) => el.getAttribute("aria-label") === "Add a folder")!;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  // Convert is enabled, so a plain Enter would submit the form.
+  assert.equal(view.find("button", "Convert")!.disabled, false);
+  typed.value = "/videos/";
+  assert.equal(typed.press("Enter"), false);
+  await settle();
+  assert.equal(view.applied.length, 0);
+  assert.deepEqual(checked(), ["/services/", "/videos/", "/work/"]);
+  assert.equal(typed.value, "");
+  assert.match(view.status(), /^3 pages will show/);
+  // Invalid, empty, unknown and already-listed folders: inline message or no change, never a submit.
+  for (const [text, message] of [["videos", /Type a folder like \/work\//], ["", /Type a folder like \/work\//], ["/nope/", /\/nope\/ has no pages/], ["/work/", undefined]] as const) {
+    typed.value = text;
+    assert.equal(typed.press("Enter"), false);
+    await settle();
+    assert.equal(view.applied.length, 0, text);
+    if (message) assert.match(view.root.textContent, message);
+  }
+  assert.deepEqual(checked(), ["/services/", "/videos/", "/work/"]);
+  // Escape neither submits nor clears what was typed.
+  typed.value = "/portfolio/";
+  assert.equal(typed.press("Escape"), false);
+  await settle();
+  assert.equal(typed.value, "/portfolio/");
+  assert.equal(view.applied.length, 0);
+  // The Add folder button does the same as Enter.
+  view.find("button", "Add folder")!.click();
+  assert.deepEqual(checked(), ["/portfolio/", "/services/", "/videos/", "/work/"]);
+  assert.equal(view.applied.length, 0);
+  // Only an explicit Convert applies, with the typed folders included.
+  await view.convert();
+  assert.equal(view.applied.length, 1);
+  assert.equal(view.applied[0].plan.expectedSources.get("portfolio/gamma/index.html"), site.sources["portfolio/gamma/index.html"]);
+  assert.match(view.applied[0].plan.edits.get("index.html"), /Read about Epsilon[\s\S]*Read about Gamma|Read about Gamma[\s\S]*Read about Epsilon/);
 });
 
 test("an existing page data file is edited, not created", async () => {

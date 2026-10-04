@@ -99,7 +99,9 @@ before users can reach it.
 
 - Every folder a current card lives in starts selected; any other folder
   with pages on the site can be checked or typed into the small "Add
-  folder" field, which suggests the site's folders.
+  folder" field, which suggests the site's folders. Enter in that field
+  adds the folder (as the button does) and never submits the form; Escape
+  keeps the typed text.
 - Refusals are shown inline with the model's reason, and nothing is
   applied. The panel reports how many pages will show, that all current
   cards stay as they are, and which card text is kept in the editor's page
