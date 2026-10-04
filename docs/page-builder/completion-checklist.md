@@ -69,7 +69,7 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 
 - [x] Reveal a newly added section below the sticky site header. Centered Add is independently reviewed and integrated at4748c6c; root actual23PASS1SKIP, default22 and native JS-off1 pass. Explicit Add before/after selection is independently reviewed and integrated atddda44e; root actual Save11/11 passes. Tall-section proof and startup diagnosis remain separate gaps.
 
-- [ ] Connect page fields to deletable editor JSON and migrate legacy `field:` metadata safely. Claude's pure planner through `469675b` is independently approved and integrated through `900ca3c`; root954/954 units pass. Encoded malformed tags refuse safely. F owns the isolated host migration, currently unmerged. New custom fields already use editor JSON through Page Settings. Legacy HTML field migration is not host-wired; it must preserve both JSON-recipe and legacy HTML-recipe card values.
+- [x] Connect page fields to deletable editor JSON and migrate legacy `field:` metadata safely. Claude's pure planner through `469675b` is independently approved and integrated through `900ca3c`; root954/954 units pass. Encoded malformed tags refuse safely. F owns the isolated host migration, currently unmerged. New custom fields already use editor JSON through Page Settings. Host migration is independently approved and integrated through971638d; root964/964units, default42 and actual migration9 plus JSON/card regressions pass. Both JSON and legacy recipe values are preserved; bounded hardening and conflict UI polish remain in F.
 
 - [ ] Move component/section > element into a compact label above editing controls. Section label retains drag/move and matching-purple faded Edit on hover/focus; descendant label keeps page-instance editing. Keep all existing section actions and source guards.
 - [ ] Complete combined Style content/dock review and real-starter screenshots. Dock is integrated9a6fe75 with root29/29 resize browsers; content e81dadd has an independent approval with ARIA/raw-variable nits still to assess.
@@ -85,3 +85,7 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 - [ ] Fit the edit bar controls panel to its actual content width. Keep the label above it; prevent transparent label space blocking page clicks and long labels wrapping over controls. Lex confirms the empty strip in child-light.png must go.
 
 - [ ] Make the component > element label one connected piece, visually joined to its controls, preserving above-controls placement and matching-purple hover Edit. H owns this with the content-width correction.
+
+- [ ] Finish remaining field-migration hardening and compact conflict UI. Initial reviewed host is integrated971638d; F owns default pins, unread-preview context and all-record field discovery polish.
+- [ ] Close four nonblocking Style polish findings after the integrated content changes5546c68: context-menu notice, live announcements, meaningful prior Undo history and dead CSS declarations. Core root66/66/check/build pass.
+- [ ] Keep the edit-bar label clear of the sticky header at the top of the page. Connected/content-width candidate afcc088 has actual5/default128 passing but is not integrated until independent review.
