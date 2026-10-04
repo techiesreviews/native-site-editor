@@ -120,6 +120,8 @@ const iconNames: Record<IconName, PhosphorName> = {
   ask: "sparkle",
 };
 
+const arrangeIcons = new Set<IconName>(["up", "down", "left", "right", "add", "duplicate", "remove"]);
+
 function icon(name: IconName) {
   return phosphorIcon(iconNames[name], 16, "edit-bar__icon");
 }
@@ -843,7 +845,21 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.title = model.context.title;
       bar.prepend(chip);
     }
+    // Controls fall into groups (name, style, content, arrange) with a thin
+    // rule between neighbours, so the bar reads as a few clusters, not a row.
+    let group = "name";
+    const groupOf = (control: EditBarControl) =>
+      control.kind === "select" ? "style"
+      : control.kind === "button" && control.icon && arrangeIcons.has(control.icon) ? "arrange"
+      : "content";
     for (const control of model.controls) {
+      const next = groupOf(control);
+      if (next !== group) {
+        const rule = node("span", "edit-bar__rule");
+        rule.setAttribute("aria-hidden", "true");
+        bar.append(rule);
+        group = next;
+      }
       if (control.kind === "button") {
         const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
         if (control.icon) {
