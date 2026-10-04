@@ -88,3 +88,27 @@ again otherwise. The host owns how it reads the snapshot and its revision.
 - A new card whose page gives no value for a part without a fallback (a
   card note, say) omits that element, leaving its indentation as a blank
   line.
+
+## Collection settings panel
+
+`src/components/collections-panel.ts` opens a selected grid of ordinary
+cards in the existing inline collection settings, after the custom-element
+card branch (`openManualGrid`), which is unchanged. The host still has to
+hand the panel such a grid (`openGrid(path, start)` or the `grid` option)
+before users can reach it.
+
+- Every folder a current card lives in starts selected; any other folder
+  with pages on the site can be checked or typed into the small "Add
+  folder" field, which suggests the site's folders.
+- Refusals are shown inline with the model's reason, and nothing is
+  applied. The panel reports how many pages will show, that all current
+  cards stay as they are, and which card text is kept in the editor's page
+  data.
+- Convert is the only action that applies. It sends one `SidecarOrigin` to
+  `deps.apply`: the page, and the page data file when it exists, are edits;
+  the page data file is created only when it is absent. `expectedSources`
+  pins every page the plan read and the page data file.
+- The panel needs `deps.files()`, the complete file list; without it, the
+  grid is refused. The snapshot it plans against includes the file list,
+  routes, site name and revision, and Convert refuses without writing if
+  any of them, or any source, changed since the panel opened.

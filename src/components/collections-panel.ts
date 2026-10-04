@@ -4,6 +4,7 @@ import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
 import { attribute, collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
+import { isStaticCardGrid, planStaticCardConversion, readStaticCardGrid } from "../page-builder/native-static-grid-collection";
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
 import { bakePageData, locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
@@ -64,11 +65,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   const stamp = (form: HTMLElement) => JSON.stringify([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")].map(input => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
   const dirty = () => Boolean(activeForm && stamp(activeForm) !== cleanStamp);
   const track = (form: HTMLElement, saved: ReturnType<typeof snapshot>) => { activeForm = form; activeSnapshot = saved; cleanStamp = stamp(form); };
-  const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision(), page: deps.page() });
+  const fileList = () => deps.files ? [...deps.files()].sort() : undefined;
+  const snapshot = () => ({ sources: { ...deps.sources() }, routes: { ...deps.routes() }, identity: { ...deps.identity() }, revision: deps.revision(), page: deps.page(), files: fileList() });
   // Each dependency is read once per check: the host builds them from the whole file graph.
   const current = (saved: ReturnType<typeof snapshot>) => {
     if (saved.page !== deps.page() || saved.revision !== deps.revision()) return false;
     if (JSON.stringify(saved.routes) !== JSON.stringify(deps.routes()) || JSON.stringify(saved.identity) !== JSON.stringify(deps.identity())) return false;
+    if (JSON.stringify(saved.files) !== JSON.stringify(fileList())) return false;
     const sources = deps.sources();
     return Object.keys(saved.sources).length === Object.keys(sources).length && Object.entries(saved.sources).every(([path, source]) => sources[path] === source);
   };
@@ -92,8 +95,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     }
   };
   /** Plans a sidecar change against the saved graph, exactly as the host will: cards and JSON in one step. */
-  function previewSidecar(saved: ReturnType<typeof snapshot>, origin: SidecarOrigin, path: string): DocumentCollectionPreview {
-    const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files: Object.keys(saved.sources), revision: saved.revision, identity: saved.identity,
+  function previewSidecar(saved: ReturnType<typeof snapshot>, origin: SidecarOrigin, path: string, files: readonly string[] = Object.keys(saved.sources)): DocumentCollectionPreview {
+    const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files, revision: saved.revision, identity: saved.identity,
       origin: { ...origin, done: "", undone: "" } });
     if ("error" in planned) throw new Error(planned.error);
     const preview = planned.documentCollections.find((item) => item.path === path);
@@ -408,6 +411,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
     activeGrid = { path, start: sourceStart };
     if (!existing && isManualCardGrid(source, el)) { openManualGrid(path, sourceStart, saved); return; }
+    if (!existing && isStaticCardGrid(source, el)) { openStaticGrid(path, sourceStart, saved); return; }
     root.replaceChildren(node("h2", "", existing ? "Edit collection" : "Make this grid a collection"), node("p", "collections-panel__scope", "Choose which pages appear in this grid."));
     const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
     // Parent folders need no index page of their own. Keep route order stable.
@@ -528,6 +532,94 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
         previewSidecar(saved, plan, path);
       } catch (error) { plan = { error: error instanceof Error ? error.message : "The pages could not be chosen." }; result.textContent = `${plan.error} Nothing will change.`; return; }
       result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page and the editor's page data as one undo step.`;
+      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept in the editor's page data; the pages' own titles, descriptions and SEO stay as they are.`));
+      apply.disabled = false;
+    };
+    form.addEventListener("change", refresh);
+    form.append(sourceGroup, result, kept, apply, button("Cancel", () => { activeForm = undefined; update(); }));
+    form.addEventListener("submit", (event) => { event.preventDefault(); void submit(saved, plan, "Grid now shows pages from folders"); });
+    root.append(form, status); refresh(); track(form, saved);
+  }
+  /**
+   * Ordinary HTML cards (an <article> grid, say): every current card stays
+   * byte for byte, or nothing changes. The site keeps plain HTML; the recipe
+   * and per-card text live in the editor's JSON only.
+   */
+  function openStaticGrid(path: string, sourceStart: number, saved: ReturnType<typeof snapshot>) {
+    const source = saved.sources[path];
+    const form = node("form", "collections-panel__form");
+    root.replaceChildren(node("h2", "", "Choose pages for this grid"));
+    const refuse = (reason: string) => root.append(node("p", "collections-panel__scope", "These cards can't be turned into a page list yet, so nothing was changed."), node("p", "collections-panel__refusal", reason), status);
+    const files = saved.files;
+    if (!files) { refuse("The editor needs the site's complete file list to keep these cards exactly. Reload the site and try again."); return; }
+    const grid = readStaticCardGrid(source, sourceStart);
+    if ("error" in grid) { refuse(grid.error); return; }
+    root.append(node("p", "collections-panel__scope", `Show pages from folders here instead of ${grid.cards.length} hand-written cards. Each card stays exactly as it is; other pages use their own title and description.`));
+    const token = newCollectionToken(saved.sources);
+    const urls = Object.entries(saved.routes).filter(([url, file]) => validCollectionRoute(url, file)).map(([url]) => url);
+    const parents = (url: string) => {
+      const segments = url.slice(1).split("/");
+      return segments.slice(0, -1).map((_, index) => `/${segments.slice(0, index + 1).join("/")}/`)
+        .filter((folder) => folder !== url && /^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)+$/.test(folder));
+    };
+    const discovered = [...new Set(urls.flatMap(parents))];
+    // Every folder a current card lives in starts selected, so no card is dropped.
+    const selected = [...new Set(grid.cards.flatMap((card) => Object.hasOwn(saved.routes, card.href) ? parents(card.href).slice(-1) : []))];
+    const sourceGroup = node("fieldset", "collections-panel__sources");
+    sourceGroup.append(node("legend", "", "Pages from folders"));
+    const checks: HTMLInputElement[] = [];
+    const addCheck = (url: string, checked: boolean) => {
+      const label = node("label", "collections-panel__source");
+      const input = node("input"); input.type = "checkbox"; input.value = url; input.checked = checked;
+      label.append(input, document.createTextNode(url)); sourceGroup.insertBefore(label, adder);
+      checks.push(input);
+    };
+    // A folder not listed yet: typed inline, suggested from the site's folders.
+    const adder = node("span", "collections-panel__source-add");
+    const folderInput = node("input"); folderInput.type = "text"; folderInput.placeholder = "/folder/";
+    folderInput.setAttribute("aria-label", "Add a folder");
+    const suggestions = node("datalist"); suggestions.id = `collections-folders-${token}`;
+    for (const url of discovered) { const option = node("option"); option.value = url; suggestions.append(option); }
+    folderInput.setAttribute("list", suggestions.id);
+    const folderProblem = node("span", "collections-panel__refusal");
+    const addFolder = button("Add folder", () => {
+      const raw = folderInput.value.trim();
+      const url = raw && !raw.endsWith("/") ? `${raw}/` : raw;
+      if (!/^\/(?:[A-Za-z0-9][A-Za-z0-9_.-]*\/)+$/.test(url)) { folderProblem.textContent = "Type a folder like /work/."; return; }
+      if (!discovered.includes(url)) { folderProblem.textContent = `${url} has no pages on this site.`; return; }
+      folderProblem.textContent = "";
+      const found = checks.find((input) => input.value === url);
+      if (found) found.checked = true; else addCheck(url, true);
+      folderInput.value = "";
+      refresh();
+    });
+    adder.append(folderInput, suggestions, addFolder, folderProblem);
+    sourceGroup.append(adder);
+    for (const url of [...new Set([...selected, ...discovered])]) addCheck(url, selected.includes(url));
+    const result = node("p"); result.setAttribute("role", "status");
+    const kept = node("ul", "collections-panel__kept");
+    const apply = node("button", "button primary", "Convert"); apply.type = "submit";
+    let plan: SidecarOrigin | { error: string } = { error: "Choose folders first." };
+    const refresh = () => {
+      apply.disabled = true; kept.replaceChildren();
+      const converted = planStaticCardConversion({ sources: saved.sources, files, routes: saved.routes, identity: saved.identity, path, start: sourceStart, token,
+        folders: checks.filter((input) => input.checked).map((input) => input.value) });
+      if ("error" in converted) { plan = converted; result.textContent = `${converted.error} Nothing will change.`; return; }
+      try {
+        // The plan's texts as one origin: the page and an existing JSON are edits; a JSON that does not exist yet is created.
+        const origin: SidecarOrigin = { edits: new Map(), creates: [], expectedSources: new Map(converted.expectedSources) };
+        for (const [file, text] of converted.texts) {
+          if (text === undefined) throw new Error(`Converting would delete ${file}, so nothing will change.`);
+          if (file === EDITOR_PAGE_BUILDER_PATH && saved.sources[file] === undefined && !files.includes(file)) origin.creates.push({ path: file, content: text });
+          else if (saved.sources[file] === undefined) throw new Error(`Load ${file} before converting.`);
+          else origin.edits.set(file, text);
+        }
+        if (JSON.stringify(converted.expectedFiles) !== JSON.stringify(files) || JSON.stringify(converted.expectedRoutes) !== JSON.stringify(saved.routes) || JSON.stringify(converted.expectedIdentity) !== JSON.stringify(saved.identity))
+          throw new Error("The site changed while planning. Reopen the collection panel.");
+        previewSidecar(saved, origin, path, files);
+        plan = origin;
+      } catch (error) { plan = { error: error instanceof Error ? error.message : "The pages could not be chosen." }; result.textContent = `${plan.error} Nothing will change.`; return; }
+      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards exactly as they are, in their current order. Convert changes this page and the editor's page data as one undo step.`;
       for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept in the editor's page data; the pages' own titles, descriptions and SEO stay as they are.`));
       apply.disabled = false;
     };
