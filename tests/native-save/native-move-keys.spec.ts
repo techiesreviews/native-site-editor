@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Alt+Up and Alt+Down move the selected section one sibling position from
 // the preview, the edit bar and the page structure sidebar: one undo step,
-// nothing at the ends; ordinary elements also move among their siblings.
+// nothing at the ends. Ordinary elements do not move from the bar.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -97,19 +97,16 @@ test("Alt+Up/Down with focus in the edit bar moves the section and keeps focus o
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // Ordinary paragraphs move among their siblings without moving the section.
+  // Only whole sections move from the bar: a paragraph has no move buttons,
+  // and Alt+Up from its bar leaves the page exactly as it was.
   await select(page, "section.filler p:nth-of-type(2)");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  for (const name of ["Move up", "Move down", "Move to"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
   await status(page).evaluate((el) => { el.textContent = ""; });
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect(status(page)).toHaveText("Element moved");
-  await expect(bar(page).getByRole("button", { name: "Bold" })).toBeFocused();
-  await expect.poll(() => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")))).toEqual(["filler-2", "filler-1", "filler-3", "filler-4", "filler-5"]);
-  const first = indexSource.match(/<p data-key="filler-1">[^<]*<\/p>/)![0];
-  const second = indexSource.match(/<p data-key="filler-2">[^<]*<\/p>/)![0];
-  await expect.poll(() => editorText(page, "#content")).toBe(indexSource.replace(`${first}\n    ${second}`, `${second}\n    ${first}\n    `));
-  await undo(page);
+  await expect(status(page)).not.toHaveText("Element moved");
+  await expect.poll(() => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")))).toEqual(["filler-1", "filler-2", "filler-3", "filler-4", "filler-5"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
