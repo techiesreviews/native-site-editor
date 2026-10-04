@@ -165,8 +165,63 @@ actual("invalid editor JSON hides plain sections instead of falling back to defa
   await openAdd(page);
   await expect(panel(page).getByRole("option").first()).toBeVisible();
   await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
+  // Said inline, without a dialog: why they are missing and how to get them back.
+  await expect(panel(page).locator(".pb-add-panel__notice")).toContainText(`${SIDECAR} can't be read`);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
+  // Repaired in the file: they come back and the notice goes.
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {} }, null, 2) + "\n" } });
+  await load(page, baseURL);
+  await openAdd(page);
+  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toBeVisible();
+  await expect(panel(page).locator(".pb-add-panel__notice")).toBeHidden();
 });
+
+actual("a page edited while the Add panel is open closes it: nothing is added to the older source", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await frame(page).locator("section.flow").hover();
+  await page.getByRole("button", { name: /^Add a section before “Recent work”/ }).first().dispatchEvent("click");
+  await expect(panel(page).getByRole("option", { name: /^Intro HTML$/ })).toBeVisible();
+  // A real source edit in the code editor while the panel is open.
+  const editor = page.locator("#content [role='textbox']").first();
+  await editor.focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n<!-- edited while adding -->");
+  await expect.poll(() => mounted(page)).toContain("<!-- edited while adding -->");
+  const edited = await mounted(page);
+  // The plus's gap was pinned to the older source, so its panel closes and offers nothing.
+  await expect(panel(page)).toBeHidden();
+  expect(await mounted(page)).toBe(edited);
+  await expect(frame(page).locator("section.section-intro")).toHaveCount(0);
+  expect(await storedDraft(page, CSS)).toBeUndefined();
+});
+
+for (const [label, scheme, width] of [["light", "light", 1440], ["dark", "dark", 1440], ["narrow", "light", 900]] as const) {
+  actual(`Add panel screenshot on the real starter (${label}), with every console warning and error logged`, async ({ page, baseURL }) => {
+    const logged: string[] = [];
+    page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") logged.push(`${message.type()}: ${message.text()} @ ${message.location().url}:${message.location().lineNumber}`); });
+    page.on("pageerror", (error) => logged.push(`pageerror: ${String(error)}`));
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.setViewportSize({ width, height: 1000 });
+    await load(page, baseURL);
+    await openAdd(page);
+    for (const name of ["Intro", "Features", "Split", "Contact"]) {
+      const option = panel(page).getByRole("option", { name: new RegExp(`^${name} HTML$`) });
+      await option.scrollIntoViewIfNeeded();
+      await expect(option.locator(".pb-thumb")).toHaveClass(/is-ready/);
+      // Whole: as tall as the section (after its late re-measure), at the canvas's width.
+      await expect.poll(() => option.evaluate((element) => {
+        const root = element.querySelector<HTMLElement>(".pb-thumb")!, frame = root.querySelector("iframe")!;
+        const section = frame.contentDocument!.querySelector("main")!.firstElementChild!;
+        const whole = Math.min(1000, section.getBoundingClientRect().height) * new DOMMatrix(getComputedStyle(frame).transform).a;
+        return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole) - 3; // thumbnail.ts sizes the bordered box: 2px of section padding hide under its border
+      })).toBe(true);
+    }
+    await panel(page).getByRole("heading", { name: "Plain HTML sections" }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${OUT}-add-${label}.png` });
+    console.log(`CONSOLE ${label} (${logged.length}):\n${logged.join("\n")}`);
+  });
+}
 
 actual("adding a section beside a stored collection leaves its recipe and cards as they are", async ({ page, baseURL }) => {
   await page.goto(baseURL!);

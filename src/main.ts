@@ -393,6 +393,7 @@ function mountWorkspace() {
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     insertExtraChoices: nativeStaticSectionChoices,
+    insertNotice: nativeStaticSectionNotice,
     insertPreview: nativeStaticSectionThumbnail,
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
@@ -2480,6 +2481,19 @@ function nativeStaticSectionChoices(): AddChoice[] {
     if ("error" in defaults) return [];
     return [...saved, ...defaults.map(choice => ({ tag: choice.id, label: choice.label, group: STATIC_SECTION_GROUP, kind: "native" as const }))];
   } catch { return []; }
+}
+// Why the plain sections are missing from Add, when the editor JSON keeps them out.
+function nativeStaticSectionNotice(): string | undefined {
+  if (!nativeSite || versionView) return undefined;
+  const { loaded, text } = nativeSectionDocument();
+  if (!loaded) return `Plain HTML sections appear once ${EDITOR_PAGE_BUILDER_PATH} has loaded. Reopen Add in a moment.`;
+  let error: string | undefined;
+  try {
+    listSectionChoices(text);
+    const defaults = listDefaultSectionChoices(text);
+    if ("error" in defaults) error = defaults.error;
+  } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
+  return error === undefined ? undefined : `Plain HTML sections are hidden: ${EDITOR_PAGE_BUILDER_PATH} can't be read (${error}). Fix that file, then reopen Add.`;
 }
 // Every loaded stylesheet, the designated one proven absent when it is not a file.
 function nativeStaticStylesheetSources(stylesheetPath: string): { sources: Record<string, string | undefined>; unloaded: boolean } {

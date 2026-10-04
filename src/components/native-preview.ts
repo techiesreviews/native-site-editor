@@ -198,6 +198,7 @@ export interface NativePreviewHandlers {
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
   insertExtraChoices?: AddPanelHandlers["extraChoices"];
+  insertNotice?: AddPanelHandlers["notice"];
   // A thumbnail for an extra choice: its markup and the preview inputs to render it with.
   insertPreview?: PageBuilderDeps["previewChoice"];
   insertPointFor?: AddPanelHandlers["pointFor"];
@@ -360,6 +361,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
     choices: () => handlers.insertChoices?.() ?? [],
     extraChoices: handlers.insertExtraChoices,
+    notice: handlers.insertNotice,
     previewChoice: handlers.insertPreview,
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,

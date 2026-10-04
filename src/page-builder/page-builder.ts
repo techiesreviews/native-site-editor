@@ -24,6 +24,7 @@ export interface PageBuilderDeps {
   inputs(): ThumbnailInputs | undefined;
   choices(): InsertChoice[];
   extraChoices?: AddPanelHandlers["extraChoices"];
+  notice?: AddPanelHandlers["notice"];
   // An extra choice's own thumbnail: its markup and the inputs to render it with (e.g. its stylesheet linked).
   previewChoice?(tag: string, inputs: ThumbnailInputs): { markup: string; inputs: ThumbnailInputs } | undefined;
   pointFor?: AddPanelHandlers["pointFor"];
@@ -86,6 +87,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   const panel = createAddPanel({
     choices: deps.choices,
     extraChoices: deps.extraChoices,
+    notice: deps.notice,
     pointFor: deps.pointFor,
     destinationText: deps.destinationText,
     preview,

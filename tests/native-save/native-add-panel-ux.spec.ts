@@ -7,37 +7,26 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
 }
 
-test("native thumbnails remain readable and an unavailable Image has an editor-only picture", async ({ page, baseURL }) => {
+// Single HTML elements (Heading, List, Image, Grid) left the Add panel when it
+// became sections-only; plain HTML sections show whole, like components.
+test("section thumbnails show the whole section at the canvas's width, with no code peek", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   const add = panel(page);
-  for (const [name, selector, minimum] of [["Heading", "h2", 16], ["List", "li", 12]] as const) {
-    const option = add.getByRole("option", { name: new RegExp(`^${name} HTML$`) });
+  for (const name of [/^Feature block/, /^Intro HTML$/, /^Split HTML$/]) {
+    const option = add.getByRole("option", { name });
     await option.scrollIntoViewIfNeeded();
     await expect(option.locator(".pb-thumb")).toHaveClass(/is-ready/);
-    const displayedFont = await option.locator("iframe").evaluate((frame: HTMLIFrameElement, selector) => {
-      const element = frame.contentDocument!.querySelector(selector)!;
-      return parseFloat(frame.contentWindow!.getComputedStyle(element).fontSize) * new DOMMatrix(getComputedStyle(frame).transform).a;
-    }, selector);
-    expect(displayedFont).toBeGreaterThanOrEqual(minimum);
-    await expect(option.locator("iframe")).toHaveCSS("width", "320px");
+    await expect.poll(() => option.evaluate((element) => {
+      const root = element.querySelector<HTMLElement>(".pb-thumb")!, frame = root.querySelector("iframe")!;
+      const section = frame.contentDocument!.querySelector("main")!.firstElementChild!;
+      const whole = Math.min(1000, section.getBoundingClientRect().height) * new DOMMatrix(getComputedStyle(frame).transform).a;
+      return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole) - 3; // thumbnail.ts sizes the bordered box: 2px of section padding hide under its border
+    })).toBe(true);
   }
-  const component = add.getByRole("option", { name: /^Feature block/ });
-  await component.scrollIntoViewIfNeeded();
-  await expect(component.locator(".pb-thumb")).toHaveClass(/is-ready/);
-  expect(await component.locator("iframe").evaluate(frame => parseFloat(getComputedStyle(frame).width))).toBeGreaterThanOrEqual(640);
-  const image = add.getByRole("option", { name: /^Image HTML$/ });
-  await image.scrollIntoViewIfNeeded();
-  await expect(image.locator(".pb-add-item__image-fallback svg")).toBeVisible();
-  await expect(image.locator(".pb-thumb")).toHaveClass(/has-image-fallback/);
+  await expect(add.getByRole("option", { name: /^(Heading|List|Image|Grid) HTML$/ })).toHaveCount(0);
   await expect(add.locator(".pb-add-panel__code-toggle,.pb-add-item__code,.pb-add-panel__peek")).toHaveCount(0);
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(before);
-  const grid = add.getByRole("option", { name: /^Grid / });
-  await grid.focus();
-  await expect(grid).toBeFocused();
-  await expect(grid).toHaveCSS("opacity", "0.5");
-  await expect(add.locator(".pb-add-panel__position")).toContainText("cannot accept Grid");
-  await expect(grid).toContainText("layout CSS integration pending");
 });
 
 async function probe(page: Page, baseURL: string | undefined) {
