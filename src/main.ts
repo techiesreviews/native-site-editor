@@ -101,6 +101,7 @@ import { isManualCardGrid } from "./page-builder/native-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
 import { bakePageData, documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
+import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "./page-builder/asset-references";
 import { sidecarCollectionAt } from "./page-builder/collection-origins";
 import { documentEditTouches, documentRegions, editTouchesGenerated, planDocumentTargetEdit, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
 import { readCollections, validCollectionRoute } from "./page-builder/collection-model";
@@ -6631,7 +6632,10 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
   const what = source.folder ? `the folder ${source.path}` : source.path;
   const done = operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${parentOf(to) || "the top of the repository"}.`;
   const native = !!nativeSite;
-  const error = native ? await applyNativeCollectionOperation({ moves: ops.map(op => ({ from: op.file.path, to: op.to })), ...folderIntent(source, to), done,
+  const moves = ops.map(op => ({ from: op.file.path, to: op.to }));
+  const references = native ? nativeAssetReferences(moves) : {};
+  if ("error" in references) return references.error;
+  const error = native ? await applyNativeCollectionOperation({ moves, ...folderIntent(source, to), ...references, done,
     undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.` }) : await applyFileOperation(ops);
   if (error) return error;
   if (!native) announce(done);
@@ -6641,6 +6645,38 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
     if (explorerDropdown?.isOpen() && explorerTab === "files") fileRow(to)?.focus();
   });
   return undefined;
+}
+
+/**
+ * A Files-tab move of images or other site files rewrites the pages and
+ * stylesheets that use them, and the editor's page data (card templates and
+ * stored values), in the same operation and Undo step. Every text file read
+ * and the page data are pinned, with the file list, so a change in between
+ * refuses. Nothing to rewrite: the plain move, reading nothing else.
+ */
+function nativeAssetReferences(moves: { from: string; to: string }[]): { edits?: Map<string, string>; expectedSources?: Map<string, string | undefined>; current?: () => boolean } | { error: string } {
+  if (!assetMoves(moves).length) return {};
+  if (nativeDocumentLoading()) return { error: DOCUMENT_LOADING };
+  const scope = draftScope();
+  const sources: Record<string, string | undefined> = nativeLinkSources();
+  const missing = Object.entries(sources).find(([, text]) => text === undefined);
+  if (missing) return { error: `Load ${missing[0]} before moving files it may use.` };
+  const files = nativeFiles(scope).sort();
+  const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH, scope);
+  if (sidecar === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) return { error: `Load ${EDITOR_PAGE_BUILDER_PATH} before moving files it may use.` };
+  try {
+    const edits = planAssetReferenceRewrites(sources, moves);
+    const json = planDocumentMediaBatch(sources, sidecar, edits, assetMoves(moves), deriveNativeRoutes(files));
+    if (json !== undefined) edits.set(EDITOR_PAGE_BUILDER_PATH, json);
+    if (!edits.size) return {};
+    const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
+    expectedSources.set(EDITOR_PAGE_BUILDER_PATH, sidecar);
+    const key = files.join("\n");
+    const epoch = generation, setup = setupScope();
+    return { edits, expectedSources, current: () => generation === epoch && setupScope() === setup && nativeFiles(draftScope()).sort().join("\n") === key };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The files that use this could not be updated, so nothing was moved." };
+  }
 }
 
 // What a Files-tab rename or move does to the site's URLs: each page among
@@ -6783,6 +6819,15 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   }
   if (epoch !== generation) return "The repository changed meanwhile. Try again.";
   if (!found.length) return `${target.path} has no files to delete.`;
+  // A file still in use is not deleted: no page, stylesheet or card is left pointing at nothing.
+  if (nativeSite) {
+    let inUse: string | undefined;
+    try {
+      const sources: Record<string, string | undefined> = { ...nativeLinkSources(), [EDITOR_PAGE_BUILDER_PATH]: nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) };
+      inUse = assetInUseProblem(assetUsers(sources, found.map((file) => file.path)));
+    } catch (error) { inUse = error instanceof Error ? error.message : "The files that use this could not be read, so nothing was deleted."; }
+    if (inUse) { errorMessage(new Error(inUse)); announce(inUse); return inUse; }
+  }
   const count = found.length;
   const onGitHub = found.some((file) => file.sha);
   const links = pageLinks(found.map((file) => file.path), new Map(), "deleted");
