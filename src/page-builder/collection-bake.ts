@@ -1,9 +1,10 @@
 import { startTags, VOID_ELEMENTS } from "../../shared/html-source";
 import { parseSource, type SourceNode } from "./component-model";
 import { builtinFields, fieldName, ownPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
-import { attribute, collectionRecords, readCollections, validCollectionRoute, type CollectionRecord } from "./collection-model";
+import { attribute, collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { escapeText } from "./site-head";
+import { EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, type PageBuilderDocument } from "./page-builder-document";
 
 export interface CollectionEdit { start: number; end: number; text: string }
 export interface CollectionPreview { path: string; start: number; folder: string; folders: string[]; records: CollectionRecord[]; template: string; output: string }
@@ -150,10 +151,53 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
   return render(tree, 0, template.length);
 }
 
+/**
+ * One page's collection fields: the page's own HTML fields, an authored JSON
+ * date only where the page has none, then the JSON custom fields, which are
+ * authoritative. Built-in names in JSON fields never override the page.
+ */
+export function resolvePageFields(html: PageFields, page: PageBuilderDocument["pages"][string] | undefined): PageFields {
+  const fields: PageFields = { ...html };
+  if (typeof page?.date === "string" && !fields.date) fields.date = page.date;
+  const custom = page?.fields;
+  if (custom && typeof custom === "object" && !Array.isArray(custom))
+    for (const [key, value] of Object.entries(custom)) if (typeof value === "string" && !builtinFields.includes(key as never)) fields[key] = value;
+  return fields;
+}
+
+/** Filter, stable sort and limit over already resolved records, as both recipe kinds apply them. */
+export function selectCollectionRecords(records: CollectionRecord[], spec: { filter: string; sort: string; limit: number }, declared: readonly string[]): CollectionRecord[] {
+  let out = records;
+  if (spec.filter) {
+    const at = spec.filter.indexOf("=");
+    const field = spec.filter.slice(0, at), value = spec.filter.slice(at + 1);
+    if (!knownCollectionField(field, records, declared)) throw new Error(`Unknown collection field: ${field}.`);
+    out = out.filter((record) => ownPageField(record.fields, field) === value);
+  }
+  if (spec.sort) {
+    const descending = spec.sort.startsWith("-");
+    const field = descending ? spec.sort.slice(1) : spec.sort;
+    if (!knownCollectionField(field, records, declared)) throw new Error(`Unknown collection field: ${field}.`);
+    out = out.map((record, index) => ({ record, index })).sort((a, b) => {
+      const av = ownPageField(a.record.fields, field), bv = ownPageField(b.record.fields, field);
+      const comparison = av < bv ? -1 : av > bv ? 1 : 0;
+      return comparison ? comparison * (descending ? -1 : 1) : a.index - b.index;
+    }).map(({ record }) => record);
+  }
+  return out.slice(0, spec.limit);
+}
+
+/** The editor's JSON for legacy listings; read only when a page has one, and never guessed when invalid. */
+function legacyBakeDocument(sources: Record<string, string>): PageBuilderDocument {
+  try { return readPageBuilderDocument(Object.hasOwn(sources, EDITOR_PAGE_BUILDER_PATH) ? sources[EDITOR_PAGE_BUILDER_PATH] : undefined); }
+  catch (error) { throw new Error(`The editor's page data file ${EDITOR_PAGE_BUILDER_PATH} is not valid (${error instanceof Error ? error.message : String(error)}). Fix it in Code before collections are rebuilt.`); }
+}
+
 /** Computes all dependent listing edits as one fail-closed, immutable source plan. */
 export function planBake(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity): BakeResult {
   try {
     const edits: BakePlan["edits"] = {}, expectedSources: Record<string, string> = {}, collections: CollectionPreview[] = [];
+    let document: PageBuilderDocument | undefined;
     const pagePaths = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))];
     for (const path of pagePaths) {
       if (sources[path] === undefined) throw new Error(`Load ${path} before baking collections.`);
@@ -163,13 +207,15 @@ export function planBake(sources: Record<string, string>, routes: Record<string,
       const source = sources[path];
       for (const collection of readCollections(source)) {
         const { element, template, spec } = collection;
-        const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path);
+        document ??= legacyBakeDocument(sources);
+        const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path)
+          .map((record) => ({ ...record, fields: resolvePageFields(record.fields, document!.pages[record.path]) }));
         const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
         validateTemplate(source.slice(template.start, template.end));
         const markup = source.slice(template.tag.end, template.close!.start);
         // An empty list still validates its template instead of silently accepting a typo.
         bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
-        const records = collectionRecords(sources, routes, identity, spec, path, collection.fields);
+        const records = selectCollectionRecords(all, spec, collection.fields);
         const newline = source.includes("\r\n") ? "\r\n" : "\n";
         const output = records.map((record) => bindCollectionTemplate(markup, record.fields, known)).join(newline);
         const text = source.slice(template.start, template.end) + output;

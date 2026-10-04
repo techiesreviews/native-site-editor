@@ -7,6 +7,7 @@ import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConv
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
 import { locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
+import { readEditorFieldMetas } from "../page-builder/native-page-fields";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
@@ -30,6 +31,11 @@ export interface CollectionsDeps {
    * keeping the page's cards and all other page data. Resolves to a refusal, if any.
    */
   forget?(id: string, sidecar: string): Promise<string | undefined>;
+  /**
+   * Moves the open page's old `field:` metadata into the editor's JSON as one
+   * undoable step. Resolves to a refusal, if any.
+   */
+  migrateFields?(path: string): Promise<string | undefined>;
 }
 export interface CollectionsPanel {
   update(): void;
@@ -127,6 +133,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!path || saved.sources[path] === undefined) { root.append(node("p", "", "Open a page to edit its fields."), status); return; }
     const url = Object.entries(saved.routes).find(([, file]) => file === path)?.[0] ?? "";
     root.append(node("p", "collections-panel__scope", `Page fields · ${url}`));
+    appendLegacyFields(path, saved);
     // Real head fields stay in the page; custom fields and an authored date come from the editor's JSON.
     const htmlFields = readPageFields(saved.sources[path], url, saved.identity);
     let stored: PageBuilderDocument;
@@ -224,6 +231,32 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     }
     if (!options.grid) appendUnlocatable(saved);
     root.append(status);
+  }
+  /** Old custom fields kept as page metadata: one inline action moves them into the editor's data. */
+  function appendLegacyFields(path: string, saved: ReturnType<typeof snapshot>) {
+    if (!deps.migrateFields) return;
+    let names: string[];
+    try { names = readEditorFieldMetas(saved.sources[path]).map((meta) => meta.field); }
+    catch (error) { root.append(node("p", "collections-panel__refusal", error instanceof Error ? error.message : "This page's old fields could not be read.")); return; }
+    if (!names.length) return;
+    const row = node("div", "collections-panel__legacy");
+    const list = names.join(", ");
+    row.append(node("p", "collections-panel__hint", `This page keeps ${names.length === 1 ? "the field" : "the fields"} ${list} in its published HTML. Move ${names.length === 1 ? "it" : "them"} to the editor's data so visitors get clean pages; cards and values stay the same.`));
+    const move = button("Move legacy fields to editor data", async () => {
+      if (applying || destroyed) return;
+      if (dirty()) { report("Apply or cancel your field changes first, then move the legacy fields."); return; }
+      if (!current(saved)) { report("The page or repository changed. Reopen the fields before moving them."); return; }
+      applying = true; move.disabled = true;
+      let error: string | undefined;
+      try { error = await deps.migrateFields!(path); }
+      catch (caught) { error = caught instanceof Error ? caught.message : "The fields could not be moved."; }
+      finally { applying = false; }
+      if (destroyed) return;
+      if (error) { move.disabled = false; report(error); return; }
+      activeForm = undefined; update(); report(`Moved ${list} to the editor's data. Undo puts them back.`);
+    });
+    row.append(move);
+    root.append(row);
   }
   /** Custom field names (and an authored date) the editor's JSON keeps for the site's pages: the bake reads them too. */
   function jsonFieldNames(saved: ReturnType<typeof snapshot>): string[] {

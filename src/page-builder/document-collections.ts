@@ -1,9 +1,9 @@
-import { applyCollectionEdits, bindCollectionTemplate } from "./collection-bake";
+import { applyCollectionEdits, bindCollectionTemplate, resolvePageFields, selectCollectionRecords } from "./collection-bake";
 import { mediaResolvePath, rewriteMediaReferences } from "./media-references";
 import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
-import { builtinFields, ownPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
-import { collectionRecords, collectionSpec, knownCollectionField, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
+import { builtinFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { collectionRecords, collectionSpec, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, type LocatedCollectionTarget, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 
 /**
@@ -75,38 +75,13 @@ export function documentDrift(sources: Readonly<Record<string, string>>, documen
 }
 
 function sortedRecords(records: CollectionRecord[], collection: PageBuilderCollection, declared: readonly string[]) {
-  const spec = collectionSpec({ folders: collection.folders, sort: collection.sort, filter: collection.filter, limit: String(collection.limit) });
-  let out = records;
-  if (spec.filter) {
-    const at = spec.filter.indexOf("=");
-    const field = spec.filter.slice(0, at), value = spec.filter.slice(at + 1);
-    if (!knownCollectionField(field, records, declared)) throw new Error(`Unknown collection field: ${field}.`);
-    out = out.filter((record) => ownPageField(record.fields, field) === value);
-  }
-  if (spec.sort) {
-    const descending = spec.sort.startsWith("-");
-    const field = descending ? spec.sort.slice(1) : spec.sort;
-    if (!knownCollectionField(field, records, declared)) throw new Error(`Unknown collection field: ${field}.`);
-    out = out.map((record, index) => ({ record, index })).sort((a, b) => {
-      const av = ownPageField(a.record.fields, field), bv = ownPageField(b.record.fields, field);
-      const comparison = av < bv ? -1 : av > bv ? 1 : 0;
-      return comparison ? comparison * (descending ? -1 : 1) : a.index - b.index;
-    }).map(({ record }) => record);
-  }
-  return out.slice(0, spec.limit);
+  return selectCollectionRecords(records, collectionSpec({ folders: collection.folders, sort: collection.sort, filter: collection.filter, limit: String(collection.limit) }), declared);
 }
 
 /** The recipe's data-if conditions are editor-only: the published card carries none. */
 function withoutConditions(html: string): string {
   const edits = [...descendants(parseSource(html))].flatMap((element) => startTagAttributes(html, element.tag).filter((attr) => attr.name === "data-if").map((attr) => ({ start: attr.start, end: attr.end, text: "" })));
   return edits.length ? applyCollectionEdits(html, edits) : html;
-}
-
-function stringFields(value: unknown): PageFields {
-  const out: PageFields = Object.create(null);
-  if (value && typeof value === "object" && !Array.isArray(value))
-    for (const [key, item] of Object.entries(value)) if (typeof item === "string" && !builtinFields.includes(key as never)) out[key] = item;
-  return out;
 }
 
 /**
@@ -164,10 +139,8 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
       const all = collectionRecords({ ...input.candidate.sources }, { ...input.candidate.routes }, input.identity,
         { folder: collection.folders.join(" "), folders: collection.folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, collection.pagePath, collection.fields)
         .map((record) => {
-          const page = document.pages[record.path];
-          // An authored date in the JSON stands in only where the page has no real date of its own.
-          const date: PageFields = typeof page?.date === "string" && !record.fields.date ? { date: page.date } : {};
-          const fields: PageFields = { ...record.fields, ...date, ...stringFields(page?.fields), ...(collection.overrides[record.path] ?? {}) };
+          // Same page fields as legacy listings (JSON authoritative), then this recipe's own per-card overrides.
+          const fields: PageFields = { ...resolvePageFields(record.fields, document.pages[record.path]), ...(collection.overrides[record.path] ?? {}) };
           return { ...record, fields };
         });
       if (all.length > MAX_COLLECTION_ITEMS * 4) throw new Error("Too many pages for one collection.");

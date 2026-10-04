@@ -25,6 +25,7 @@ import { createNativePreview, routeStylesheets, type NativeFormat, type NativePr
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
+import { NativePageFieldError, planLegacyPageFieldMigration } from "./page-builder/native-page-fields";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
@@ -2998,6 +2999,59 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
   });
 }
 
+// Moves a page's old `field:` metadata into the editor's JSON: the page loses
+// only those tags, the JSON gains the values, and listings that show them are
+// rebuilt from the same values in the same step (one draft write, one Undo).
+// The page and JSON are pinned as the caller saw them; a conflicting value,
+// an unreadable JSON or any change made during a load refuses, writing nothing.
+async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<string, string | undefined> = new Map()): Promise<string | undefined> {
+  if (!nativeRouteForPath(path)) return "This page has no URL in the site.";
+  const scope = setupScope(), epoch = generation;
+  const source = nativeEffectiveSource(path);
+  if (source === undefined) return "The page could not be read.";
+  if (pinned.has(path) && pinned.get(path) !== source) return "The page changed meanwhile. Reopen the fields and try again.";
+  const pinnedSidecar = pinned.has(EDITOR_PAGE_BUILDER_PATH);
+  const sidecarBefore = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  if (pinnedSidecar && pinned.get(EDITOR_PAGE_BUILDER_PATH) !== sidecarBefore) return "The editor's page data changed meanwhile. Reopen the fields and try again.";
+  // The editor's JSON must be read before it is changed: never written over unseen bytes.
+  if (sidecarBefore === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) {
+    const error = await ensureNativeTextIndex();
+    if (error) return error;
+    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
+    if (nativeEffectiveSource(path) !== source) return "The page changed meanwhile. Reopen the fields and try again.";
+    if (pinnedSidecar && nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== undefined) return "The editor's page data changed meanwhile. Reopen the fields and try again.";
+  }
+  const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  if (sidecar === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) return `${EDITOR_PAGE_BUILDER_PATH} could not be read, so nothing was moved.`;
+  const files = nativeFiles().sort();
+  let plan: ReturnType<typeof planLegacyPageFieldMigration>;
+  try { plan = planLegacyPageFieldMigration({ files, pagePath: path, source, sidecarText: sidecar }); }
+  catch (error) {
+    const message = error instanceof Error ? error.message : "The fields could not be moved.";
+    return error instanceof NativePageFieldError && error.code === "native-page-fields/conflict"
+      ? `${message} Nothing was moved. Edit that field below so it has one value, apply, then move the legacy fields again.` : `${message} Nothing was moved.`;
+  }
+  if (plan.noop) { element("status").textContent = "This page has no legacy fields to move."; return undefined; }
+  // The planner's file list is a proof of the whole graph; the operation itself does not check it.
+  const sameGraph = () => JSON.stringify([...plan.expectedFiles].sort()) === JSON.stringify(nativeFiles().sort());
+  if (!sameGraph()) return "The site's files changed meanwhile. Try again.";
+  const edits = new Map(plan.edits), creates: { path: string; content: string }[] = [];
+  if (sidecar === undefined) {
+    const created = edits.get(EDITOR_PAGE_BUILDER_PATH);
+    edits.delete(EDITOR_PAGE_BUILDER_PATH);
+    if (created !== undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: created });
+  }
+  const names = Object.keys(plan.fields).join(", ");
+  const expectedSources = new Map<string, string | undefined>([...pinned, ...plan.expectedSources]);
+  return applyNativeCollectionOperation({
+    expectedSources, edits, creates,
+    current: sameGraph,
+    done: `Moved ${names} out of the page's HTML into the editor's data. Save to GitHub to keep it.`,
+    undone: `Undid moving ${names} into the editor's data.`,
+    focus: { file: path },
+  });
+}
+
 // ---- Page-builder site controls. Kept together to isolate this slice's wiring. ----
 
 function nativeSitePageChoices() {
@@ -3080,6 +3134,7 @@ function nativeSettingsController() {
         announce,
         files: () => nativeFiles(),
         forget: forgetNativeCollection,
+        migrateFields: async (page) => stale() || sourcesChanged() ? changed : applied(await migrateNativeLegacyFields(page, expectedSources)),
       }, { settings: true });
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
@@ -5311,7 +5366,8 @@ function nativeCollectionSnapshot(scope = draftScope()): NativeCollectionSnapsho
  * one draft write and one Undo. The plan's graph, identity, revision and every
  * input source are checked again right before the synchronous write.
  */
-async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): Promise<string | undefined> {
+async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & { current?: () => boolean }): Promise<string | undefined> {
+  const extraCurrent = origin.current;
   if (!nativeSite) return "Open a native site first.";
   // Every touched path is guarded by its source as the caller computed from
   // it, captured before any await: a newer edit is refused, never overwritten.
@@ -5360,7 +5416,8 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin): P
   const candidateIdentity = { name: readSiteIdentity(candidate(NATIVE_CONFIG_PATH), candidate(deriveNativeRoutes([...afterFiles])["/"]) ?? "").name };
   const plan = planNativeCollectionOperation({ ...snapshot, origin, candidateIdentity });
   if ("error" in plan) return plan.error;
-  const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot());
+  // A caller's own whole-graph proof (a file list it planned from) is checked with the plan's.
+  const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot()) && (extraCurrent?.() ?? true);
   if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
   return applyNativeOperation({ ...plan.operation, current });
 }
