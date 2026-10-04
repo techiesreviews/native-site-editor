@@ -30,3 +30,20 @@
 .collections-panel select { width: 100%; padding: .5rem; color: var(--text); background: var(--surface); font: inherit; box-sizing: border-box; }
 .collections-panel select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .collections-panel__kept { margin: 0; padding-left: 1.25rem; display: grid; gap: .25rem; }
+
+/* Collections that cannot be found: one quiet row each, the action at the row's end, details inline. */
+.collections-panel__unlocatable { display: grid; gap: .5rem; }
+.collections-panel__hint { color: var(--muted); font-size: .875rem; }
+.collections-panel__recovery { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); }
+.collections-panel__recovery-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; row-gap: .125rem; align-items: center; padding: .625rem 0; border-bottom: 1px solid var(--line); }
+.collections-panel__recovery-name { grid-column: 1; font-weight: 500; overflow-wrap: anywhere; }
+.collections-panel__recovery-reason { grid-column: 1; color: var(--muted); font-size: .875rem; }
+.collections-panel__recovery-action { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; opacity: .75; transition: opacity .15s ease-out; }
+.collections-panel__recovery-row:is(:hover, :focus-within) .collections-panel__recovery-action, .collections-panel__recovery-action:focus-visible { opacity: 1; }
+.collections-panel__recovery-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.collections-panel__recovery-details { grid-column: 1 / -1; font-size: .8125rem; color: var(--muted); }
+.collections-panel__recovery-details summary { cursor: pointer; width: max-content; }
+.collections-panel__recovery-details summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.collections-panel__recovery-details p { margin: .25rem 0 0; overflow-wrap: anywhere; }
+@media (hover: none), (pointer: coarse) { .collections-panel__recovery-action { opacity: 1; min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .collections-panel__recovery-action { transition: none; } }

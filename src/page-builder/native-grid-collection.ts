@@ -11,6 +11,7 @@ import { applyCollectionEdits, bindCollectionTemplate, planCollectionChange, typ
 import { readPageFields, withCustomPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, declaredCollectionFields, makeGridCollection, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
+import type { CollectionRecipe } from "./collection-origins";
 
 interface CardSlot { slot: string; tag: string; open: string; text: string; href?: string }
 interface Card { element: SourceElement; open: string; slots: CardSlot[]; gaps: string[] }
@@ -109,7 +110,8 @@ export interface ManualConversionInput {
   /** Grid namespace persisted as data-collection-id; letters and digits, starting with a letter. */
   token: string;
 }
-export interface ManualConversion { plan: BakePlan; template: string; kept: string[]; records: number; cards: number }
+/** The recipe for the editor's page data file; per-card text the pages don't provide becomes JSON overrides. */
+export interface ManualConversion { recipe: CollectionRecipe; id: string; template: string; kept: string[]; records: number; cards: number }
 
 function folderOf(url: string): string { return url.replace(/[^/]+\/$/, ""); }
 /** The folders the current cards live in; the default selection keeps them all. */
@@ -178,30 +180,24 @@ export function planManualConversion(input: ManualConversionInput): ManualConver
     const cardPages = new Set(pages.map(({ page }) => page!));
     if (ordered.filter((page) => cardPages.has(page)).some((page, index) => page !== pages[index].page))
       return fail("These cards use a custom order. Choosing pages would reorder them, so nothing was changed.");
-    const after: Record<string, string> = { ...sources };
-    for (const [page, fields] of writes) for (const [field, value] of Object.entries(fields)) after[page] = withCustomPageField(after[page], field, value, identity);
-    const converted = makeGridCollection(source, start, { folders, sort: "", filter: "", limit: "", template: markup });
-    const host = [...descendants(parseSource(converted))].find((item) => item.start === start)!;
     const declared = [...new Set([...declaredCollectionFields(source, grid.element), ...[...writes.values()].flatMap((fields) => Object.keys(fields))])];
-    const identified = applyCollectionEdits(converted, [attributeEdit(converted, host.tag, "data-collection-id", token)]);
-    const identifiedHost = [...descendants(parseSource(identified))].find((item) => item.start === start)!;
-    after[path] = applyCollectionEdits(identified, [attributeEdit(identified, identifiedHost.tag, "data-fields", declared.length ? declared.join(" ") : undefined)]);
-    const plan = planCollectionChange(sources as Record<string, string>, after, routes as Record<string, string>, identity);
-    if ("error" in plan) return plan;
-    const collection = plan.collections.find((item) => item.path === path && item.start === start);
-    if (!collection) return fail("The grid could not be read back after choosing pages.");
+    const overrides = Object.fromEntries(writes);
     // Prove every current card renders exactly as before; refuse rather than approximate.
+    const all = collectionRecords(sources as Record<string, string>, routes as Record<string, string>, identity, { folder: folders[0], folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path, declared)
+      .map((record) => ({ ...record, fields: { ...record.fields, ...(overrides[record.path] ?? {}) } }));
+    const known = [...new Set([...declared, ...all.flatMap((item) => Object.keys(item.fields))])];
+    const collection = { records: all };
     for (const { card, page } of pages) {
       const record = collection.records.find((item) => item.path === page);
       if (!record) return fail(`The chosen folders leave out ${card.slots.find((slot) => slot.href)!.href}. Select its folder so no card is dropped.`);
-      const known = [...new Set(collection.records.flatMap((item) => Object.keys(item.fields)))];
       const rendered = bindCollectionTemplate(markup, record.fields, known);
       const back = readCard(rendered, parseSource(rendered).find((node): node is SourceElement => node.type === "element")!, true);
       if ("error" in back || back.open !== card.open || back.slots.length !== card.slots.length ||
         back.slots.some((slot, index) => slot.slot !== card.slots[index].slot || slot.text !== card.slots[index].text || slot.href !== card.slots[index].href || slot.open !== card.slots[index].open))
         return fail("A card would not look the same after choosing pages, so nothing was changed.");
     }
-    return { plan, template: markup, kept, records: collection.records.length, cards: pages.length };
+    const recipe: CollectionRecipe = { folders, sort: "", filter: "", limit: MAX_COLLECTION_ITEMS, template: markup, fields: declared, overrides };
+    return { recipe, id: token, template: markup, kept, records: collection.records.length, cards: pages.length };
   } catch (error) {
     return fail(error instanceof Error ? error.message : "The pages could not be chosen for this grid.");
   }

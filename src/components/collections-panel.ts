@@ -2,8 +2,12 @@ import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
-import { attribute, makeGridCollection, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { attribute, collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
+import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
+import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
+import { locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -12,10 +16,20 @@ export interface CollectionsDeps {
   identity(): CollectionIdentity;
   revision(): string;
   page(): string | undefined;
-  /** Host verifies revision and every expected source, then applies all files as one undo step. */
-  apply(plan: BakePlan, expectedRevision: string, label: string): boolean | Promise<boolean>;
+  /**
+   * Host verifies revision and every expected source, then applies all files as one undo step.
+   * A sidecar origin is planned again by the host, which bakes the cards from the JSON recipe.
+   */
+  apply(plan: BakePlan | SidecarOrigin, expectedRevision: string, label: string): boolean | Promise<boolean>;
   openPage(path: string): void;
   announce(message: string): void;
+  /** Every file on the branch, loaded or not: tells a page that is gone from one not read yet. */
+  files?(): readonly string[];
+  /**
+   * Removes one collection's recipe from the editor's JSON (pinned at `sidecar`),
+   * keeping the page's cards and all other page data. Resolves to a refusal, if any.
+   */
+  forget?(id: string, sidecar: string): Promise<string | undefined>;
 }
 export interface CollectionsPanel {
   update(): void;
@@ -24,6 +38,8 @@ export interface CollectionsPanel {
   pageFieldsDirty(): boolean;
   pageFieldsStamp(): string | undefined;
   pageFieldSource(source: string): string;
+  /** The editor's JSON with this page's custom fields and authored date applied; unchanged bytes when nothing changed. */
+  pageFieldDocument(sidecar: string | undefined): string | undefined;
   destroy(): void;
 }
 export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean; grid?: () => { path: string; start: number } | undefined } = {}): CollectionsPanel {
@@ -35,6 +51,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   let activeForm: HTMLElement | undefined;
   let cleanStamp = "";
   let fieldSource: ((source: string) => string) | undefined;
+  let fieldDocument: ((sidecar: string | undefined) => string | undefined) | undefined;
   let activeSnapshot: ReturnType<typeof snapshot> | undefined;
   let fieldForm: HTMLElement | undefined;
   let activeGrid: { path: string; start: number } | undefined;
@@ -52,7 +69,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   const status = node("p", "collections-panel__status");
   status.setAttribute("role", "status");
   const report = (message: string) => { const changed = status.textContent !== message; status.textContent = message; if (changed) deps.announce(message); };
-  const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult, label: string) => {
+  const submit = async (saved: ReturnType<typeof snapshot>, plan: BakeResult | SidecarOrigin | { error: string }, label: string) => {
     if (destroyed || applying) return;
     if ("error" in plan) { report(plan.error); return; }
     if (!current(saved)) { report("The page or repository changed. Reopen the collection panel before applying."); return; }
@@ -68,6 +85,15 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       else report(`${label}. Newer input was kept; reopen before applying again.`);
     }
   };
+  /** Plans a sidecar change against the saved graph, exactly as the host will: cards and JSON in one step. */
+  function previewSidecar(saved: ReturnType<typeof snapshot>, origin: SidecarOrigin, path: string): DocumentCollectionPreview {
+    const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files: Object.keys(saved.sources), revision: saved.revision, identity: saved.identity,
+      origin: { ...origin, done: "", undone: "" } });
+    if ("error" in planned) throw new Error(planned.error);
+    const preview = planned.documentCollections.find((item) => item.path === path);
+    if (!preview) throw new Error("The grid could not be read back after this change.");
+    return preview;
+  }
   function control(form: HTMLElement, label: string, value: string, multiline = false) {
     const wrap = node("label", "collections-panel__field");
     wrap.append(node("span", "", label));
@@ -101,24 +127,56 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!path || saved.sources[path] === undefined) { root.append(node("p", "", "Open a page to edit its fields."), status); return; }
     const url = Object.entries(saved.routes).find(([, file]) => file === path)?.[0] ?? "";
     root.append(node("p", "collections-panel__scope", `Page fields · ${url}`));
-    const fields = readPageFields(saved.sources[path], url, saved.identity);
+    // Real head fields stay in the page; custom fields and an authored date come from the editor's JSON.
+    const htmlFields = readPageFields(saved.sources[path], url, saved.identity);
+    let stored: PageBuilderDocument;
+    try { stored = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]); }
+    catch (error) { root.append(node("p", "collections-panel__refusal", (error as Error).message), status); return; }
+    const storedPage = stored.pages[path] ?? {};
+    const jsonFields: Record<string, string> = {};
+    for (const [name, value] of Object.entries(storedPage.fields ?? {})) if (typeof value === "string") jsonFields[name] = value;
+    if (typeof storedPage.date === "string" && !Object.hasOwn(htmlFields, "date")) jsonFields.date = storedPage.date;
+    if (!Object.hasOwn(htmlFields, "date") && !Object.hasOwn(jsonFields, "date")) jsonFields.date = "";
+    // Same precedence as the bake: a JSON custom value stands over the page's own; a JSON date only where the page has none.
+    const fields: Record<string, string> = { ...htmlFields, ...jsonFields };
+    const inHtml = (name: string) => Object.hasOwn(htmlFields, name) && !Object.hasOwn(jsonFields, name) && name !== "url";
     const form = node(options.settings ? "div" : "form", "collections-panel__form");
     const inputs = Object.entries(fields).filter(([name]) => name !== "url" && (!options.settings || !["title", "description", "image"].includes(name))).map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
     const customName = control(form, "New custom field name", "");
     const customValue = control(form, "New custom field value", "");
-    const stage = (source: string) => {
-      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
-      for (const { name, input } of inputs) if (input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
+    const newName = () => {
       const name = customName.value.trim();
       if (!name && customValue.value !== "") throw new Error("Name the new custom field, or clear its value.");
-      if (name) {
-        const changed = withCustomPageField(source, name, customValue.value, saved.identity);
-        if (Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
-        source = changed;
-      }
+      if (name && ["title", "description", "image", "date", "url"].includes(name)) throw new Error(`${name} is a built-in field. Edit its own control above.`);
+      if (name && Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
+      if (name && !/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error("Use a valid editable page field name: lowercase letters, digits, - or _.");
+      return name;
+    };
+    // Fields that are real page metadata are edited where they are; nothing new is written into the head.
+    const stage = (source: string) => {
+      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
+      for (const { name, input } of inputs) if (inHtml(name) && input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
+      newName();
       return source;
     };
-    fieldSource = stage; fieldForm = form;
+    const stageDocument = (sidecar: string | undefined) => {
+      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
+      const document = readSidecar(sidecar);
+      const page = { ...(document.pages[path] ?? {}) };
+      const custom: Record<string, string> = { ...(page.fields ?? {}) };
+      for (const { name, input } of inputs) {
+        if (inHtml(name) || input.value === fields[name]) continue;
+        if (name === "date") { if (input.value) page.date = input.value; else delete page.date; }
+        else custom[name] = input.value;
+      }
+      const name = newName();
+      if (name) custom[name] = customValue.value;
+      if (Object.keys(custom).length) page.fields = custom; else delete page.fields;
+      if (Object.keys(page).length) document.pages[path] = page; else delete document.pages[path];
+      const empty = !Object.keys(document.pages).length && !Object.keys(document.collections).length;
+      return sidecar === undefined && empty ? undefined : writePageBuilderDocument(document, sidecar);
+    };
+    fieldSource = stage; fieldDocument = stageDocument; fieldForm = form;
     if (!options.settings) {
       const apply = node("button", "button primary", "Apply page fields"); apply.type = "submit";
       form.append(apply, button("Cancel changes", () => { activeForm = undefined; update(); }));
@@ -126,15 +184,33 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
         event.preventDefault();
         try {
           const source = stage(saved.sources[path]);
-          void submit(saved, planCollectionChange(saved.sources, { ...saved.sources, [path]: source }, saved.routes, saved.identity), "Page fields and collections updated");
+          const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH], next = stageDocument(sidecar);
+          const edits = new Map<string, string>(source === saved.sources[path] ? [] : [[path, source]]);
+          const creates: { path: string; content: string }[] = [];
+          if (next !== undefined && next !== sidecar) { if (sidecar === undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: next }); else edits.set(EDITOR_PAGE_BUILDER_PATH, next); }
+          void submit(saved, { edits, creates, expectedSources: new Map<string, string | undefined>([[path, saved.sources[path]], [EDITOR_PAGE_BUILDER_PATH, sidecar]]) }, "Page fields and collections updated");
         } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
       });
     }
     track(form, saved);
     root.append(form, ...(options.settings ? [] : [node("h2", "", "Collections")]));
     const baked = planBake(saved.sources, saved.routes, saved.identity);
+    // Collections stored in the editor's JSON are listed from their recipe, with the cards the host would bake.
+    let fromJson: { folders: string[]; template: string; records: DocumentCollectionPreview["records"] }[] = [];
+    try {
+      const recipes = Object.entries(readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).collections).filter(([, recipe]) => recipe.pagePath === path);
+      if (recipes.length) {
+        const planned = planNativeCollectionOperation({ sources: saved.sources, routes: saved.routes, files: Object.keys(saved.sources), revision: saved.revision, identity: saved.identity, origin: { done: "", undone: "" } });
+        if ("error" in planned) throw new Error(planned.error);
+        fromJson = recipes.map(([id, recipe]) => ({ folders: recipe.folders, template: recipe.template, records: planned.documentCollections.find((item) => item.id === id)?.records ?? [] }));
+      }
+    } catch (error) {
+      // When some collection cannot be found, the list below says which, in plain words; no technical repeat here.
+      root.append(node("p", "", !options.grid && unlocatableRows(saved).length ? "This page's collections can be shown again once the ones listed below are fixed or forgotten."
+        : error instanceof Error ? error.message : "The editor's page data could not be read."));
+    }
     if ("error" in baked) root.append(node("p", "", baked.error));
-    else for (const collection of baked.collections.filter((item) => item.path === path)) {
+    else for (const collection of [...baked.collections.filter((item) => item.path === path), ...fromJson]) {
       const block = node("div", "collections-panel__collection");
       block.append(node("h3", "", `Pages from ${collection.folders.join(", ")}`), node("p", "", `${collection.records.length} matching ${collection.records.length === 1 ? "page" : "pages"}`));
       if (!options.settings) {
@@ -146,7 +222,110 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       block.append(advanced);
       root.append(block);
     }
+    if (!options.grid) appendUnlocatable(saved);
     root.append(status);
+  }
+  /** Custom field names (and an authored date) the editor's JSON keeps for the site's pages: the bake reads them too. */
+  function jsonFieldNames(saved: ReturnType<typeof snapshot>): string[] {
+    try {
+      const pages = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).pages, routed = new Set(Object.values(saved.routes));
+      return Object.entries(pages).filter(([file]) => routed.has(file))
+        .flatMap(([, page]) => [...Object.keys(page.fields ?? {}), ...(typeof page.date === "string" ? ["date"] : [])]);
+    } catch { return []; }
+  }
+  /**
+   * Collections anywhere on the site whose grid cannot be found exactly (or
+   * whose page is gone). Each can be forgotten on its own: only its recipe
+   * leaves the JSON; the cards stay in the page, as do all other page data.
+   */
+  function unlocatableRows(saved: ReturnType<typeof snapshot>) {
+    const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH];
+    const rows: { id: string; page: string; label: string; where: string; reason: string; detail: string }[] = [];
+    if (sidecar === undefined || !deps.forget) return rows;
+    let document: PageBuilderDocument;
+    try { document = readSidecar(sidecar); } catch { return rows; }
+    const files = new Set(deps.files?.() ?? Object.values(saved.routes));
+    const grid = (id: string) => {
+      const target = document.collections[id].target, tag = target.openingTagFingerprint;
+      const classes = /\sclass\s*=\s*["']?([^"'>]*)/i.exec(tag)?.[1].trim().split(/\s+/).filter(Boolean) ?? [];
+      return target.authoredId ? `${target.tag}#${target.authoredId}` : [target.tag, ...classes].join(".");
+    };
+    for (const page of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
+      const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === page).map(([id]) => id);
+      const source = saved.sources[page];
+      const broken = new Map<string, { reason: string; detail: string }>();
+      if (source === undefined) {
+        if (files.has(page)) continue;
+        for (const id of ids) broken.set(id, { reason: "This page no longer exists.", detail: `${page} is not in the repository.` });
+      } else {
+        try { locatePageCollections(source, document, page); continue; } catch (error) {
+          // Each recipe is located on its own: only the ones that fail are listed, never their healthy neighbours.
+          const found = new Map<string, { start: number; end: number }>();
+          for (const id of ids) {
+            const located = locateCollectionTarget(source, document.collections[id].target);
+            if ("error" in located) broken.set(id, { reason: "Its grid was changed in Code, so the editor cannot tell which element it is.", detail: located.error });
+            else found.set(id, { start: located.element.start, end: located.element.end });
+          }
+          for (const [id, a] of found) for (const [other, b] of found) if (id !== other && a.start <= b.start && a.end >= b.end)
+            for (const both of [id, other]) broken.set(both, { reason: "Two collections point at the same grid, so the editor cannot tell whose cards are whose.", detail: `Collections ${id} and ${other} resolve to overlapping elements.` });
+          if (!broken.size) for (const id of ids) broken.set(id, { reason: "The collections on this page cannot be found exactly.", detail: (error as Error).message });
+        }
+      }
+      const url = Object.entries(saved.routes).find(([, file]) => file === page)?.[0];
+      let title = "";
+      try { if (source !== undefined && url) title = readPageFields(source, url, saved.identity).title ?? ""; } catch { title = ""; }
+      const where = title ? `${title.split(/\s+[|·–—-]\s+/)[0]} (${url})` : url ?? page;
+      for (const [id, problem] of broken) {
+        const recipe = document.collections[id];
+        // An optional label kept in the JSON record names the grid; otherwise its pages describe it.
+        const label = typeof recipe.label === "string" && recipe.label.trim() ? recipe.label.trim() : `Cards from ${recipe.folders.join(", ")}`;
+        rows.push({ id, page, label, where, reason: problem.reason, detail: `${problem.detail} Recipe “${id}” in ${EDITOR_PAGE_BUILDER_PATH}, page ${page}.` });
+      }
+    }
+    // Rows that would read the same say which grid they are, then their place in order: never an internal id.
+    const named = (row: (typeof rows)[number]) => `${row.label} on ${row.where}`;
+    const groups = () => [...rows.reduce((map, row) => map.set(named(row), [...(map.get(named(row)) ?? []), row]), new Map<string, typeof rows>()).values()].filter((group) => group.length > 1);
+    for (const group of groups()) for (const row of group) row.label = `${row.label}, grid ${grid(row.id)}`;
+    for (const group of groups()) group.forEach((row, index) => { row.label = `${row.label} (${index + 1} of ${group.length})`; });
+    return rows;
+  }
+  /**
+   * Collections anywhere on the site whose grid cannot be found exactly (or
+   * whose page is gone). Each can be forgotten on its own: only its recipe
+   * leaves the JSON; the cards stay in the page, as do all other page data.
+   */
+  function appendUnlocatable(saved: ReturnType<typeof snapshot>) {
+    const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH];
+    const rows = unlocatableRows(saved);
+    if (sidecar === undefined || !rows.length) return;
+    const section = node("section", "collections-panel__unlocatable");
+    section.setAttribute("aria-label", "Collections that cannot be found");
+    section.append(node("h3", "", "Collections that cannot be found"),
+      node("p", "collections-panel__hint", "Their cards stay in the page as they are. Fix the grid in Code, or forget its recipe: the cards and every page field are kept."));
+    const list = node("ul", "collections-panel__recovery");
+    for (const row of rows) {
+      const item = node("li", "collections-panel__recovery-row");
+      const name = `${row.label} on ${row.where}`;
+      const forget = button("Forget recipe, keep cards", async () => {
+        if (applying || destroyed) return;
+        applying = true; forget.disabled = true;
+        let error: string | undefined;
+        try { error = await deps.forget!(row.id, sidecar); }
+        catch (caught) { error = caught instanceof Error ? caught.message : "The recipe could not be forgotten."; }
+        finally { applying = false; }
+        if (destroyed) return;
+        if (error) { forget.disabled = false; report(error); return; }
+        update(); report(`Forgot the recipe of ${name}; its cards stay as they are.`);
+      });
+      forget.classList.add("collections-panel__recovery-action");
+      forget.setAttribute("aria-label", `Forget recipe, keep cards: ${name}`);
+      const details = node("details", "collections-panel__recovery-details");
+      details.append(node("summary", "", "Technical details"), node("p", "", row.detail.trim()));
+      item.append(node("span", "collections-panel__recovery-name", name), node("span", "collections-panel__recovery-reason", row.reason), forget, details);
+      list.append(item);
+    }
+    section.append(list);
+    root.append(section);
   }
   function openGrid(path: string, sourceStart: number) {
     if (destroyed) return;
@@ -159,8 +338,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!el?.close) { report("Choose a complete grid in the page source."); return; }
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
     const form = node("form", "collections-panel__form");
-    let existing;
-    try { existing = readCollections(source).find((collection) => collection.element.start === sourceStart); }
+    let existing: { spec: { folders: string[]; sort: string; filter: string; limit: number }; fields: string[]; template: string; namespace?: string } | undefined;
+    try {
+      const stored = sidecarCollectionAt(saved.sources, path, sourceStart);
+      const inline = stored ? undefined : readCollections(source).find((collection) => collection.element.start === sourceStart);
+      existing = stored ? { spec: stored.collection, fields: stored.collection.fields, template: stored.collection.template, namespace: stored.id }
+        : inline ? { spec: inline.spec, fields: inline.fields, template: source.slice(inline.template.tag.end, inline.template.close!.start), namespace: attribute(source, inline.element, "data-collection-id") } : undefined;
+    }
     catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
     activeGrid = { path, start: sourceStart };
     if (!existing && isManualCardGrid(source, el)) { openManualGrid(path, sourceStart, saved); return; }
@@ -184,8 +368,8 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     });
     form.append(sourceGroup);
     const fieldNames = [...new Set(["title", "date", "url", ...(existing?.fields ?? []), ...Object.entries(saved.routes).flatMap(([url, file]) =>
-      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
-    const namespace = existing && attribute(source, existing.element, "data-collection-id");
+      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity))), ...jsonFieldNames(saved)])];
+    const namespace = existing?.namespace;
     const fieldLabel = (name: string) => {
       const text = namespace && name.startsWith(`${namespace}-`) ? `Card ${name.slice(namespace.length + 1)}` : name;
       return text.replace(/[_-]/g, " ").replace(/^./, (first) => first.toUpperCase());
@@ -211,13 +395,13 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const limit = control(form, "Maximum items (1–500)", existing ? String(existing.spec.limit) : "6");
     const advanced = node("details", "collections-panel__advanced");
     advanced.append(node("summary", "", "Advanced"));
-    const template = control(advanced, "Card template HTML", existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
-    const originalTemplate = existing ? source.slice(existing.template.tag.end, existing.template.close!.start) : template.value;
+    const template = control(advanced, "Card template HTML", existing ? existing.template : first ? source.slice(first.start, first.end) : `<a href="{url}">{title}</a>`, true);
+    const originalTemplate = existing ? existing.template : template.value;
     const displayedTemplate = template.value;
     advanced.append(node("p", "", "Bind text or attributes with {title}, {description}, {image}, {date}, {url}, or a custom field. Show when image exists: data-if=\"image\"."));
     const preview = node("pre", "collections-panel__preview");
     const result = node("p"); result.setAttribute("role", "status");
-    let plan: BakeResult = { error: "Preview the collection first." };
+    let plan: SidecarOrigin | { error: string } = { error: "Preview the collection first." };
     const refresh = () => {
       apply.disabled = true;
       filterMatch.parentElement!.hidden = !filter.value;
@@ -225,10 +409,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       try {
         const folders = checks.filter((input) => input.checked).map((input) => input.value);
         if (!folders.length) throw new Error("Select at least one source folder to preview or apply.");
-        const converted = makeGridCollection(source, sourceStart, { folders, sort: sort.value ? `${direction.value === "descending" ? "-" : ""}${sort.value}` : "", filter: filter.value ? `${filter.value}=${filterMatch.value}` : "", limit: limit.value, template: template.value === displayedTemplate ? originalTemplate : template.value });
-        plan = planCollectionChange(saved.sources, { ...saved.sources, [path]: converted }, saved.routes, saved.identity);
-        if ("error" in plan) { result.textContent = plan.error; preview.textContent = ""; return; }
-        const collection = plan.collections.find((item) => item.path === path && item.start === sourceStart);
+        // Validates the settings exactly as an inline recipe would, then stores them as JSON only.
+        const spec = collectionSpec({ folders, sort: sort.value ? `${direction.value === "descending" ? "-" : ""}${sort.value}` : "", filter: filter.value ? `${filter.value}=${filterMatch.value}` : "", limit: limit.value });
+        plan = planSidecarRecipe({ sources: saved.sources, routes: saved.routes, identity: saved.identity }, path, sourceStart,
+          { folders: spec.folders, sort: spec.sort, filter: spec.filter, limit: spec.limit, template: template.value === displayedTemplate ? originalTemplate : template.value });
+        const collection = previewSidecar(saved, plan, path);
         result.textContent = `${collection?.records.length ?? 0} matching ${collection?.records.length === 1 ? "page" : "pages"}. Apply updates the grid and its dependent listings as one undo step.`;
         preview.textContent = collection?.output ?? "";
         apply.disabled = false;
@@ -272,16 +457,18 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     const result = node("p"); result.setAttribute("role", "status");
     const kept = node("ul", "collections-panel__kept");
     const apply = node("button", "button primary", "Apply"); apply.type = "submit";
-    let plan: BakeResult = { error: "Choose folders first." };
+    let plan: SidecarOrigin | { error: string } = { error: "Choose folders first." };
     const refresh = () => {
       apply.disabled = true; kept.replaceChildren();
       const converted = planManualConversion({ sources: saved.sources, routes: saved.routes, identity: saved.identity, path, start: sourceStart, token,
         folders: checks.filter((input) => input.checked).map((input) => input.value) });
       if ("error" in converted) { plan = converted; result.textContent = `${converted.error} Nothing will change.`; return; }
-      plan = converted.plan;
-      const changed = Object.keys(converted.plan.edits).filter((file) => file !== path);
-      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page${changed.length ? ` and ${changed.length} linked ${changed.length === 1 ? "page" : "pages"}` : ""} as one undo step.`;
-      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept as a page field of the linked page; SEO titles and descriptions stay as they are.`));
+      try {
+        plan = planSidecarRecipe({ sources: saved.sources, routes: saved.routes, identity: saved.identity }, path, sourceStart, converted.recipe, converted.id);
+        previewSidecar(saved, plan, path);
+      } catch (error) { plan = { error: error instanceof Error ? error.message : "The pages could not be chosen." }; result.textContent = `${plan.error} Nothing will change.`; return; }
+      result.textContent = `${converted.records} ${converted.records === 1 ? "page" : "pages"} will show, including all ${converted.cards} current cards in their current order. Apply changes this page and the editor's page data as one undo step.`;
+      for (const line of converted.kept) kept.append(node("li", "", `Card ${line} is kept in the editor's page data; the pages' own titles, descriptions and SEO stay as they are.`));
       apply.disabled = false;
     };
     form.addEventListener("change", refresh);
@@ -294,6 +481,12 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   return { update, openGrid, dirty,
     pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
     pageFieldsStamp: () => !destroyed && fieldForm && activeForm === fieldForm ? stamp(fieldForm) : undefined,
+    pageFieldDocument(sidecar) {
+      if (destroyed) throw new Error("Open a page to edit its fields.");
+      if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return sidecar;
+      if (!fieldDocument) throw new Error("Open a page to edit its fields.");
+      return fieldDocument(sidecar);
+    },
     pageFieldSource(source) {
       if (destroyed) throw new Error("Open a page to edit its fields.");
       if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return source;

@@ -4,13 +4,24 @@ async function mount(page:Page,baseURL:string|undefined,settings=true){
  await page.evaluate(async settings=>{
   const {mountCollectionsPanel}=await import('/src/components/collections-panel.ts');
   const {applyCollectionEdits}=await import('/src/page-builder/collection-bake.ts');
+  const {planNativeCollectionOperation}=await import('/src/page-builder/native-collection-host.ts');
   const host=document.createElement('div');document.body.replaceChildren(host);
   const source='<html><head><title>Home</title><meta name="date" content="2025-01-01"><meta name="field:category" content="Clay"></head><body><div><a href="/old/">Old</a></div></body></html>';
   const state={sources:{'index.html':source,'work/one/index.html':'<html><head><title>One</title></head><body></body></html>'} as Record<string,string>,routes:{'/':'index.html','/work/one/':'work/one/index.html'},identity:{name:'Studio'},revision:'scope-A',calls:0,pending:false,refreshOnApply:false,messages:[] as string[],resolve:undefined as undefined|(()=>void),opened:[] as string[]};
   const panel=mountCollectionsPanel(host,{sources:()=>state.sources,routes:()=>state.routes,identity:()=>state.identity,revision:()=>state.revision,page:()=>'index.html',apply:async(plan,revision)=>{
    state.calls++;if(state.pending)await new Promise<void>(resolve=>state.resolve=resolve);
-   if(revision!==state.revision||Object.entries(plan.expectedSources).some(([path,source])=>state.sources[path]!==source))return false;
-   for(const [path,edits]of Object.entries(plan.edits))state.sources[path]=applyCollectionEdits(state.sources[path],edits);
+   if(revision!==state.revision)return false;
+   if('creates' in plan){
+    // As the host does: the JSON origin is planned again by the real planner, pinned, and applied together.
+    const planned=planNativeCollectionOperation({sources:state.sources,routes:state.routes,files:Object.keys(state.sources),revision:state.revision,identity:state.identity,origin:{...plan,done:'',undone:''}});
+    if('error' in planned)throw new Error(planned.error);
+    if([...planned.operation.expectedSources].some(([path,source])=>state.sources[path]!==source))return false;
+    for(const [path,text]of planned.operation.edits??[])state.sources[path]=text;
+    for(const file of planned.operation.creates??[])state.sources[file.path]=file.content;
+   }else{
+    if(Object.entries(plan.expectedSources).some(([path,source])=>state.sources[path]!==source))return false;
+    for(const [path,edits]of Object.entries(plan.edits))state.sources[path]=applyCollectionEdits(state.sources[path],edits);
+   }
    if(state.refreshOnApply)panel.update();
    return true;
   },openPage:path=>state.opened.push(path),announce:message=>state.messages.push(message)},{settings});

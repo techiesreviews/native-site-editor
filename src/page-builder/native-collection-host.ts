@@ -4,6 +4,8 @@ import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
 import type { CollectionIdentity } from './collection-fields';
+import { planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
+import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
 export interface NativeCollectionOrigin {
@@ -18,6 +20,15 @@ export interface NativeCollectionOrigin {
   done: string;
   undone: string;
   focus?: { file?: string; route?: string };
+  /**
+   * Listings whose current generated cards may be replaced or detached even
+   * though they differ from what the template and page data produce. Each
+   * entry names one existing listing by source path and element start; the
+   * path must also be pinned in expectedSources. Not a blanket bypass.
+   */
+  acceptGeneratedDrift?: { path: string; start: number }[];
+  /** Sidecar collection ids whose hand-edited or unbuilt cards this change may replace. */
+  acceptCollections?: string[];
 }
 export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
@@ -34,6 +45,8 @@ export interface NativeCollectionPlan {
   expectedRoutes: Readonly<Record<string, string>>;
   afterRoutes: Readonly<Record<string, string>>;
   collections: CollectionPreview[];
+  /** Sidecar collections as baked for the candidate graph. */
+  documentCollections: DocumentCollectionPreview[];
 }
 const own = (sources: Readonly<Record<string, string>>, path: string) => Object.hasOwn(sources, path) ? sources[path] : undefined;
 const sameRoutes = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
@@ -48,6 +61,67 @@ export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapsh
     [...plan.operation.expectedSources].every(([path, expected]) => own(snapshot.sources, path) === expected);
 }
 
+/**
+ * Fails closed when an existing listing's cards were edited by hand: a later
+ * bake would silently replace that text. Only the before graph is compared,
+ * so legitimate metadata changes still rebuild clean listings. Listings whose
+ * recipe cannot be baked are left to the bake's own error.
+ */
+function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, origin: NativeCollectionOrigin): GeneratedDrift[] {
+  const accepted = origin.acceptGeneratedDrift ?? [];
+  for (const entry of accepted) {
+    if (!origin.expectedSources?.has(entry.path) || origin.expectedSources.get(entry.path) !== own(sources, entry.path))
+      throw Error(`Pin ${entry.path} before replacing its cards.`);
+  }
+  const all = generatedDrift(sources, routes, identity);
+  const isAccepted = (item: { path: string; start: number }) => accepted.some(entry => entry.path === item.path && entry.start === item.start);
+  for (const entry of accepted) {
+    if (!all.some(item => item.path === entry.path && item.start === entry.start))
+      throw Error(`The cards in ${entry.path} already match their page data.`);
+  }
+  const blocked = all.filter(item => item.kind !== 'unchecked' && !isAccepted(item));
+  const edited = [...new Set(blocked.filter(item => item.kind === 'edited').map(item => item.path))];
+  if (edited.length) throw Error(`The cards in ${edited.join(", ")} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+  const unbuilt = [...new Set(blocked.map(item => item.path))];
+  if (unbuilt.length) throw Error(`The cards in ${unbuilt.join(", ")} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
+  // Listings that cannot be baked as they are: checked again after the bake.
+  return all.filter(item => item.kind === 'unchecked' && !isAccepted(item));
+}
+
+export interface GeneratedDrift {
+  path: string;
+  start: number;
+  /** edited: cards differ by hand; unbuilt: no cards yet; unchecked: this listing's recipe cannot be baked as it is. */
+  kind: 'edited' | 'unbuilt' | 'unchecked';
+}
+/**
+ * Legacy inline listings (recipe still in the page HTML). When the whole graph
+ * bakes, each listing is compared exactly. When it does not, every page that
+ * holds a listing (readable or not) is "unchecked": any bake that would then
+ * change that page is refused after the fact, page by page.
+ */
+export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity): GeneratedDrift[] {
+  const listingPages = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))]
+    .filter(path => sources[path] !== undefined && /data-each/i.test(sources[path]));
+  if (!listingPages.length) return [];
+  let baked: ReturnType<typeof planBake>;
+  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }); } catch (error) { baked = { error: String(error) }; }
+  const drift: GeneratedDrift[] = [];
+  for (const path of listingPages) {
+    const source = sources[path];
+    let collections: ReturnType<typeof readCollections> | undefined;
+    try { collections = readCollections(source); } catch { collections = undefined; }
+    if (!collections) { drift.push({ path, start: -1, kind: 'unchecked' }); continue; }
+    for (const collection of collections) {
+      if ('error' in baked) { drift.push({ path, start: collection.element.start, kind: 'unchecked' }); continue; }
+      if (!(baked.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end)) continue;
+      const region = source.slice(collection.template.end, collection.element.close!.start);
+      drift.push({ path, start: collection.element.start, kind: region.trim() ? 'edited' : 'unbuilt' });
+    }
+  }
+  return drift;
+}
+
 /** Apply the origin to a candidate graph, bake once, and return one operation. */
 export function planNativeCollectionOperation(input: NativeCollectionSnapshot & {
   origin: NativeCollectionOrigin;
@@ -60,6 +134,8 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     const files = new Set(input.files);
     if (Object.keys(sources).some(path => !files.has(path))) throw Error("Loaded source is absent from the file graph.");
     if (!sameRoutes(routes, deriveNativeRoutes(files))) throw Error('Load the complete current route graph before planning collections.');
+    // The editor's page data file is a planning input: loaded, and pinned by its bytes or absence.
+    if (files.has(EDITOR_PAGE_BUILDER_PATH) && own(sources, EDITOR_PAGE_BUILDER_PATH) === undefined) throw Error(`Load ${EDITOR_PAGE_BUILDER_PATH} before planning collections.`);
     const before = new Map(Object.entries(sources));
     const candidate = new Map(before);
     const afterFiles = new Set(files);
@@ -69,6 +145,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (own(sources, path) !== value) throw Error(`Source changed: ${path}.`);
       expected.set(path, value);
     }
+    const unchecked = assertGeneratedCardsCurrent(sources, routes, identity, origin);
     const moves = (origin.moves ?? []).map(move => ({ ...move }));
     const deletes = [...(origin.deletes ?? [])];
     const creates = (origin.creates ?? []).map(create => ({ ...create }));
@@ -104,6 +181,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     }
     const afterRoutes = deriveNativeRoutes(afterFiles);
     for (const path of new Set([...Object.values(routes), ...Object.values(afterRoutes)])) guard(path);
+    guard(EDITOR_PAGE_BUILDER_PATH);
     const movedFiles = new Map(moves.map(move => [move.from, move.to]));
     const folders = (origin.folders ?? []).map(folder => ({ ...folder }));
     const folderPrefix = (path: string) => path.endsWith("/") && !/[\\\x00-\x1f\x7f]/.test(path) &&
@@ -152,6 +230,42 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };
     }
     for (const [path, ranges] of Object.entries(baked.edits)) candidate.set(path, applyCollectionEdits(candidate.get(path)!, ranges));
+    // A page whose listings could not be checked before must not be rebaked now.
+    for (const path of new Set(unchecked.map(item => item.path))) {
+      const target = moves.find(move => move.from === path)?.to ?? path;
+      if ((baked.edits[target] ?? []).length)
+        throw Error(`The cards in ${path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or fix the collection in Code first.`);
+    }
+    // Accepting replacement is scoped: the sidecar and each accepted listing page must be pinned at their current bytes.
+    if (origin.acceptCollections?.length) {
+      const pinned = (path: string) => origin.expectedSources?.has(path) && origin.expectedSources.get(path) === own(sources, path);
+      if (!pinned(EDITOR_PAGE_BUILDER_PATH)) throw Error(`Pin ${EDITOR_PAGE_BUILDER_PATH} before replacing cards.`);
+      const stored = readSidecar(own(sources, EDITOR_PAGE_BUILDER_PATH));
+      for (const id of origin.acceptCollections) {
+        const page = stored.collections[id]?.pagePath;
+        if (!page || !pinned(page)) throw Error(`Pin the page of collection “${id}” before replacing its cards.`);
+      }
+    }
+    // Sidecar collections: recipes only in JSON, finished cards only in HTML.
+    const document = planDocumentBake({
+      identity: candidateIdentity,
+      before: { sources, routes },
+      candidate: { sources: Object.fromEntries(candidate), routes: afterRoutes },
+      moves: new Map(moves.map(move => [move.from, move.to])),
+      deletes,
+      relocateFolder: relocatedFolder,
+      accept: origin.acceptCollections,
+    });
+    if ('error' in document) return { error: document.error };
+    for (const [path, text] of document.texts) {
+      if (text === undefined) {
+        candidate.delete(path);
+        if (files.has(path) && !deletes.includes(path)) deletes.push(path);
+        continue;
+      }
+      candidate.set(path, text);
+      if (!files.has(path) && !creates.some(create => create.path === path)) creates.push({ path, content: text });
+    }
     const finalEdits = new Map<string, string>();
     const createdPaths = new Set(creates.map(create => create.path));
     const oldFor = new Map(moves.map(move => [move.to, move.from]));
@@ -159,10 +273,10 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { folders: _folderIntent, ...nativeOrigin } = origin;
+    const { folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
-    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections };
+    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Collection operation could not be planned.' };
   }

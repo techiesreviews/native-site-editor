@@ -45,23 +45,32 @@ test("selected collection mixes five page folders, filters and sorts native card
   await panel.getByRole("button", { name: "Save collection", exact: true }).click();
   const links = frame(page).locator('[data-key="mixed-list"] article a');
   await expect(links).toHaveText(["videos", "articles", "portfolio", "services", "Work"]);
+  // The legacy inline recipe moves into the editor's JSON; the page keeps only plain cards.
   const union = (await storedDraft(page, "index.html"))!.content;
-  expect(union).toContain('data-each="/work/ /articles/ /portfolio/ /services/ /videos/"');
-  expect(union).toContain('<template><article><a href="{url}">{title}</a></article></template>');
+  const json = (await storedDraft(page, ".editor/page-builder.json"))!.content;
+  const recipe = () => (Object.values(JSON.parse(json).collections) as any[])[0];
+  expect(Object.keys(JSON.parse(json).collections)).toHaveLength(1);
+  expect(recipe()).toMatchObject({ pagePath: "index.html", folders: ["/work/", "/articles/", "/portfolio/", "/services/", "/videos/"], sort: "-date", limit: 5, template: '<article><a href="{url}">{title}</a></article>' });
+  for (const inline of ["data-each", "<template", "data-sort", "data-limit"]) expect(union).not.toContain(inline);
+  expect(union).toContain('<section class="collection-grid" data-key="mixed-list"><article><a href="/videos/one/">videos</a></article>');
   expect(union).not.toContain(">Folder index</a>");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(before);
   await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
   await expect(links).toHaveText(["Work"]);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(union);
+  await expect.poll(async () => (await storedDraft(page, ".editor/page-builder.json"))?.content).toBe(json);
   await expect(links).toHaveCount(5);
   await panel.getByRole("combobox", { name: "Filter by", exact: true }).selectOption("category");
   await panel.getByLabel("Matches exactly").fill("Featured");
   await panel.getByLabel("Maximum items (1–500)").fill("2");
   await panel.getByRole("button", { name: "Save collection", exact: true }).click();
   await expect(links).toHaveText(["articles", "portfolio"]);
-  expect((await storedDraft(page, "index.html"))!.content).toContain('data-filter="category=Featured"');
+  const filtered = (Object.values(JSON.parse((await storedDraft(page, ".editor/page-builder.json"))!.content).collections) as any[])[0];
+  expect(filtered).toMatchObject({ filter: "category=Featured", limit: 2 });
+  expect((await storedDraft(page, "index.html"))!.content).not.toContain("data-filter");
 });
 
 test("foreign native source edit retains the collection form and refuses stale Apply", async ({ page, baseURL }) => {

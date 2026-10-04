@@ -147,7 +147,8 @@ test("typing a title and a description writes the head, og tags along, one undo 
   await open(page, baseURL, 501);
   await writeSetting(page, "Title", "Home & <more>");
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
-  await expect(code(page)).toContainText("<title>Home &amp; &lt;more&gt;</title>");
+  // The code editor opens with the <head> folded, so read the mounted source rather than the rendered lines.
+  await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toContain("\n  <title>Home &amp; &lt;more&gt;</title>\n");
   await expect(page.locator("#current-page")).toHaveText("Home");
   await writeSetting(page, "Description", 'The "home" page');
   await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");

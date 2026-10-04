@@ -5,14 +5,74 @@ export interface SelectedCollection { key: string; path: string; start: number }
 export interface SelectedCollectionDeps extends CollectionsDeps {
   target(): SelectedCollection | undefined;
   prepare(target: SelectedCollection): Promise<void>;
+  /** Recovery for listings whose cards were edited by hand; each action is one undo step. */
+  generated?: {
+    state(target: SelectedCollection): "clean" | "edited" | "unbuilt" | "unchecked" | "checking" | undefined;
+    keepManual(target: SelectedCollection): Promise<string | undefined>;
+    rebuild(target: SelectedCollection): Promise<string | undefined>;
+  };
 }
 
 /** Keeps the collection form alive through CSS rerenders and canvas repainting. */
 export function mountSelectedCollection(host: HTMLElement, deps: SelectedCollectionDeps) {
   const details = node("details", "selected-collection");
   details.append(node("summary", "", "Collection"));
+  const recovery = node("div", "selected-collection__recovery");
   const content = node("div");
-  details.append(content); host.append(details);
+  details.append(recovery, content); host.append(details);
+  let recoveryKey: string | undefined, busy = false;
+  function renderRecovery() {
+    const target = deps.target();
+    const state = target && deps.generated?.state(target);
+    const key = `${target?.key ?? ""}:${state ?? ""}`;
+    if (key === recoveryKey) return;
+    recoveryKey = key;
+    recovery.replaceChildren();
+    if (!target || !state || !deps.generated) return;
+    const generated = deps.generated;
+    const act = (button: HTMLButtonElement, run: () => Promise<string | undefined>) => button.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      let error: string | undefined;
+      try { error = await run(); }
+      catch (caught) { error = caught instanceof Error ? caught.message : "The cards could not be changed."; }
+      finally {
+        busy = false; recoveryKey = undefined; update();
+        // The area is redrawn; the refusal stays in its note and is announced.
+        // A refusal for a collection that is no longer selected is only announced:
+        // it never lands in another selection's note.
+        if (error && deps.target()?.key !== target.key) deps.announce(error);
+        else if (error) {
+          const note = recovery.querySelector(".selected-collection__note");
+          if (note) note.textContent = error;
+          else recovery.prepend(node("p", "selected-collection__note", error));
+          deps.announce(error);
+        }
+      }
+    });
+    const message = node("p", "selected-collection__note");
+    message.textContent = state === "edited" ? "The cards here were edited by hand and no longer match the page data. Keep them as they are, or rebuild them from the pages."
+      : state === "unbuilt" ? "These cards have not been built from page data yet."
+      : state === "unchecked" ? "These cards cannot be checked against page data until the collection is fixed. Keep them as they are, or fix the collection in Code." : "";
+    if (state === "checking") message.textContent = "Checking these cards against page data…";
+    recovery.append(message);
+    if (state === "checking") return;
+    if (state !== "unbuilt") {
+      const keep = node("button", "", "Use manual cards") as HTMLButtonElement;
+      keep.type = "button";
+      keep.title = "Keep these cards exactly as they are and stop making them from page data.";
+      act(keep, () => generated.keepManual(target));
+      recovery.append(keep);
+    }
+    if (state === "edited" || state === "unbuilt") {
+      const label = state === "edited" ? "Rebuild cards from page data" : "Build cards from page data";
+      const rebuild = node("button", "", label) as HTMLButtonElement;
+      rebuild.type = "button";
+      rebuild.title = state === "edited" ? "Replaces the hand edits in these cards with what the pages say." : "Makes the cards from the pages this collection lists.";
+      act(rebuild, () => generated.rebuild(target));
+      recovery.append(rebuild);
+    }
+  }
   let panel: CollectionsPanel | undefined;
   let preparedKey: string | undefined;
   let loading = false, destroyed = false;
@@ -40,6 +100,7 @@ export function mountSelectedCollection(host: HTMLElement, deps: SelectedCollect
     if (destroyed) return;
     const target = deps.target();
     host.hidden = !target && !panel?.dirty();
+    renderRecovery();
     panel?.update();
     if (target && details.open && !panel?.dirty() && target.key !== preparedKey) void load(target);
   }
