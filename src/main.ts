@@ -1399,6 +1399,8 @@ function mountNativeSelectedCollection(host: HTMLElement) {
   return selectedCollectionView = mountSelectedCollection(host, {
     target: nativeSelectedCollection, sources,
     routes, identity,
+    // Every path, read or not: an unread editor JSON shows as not ready, never as absent.
+    files: () => nativeFiles(),
     revision, page: () => nativeSelectedCollection()?.path,
     async prepare(target) {
       const before = sources(), expectedRevision = revision();
@@ -3018,6 +3020,9 @@ async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<strin
   const files = nativeFiles().sort();
   const pins = new Map(pinned);
   pins.set(path, pins.has(path) ? pins.get(path) : source);
+  // The editor's JSON is pinned as it is now (bytes, or absent/unread) unless the caller pinned it:
+  // a JSON read or changed during a load below refuses instead of being trusted.
+  if (!pins.has(EDITOR_PAGE_BUILDER_PATH)) pins.set(EDITOR_PAGE_BUILDER_PATH, nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH));
   // Every pinned file must still have exactly the bytes it was planned from
   // (or still be absent/unread): anything read or changed meanwhile refuses.
   const verify = (): string | undefined => {

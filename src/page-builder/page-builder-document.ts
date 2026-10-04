@@ -246,7 +246,8 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
         const all = collectionRecords(input.sources, input.routes, input.identity, { ...collection.spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, pagePath)
           .map((record) => ({ ...record, fields: resolvePageFields(record.fields, Object.hasOwn(document.pages, record.path) ? document.pages[record.path] : undefined) }));
         const records = selectCollectionRecords(all, collection.spec, collection.fields);
-        const known = [...new Set([...collection.fields, ...records.flatMap((record) => Object.keys(record.fields))])];
+        // Names come from every page the folders list, before filter and limit, as the bake learns them.
+        const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
         bindCollectionTemplate(markup, Object.fromEntries(known.map((field) => [field, ""])), known);
         for (const record of records) expectedSources[record.path] = input.sources[record.path];
         discovered.push({ pagePath, source, collection, id, fields: known.filter((field) => !builtinFields.some((builtin) => builtin === field)), privateFields: privateFields(source, collection, existing) });

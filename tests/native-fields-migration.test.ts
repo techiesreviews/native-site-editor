@@ -219,3 +219,22 @@ test("legacy cards whose JSON value differs from their HTML-built output show as
     origin: { edits: new Map([[fern, sources[fern].replace("</h1>", " Cafe</h1>")]]), done: "", undone: "" } });
   assert.ok("error" in result && /moved to the editor's data/.test(result.error) && /Rebuild cards from page data/.test(result.error));
 });
+
+test("the legacy import learns field names from every listed page, not only the ones the limit keeps", () => {
+  let sources = load();
+  const meadow = "work/meadow-row-allotments/index.html";
+  sources[meadow] = withMeta(sources[meadow], meta("client", "Meadow Trust"));
+  // Only Fern & Kettle is shown (title order, limit 1); client exists only on an excluded page.
+  sources["index.html"] = sources["index.html"].replace("</main>", '<ul class="limited" data-each="/work/" data-sort="title" data-limit="1"><template><li>{title} {client}</li></template></ul>\n</main>');
+  sources = bakeLegacy(sources);
+  assert.match(sources["index.html"], /<li>Fern &amp; Kettle <\/li>/);
+  sources["about/index.html"] = sources["about/index.html"].replace("</main>", `${jsonGrid}\n</main>`);
+  const start = sources["about/index.html"].indexOf(jsonGrid);
+  const origin = planSidecarRecipe({ sources, routes: deriveNativeRoutes(Object.keys(sources)), identity }, "about/index.html", start,
+    { folders: ["/work/"], sort: "", filter: "", limit: 6, template: "<p>{title}</p>" });
+  const { next } = plan(sources, { ...origin, done: "", undone: "" });
+  const imported = Object.values(readPageBuilderDocument(next[EDITOR_PAGE_BUILDER_PATH]).collections).find((collection) => collection.pagePath === "index.html")!;
+  assert.deepEqual(imported.fields, ["client"]);
+  assert.equal(imported.limit, 1);
+  assert.match(next["index.html"], /<li>Fern &amp; Kettle <\/li>/);
+});
