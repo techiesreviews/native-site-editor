@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { showStylePanel, styleGrip } from "./style-panel-controls";
 const panel = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 async function open(page: Page, baseURL: string | undefined, repo = 501) {
@@ -7,16 +8,10 @@ async function open(page: Page, baseURL: string | undefined, repo = 501) {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible();
 }
-// The Style dock starts collapsed to zero width; then everything in it except
-// its resize separator is inert and hidden, so the separator is what opens it.
-const grip = (page: Page) => page.getByRole("separator", { name: "Resize Style panel", exact: true });
-async function showPanel(page: Page) {
-  if (await grip(page).getAttribute("aria-valuenow") === "0") { await grip(page).focus(); await page.keyboard.press("Enter"); }
-  await expect(grip(page)).not.toHaveAttribute("aria-valuenow", "0");
-}
+const grip = styleGrip;
 async function select(page: Page, selector = ".lead") {
   await frame(page).locator(selector).click();
-  await showPanel(page);
+  await showStylePanel(page);
   await expect(panel(page).getByText("Spacing", { exact: true })).toBeVisible();
 }
 async function fill(page: Page, label: string, value: string) {
@@ -72,7 +67,7 @@ test("tablet and hover changes write media and state rules; hide stays scoped", 
 test("Add class writes HTML before styling a heading; never writes inline CSS", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await frame(page).locator(".hero h1").click();
-  await showPanel(page);
+  await showStylePanel(page);
   await panel(page).getByRole("textbox", { name: "Class name" }).fill("hero-title");
   await panel(page).getByRole("button", { name: "Add class", exact: true }).click();
   await expect(frame(page).locator("h1.hero-title")).toBeVisible();

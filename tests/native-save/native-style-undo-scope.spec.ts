@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { showStylePanel } from "./style-panel-controls";
 const style = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("styles/site.css"));
 async function append(page: Page, text: string) {
@@ -12,7 +13,7 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   const lead = page.frameLocator(".native-preview-frame").locator(".lead");
   await expect(lead).toBeVisible(); await lead.click();
-  await style(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showStylePanel(page);
   await expect.poll(() => source(page)).toBeDefined();
 }
 test("native focused Undo retries the prior value and original Show in code follows current source", async ({ page, baseURL }) => {

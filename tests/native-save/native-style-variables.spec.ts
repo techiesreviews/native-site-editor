@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { showStylePanel } from "./style-panel-controls";
 test.beforeEach(({ page }) => { page.on("pageerror", error => console.log("PAGEERROR", error.stack)); page.on("console", message => { if (message.type() === "error") console.log("BROWSERERROR", message.text()); }); });
 const panel = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 async function open(page: Page, baseURL: string | undefined) {
@@ -7,7 +8,7 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.frameLocator(".native-preview-frame").locator(".lead")).toBeVisible();
   await expect.poll(() => page.evaluate(async () => typeof (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe("string");
   await page.frameLocator(".native-preview-frame").locator(".lead").click();
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showStylePanel(page);
   await panel(page).getByRole("searchbox", { name: "Search styles" }).fill("text colour");
 }
 test("right-click compatible variables writes var() with one Undo and keyboard Escape restores focus", async ({ page, baseURL }) => {

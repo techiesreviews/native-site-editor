@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { showStylePanel } from "./style-panel-controls";
 const style = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 async function open(page: Page, baseURL: string | undefined, selector = ".lead") {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(selector)).toBeVisible();
   await frame(page).locator(selector).click();
-  await style(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showStylePanel(page);
   await expect.poll(() => page.evaluate(async () => typeof (await import("/src/components/code-editor.ts")).getMountedSource("styles/site.css"))).toBe("string");
 }
 async function append(page: Page, path: string, text: string) {

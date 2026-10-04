@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { showStylePanel } from "./style-panel-controls";
 const panel = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 async function open(page: Page, baseURL: string | undefined, repo = 501) {
@@ -9,7 +10,7 @@ async function open(page: Page, baseURL: string | undefined, repo = 501) {
 }
 async function select(page: Page, selector = ".lead") {
   await frame(page).locator(selector).click();
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showStylePanel(page);
   await expect(panel(page).getByText("Spacing", { exact: true })).toBeVisible();
 }
 async function fill(page: Page, label: string, value: string) {
@@ -55,7 +56,7 @@ test("new catalogue fields write native CSS, keep unitless values and support Un
 test("code-authored grid exposes computed auto tracks and writes live native grid CSS", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await frame(page).locator("section.cards").evaluate(element => (element as HTMLElement).click());
-  await panel(page).getByRole("button", { name: "Open Style panel" }).click();
+  await showStylePanel(page);
   await expect(panel(page).locator(".style-panel__selector")).toHaveText(".cards");
   const search = panel(page).getByRole("searchbox", { name: "Search styles" });
   await search.fill("auto rows");
