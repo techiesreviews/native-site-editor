@@ -463,7 +463,17 @@
   background: var(--component-surface);
 }
 
-/* A thin rule between the bar's groups: name, style, content, arrange. */
+/* The bar's groups (style, content, arrange) after the name: each wraps to
+   the next line as one unit, and only inside itself when wider than the bar. */
+.edit-bar__group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+/* A thin rule leading each group, so a wrapped line never ends on one. */
 .edit-bar__rule {
   flex: none;
   align-self: stretch;

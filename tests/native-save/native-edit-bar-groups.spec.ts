@@ -1,10 +1,47 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 // The edit bar reads as groups (name, style, content, arrange: moves, Move to,
 // duplicate, delete, add) split by thin
 // rules that are decoration only: hidden from assistive tech, not focusable,
 // and never between two controls of the same group.
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent("index.html")}`;
+
+// Every rule leads its group; no line of the bar ends on a rule, and each
+// rule is decoration only.
+async function groupLayout(bar: Locator) {
+  return bar.evaluate((el) => {
+    const items = [...el.querySelectorAll<HTMLElement>(".edit-bar__kind, button, select, .edit-bar__rule")].filter((item) => item.getClientRects().length);
+    return items.map((item) => {
+      const r = item.getBoundingClientRect();
+      return {
+        rule: item.classList.contains("edit-bar__rule"),
+        leads: item.classList.contains("edit-bar__rule") && item.parentElement!.classList.contains("edit-bar__group") && item.parentElement!.firstElementChild === item,
+        hidden: item.getAttribute("aria-hidden"),
+        tabindex: item.getAttribute("tabindex"),
+        label: item.getAttribute("aria-label") ?? item.textContent ?? "",
+        top: Math.round(r.top), mid: r.top + r.height / 2, width: r.width, right: r.right,
+      };
+    });
+  });
+}
+
+function expectRulesAttached(layout: Awaited<ReturnType<typeof groupLayout>>) {
+  const rules = layout.filter((entry) => entry.rule);
+  expect(rules.length).toBeGreaterThan(0);
+  for (const rule of rules) expect(rule).toMatchObject({ leads: true, hidden: "true", tabindex: null, width: 1 });
+  expect(layout[0].rule).toBe(false);
+  expect(layout.at(-1)!.rule).toBe(false);
+  layout.forEach((entry, i) => {
+    if (!entry.rule) return;
+    // The control after a rule shares its line: a wrap moves both together.
+    expect(Math.abs(layout[i + 1].mid - entry.mid)).toBeLessThan(4);
+  });
+}
+
+const sameRow = (layout: Awaited<ReturnType<typeof groupLayout>>, a: string, b: string) => {
+  const one = layout.find((entry) => entry.label === a)!; const two = layout.find((entry) => entry.label === b)!;
+  return Math.abs(one.mid - two.mid) < 4;
+};
 
 test("the bar's controls sit in groups split by decorative rules", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
@@ -14,24 +51,57 @@ test("the bar's controls sit in groups split by decorative rules", async ({ page
   await heading.click();
   const bar = page.getByRole("toolbar", { name: "Edit bar" });
   await expect(bar).toBeVisible();
-
-  const layout = await bar.evaluate((el) => [...el.children].map((child) => ({
-    rule: child.classList.contains("edit-bar__rule"),
-    hidden: child.getAttribute("aria-hidden"),
-    tag: child.tagName,
-    width: child.getBoundingClientRect().width,
-  })));
-  const rules = layout.filter((entry) => entry.rule);
-  expect(rules.length).toBeGreaterThan(0);
-  for (const rule of rules) {
-    expect(rule).toMatchObject({ hidden: "true", tag: "SPAN", width: 1 });
+  expectRulesAttached(await groupLayout(bar));
+  // Group wrappers add no roles or names.
+  for (const group of await bar.locator(".edit-bar__group").all()) {
+    expect(await group.evaluate((el) => [el.getAttribute("role"), el.getAttribute("aria-label"), el.getAttribute("tabindex")])).toEqual([null, null, null]);
   }
-  // Never first, last, or doubled.
-  expect(layout[0].rule).toBe(false);
-  expect(layout.at(-1)!.rule).toBe(false);
-  layout.forEach((entry, i) => { if (entry.rule) expect(layout[i + 1].rule).toBe(false); });
-  // The rules leave keyboard order alone: no rule takes focus.
-  await expect(bar.locator(".edit-bar__rule[tabindex]")).toHaveCount(0);
+});
+
+test("in a 340px canvas between Structure and Style, groups wrap whole and keep keyboard order", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await page.goto(`${baseURL}/${nativeHash}`);
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
+  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
+  const canvas = (await page.locator(".native-preview-frame").boundingBox())!;
+  expect(canvas.width).toBeLessThan(400);
+  const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
+  let wrapped = 0;
+
+  for (const target of [frame.locator(".hero p").first(), frame.locator(".hero h1")]) {
+    await target.click({ position: { x: 4, y: 4 } });
+    await expect(bar).toBeVisible();
+    const layout = await groupLayout(bar);
+    expectRulesAttached(layout);
+    const box = (await bar.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
+    if (new Set(layout.map((entry) => entry.top)).size > 1) wrapped++;
+    const labels = layout.map((entry) => entry.label);
+    if (labels.includes("Bold") && labels.includes("Italic")) expect(sameRow(layout, "Bold", "Italic")).toBe(true);
+    if (labels.includes("Move down") && labels.includes("Move to")) expect(sameRow(layout, "Move down", "Move to")).toBe(true);
+    if (labels.includes("Move up") && labels.includes("Move down")) expect(sameRow(layout, "Move up", "Move down")).toBe(true);
+
+    // Tab walks the controls in DOM order across group wrappers.
+    const controls = await bar.evaluate((el) => [...el.querySelectorAll<HTMLElement>("button:not([disabled]), select")].map((c) => c.getAttribute("aria-label") ?? c.textContent));
+    await bar.locator("button:not([disabled]), select").first().focus();
+    const walked = [];
+    for (let i = 0; i < controls.length; i++) {
+      walked.push(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent));
+      if (i < controls.length - 1) await page.keyboard.press("Tab");
+    }
+    expect(walked).toEqual(controls);
+  }
+  // The narrow canvas really makes the bar wrap, so the checks above bite.
+  expect(wrapped).toBeGreaterThan(0);
+  // Bold activates from the keyboard inside its group.
+  const bold = bar.getByRole("button", { name: "Bold", exact: true });
+  if (await bold.count()) {
+    const before = await bold.getAttribute("aria-pressed");
+    await bold.focus(); await bold.press("Enter");
+    await expect(bold).not.toHaveAttribute("aria-pressed", before ?? "");
+  }
 });
 
 test("Move down and Move to share the arrange group and both still work", async ({ page, baseURL }) => {
@@ -56,9 +126,9 @@ test("Move down and Move to share the arrange group and both still work", async 
   const next = await down.evaluate((el) => {
     let sib = el.nextElementSibling;
     while (sib && sib.textContent !== "Move to" && !sib.classList.contains("edit-bar__rule")) sib = sib.nextElementSibling;
-    return sib?.classList.contains("edit-bar__rule") ? "rule" : sib?.textContent;
+    return [sib?.classList.contains("edit-bar__rule") ? "rule" : sib?.textContent, el.parentElement === sib?.parentElement];
   });
-  expect(next).toBe("Move to");
+  expect(next).toEqual(["Move to", true]);
 
   const before = await source();
   await down.focus(); await down.press("Enter");

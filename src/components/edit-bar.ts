@@ -217,7 +217,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > .edit-bar__component-name > button:not([disabled]), :scope > select")];
+    return [...bar.querySelectorAll<HTMLElement>(":scope > button:not([disabled]), :scope > .edit-bar__component-name > button:not([disabled]), :scope > select, :scope > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__group > select")];
   }
 
   function closePopover(restoreFocus: boolean) {
@@ -848,6 +848,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // Controls fall into groups (name, style, content, arrange) with a thin
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";
+    let target: HTMLElement = bar;
     const groupOf = (control: EditBarControl) =>
       control.kind === "select" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
@@ -855,9 +856,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     for (const control of model.controls) {
       const next = groupOf(control);
       if (next !== group) {
+        // Each group wraps as one unit; its rule leads it, so a wrapped
+        // group starts its line with the rule and none is left orphaned.
+        target = node("span", "edit-bar__group");
         const rule = node("span", "edit-bar__rule");
         rule.setAttribute("aria-hidden", "true");
-        bar.append(rule);
+        target.append(rule);
+        bar.append(target);
         group = next;
       }
       if (control.kind === "button") {
@@ -871,7 +876,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         if (control.title) item.title = control.title;
         if (control.pressed !== undefined) item.setAttribute("aria-pressed", String(control.pressed));
         item.disabled = Boolean(control.disabled);
-        bar.append(item);
+        target.append(item);
       } else if (control.kind === "menu") {
         const item = button(control.label, () => {
           if (popoverButton === item) { closePopover(true); return; }
@@ -888,7 +893,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         item.setAttribute("aria-haspopup", "menu");
         item.setAttribute("aria-expanded", "false");
         if (control.title) item.title = control.title;
-        bar.append(item);
+        target.append(item);
       } else if (control.kind === "address") {
         const item = addressButton(control);
         if (kept === control && openAddress) {
@@ -898,7 +903,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         } else if (control.open && !kept) {
           opening = { item, control };
         }
-        bar.append(item);
+        target.append(item);
       } else if (control.kind === "prompt") {
         const item = button("", () => {
           if (note?.trigger === item) { closeNote(true); return; }
@@ -910,7 +915,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         item.setAttribute("aria-haspopup", "dialog");
         item.setAttribute("aria-expanded", String(keptPrompt === control));
         if (keptPrompt === control && note) note.trigger = item;
-        bar.append(item);
+        target.append(item);
       } else {
         const select = document.createElement("select");
         select.className = "edit-bar__select";
@@ -921,7 +926,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         select.addEventListener("change", () => {
           if (select.value !== control.value) control.onChange(select.value);
         });
-        bar.append(select);
+        target.append(select);
       }
     }
     bar.dataset.model = "1";
