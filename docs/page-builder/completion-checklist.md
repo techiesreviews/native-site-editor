@@ -77,5 +77,5 @@ Checkpoint commits, paths, worker ownership, servers, tests, failed checks, scre
 
 - [ ] Align slot actions to the far right of Structure rows; reveal on slot-name hover/focus with the existing matching faded overlay. Preserve inline text/link/image editing and slot toggles.
 - [ ] Replace the link/URL suggestion field shown in the edit bar with a native autocomplete/combobox, keeping inline appearance, arbitrary URLs, site paths/anchors, keyboard behavior and one Undo.
-- [ ] Remove the Plain HTML sections category from Add. Clarification pending: heading only, retaining native section choices, or remove those choices as well. Keep source output native either way.
+- [ ] Remove only the “Plain HTML sections” heading inside Add to the page, as clarified with the red-arrow screenshot. Keep Intro, Features, Split and Contact choices and their native output.
 - [ ] Match Style's dark background and mirrored grip animation to Structure, retaining the full-right collapse and narrow drawer behavior.
