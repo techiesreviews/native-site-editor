@@ -70,6 +70,10 @@ test("foreign native source edit retains the collection form and refuses stale A
   const panel = inspector(page);
   await panel.getByRole("checkbox", { name: "/articles/", exact: true }).check();
   await panel.getByLabel("Maximum items (1–500)").fill("3");
+  await page.getByRole("searchbox", { name: "Search styles", exact: true }).fill("padding");
+  await expect(panel.getByLabel("Maximum items (1–500)")).toHaveValue("3");
+  await expect(panel.getByLabel("Maximum items (1–500)")).toBeVisible();
+  await expect(panel.getByLabel("Card template HTML")).not.toBeVisible();
   // The actual mounted editor changes while a collection recipe is still unsubmitted.
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");

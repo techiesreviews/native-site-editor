@@ -623,7 +623,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const empty = node("p", "style-panel__hint", "No matching styles."); empty.setAttribute("role", "status");
     function filter() {
       let matches = 0;
-      for (const details of content.querySelectorAll<HTMLDetailsElement>("details")) {
+      for (const details of content.querySelectorAll<HTMLDetailsElement>(":scope > .style-panel__section")) {
         const title = details.querySelector("summary")!.textContent!;
         if (title === "Spacing") {
           const visible = matchesStyleSearch(searchQuery, "margin padding spacing box model", "margin padding", title) || ["margin", "padding"].some(kind => sides.some(side => matchesStyleSearch(searchQuery, `${kind} ${side}`, `${kind}-${side}`, title))); details.hidden = !visible; if (visible) matches++;
