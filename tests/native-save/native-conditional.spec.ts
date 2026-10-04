@@ -54,11 +54,30 @@ test("data-if shows an element only when its named slot is filled", async ({ pag
   const note = (index: number) => frame.locator("project-card").nth(index)
     .evaluate((el) => getComputedStyle(el.shadowRoot!.querySelector("card-note")!).display);
   await expect.poll(() => note(0)).not.toBe("none");
-  // Open the template and make the note depend on the link slot.
-  // The card's own article (the body paragraph is the page's slotted element).
-  await frame.locator("project-card article").first().evaluate((el) => (el as HTMLElement).click());
+  // Select the page instance, then explicitly enter its shared template.
+  await frame.locator("project-card").first().click({ position: { x: 5, y: 5 } });
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Project card");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
-  await pasteInto(page, "#content", cardSource.replace(`<card-note data-key="card-note">`, `<card-note data-if="link" data-key="card-note">`));
+  const changed = cardSource.replace(`<card-note data-key="card-note">`, `<card-note data-if="link" data-key="card-note">`);
+  const mounted = () => page.evaluate(async () => {
+    const modulePath = "/src/components/code-editor.ts";
+    return (await import(modulePath)).getMountedSource("components/project-card/project-card.html");
+  });
+  await expect.poll(mounted).toBe(cardSource);
+  await pasteInto(page, "#content", changed);
+  await expect.poll(mounted).toBe(changed);
+  for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
+
+  // One source edit changes all instances; Undo and Redo restore exact bytes.
+  await page.locator("#content [role=textbox]").first().focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(mounted).toBe(cardSource);
+  for (const index of [0, 1, 2]) await expect.poll(() => note(index)).not.toBe("none");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await expect.poll(mounted).toBe(changed);
   for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
 });
 

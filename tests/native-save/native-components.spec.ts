@@ -184,10 +184,10 @@ test("Structure edits an instance's slots and attributes as page source", async 
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
 
   // An optional part: the link paragraph shows only when the page gives it a link.
-  const link = panel(page).getByRole("checkbox", { name: "Show Link" });
-  await expect(link).not.toBeChecked();
+  const link = panel(page).getByRole("button", { name: "Show Link", exact: true });
+  await expect(link).toHaveAttribute("aria-pressed", "false");
   await link.click();
-  await expect(link).toBeChecked();
+  await expect(link).toHaveAttribute("aria-pressed", "true");
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
   // Show immediately focuses the button text field.
   await expect(slot(page, "link").getByRole("textbox", {name:"Link: Button text"})).toBeFocused();
@@ -200,7 +200,7 @@ test("Structure edits an instance's slots and attributes as page source", async 
   expect(source).toMatch(/<p slot="body">[^\n]*<\/p>\n {6}<a slot="link" href="\/about\/">About the studio<\/a>\n {4}<\/project-card>/);
   await tree(page).locator("[data-slot=link]").first().hover();
   await link.click();
-  await expect(link).not.toBeChecked();
+  await expect(link).toHaveAttribute("aria-pressed", "false");
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveCount(0);
   expect(await editorText(page)).not.toContain(`slot="link"`);
 
@@ -360,9 +360,11 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   expect(await editorText(page)).toContain(`<media-card>\n    <img slot="image" src="/images/studio-desk.svg" alt="A desk">\n  </media-card>`);
   await expect(frame(page).locator("media-card > img")).toHaveAttribute("alt", "A desk");
   // The caption is optional (data-if): off until switched on.
-  const caption = panel(page).getByRole("checkbox", { name: "Show Caption" });
-  await expect(caption).not.toBeChecked();
+  const caption = panel(page).getByRole("button", { name: "Show Caption", exact: true });
+  await expect(caption).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => frame(page).locator("media-card figcaption").evaluate((el) => getComputedStyle(el).display)).toBe("none");
   await caption.click();
+  await expect(caption).toHaveAttribute("aria-pressed", "true");
   await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).fill("Where it happens");
   await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).press("Enter");
   expect(await editorText(page)).toContain(`<span slot="caption">Where it happens</span>`);
