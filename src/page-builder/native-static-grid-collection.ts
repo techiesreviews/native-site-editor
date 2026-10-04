@@ -41,7 +41,7 @@ export type StaticCardGridResult = StaticCardGrid | { error: string };
 
 const SPACE = /^[\t\n\f\r ]*$/;
 const RECIPE_ATTRIBUTES = /^(?:data-each|data-if|data-sort|data-filter|data-limit|data-fields|data-collection-id|slot)$/;
-const UNSUPPORTED = new Set(["script", "style", "template", "slot", "iframe", "object", "embed", "noscript", "textarea", "svg", "math", "picture", "source", "video", "audio"]);
+const UNSUPPORTED = new Set(["script", "style", "template", "slot", "iframe", "object", "embed", "noscript", "textarea", "svg", "math", "picture", "source", "video", "audio", "form", "input", "button", "select", "option"]);
 const fail = (error: string): { error: string } => ({ error });
 const elementsOf = (element: SourceElement) => element.children.filter((child): child is SourceElement => child.type === "element");
 const textOf = (source: string, element: SourceElement) => source.slice(element.tag.end, element.close?.start ?? element.tag.end);
@@ -140,8 +140,16 @@ export function readStaticCardGrid(source: string, start: number): StaticCardGri
   return { element, cards };
 }
 
+/**
+ * One read-only snapshot of the site. `files` is every path in the
+ * repository at that moment, loaded or not (images and other binary files
+ * included); `sources` holds the text of every HTML page and of the editor's
+ * page data file when it exists. A partial snapshot is refused rather than
+ * taken as the whole site.
+ */
 export interface StaticConversionInput {
   sources: Readonly<Record<string, string>>;
+  files: readonly string[];
   routes: Readonly<Record<string, string>>;
   identity: CollectionIdentity;
   path: string;
@@ -155,13 +163,24 @@ export interface StaticConversionInput {
 }
 /**
  * The recipe, and the full new texts of every file the change writes (the
- * page with its baked grid, and the editor's page data file). `expectedSources`
- * are the texts those files must still have when the change is applied.
+ * page with its baked grid, and the editor's page data file).
+ *
+ * The plan holds only for the snapshot it was made from. Before applying it,
+ * the host must check that the site is still that snapshot: every file in
+ * `expectedSources` still has that text (`undefined`: the file does not
+ * exist), the file list is still `expectedFiles`, the routes are still
+ * `expectedRoutes`, and the site name is still `expectedIdentity`.
+ * Otherwise it plans again.
  */
 export interface StaticConversion {
   recipe: CollectionRecipe;
   texts: Map<string, string | undefined>;
+  /** Every file the plan read (all pages and the page data file), with the text it read. */
   expectedSources: Map<string, string | undefined>;
+  /** The sorted file list the plan was made against. */
+  expectedFiles: string[];
+  expectedRoutes: Record<string, string>;
+  expectedIdentity: CollectionIdentity;
   kept: string[];
   records: number;
   cards: number;
@@ -173,6 +192,13 @@ const LINK_FALLBACK = "Read about {title}";
 export function planStaticCardConversion(input: StaticConversionInput): StaticConversion | { error: string } {
   const { sources, routes, identity, path, start, folders, token } = input;
   if (!/^[a-z][a-z0-9]{2,15}$/.test(token)) return fail("The grid needs a valid collection id.");
+  // The complete snapshot: every loaded file and every route is in the file
+  // list, and every page and the page data file in it are loaded.
+  const files = new Set(input.files);
+  for (const file of [...Object.keys(sources), ...Object.values(routes)])
+    if (!files.has(file)) return fail(`${file} is not in the site's file list. Choose pages again once the whole site is loaded.`);
+  const read = [...files].filter((file) => file.endsWith(".html") || file === EDITOR_PAGE_BUILDER_PATH).sort();
+  for (const file of read) if (sources[file] === undefined) return fail(`Load ${file} before choosing pages for this grid.`);
   const source = sources[path];
   if (source === undefined) return fail("Load the page before choosing pages for this grid.");
   if (!folders.length) return fail("Select at least one folder.");
@@ -288,9 +314,17 @@ export function planStaticCardConversion(input: StaticConversionInput): StaticCo
     for (const [index, { card }] of pages.entries())
       if (after.slice(bakedCards[positions[index]].start, bakedCards[positions[index]].end) !== source.slice(card.element.start, card.element.end))
         return fail("A card would not look the same after choosing pages, so nothing was changed.");
-    const expectedSources = new Map<string, string | undefined>(origin.expectedSources);
-    for (const file of texts.keys()) if (!expectedSources.has(file)) expectedSources.set(file, sources[file]);
-    return { recipe, texts, expectedSources, kept, records: order.length, cards: pages.length };
+    // Every page was read (linked, listed or scanned for older recipes), and the page data file.
+    const expectedSources = new Map<string, string | undefined>(read.map((file) => [file, sources[file]]));
+    if (!expectedSources.has(EDITOR_PAGE_BUILDER_PATH)) expectedSources.set(EDITOR_PAGE_BUILDER_PATH, undefined);
+    for (const [file, text] of origin.expectedSources) if (!expectedSources.has(file)) expectedSources.set(file, text);
+    return {
+      recipe, texts, expectedSources,
+      expectedFiles: [...files].sort(),
+      expectedRoutes: { ...routes },
+      expectedIdentity: { ...identity },
+      kept, records: order.length, cards: pages.length,
+    };
   } catch (error) {
     return fail(error instanceof Error ? error.message : "The pages could not be chosen for this grid.");
   }

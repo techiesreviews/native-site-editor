@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { nativePageRoute } from "../shared/native-routes.ts";
 import { planStaticCardConversion, readStaticCardGrid, type StaticConversionInput } from "../src/page-builder/native-static-grid-collection.ts";
 import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document.ts";
 
-// The native static starter's grid of project cards, byte for byte
-// (.scratch/native-static-preview/index.html), and its pages' titles and
-// descriptions.
+// The native static starter's grid of project cards, byte for byte, and its
+// pages' titles and descriptions; the vendored starter
+// (public/native-static-starter/v6a9ca44) is checked to hold them.
 const REAL_GRID = "      <div class=\"cards\">\n        <article class=\"card-project\">\n          <p class=\"card-note\">Cafe · Identity and site · 2025</p>\n          <h3>Fern &amp; Kettle</h3>\n          <p class=\"body\">A one-page site with a menu the owners change themselves before opening each morning.</p>\n          <p class=\"actions\"><a href=\"/work/fern-and-kettle/\">Read about Fern &amp; Kettle</a></p>\n        </article>\n        <article class=\"card-project\">\n          <p class=\"card-note\">Ceramics studio · Portfolio · 2025</p>\n          <h3>Harbour Lane Pottery</h3>\n          <p class=\"body\">A quiet portfolio for a working potter, with large photographs and a dates page for kiln openings.</p>\n          <p class=\"actions\"><a href=\"/work/harbour-lane-pottery/\">Read about Harbour Lane Pottery</a></p>\n        </article>\n        <article class=\"card-project\">\n          <p class=\"card-note\">Community group · Notices and rules · 2024</p>\n          <h3>Meadow Row Allotments</h3>\n          <p class=\"body\">A small site for forty plot holders: rules, a plot map, seasonal notices, and a way to reach the committee.</p>\n          <p class=\"actions\"><a href=\"/work/meadow-row-allotments/\">Read about Meadow Row Allotments</a></p>\n        </article>\n      </div>";
 const REAL_PAGES: Record<string, string> = {
   "work/fern-and-kettle/index.html": "  <title>Fern &amp; Kettle · Larkspur Studio</title>\n  <meta name=\"description\" content=\"A one-page site for a neighbourhood cafe, with a printable menu the owners update themselves each morning.\">",
@@ -28,7 +29,7 @@ function site(grid: string, pages: Record<string, string> = REAL_PAGES, name = "
     routes[route(path)] = path;
   }
   const start = sources["index.html"].indexOf('<div class="cards">');
-  return { sources, routes, identity: { name }, path: "index.html", start, folders: ["/work/"], token: "grid1" };
+  return { sources, files: Object.keys(sources), routes, identity: { name }, path: "index.html", start, folders: ["/work/"], token: "grid1" };
 }
 function planned(input: StaticConversionInput) {
   const plan = planStaticCardConversion(input);
@@ -38,7 +39,8 @@ function planned(input: StaticConversionInput) {
 /** The published page: every current card is there byte for byte, and nothing the editor uses. */
 function assertStatic(text: string, cards: string[]) {
   for (const card of cards) assert.ok(text.includes(card), `card kept exactly:\n${card}`);
-  assert.doesNotMatch(text, /data-if|data-each|data-collection|<template|<script|\{[a-z]/);
+  // The starter's own JSON-LD is data, not script; nothing else may run.
+  assert.doesNotMatch(text, /data-if|data-each|data-collection|<template|<script(?![^>]*application\/ld\+json)|\{[a-z]/);
 }
 
 test("the native starter's three cards convert with every card kept byte for byte", () => {
@@ -74,11 +76,73 @@ test("the native starter's three cards convert with every card kept byte for byt
   assert.equal(plan.expectedSources.get(EDITOR_PAGE_BUILDER_PATH), undefined);
 });
 
-// Worktrees share the main checkout's local preview.
-const preview = [".scratch/native-static-preview", "../../../.scratch/native-static-preview"].find((dir) => existsSync(`${dir}/index.html`));
-test("the fixture is the native starter's grid as it is on disk", { skip: !preview && "no local native static preview" }, () => {
-  assert.ok(readFileSync(`${preview}/index.html`, "utf8").includes(REAL_GRID));
-  for (const [path, head] of Object.entries(REAL_PAGES)) assert.ok(readFileSync(`${preview}/${path}`, "utf8").includes(head));
+const STARTER = "public/native-static-starter/v6a9ca44";
+test("the vendored native starter converts as it is: its cards stay byte for byte and the site stays plain", () => {
+  const manifest = JSON.parse(readFileSync(`${STARTER}/manifest.json`, "utf8")) as { files: { path: string }[]; inline: { path: string; content: string }[] };
+  const sources: Record<string, string> = {};
+  const files: string[] = [];
+  for (const { path } of manifest.files) {
+    files.push(path);
+    // Text files are read as the editor would; the social card PNG is listed but has no text.
+    if (!path.endsWith(".png")) sources[path] = readFileSync(`${STARTER}/files/${path}.asset`, "utf8");
+  }
+  for (const { path, content } of manifest.inline) { files.push(path); sources[path] = content; }
+  const routes: Record<string, string> = {};
+  for (const path of files) { const url = nativePageRoute(path); if (url) routes[url] = path; }
+  const home = sources["index.html"];
+  assert.ok(home.includes(REAL_GRID));
+  for (const [path, head] of Object.entries(REAL_PAGES)) assert.ok(sources[path].includes(head), path);
+  assert.match(home, /<link rel="stylesheet" href="\/styles\/site.css">/);
+  const name = JSON.parse(sources[".editor/config.json"]).site.name;
+  const plan = planned({ sources, files, routes, identity: { name }, path: "index.html", start: home.indexOf('<div class="cards">'), folders: ["/work/"], token: "grid1" });
+  assert.equal(plan.cards, 3);
+  assert.equal(plan.records, 3);
+  assert.deepEqual([...plan.texts.keys()].sort(), [EDITOR_PAGE_BUILDER_PATH, "index.html"]);
+  const after = plan.texts.get("index.html")!;
+  assertStatic(after, articles(REAL_GRID));
+  assert.equal(after.slice(0, after.indexOf('<div class="cards">')), home.slice(0, home.indexOf('<div class="cards">')));
+  // From the grid's end tag on, the page is the same (the bake writes cards one per line).
+  assert.equal(after.slice(after.indexOf("</article></div>") + "</article>".length), home.slice(home.indexOf(REAL_GRID) + REAL_GRID.length - "</div>".length));
+  // Every page the plan read is pinned, with the graph it was planned against.
+  for (const path of ["index.html", ...Object.keys(REAL_PAGES), "about/index.html", "404.html"]) assert.equal(plan.expectedSources.get(path), sources[path], path);
+  assert.equal(plan.expectedSources.get(EDITOR_PAGE_BUILDER_PATH), undefined);
+  assert.ok(plan.expectedSources.has(EDITOR_PAGE_BUILDER_PATH));
+  assert.deepEqual(plan.expectedFiles, [...files].sort());
+  assert.deepEqual(plan.expectedRoutes, routes);
+});
+
+test("the plan pins every page it read, the file graph, the routes and the site name", () => {
+  const pages = { "work/alpha/index.html": head("Alpha"), "work/beta/index.html": head("Beta"), "work/gamma/index.html": head("Gamma") };
+  const input = site(grid(card("/work/alpha/", "Alpha"), card("/work/beta/", "Beta")), pages);
+  const plan = planned(input);
+  // Gamma is not a card yet, but its title becomes a new card: its text is pinned.
+  assert.equal(plan.records, 3);
+  assert.equal(plan.expectedSources.get("work/gamma/index.html"), input.sources["work/gamma/index.html"]);
+  const renamed = planned({ ...input, sources: { ...input.sources, "work/gamma/index.html": input.sources["work/gamma/index.html"].replace("Gamma ·", "Delta ·") } });
+  assert.notEqual(renamed.texts.get("index.html"), plan.texts.get("index.html"));
+  assert.equal(plan.expectedSources.get("index.html"), input.sources["index.html"]);
+  assert.ok(plan.expectedSources.has(EDITOR_PAGE_BUILDER_PATH));
+  assert.deepEqual(plan.expectedFiles, [...input.files].sort());
+  assert.deepEqual(plan.expectedRoutes, input.routes);
+  assert.notEqual(plan.expectedRoutes, input.routes);
+  assert.deepEqual(plan.expectedIdentity, { name: "Larkspur Studio" });
+  // A new page in a chosen folder is a different graph.
+  const grown = { ...input.routes, "/work/delta/": "work/delta/index.html" };
+  assert.notDeepEqual(plan.expectedRoutes, grown);
+});
+
+test("a plan needs the complete file graph, with every page and the page data loaded", () => {
+  const pages = { "work/alpha/index.html": head("Alpha"), "work/beta/index.html": head("Beta") };
+  const input = site(grid(card("/work/alpha/", "Alpha"), card("/work/beta/", "Beta")), pages);
+  const refused = (change: Partial<StaticConversionInput>, pattern: RegExp) => {
+    const plan = planStaticCardConversion({ ...input, ...change });
+    assert.ok("error" in plan, `refused: ${pattern}`);
+    assert.match(plan.error, pattern);
+  };
+  refused({ files: input.files.filter((path) => path !== "styles/site.css") }, /not in the site's file list/);
+  refused({ routes: { ...input.routes, "/about/": "about/index.html" } }, /not in the site's file list/);
+  refused({ files: [...input.files, "about/index.html"] }, /Load about\/index.html/);
+  refused({ files: [...input.files, EDITOR_PAGE_BUILDER_PATH] }, /Load \.editor\/page-builder\.json/);
 });
 
 test("a page title with a brand tail the site name does not match is kept as an override", () => {

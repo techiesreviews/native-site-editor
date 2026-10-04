@@ -43,14 +43,17 @@ tag, with only whitespace between them. In each card:
 Every card must have the same tree, start tags and other text; only part
 text, the link's `href` and the image's `src`/`alt` may differ. Refused:
 text mixed with markup, comments, braces, scripts and other embedded
-content, custom elements, repeated attributes, `on*` and recipe attributes,
+content, form controls, custom elements, repeated attributes, `on*` and recipe attributes,
 and a second link or image.
 
 ## Planning (`planStaticCardConversion`)
 
 Input matches the custom-element grid conversion (`sources`, `routes`,
-`identity`, `path`, `start`, `folders`, `token`) plus optional `sort`,
-`filter` and `limit`. Each part uses the linked page's own value
+`identity`, `path`, `start`, `folders`, `token`) plus `files` and optional
+`sort`, `filter` and `limit`. `files` is the complete file list of one
+snapshot of the site, loaded or not, binary files included. Every loaded
+file and route must be in it, and every HTML page and the page data file in
+it must be loaded; a partial snapshot is refused. Each part uses the linked page's own value
 (`{title}`, `{description}`, `Read about {title}`, `{url}`, `{image}`) when
 every card shows it, else a per-card override field named
 `<token>-<part>`, with the page's value as the fallback where there is one.
@@ -65,8 +68,18 @@ new cards.
 
 The plan is proved with the real bake: the page outside the grid must be
 unchanged and every current card byte for byte the same, or the plan is
-refused. It returns the full new texts (page and page data file) and the
-texts those files must still have when the change is applied.
+refused. It returns the full new texts (page and page data file), and the
+snapshot it read so the host can guard it:
+
+- `expectedSources`: every HTML page and the page data file, with the text
+  read (`undefined` when the page data file does not exist). This covers
+  the linked pages, every page in the chosen folders (a new card's title,
+  description or a filter field) and the pages scanned for older recipes.
+- `expectedFiles`, `expectedRoutes`, `expectedIdentity`: the file list,
+  routes and site name.
+
+The host applies the plan only while all of these still hold, and plans
+again otherwise. The host owns how it reads the snapshot and its revision.
 
 ## Known limits
 
