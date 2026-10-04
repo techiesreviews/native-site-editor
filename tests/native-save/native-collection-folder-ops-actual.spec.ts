@@ -15,6 +15,7 @@ const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
 const inspector = (page: Page) => page.getByRole("region", { name: "Collection settings", exact: true });
+const mounted = (page: Page, path = "index.html") => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 const file = async (page: Page, baseURL: string | undefined, path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 const servicesPage = `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>`;
 const pageErrors: string[] = [];
@@ -105,8 +106,10 @@ test("F2 renaming a listed folder moves its recipe and cards; one Undo restores 
   expect(afterHome).toBe(before.home.replaceAll("/services/one/", "/studio/one/"));
   expect((await storedDraft(page, "studio/one/index.html"))?.content).toBe(servicesPage);
   const afterDrafts = await storedDrafts(page);
-  const afterPaths = afterDrafts.map((draft) => draft.path).sort();
-  expect(afterPaths).toEqual(expect.arrayContaining([SIDECAR, "index.html", "studio/one/index.html"]));
+  const afterPaths = afterDrafts.map((draft) => draft.path);
+  expect(afterPaths).toEqual([SIDECAR, "_redirects", "index.html", "services/one/index.html", "studio/one/index.html"].sort((a, b) => a.localeCompare(b)));
+  expect(afterDrafts.find((draft) => draft.path === "services/one/index.html")?.deleted).toBe(true);
+  expect(afterDrafts.find((draft) => draft.path === "studio/one/index.html")?.movedFrom).toBe("services/one/index.html");
   await expect(titles).toHaveCount(4);
   await expect(frame(page).locator(".cards card-project").filter({ hasText: "New services" }).locator('a[slot="link"]')).toHaveAttribute("href", "/studio/one/");
 
@@ -114,6 +117,8 @@ test("F2 renaming a listed folder moves its recipe and cards; one Undo restores 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);
+  // The editor's own mounted source is the proof; the branch files are only a cross-check.
+  await expect.poll(() => mounted(page)).toBe(before.home);
   expect(await file(page, baseURL, SIDECAR)).toBe(before.sidecar);
   expect(await file(page, baseURL, "index.html")).toBe(before.home);
   expect(await file(page, baseURL, "services/one/index.html")).toBe(servicesPage);
@@ -123,6 +128,6 @@ test("F2 renaming a listed folder moves its recipe and cards; one Undo restores 
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(afterSidecar);
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(afterHome);
-  expect((await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual(afterPaths);
+  await expect.poll(() => mounted(page)).toBe(afterHome);
   expect(await storedDrafts(page)).toEqual(afterDrafts);
 });
