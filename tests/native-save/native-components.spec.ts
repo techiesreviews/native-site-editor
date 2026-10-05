@@ -428,11 +428,14 @@ for (const action of ["delete", "reorder"] as const) {
     await page.keyboard.press("ControlOrMeta+A");
     await page.keyboard.insertText(changed);
     await expect(frame(page).locator("media-card")).toHaveCount(action === "delete" ? 1 : 2);
-    const beforeUpload = await editorText(page);
-    expect(beforeUpload).toContain(action === "delete" ? second : `${second}${first}`);
+    // Check complete source bytes independently of the clipboard reader, which
+    // can copy only the current line instead of the editor's full selection.
+    const draftText = async () => (await storedDraft(page, "about/index.html"))?.content;
+    await expect.poll(draftText).toContain(action === "delete" ? second : `${second}${first}`);
+    const beforeUpload = await draftText();
     await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
     await expect(status(page)).toHaveText("The instance changed while the image uploaded; it was not replaced.");
-    expect(await editorText(page)).toBe(beforeUpload);
+    await expect.poll(draftText).toBe(beforeUpload);
   });
 }
 

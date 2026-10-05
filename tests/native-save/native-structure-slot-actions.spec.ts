@@ -78,9 +78,9 @@ test('keyboard focus on a slot row reveals its actions at once and Tab reaches t
  const pencil=title.locator('.row-action-overlay').getByRole('button',{name:'Edit Title',exact:true});
  await expect(pencil).toHaveCSS('opacity','1');
  await page.keyboard.press('Tab');await expect(title.locator('.page-structure__slot-badge')).toBeFocused();
- // The pencil ends the bar, at the badge's place: Reset first, then the pencil.
- await page.keyboard.press('Tab');await expect(title.getByRole('button',{name:'Reset Title to default',exact:true})).toBeFocused();
+ // Edit precedes the trailing visibility/reset control.
  await page.keyboard.press('Tab');await expect(pencil).toBeFocused();
+ await page.keyboard.press('Tab');await expect(title.getByRole('button',{name:'Reset Title to default',exact:true})).toBeFocused();
 });
 test.describe('reduced motion',()=>{test.use({reducedMotion:'reduce'});
  test('the row bar has no transition',async({page})=>{await harness(page);
@@ -93,7 +93,16 @@ test('the visibility eye shows state, hides and shows by keyboard, and leaves no
  // A fallback slot keeps Reset to default and never wears an eye.
  await expect(row(page,'0.0').getByRole('button',{name:'Reset Title to default',exact:true})).toHaveCount(1);
  await expect(row(page,'0.0').locator('.page-structure__slot-toggle')).toHaveCount(0);
- const eye=row(page,'0.4').getByRole('button',{name:'Show Optional',exact:true});
+ const optional=row(page,'0.4');
+ const actions=optional.locator(':scope > .row-action-overlay > button');
+ await expect(actions).toHaveCount(2);
+ expect(await actions.evaluateAll((buttons:HTMLButtonElement[])=>buttons.map(button=>button.getAttribute('aria-label')))).toEqual(['Edit Optional','Show Optional']);
+ await optional.focus();await page.keyboard.press('Tab');await expect(optional.locator('.page-structure__slot-badge')).toBeFocused();
+ await page.keyboard.press('Tab');await expect(actions.nth(0)).toBeFocused();
+ await page.keyboard.press('Tab');await expect(actions.nth(1)).toBeFocused();
+ const pencilBox=(await actions.nth(0).boundingBox())!,eyeBox=(await actions.nth(1).boundingBox())!;
+ expect(eyeBox.x).toBeGreaterThanOrEqual(pencilBox.x+pencilBox.width);
+ const eye=optional.getByRole('button',{name:'Show Optional',exact:true});
  await expect(eye).toHaveAttribute('aria-pressed','true');await expect(eye).toHaveAttribute('title','Hide Optional');
  await eye.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');

@@ -510,13 +510,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     paint(slot.filled);
     return toggle;
   }
-  // Visibility and pencil for a slot row. The pencil comes last, at the row's
-  // end where the badge sits, so a click aimed at the badge still edits.
+  // Edit precedes visibility/reset in both the row's visual and Tab order.
   function slotActions(model: ComponentStructureModel, slot: SlotRowContext["slot"], edit: () => void) {
     const actions: HTMLElement[] = [];
+    if (editable(slot)) actions.push(iconAction(`Edit ${slot.label}`, "edit", edit));
     const visibility = slot.filled ? visibilityControl(model, slot) : undefined;
     if (visibility) actions.push(visibility);
-    if (editable(slot)) actions.push(iconAction(`Edit ${slot.label}`, "edit", edit));
     return actions;
   }
   // Every row's actions share one faded bar at the row's end (rowActions). On
