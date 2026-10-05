@@ -1,5 +1,5 @@
 import { deriveNativeRoutes, nativePageRoute } from '../../shared/native-routes';
-import { type FileMove } from '../native-page-moves';
+import { groupRouteChanges, rewriteRouteLinks, type FileMove } from '../native-page-moves';
 import { attributeEdit } from './component-model';
 import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
 import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
@@ -285,6 +285,13 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
         if (!page || !pinned(page)) throw Error(`Pin the page of collection “${id}” before replacing its cards.`);
       }
     }
+    // The URL changes of moved pages, as the Files move rewrites links: shared copies' bases follow.
+    const afterRouteOf = new Map(Object.entries(afterRoutes).map(([url, path]) => [path, url]));
+    const urlPairs = Object.entries(routes).flatMap(([url, path]): [string, string][] => {
+      const next = movedFiles.has(path) ? afterRouteOf.get(movedFiles.get(path)!) : undefined;
+      return next && next !== url ? [[url, next]] : [];
+    });
+    const urlChanges = urlPairs.length ? groupRouteChanges(Object.keys(routes), urlPairs) : [];
     // Sidecar collections: recipes only in JSON, finished cards only in HTML.
     const document = planDocumentBake({
       identity: candidateIdentity,
@@ -294,6 +301,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       deletes,
       relocateFolder: relocatedFolder,
       accept: origin.acceptCollections,
+      ...(urlChanges.length ? { rewriteLinks: (html: string) => urlChanges.reduce((text, change) => rewriteRouteLinks(text, change.from, change.to, change.subtree).text, html) } : {}),
     });
     if ('error' in document) return { error: document.error };
     for (const [path, text] of document.texts) {

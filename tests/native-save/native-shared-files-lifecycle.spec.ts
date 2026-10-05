@@ -110,10 +110,16 @@ test("renaming a shared page's folder carries its whole metadata entry; deleting
   await expect(status(page)).toContainText("Renamed the folder about to studio");
   await expect.poll(async () => Object.keys((await json(page, baseURL)).pages ?? {}).sort()).toEqual(["index.html", "studio/index.html"]);
   const moved = await json(page, baseURL);
-  // The whole entry moves under its new key: sections, page parts and opaque data alike.
+  // The whole entry moves under its new key: sections, page parts and opaque data alike. The one
+  // change is the pristine header copy's basis, which gets the same /about/ link rewrite as the page.
   const expected = structuredClone(before.document);
   delete expected.pages[PAGE];
-  expected.pages["studio/index.html"] = entry;
+  expected.pages["studio/index.html"] = structuredClone(entry);
+  const parts = expected.pages["studio/index.html"].pageParts as Record<string, { basis: string }>;
+  const [partKey] = Object.keys(parts);
+  expect(parts[partKey].basis).toContain('href="/about/"');
+  parts[partKey].basis = parts[partKey].basis.replaceAll("/about/", "/studio/");
+  for (const section of Object.values(entry.sections as Record<string, { basis: string }>)) expect(section.basis).not.toContain("/about/");
   expect(moved).toEqual(expected);
   // Pages and masters change only by links to the moved URL; masters stay at their own paths.
   const rebased = (text: string | undefined) => text!.replaceAll("/about/", "/studio/");

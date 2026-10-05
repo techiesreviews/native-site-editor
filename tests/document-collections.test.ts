@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveNativeRoutes } from '../shared/native-routes';
+import { rewriteRouteLinks } from '../src/native-page-moves';
 import { planNativeCollectionOperation, type NativeCollectionOrigin } from '../src/page-builder/native-collection-host';
 import { EDITOR_PAGE_BUILDER_PATH as SIDE, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from '../src/page-builder/page-builder-document';
 
@@ -239,4 +240,86 @@ test('a duplicated page starts without the original page metadata or links',()=>
  const after=sidecarAfter(r);
  assert.equal(Object.hasOwn(after.pages,'work/c/index.html'),false);
  assert.deepEqual(after.pages['work/a/index.html'],doc.pages['work/a/index.html']);
+});
+
+/**
+ * Shared copies whose bytes a page move's site-managed link rewrite changes: the about page's
+ * section and the home page's header link /about/. Built as the Files move builds its origin:
+ * the moves plus every page with links rewritten by rewriteRouteLinks.
+ */
+function sharedSite(){
+ const head='<header class="site-header"><a href="/">S</a><a href="/about/">About</a></header>';
+ const hero='<section class="hero"><h1>About</h1><a href="/about/#team">Team</a></section>';
+ const sources:Record<string,string>={
+  'index.html':page('Home',head+'<main><p>Hi</p></main>'),
+  'about/index.html':page('About',head+`<main>${hero}</main>`),
+  'work/a/index.html':page('Alpha',head.replace('>S<','>Custom<')),
+ };
+ const target=(path:string,needle:string)=>makeCollectionTarget(sources[path],sources[path].indexOf(needle));
+ const part=(path:string)=>({kind:'native-page-part',recordId:'site-head',target:target(path,'<header'),basis:head,unknown:{kept:[1]}});
+ const doc={version:1,collections:{},
+  reusablePageParts:{version:1,records:{'site-head':{id:'site-head',label:'Site header',htmlPath:'.editor/page-parts/site-head.html',rootTag:'header',rootClass:'site-header',stylesheetPath:'styles/site.css'}}},
+  pages:{
+   'index.html':{pageParts:{'site-head-1':part('index.html')},fields:{tone:'home'}},
+   'about/index.html':{sections:{'hero-1':{kind:'native-section',recordId:'about-hero',target:target('about/index.html','<section class="hero"'),basis:hero},other:{kind:'not-native',basis:'/about/'}},pageParts:{'site-head-1':part('about/index.html')},opaque:{nested:['/about/']}},
+   // A customised copy: its header differs from the basis before the move.
+   'work/a/index.html':{pageParts:{'site-head-1':part('work/a/index.html')}},
+  }} as unknown as PageBuilderDocument;
+ sources[SIDE]=writePageBuilderDocument(doc);
+ return {sources,head,hero};
+}
+/** The Files move's origin: moves, and every page whose links the URL change rewrites. */
+function urlMove(sources:Record<string,string>,from:string,to:string,extraEdits:Record<string,string>={}){
+ const moves=Object.keys(sources).filter(path=>path.startsWith(from)).map(path=>({from:path,to:to+path.slice(from.length)}));
+ const moved=new Map(moves.map(m=>[m.from,m.to]));
+ const edits=new Map<string,string>();
+ for(const [path,text] of Object.entries(sources)){
+  if(path===SIDE)continue;
+  const next=rewriteRouteLinks(text,`/${from}`,`/${to}`,true).text;
+  if(next!==text)edits.set(moved.get(path)??path,next);
+ }
+ for(const [path,text] of Object.entries(extraEdits))edits.set(path,text);
+ return plan(sources,{moves,folders:[{from,to}],edits});
+}
+const page_=(doc:PageBuilderDocument,path:string)=>doc.pages[path] as Record<string,Record<string,Record<string,unknown>>>;
+
+test('a folder move rebases the basis of pristine shared copies whose links it rewrote, on the moved page and others',()=>{
+ const {sources,head,hero}=sharedSite();
+ const before=readPageBuilderDocument(sources[SIDE]);
+ const after=sidecarAfter(urlMove(sources,'about/','studio/'));
+ const studio=page_(after,'studio/index.html');
+ assert.equal(studio.sections['hero-1'].basis,hero.replace('/about/#team','/studio/#team'));
+ assert.equal(studio.pageParts['site-head-1'].basis,head.replace('/about/','/studio/'));
+ assert.equal(page_(after,'index.html').pageParts['site-head-1'].basis,head.replace('/about/','/studio/'),'a pristine copy on a page that did not move');
+ // Customised before the move: stays customised.
+ assert.equal(page_(after,'work/a/index.html').pageParts['site-head-1'].basis,head);
+ // Only bases change: unknown entries, unknown link fields, targets and other pages' data stay exactly.
+ const expected=structuredClone(before) as PageBuilderDocument;
+ expected.pages['studio/index.html']=expected.pages['about/index.html'];delete expected.pages['about/index.html'];
+ (page_(expected,'studio/index.html').sections['hero-1']).basis=studio.sections['hero-1'].basis;
+ (page_(expected,'studio/index.html').pageParts['site-head-1']).basis=studio.pageParts['site-head-1'].basis;
+ (page_(expected,'index.html').pageParts['site-head-1']).basis=studio.pageParts['site-head-1'].basis;
+ assert.deepEqual(after,expected);
+});
+test('a pristine copy the move also changes by hand, or an edit with no move, keeps its basis',()=>{
+ const {sources,head}=sharedSite();
+ const homeEdited=rewriteRouteLinks(sources['index.html'],'/about/','/studio/').text.replace('>S<','>Hand<');
+ const after=sidecarAfter(urlMove(sources,'about/','studio/',{'index.html':homeEdited}));
+ assert.equal(page_(after,'index.html').pageParts['site-head-1'].basis,head);
+ // The same rewrite as a plain edit, no page moving: nothing is a site-managed URL change.
+ const plain=plan(sources,{edits:new Map([['index.html',rewriteRouteLinks(sources['index.html'],'/about/','/studio/').text]])});
+ if('error'in plain)assert.fail(plain.error);
+ assert.equal(plain.operation.edits!.has(SIDE),false,'the JSON is not rewritten');
+});
+test('a malformed recognised link refuses a URL move atomically; the leftover-metadata guard still refuses',()=>{
+ const {sources}=sharedSite();
+ const doc=readPageBuilderDocument(sources[SIDE]);
+ delete page_(doc,'index.html').pageParts['site-head-1'].basis;
+ const broken={...sources,[SIDE]:writePageBuilderDocument(doc,sources[SIDE])};
+ const r=urlMove(broken,'about/','studio/');
+ assert.ok('error'in r);assert.match(r.error,/needs its basis/);
+ const left=readPageBuilderDocument(sources[SIDE]);
+ (left.pages as Record<string,unknown>)['studio/index.html']={fields:{note:'old'}};
+ const leftover=urlMove({...sources,[SIDE]:writePageBuilderDocument(left,sources[SIDE])},'about/','studio/');
+ assert.ok('error'in leftover);assert.match(leftover.error,/studio\/index\.html already has page data/);
 });
