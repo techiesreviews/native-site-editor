@@ -2,6 +2,8 @@
 
 ## Handoffs
 
+- [Listings continuation and pending Claude review](handoffs/t3-listings-continuation-2026-10-05.md): resume the removed migration action, Code card refresh, broken-listing isolation and Page structure icon order; candidate `c63dd0d` is locally validated, with prescribed Claude review and release gates pending.
+
 - [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): start here for the latest component reuse release, passing Node 24 CI, public asset checks, and owner-authentication verification limit.
 
 - [5 October transfer to T3 thread 0865866a](handoffs/t3-page-builder-transfer-2026-10-05.md): frozen green demo, three measured refactors awaiting independent review, helper cleanup and preview release next.
