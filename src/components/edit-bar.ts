@@ -232,6 +232,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
     address?.onClose?.();
+    position();
   }
   function openPopover(trigger: HTMLButtonElement, content: HTMLElement[], role: string) {
     closePopover(false);
@@ -241,7 +242,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     popover.setAttribute("aria-label", trigger.getAttribute("aria-label") ?? trigger.textContent ?? "");
     popover.replaceChildren(...content);
     popover.hidden = false;
-    placePopover(trigger);
+    position();
   }
   function placePopover(trigger: HTMLElement) {
     // Under the button, kept inside the frame's width.
@@ -433,6 +434,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     items[next]?.focus();
   });
 
+  bar.addEventListener("focusout", () => queueMicrotask(position));
+
   function position() {
     // Held where it is during a drag, so the grip stays under the pointer's capture.
     if (press?.dragging) return;
@@ -441,7 +444,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const paneRect = pane.getBoundingClientRect();
     const visible = rect.bottom > 0 && rect.top < frameRect.height && rect.right > 0 && rect.left < frameRect.width;
     if (note) note.element.hidden = !visible;
-    if (!visible) {
+    const keepControls = !popover.hidden || bar.contains(document.activeElement) || popover.contains(document.activeElement);
+    if (!visible && !keepControls) {
       bar.hidden = true;
       return;
     }
@@ -470,9 +474,16 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       if (covered <= 0 && below + height <= frameBottom - 4) { top = below; side = "below"; }
       else { top = ceiling; side = "pinned"; }
     }
+    if (!visible) {
+      // Keep the active controls reachable until focus leaves them. An
+      // unfocused selection still hides when it leaves the viewport.
+      top = Math.max(ceiling, Math.min(top, frameBottom - height - 4));
+      side = "pinned";
+    }
     bar.dataset.side = side;
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
     bar.style.top = `${top}px`;
+    if (!popover.hidden && popoverButton) placePopover(popoverButton);
   }
   const resize = new ResizeObserver(() => position());
   resize.observe(frame);
