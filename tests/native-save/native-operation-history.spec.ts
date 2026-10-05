@@ -235,6 +235,11 @@ test("Files rename retains an open stylesheet's owned model through Undo and Red
   await expect(frame(page).locator(".hero h1")).toBeVisible();
   await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
   const original = await source(page);
+  const stylesheet = (path: string) => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+  const originalStylesheet = await stylesheet("styles/site.css");
+  expect(originalStylesheet).toContain(".hero");
+  expect(original).toContain('href="/styles/site.css"');
+  const renamedPage = original!.replace('href="/styles/site.css"', 'href="/styles/layout.css"');
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Files", exact: true }).click();
   const explorer = page.locator("#explorer");
@@ -246,18 +251,21 @@ test("Files rename retains an open stylesheet's owned model through Undo and Red
   await name.fill("layout.css");
   await name.press("Enter");
   await expect(page.locator("#status")).toContainText("Renamed styles/site.css to styles/layout.css");
-  expect(await source(page)).toBe(original);
-  await expect(page.locator("#secondary-pane")).toBeHidden();
+  await expect.poll(() => source(page)).toBe(renamedPage);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/layout.css");
+  await expect.poll(() => stylesheet("styles/layout.css")).toBe(originalStylesheet);
   await history(page, "undo");
   await expect.poll(() => source(page)).toBe(original);
   await expect(page.locator("#secondary-title")).toHaveText("styles/site.css");
+  await expect.poll(() => stylesheet("styles/site.css")).toBe(originalStylesheet);
   await expect(page.locator("#status")).toContainText("Undid renaming styles/site.css");
   await history(page, "redo");
-  expect(await source(page)).toBe(original);
-  await expect(page.locator("#secondary-pane")).toBeHidden();
+  await expect.poll(() => source(page)).toBe(renamedPage);
+  await expect(page.locator("#secondary-title")).toHaveText("styles/layout.css");
+  await expect.poll(() => stylesheet("styles/layout.css")).toBe(originalStylesheet);
   const moved = await page.evaluate(async () => (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "styles/layout.css"));
   expect(moved?.movedFrom).toBe("styles/site.css");
-  expect(moved?.content).toContain(".hero");
+  expect(moved?.content).toBe(originalStylesheet);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
 });
 

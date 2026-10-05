@@ -158,17 +158,22 @@ test("moved, renamed and deleted files are found where they are now", async ({ p
   await expect(card).toHaveCSS("background-color", "rgb(255, 250, 230)");
   await expect(card).toHaveCSS("border-top-left-radius", "0px");
 
-  // The shared stylesheet renamed: the pages still link styles/site.css, which the preview says is missing.
+  // Renaming a shared stylesheet updates its authored references atomically.
+  const pageSource = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  const beforeRename = await pageSource();
+  expect(beforeRename).toContain('href="/styles/site.css"');
   await expand(page, "styles");
   await row("site.css").focus();
   await page.keyboard.press("F2");
   await explorer(page).getByRole("textbox", { name: "New name for styles/site.css" }).fill("main.css");
   await page.keyboard.press("Enter");
   await expect(page.locator("#status")).toHaveText("Renamed styles/site.css to styles/main.css.");
-  await expect(page.locator(".native-preview-error")).toContainText("index.html links styles/site.css, which is missing from this branch.");
-  await expect(frame(page).locator("h1")).not.toHaveCSS("color", "rgb(47, 109, 58)");
-  // Undone, the link finds it again.
+  await expect.poll(pageSource).toBe(beforeRename!.replace('href="/styles/site.css"', 'href="/styles/main.css"'));
+  await expect(page.locator(".native-preview-error")).toBeHidden();
+  await expect(frame(page).locator("h1")).toHaveCSS("color", "rgb(47, 109, 58)");
+  // Undo restores both the file and its exact original page reference.
   await page.locator(".code-editor__undo").first().click();
+  await expect.poll(pageSource).toBe(beforeRename);
   await expect(frame(page).locator("h1")).toHaveCSS("color", "rgb(47, 109, 58)");
 
   // A component deleted is no longer one.
