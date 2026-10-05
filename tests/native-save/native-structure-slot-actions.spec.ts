@@ -119,7 +119,7 @@ test('a refused Show restores the closed eye and arms no editor',async({page})=>
 test.describe('touch',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:800}});
  test('a full slot-row bar keeps every action reachable in a narrow sidebar',async({page})=>{
   await harness(page);
-  await page.evaluate(()=>{document.querySelector('aside')!.style.width='300px';});
+  await page.evaluate(()=>{document.querySelector('aside')!.style.width='240px';});
   const title=row(page,'0.0');
   // As many buttons as an instance filling a slot carries: Attributes, Edit, Disconnect, pencil, Reset.
   await title.evaluate((el:HTMLElement)=>{const bar=el.querySelector('.row-action-overlay')!;const first=bar.querySelector('button')!;for(const name of ['Attributes','Edit component','Disconnect this instance']){const b=first.cloneNode(true) as HTMLElement;b.setAttribute('aria-label',name);bar.prepend(b);}});
@@ -128,5 +128,7 @@ test.describe('touch',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width
   expect(clipped).toEqual([]);
   const badge=(await title.locator('.page-structure__slot-badge').boundingBox())!,rowBox=(await title.boundingBox())!;
   expect(badge.x+badge.width).toBeLessThanOrEqual(rowBox.x+rowBox.width+1);
+  const buttonsRight=await title.evaluate((el:HTMLElement)=>Math.max(...[...el.querySelectorAll<HTMLElement>('.row-action-overlay button')].map(b=>b.getBoundingClientRect().right)));
+  expect(buttonsRight).toBeLessThanOrEqual(badge.x+1);
  });
 });
