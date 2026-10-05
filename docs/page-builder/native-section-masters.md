@@ -14,6 +14,10 @@ Heading level, bold, italic and element classes edit the master with ordinary Un
 Its root and children cannot be moved, duplicated or removed from this bar. Style inspection
 writes nothing; an explicit Style edit writes the site's public CSS. Styles resolve from the
 page where Edit was opened. Controls from a closed session refuse to write after Done.
+Master image assets and focal previews use that opening page to resolve relative URLs. Asset
+discovery reads the master without changing the page or public HTML. Image, link and alt edits
+write only the master; an image picker pins its session and source model, so a callback retained
+after Done or reopening cannot navigate back or replace an image.
 
 Status: wired into the editor (`src/main.ts`): the purple Edit on a whole saved section opens its
 master, a compact line over the code offers Done and Update copies, Add links each new copy, and

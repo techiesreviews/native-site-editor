@@ -1,0 +1,127 @@
+import { expect, test, type Page } from "@playwright/test";
+import { fixtureKind } from "./fixture-contract";
+import { storedDraft } from "./drafts";
+import { showStylePanel } from "./style-panel-controls";
+
+const pageErrors = new WeakMap<Page, string[]>();
+test.beforeEach(async ({ page }) => {
+  const errors: string[] = [];
+  pageErrors.set(page, errors);
+  page.on("pageerror", error => errors.push(error.message));
+});
+test.afterEach(async ({ page }) => { expect(pageErrors.get(page)).toEqual([]); });
+
+test.skip(process.env.STATIC_SECTIONS_FIXTURE !== "native", "Requires the native static starter.");
+if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
+const MASTER = ".editor/sections/intro.html";
+const PAGE = "about/index.html";
+const markup = '<section class="section-intro"><h2>Master assets</h2><p><a href="../work/fern-and-kettle/">Master link</a></p><img class="master-image" src="master-image.svg" alt="Original master image" width="160" height="100"><form class="master-form" action="/search/" method="get"><button type="submit">Search</button></form></section>';
+const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
+const banner = (page: Page) => page.getByRole("region", { name: "Saved section master" });
+const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
+async function edit(page: Page) {
+  await page.getByRole("treeitem", { name: /^Section Section heading/ }).locator(".page-structure__label").first().click();
+  await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
+  await expect(banner(page)).toBeVisible();
+}
+async function seed(page: Page, baseURL: string | undefined) {
+  await page.goto(baseURL!);
+  const asset = await (await page.request.get(`${baseURL}/__demo/file?path=images%2Fstudio-desk.svg`)).text();
+  expect(asset).toContain("<svg");
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/master-image.svg", content: asset } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await frame(page).locator("main > section h1, main > section h2").first().click();
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add to the page" });
+  await add.getByRole("option", { name: /^Intro HTML$/ }).focus();
+  await page.keyboard.press("Enter");
+  await add.getByRole("button", { name: "Close" }).click();
+  await edit(page);
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.evaluate(text => navigator.clipboard.writeText(text), markup);
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+  await expect(frame(page).locator(".master-image")).toBeVisible();
+  await expect.poll(() => frame(page).locator(".master-image").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  return await effective(page, baseURL, PAGE);
+}
+
+test("a nested page's master image has a trusted focal preview and image/link/alt controls write only the master", async ({ page, baseURL }) => {
+  const originalPage = await seed(page, baseURL);
+  const css = await effective(page, baseURL, "styles/site.css");
+  await frame(page).locator(".master-image").click();
+  await showStylePanel(page);
+  const style = page.getByRole("complementary", { name: "Style panel" });
+  await style.getByRole("searchbox", { name: "Search styles" }).fill("image focus");
+  const focal = style.getByRole("region", { name: "Image focus" });
+  await expect(focal).toBeVisible();
+  await expect.poll(() => focal.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  expect(await effective(page, baseURL, MASTER)).toBe(markup);
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  expect(await effective(page, baseURL, "styles/site.css")).toBe(css);
+  await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
+  const alt = page.getByRole("textbox", { name: "Alt text", exact: true });
+  await expect(alt).toBeVisible();
+  await alt.fill("Changed master image");
+  await alt.press("Escape");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace("Original master image", "Changed master image"));
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await banner(page).getByRole("button", { name: "Done" }).focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+  await page.locator(".canvas-crumb").first().click();
+  await frame(page).locator("section.section-intro a").click({ timeout: 15000 });
+  await bar(page).getByRole("button", { name: "Address", exact: true }).click();
+  const address = page.getByRole("combobox", { name: "Address", exact: true });
+  await expect(address).toHaveValue("../work/fern-and-kettle/");
+  await address.fill("../work/harbour-lane-pottery/");
+  await address.press("Escape");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace("../work/fern-and-kettle/", "../work/harbour-lane-pottery/"));
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+});
+
+test("a stale Choose image callback after Done opens no picker and never navigates back to the master", async ({ page, baseURL }) => {
+  const originalPage = await seed(page, baseURL);
+  await frame(page).locator(".master-image").click();
+  const oldChoose = await bar(page).getByRole("button", { name: "Choose image…", exact: true }).elementHandle();
+  expect(oldChoose).not.toBeNull();
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await oldChoose!.evaluate(button => (button as HTMLElement).click());
+  await expect(page.getByRole("dialog", { name: "Choose image", exact: true })).toHaveCount(0);
+  expect(await effective(page, baseURL, MASTER)).toBe(markup);
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await edit(page);
+  await oldChoose!.evaluate(button => (button as HTMLElement).click());
+  const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(chooser).toHaveCount(0);
+  await frame(page).locator(".master-image").click();
+  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await expect(chooser).toBeVisible();
+  await chooser.getByRole("button", { name: "Details for about/master-image.svg", exact: true }).click();
+  await chooser.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(chooser).toHaveCount(0);
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace('<img class="master-image" src="master-image.svg" alt="Original master image" width="160" height="100">', '<img loading="lazy" decoding="async" class="master-image" src="/about/master-image.svg" alt="Original master image" width="800" height="600">'));
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await banner(page).getByRole("button", { name: "Done" }).focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+});
+
+test("a previous master's Method callback refuses after Done and reopening the same cached model", async ({ page, baseURL }) => {
+  const originalPage = await seed(page, baseURL);
+  await frame(page).locator(".master-form").click({ position: { x: 4, y: 4 } });
+  const method = await bar(page).getByRole("combobox", { name: "Method", exact: true }).elementHandle();
+  expect(method).not.toBeNull();
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await edit(page);
+  await frame(page).locator(".master-form").click({ position: { x: 4, y: 4 } });
+  await expect(bar(page).getByRole("combobox", { name: "Method", exact: true })).toHaveValue("get");
+  await method!.evaluate((control: HTMLSelectElement) => { control.value = "post"; control.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(await effective(page, baseURL, MASTER)).toBe(markup);
+  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+});

@@ -1698,10 +1698,13 @@ async function forgetNativeCollection(id: string, sidecar: string): Promise<stri
 
 /** Resolve an authored asset; computed URLs alone do not identify repository provenance. */
 function nativeStyleImageSource(selection: NativePreviewSelection, sources: Record<string, string>): { path: string; mode: "object-position" | "background-position" } | undefined {
-  const source = sources[selection.path], tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
+  const master = nativeOpenMaster();
+  const source = master?.masterPath === selection.path ? master.masterSource : sources[selection.path];
+  const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
   if (selection.tag.toLowerCase() === "img" && tag) {
     const raw = startTagAttribute(source, tag, "src")?.value;
-    const path = raw && nativeImageAsset(nativePageRoute(selection.path) ? selection.path : "index.html", decodeHtmlEntities(raw, true));
+    const page = master?.masterPath === selection.path ? master.pagePath : nativePageRoute(selection.path) ? selection.path : "index.html";
+    const path = raw && nativeImageAsset(page, decodeHtmlEntities(raw, true));
     return path ? { path, mode: "object-position" } : undefined;
   }
   const result = resolveSelectedRules(selection.selectors, selection.cascade);
@@ -2162,7 +2165,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     const tag = range.tag;
     const src = attribute("src");
     const alt = attribute("alt");
-    controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
+    controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node && currentMaster()) void chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
     // Alt text applies as typed; opening with no alt written applies the
     // file's name at once; emptied, the image is decorative (alt="").
     controls.push({
@@ -3774,7 +3777,15 @@ function nativePageShownSources(site: NativeSite, file: string) {
 }
 // Reads the assets `sources` name that are not read yet; `onProgress` runs
 // as each arrives.
-async function loadNativeAssets(sources = nativeSite ? nativeSources() : {}, onProgress = updateNativePreviewSources) {
+function nativeAssetSources() {
+  const sources = nativeSite ? nativeSources() : {};
+  const master = nativeOpenMaster();
+  // Asset discovery only: the master is shown in this page, never at its private file URL.
+  // Keep the page's own assets too; no preview or published source is changed.
+  if (master) sources[master.pagePath] = (sources[master.pagePath] ?? "") + master.masterSource;
+  return sources;
+}
+async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewSources) {
   if (!currentRepo || !snapshot) return;
   const repo = currentRepo.full_name;
   const request = nativeSourcesRequest;
@@ -3963,6 +3974,10 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
 
 async function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
   const epoch = generation, workspace = setupScope();
+  const privateMaster = target.path.startsWith(SECTION_MASTER_FOLDER), master = nativeOpenMaster();
+  if (privateMaster && master?.masterPath !== target.path) { announce("That master is no longer open. Choose Edit on the section again."); return; }
+  const scope = draftScope(), proof = privateMaster && scope ? editorModule?.captureFileModelState(scope, target.path) : undefined;
+  const currentMaster = () => !privateMaster || nativeOpenMaster()?.session === master?.session && currentPath === target.path && proof?.isCurrent() === true;
   const source = nativeEffectiveSource(target.path);
   const initial = source === undefined ? undefined : locateNativeElementRange(source, target.node);
   if (!initial || initial.tag.name !== "img" || versionView) return;
@@ -3972,10 +3987,11 @@ async function chooseMediaForImage(target: { path: string; node: number[]; width
   const initialAlt = mediaExistingAlt(expected);
   await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
     if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Choose an image again.");
+    if (!currentMaster()) throw new Error("The master changed. Choose an image again.");
     if (currentPath !== target.path) await restoreFile(target.path, epoch, { linkDefaultStyle: false });
     const latest = nativeEffectiveSource(target.path);
     const range = latest === undefined ? undefined : locateNativeElementRange(latest, target.node);
-    if (epoch !== generation || workspace !== setupScope() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
+    if (epoch !== generation || workspace !== setupScope() || !currentMaster() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
     const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
     if (!applyNativeChange(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
   } }).catch(errorMessage);
