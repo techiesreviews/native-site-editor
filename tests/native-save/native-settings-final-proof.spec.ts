@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test, type Page } from '@playwright/test';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { storedDrafts, storedDraft } from './drafts';
@@ -13,7 +14,7 @@ async function open(page: Page, baseURL: string | undefined, branch = 'main') {
 async function settings(page: Page) {
   if (!await page.locator('#explorer').isVisible()) await page.locator('#explorer-toggle').click();
   await page.getByRole('tab', { name: 'Pages', exact: true }).click();
-  await page.locator('#page-settings-toggle').click();
+  await openPageSettingsFromPages(page);
   const dialog = page.getByRole('dialog', { name: 'Page settings', exact: true });
   await expect(dialog).toBeVisible();
   return dialog;

@@ -72,6 +72,8 @@ export function createPagesTree(options: {
   /** Gives a URL with no page its own page. */
   createPage?: (route: string) => void;
   pageSettings?: (file: string) => void;
+  /** Opens the navigation used by this page. */
+  navigation?: (file: string) => void;
   /** Whether a recognised header navigation can receive a new top-level page. */
   canAddToNavigation?: () => boolean;
   /** What changing a page's URL to the typed value does. */
@@ -333,6 +335,7 @@ export function createPagesTree(options: {
     const home = page.special === "home";
     return [
       ...(options.pageSettings ? [{ label: "Page settings…", run: () => options.pageSettings!(page.file!) }] : []),
+      ...(options.navigation ? [{ label: "Navigation…", run: () => options.navigation!(page.file!) }] : []),
       ...(isFolderRoute(page.route) ? [{ label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) }] : []),
       ...(options.retitle ? [{ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) }] : []),
       ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),

@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
@@ -21,7 +22,7 @@ async function load(page: Page, baseURL: string | undefined, source?: string) {
 async function openSettings(page: Page, tab: "General" | "Social") {
   if (!await page.locator("#explorer").evaluate((el) => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("tab", { name: tab, exact: true }).click();
   return dialog(page);

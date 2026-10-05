@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
@@ -8,6 +9,8 @@ import { effectiveSource } from "./drafts";
 // static starter: STATIC_SECTIONS_FIXTURE=native ASE_NATIVE_SAVE_FIXTURE=<.scratch/native-static-preview>.
 test.skip(process.env.STATIC_SECTIONS_FIXTURE !== "native", "Runs on the native static starter (STATIC_SECTIONS_FIXTURE=native).");
 if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
+
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
 const JSON_PATH = ".editor/page-builder.json";
 const MASTER = ".editor/sections/intro.html";

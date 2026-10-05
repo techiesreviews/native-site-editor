@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -43,7 +44,7 @@ async function open(page: Page, baseURL: string | undefined, file: string) {
 async function openPageSettings(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   await expect(dialog(page, "Page settings")).toBeVisible();
   return dialog(page, "Page settings");
 }

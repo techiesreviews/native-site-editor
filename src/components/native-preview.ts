@@ -341,13 +341,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   frame.setAttribute("sandbox", "allow-scripts");
   frame.setAttribute("srcdoc", RUNTIME_DOC);
   frameHost.append(frame);
-  // The canvas around the frame: breakpoints, breadcrumb, spacing (canvas-bar.ts).
+  // The canvas around the frame: breakpoints and breadcrumb (canvas-bar.ts).
   const toCanvas = (message: Record<string, unknown>) =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", ...message }, "*");
   const canvas = createCanvasBar(frameHost, frame, {
     onCrumb: (index) => toCanvas({ type: "canvas-crumb", action: "select", index }),
     onCrumbHover: (index) => toCanvas({ type: "canvas-crumb", action: "hover", index: index ?? -2 }),
-    onSpacing: (on) => toCanvas({ type: "canvas-spacing", on }),
   });
   const errorBox = node("div", "native-preview-error");
   errorBox.setAttribute("role", "alert");
@@ -686,7 +685,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "ready") {
       ready = true;
       postTheme();
-      if (canvas.spacing()) toCanvas({ type: "canvas-spacing", on: true });
       lastAvoid = "";
       postAvoid();
       postFocus();

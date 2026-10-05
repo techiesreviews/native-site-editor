@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test } from "@playwright/test";
 
 test("Page settings keeps the first heading hint and refuses a component-only preview", async ({ page, baseURL }) => {
@@ -5,7 +6,7 @@ test("Page settings keeps the first heading hint and refuses a component-only pr
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
   if (!await page.locator("#explorer").evaluate(element => element.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await expect(settings.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Native Studio");
   await expect(settings.getByRole("textbox", { name: "Title", exact: true })).toHaveAttribute("placeholder", "A native browser preview");
@@ -15,10 +16,9 @@ test("Page settings keeps the first heading hint and refuses a component-only pr
   await expect(page.locator("#structure .sidebar-hint")).toContainText("component by itself");
   if (!await page.locator("#explorer").evaluate(element => element.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
-  await expect(page.locator("#status")).toHaveText("Open a page to edit its settings.");
+  await expect(page.locator(".pages-settings")).toHaveCount(0);
+  await expect(page.locator("#structure").getByRole("button", { name: "Page settings", exact: true })).toHaveCount(0);
+  await expect(page.locator("#structure").getByRole("button", { name: "Navigation", exact: true })).toHaveCount(0);
   await expect(settings).toBeHidden();
-  await page.locator("#navigation-settings-toggle").click();
-  await expect(page.locator("#status")).toHaveText("Open a page to edit its navigation.");
   await expect(page.getByRole("dialog", { name: "Navigation", exact: true })).toBeHidden();
 });

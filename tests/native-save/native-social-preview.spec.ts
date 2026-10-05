@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test } from "@playwright/test";
 
@@ -16,7 +17,7 @@ test("the share card previews the site's own absolute image from the repository 
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   const image = settings.getByLabel("Social image", { exact: true });
@@ -30,4 +31,8 @@ test("the share card previews the site's own absolute image from the repository 
   await expect(photo).toBeHidden();
   expect(external).toEqual([]);
   expect(errors).toEqual([]);
+  await settings.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator('.pages-settings[role="group"][aria-label="Page"]')).toHaveCount(0);
+  await openNavigationFromPages(page);
+  await expect(page.getByRole("dialog", { name: "Navigation", exact: true })).toBeVisible();
 });

@@ -66,6 +66,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pb-add-panel__position[hidden] {
+  display: none;
+}
 .pb-add-panel.has-no-place .pb-add-panel__position {
   color: var(--warning-fg);
 }
@@ -473,6 +476,9 @@
 
 /* Refused choices remain keyboard reachable so their destination is explained. */
 .pb-add-item__option[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.pb-add-panel__position[hidden] {
+  display: none;
+}
 .pb-add-panel.has-no-place .pb-add-panel__position { white-space: normal; }
 .pb-add-item__image-fallback { position: absolute; inset: 0; display: grid; place-items: center; background: #fff; color: var(--muted); }
 .pb-add-item__image-fallback[hidden] { display: none; }

@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The canvas (page builder, canvas slice; docs/page-builder/canvas.md):
 // breakpoints and a draggable frame width, hover labels, the selection's
 // breadcrumb with Esc / Ctrl+↑ to the parent, code ⇄ canvas linking and
-// the spacing overlay.
+// preview chrome.
 
 const nativeHash = "#repo=501&branch=main&file=index.html";
 
@@ -222,27 +222,41 @@ test("the code pane's cursor selects its element on the canvas, and a hovered li
   await expect(page.locator("#content textarea, #content [role=textbox]").first()).toBeFocused();
 });
 
-test("the spacing overlay shades margin and padding", async ({ page }) => {
+test("the removed spacing control never restores a legacy session overlay", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("native-site-editor:canvas-spacing", "on"));
+  await page.reload();
   const frame = page.frameLocator(".native-preview-frame");
-  const toggle = page.getByRole("button", { name: "Show margin and padding" });
-  const padding = frame.locator("[data-native-spacing=padding]:visible");
-  await frame.locator("project-card").first().locator("article").click({ position: { x: 4, y: 4 } });
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  await expect(current(page)).toHaveText("project-card");
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
-  await frame.locator("project-card").first().locator("article").click({ position: { x: 4, y: 4 } });
-  await expect(current(page)).toHaveText("article.project-card");
-  expect(await frame.locator("project-card").first().locator("article").evaluate(el => { const css = getComputedStyle(el); return [css.paddingTop, css.paddingRight, css.paddingBottom, css.paddingLeft]; })).toEqual(["20px", "20px", "20px", "20px"]);
-  await expect(padding).toHaveCount(0);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await page.mouse.move(10, 500);
-  // The card's 20px padding on all four sides, numbered.
-  await expect(padding).toHaveCount(4);
-  await expect(padding).toHaveText(["20", "20", "20", "20"]);
-  await toggle.click();
-  await expect(padding).toHaveCount(0);
+  await expect(frame.locator(".hero h1")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show margin and padding", exact: true })).toHaveCount(0);
+  const source = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  await frame.locator(".hero h1").click();
+  await frame.locator(".hero p").hover();
+  await expect(frame.locator("[data-native-spacing]:visible")).toHaveCount(0);
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(source);
+  expect(await page.evaluate(() => sessionStorage.getItem("native-site-editor:canvas-spacing"))).toBe("on");
+});
+
+test("subtle editor and preview scrollbars preserve scrolling and source", async ({ page }) => {
+  const source = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  await page.setViewportSize({ width: 1440, height: 500 });
+  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: "Section", exact: true }).locator(".page-structure__toggle").click();
+  const structure = page.locator(".page-structure");
+  await expect(structure).toHaveCSS("scrollbar-width", "thin");
+  expect(await structure.evaluate(element => {
+    // Give the native scroll container a bounded height independent of sidebar layout.
+    (element as HTMLElement).style.maxHeight = "64px";
+    element.scrollTop = element.scrollHeight;
+    return element.scrollHeight > element.clientHeight && element.scrollTop > 0;
+  })).toBe(true);
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.locator("html")).toHaveCSS("scrollbar-width", "thin");
+  await expect(frame.locator("project-card article").first()).toHaveCSS("scrollbar-width", "thin");
+  expect(await frame.locator("html").evaluate(() => {
+    const root = document.scrollingElement!;
+    root.scrollTop = root.scrollHeight;
+    return root.scrollHeight > root.clientHeight && root.scrollTop > 0;
+  })).toBe(true);
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(source);
 });
 
 test("implied end tags map to their parent and pending code pointers can be cancelled", async ({ page }) => {

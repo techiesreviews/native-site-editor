@@ -76,7 +76,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   search.placeholder = "Search components";
   search.setAttribute("aria-label", "Search components");
   search.autocomplete = "off";
-  const hint = node("p", "pb-add-panel__hint", "Click to add, or drag onto the page.");
   const notice = node("p", "pb-add-panel__hint pb-add-panel__notice");
   notice.setAttribute("role", "status");
   notice.hidden = true;
@@ -89,7 +88,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   body.append(list, message);
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
-  panel.append(head, position, search, hint, notice, body, live);
+  panel.append(head, position, search, notice, body, live);
   document.body.append(panel);
 
   let open = false;
@@ -127,6 +126,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     panel.classList.toggle("has-no-place", !at);
     if (entry) entry.option.setAttribute("aria-disabled", String(!at));
     if (entry && !at) position.textContent = `This destination cannot accept ${entry.item.name}.`;
+    position.hidden = position.textContent === "Goes at the end";
   }
 
   function clearInactive(tag: string) {
@@ -144,7 +144,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   function refuse(item: AddItem) {
     entries.get(item.tag)?.option.setAttribute("aria-disabled", "true");
     const text = `This destination cannot accept ${item.name}.`;
-    position.textContent = text; live.textContent = text;
+    position.textContent = text; position.hidden = false; live.textContent = text;
     panel.classList.add("has-no-place");
   }
 
@@ -266,7 +266,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     }
     for (const group of groups) group.root.hidden = group.tags.every((tag) => entries.get(tag)!.root.hidden);
     search.hidden = !total;
-    hint.hidden = !total;
     const why = handlers.notice?.();
     notice.hidden = !why;
     if (notice.textContent !== (why ?? "")) notice.textContent = why ?? "";

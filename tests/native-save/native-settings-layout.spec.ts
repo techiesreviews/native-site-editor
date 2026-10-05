@@ -1,14 +1,14 @@
+import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { storedDraft } from "./drafts";
 const settings = (page: Page, name = "Page settings") => page.getByRole("dialog", { name, exact: true });
-const pageBlock = (page: Page) => page.getByRole("group", { name: "Page", exact: true });
 async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
 }
-async function openPageSettings(page: Page) { await showPages(page); await page.locator("#page-settings-toggle").click(); }
-async function openNavigation(page: Page) { await showPages(page); await page.locator("#navigation-settings-toggle").click(); }
+async function openPageSettings(page: Page) { await showPages(page); await openPageSettingsFromPages(page); }
+async function openNavigation(page: Page) { await showPages(page); await openNavigationFromPages(page); }
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
@@ -65,7 +65,8 @@ test("all settings families fit 390px with horizontal categories and stacked con
   await open(page, baseURL);
   for (const [family, categories] of [["Page settings", ["General", "Search", "Social"]], ["Site settings", ["General", "Social", "Pages"]], ["Navigation", ["Links", "Add link"]]] as const) {
     if (family === "Site settings") { await showPages(page); await page.getByRole("button", { name: family, exact: true }).click(); }
-    else { await showPages(page); await pageBlock(page).getByRole("button", { name: family, exact: true }).click(); }
+    else if (family === "Page settings") await openPageSettingsFromPages(page);
+    else await openNavigationFromPages(page);
     const panel = settings(page, family);
     await expect(panel.getByRole("tablist")).toHaveAttribute("aria-orientation", "horizontal");
     for (const category of categories) {
@@ -97,4 +98,14 @@ test("site categories preserve identity and image edits until Cancel, returning 
   await panel.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
   await expect(page.locator("#explorer-toggle")).toBeFocused();
+});
+
+test("Explorer omits the redundant Page bar while page menus retain settings and navigation", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await expect(page.locator('.pages-settings[role="group"][aria-label="Page"]')).toHaveCount(0);
+  await openPageSettingsFromPages(page);
+  await expect(settings(page)).toBeVisible();
+  await settings(page).locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
+  await openNavigationFromPages(page);
+  await expect(settings(page, "Navigation")).toBeVisible();
 });

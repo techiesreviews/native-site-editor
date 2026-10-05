@@ -97,7 +97,7 @@ import { planNativeSharedSection } from "./page-builder/native-shared-section";
 import { createNativeSectionMasterController, type MasterControllerHost, type MasterSelection } from "./page-builder/native-section-master-controller";
 import { createMasterBanner } from "./components/master-banner";
 import { planSelectedStaticSectionSave } from "./page-builder/native-section-save";
-import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
+import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
 import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
@@ -242,7 +242,7 @@ function mountWorkspace() {
         <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
         <button type="button" id="explorer-tab-images" class="explorer-tab" role="tab" aria-controls="explorer-images" aria-selected="false" tabindex="-1">Images</button>
       </div>
-      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><div class="pages-settings" role="group" aria-label="Page"><button type="button" id="page-settings-toggle" class="text-button">Page settings</button><button type="button" id="navigation-settings-toggle" class="text-button">Navigation</button></div></div>
+      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
       <div id="explorer-images" class="explorer-panel" aria-labelledby="explorer-tab-images" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
@@ -278,10 +278,6 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
-  const settingsPage = () => nativeSite?.routes[nativePreview?.route() ?? ""] ??
-    (currentPath && nativeRouteForPath(currentPath) ? currentPath : undefined);
-  element("page-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativePageSettings(path); else announce("Open a page to edit its settings."); });
-  element("navigation-settings-toggle").addEventListener("click", () => { const path = settingsPage(); if (path) void openNativeNavigation(path); else announce("Open a page to edit its navigation."); });
   disposeExplorerImages();
   configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
@@ -365,7 +361,8 @@ function mountWorkspace() {
     duplicate: (file) => void duplicateNativePage(file),
     remove: (target) => void removeNativePagesTarget(target),
     createPage: (route) => void createNativeFolderPage(route),
-    pageSettings: (path) => void openNativePageSettings(path),
+    pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
+    navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
     canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
     planUrl: (target, value) => (target.file ? nativeUrlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
     changeUrl: (target, value, keep) => (target.file ? changeNativeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
@@ -2920,9 +2917,7 @@ function nativeStaticSectionChoices(): AddChoice[] {
   if (!loaded) return [];
   try {
     const saved = listSectionChoices(text).map(choice => ({ tag: SAVED_SECTION_PREFIX + choice.id, label: choice.label, group: STATIC_SECTION_GROUP, kind: "native" as const }));
-    const defaults = listDefaultSectionChoices(text);
-    if ("error" in defaults) return [];
-    return [...saved, ...defaults.map(choice => ({ tag: choice.id, label: choice.label, group: STATIC_SECTION_GROUP, kind: "native" as const }))];
+    return saved;
   } catch { return []; }
 }
 // Why the plain sections are missing from Add, when the editor JSON keeps them out.
@@ -2933,8 +2928,6 @@ function nativeStaticSectionNotice(): string | undefined {
   let error: string | undefined;
   try {
     listSectionChoices(text);
-    const defaults = listDefaultSectionChoices(text);
-    if ("error" in defaults) error = defaults.error;
   } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
   return error === undefined ? undefined : `Plain HTML sections are hidden: ${EDITOR_PAGE_BUILDER_PATH} can't be read (${error}). Fix that file, then reopen Add.`;
 }
@@ -6402,8 +6395,17 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       prepareSources: edits => editor.prepareHistorySources(edits, true),
     }, { before, after, beforeSources, afterSources });
     if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? changedOperation; receipt?.dispose(); return error; }
+    // A read-only stylesheet mount over this step's exact bytes belongs to the host.
+    const adoptPane = (path: string) => {
+      if (generation === epoch && setupScope() === scopeKey && !versionView)
+        receipt.adoptOwnMount(path, editor.captureFileModelState(scope, path, true), editor.getMountedSource(path));
+    };
+    if (!companion) nativePaneMountAdopters.add(adoptPane);
+    const dispose = () => { nativePaneMountAdopters.delete(adoptPane); receipt.dispose(); };
     const transition = (direction: "undo" | "redo") => {
-      if (!receipt[direction]()) { announce(receipt.error() ?? changedOperation); return false; }
+      const select = direction === "undo" ? op.selection?.before : op.selection?.after;
+      if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
+      if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); announce(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
       announce(direction === "undo" ? op.undone : done);
       return true;
@@ -6414,16 +6416,16 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       if (!editor.modelAtState(scope, companion.path, companion.after, companion.source) || companion.before !== companion.after &&
           !editor.attachHistoryCompanion(scope, companion.path, companion.before, companion.after, { undo: () => follow("undo"), redo: () => follow("redo") })) {
         if (receipt.undo()) afterFileChanges();
-        receipt.dispose();
+        dispose();
         return changedOperation;
       }
       afterFileChanges();
       announce(done);
       return undefined;
     }
-    if (!editor.recordHistoryAction(anchor!, () => transition("undo"), () => transition("redo"), receipt.dispose, op.precedingTyping)) {
+    if (!editor.recordHistoryAction(anchor!, () => transition("undo"), () => transition("redo"), dispose, op.precedingTyping)) {
       if (receipt.undo()) afterFileChanges();
-      receipt.dispose();
+      dispose();
       return "The editor changed before this operation could be recorded. Review the current drafts.";
     }
     afterFileChanges();

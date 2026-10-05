@@ -1,7 +1,10 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
 import { showStylePanel } from "./style-panel-controls";
+
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {

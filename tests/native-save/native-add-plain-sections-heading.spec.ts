@@ -8,7 +8,7 @@ test("plain sections lose only their heading; other groups keep headings and nam
     const { nativeElementChoices } = await import("/src/page-builder/native-elements.ts" as string);
     document.body.replaceChildren();
     const inserted: string[] = ((window as any).inserted = []);
-    const plain = ["Intro", "Features", "Split", "Contact"].map((label) => ({ tag: `static:${label.toLowerCase()}`, label, group: "Plain HTML sections", kind: "native" }));
+    const plain = [{ tag: "saved-section:custom", label: "Custom saved section", group: "Plain HTML sections", kind: "native" }];
     const point = { parent: [0], index: 0 };
     const panel = createAddPanel({
       choices: () => [{ tag: "section-hero", label: "Hero" }],
@@ -24,11 +24,11 @@ test("plain sections lose only their heading; other groups keep headings and nam
   await expect(panel.getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
   const plain = panel.getByRole("group", { name: "Page sections", exact: true });
   await expect(plain).toHaveCount(1);
-  for (const name of ["Intro", "Features", "Split", "Contact"]) await expect(plain.getByRole("option", { name: `${name} HTML`, exact: true })).toHaveCount(1);
+  await expect(plain.getByRole("option", { name: "Custom saved section HTML", exact: true })).toHaveCount(1);
   for (const name of ["Elements", "Layout", "Forms"]) {
     await expect(panel.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(panel.getByRole("group", { name, exact: true })).toHaveCount(1);
   }
-  await plain.getByRole("option", { name: "Split HTML", exact: true }).click();
-  expect(await page.evaluate(() => (window as any).inserted)).toEqual(["static:split"]);
+  await plain.getByRole("option", { name: "Custom saved section HTML", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).inserted)).toEqual(["saved-section:custom"]);
 });

@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { locateCollectionTarget } from "../../src/page-builder/page-builder-document";
 import { requireStaticFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
@@ -6,12 +7,13 @@ import { publishButton } from "./publish";
 
 requireStaticFixture();
 
-// Plain HTML/CSS sections in the same Add panel: four curated defaults and
-// the records saved in .editor/page-builder.json. Adding one writes ordinary
-// HTML (and a stylesheet link only when the page does not load the section
-// stylesheet yet) and appends its rules to styles/sections.css; the JSON is
+// User-saved plain HTML/CSS sections in the Add panel. Adding one writes ordinary
+// HTML, reuses its public stylesheet, and records its page copy in editor JSON.
+// A stylesheet link is added only when the page does not already load it. The JSON is
 // editor-only. Runs on a copy of the actual starter, unchanged:
 // ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
+
 const SIDECAR = ".editor/page-builder.json";
 const CSS = "styles/sections.css";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -46,7 +48,7 @@ async function add(page: Page, name: RegExp) {
   await option.press("Enter");
 }
 
-actual("on the real starter, defaults go into the stylesheet it already imports; one Undo; Save gives ready HTML that needs no editor", async ({ page, baseURL }) => {
+actual("on the real starter, saved sections reuse the stylesheet it already imports; one Undo; Save gives ready HTML that needs no editor", async ({ page, baseURL }) => {
   await load(page, baseURL);
   const siteCss = await file(page, baseURL, "styles/site.css");
   const sectionsCss = await file(page, baseURL, CSS);
@@ -70,8 +72,8 @@ actual("on the real starter, defaults go into the stylesheet it already imports;
   // site.css already imports styles/sections.css: no second link.
   expect(home.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
   expect(home).not.toMatch(/static-section|saved-section|data-native|reusableSections|<script[^>]*>[^<]*section-intro/);
-  await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain("@layer sections {\n  .section-intro {");
-  const css = (await storedDraft(page, CSS))!.content;
+  expect(await storedDraft(page, CSS)).toBeUndefined();
+  const css = sectionsCss;
   expect(css.startsWith(sectionsCss)).toBe(true);
   expect(await storedDraft(page, "styles/site.css")).toBeUndefined();
   const sidecar = (await storedDraft(page, SIDECAR))!.content;
@@ -83,7 +85,7 @@ actual("on the real starter, defaults go into the stylesheet it already imports;
   expect(await mounted(page)).toBe(before);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
-  await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(css);
+  expect(await storedDraft(page, CSS)).toBeUndefined();
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(sidecar);
 
   // The site's own Text size (its utilities layer) wins over the section's layered seed.
@@ -94,14 +96,14 @@ actual("on the real starter, defaults go into the stylesheet it already imports;
   expect(await mounted(page)).toContain('<h2 class="text-xl">Section heading</h2>');
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(home);
-  expect((await storedDraft(page, CSS))?.content).toBe(css);
+  expect(await storedDraft(page, CSS)).toBeUndefined();
 
   // Features through the plus between two sections: that very gap.
   await frame(page).locator("section.flow").hover();
   await page.getByRole("button", { name: /^Add a section before “Recent work”/ }).first().dispatchEvent("click");
   await panel(page).getByRole("option", { name: /^Features HTML$/ }).click();
   await expect(frame(page).locator("section.section-features + section.flow")).toHaveCount(1);
-  const withFeatures = (await storedDraft(page, CSS))!.content;
+  const withFeatures = await file(page, baseURL, CSS);
   expect(withFeatures.startsWith(css)).toBe(true);
   expect(withFeatures.match(/\.section-intro \{/g)?.length).toBe(1);
 
@@ -204,13 +206,15 @@ actual("invalid editor JSON hides plain sections instead of falling back to defa
   await expect(panel(page).locator(".pb-add-panel__notice")).toContainText(`${SIDECAR} can't be read`);
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
-  // Repaired in the file: they come back and the notice goes.
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {} }, null, 2) + "\n" } });
   await load(page, baseURL);
   await openAdd(page);
-  await expect(panel(page).getByRole("heading", { name: "Plain HTML sections" })).toHaveCount(0);
-  await expect(panel(page).getByRole("group", { name: "Page sections", exact: true }).getByRole("option", { name: /^Intro HTML$/ })).toBeVisible();
+  await expect(panel(page).getByRole("option", { name: /^Intro HTML$/ })).toHaveCount(0);
   await expect(panel(page).locator(".pb-add-panel__notice")).toBeHidden();
+  await seedSavedSections(page, baseURL, ["intro"]);
+  await load(page, baseURL);
+  await openAdd(page);
+  await expect(panel(page).getByRole("option", { name: /^Intro HTML$/ })).toBeVisible();
 });
 
 actual("a page edited while the Add panel is open closes it: nothing is added to the older source", async ({ page, baseURL }) => {
@@ -257,7 +261,7 @@ actual("a stylesheet edited after the gap was opened and before the click: the c
   expect(path).toMatch(/\.css$/);
   // Not the pinned bytes: the click re-reads every source, so the add goes on top of the foreign edit.
   await expect(frame(page).locator("main > section.section-intro + section.flow")).toHaveCount(1);
-  await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain(".section-intro {");
+  expect((await storedDraft(page, CSS))?.content ?? await file(page, baseURL, CSS)).toContain(".section-intro {");
   const edited = (await storedDraft(page, path))!.content;
   expect(edited).toContain("/* foreign edit */");
 });
@@ -303,7 +307,7 @@ actual("the page edited while Add waits in restoreFile: nothing is inserted and 
   await expect.poll(() => mounted(page)).toBe(before);
 });
 
-actual("added while a stylesheet is open in the editor: no notice, and one Undo takes back page, CSS and JSON", async ({ page, baseURL }) => {
+actual("added while a stylesheet is open in the editor: no notice, and one Undo takes back page and JSON without changing saved CSS", async ({ page, baseURL }) => {
   await load(page, baseURL, "styles/site.css");
   await expect(frame(page).locator("section.flow h2")).toBeVisible();
   const before = await file(page, baseURL, "index.html");
@@ -312,7 +316,7 @@ actual("added while a stylesheet is open in the editor: no notice, and one Undo 
   await panel(page).getByRole("option", { name: /^Intro HTML$/ }).click();
   await expect(frame(page).locator("main > section.section-intro + section.flow")).toHaveCount(1);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
   await page.waitForTimeout(500);
   const notice = await page.locator("#notice").isVisible() ? await page.locator("#notice").textContent() : "";
   console.log(`HIST notice after a clean add: ${JSON.stringify(notice)}`);
@@ -418,7 +422,7 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["na
     const home = await mounted(page);
     expect(home).toContain('<section class="section-intro"><h2>Section heading</h2>');
     expect(home).not.toMatch(/data-native|static-section|saved-section/);
-    expect((await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+    expect((await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
     await page.screenshot({ path: `${OUT}-reveal-${label}.png` });
     await page.locator(".code-editor__undo").first().click();
     await expect.poll(() => storedDrafts(page)).toEqual([]);
@@ -430,7 +434,7 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["na
 
 test.describe("native static starter", () => {
   test.skip(!native, "Needs ASE_NATIVE_SAVE_FIXTURE pointing at the native static starter.");
-  test("all four defaults join the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
+  test("all four saved sections reuse the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
     await load(page, baseURL);
     const before = await mounted(page);
     const sectionsCss = await file(page, baseURL, CSS);
@@ -439,15 +443,15 @@ test.describe("native static starter", () => {
     await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
     const home = await mounted(page);
     expect(home.match(/rel="stylesheet"/g)?.length).toBe(before!.match(/rel="stylesheet"/g)?.length);
-    await expect.poll(async () => (await storedDraft(page, CSS))?.content ?? "").toContain(".section-intro {");
-    expect((await storedDraft(page, CSS))!.content.startsWith(sectionsCss)).toBe(true);
+    expect(await storedDraft(page, CSS)).toBeUndefined();
+    expect(await file(page, baseURL, CSS)).toBe(sectionsCss);
     expect((await storedDrafts(page)).some((draft) => draft.path.startsWith(".editor/legacy"))).toBe(false);
     // The other three join too; Contact uses contact-section beside the starter's own .section-contact.
     for (const [name, root] of [["Features", "section-features"], ["Split", "section-split"], ["Contact", "contact-section"]]) {
       await add(page, new RegExp(`^${name} HTML$`));
       await expect(frame(page).locator(`section.${root}`)).toHaveCount(1);
     }
-    const four = await mounted(page), fourCss = (await storedDraft(page, CSS))!.content;
+    const four = await mounted(page), fourCss = await file(page, baseURL, CSS);
     // Each at the page's level after the selected flow section; the flow's heading and cards untouched.
     for (const root of ["section-intro", "section-features", "section-split", "contact-section"]) await expect(frame(page).locator(`main > section.${root}`)).toHaveCount(1);
     await expect(frame(page).locator("section.flow section")).toHaveCount(0);
@@ -457,7 +461,8 @@ test.describe("native static starter", () => {
     await expect(frame(page).locator("section.contact-section")).toHaveCount(0);
     await page.locator(".code-editor__redo").first().click();
     await expect.poll(() => mounted(page)).toBe(four);
-    await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(fourCss);
+    expect(await storedDraft(page, CSS)).toBeUndefined();
+    expect(await file(page, baseURL, CSS)).toBe(fourCss);
     for (const name of ["Contact", "Split", "Features", "Intro"]) await page.locator(".code-editor__undo").first().click();
     await expect.poll(() => mounted(page)).toBe(before);
     for (const name of ["Intro", "Features", "Split", "Contact"]) await page.locator(".code-editor__redo").first().click();

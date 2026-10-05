@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -81,16 +82,13 @@ test("a new page starts with an empty <main>, and a native page section goes in 
   await expect(page.locator(".insert-point__plus")).toBeHidden();
   const empty = page.getByRole("region", { name: "Empty page" });
   await expect(empty).toContainText("Start with a section");
-  await expect.poll(() => empty.getByRole("list", { name: "Suggested sections" }).getByRole("button").evaluateAll((buttons) => buttons.map((el) => el.getAttribute("aria-label")))).toEqual(["Add Intro", "Add Features", "Add Split"]);
-  await empty.getByRole("button", { name: "Add Features", exact: true }).click();
+  for (const name of ["Intro", "Features", "Split", "Contact"]) await expect(empty.getByRole("button", { name: `Add ${name}`, exact: true })).toHaveCount(0);
+  await empty.getByRole("button", { name: "Add Feature block", exact: true }).click();
   await expect(frame(page).locator("main > *")).toHaveCount(1);
-  await expect(frame(page).locator("main > section.section-features")).toHaveCount(1);
-  await expect(frame(page).locator("main > section.section-features h2")).toHaveText("Features");
+  await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
+  await expect(frame(page).locator("main > feature-block h2")).toHaveText("A feature worth sharing");
   await expect(empty).toBeHidden();
-  // Ordinary HTML at the end of <main>, and the section stylesheet linked, relative to the page.
-  const withSectionCss = (html: string) => html.replace("\n</head>", `\n\n  <link rel="stylesheet" href="../styles/sections.css">\n</head>`);
-  const features = `<section class="section-features"><h2>Features</h2><ul><li><h3>First feature</h3><p>Describe what makes this useful.</p></li><li><h3>Second feature</h3><p>Describe what makes this useful.</p></li><li><h3>Third feature</h3><p>Describe what makes this useful.</p></li></ul></section>`;
-  await expect.poll(() => editorText(page)).toBe(withSectionCss(shell(`\n  ${features}\n`)));
+  expect(await editorText(page)).not.toContain("styles/sections.css");
   // One Undo restores the empty page exactly.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => editorText(page)).toBe(shell(""));
@@ -151,19 +149,12 @@ test("a page whose <main> holds no section offers one place at the end of <main>
   await frame(page).locator("main > h1").click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();
   await end.click();
-  await expect(picker(page)).toContainText("Goes at the end");
-  // This site has no section components, so the native page sections are its choices.
-  await expect(picker(page).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
-  await picker(page).getByRole("option", { name: /^Intro/ }).click();
-  await expect(picker(page)).toBeHidden();
-  // At the end of <main>, after the heading, as ordinary HTML with the section stylesheet linked.
-  await expect(frame(page).locator("main > *")).toHaveCount(2);
-  await expect(frame(page).locator("main > h1 + section.section-intro:last-child h2")).toHaveText("Section heading");
+  await expect(picker(page).locator(".pb-add-panel__position")).toBeHidden();
+  // With no authored components or saved sections, Add explains the empty catalogue.
+  await expect(picker(page).getByRole("option")).toHaveCount(0);
+  await expect(picker(page).locator(".pb-add-panel__message")).toBeVisible();
+  await picker(page).getByRole("button", { name: "Close", exact: true }).click();
   const notes = readFileSync(resolve("fixtures/native-routing/work/notes.html"), "utf8");
-  await expect.poll(() => editorText(page)).toBe(notes
-    .replace("\n</head>", `\n\n  <link rel="stylesheet" href="../styles/sections.css">\n</head>`)
-    .replace("\n</main>", `\n  <section class="section-intro"><h2>Section heading</h2><p>Write a short introduction for this part of the page.</p></section>\n</main>`));
-  await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => editorText(page)).toBe(notes);
   await expect(frame(page).locator("main > *")).toHaveCount(1);
 
@@ -176,7 +167,7 @@ const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page se
 async function openSettings(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   await expect(settingsDialog(page)).toBeVisible();
 }
 async function writeSetting(page: Page, label: string, value: string) {

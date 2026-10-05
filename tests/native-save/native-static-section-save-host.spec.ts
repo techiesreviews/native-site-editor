@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { requireActualFixture } from "./fixture-contract";
 import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
@@ -13,6 +14,8 @@ requireActualFixture();
 // Only that JSON changes; the page, its stylesheets and copies already on
 // pages stay as they are, and future Adds use the saved HTML. Runs on a copy
 // of the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
+
 const SIDECAR = ".editor/page-builder.json";
 const CSS = "styles/sections.css";
 const OUT = process.env.STATIC_SECTION_SAVE_OUT ?? ".scratch/native-section-save-host/spec";
@@ -159,7 +162,7 @@ test("Update Intro updates only the saved JSON record; one Undo; future Adds use
 
 // The stylesheet pane is already open beside the page (elements.css) before Add:
 // it is not part of the operation, so Add, Undo and Redo neither warn nor touch it.
-test("Add with an unchanged stylesheet pane open: no warning, three drafts, one Undo and Redo, also after the pane follows another stylesheet", async ({ page, baseURL }) => {
+test("Add with an unchanged stylesheet pane open: no warning, page and JSON drafts, one Undo and Redo, also after the pane follows another stylesheet", async ({ page, baseURL }) => {
   await load(page, baseURL);
   const elementsCss = await file(page, baseURL, "styles/elements.css");
   const notice = page.locator("#notice");
@@ -169,7 +172,7 @@ test("Add with an unchanged stylesheet pane open: no warning, three drafts, one 
   const before = await mounted(page);
   await addIntro(page, "section.flow h2");
   await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
   const drafts = await storedDrafts(page);
   await expect(notice).not.toContainText("not part of this owned source transition");
   await expect(notice).not.toContainText("changed");
@@ -177,7 +180,7 @@ test("Add with an unchanged stylesheet pane open: no warning, three drafts, one 
   expect(await mounted(page, "styles/elements.css")).toBe(elementsCss);
   await page.screenshot({ path: `${OUT}/pane-open-add.png` });
 
-  // One Undo clears all three with the pane still open; one Redo restores them exactly.
+  // One Undo clears both Add drafts with the pane still open; one Redo restores them exactly.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);
   expect(await mounted(page)).toBe(before);
@@ -197,7 +200,7 @@ test("Add with an unchanged stylesheet pane open: no warning, three drafts, one 
 });
 
 // Typing in the open stylesheet pane after Add clears the shared journal. The
-// primary Undo must then refuse as a whole: the Add's three drafts, the page
+// primary Undo must then refuse as a whole: the Add's page and JSON drafts, the page
 // source and the typed stylesheet bytes all stay exactly as they were.
 test("Undo after typing in the stylesheet pane following Add refuses without a partial revert", async ({ page, baseURL }) => {
   await load(page, baseURL);
@@ -205,7 +208,7 @@ test("Undo after typing in the stylesheet pane following Add refuses without a p
   await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
   await addIntro(page, "section.flow h2");
   await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
   const added = await mounted(page);
 
   await page.locator("#content-secondary [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
@@ -213,7 +216,7 @@ test("Undo after typing in the stylesheet pane following Add refuses without a p
   await page.keyboard.type("/* foreign */");
   await expect.poll(() => mounted(page, "styles/elements.css")).toContain("/* foreign */");
   const typed = await mounted(page, "styles/elements.css");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", "styles/elements.css", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", "styles/elements.css"].sort());
   const drafts = await storedDrafts(page);
 
   const undo = page.locator(".code-editor__undo").first();
@@ -251,7 +254,7 @@ async function addWithPane(page: Page, baseURL: string | undefined) {
   const before = await mounted(page);
   await addIntro(page, "section.flow h2");
   await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
   return { before, added: (await mounted(page))!, drafts: await storedDrafts(page) };
 }
 
@@ -275,7 +278,7 @@ test("Monaco Undo in the page editor refuses after the stylesheet pane cleared t
   const { added } = await addWithPane(page, baseURL);
   await typeInPane(page, "/* foreign */");
   const typed = await mounted(page, "styles/elements.css");
-  await expect.poll(async () => (await storedDrafts(page)).length).toBe(4);
+  await expect.poll(async () => (await storedDrafts(page)).length).toBe(3);
   const drafts = await storedDrafts(page);
   await focusPrimary(page);
   await page.keyboard.press("ControlOrMeta+z");
@@ -349,9 +352,9 @@ test("Monaco Undo and Redo keys in the page editor follow a Style panel edit mad
   const styledDrafts = strip(await storedDrafts(page));
   await expect(page.locator(".code-editor__undo").first()).toBeEnabled();
   await expect(page.locator(".code-editor__undo").first()).toHaveAttribute("title", "Undo");
-  const addedCss = drafts.find((draft) => draft.path === CSS)!.content;
+  const addedCss = await file(page, baseURL, CSS);
 
-  // First Ctrl+Z undoes the style only; the Add's three drafts stay.
+  // First Ctrl+Z undoes the style only; the Add's page and JSON drafts stay.
   await focusPrimary(page);
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => mounted(page, CSS)).toBe(addedCss);
@@ -469,7 +472,7 @@ test("Undo and Redo of an Add with a Style edit keep the selection on the restor
   await expect.poll(() => selectedIs("section.flow > h2")).toBe(true);
   await expect(crumb).toHaveText("h2");
   await key("ControlOrMeta+Shift+z");
-  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html", CSS].sort());
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path).sort()).toEqual([SIDECAR, "index.html"].sort());
   expect(await mounted(page)).toBe(added);
   await expect.poll(() => selectedIs("section.section-intro")).toBe(true);
   await expect(crumb).toHaveText("section.section-intro");

@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -88,7 +89,7 @@ test("a hand edit to the cards blocks a later title change until rebuilt, and Re
   await load(page, baseURL, "services/one/index.html");
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("Services renamed");
   await settings.getByRole("button", { name: "Apply page settings" }).click();

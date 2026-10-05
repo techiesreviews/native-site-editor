@@ -1,6 +1,9 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test } from '@playwright/test';
 import { storedDrafts } from './drafts';
 import { fixtureKind } from './fixture-contract';
+
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
 test('creating a saved-section master then Done keeps one-step Undo and Redo valid without Code typing', async ({ page, baseURL }) => {
   test.skip(process.env.STATIC_SECTIONS_FIXTURE !== 'native', 'Runs on the native static starter (STATIC_SECTIONS_FIXTURE=native).');
@@ -17,7 +20,7 @@ test('creating a saved-section master then Done keeps one-step Undo and Redo val
   await page.getByRole('dialog', { name: 'Add to the page' }).getByRole('option', { name: /^Intro HTML$/ }).click();
   await expect(page.locator('#status')).toContainText('Added Intro');
   const afterAdd = await storedDrafts(page);
-  expect(afterAdd.map(draft => draft.path)).toEqual(['.editor/page-builder.json', 'index.html', 'styles/sections.css']);
+  expect(afterAdd.map(draft => draft.path)).toEqual(['.editor/page-builder.json', 'index.html']);
   await page.getByRole('dialog', { name: 'Add to the page' }).getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Add to the page' })).toBeHidden();
   const structure = page.getByRole('complementary', { name: 'Page structure' });
@@ -32,7 +35,7 @@ test('creating a saved-section master then Done keeps one-step Undo and Redo val
   await expect(banner).toBeVisible();
   await expect(page.locator('#primary-title')).toHaveText('.editor/sections/intro.html');
   const afterMake = await storedDrafts(page);
-  expect(afterMake.map(draft => draft.path)).toEqual(['.editor/page-builder.json', '.editor/sections/intro.html', 'index.html', 'styles/sections.css']);
+  expect(afterMake.map(draft => draft.path)).toEqual(['.editor/page-builder.json', '.editor/sections/intro.html', 'index.html']);
   // Opening and closing are the only master interactions: no Code mutation.
   await banner.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(page.locator('#primary-title')).toHaveText('index.html');

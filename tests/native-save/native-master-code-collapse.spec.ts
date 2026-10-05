@@ -1,9 +1,12 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
 
 test.skip(process.env.STATIC_SECTIONS_FIXTURE !== "native", "Requires the native static starter.");
 if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
+
 const MASTER = ".editor/sections/intro.html", JSON_PATH = ".editor/page-builder.json";
 const grip = (page: Page) => page.getByRole("separator", { name: "Resize code pane", exact: true });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");

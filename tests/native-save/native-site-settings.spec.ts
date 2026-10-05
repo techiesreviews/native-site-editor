@@ -1,21 +1,22 @@
+import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 import { mkdir } from "node:fs/promises";
 
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name, exact: true });
-const pageBlock = (page: Page) => page.getByRole("group", { name: "Page", exact: true });
+const pageBlock = (page: Page) => page.locator("#structure").getByRole("group", { name: "Page", exact: true });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
 }
-async function openPageSettings(page: Page) { await showPages(page); await page.locator("#page-settings-toggle").click(); }
-async function openNavigation(page: Page) { await showPages(page); await page.locator("#navigation-settings-toggle").click(); }
+async function openPageSettings(page: Page) { await showPages(page); await openPageSettingsFromPages(page); }
+async function openNavigation(page: Page) { await showPages(page); await openNavigationFromPages(page); }
 async function open(page: Page, baseURL: string | undefined, repo = 501, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await expect(page.locator("#page-settings-toggle")).toHaveCount(1);
+  await expect(page.locator(".pages-settings")).toHaveCount(0);
 }
 async function openSite(page: Page) {
   await showPages(page);

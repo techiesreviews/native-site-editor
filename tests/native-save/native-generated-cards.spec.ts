@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -173,7 +174,7 @@ test("hand-edited cards block later page changes until explicitly rebuilt, in on
   // A title change on the source page would rebake Home: refused, nothing written.
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("One renamed");
   await settings.getByRole("button", { name: "Apply page settings" }).click();
@@ -217,7 +218,7 @@ test("a clean listing still rebakes on a page title change in one Undo", async (
   await open(page, baseURL, seed, "work/one/index.html");
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("One renamed");
   await settings.getByRole("button", { name: "Apply page settings" }).click();

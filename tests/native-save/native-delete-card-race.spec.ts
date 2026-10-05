@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -334,7 +335,7 @@ test("Fields typed in the same task as a real Apply survive its success remount,
     await openCards(page, baseURL);
     const original = (await mounted(page))!;
     await openPages(page);
-    await page.locator("#page-settings-toggle").click();
+    await openPageSettingsFromPages(page);
     const dialog = page.getByRole("dialog", { name: "Page settings", exact: true });
     await dialog.getByRole("tab", { name: "Fields", exact: true }).click();
     await dialog.getByLabel("Date", { exact: true }).fill("2027-05-01");

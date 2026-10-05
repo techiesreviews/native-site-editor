@@ -40,7 +40,11 @@
   // A <main> with nothing in it yet keeps some height, so the editor's
   // "Start with a section" (src/page-builder/canvas-overlays.ts) has room
   // over it; preview only, like the selection boxes.
-  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}");
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}" +
+    "*{scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.4) transparent}" +
+    "*::-webkit-scrollbar{width:6px;height:6px}*::-webkit-scrollbar-track{background:transparent}" +
+    "*::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(127,127,127,.4)}*::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.65)}" +
+    "@media(forced-colors:active){*{scrollbar-color:auto}}");
   // Each constructed sheet's source: `{ path, wrappers, importer, kind }`. A
   // shared sheet expanded from an `@import` carries the imported file's path,
   // the chain of import wrappers (outermost first; each may have `layer`,

@@ -1,0 +1,33 @@
+/* Editor chrome only; the preview supplies its own runtime sheet. */
+:where(:root, #app *) {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent;
+}
+:where(:root, #app *)::-webkit-scrollbar { width: 6px; height: 6px; }
+:where(:root, #app *)::-webkit-scrollbar-track { background: transparent; }
+:where(:root, #app *)::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+}
+:where(:root, #app *)::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+/* Monaco draws its own thumbs. Keep the track and its drag target intact. */
+#app .monaco-scrollable-element > .scrollbar > .slider { background: transparent; }
+#app .monaco-scrollable-element > .scrollbar > .slider::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  pointer-events: none;
+}
+#app .monaco-scrollable-element > .scrollbar > .slider:hover::before {
+  background: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+#app .monaco-scrollable-element > .scrollbar.vertical > .slider::before { width: 6px; left: auto; }
+#app .monaco-scrollable-element > .scrollbar.horizontal > .slider::before { height: 6px; top: auto; }
+@media (forced-colors: active) {
+  :where(:root, #app *) { scrollbar-color: auto; }
+  #app .monaco-scrollable-element > .scrollbar > .slider::before { background: CanvasText; }
+}

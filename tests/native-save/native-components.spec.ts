@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 import { publishButton } from "./publish";
@@ -456,6 +457,8 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
 // A page change made while Update Intro awaits the editor JSON's branch text
 // must not let the save land: the JSON is not written and the change stays.
 test("Update Intro refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
+  await seedSavedSections(page, baseURL, ["intro"]);
+  await open(page, baseURL);
   const sidecar = ".editor/page-builder.json";
   const addPanel = page.getByRole("dialog", { name: "Add to the page" });
   await select(page, "section.hero");

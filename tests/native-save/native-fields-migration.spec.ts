@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
@@ -50,7 +51,7 @@ async function load(page: Page, baseURL: string | undefined, path: string) {
 async function openFields(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   return settings;
@@ -234,7 +235,7 @@ const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page se
 async function requestSettings(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
 }
 const foreignEdit = (page: Page, text: string) => page.evaluate(async ({ path, text }) => {
   const editor = await import("/src/components/code-editor.ts");

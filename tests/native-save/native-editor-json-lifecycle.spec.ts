@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -119,7 +120,7 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   await page.evaluate(async (at) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, text: ' data-x="1"', expected: "" }), at);
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain('data-x="1"');
   await pagesTab(page);
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
@@ -163,7 +164,7 @@ test("a collection whose page was deleted outside the editor can be forgotten al
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: seeded } });
   await load(page, baseURL);
   await pagesTab(page);
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
@@ -214,7 +215,7 @@ test("with two JSON grids from the same pages, only the broken one is listed, ro
   };
   const openFields = async () => {
     await pagesTab(page);
-    await page.locator("#page-settings-toggle").click();
+    await openPageSettingsFromPages(page);
     const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
     await settings.getByRole("tab", { name: "Fields", exact: true }).click();
     return settings;

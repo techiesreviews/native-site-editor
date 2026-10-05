@@ -47,9 +47,9 @@ test("the Add panel shows live thumbnails without HTML previews, and a click add
   await addButton(page).click();
   await expect(panel(page)).toBeVisible();
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "true");
-  await expect(panel(page).getByRole("searchbox", { name: "Search elements and components" })).toBeFocused();
-  await expect(panel(page)).toContainText("Goes at the end");
-  await expect(panel(page).getByRole("group", { name: "More sections" }).getByRole("option")).toHaveText([/^Feature block\s*<feature-block>$/]);
+  await expect(panel(page).getByRole("searchbox", { name: "Search components" })).toBeFocused();
+  await expect(panel(page).locator(".pb-add-panel__position")).toBeHidden();
+  await expect(panel(page).getByRole("group", { name: "Sections" }).getByRole("option")).toHaveText([/^Feature block\s*<feature-block>$/]);
 
   // A live thumbnail: the component as the page would show it, in a frame that runs nothing.
   const thumb = feature(page).locator(".pb-thumb__frame");

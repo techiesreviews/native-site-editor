@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 
@@ -216,7 +217,7 @@ const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page se
 async function openSettings(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   await expect(settingsDialog(page)).toBeVisible();
 }
 async function readSetting(page: Page, label: string, value: string) {

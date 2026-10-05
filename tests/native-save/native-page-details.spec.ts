@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -122,12 +123,9 @@ test("Page settings shows the page head and keeps metadata fields out of the str
   const homeDraft = await draft(page, 'index.html');
   const componentDraft = await draft(page, componentPath);
   await openExplorer(page, "Pages");
-  const gear = page.locator("#page-settings-toggle");
-  // The refusal status is the completed handler outcome, so this negative
-  // dialog assertion cannot pass before asynchronous settings work finishes.
-  await expect(gear).toBeEnabled();
-  await gear.click();
-  await expect(status(page)).toHaveText("Open a page to edit its settings.");
+  // Component-only previews have no current-page settings control.
+  await expect(page.locator("#structure").getByRole("button", { name: "Page settings", exact: true })).toHaveCount(0);
+  await expect(page.locator(".pages-settings")).toHaveCount(0);
   await expect(settingsDialog(page)).toBeHidden();
   expect(await draft(page, 'index.html')).toEqual(homeDraft);
   expect(await draft(page, componentPath)).toEqual(componentDraft);
@@ -191,16 +189,16 @@ test("the fields follow the preview's page and keep what was typed on each page"
   await writeSetting(page, "Title", "Home");
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
-  await readSetting(page, "Title", "About this project");
-  await writeSetting(page, "Title", "About");
-  await writeSetting(page, "Description", "Who made this");
+  await readSetting(page, "Title", "About this project", "about/index.html");
+  await writeSetting(page, "Title", "About", "about/index.html");
+  await writeSetting(page, "Description", "Who made this", "about/index.html");
   await follow(page, "Home");
   await expect(tree(page).getByRole("treeitem", { name: "Section A native browser preview" })).toBeVisible();
-  await readSetting(page, "Title", "Home");
+  await readSetting(page, "Title", "Home", "index.html");
   await follow(page, "About");
   await expect(tree(page).getByRole("treeitem", { name: "Section About this project" })).toBeVisible();
-  await readSetting(page, "Title", "About");
-  await readSetting(page, "Description", "Who made this");
+  await readSetting(page, "Title", "About", "about/index.html");
+  await readSetting(page, "Description", "Who made this", "about/index.html");
   await openSaveMenu(page);
   await expect(page.locator("#publish-files .publish-menu__file")).toHaveCount(2);
 });
@@ -274,19 +272,19 @@ test("renaming a page's folder in the Files tab updates the links to it and can 
 });
 
 const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
-async function openSettings(page: Page) {
+async function openSettings(page: Page, path?: string) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page, path);
   await expect(settingsDialog(page)).toBeVisible();
 }
-async function readSetting(page: Page, label: string, value: string) {
-  await openSettings(page);
+async function readSetting(page: Page, label: string, value: string, path?: string) {
+  await openSettings(page, path);
   await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
   await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
 }
-async function writeSetting(page: Page, label: string, value: string) {
-  await openSettings(page);
+async function writeSetting(page: Page, label: string, value: string, path?: string) {
+  await openSettings(page, path);
   await settingsDialog(page).getByLabel(label, { exact: true }).fill(value);
   const apply = settingsDialog(page).getByRole("button", { name: "Apply page settings", exact: true });
   // Exercise the dialog keyboard path rather than pressing Enter after close.

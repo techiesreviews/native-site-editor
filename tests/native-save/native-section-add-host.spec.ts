@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test } from "@playwright/test";
 
 test("Add offers page sections without a separate HTML element catalogue", async ({ page, baseURL }) => {
@@ -24,7 +25,7 @@ test("Pages settings follows the canvas page while the code editor stays on Home
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("group", { name: "Page", exact: true }).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettingsFromPages(page, "about/index.html");
   const dialog = page.getByRole("dialog", { name: "Page settings", exact: true });
   await expect(dialog.getByLabel("Title", { exact: true })).toHaveValue("About this project");
   await dialog.locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();

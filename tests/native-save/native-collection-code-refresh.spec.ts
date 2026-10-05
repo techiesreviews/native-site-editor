@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { createHash } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { makeCollectionTarget } from '../../src/page-builder/page-builder-document';
@@ -215,7 +216,7 @@ test('a broken JSON recipe allows unrelated page settings with a warning, exact 
   await open(page, baseURL, unrelated);
   if (!await page.locator('#explorer').evaluate(el => el.matches(':popover-open'))) await page.locator('#explorer-toggle').click();
   await page.getByRole('tab', { name: 'Pages', exact: true }).click();
-  await page.locator('#page-settings-toggle').click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole('dialog', { name: 'Page settings', exact: true });
   await panel.getByLabel('Title', { exact: true }).fill('Changed unrelated');
   await panel.getByRole('button', { name: 'Apply page settings' }).click();
@@ -231,7 +232,7 @@ test('a broken JSON recipe allows unrelated page settings with a warning, exact 
   await open(page, baseURL, item);
   if (!await page.locator('#explorer').evaluate(el => el.matches(':popover-open'))) await page.locator('#explorer-toggle').click();
   await page.getByRole('tab', { name: 'Pages', exact: true }).click();
-  await page.locator('#page-settings-toggle').click();
+  await openPageSettingsFromPages(page);
   await panel.getByLabel('Title', { exact: true }).fill('Must refuse');
   await panel.getByRole('button', { name: 'Apply page settings' }).click();
   await expect(panel.getByRole('status')).toContainText('Unknown collection field: unknown.');

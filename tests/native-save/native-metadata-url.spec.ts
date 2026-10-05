@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test } from "@playwright/test";
 
 for (const dirty of [false, true]) test(`page URL ${dirty ? "refuses changed" : "accepts untouched fallback"} social metadata`, async ({ page, baseURL }) => {
@@ -8,7 +9,7 @@ for (const dirty of [false, true]) test(`page URL ${dirty ? "refuses changed" : 
   expect(before).not.toContain('property="og:title"');
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(panel.getByLabel("Social title", { exact: true })).toHaveValue("The first note");
@@ -42,7 +43,7 @@ for (const roundtrip of [false, true]) test(`applying ${roundtrip ? "round-trip"
   const before = await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path)!, path);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   if (roundtrip) {
     await panel.getByLabel("Title", { exact: true }).fill("A temporary title");
@@ -65,7 +66,7 @@ test("missing linked social tags stay absent when the title changes, but indepen
   const open = async () => {
     await page.locator("#explorer-toggle").click();
     await page.getByRole("tab", { name: "Pages", exact: true }).click();
-    await page.locator("#page-settings-toggle").click();
+    await openPageSettingsFromPages(page);
     return page.getByRole("dialog", { name: "Page settings", exact: true });
   };
   const source = () => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path)!, path);
@@ -95,7 +96,7 @@ test("authored linked social tags follow changed page details", async ({ page, b
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   await panel.getByLabel("Title", { exact: true }).fill("Authored linked title");
   await panel.getByLabel("Description", { exact: true }).fill("Authored linked description");
@@ -120,7 +121,7 @@ test("unlinking untouched social text preserves its old title and description wh
   }, path);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   const originalTitle = await panel.getByLabel("Title", { exact: true }).inputValue();
   const originalDescription = await panel.getByLabel("Description", { exact: true }).inputValue();
@@ -150,7 +151,7 @@ test("URL changes refuse an unsaved link preference", async ({ page, baseURL }) 
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.locator("#page-settings-toggle").click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await panel.getByLabel("Use page title", { exact: true }).uncheck();

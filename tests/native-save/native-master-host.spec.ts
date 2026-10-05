@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
@@ -9,6 +10,8 @@ import { effectiveSource } from "./drafts";
 // no page; Update copies changes only copies nobody customised, as one Undo.
 test.skip(process.env.STATIC_SECTIONS_FIXTURE !== "native", "Runs on the native static starter (STATIC_SECTIONS_FIXTURE=native).");
 if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
+
+test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
 const JSON_PATH = ".editor/page-builder.json";
 const MASTER = ".editor/sections/intro.html";
@@ -42,6 +45,7 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   page.on("pageerror", (error) => errors.push(error.message));
   await load(page, baseURL);
   const homeBefore = await effectiveSource(page, baseURL, "index.html");
+  const recordsBefore = JSON.parse((await effectiveSource(page, baseURL, JSON_PATH))!).reusableSections.records;
   await addIntro(page, "main > section h2");
   await expect.poll(async () => (await effectiveSource(page, baseURL, "index.html"))?.length ?? 0).toBeGreaterThan(homeBefore!.length);
   const linked = JSON.parse((await effectiveSource(page, baseURL, JSON_PATH))!);
@@ -88,7 +92,9 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   expect(masterMade).toBe(`<section class="section-intro"><h2>Section heading</h2><p>Write a short introduction for this part of the page.</p></section>`);
   const madeJson = (await effectiveSource(page, baseURL, JSON_PATH))!;
   expect(JSON.parse(madeJson).reusableSections.records.intro.htmlPath).toBe(MASTER);
-  expect(madeJson).not.toContain('"html"');
+  const madeRecords = JSON.parse(madeJson).reusableSections.records;
+  expect(Object.hasOwn(madeRecords.intro, "html")).toBe(false);
+  for (const id of ["features", "split", "contact"]) expect(madeRecords[id]).toEqual(recordsBefore[id]);
   if (SHOTS) {
     await page.screenshot({ path: `${SHOTS}/master-open.png` });
     await page.setViewportSize({ width: 760, height: 900 });

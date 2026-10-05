@@ -1,3 +1,4 @@
+import { seedSavedSections } from "./static-sections";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -13,6 +14,7 @@ const featureSource = readFileSync(resolve(fixture, featurePath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 test.beforeEach(async ({ page, baseURL }) => {
+  await seedSavedSections(page, baseURL);
   await page.goto(`${baseURL}/${nativeHash}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
@@ -74,7 +76,7 @@ test("a section plus inserts a component from its section-only group alongside n
   await expect(picker(page)).toBeVisible();
   await expect(picker(page)).toContainText("Goes before “Scroll to verify”");
   await expect(picker(page).getByRole("searchbox", { name: "Search elements and components" })).toBeFocused();
-  // The component group contains only section templates; native HTML has separate groups.
+  // The component group contains only section templates; saved HTML has a separate group.
   const options = picker(page).getByRole("group", { name: "More sections" }).getByRole("option");
   await expect(options).toHaveText([/^Feature block\s*<feature-block>$/]);
 
@@ -122,7 +124,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await hoverIn(page, "section.filler p:last-child");
   await end.click();
   const search = picker(page).getByRole("searchbox", { name: "Search elements and components" });
-  await expect(picker(page)).toContainText("Goes at the end");
+  await expect(picker(page).locator(".pb-add-panel__position")).toBeHidden();
   await page.keyboard.type("zzz");
   await expect(picker(page)).toContainText("No items match “zzz”");
   await picker(page).getByRole("button", { name: "Clear search" }).click();

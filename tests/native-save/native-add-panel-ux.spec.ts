@@ -1,7 +1,9 @@
+import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 const panel = (page: Page) => page.locator(".pb-add-panel:visible");
 async function open(page: Page, baseURL: string | undefined) {
+  await seedSavedSections(page, baseURL, ["intro", "split"]);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
@@ -100,7 +102,7 @@ test("destination warnings follow current pointer or focus and reset for hidden 
   await expect(position).toContainText("cannot accept Grid");
   await page.mouse.move(850, 300);
   await page.evaluate(() => (window as any).addUXProbe.view.retarget());
-  await expect(position).toHaveText("Goes at the end");
+  await expect(position).toBeHidden();
   await expect(add).not.toHaveClass(/has-no-place/);
 
   // Leaving the pointer keeps the keyboard's current item active.
@@ -109,7 +111,7 @@ test("destination warnings follow current pointer or focus and reset for hidden 
   await expect(position).toContainText("cannot accept Grid");
   await expect(grid).toBeFocused();
   await search.focus();
-  await expect(position).toHaveText("Goes at the end");
+  await expect(position).toBeHidden();
 
   // Moving keyboard focus keeps a still-hovered item active.
   await grid.focus(); await grid.dispatchEvent("pointerenter");
@@ -117,14 +119,14 @@ test("destination warnings follow current pointer or focus and reset for hidden 
   await expect(position).toContainText("cannot accept Grid");
   await search.fill("Heading");
   await expect(grid).toBeHidden();
-  await expect(position).toHaveText("Goes at the end");
+  await expect(position).toBeHidden();
   await expect(add).not.toHaveClass(/has-no-place/);
 
   await search.fill(""); await grid.dispatchEvent("pointerenter");
   await expect(position).toContainText("cannot accept Grid");
   await page.evaluate(() => { (window as any).addUXProbe.view.close(false); (window as any).addUXProbe.openGap(); });
   await expect(search).toBeFocused();
-  await expect(position).toHaveText("Goes at the end");
+  await expect(position).toBeHidden();
   await expect(add).not.toHaveClass(/has-no-place/);
   await page.evaluate(() => (window as any).addUXProbe.dispose());
 });

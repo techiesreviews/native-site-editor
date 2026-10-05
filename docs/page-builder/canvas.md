@@ -1,9 +1,9 @@
 # Canvas
 
 The preview is a design-tool canvas, and the canvas and the code pane stay visibly linked.
-Nothing here writes to the site: breakpoints, labels, the breadcrumb and the spacing
-overlay are editor chrome. Selecting through them is the same selection a click makes, so
-every edit that follows is still one readable source edit.
+Nothing here writes to the site: breakpoints, labels, the breadcrumb and subtle
+scrollbars are editor chrome. Canvas selection uses the same source target as a direct
+page click, so every edit that follows is still one readable source edit.
 
 ## What the user can do
 
@@ -36,9 +36,9 @@ every edit that follows is still one readable source edit.
   and the editor's own reveals do not select, a click on the canvas wins over a cursor
   move still waiting, and a position is dropped when the file changed after it. Hovering a line in the code outlines the element that line belongs to
   with a dashed box and its label.
-- **Spacing overlay.** The bounding-box button on the bar shades margin (orange) and
-  padding (green) of the hovered element, else of the selection, with the size in px on
-  any band 14 px or more wide. It lasts for the session.
+- **Scrollbars.** Editor panels and the preview use thin, muted thumbs on transparent
+  tracks. Preview scrollbar styling lives in the runtime sheet, including component
+  shadow roots; it never changes saved source or site styles.
 
 ## How it is built
 
@@ -49,18 +49,18 @@ every edit that follows is still one readable source edit.
 | Offset in a source → element index path | `src/page-builder/canvas-source.ts` (reverse of `native-source-location.ts`, same parse) |
 | Code pane → canvas, debounced (hover 40 ms, cursor 120 ms) | `src/page-builder/code-link.ts`; the editor reports through a `native-code-pointer` window event from `linkToCanvas` in `src/components/code-editor.ts` |
 | Wiring | `src/components/native-preview.ts` (bar created with the pane; crumbs from each `select`; `canvas-clear`) |
-| Labels, dashed hint box, spacing shading, crumbs, Esc/Ctrl+↑ | the "Canvas" block in `public/native-preview-runtime.js`, called from `updateBoxes` and `emitSelection` |
+| Labels, dashed hint box, crumbs, Esc/Ctrl+↑ | the "Canvas" block in `public/native-preview-runtime.js`, called from `updateBoxes` and `emitSelection` |
 
 Runtime messages: the host sends `canvas-crumb` (`action` `hover`/`select`, `index` into
 the last crumbs sent, -1 for the body), `canvas-hint` (`request` `{path, node}` or null),
-`canvas-code-select` (`request`) and `canvas-spacing` (`on`), and the `theme` message
+`canvas-code-select` (`request`), and the `theme` message
 carries the component colour. The runtime adds `crumbs` (`{label, kind}`, outermost
 first) to `select` and sends `canvas-clear` when Esc climbs past the top or the body crumb
 is chosen. A code-driven selection is reported as a `refresh`, which reveals nothing in
 the code pane.
 
 The overlays are elements on the frame's `<html>` marked `data-native-selection-box`
-(`label`, `hint`, `spacing`), never inside the page root, so structure, insert points,
+(`label`, `hint`), never inside the page root, so structure, insert points,
 inspection and source mapping do not see them.
 
 ## Tested
@@ -71,7 +71,8 @@ inspection and source mapping do not see them.
   frame, handle drag with the live pill, handle keys, typed width, session memory across
   a reload; hover labels (page and template); breadcrumb, crumb hover and select, Esc and
   Ctrl+↑, body crumb; breadcrumb through nested components; code hover hint, code click
-  and arrow keys selecting, typing not selecting; spacing overlay on and off.
+  and arrow keys selecting, typing not selecting; removed spacing control stays absent
+  even with a legacy session preference; scrollable editor and preview keep their source.
 
 ## Known gaps
 

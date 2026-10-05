@@ -2,18 +2,16 @@
 // docs/page-builder/canvas.md): a bar above it with the selection's
 // breadcrumb on the left and, on the right, the breakpoints (Desktop fills
 // the canvas, Tablet 768 and Mobile 390 centre a frame of that width on a
-// subtle canvas), the frame's live width, which can be typed, and the
-// spacing overlay toggle. In a framed width, a handle on each side of the
-// frame drags its width (both edges move, so the frame stays centred).
-// The width and the toggle last for the browser session. Nothing here
-// touches the site's files.
+// subtle canvas), and the frame's live width, which can be typed. In a
+// framed width, a handle on each side drags its width (both edges move,
+// so the frame stays centred). The width lasts for the browser session.
+// Nothing here touches the site's files.
 
 import { setCurrentBreakpoint, subscribeBreakpoint } from "../page-builder/breakpoints";
 
 import desktop from "@phosphor-icons/core/regular/desktop.svg?raw";
 import tablet from "@phosphor-icons/core/regular/device-tablet.svg?raw";
 import mobile from "@phosphor-icons/core/regular/device-mobile.svg?raw";
-import boundingBox from "@phosphor-icons/core/regular/bounding-box.svg?raw";
 import { node } from "../ui/dom";
 import {
   CANVAS_DEVICES,
@@ -29,7 +27,6 @@ import {
 import "./canvas-bar.css";
 
 const WIDTH_KEY = "native-site-editor:canvas-width";
-const SPACING_KEY = "native-site-editor:canvas-spacing";
 const ICONS: Record<CanvasDevice, string> = { desktop, tablet, mobile };
 
 function svg(markup: string) {
@@ -50,8 +47,6 @@ export interface CanvasHandlers {
   onCrumb(index: number): void;
   /** A crumb pointed at (hover or focus), or no longer (`undefined`). */
   onCrumbHover(index: number | undefined): void;
-  /** The spacing overlay turned on or off. */
-  onSpacing(on: boolean): void;
 }
 
 export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement, handlers: CanvasHandlers) {
@@ -63,7 +58,7 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   const crumbList = node("ol", "canvas-crumbs__list");
   crumbsNav.append(crumbList);
 
-  // Breakpoints, width and spacing.
+  // Breakpoints and width.
   const tools = node("div", "canvas-tools");
   const devices = node("div", "canvas-devices");
   devices.setAttribute("role", "group");
@@ -90,12 +85,7 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   widthInput.setAttribute("aria-label", "Frame width in pixels");
   widthInput.title = "Frame width: type a width and press Enter";
   widthField.append(widthInput, node("span", "canvas-width__unit", "px"));
-  const spacingButton = node("button", "canvas-device canvas-spacing");
-  spacingButton.type = "button";
-  spacingButton.setAttribute("aria-label", "Show margin and padding");
-  spacingButton.title = "Show margin and padding";
-  spacingButton.append(svg(boundingBox));
-  tools.append(devices, widthField, spacingButton);
+  tools.append(devices, widthField);
   bar.append(crumbsNav, tools);
 
   // The frame sits on a stage that takes the chosen width, with a handle on each side.
@@ -118,7 +108,6 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   stage.append(handles[0], frame, handles[1], sizePill);
 
   let width: CanvasWidth = readStoredWidth(remembered(WIDTH_KEY));
-  let spacing = remembered(SPACING_KEY) === "on";
   let dragging = false;
   let fromCanvas = false;
 
@@ -157,14 +146,6 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
     if (store) remember(WIDTH_KEY, framed ? String(next) : "fill");
     showWidth();
   }
-  function setSpacing(on: boolean) {
-    spacing = on;
-    spacingButton.setAttribute("aria-pressed", String(on));
-    remember(SPACING_KEY, on ? "on" : "off");
-    handlers.onSpacing(on);
-  }
-  spacingButton.addEventListener("click", () => setSpacing(!spacing));
-
   function applyTyped() {
     const typed = Number(widthInput.value.trim().replace(/px$/i, ""));
     if (widthInput.value.trim() && Number.isFinite(typed) && typed > 0) setWidth(settleWidth(typed, available()), true);
@@ -289,14 +270,11 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
     if (!fromCanvas) setWidth(widthFor(value === "all" ? "desktop" : value), true);
   });
   setWidth(width, false);
-  spacingButton.setAttribute("aria-pressed", String(spacing));
   setCrumbs([]);
 
   return {
     bar,
     setCrumbs,
-    /** The overlay state the runtime needs again after it (re)loads. */
-    spacing: () => spacing,
     destroy() {
       observer.disconnect();
       unsubscribeBreakpoint();

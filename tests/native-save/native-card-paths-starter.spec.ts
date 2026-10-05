@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
@@ -190,7 +191,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
 
     // Page settings: General, and Fields (the collections panel's page fields).
     await showPages(page);
-    await page.locator("#page-settings-toggle").click();
+    await openPageSettingsFromPages(page);
     const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
     await expect(settings).toBeVisible();
     report.pageSettings = await audit(page, ".site-settings");
