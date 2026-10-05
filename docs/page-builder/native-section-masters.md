@@ -17,7 +17,9 @@ page where Edit was opened. Controls from a closed session refuse to write after
 Master image assets and focal previews use that opening page to resolve relative URLs. Asset
 discovery reads the master without changing the page or public HTML. Image, link and alt edits
 write only the master; an image picker pins its session and source model, so a callback retained
-after Done or reopening cannot navigate back or replace an image.
+after Done or reopening cannot navigate back or replace an image. The stylesheet pane keeps
+the live primary editor's history session, including after Code edits release a creation alias;
+a focal CSS edit has one Undo and Redo without changing the master or its page.
 
 Status: wired into the editor (`src/main.ts`): the purple Edit on a whole saved section opens its
 master, a compact line over the code offers Done and Update copies, Add links each new copy, and

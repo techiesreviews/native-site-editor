@@ -155,6 +155,8 @@ function loadEditorModule() {
 }
 let stylePanel: ReturnType<typeof createStylePanel> | undefined;
 let disposeEditor: (() => void) | undefined;
+// The live primary keeps its journal even when a completed operation releases its alias.
+let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
 let agentMenu: ReturnType<typeof createAgentMenu> | undefined;
 let activeFileContext: EditorContext["file"] = null;
 let editorRequest = 0;
@@ -172,6 +174,7 @@ function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>,
 }
 
 function closeEditor() {
+  primaryHistoryScope = undefined;
   editorRequest++;
   disposeEditor?.();
   disposeEditor = undefined;
@@ -188,11 +191,16 @@ async function openCodeEditor(
     editorModule = await loadEditorModule();
     if (request !== editorRequest || !info.user) return;
     if (beforeMount && !beforeMount()) { content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again.")); return; }
+    const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
     disposeEditor = editorModule.mountCodeEditor(
       content,
-      file.scope ? { ...file, historyScope: nativeHistorySession(file.scope, file.path) } : file,
+      file.scope ? { ...file, historyScope } : file,
       element("editor-toolbar-host"),
     );
+    const historyHost = editorModule.captureHistoryHost(file.path), liveScope = draftScope();
+    primaryHistoryScope = file.scope && historyScope && currentPath === file.path && historyHost && liveScope &&
+      draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
+      ? { key: draftKey(file.scope, file.path), session: historyScope, proof: historyHost } : undefined;
     nativeHistoryMountCapture?.(file.path);
     if (!nativeHistoryMountCapture) for (const adopt of nativePaneMountAdopters) adopt(file.path);
   } catch (error) {
@@ -1273,12 +1281,19 @@ function findEntry(path: string) {
 async function openSecondary(css: string, guard: () => boolean = () => true) {
   if (!currentRepo || !snapshot || !info.user || !guard()) return false;
   const request = ++secondaryRequest;
-  const historyScope = currentPath ? nativeHistorySession({ account: info.user.login, repoId: currentRepo.id, repo: currentRepo.full_name, branch: snapshot.branch }, currentPath) : undefined;
   const scope = {
     account: info.user.login,
     repoId: currentRepo.id,
     repo: currentRepo.full_name,
     branch: snapshot.branch,
+  };
+  const primaryKey = currentPath ? draftKey(scope, currentPath) : undefined;
+  const primary = primaryKey && primaryHistoryScope?.key === primaryKey && primaryHistoryScope.proof.isCurrent() ? primaryHistoryScope : undefined;
+  const historyScope = primary?.session ?? (currentPath ? nativeHistorySession(scope, currentPath) : undefined);
+  const current = () => {
+    const liveScope = draftScope();
+    return guard() && (!primary || primaryHistoryScope === primary && primary.proof.isCurrent() &&
+      !!currentPath && !!liveScope && draftKey(liveScope, currentPath) === primary.key);
   };
   if (draftStore().get(scope, css)?.deleted) return false;
   if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
@@ -1287,13 +1302,13 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     const draft = draftStore().get(scope, css);
     const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
     const entry = created ? undefined : await findEntry(css);
-    if (!guard() || request !== secondaryRequest) return false;
+    if (!current() || request !== secondaryRequest) return false;
     if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
     const [source, editor] = await Promise.all([
       entry ? readFile(scope.repo, entry.sha) : "",
       loadEditorModule(),
     ]);
-    if (request !== secondaryRequest || !guard() || draftStore().get(scope, css)?.deleted) return false;
+    if (request !== secondaryRequest || !current() || draftStore().get(scope, css)?.deleted) return false;
     disposeSecondary?.();
     element("secondary-pane").hidden = false;
     element("main").classList.add("has-secondary");
