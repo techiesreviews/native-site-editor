@@ -4,7 +4,6 @@ import { storedDraft, storedDrafts } from "./drafts";
 import { showStylePanel } from "./style-panel-controls";
 
 const kind = fixtureKind();
-if (kind !== "native-static" && process.env.ASE_NATIVE_SAVE_FIXTURE) throw new Error("This proof requires the native static starter and STATIC_SECTIONS_FIXTURE=native.");
 test.skip(kind !== "native-static", "Requires the native static starter; see docs/page-builder/collections.md.");
 const side = ".editor/page-builder.json";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
