@@ -251,6 +251,34 @@ test("renaming a listed page from the Pages tab rebuilds its card in the same st
   await expect(details).not.toContainText("Checking");
 });
 
+test("a title typed in Code rebuilds every listing that shows the page, shared-component cards included, with the edit's Undo", async ({ page, baseURL }) => {
+  // Home's cards are the shared card-note component; About lists the same pages with plain cards.
+  const seed = bakedSeed(`<card-note>{title}</card-note>`, true);
+  await open(page, baseURL, seed, "work/one/index.html");
+  const one = seed[0][1], typed = one.replaceAll("One", "One from Code");
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
+  await page.evaluate((text) => navigator.clipboard.writeText(text), typed);
+  await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain("<card-note>One from Code</card-note>");
+  await expect.poll(async () => (await storedDraft(page, "about/index.html"))?.content ?? "").toContain("<h3>One from Code</h3>");
+  const home = (await storedDraft(page, "index.html"))!.content, about = (await storedDraft(page, "about/index.html"))!.content;
+  // Only the cards change; each listing keeps its recipe.
+  expect(home).toBe(seed[2][1].replace("<card-note>One</card-note>", "<card-note>One from Code</card-note>"));
+  expect(about).toBe(seed[3][1].replace("<h3>One</h3>", "<h3>One from Code</h3>"));
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => draft.path)).toEqual([]);
+  expect(await mounted(page, "work/one/index.html")).toBe(one);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(home);
+  expect((await storedDraft(page, "about/index.html"))!.content).toBe(about);
+  expect((await storedDraft(page, "work/one/index.html"))!.content).toBe(typed);
+  // The preview renders the shared component with the new title.
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator('section[data-key="work-list"] card-note', { hasText: "One from Code" })).toBeVisible();
+});
+
 test("Structure hides only the collection recipe and offers no fields on a generated component card", async ({ page, baseURL }) => {
   await open(page, baseURL, bakedSeed(`<card-note>{title}</card-note>`));
   const before = await mounted(page, "index.html");

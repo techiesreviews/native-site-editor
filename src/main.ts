@@ -14,7 +14,7 @@ import { createAgentMenu, setupPrompt } from "./components/agent-menu";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
-import { draftStore, type SavedDraft } from "./drafts";
+import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -27,6 +27,7 @@ import type { NativeSharedMetadata } from "./components/native-shared-authoring"
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { NativePageFieldError, planLegacyPageFieldMigration } from "./page-builder/native-page-fields";
+import { readPageFields } from "./page-builder/collection-fields";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
@@ -146,6 +147,8 @@ let siteActions: ReturnType<typeof mountSiteActions> | undefined;
 let sidebarResize: SidebarResize | undefined;
 let editorModule: typeof import("./components/code-editor") | undefined;
 type HistoryCompanion = import("./components/code-editor").HistoryCompanion;
+type CodeTypingState = import("./components/code-editor").TypingState;
+type CodeTypingGroup = { before: CodeTypingState; after: CodeTypingState };
 let editorLoading:
   | Promise<typeof import("./components/code-editor")>
   | undefined;
@@ -6086,6 +6089,15 @@ interface NativeOperation {
    * whatever element took the removed one's place.
    */
   selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } };
+  /**
+   * Edits only: instead of its own Undo step, the operation follows a settled
+   * Code typing group in `path` (from `before` to `after`, Undo stops of that
+   * model): undoing the model to `before` undoes it, redoing to `after` redoes it.
+   * `onRefused` runs when such an Undo or Redo of it is refused. With `before`
+   * equal to `after` it has no history of its own (written only while the model
+   * is still at `after`).
+   */
+  companionOf?: { path: string; before: number; after: number; source: string; onRefused?: (direction: "undo" | "redo") => void };
 }
 
 // The whole current file graph for collection planning: every existing path
@@ -6167,6 +6179,75 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
   return applyNativeOperation({ ...plan.operation, done: plan.operation.done + skippedListingsMessage(plan.skipped), current });
 }
 
+/**
+ * A settled Code typing group in a page. When it changed what cards read from
+ * the page (its fields, or the site name on the home page), the listings that
+ * show it are baked again: written as drafts that follow the typing group's
+ * own Undo stop (undone when the page is undone to before the group, redone
+ * with it). A rebuild refused because typing went on keeps the group's start
+ * for the next settle, so the cards are always checked against the text they
+ * were made from.
+ */
+const codeTypingPending = new Map<string, { epoch: number; before: CodeTypingState }>();
+function settleCodeTyping(scope: DraftScope, epoch: number, path: string, group: { before: CodeTypingState; after: CodeTypingState }) {
+  const key = draftKey(scope, path);
+  const pending = codeTypingPending.get(key);
+  const entry = { epoch, before: pending?.epoch === epoch ? pending.before : group.before };
+  codeTypingPending.set(key, entry);
+  void rebuildCardsAfterCode(scope, epoch, path, entry.before, group.after).catch((error: unknown) => error instanceof Error ? error.message : String(error)).then((result) => {
+    if (codeTypingPending.get(key) !== entry || result === "moved") return;
+    codeTypingPending.delete(key);
+    if (result !== "done" && result !== "nothing") announce(`The cards that list ${path} were not updated: ${result}`);
+  });
+}
+async function rebuildCardsAfterCode(scope: DraftScope, epoch: number, path: string, before: CodeTypingState, after: CodeTypingState, own = true): Promise<string> {
+  const editor = editorModule;
+  const live = () => epoch === generation && !versionView && Boolean(nativeSite) && draftScope()?.repoId === scope.repoId && draftScope()?.branch === scope.branch && draftScope()?.account === scope.account;
+  const moved = () => !editor?.modelAtState(scope, path, after.version, after.source) || nativeEffectiveSource(path) !== after.source;
+  if (!editor || !live() || before.source === after.source) return "nothing";
+  if (moved()) return "moved";
+  const route = nativeRouteForPath(path);
+  if (!route) return "nothing";
+  const identity = nativeCollectionSnapshot().identity;
+  const config = nativeEffectiveSource(NATIVE_CONFIG_PATH);
+  const home = nativeSite!.routes["/"] === path;
+  if (JSON.stringify(readPageFields(before.source, route, identity)) === JSON.stringify(readPageFields(after.source, route, identity)) &&
+      (!home || readSiteIdentity(config, before.source).name === readSiteIdentity(config, after.source).name)) return "nothing";
+  let snapshot = nativeCollectionSnapshot();
+  const unloaded = Object.values(snapshot.routes).some((file) => snapshot.sources[file] === undefined) ||
+    (snapshot.files.includes(EDITOR_PAGE_BUILDER_PATH) && snapshot.sources[EDITOR_PAGE_BUILDER_PATH] === undefined);
+  if (unloaded) {
+    const error = await ensureNativeTextIndex();
+    if (!live()) return "nothing";
+    if (moved()) return "moved";
+    if (error) return error;
+    snapshot = nativeCollectionSnapshot();
+  }
+  const plan = planNativeCollectionOperation({ ...snapshot, origin: { refreshCollections: true, driftBasis: { path, source: before.source },
+    expectedSources: new Map([[path, after.source]]), done: `Updated the cards that list ${path}.`, undone: `Undid the card update for ${path}.` } });
+  if ("error" in plan) return plan.error;
+  const op = plan.operation;
+  if (!op.edits?.size && !op.creates?.length && !op.deletes?.length) return "nothing";
+  if (op.creates?.length || op.deletes?.length || op.moves?.length || op.edits?.has(path))
+    return "the change would also rewrite this page or create files. Apply it from Page settings instead.";
+  const current = () => live() && !moved() && nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot());
+  // A paired Undo or Redo that cannot restore the cards exactly (a listing page changed or was
+  // opened since) leaves them as they are; they are then rebuilt, through every guard, from
+  // the page as it is now, checked against the text they were made from. That rebuild has no
+  // history of its own: the page's own Undo and Redo bring it back here.
+  const onRefused = (direction: "undo" | "redo") => setTimeout(() => {
+    const now = editor.modelState(scope, path);
+    if (!now) return;
+    void rebuildCardsAfterCode(scope, generation, path, direction === "undo" ? after : before, now, false)
+      .catch((error: unknown) => error instanceof Error ? error.message : String(error))
+      .then((result) => { if (result !== "done" && result !== "nothing" && result !== "moved") announce(`The cards that list ${path} were not updated: ${result}`); });
+  }, 0);
+  const error = await applyNativeOperation({ ...op, done: op.done + skippedListingsMessage(plan.skipped), current,
+    companionOf: { path, before: own ? before.version : after.version, after: after.version, source: after.source, onRefused } });
+  if (error) return moved() ? "moved" : error;
+  return "done";
+}
+
 // A branch file's blob and text, for a draft of an edit to it.
 async function branchText(path: string): Promise<{ sha: string; text: string } | undefined> {
   if (!currentRepo) return undefined;
@@ -6245,13 +6326,16 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     if (from) touched.add(from);
   }
   const before = new Map([...touched].map((path) => [path, store.get(scope, path)] as const));
+  if (op.companionOf && (moves.length || deletes.length || creates.length || op.open)) return "Only file edits can follow a typing group.";
   if (!moves.length && !deletes.length && !creates.length && !op.open) {
-    const editor = editorModule, anchor = currentPath;
-    if (!editor || !anchor || !editor.isMounted(anchor)) return "Open a page before changing these files.";
+    const editor = editorModule, anchor = currentPath, companion = op.companionOf;
+    // A Code typing group's companion needs no open page: it follows that model's own history.
+    if (!editor || !companion && (!anchor || !editor.isMounted(anchor))) return "Open a page before changing these files.";
     const after = new Map(before);
-    const beforeSources = new Map(expectedSources);
-    for (const path of touched) if (!beforeSources.has(path)) beforeSources.set(path, nativeEffectiveSource(path));
-    if (!beforeSources.has(anchor)) beforeSources.set(anchor, nativeEffectiveSource(anchor));
+    // A companion's step owns only the files it writes: the typing model moves under it by design.
+    const beforeSources = companion ? new Map<string, string | undefined>() : new Map(expectedSources);
+    for (const path of touched) if (!beforeSources.has(path)) beforeSources.set(path, expectedSources.has(path) ? expectedSources.get(path) : nativeEffectiveSource(path));
+    if (!companion && anchor && !beforeSources.has(anchor)) beforeSources.set(anchor, nativeEffectiveSource(anchor));
     const afterSources = new Map(beforeSources);
     const now = Date.now();
     for (const [path, text] of edits) {
@@ -6280,7 +6364,20 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       announce(direction === "undo" ? op.undone : done);
       return true;
     };
-    if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"), receipt.dispose)) {
+    if (companion) {
+      // Attached only while the typing model is still exactly at the settled stop.
+      const follow = (direction: "undo" | "redo") => { if (!transition(direction)) companion.onRefused?.(direction); };
+      if (!editor.modelAtState(scope, companion.path, companion.after, companion.source) || companion.before !== companion.after &&
+          !editor.attachHistoryCompanion(scope, companion.path, companion.before, companion.after, { undo: () => follow("undo"), redo: () => follow("redo") })) {
+        if (receipt.undo()) afterFileChanges();
+        receipt.dispose();
+        return changedOperation;
+      }
+      afterFileChanges();
+      announce(done);
+      return undefined;
+    }
+    if (!editor.recordHistoryAction(anchor!, () => transition("undo"), () => transition("redo"), receipt.dispose)) {
       if (receipt.undo()) afterFileChanges();
       receipt.dispose();
       return "The editor changed before this operation could be recorded. Review the current drafts.";
@@ -7674,6 +7771,8 @@ async function mountSource(
     key: draftKey(scope, path),
     scope,
     baseSha: baseSha,
+    // A page's title or metadata typed in Code rebuilds the cards that list it once typing settles.
+    ...(!readOnly && /\.html?$/i.test(path) ? { onTypingSettled: (group: CodeTypingGroup) => settleCodeTyping(scope, epoch, path, group) } : {}),
     saveLabels: nativeEngaged,
     onPublished: (result, submitted) => {
       if (

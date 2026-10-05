@@ -361,3 +361,33 @@ test('a skipped listing is named with its page and reason in the status words',(
  assert.match(one,/listing on broken\.html was left as it is/);assert.match(one,/Unknown collection field: nope\./);assert.match(one,/Fix it in Code/);
  assert.match(skippedListingsMessage([{path:'a.html',start:1,error:'X.'},{path:'b.html',start:1,error:'Y.'}]),/listings on a\.html, b\.html were left as they are/);
 });
+// A page title typed in Code: the cards were made from the page's text before that edit.
+const codeEdited=()=>{const before=snapshot(),basis=before.sources['work/a/index.html'];before.sources['work/a/index.html']=page('Typed in Code');return {before,basis};};
+const refresh=(basis:string|undefined,before:ReturnType<typeof snapshot>,pin=true)=>planNativeCollectionOperation({...before,origin:origin({refreshCollections:true,
+ ...(basis===undefined?{}:{driftBasis:{path:'work/a/index.html',source:basis}}),...(pin?{expectedSources:new Map([['work/a/index.html',before.sources['work/a/index.html']]])}:{})})});
+test('a Code-edited page rebuilds the listings it feeds against its text before the edit',()=>{
+ const {before,basis}=codeEdited();
+ // Without the basis, the stale cards look hand edited and are kept.
+ const plain=refresh(undefined,before);assert.ok('error'in plain);assert.match(plain.error,/edited by hand/);
+ const plan=refresh(basis,before);
+ if('error'in plan)assert.fail(plan.error);
+ assert.ok(plan.operation.edits!.get('index.html')!.includes('>Typed in Code</a>'));
+ assert.ok(plan.operation.edits!.get('other.html')!.includes('>Typed in Code</a>'));
+ assert.equal(plan.operation.edits!.has('work/a/index.html'),false);
+ assert.equal('driftBasis'in plan.operation,false);
+ assert.equal(nativeCollectionPlanIsCurrent(plan,before),true);
+ assert.equal(nativeCollectionPlanIsCurrent(plan,{...before,sources:{...before.sources,'work/a/index.html':page('Typed more')}}),false);
+});
+test('a Code basis must be pinned and never blesses hand-edited or unrelated cards',()=>{
+ const {before,basis}=codeEdited();
+ const unpinned=refresh(basis,before,false);assert.ok('error'in unpinned);assert.match(unpinned.error,/Pin work\/a\/index\.html/);
+ // A hand edit in a listing still refuses, with the basis or without.
+ const edited={...before,sources:{...before.sources,'other.html':before.sources['other.html'].replace('>News</a>','>Mine</a>')}};
+ const hand=refresh(basis,edited);assert.ok('error'in hand);assert.match(hand.error,/other\.html/);assert.match(hand.error,/edited by hand/);
+ // A basis the cards were not made from is no basis.
+ const wrong=refresh(page('Something else'),before);assert.ok('error'in wrong);assert.match(wrong.error,/edited by hand/);
+ // Listings on the edited page itself are checked against its current text.
+ const self={...before,sources:{...before.sources,'work/a/index.html':page('Typed in Code',list('/news/').replace('<p>Old</p>','<p>Hand</p>'))}};
+ const own=planNativeCollectionOperation({...self,origin:origin({refreshCollections:true,driftBasis:{path:'work/a/index.html',source:page('First',list('/news/').replace('<p>Old</p>','<p>Hand</p>'))},expectedSources:new Map([['work/a/index.html',self.sources['work/a/index.html']]])})});
+ assert.ok('error'in own);assert.match(own.error,/work\/a\/index\.html/);
+});

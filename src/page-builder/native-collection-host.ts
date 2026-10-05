@@ -31,6 +31,16 @@ export interface NativeCollectionOrigin {
   acceptGeneratedDrift?: { path: string; start: number }[];
   /** Sidecar collection ids whose hand-edited or unbuilt cards this change may replace. */
   acceptCollections?: string[];
+  /**
+   * A page already edited in Code since its cards were last baked: `source` is
+   * its text before that edit. Inline listings on other pages are checked for
+   * hand edits against the graph with this earlier text (their cards were made
+   * from it); listings on the page itself against its current text. The page's
+   * current bytes must be pinned in expectedSources. Not a bypass: cards that
+   * match neither are refused as before. JSON collections use their recorded
+   * output and need no basis.
+   */
+  driftBasis?: { path: string; source: string };
 }
 export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
@@ -101,7 +111,13 @@ function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, 
     if (!origin.expectedSources?.has(entry.path) || origin.expectedSources.get(entry.path) !== own(sources, entry.path))
       throw Error(`Pin ${entry.path} before replacing its cards.`);
   }
-  const all = generatedDrift(sources, routes, identity, files);
+  const basis = origin.driftBasis;
+  if (basis && (!Object.hasOwn(sources, basis.path) || !origin.expectedSources?.has(basis.path) || origin.expectedSources.get(basis.path) !== own(sources, basis.path)))
+    throw Error(`Pin ${basis.path} before rebuilding the cards it feeds.`);
+  const all = basis
+    ? [...generatedDrift({ ...sources, [basis.path]: basis.source }, routes, identity, files).filter(item => item.path !== basis.path),
+      ...generatedDrift(sources, routes, identity, files).filter(item => item.path === basis.path)]
+    : generatedDrift(sources, routes, identity, files);
   const isAccepted = (item: { path: string; start: number }) => accepted.some(entry => entry.path === item.path && entry.start === item.start);
   for (const entry of accepted) {
     if (!all.some(item => item.path === entry.path && item.start === entry.start))
@@ -369,7 +385,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { refreshCollections: _refresh, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
+    const { refreshCollections: _refresh, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, driftBasis: _basis, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
     return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections, skipped };

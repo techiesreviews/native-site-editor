@@ -107,7 +107,18 @@ export interface SourceFile {
   deletedUpstream?: (path: string) => boolean;
   /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
   onSettleDeleted?: (path: string, keep: boolean) => void;
+  /**
+   * A typing group in Code has settled: no typing for `TYPING_SETTLE_MS`, or the
+   * editor is closing. The group is closed as one Undo stop first, so `before`
+   * (the model's state when the group's first keystroke arrived) and `after` are
+   * both stops of the model's own history. Undo, Redo and routed edits are not typing.
+   */
+  onTypingSettled?: (group: { before: TypingState; after: TypingState }) => void;
 }
+/** A model state: Monaco's alternative version id (stable across Undo/Redo) and its text. */
+export interface TypingState { version: number; source: string }
+/** A pause in typing this long closes the typing group. */
+export const TYPING_SETTLE_MS = 700;
 
 interface Draft {
   historySession?: string;
@@ -239,6 +250,31 @@ function runCompanions(model: monaco.editor.ITextModel, undoing: boolean) {
       mark.companion.redo();
     }
   }
+}
+/**
+ * Ties `companion` (a change to other files, already made) to a span of the
+ * model of `path`, from `before` to `after` (alternative version ids; `after`
+ * is current): it is undone when the model is undone back to `before`, and
+ * redone when it is redone to `after`, by the toolbar, the keyboard or Monaco's
+ * own stack. Both must be Undo stops of the model (`onTypingSettled` gives such).
+ */
+export function attachHistoryCompanion(scope: DraftScope, path: string, before: number, after: number, companion: HistoryCompanion) {
+  const model = drafts.get(draftKey(scope, path))?.model;
+  if (!model || model.isDisposed() || before === after || model.getAlternativeVersionId() !== after) return false;
+  const marks = companionMarks.get(model) ?? [];
+  marks.push({ before, after, done: true, companion });
+  companionMarks.set(model, marks.slice(-50));
+  return true;
+}
+/** The state of the model of `path` (mounted or kept as a draft), if there is one. */
+export function modelState(scope: DraftScope, path: string): TypingState | undefined {
+  const model = drafts.get(draftKey(scope, path))?.model;
+  return model && !model.isDisposed() ? { version: model.getAlternativeVersionId(), source: model.getValue() } : undefined;
+}
+/** The model of `path` (mounted or kept as a draft) is at exactly this state. */
+export function modelAtState(scope: DraftScope, path: string, version: number, source: string) {
+  const state = modelState(scope, path);
+  return state?.version === version && state.source === source;
 }
 // Versions on either side of an applied persistent receipt step. Such a step
 // belongs to a compound operation whose other files are drafts outside this
@@ -1403,9 +1439,32 @@ export function mountCodeEditor(
     if (uris.some((uri) => uri.toString() === current.model.uri.toString()))
       reportContext();
   });
+  // Typing groups for `onTypingSettled`: the state before a group's first keystroke,
+  // kept current through every change that is not typing.
+  const typingState = (): TypingState => ({ version: current.model.getAlternativeVersionId(), source: current.model.getValue() });
+  let quiet = file.onTypingSettled ? typingState() : undefined;
+  let typing: { before: TypingState; timer: ReturnType<typeof setTimeout> } | undefined;
+  function settleTyping() {
+    const group = typing;
+    typing = undefined;
+    if (!group) return;
+    clearTimeout(group.timer);
+    if (current.model.isDisposed()) return;
+    // The settle point is an Undo stop: Undo comes back to exactly `after`, then `before`.
+    current.model.pushStackElement();
+    quiet = typingState();
+    file.onTypingSettled?.({ before: group.before, after: quiet });
+  }
   const subscription = current.model.onDidChangeContent((event) => {
     if (!routedModelChanges.has(current.model)) invalidateVisualHistory(session);
     if (event.isUndoing || event.isRedoing) runCompanions(current.model, event.isUndoing);
+    if (quiet) {
+      if (!file.readOnly && !routedModelChanges.has(current.model) && !event.isUndoing && !event.isRedoing) {
+        typing ??= { before: quiet, timer: setTimeout(() => {}) };
+        clearTimeout(typing.timer);
+        typing.timer = setTimeout(settleTyping, TYPING_SETTLE_MS);
+      } else if (!typing) quiet = typingState();
+    }
     update(event.changes.map((change) => ({
       start: change.rangeOffset,
       end: change.rangeOffset + change.rangeLength,
@@ -1418,6 +1477,8 @@ export function mountCodeEditor(
   reportContext();
   function disposeMountedEditor() {
     if (disposed) return;
+    // Closing the file settles its typing group now, while the model is still this file's.
+    settleTyping();
     disposed = true;
     unregisterMounted(file.path, registration);
     if (marks.length || elementMarks.length) current.model.deltaDecorations([...marks, ...elementMarks], []);

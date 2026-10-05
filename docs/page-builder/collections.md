@@ -16,6 +16,31 @@ selection and editor model state before asynchronous host work. A changed input 
 refused rather than silently used as a new basis. Refresh does not authorize
 replacing hand-edited cards; that requires the explicit rebuild action.
 
+A page's title or metadata typed in Code rebuilds the cards that list it once the
+typing settles: no keystroke for 700 ms, or the file closing. Only a change to
+what cards read from the page (its fields, or the site name on the home page)
+starts a rebuild; body edits do not. The settle point closes the typing group as
+an Undo stop of the page's model, and the rebuilt listing pages and JSON follow
+that group instead of taking their own Undo step: undoing the page back to where
+the group began undoes the cards too, and redoing to its end redoes them. For a
+paste, or a typing group Monaco keeps as one step, that is one Undo for both;
+when Monaco splits the group into several stops, the cards go back with the last
+of them, so the page and its cards never disagree once Undo reaches the start of
+the group. A separate journal step was rejected: Code typing clears the shared
+journal, so its Undo could be lost behind a later group and leave cards newer
+than the page. The rebuild pins the page at the settled text and the whole graph
+like any collection operation. Typing on, Undo, a branch switch or any other
+change before it is written refuses it without writing; a rebuild refused because
+typing went on is planned again from the earlier start at the next settle. Inline
+listings on other pages are checked for hand edits against the page's text from
+before the typing group (their cards were made from it); JSON collections use
+their recorded output. Hand-edited cards are never replaced; the status line says
+why. When a paired Undo or Redo cannot restore the cards exactly (a listing page
+changed, or was opened and got a new editor model, since), the page still moves
+and its cards are rebuilt from it through the same guards, checked against the
+text they were made from; that rebuild has no Undo step of its own and may write
+the editor's JSON in its canonical key order. Save collection stays an explicit action.
+
 An inline listing whose own recipe cannot be read or baked (an unknown field, a
 malformed folder, a missing template) no longer blocks unrelated page operations.
 Each operation bakes the healthy listings and leaves a broken one byte for byte; the
