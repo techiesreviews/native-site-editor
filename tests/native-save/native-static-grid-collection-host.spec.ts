@@ -138,3 +138,109 @@ test("a natural Code edit after folder choices refuses stale Convert and preserv
   expect((await storedDrafts(page)).map(draft => draft.path)).toEqual(["index.html"]);
   expect(await effectiveSource(page, baseURL, servicePath)).toBe(service);
 });
+
+// Convert reads nothing from GitHub once the panel is open, so nothing real
+// can be held in flight. These cases hold the host's own lookup of the
+// editor's JSON (RepositoryIndex.find, awaited between planning and writing
+// the drafts) and change the branch, the repository snapshot, the repository
+// or the account while it waits.
+async function holdConvert(page: Page) {
+  await page.evaluate(async (path) => {
+    const { RepositoryIndex } = await import("/src/repository-loading.ts");
+    const original = RepositoryIndex.prototype.find;
+    const state = window as unknown as { convertHeld?: boolean; releaseConvert?: () => void };
+    const gate = new Promise<void>((resolve) => { state.releaseConvert = resolve; });
+    state.convertHeld = false;
+    RepositoryIndex.prototype.find = async function (this: InstanceType<typeof RepositoryIndex>, ...args: Parameters<typeof original>) {
+      if (args[3] === path) { RepositoryIndex.prototype.find = original; state.convertHeld = true; await gate; }
+      return original.apply(this, args);
+    };
+  }, side);
+}
+async function convertHeld(page: Page) {
+  await holdConvert(page);
+  await panel(page).getByRole("button", { name: "Convert", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { convertHeld?: boolean }).convertHeld)).toBe(true);
+  expect(await storedDrafts(page)).toEqual([]);
+}
+const release = (page: Page) => page.evaluate(() => (window as unknown as { releaseConvert(): void }).releaseConvert());
+const stale = /changed meanwhile/;
+async function untouched(page: Page, home: string) {
+  // Let the released Convert run to its end before reading what it left.
+  await page.waitForTimeout(500);
+  expect(await storedDrafts(page)).toEqual([]);
+  expect(await mounted(page)).toBe(home);
+  await expect(frame(page).locator(".cards > article.card-project")).toHaveCount(3);
+}
+
+test("switching branch while Convert waits refuses it and leaves the new branch untouched", async ({ page, baseURL }) => {
+  const before = await open(page, baseURL);
+  const feature = before.replace("</body>", "<!-- feature branch -->\n</body>");
+  expect(feature).not.toBe(before);
+  expect((await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: feature } })).status()).toBe(204);
+  await convertHeld(page);
+  await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+  await expect.poll(() => mounted(page)).toBe(feature);
+  await release(page);
+  await expect(page.locator("#status")).toHaveText(stale);
+  await untouched(page, feature);
+  expect(await file(page, baseURL, side)).toBeUndefined();
+});
+
+test("refreshing the repository while Convert waits refuses it and keeps the newer commit", async ({ page, baseURL }) => {
+  const before = await open(page, baseURL);
+  const newer = before.replace("</body>", "<!-- committed on GitHub meanwhile -->\n</body>");
+  await convertHeld(page);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: newer } })).status()).toBe(204);
+  await page.locator("#refresh").evaluate((button) => (button as HTMLButtonElement).click());
+  await expect.poll(() => mounted(page), { timeout: 30_000 }).toBe(newer);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await release(page);
+  await expect(page.locator("#status")).toHaveText(stale);
+  await untouched(page, newer);
+  expect(await file(page, baseURL, side)).toBeUndefined();
+});
+
+test("refreshing an unchanged repository while Convert waits still refuses the older session's Convert to an existing JSON", async ({ page, baseURL }) => {
+  // With the editor's JSON on the branch, Convert edits it rather than creating it.
+  const before = await open(page, baseURL, true);
+  const json = await file(page, baseURL, side);
+  expect(json).toBeDefined();
+  await panel(page).getByRole("checkbox", { name: "/services/", exact: true }).check();
+  await expect(panel(page)).toContainText("4 pages will show");
+  await convertHeld(page);
+  await page.locator("#refresh").evaluate((button) => (button as HTMLButtonElement).click());
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await release(page);
+  await expect(page.locator("#status")).toHaveText(stale);
+  await untouched(page, before);
+  expect(await file(page, baseURL, side)).toBe(json);
+  expect(await effectiveSource(page, baseURL, servicePath)).toBe(service);
+});
+
+test("switching repository while Convert waits refuses it and leaves the other repository untouched", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  expect((await page.request.post(`${baseURL}/__demo/onboarding`, { data: { org: true } })).status()).toBe(204);
+  const other = await (await page.request.get(`${baseURL}/__demo/file?repo=org-site&path=index.html`)).text();
+  await convertHeld(page);
+  await page.evaluate(() => { location.hash = "#repo=700&branch=main&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await expect.poll(() => mounted(page), { timeout: 30_000 }).toBe(other);
+  await release(page);
+  await expect(page.locator("#status")).toHaveText(stale);
+  await untouched(page, other);
+  expect(await file(page, baseURL, side)).toBeUndefined();
+});
+
+test("signing out while Convert waits writes nothing for the account that left", async ({ page, context, baseURL }) => {
+  await open(page, baseURL);
+  await convertHeld(page);
+  await context.addCookies([{ name: "ase_demo_signed_out", value: "1", url: baseURL! }]);
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: /^Sign out/ }).click();
+  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(500);
+  expect(await storedDrafts(page)).toEqual([]);
+  expect(await file(page, baseURL, side)).toBeUndefined();
+});
