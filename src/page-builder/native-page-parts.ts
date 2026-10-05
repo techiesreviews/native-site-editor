@@ -5,7 +5,7 @@ import { attribute } from "./collection-model";
 import { descendants, parseSource, startTagAttributes, type SourceElement, type SourceNode } from "./component-model";
 import { readNativeSectionLinks } from "./native-section-links";
 import { nativeMarkupInsertEdit } from "./native-operations";
-import { scanMediaReferences } from "./media-references";
+import { scanMediaUrlTokens } from "./media-references";
 import {
   EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
   type CollectionTarget, type JsonValue, type PageBuilderDocument,
@@ -121,8 +121,8 @@ function checkPartMarkup(html: string, root: SourceElement): void {
  * plus form `action`/`formaction`. Nothing is rewritten: the user is asked for a root path.
  */
 function checkPortableUrls(html: string, root: SourceElement): void {
-  const relative = (value: string) => !value.trim().startsWith("/");
-  const found = scanMediaReferences("page.html", html).find((reference) => relative(reference.value));
+  const relative = (value: string) => Boolean(value.trim()) && !/^(?:[a-z][\w+.-]*:|\/|#)/i.test(value.trim());
+  const found = scanMediaUrlTokens("page.html", html).find((reference) => relative(reference.value));
   let bad = found?.value;
   if (bad === undefined) {
     for (const element of [root, ...descendants(root.children)]) {

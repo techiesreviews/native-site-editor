@@ -56,6 +56,8 @@ JSON. CSS is never written.
   (the page itself) too. Nothing is rewritten. Save, Link and Update all check the copy or master.
   Other attributes holding URLs (`cite`, `background`, `longdesc`) aren't checked. The existing
   insert policy still refuses `srcset` lists and `data:` URLs in attributes.
+  The check uses decoded URL tokens before repository-path resolution: `./`, `../`, query-only
+  URLs and malformed-percent relative paths are refused even when no media file can be resolved.
 - A master with a comment outside its root is refused by Link as well as Update.
 - A part inside a component, template, foreign markup or another header/footer is refused. Links
   may not overlap each other, a section link or a collection; a missing or ambiguous link refuses

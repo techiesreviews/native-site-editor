@@ -3,7 +3,8 @@ import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaUrl } from "./media-markup";
 
-export interface MediaReference { file: string; start: number; end: number; path: string; value: string; alt?: string; attributeQuote?: string; cssQuote?: string }
+export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attributeQuote?: string; cssQuote?: string }
+export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
 export function mediaResolvePath(value: string, file: string): string | undefined {
@@ -127,11 +128,11 @@ function srcsetUrls(value: string, add: (url: string, start: number, end: number
   }
 }
 
-export function scanMediaReferences(file: string, source: string): MediaReference[] {
-  const out: MediaReference[] = [];
+/** Every decoded URL token, including values that do not resolve to a repository file. */
+export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[] {
+  const out: MediaUrlToken[] = [];
   const add = (value: string, start: number, end: number, alt?: string, attributeQuote?: string, cssQuote?: string) => {
-    const path = mediaResolvePath(value, file);
-    if (path) out.push({ file, start, end, value, path, alt, attributeQuote, cssQuote });
+    out.push({ file, start, end, value, alt, attributeQuote, cssQuote });
   };
   if (/\.css$/i.test(file)) { cssUrls(source, (value, start, end, quote) => add(value, start, end, undefined, undefined, quote)); return out; }
   let styleEnd = 0;
@@ -166,6 +167,13 @@ export function scanMediaReferences(file: string, source: string): MediaReferenc
     }
   }
   return out;
+}
+
+export function scanMediaReferences(file: string, source: string): MediaReference[] {
+  return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attributeQuote, cssQuote }) => {
+    const path = mediaResolvePath(value, file);
+    return path ? [{ file, start, end, value, path, alt, attributeQuote, cssQuote }] : [];
+  });
 }
 
 /** Page usage includes nested components, linked styles and CSS imports, once per page. */

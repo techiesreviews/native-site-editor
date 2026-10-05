@@ -316,6 +316,11 @@ test("a page-relative link added to the master is refused at Update; nothing is 
   site.sources[MASTER] = site.sources[MASTER]!.replace(`<a href="/about/">About</a>`, `<a href="/about/">About</a>\n      <a href="contact/">Contact</a>`);
   error(planUpdatePagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header" }), /"contact\/" would point to different places\. Use a root path starting with \//);
   for (const page of ["index.html", deep, EDITOR_PAGE_BUILDER_PATH]) assert.equal(site.sources[page], before[page]);
+  for (const href of ["./", "../", "images/%ZZ.png", "?"]) {
+    site.sources[MASTER] = before[MASTER]!.replace('<a href="/about/">', `<a href="${href}">`);
+    error(planUpdatePagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header" }), /would point to different places/);
+    for (const page of ["index.html", deep, EDITOR_PAGE_BUILDER_PATH]) assert.equal(site.sources[page], before[page]);
+  }
   // The same edit with a root path updates both pages.
   site.sources[MASTER] = before[MASTER]!.replace(`<a href="/about/">About</a>`, `<a href="/about/">About</a>\n      <a href="/contact/">Contact</a>`);
   const update = ok(planUpdatePagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header" }));
@@ -333,6 +338,10 @@ test("Save and Link refuse page-relative URLs in the copy or the master", () => 
   // A relative URL edited into the master refuses Link too.
   const master = saved.sources[MASTER]!.replace(`<a href="/about/">`, `<a href="about/">`);
   error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources: { ...saved.sources, [MASTER]: master }, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(saved.sources["about/index.html"]!, "header") }] }), /"about\/"/);
+  for (const href of ["./", "../", "images/%ZZ.png", "?"]) {
+    const master = saved.sources[MASTER]!.replace('<a href="/about/">', `<a href="${href}">`);
+    error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources: { ...saved.sources, [MASTER]: master }, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(saved.sources["about/index.html"]!, "header") }] }), /would point to different places/);
+  }
   // A master comment outside its root refuses Link as it refuses Update.
   error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources: { ...saved.sources, [MASTER]: `<!-- n -->\n${saved.sources[MASTER]}` }, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(saved.sources["about/index.html"]!, "header") }] }), /comment outside/);
 });
@@ -353,6 +362,17 @@ test("which URLs are portable", () => {
   error(save(`<img src="/images/a.svg" srcset="/images/a.svg 1x, data:image/png;base64,AA,BB= 2x" alt="">`), /malformed|placed safely/);
   error(save(`<img src="data:image/png;base64,iVBORw0KGgo=" alt="">`), /malformed|placed safely/);
   for (const [inner, bad] of [
+    [`<a href="?">query only</a>`, "?"],
+    [`<a href="./">self directory</a>`, "./"],
+    [`<a href="../">parent directory</a>`, "../"],
+    [`<a href="images/..">directory</a>`, "images/.."],
+    [`<a href="&#46;/">encoded directory</a>`, "./"],
+    [`<a href="images/%ZZ.png">invalid percent</a>`, "images/%ZZ.png"],
+    [`<img src="images/%ZZ.png" alt="">`, "images/%ZZ.png"],
+    [`<img src="/images/a.svg" srcset="images/%ZZ.png 1x" alt="">`, "images/%ZZ.png"],
+    [`<video poster="./"></video>`, "./"],
+    [`<span style="background-image: url('./')">s</span>`, "./"],
+    [`<span style="background-image: url('\\69mages/%ZZ.png')">s</span>`, "images/%ZZ.png"],
     [`<img src="images/a.svg" alt="">`, "images/a.svg"],
     [`<img src="/images/a.svg" srcset="/images/a.svg 1x, images/a@2x.svg 2x" alt="">`, "images/a@2x.svg"],
     [`<span style="background: url(img/a.png)">s</span>`, "img/a.png"],
