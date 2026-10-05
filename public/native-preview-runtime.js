@@ -2771,11 +2771,17 @@
     canvasPlace(box[6], ix, iy + ih - p.b, iw, p.b, p.b);
     canvasPlace(box[7], ix, iy + p.t, p.l, ih - p.t - p.b, p.l);
   }
-  // Called from updateBoxes, after the hover and selection boxes.
-  function canvasPaint() {
+  // Bar movement changes only which label position is clear of the bar.
+  function canvasPaintLabel() {
     canvasEnsure();
     if (canvasHint && !canvasHint.isConnected) canvasHint = null;
     var hint = canvasHint && canvasHint !== selected ? canvasHint : null;
+    canvasDrawLabel(hint || (hovered && hovered !== selected && !sectionDrag ? hovered : null));
+    return hint;
+  }
+  // Called from updateBoxes, after the hover and selection boxes.
+  function canvasPaint() {
+    var hint = canvasPaintLabel();
     if (hoverBox && hovered) {
       var hoverColor = canvasColor(hovered);
       hoverBox.style.borderColor = hoverColor;
@@ -2787,7 +2793,6 @@
       canvasHintBox.style.border = "1px dashed " + hintColor;
       canvasHintBox.style.background = "color-mix(in srgb, " + hintColor + " 8%, transparent)";
     }
-    canvasDrawLabel(hint || (hovered && hovered !== selected && !sectionDrag ? hovered : null));
     canvasDrawSpacing(canvasSpacing && !sectionDrag ? (hint || hovered || selected) : null);
   }
   function canvasSelect(el, reason) {
@@ -2830,7 +2835,7 @@
     if (msg.type === "canvas-avoid") {
       var bar = msg.rect;
       canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
-      updateBoxes();
+      canvasPaintLabel();
       return;
     }
     if (msg.type === "canvas-spacing") {
