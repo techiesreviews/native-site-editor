@@ -30,3 +30,15 @@ Only set an identity for a copy that preserves that fixture's contract. Unknown 
 `npm run test:browser` remains the unfiltered Playwright command. Without `ASE_NATIVE_SAVE_FIXTURE`, actual-only specs clearly skip. Explicitly selecting a wrong fixture for those specs raises a fixture error before UI setup. Real failures on the correct fixture remain failures.
 
 The wrapper's actual manifest contains the existing actual-only specs and `native-structure-readiness.spec.ts`. New `*-actual.spec.ts` files join automatically; register other actual-only names in `scripts/native-browser-tests.mjs` and add the shared fixture guard. Keep native-static tests in their separate group. Use distinct ports and output directories for concurrent runs. The wrapper and test server resolve installed dependencies through Node module resolution, so linked worktrees can use the main checkout’s installation without creating a local `node_modules` symlink.
+
+## Human screen-reader check
+
+This check remains unperformed. Use a disposable fixture with the reviewed application `634d69f` or its verified preview release, and record the screen reader, browser, operating system and application version. An authenticated live preview needs the user's ordinary sign-in; the local fixture needs no real GitHub writes. Include native-static and component pages so both ordinary Structure rows and slot actions are exercised.
+
+1. Navigate Page structure using the screen reader and keyboard. Check that row names, hierarchy, selection and expansion state are understandable. Ordinary selection must not open an inline editor. Reach Edit followed by the visibility eye, and confirm that each action announces its name and current state.
+2. Open an inline edit explicitly. Check its field label, Save/Cancel controls and focus on entry and exit. Hide and show a slot; confirm the changed visibility is understandable without looking at the canvas.
+3. Open Style, change a value and switch its responsive target. Check control names, selected states, keyboard access and focus when closing the panel. Repeat at the narrow viewport used for visual review.
+4. In Fields, apply a valid change and exercise a refused operation using the disposable fixture. Check that success, validation and refusal messages are announced, and that focus and unsaved input remain usable. Open and cancel a deletion confirmation; check the dialog name and returned focus.
+5. Edit Code until a collection refresh settles, then use Undo and Redo through the typing and generated-card steps. Check that operation results and remaining edits are understandable from the accessible controls and status messages.
+
+Record observed announcements and focus for each step, including any failure and reproduction details. Leave the completion-checklist item unchecked until a human has run this protocol and any blocking findings have been resolved; automated ARIA/keyboard assertions and screenshots do not substitute for this evidence.

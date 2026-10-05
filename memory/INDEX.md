@@ -2,7 +2,7 @@
 
 ## Handoffs
 
-- [Listings continuation and pending Claude review](handoffs/t3-listings-continuation-2026-10-05.md): resume the removed migration action, Code card refresh, broken-listing isolation and Page structure icon order; candidate `c63dd0d` is locally validated, with prescribed Claude review and release gates pending.
+- [Reviewed listings continuation and preview release](handoffs/t3-listings-continuation-2026-10-05.md): migration action removed, visibility eye follows Edit, collection Code refresh and settings/delete races fixed; Claude approved application `634d69f`, released through `dev@abb5566` to preview version `e574d5aa`. Human screen-reader testing remains open.
 
 - [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): start here for the latest component reuse release, passing Node 24 CI, public asset checks, and owner-authentication verification limit.
 
