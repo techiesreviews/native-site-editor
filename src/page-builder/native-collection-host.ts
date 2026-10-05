@@ -11,6 +11,8 @@ import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 export interface NativeCollectionOrigin {
   /** Host routing intent only; does not authorize replacing customised cards. */
   refreshCollections?: true;
+  /** Explicit Save touches this recipe even when its values are unchanged. */
+  refreshCollection?: string;
   expectedSources?: Map<string, string | undefined>;
   moves?: FileMove[];
   /** Explicit filesystem folder relocation intent; prefixes end in slash. */
@@ -36,11 +38,12 @@ export interface NativeCollectionOrigin {
    * its text before that edit. Inline listings on other pages are checked for
    * hand edits against the graph with this earlier text (their cards were made
    * from it); listings on the page itself against its current text. The page's
-   * current bytes must be pinned in expectedSources. Not a bypass: cards that
+   * current bytes must be pinned in expectedSources. `identity` is the site
+   * identity that produced the old cards, before a home site-name edit. Not a bypass: cards that
    * match neither are refused as before. JSON collections use their recorded
    * output and need no basis.
    */
-  driftBasis?: { path: string; source: string };
+  driftBasis?: { path: string; source: string; identity?: CollectionIdentity };
 }
 export interface NativeCollectionSnapshot {
   sources: Readonly<Record<string, string>>;
@@ -115,8 +118,8 @@ function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, 
   if (basis && (!Object.hasOwn(sources, basis.path) || !origin.expectedSources?.has(basis.path) || origin.expectedSources.get(basis.path) !== own(sources, basis.path)))
     throw Error(`Pin ${basis.path} before rebuilding the cards it feeds.`);
   const all = basis
-    ? [...generatedDrift({ ...sources, [basis.path]: basis.source }, routes, identity, files).filter(item => item.path !== basis.path),
-      ...generatedDrift(sources, routes, identity, files).filter(item => item.path === basis.path)]
+    ? [...generatedDrift({ ...sources, [basis.path]: basis.source }, routes, basis.identity ?? identity, files).filter(item => item.path !== basis.path),
+      ...generatedDrift(sources, routes, basis.identity ?? identity, files).filter(item => item.path === basis.path)]
     : generatedDrift(sources, routes, identity, files);
   const isAccepted = (item: { path: string; start: number }) => accepted.some(entry => entry.path === item.path && entry.start === item.start);
   for (const entry of accepted) {
@@ -359,7 +362,8 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     const urlChanges = urlPairs.length ? groupRouteChanges(Object.keys(routes), urlPairs) : [];
     // Sidecar collections: recipes only in JSON, finished cards only in HTML.
     const document = planDocumentBake({
-      identity: candidateIdentity,
+      identity: candidateIdentity, beforeIdentity: origin.driftBasis?.identity ?? identity, skipBroken: true,
+      inputBasis: origin.driftBasis, touchCollections: origin.refreshCollection ? [origin.refreshCollection] : [],
       before: { sources, routes },
       candidate: { sources: Object.fromEntries(candidate), routes: afterRoutes },
       moves: new Map(moves.map(move => [move.from, move.to])),
@@ -369,6 +373,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       ...(urlChanges.length ? { rewriteLinks: (html: string) => urlChanges.reduce((text, change) => rewriteRouteLinks(text, change.from, change.to, change.subtree).text, html) } : {}),
     });
     if ('error' in document) return { error: document.error };
+    skipped.push(...document.skipped);
     for (const [path, text] of document.texts) {
       if (text === undefined) {
         candidate.delete(path);
@@ -385,7 +390,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (createdPaths.has(path)) continue;
       if (text !== before.get(oldFor.get(path) ?? path)) finalEdits.set(path, text);
     }
-    const { refreshCollections: _refresh, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, driftBasis: _basis, ...nativeOrigin } = origin;
+    const { refreshCollections: _refresh, refreshCollection: _recipe, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, driftBasis: _basis, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
     return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections, skipped };

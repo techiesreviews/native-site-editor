@@ -1,4 +1,4 @@
-import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords, type BakePageData } from "./collection-bake";
+import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords, type BakePageData, type BrokenListing } from "./collection-bake";
 import { mediaResolvePath, rewriteMediaReferences } from "./media-references";
 import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
@@ -17,6 +17,13 @@ import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, re
 export interface DocumentCollectionPreview { id: string; path: string; start: number; records: CollectionRecord[]; output: string }
 export interface DocumentBakeInput {
   identity: CollectionIdentity;
+  beforeIdentity?: CollectionIdentity;
+  /** Host operations may leave unrelated broken listings untouched. */
+  skipBroken?: true;
+  /** Pre-Code-edit page text, used only to compare selected inputs. */
+  inputBasis?: { path: string; source: string };
+  /** Recipes explicitly saved even when no recipe bytes changed. */
+  touchCollections?: readonly string[];
   before: { sources: Readonly<Record<string, string>>; routes: Readonly<Record<string, string>> };
   /** Graph after the origin was applied, including the sidecar's new text (or its absence). */
   candidate: { sources: Readonly<Record<string, string>>; routes: Readonly<Record<string, string>> };
@@ -41,6 +48,7 @@ export interface DocumentBakePlan {
   collections: DocumentCollectionPreview[];
   /** Collection ids found drifted before the change (for recovery UI). */
   drifted: { id: string; kind: "edited" | "unbuilt" }[];
+  skipped: BrokenListing[];
 }
 
 const SIDECAR_INVALID = (error: unknown) =>
@@ -110,7 +118,9 @@ function withoutConditions(html: string): string {
  * Plans every sidecar collection's cards for the candidate graph. Refuses,
  * writing nothing, when a collection's current cards differ from what the
  * editor last wrote (unless that id is explicitly accepted), when its target
- * cannot be found uniquely, or when the sidecar is invalid.
+ * cannot be found uniquely, or when the sidecar is invalid. With `skipBroken`,
+ * an untouched broken listing is left exactly as it was and named in `skipped`;
+ * invalid JSON syntax/schema and changed inputs still refuse the whole plan.
  */
 export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | { error: string } {
   try {
@@ -120,18 +130,39 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     const after = readSidecar(afterText);
     const accept = new Set(input.accept ?? []);
     const drift = documentDrift(input.before.sources, before);
+    const skipped: BrokenListing[] = [];
+    const skippedIds = new Set<string>();
+    // Compare the whole selected input set, before sort/filter/limit: a broken
+    // recipe cannot safely tell which records would have reached its cards.
+    const inputs = (graph: DocumentBakeInput["before"], document: PageBuilderDocument, collection: PageBuilderCollection, identity: CollectionIdentity) =>
+      JSON.stringify(collectionRecords({ ...graph.sources }, { ...graph.routes }, identity,
+        { folder: collection.folders.join(" "), folders: collection.folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, collection.pagePath, collection.fields)
+        .map(record => [record.path, record.url, { ...resolvePageFields(record.fields, document.pages[record.path]), ...(collection.overrides[record.path] ?? {}) }]));
+    const beforeInputs = input.inputBasis ? { ...input.before, sources: { ...input.before.sources, [input.inputBasis.path]: input.inputBasis.source } } : input.before;
+    const leaveBroken = (id: string, error: unknown): boolean => {
+      const previous = before.collections[id], next = after.collections[id];
+      if (!input.skipBroken || !previous || !next || (input.accept ?? []).includes(id) || input.touchCollections?.includes(id) ||
+          !sameJson(previous, next) || input.moves?.has(previous.pagePath) || input.deletes?.includes(previous.pagePath) ||
+          input.before.sources[previous.pagePath] !== input.candidate.sources[next.pagePath] ||
+          previous.folders.some(folder => (input.relocateFolder?.(folder) ?? folder) !== folder) ||
+          inputs(beforeInputs, before, previous, input.beforeIdentity ?? input.identity) !== inputs(input.candidate, after, next, input.identity)) return false;
+      if (!skippedIds.has(id)) skipped.push({ path: previous.pagePath, start: -1, error: error instanceof Error ? error.message : String(error) });
+      skippedIds.add(id);
+      return true;
+    };
     // Cards that cannot be located refuse first: acceptance never stands in for a target.
-    for (const item of drift) if (item.kind === "missing" && Object.hasOwn(after.collections, item.id)) throw new Error(item.reason!);
+    for (const item of drift) if (item.kind === "missing" && Object.hasOwn(after.collections, item.id) && !leaveBroken(item.id, item.reason!)) throw new Error(item.reason!);
     for (const id of accept) if (!drift.some((item) => item.id === id)) throw new Error(`The cards of collection “${id}” already match their page data.`);
     for (const item of drift) {
       // A collection the change removes from the sidecar keeps its cards as they are.
-      if (!Object.hasOwn(after.collections, item.id)) continue;
+      if (!Object.hasOwn(after.collections, item.id) || skippedIds.has(item.id)) continue;
       if (item.kind === "missing") throw new Error(item.reason!);
       if (accept.has(item.id)) continue;
       const page = before.collections[item.id].pagePath;
-      throw new Error(item.kind === "edited"
+      const error = new Error(item.kind === "edited"
         ? `The cards in ${page} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`
         : `The cards in ${page} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
+      if (!leaveBroken(item.id, error)) throw error;
     }
     const moves = input.moves ?? new Map<string, string>();
     const deletes = new Set(input.deletes ?? []);
@@ -162,32 +193,39 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     }
     const located = new Map<string, ReturnType<typeof locatePageCollections>>();
     for (const [id, collection] of Object.entries(document.collections)) {
-      collection.folders = collection.folders.map(relocate);
-      rekey(collection.overrides);
-      const source = input.candidate.sources[collection.pagePath];
-      if (source === undefined) throw new Error(`Load ${collection.pagePath} before baking its collection.`);
-      const inner = (located.get(collection.pagePath) ?? located.set(collection.pagePath, locatePageCollections(source, document, collection.pagePath)).get(collection.pagePath)!)[id];
-      collection.target = inner.located.target;
-      const all = collectionRecords({ ...input.candidate.sources }, { ...input.candidate.routes }, input.identity,
-        { folder: collection.folders.join(" "), folders: collection.folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, collection.pagePath, collection.fields)
-        .map((record) => {
-          // Same page fields as legacy listings (JSON authoritative), then this recipe's own per-card overrides.
-          const fields: PageFields = { ...resolvePageFields(record.fields, document.pages[record.path]), ...(collection.overrides[record.path] ?? {}) };
-          return { ...record, fields };
-        });
-      if (all.length > MAX_COLLECTION_ITEMS * 4) throw new Error("Too many pages for one collection.");
-      const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
-      // An empty list still validates its template instead of silently accepting a typo.
-      bindCollectionTemplate(collection.template, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
-      const records = sortedRecords(all, collection, collection.fields);
-      const newline = source.includes("\r\n") ? "\r\n" : "\n";
-      const output = records.map((record) => withoutConditions(bindCollectionTemplate(collection.template, record.fields, known))).join(newline);
-      collection.outputFingerprint = output;
-      if (output !== inner.text) (pageEdits.get(collection.pagePath) ?? pageEdits.set(collection.pagePath, []).get(collection.pagePath)!).push({ start: inner.start, end: inner.end, text: output, id });
-      previews.push({ id, path: collection.pagePath, start: inner.located.element.start, records, output });
+      if (skippedIds.has(id)) continue;
+      try {
+        collection.folders = collection.folders.map(relocate);
+        rekey(collection.overrides);
+        const source = input.candidate.sources[collection.pagePath];
+        if (source === undefined) throw new Error(`Load ${collection.pagePath} before baking its collection.`);
+        const inner = (located.get(collection.pagePath) ?? located.set(collection.pagePath, locatePageCollections(source, document, collection.pagePath)).get(collection.pagePath)!)[id];
+        collection.target = inner.located.target;
+        const all = collectionRecords({ ...input.candidate.sources }, { ...input.candidate.routes }, input.identity,
+          { folder: collection.folders.join(" "), folders: collection.folders, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, collection.pagePath, collection.fields)
+          .map((record) => {
+            // Same page fields as legacy listings (JSON authoritative), then this recipe's own per-card overrides.
+            const fields: PageFields = { ...resolvePageFields(record.fields, document.pages[record.path]), ...(collection.overrides[record.path] ?? {}) };
+            return { ...record, fields };
+          });
+        if (all.length > MAX_COLLECTION_ITEMS * 4) throw new Error("Too many pages for one collection.");
+        const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
+        // An empty list still validates its template instead of silently accepting a typo.
+        bindCollectionTemplate(collection.template, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
+        const records = sortedRecords(all, collection, collection.fields);
+        const newline = source.includes("\r\n") ? "\r\n" : "\n";
+        const output = records.map((record) => withoutConditions(bindCollectionTemplate(collection.template, record.fields, known))).join(newline);
+        collection.outputFingerprint = output;
+        if (output !== inner.text) (pageEdits.get(collection.pagePath) ?? pageEdits.set(collection.pagePath, []).get(collection.pagePath)!).push({ start: inner.start, end: inner.end, text: output, id });
+        previews.push({ id, path: collection.pagePath, start: inner.located.element.start, records, output });
+      } catch (error) {
+        if (!leaveBroken(id, error)) throw error;
+        document.collections[id] = structuredClone(after.collections[id]);
+      }
     }
     const texts = new Map<string, string | undefined>();
     for (const [path, edits] of pageEdits) {
+      if (skipped.some(item => item.path === path)) throw new Error(`The cards in ${path} could not be checked before this change, so no collection on that page was rewritten.`);
       const next = applyCollectionEdits(input.candidate.sources[path], edits);
       texts.set(path, next);
       // Opening tags are unchanged; refresh each target's path against the new text.
@@ -198,7 +236,7 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     // No file is created for nothing; an existing (or deleted) file is otherwise rewritten only when it changes.
     const sidecar = afterText === undefined && empty ? undefined : writePageBuilderDocument(document, afterText);
     if (sidecar !== afterText) texts.set(EDITOR_PAGE_BUILDER_PATH, sidecar);
-    return { texts, collections: previews, drifted: drift.filter((item): item is { id: string; kind: "edited" | "unbuilt" } => item.kind !== "missing") };
+    return { texts, collections: previews, skipped, drifted: drift.filter((item): item is { id: string; kind: "edited" | "unbuilt" } => item.kind !== "missing") };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The collections could not be baked." };
   }

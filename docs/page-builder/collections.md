@@ -26,9 +26,16 @@ the group began undoes the cards too, and redoing to its end redoes them. For a
 paste, or a typing group Monaco keeps as one step, that is one Undo for both;
 when Monaco splits the group into several stops, the cards go back with the last
 of them, so the page and its cards never disagree once Undo reaches the start of
-the group. A separate journal step was rejected: Code typing clears the shared
-journal, so its Undo could be lost behind a later group and leave cards newer
-than the page. The rebuild pins the page at the settled text and the whole graph
+the group. When a rebuild also changes the page being typed (for example,
+a home site-name edit changes its own cards), the rebuild instead has a separate
+guarded Undo step: first Undo restores the old cards and JSON while retaining
+the typed page fields; second Undo restores the typing group. Redo replays the
+typing group, then the rebuild, with exact source/model checks. The journal
+records the existing native typing stops beneath that action, including groups
+with several native stops. This requires that page to remain mounted in Code;
+a file switch before application refuses the rebuild. Later typing still clears
+the compound journal safely, and receipt boundaries prevent a partial raw Undo.
+The rebuild pins the page at the settled text and the whole graph
 like any collection operation. Typing on, Undo, a branch switch or any other
 change before it is written refuses it without writing; a rebuild refused because
 typing went on is planned again from the earlier start at the next settle. Inline
@@ -42,15 +49,17 @@ text they were made from; that rebuild has no Undo step of its own and may write
 the editor's JSON in its canonical key order. Save collection stays an explicit action.
 
 An inline listing whose own recipe cannot be read or baked (an unknown field, a
-malformed folder, a missing template) no longer blocks unrelated page operations.
+malformed folder, a missing template), or a collection in a valid editor JSON
+document whose target or recipe cannot be baked, no longer blocks unrelated page operations.
 Each operation bakes the healthy listings and leaves a broken one byte for byte; the
 status line names the listing's page and its reason. An operation that touches the
 broken listing is still refused with that reason: a change to its own page (an edit
 or a move; deleting the page removes the listing and goes ahead), or a change to what its
 folders select (a selected page's fields, URL, existence or page data, including a
 folder relocation). A listing whose folders cannot be read selects nothing, so only
-its own page counts. The editor's JSON collections still refuse as a whole when one
-cannot be baked.
+its own page counts. Skipped JSON recipes and their cards stay unchanged while
+healthy collections on other pages still bake. Invalid JSON syntax or schema
+still refuses the whole operation; the editor never discards unreadable page data.
 
 
 A collection lives in a page's HTML. `data-each="/work/"` selects pages strictly

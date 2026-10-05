@@ -204,3 +204,96 @@ test('hand-edited cards are kept: a Code title edit does not replace them and sa
   expect(await storedDraft(page, side)).toBeUndefined();
   expect((await storedDraft(page, item))!.content).toBe(changed);
 });
+
+test('a broken JSON recipe allows unrelated page settings with a warning, exact Undo and refused selected inputs', async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const broken = JSON.stringify({ ...JSON.parse(recipe), collections: { proof: { ...JSON.parse(recipe).collections.proof, sort: 'unknown' } } }, null, 2) + '\n';
+  const unrelated = 'about/index.html';
+  const about = '<html><head><title>About</title></head><body><main><h1>About</h1></main></body></html>';
+  for (const [path, content] of [['index.html', home], [item, source], [side, broken], [unrelated, about]])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await open(page, baseURL, unrelated);
+  if (!await page.locator('#explorer').evaluate(el => el.matches(':popover-open'))) await page.locator('#explorer-toggle').click();
+  await page.getByRole('tab', { name: 'Pages', exact: true }).click();
+  await page.locator('#page-settings-toggle').click();
+  const panel = page.getByRole('dialog', { name: 'Page settings', exact: true });
+  await panel.getByLabel('Title', { exact: true }).fill('Changed unrelated');
+  await panel.getByRole('button', { name: 'Apply page settings' }).click();
+  await expect(panel).not.toBeVisible();
+  await expect(page.locator('#status')).toContainText('listing on index.html was left as it is');
+  expect(await paths(page)).toEqual([unrelated]);
+  expect(await storedDraft(page, side)).toBeUndefined();
+  expect(await mounted(page, 'index.html')).toBeUndefined();
+  await undo(page);
+  await expect.poll(() => paths(page)).toEqual([]);
+  await redo(page);
+  await expect.poll(() => paths(page)).toEqual([unrelated]);
+  await open(page, baseURL, item);
+  if (!await page.locator('#explorer').evaluate(el => el.matches(':popover-open'))) await page.locator('#explorer-toggle').click();
+  await page.getByRole('tab', { name: 'Pages', exact: true }).click();
+  await page.locator('#page-settings-toggle').click();
+  await panel.getByLabel('Title', { exact: true }).fill('Must refuse');
+  await panel.getByRole('button', { name: 'Apply page settings' }).click();
+  await expect(panel.getByRole('status')).toContainText('Unknown collection field: unknown.');
+  expect(await paths(page)).toEqual([unrelated]);
+  expect(await storedDraft(page, side)).toBeUndefined();
+  expect(await storedDraft(page, 'index.html')).toBeUndefined();
+});
+
+for (const mode of ['paste', 'typing', 'configured-name'] as const) test(mode === 'configured-name' ? 'a configured site name takes precedence over a home site-name Code edit' : `a home site-name ${mode} rebuilds its own listing in a separate guarded Undo before the typed source`, async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const oldHome = home.replace('</head>', '<meta property="og:site_name" content="Old"></head>');
+  const oldItem = source.replace('<title>Lifecycle</title>', '<title>Lifecycle | Old</title>');
+  const document = JSON.parse(recipe);
+  document.collections.proof.target = makeCollectionTarget(oldHome, oldHome.indexOf('<div'));
+  const oldRecipe = JSON.stringify(document, null, 2) + '\n';
+  for (const [path, content] of [['index.html', oldHome], [item, oldItem], [side, oldRecipe], ['.editor/config.json', mode === 'configured-name' ? '{"site":{"name":"Old"}}\n' : '{}\n']])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await open(page, baseURL);
+  const typedHome = oldHome.replace('content="Old"', 'content="New"');
+  if (mode !== 'typing') await pasteSource(page, typedHome);
+  else {
+    await selectInCode(page, 'index.html', 'Old');
+    for (const char of 'New') {
+      await page.keyboard.type(char, { delay: 60 });
+      // Cursor motion forces native typing stops inside the same 700 ms group.
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('ArrowRight');
+    }
+    expect(await storedDraft(page, side)).toBeUndefined();
+  }
+  if (mode === 'configured-name') {
+    await expect.poll(() => mounted(page, 'index.html')).toBe(typedHome);
+    await page.waitForTimeout(1_000);
+    expect(await storedDraft(page, side)).toBeUndefined();
+    await expect(frame(page).locator('#proof-cards a')).toHaveText('Lifecycle');
+    expect(await paths(page)).toEqual(['index.html']);
+    return;
+  }
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content ?? '').toContain('>Lifecycle | Old</a>');
+  const rebuiltHome = (await storedDraft(page, 'index.html'))!.content;
+  const rebuiltRecipe = (await storedDraft(page, side))!.content;
+  expect(rebuiltHome).toContain('content="New"');
+  await expect(frame(page).locator('#proof-cards a')).toHaveText('Lifecycle | Old');
+  await undo(page);
+  await expect.poll(() => mounted(page, 'index.html')).toBe(typedHome);
+  expect(await storedDraft(page, side)).toBeUndefined();
+  await undo(page);
+  await expect.poll(() => paths(page)).toEqual([]);
+  expect(await mounted(page, 'index.html')).toBe(oldHome);
+  await redo(page);
+  await expect.poll(() => mounted(page, 'index.html')).toBe(typedHome);
+  await redo(page);
+  await expect.poll(() => mounted(page, 'index.html')).toBe(rebuiltHome);
+  expect((await storedDraft(page, side))!.content).toBe(rebuiltRecipe);
+  if (mode === 'paste') {
+    await pasteSource(page, rebuiltHome.replace('<main>', '<main><!--later typing-->'));
+    await undo(page);
+    await expect.poll(() => mounted(page, 'index.html')).toBe(rebuiltHome);
+    await expect(page.locator('.code-editor__undo').first()).toBeDisabled();
+    await page.locator('#content [role="textbox"]').first().evaluate(el => (el as HTMLElement).focus());
+    await page.keyboard.press('ControlOrMeta+Z');
+    expect(await mounted(page, 'index.html')).toBe(rebuiltHome);
+    expect((await storedDraft(page, side))!.content).toBe(rebuiltRecipe);
+  }
+});

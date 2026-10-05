@@ -391,3 +391,15 @@ test('a Code basis must be pinned and never blesses hand-edited or unrelated car
  const own=planNativeCollectionOperation({...self,origin:origin({refreshCollections:true,driftBasis:{path:'work/a/index.html',source:page('First',list('/news/').replace('<p>Old</p>','<p>Hand</p>'))},expectedSources:new Map([['work/a/index.html',self.sources['work/a/index.html']]])})});
  assert.ok('error'in own);assert.match(own.error,/work\/a\/index\.html/);
 });
+
+test('a home Code drift basis uses the identity that produced its own inline cards',()=>{
+ const raw={'index.html':page('Home',list()),'work/a/index.html':page('Alpha | Old')};
+ const before=canonical(raw,'Old');
+ const after=before['index.html'].replace('<title>Home</title>','<title>Home 2</title>');
+ const result=planNativeCollectionOperation({sources:{...before,'index.html':after},routes:deriveNativeRoutes(Object.keys(before)),revision:'r',files:Object.keys(before),identity:{name:'New'},origin:origin({driftBasis:{path:'index.html',source:before['index.html'],identity:{name:'Old'}},expectedSources:new Map([['index.html',after]])})});
+ if('error'in result)assert.fail(result.error);
+ assert.match(result.operation.edits!.get('index.html')!,/>Alpha \| Old<\/a>/);
+ const manual=after.replace('>Alpha<','>Mine<');
+ const refused=planNativeCollectionOperation({sources:{...before,'index.html':manual},routes:deriveNativeRoutes(Object.keys(before)),revision:'r',files:Object.keys(before),identity:{name:'New'},origin:origin({driftBasis:{path:'index.html',source:before['index.html'],identity:{name:'Old'}},expectedSources:new Map([['index.html',manual]])})});
+ assert.ok('error'in refused);assert.match(refused.error,/edited by hand/);
+});

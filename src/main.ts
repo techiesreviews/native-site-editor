@@ -6089,6 +6089,8 @@ interface NativeOperation {
    * whatever element took the removed one's place.
    */
   selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } };
+  /** Existing typing stops beneath a rebuild that also writes the typing model. */
+  precedingTyping?: { before: CodeTypingState; after: CodeTypingState };
   /**
    * Edits only: instead of its own Undo step, the operation follows a settled
    * Code typing group in `path` (from `before` to `after`, Undo stops of that
@@ -6211,7 +6213,8 @@ async function rebuildCardsAfterCode(scope: DraftScope, epoch: number, path: str
   const identity = nativeCollectionSnapshot().identity;
   const config = nativeEffectiveSource(NATIVE_CONFIG_PATH);
   const home = nativeSite!.routes["/"] === path;
-  if (JSON.stringify(readPageFields(before.source, route, identity)) === JSON.stringify(readPageFields(after.source, route, identity)) &&
+  const beforeIdentity = home ? { name: readSiteIdentity(config, before.source).name } : identity;
+  if (JSON.stringify(readPageFields(before.source, route, beforeIdentity)) === JSON.stringify(readPageFields(after.source, route, identity)) &&
       (!home || readSiteIdentity(config, before.source).name === readSiteIdentity(config, after.source).name)) return "nothing";
   let snapshot = nativeCollectionSnapshot();
   const unloaded = Object.values(snapshot.routes).some((file) => snapshot.sources[file] === undefined) ||
@@ -6223,14 +6226,26 @@ async function rebuildCardsAfterCode(scope: DraftScope, epoch: number, path: str
     if (error) return error;
     snapshot = nativeCollectionSnapshot();
   }
-  const plan = planNativeCollectionOperation({ ...snapshot, origin: { refreshCollections: true, driftBasis: { path, source: before.source },
+  const plan = planNativeCollectionOperation({ ...snapshot, origin: { refreshCollections: true, driftBasis: { path, source: before.source, identity: beforeIdentity },
     expectedSources: new Map([[path, after.source]]), done: `Updated the cards that list ${path}.`, undone: `Undid the card update for ${path}.` } });
   if ("error" in plan) return plan.error;
   const op = plan.operation;
-  if (!op.edits?.size && !op.creates?.length && !op.deletes?.length) return "nothing";
-  if (op.creates?.length || op.deletes?.length || op.moves?.length || op.edits?.has(path))
-    return "the change would also rewrite this page or create files. Apply it from Page settings instead.";
+  if (!op.edits?.size && !op.creates?.length && !op.deletes?.length) {
+    if (plan.skipped.length) announce("No collection cards changed." + skippedListingsMessage(plan.skipped));
+    return "nothing";
+  }
+  if (op.creates?.length || op.deletes?.length || op.moves?.length)
+    return "the change would create, move or delete files. Apply it from Page settings instead.";
   const current = () => live() && !moved() && nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot());
+  if (op.edits?.has(path)) {
+    // Rebuilding this model creates its own guarded Undo stop: the first Undo
+    // restores the old cards, the second takes back the typed page fields.
+    // A file switch cannot anchor that stop in another editor's history.
+    const mounted = () => currentPath === path && editor.isMounted(path);
+    if (!mounted()) return "this page is no longer open in Code. Reopen it and apply the change from Page settings.";
+    const error = await applyNativeOperation({ ...op, done: op.done + skippedListingsMessage(plan.skipped), current: () => mounted() && current(), precedingTyping: { before, after } });
+    return error ? moved() ? "moved" : error : "done";
+  }
   // A paired Undo or Redo that cannot restore the cards exactly (a listing page changed or was
   // opened since) leaves them as they are; they are then rebuilt, through every guard, from
   // the page as it is now, checked against the text they were made from. That rebuild has no
@@ -6377,7 +6392,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       announce(done);
       return undefined;
     }
-    if (!editor.recordHistoryAction(anchor!, () => transition("undo"), () => transition("redo"), receipt.dispose)) {
+    if (!editor.recordHistoryAction(anchor!, () => transition("undo"), () => transition("redo"), receipt.dispose, op.precedingTyping)) {
       if (receipt.undo()) afterFileChanges();
       receipt.dispose();
       return "The editor changed before this operation could be recorded. Review the current drafts.";

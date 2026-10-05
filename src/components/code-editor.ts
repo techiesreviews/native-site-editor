@@ -167,6 +167,8 @@ type VisualHistoryEntry = {
   after: number;
   undone?: number;
   group?: boolean;
+  /** Existing native typing stops below a subsequently recorded compound action. */
+  typingSpan?: { before: TypingState; after: TypingState };
   draft?: { scope: DraftScope; before?: SavedDraft; after?: SavedDraft; beforeSource: string; afterSource: string };
   /** Changes to other files made with this edit: undone and redone with it. */
   companions?: HistoryCompanion[];
@@ -352,10 +354,12 @@ function canRunVisualHistory(session: string, direction: "undo" | "redo", fallba
  * Supply redo for a reversible action. False, throws and rejected promises keep
  * the entry in place. Callbacks own source/draft checks and any side-effect rollback.
  */
-export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback, dispose?: () => void) {
+export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback, dispose?: () => void, precedingTyping?: { before: TypingState; after: TypingState }) {
   const editor = mounted.get(path);
   if (!editor) return false;
   const history = historyFor(editor.session);
+  if (precedingTyping && precedingTyping.before.version !== precedingTyping.after.version)
+    history.undo.push({ path, model: editor.model, after: precedingTyping.after.version, typingSpan: precedingTyping });
   history.undo.push({ path, action, redo, dispose });
   for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
   history.redo.length = 0;
@@ -570,6 +574,41 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
     const expected = direction === "undo" ? entry?.after : entry?.undone;
     if (entry && targetEditor?.model === entry.model && targetEditor.session === session && !targetEditor.readOnly &&
         !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === expected) {
+      if (entry.typingSpan) {
+        const span = entry.typingSpan;
+        const initial = direction === "undo" ? span.after : span.before;
+        const final = direction === "undo" ? span.before : span.after;
+        if (entry.model.getValue() !== initial.source || entry.model.getAlternativeVersionId() !== initial.version) return false;
+        let steps = 0, owned = initial;
+        routedModelChanges.add(entry.model);
+        try {
+          while (entry.model.getAlternativeVersionId() !== final.version && steps < 1000) {
+            if (mounted.get(entry.path) !== targetEditor || source.at(-1) !== entry || entry.model.isDisposed() ||
+                entry.model.getAlternativeVersionId() !== owned.version || entry.model.getValue() !== owned.source ||
+                crossesReceipt(entry.model, direction) || !(direction === "undo" ? entry.model.canUndo() : entry.model.canRedo())) break;
+            const operation = entry.model[direction]();
+            steps++;
+            owned = { version: entry.model.getAlternativeVersionId(), source: entry.model.getValue() };
+            if (operation) { try { await operation; } catch { break; } }
+          }
+          if (entry.model.getAlternativeVersionId() !== final.version || entry.model.getValue() !== final.source ||
+              mounted.get(entry.path) !== targetEditor || source.at(-1) !== entry) {
+            // Roll back only our synchronous local steps, never a newer model edit.
+            while (steps > 0 && mounted.get(entry.path) === targetEditor && source.at(-1) === entry && !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === owned.version && entry.model.getValue() === owned.source) {
+              const operation = entry.model[direction === "undo" ? "redo" : "undo"]();
+              steps--;
+              owned = { version: entry.model.getAlternativeVersionId(), source: entry.model.getValue() };
+              if (operation) { try { await operation; } catch { break; } }
+            }
+            return false;
+          }
+        } finally { routedModelChanges.delete(entry.model); }
+        source.pop();
+        if (direction === "undo") entry.undone = final.version; else entry.after = final.version;
+        target.push(entry);
+        targetEditor.refresh();
+        return true;
+      }
       const draft = entry.draft;
       const expectedDraft = direction === "undo" ? draft?.after : draft?.before;
       const restoredDraft = direction === "undo" ? draft?.before : draft?.after;

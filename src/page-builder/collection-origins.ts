@@ -21,6 +21,8 @@ export interface CollectionRecipe {
 export interface SidecarOrigin {
   /** Explicit recipe Save requests a bake even when its JSON is unchanged. */
   refreshCollections?: true;
+  /** The recipe explicitly saved, even when its values are unchanged. */
+  refreshCollection?: string;
   edits: Map<string, string>;
   creates: { path: string; content: string }[];
   expectedSources: Map<string, string | undefined>;
@@ -80,7 +82,7 @@ export function planSidecarRecipe(site: SidecarSite, path: string, start: number
     fields: [...(recipe.fields ?? previous?.fields ?? [])],
     overrides: structuredClone(recipe.overrides ?? previous?.overrides ?? {}),
   };
-  return { ...originFor(site, document, texts, expected), refreshCollections: true };
+  return { ...originFor(site, document, texts, expected), refreshCollections: true, refreshCollection: key };
 }
 
 /** Removes the grid's recipe: its current cards stay exactly as they are. */

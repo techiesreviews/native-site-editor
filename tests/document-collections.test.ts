@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveNativeRoutes } from '../shared/native-routes';
+import { planSidecarRecipe } from '../src/page-builder/collection-origins';
 import { rewriteRouteLinks } from '../src/native-page-moves';
 import { planNativeCollectionOperation, type NativeCollectionOrigin } from '../src/page-builder/native-collection-host';
 import { EDITOR_PAGE_BUILDER_PATH as SIDE, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from '../src/page-builder/page-builder-document';
@@ -361,4 +362,64 @@ test('a malformed recognised link in the candidate JSON refuses the move without
   assert.match(r.error,reason);
  }
  assert.deepEqual(sources,frozen);
+});
+
+test('unrelated operations skip a broken JSON recipe or target without changing its page or recipe',()=>{
+ for(const defect of ['sort','target','cards'] as const){
+  const s:Record<string,string>={...canonical(),'unrelated.html':page('Other')};
+  const doc=readPageBuilderDocument(s[SIDE]);
+  if(defect==='sort')doc.collections.work.sort='unknown';
+  if(defect==='target')s['index.html']=s['index.html'].replace('id="work-cards"','id="missing"');
+  if(defect==='cards')s['index.html']=s['index.html'].replace('>Alpha<','>Manual<');
+  s[SIDE]=writePageBuilderDocument(doc,s[SIDE]);
+  const r=plan(s,{edits:new Map([['unrelated.html',page('Changed')]])});
+  if('error'in r)assert.fail(`${defect}: ${r.error}`);
+  assert.equal(r.operation.edits!.has('index.html'),false,defect);
+  assert.equal(r.operation.edits!.has(SIDE),false,defect);
+  assert.equal(r.operation.expectedSources.get(SIDE),s[SIDE]);
+  assert.equal(r.skipped.length,1,defect);
+  assert.equal(r.skipped[0].path,'index.html');
+  for(const extra of [{edits:new Map([['work/a/index.html',page('Changed')]])},{edits:new Map([['index.html',s['index.html']+'\n']])},{creates:[{path:'work/c/index.html',content:page('New')}]}]){
+   assert.ok('error'in plan(s,extra),`${defect}: touching the broken listing refuses`);
+  }
+ }
+});
+
+test('healthy JSON listings still bake while a distinct broken recipe and its cards stay exact',()=>{
+ const s:Record<string,string>={...canonical(),'news/a/index.html':page('News')};
+ const newsCards='<a href="/news/a/">News</a>';
+ s['news-list.html']=home(newsCards);
+ const doc=readPageBuilderDocument(s[SIDE]);
+ doc.collections.news={...structuredClone(doc.collections.work),pagePath:'news-list.html',target:makeCollectionTarget(s['news-list.html'],s['news-list.html'].indexOf('<div')),folders:['/news/'],outputFingerprint:newsCards};
+ doc.collections.work.sort='unknown';
+ s[SIDE]=writePageBuilderDocument(doc,s[SIDE]);
+ const r=plan(s,{edits:new Map([['news/a/index.html',page('Updated news')]])});
+ if('error'in r)assert.fail(r.error);
+ assert.match(r.operation.edits!.get('news-list.html')!,/>Updated news<\/a>/);
+ assert.equal(r.operation.edits!.has('index.html'),false);
+ assert.deepEqual(readPageBuilderDocument(r.operation.edits!.get(SIDE)).collections.work,doc.collections.work);
+ assert.equal(r.skipped.length,1);
+ assert.equal(r.operation.expectedSources.get('index.html'),s['index.html']);
+ const healthySave=plan(s,planSidecarRecipe(graph(s),'news-list.html',s['news-list.html'].indexOf('<div'),doc.collections.news));
+ if('error'in healthySave)assert.fail(healthySave.error);
+ assert.equal(healthySave.skipped.length,1);
+ assert.ok('error'in plan(s,planSidecarRecipe(graph(s),'index.html',s['index.html'].indexOf('<div'),doc.collections.work)),'explicit Save of the broken recipe refuses');
+ for(const extra of [
+  {moves:[{from:'work/a/index.html',to:'elsewhere/a/index.html'}]},
+  {deletes:['work/a/index.html']},
+  {edits:new Map([[SIDE,writePageBuilderDocument({...doc,pages:{'work/a/index.html':{fields:{category:'Changed'}}}},s[SIDE])]])},
+  {moves:[{from:'index.html',to:'moved-list.html'}]},
+ ])assert.ok('error'in plan(s,extra),'source URL, deletion, metadata and listing moves refuse');
+ const malformed=structuredClone(doc);malformed.collections.work.template='<a>{unknown}</a>';
+ assert.ok('error'in plan({...s,[SIDE]:JSON.stringify(malformed)},{edits:new Map([['news/a/index.html',page('Updated news')]])}),'invalid template schema still refuses the whole document');
+});
+
+
+test('a broken JSON recipe refuses a Code-edited selected input using the pre-edit dependency basis',()=>{
+ const s:Record<string,string>=canonical();
+ const doc=readPageBuilderDocument(s[SIDE]);doc.collections.work.sort='unknown';
+ s[SIDE]=writePageBuilderDocument(doc,s[SIDE]);
+ const before=s['work/a/index.html'];s['work/a/index.html']=page('Changed in Code');
+ const r=plan(s,{driftBasis:{path:'work/a/index.html',source:before},expectedSources:new Map([['work/a/index.html',s['work/a/index.html']]])});
+ assert.ok('error'in r);assert.match(r.error,/Unknown collection field: unknown/);
 });
