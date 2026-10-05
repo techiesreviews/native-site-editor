@@ -1768,7 +1768,7 @@ H c155 low CLI19067 ACTIVE controller-only visualcontext preparation in native-m
 Claude500 low57319 ACTIVE soleMAINasset hardening in collection-asset-host; no Code-refresh/main-master lease. New refresh helper e6rootintegrated, Code Save refreshmain stillopen. Codexprepared Code acceptance draft at collection-code-refresh-acceptance/.scratch/collection-code-refresh-acceptance (syntaxonly, no raceproof). Next collectasset/bridge reviews; after500MAINrelease grant separate refresh/griddetection, then nativevisualmainhook oncecontroller/bridgeapprove. NativeexistingHero/Feature/Header/Footer savedauthoring coverage remainsopen. Publicpreview103fded7/startermain ea98c6e/production untouched, no push/deploy/PR. Exactcontext monitoring unavailable; recovery current.
 
 
-## Preview bridge integrated; Undo cause isolated — 2026-10-05T00:03Z
+## Preview bridge integrated; Undo cause isolated — 2026-10-05T00:00Z
 
 Root clean application dev@afea631 integrates approved7f0/333 asbf6ffb3/afea631. a4ed final corrected66255exit0/errorfalse/denials[] exactOpus5.5medium APPROVE7units/check/new5browser; lock-offmutation failsAddtests. Additionalinsertgate mutation stillpasses becauseclosedpanel doesn'treachcallback (P3), tooltipHistoryreason canstale (P3), noMAINwire yet. Root7units/npmcheck pass. StandalonePlaywright command matchedbothrootandretainedworktreespecs:10PASS12.3s means5rootcases+5matchingworkerduplicates, not10uniqueproductchecks. Rootresults/log retained;5347closed. Cascade/climb previousfailures remain separate, notcleared.
 
