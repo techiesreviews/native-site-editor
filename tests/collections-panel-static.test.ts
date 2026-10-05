@@ -7,11 +7,16 @@ import { deriveNativeRoutes } from "../shared/native-routes.ts";
 // The collection panel's ordinary-card branch (src/components/collections-panel.ts),
 // mounted on a small DOM stand-in: Node has no DOM, and the panel only needs
 // elements, text, attributes, form values and bubbling events. Stylesheet and
-// raw SVG imports load as empty modules.
+// raw SVG imports load as empty modules (resolve covers older Node; load
+// covers Node 24, where the ?raw suffix can reach us already resolved).
 register("data:text/javascript," + encodeURIComponent(`
   export async function resolve(specifier, context, next) {
     if (specifier.endsWith(".css") || specifier.includes("?raw")) return { url: "data:text/javascript,export default ''", shortCircuit: true };
     return next(specifier, context);
+  }
+  export async function load(url, context, next) {
+    if (/\\.(css|svg)(\\?|$)/.test(url)) return { format: "module", source: "export default ''", shortCircuit: true };
+    return next(url, context);
   }`));
 
 class FakeEvent {
