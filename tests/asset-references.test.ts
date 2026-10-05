@@ -23,11 +23,25 @@ test("page moves are left to Change URL, and nothing is read when only pages mov
   assert.equal(planAssetReferenceRewrites({ "index.html": '<a href="/work/a/">a</a>' }, [{ from: "work/a/index.html", to: "work/b/index.html" }]).size, 0);
 });
 
-test("a moving stylesheet with relative paths, or a file using another moving file, is refused", () => {
-  assert.throws(() => planAssetReferenceRewrites({ "styles/site.css": ".a { background: url(../images/x.svg); }" }, [{ from: "styles/site.css", to: "css/site.css" }]), /relative paths/);
-  assert.throws(() => planAssetReferenceRewrites({ "styles/site.css": ".a { background: url(/images/a.svg); }" }, [...move, { from: "styles/site.css", to: "css/site.css" }]), /moves with it/);
-  // A moving page with relative links is fine: pages are not rebased here.
-  assert.equal(planAssetReferenceRewrites({ "work/a/index.html": '<img src="../../images/c.svg">' }, [...move, { from: "work/a/index.html", to: "work/b/index.html" }]).size, 0);
+test("moved files keep relative paths only when they still point at the same file; links already rewritten are kept", () => {
+  // A stylesheet moving away from the image it uses relatively: refused.
+  assert.throws(() => planAssetReferenceRewrites({ "styles/site.css": ".a { background: url(../images/x.svg); }" }, [{ from: "styles/site.css", to: "css/deep/site.css" }, ...move]), /relative path.*nothing was moved/);
+  // A page and its image moving together as a folder: the relative path still works and is kept;
+  // an absolute one elsewhere follows, on top of the link edits already planned.
+  const folder = [{ from: "work/a/index.html", to: "work/b/index.html" }, { from: "work/a/photo.svg", to: "work/b/photo.svg" }];
+  const sources = {
+    "work/a/index.html": '<head><meta property="og:image" content="/work/a/photo.svg"></head><img src="photo.svg">',
+    "index.html": '<a href="/work/a/">A</a><img srcset="/work/a/photo.svg 2x" src="/work/a/photo.svg">',
+    "styles/site.css": ".a{background:url(/work/a/photo.svg)}",
+  };
+  const base = new Map([["index.html", '<a href="/work/b/">A</a><img srcset="/work/a/photo.svg 2x" src="/work/a/photo.svg">']]);
+  const edits = planAssetReferenceRewrites(sources, folder, base);
+  assert.equal(edits.get("index.html"), '<a href="/work/b/">A</a><img srcset="/work/b/photo.svg 2x" src="/work/b/photo.svg">');
+  assert.equal(edits.get("work/b/index.html"), '<head><meta property="og:image" content="/work/b/photo.svg"></head><img src="photo.svg">');
+  assert.equal(edits.get("styles/site.css"), ".a{background:url(/work/b/photo.svg)}");
+  assert.ok(!edits.has("work/a/index.html"));
+  // A moving page whose relative image stays behind: refused.
+  assert.throws(() => planAssetReferenceRewrites({ "work/a/index.html": '<img src="../../images/c.svg">' }, [{ from: "work/a/index.html", to: "work/a/deep/index.html" }, ...move]), /relative path/);
 });
 
 test("a file in use by pages, stylesheets or the JSON recipe cannot be deleted", () => {

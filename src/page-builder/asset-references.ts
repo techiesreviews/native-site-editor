@@ -18,25 +18,34 @@ export function assetMoves(moves: readonly { from: string; to: string }[]) {
 }
 
 /**
- * The new text of every page and stylesheet that refers to a moved file.
- * Refuses a moving stylesheet (or other non-page text) that refers to files
- * by relative paths, which would need rebasing, and a moving file that refers
- * to another moving file; those are moved one at a time.
+ * Every page and stylesheet with its references to moved files rewritten, on
+ * top of `base` (texts already changed by the same operation, such as page
+ * links, keyed by the path each file has after the move). The result holds
+ * `base` and the new texts, keyed the same way.
+ *
+ * A file that moves keeps a relative reference only when it still points at
+ * the same file afterwards (both moved together); otherwise the whole move is
+ * refused, since rewriting relative paths in moved files is not supported.
  */
-export function planAssetReferenceRewrites(sources: Readonly<Record<string, string | undefined>>, moves: readonly { from: string; to: string }[]): Map<string, string> {
+export function planAssetReferenceRewrites(sources: Readonly<Record<string, string | undefined>>, moves: readonly { from: string; to: string }[], base: ReadonlyMap<string, string> = new Map()): Map<string, string> {
   const assets = assetMoves(moves);
-  const edits = new Map<string, string>();
+  const edits = new Map(base);
   if (!assets.length) return edits;
-  const moving = new Set(moves.map(({ from }) => from));
+  const moved = new Map(moves.map(({ from, to }) => [from, to]));
   for (const [file, source] of Object.entries(sources)) {
     if (source === undefined || !isText(file)) continue;
-    if (moving.has(file) && !isPage(file) && scanMediaReferences(file, source).some((ref) => !/^\//.test(ref.value.trim())))
-      throw new Error(`${file} refers to other files by relative paths, which would break when it moves. Use paths from the site root in it first.`);
-    let next = source;
-    for (const { from, to } of assets) next = rewriteMediaReferences(file, next, from, to);
-    if (next === source) continue;
-    if (moving.has(file)) throw new Error(`${file} uses a file that moves with it. Move them one at a time.`);
-    edits.set(file, next);
+    const final = moved.get(file) ?? file;
+    const text = base.get(final) ?? source;
+    if (final !== file)
+      for (const ref of scanMediaReferences(file, source)) {
+        if (/^\//.test(ref.value.trim())) continue;
+        const after = mediaResolvePath(ref.value, final);
+        if (after !== (moved.get(ref.path) ?? ref.path))
+          throw new Error(`${file} refers to ${ref.value} by a relative path, which would point elsewhere after the move. Use a path from the site root in it first; nothing was moved.`);
+      }
+    let next = text;
+    for (const { from, to } of assets) next = rewriteMediaReferences(final, next, from, to);
+    if (next !== text) edits.set(final, next);
   }
   return edits;
 }

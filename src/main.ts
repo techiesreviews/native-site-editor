@@ -6648,32 +6648,56 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
 }
 
 /**
- * A Files-tab move of images or other site files rewrites the pages and
- * stylesheets that use them, and the editor's page data (card templates and
- * stored values), in the same operation and Undo step. Every text file read
- * and the page data are pinned, with the file list, so a change in between
- * refuses. Nothing to rewrite: the plain move, reading nothing else.
+ * The site's text files and editor data as one pinned snapshot, for a
+ * Files-tab move or delete of site files: every page and stylesheet (all
+ * must be loaded), the editor's page data (it must be valid, or nothing is
+ * checked), and the file list, generation and repository scope. `current`
+ * holds while none of them changed.
  */
-function nativeAssetReferences(moves: { from: string; to: string }[]): { edits?: Map<string, string>; expectedSources?: Map<string, string | undefined>; current?: () => boolean } | { error: string } {
-  if (!assetMoves(moves).length) return {};
+function nativeAssetSnapshot(action: "moved" | "deleted"): { sources: Record<string, string>; sidecar: string | undefined; document: PageBuilderDocument; files: string[]; expectedSources: Map<string, string | undefined>; current: () => boolean } | { error: string } {
   if (nativeDocumentLoading()) return { error: DOCUMENT_LOADING };
-  const scope = draftScope();
-  const sources: Record<string, string | undefined> = nativeLinkSources();
-  const missing = Object.entries(sources).find(([, text]) => text === undefined);
-  if (missing) return { error: `Load ${missing[0]} before moving files it may use.` };
+  const scope = draftScope(), epoch = generation, setup = setupScope();
+  const linked = nativeLinkSources();
+  const missing = Object.entries(linked).find(([, text]) => text === undefined);
+  if (missing) return { error: `${missing[0]} is not loaded, so the files that use this cannot be checked; nothing was ${action}.` };
+  const sources = linked as Record<string, string>;
   const files = nativeFiles(scope).sort();
   const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH, scope);
-  if (sidecar === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) return { error: `Load ${EDITOR_PAGE_BUILDER_PATH} before moving files it may use.` };
+  if (sidecar === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) return { error: `The editor data (${EDITOR_PAGE_BUILDER_PATH}) is not loaded, so it cannot be checked; nothing was ${action}.` };
+  let document: PageBuilderDocument;
+  try { document = readSidecar(sidecar); }
+  catch { return { error: `The editor data (${EDITOR_PAGE_BUILDER_PATH}) is not valid, so it cannot be checked; nothing was ${action}. Fix it in Code first.` }; }
+  const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
+  expectedSources.set(EDITOR_PAGE_BUILDER_PATH, sidecar);
+  const key = files.join("\n");
+  return { sources, sidecar, document, files, expectedSources,
+    current: () => generation === epoch && setupScope() === setup && nativeFiles(draftScope()).sort().join("\n") === key };
+}
+
+/**
+ * A Files-tab move of images or other site files rewrites the pages and
+ * stylesheets that use them, and the editor's page data (card templates and
+ * stored values), in the same operation and Undo step, on top of `base`
+ * (page link edits of the same move, keyed by the paths after it). Every
+ * text file read and the page data are pinned, with the file list, so a
+ * change in between refuses. With no site files moving: nothing is read.
+ */
+function nativeAssetReferences(moves: { from: string; to: string }[], base: Map<string, string> = new Map()): { edits?: Map<string, string>; expectedSources?: Map<string, string | undefined>; current?: () => boolean } | { error: string } {
+  const assets = assetMoves(moves);
+  if (!assets.length) return {};
+  const snap = nativeAssetSnapshot("moved");
+  if ("error" in snap) return snap;
   try {
-    const edits = planAssetReferenceRewrites(sources, moves);
-    const json = planDocumentMediaBatch(sources, sidecar, edits, assetMoves(moves), deriveNativeRoutes(files));
+    const moving = new Set(moves.map((move) => move.from));
+    const listing = Object.entries(snap.document.collections).find(([, collection]) => moving.has(collection.pagePath));
+    if (listing) return { error: `${listing[1].pagePath} has a card list (${listing[0]}) and moves together with files; move the page and the files separately. Nothing was moved.` };
+    const edits = planAssetReferenceRewrites(snap.sources, moves, base);
+    // The editor data sees the pages that stay, as they are after this operation.
+    const staying = new Map([...edits].filter(([path]) => !moves.some((move) => move.to === path)));
+    const json = planDocumentMediaBatch(snap.sources, snap.sidecar, staying, assets, deriveNativeRoutes(snap.files));
     if (json !== undefined) edits.set(EDITOR_PAGE_BUILDER_PATH, json);
     if (!edits.size) return {};
-    const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
-    expectedSources.set(EDITOR_PAGE_BUILDER_PATH, sidecar);
-    const key = files.join("\n");
-    const epoch = generation, setup = setupScope();
-    return { edits, expectedSources, current: () => generation === epoch && setupScope() === setup && nativeFiles(draftScope()).sort().join("\n") === key };
+    return { edits, expectedSources: snap.expectedSources, current: snap.current };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The files that use this could not be updated, so nothing was moved." };
   }
@@ -6783,12 +6807,15 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
       next = editNativeRedirects(next, change.from, change.to, answer.option ? urls.redirect.get(change) ?? [] : [], change.subtree);
     if (next !== (redirects ?? "")) edits.set(NATIVE_REDIRECTS_PATH, next);
   }
+  const references = nativeAssetReferences(ops.map((op) => ({ from: op.file.path, to: op.to })), edits);
+  if ("error" in references) return references.error;
   const what = source.folder ? `the folder ${source.path}` : source.path;
   const summary = count ? `${count} ${count === 1 ? "link" : "links"} updated in ${urls.links.length} ${urls.links.length === 1 ? "file" : "files"}` : "no links to update";
   const error = await applyNativeCollectionOperation({
     moves: ops.map((op) => ({ from: op.file.path, to: op.to })),
     ...folderIntent(source, to),
     edits,
+    ...references,
     done: `${operation === "rename" ? "Renamed" : "Moved"} ${what} to ${to} — ${summary}${answer.option && redirected.length ? `; ${single ? `${first.from} redirects` : "the old URLs redirect"} there` : ""}.`,
     undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.`,
   });
@@ -6820,12 +6847,16 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   if (epoch !== generation) return "The repository changed meanwhile. Try again.";
   if (!found.length) return `${target.path} has no files to delete.`;
   // A file still in use is not deleted: no page, stylesheet or card is left pointing at nothing.
-  if (nativeSite) {
-    let inUse: string | undefined;
-    try {
-      const sources: Record<string, string | undefined> = { ...nativeLinkSources(), [EDITOR_PAGE_BUILDER_PATH]: nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) };
-      inUse = assetInUseProblem(assetUsers(sources, found.map((file) => file.path)));
-    } catch (error) { inUse = error instanceof Error ? error.message : "The files that use this could not be read, so nothing was deleted."; }
+  // The snapshot checked here is pinned through the dialog to the write.
+  let pins: { expectedSources?: Map<string, string | undefined>; current?: () => boolean } = {};
+  if (nativeSite && found.some((file) => !/\.html?$/i.test(file.path))) {
+    const snap = nativeAssetSnapshot("deleted");
+    let inUse = "error" in snap ? snap.error : undefined;
+    if (!("error" in snap)) {
+      try { inUse = assetInUseProblem(assetUsers({ ...snap.sources, [EDITOR_PAGE_BUILDER_PATH]: snap.sidecar }, found.map((file) => file.path))); }
+      catch (error) { inUse = error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted."; }
+      pins = { expectedSources: snap.expectedSources, current: snap.current };
+    }
     if (inUse) { errorMessage(new Error(inUse)); announce(inUse); return inUse; }
   }
   const count = found.length;
@@ -6845,7 +6876,7 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   if (!ok) { announce(`Cancelled deleting ${target.path}`); return "Cancelled."; }
   const done = target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`;
   const native = !!nativeSite;
-  const error = native ? await applyNativeCollectionOperation({ deletes: found.map(file => file.path), done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
+  const error = native ? await applyNativeCollectionOperation({ deletes: found.map(file => file.path), ...pins, done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
   if (error) { errorMessage(new Error(error)); return error; }
   if (!native) announce(done);
   requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });

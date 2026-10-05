@@ -66,3 +66,96 @@ test("deleting an image that pages and cards use is refused and changes nothing"
   await expect(page.getByRole("dialog", { name: /^Delete images\/studio-desk\.svg/ })).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
 });
+
+test("renaming a folder with a page and its image moves every reference, keeps the page's own relative path, and Undo restores all", async ({ page, baseURL }) => {
+  const photo = "/work/lifecycle/photo.svg";
+  const itemSource = source.replace("/images/studio-desk.svg", photo).replace("<h1>Lifecycle</h1>", '<h1>Lifecycle</h1><img src="photo.svg" alt="">');
+  const extra = `<p><img srcset="${photo} 2x" src="${photo}" alt=""></p>`;
+  const folderCard = card.replace("/images/studio-desk.svg", photo);
+  const folderHome = `<!doctype html><html><head><title>Collection proof</title><meta property="og:image" content="${photo}"></head><body><main><div id="proof-cards">${folderCard}</div>${extra}</main></body></html>`;
+  const folderRecipe = JSON.parse(recipe);
+  folderRecipe.collections.proof.target = makeCollectionTarget(folderHome, folderHome.indexOf("<div"));
+  folderRecipe.collections.proof.outputFingerprint = folderCard;
+  await page.goto(baseURL!);
+  for (const [path, content] of [["index.html", folderHome], [item, itemSource], [side, JSON.stringify(folderRecipe, null, 2) + "\n"], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.frameLocator(".native-preview-frame").locator("#proof-cards a")).toHaveText("Lifecycle");
+  await page.locator("#explorer-toggle").click();
+  const explorer = page.locator("#explorer");
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const work = explorer.getByRole("button", { name: "work", exact: true });
+  if (await work.getAttribute("aria-expanded") === "false") await work.click();
+  await explorer.getByRole("button", { name: "lifecycle", exact: true }).focus();
+  await page.keyboard.press("F2");
+  await explorer.getByRole("textbox", { name: "New name for work/lifecycle" }).fill("renamed");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: /^Rename work\/lifecycle to work\/renamed/ });
+  // Without redirects, nothing may be left pointing at the old folder.
+  const keep = dialog.getByRole("checkbox");
+  if (await keep.count() && await keep.isChecked()) await keep.uncheck();
+  await dialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Renamed the folder work/lifecycle to work/renamed");
+  const moved = "/work/renamed/photo.svg";
+  await expect.poll(async () => (await storedDraft(page, "work/renamed/index.html"))?.content).toBe(itemSource.replace(photo, moved));
+  const homeAfter = (await storedDraft(page, "index.html"))!.content;
+  expect(homeAfter).not.toContain("/work/lifecycle/");
+  expect(homeAfter).toContain(`<meta property="og:image" content="${moved}">`);
+  expect(homeAfter).toContain(`<img srcset="${moved} 2x" src="${moved}" alt="">`);
+  expect(homeAfter).toContain(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
+  const json = JSON.parse((await storedDraft(page, side))!.content);
+  expect(json.futureKey).toEqual({ keep: true });
+  expect(json.pages["work/renamed/index.html"]).toEqual({ fields: { keep: "yes" } });
+  expect(json.collections.proof.outputFingerprint).toBe(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await mounted(page, "index.html")).toBe(folderHome);
+});
+
+test("a reference added in another tab while the Delete dialog is open stops the delete", async ({ page, baseURL, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const explorer = await seed(page, baseURL);
+  const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for images/placeholder.svg" }).getByRole("menuitem", { name: "Delete" }).click();
+  const dialog = page.getByRole("dialog", { name: /^Delete images\/placeholder\.svg/ });
+  await expect(dialog).toBeVisible();
+  // Meanwhile another tab of the same site starts using the image in the stylesheet.
+  const other = await context.newPage();
+  await other.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent("styles/site.css")}`);
+  await expect(other.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  const used = css + "\n.used { background: url(/images/placeholder.svg); }\n";
+  await other.evaluate((text) => navigator.clipboard.writeText(text), used);
+  await other.locator('#content [role="textbox"]').first().evaluate((el) => (el as HTMLElement).focus());
+  await other.keyboard.press("ControlOrMeta+A");
+  await other.keyboard.press("ControlOrMeta+V");
+  await expect.poll(async () => (await storedDraft(other, "styles/site.css"))?.content).toBe(used);
+  await other.close();
+  await dialog.getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#explorer")).toContainText("The repository or source changed meanwhile. Review the latest files and try again.");
+  await expect(page.locator("#explorer").getByRole("button", { name: "placeholder.svg", exact: true })).toBeVisible();
+  expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
+  expect((await storedDraft(page, "styles/site.css"))?.content).toBe(used);
+});
+
+test("with editor data that cannot be read, moving or deleting even an unused image is refused and says why", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: side, content: "{ not json" } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.locator("#explorer-toggle").click();
+  const explorer = page.locator("#explorer");
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const images = explorer.getByRole("button", { name: "images", exact: true });
+  if (await images.getAttribute("aria-expanded") === "false") await images.click();
+  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).focus();
+  await page.keyboard.press("F2");
+  await explorer.getByRole("textbox", { name: "New name for images/placeholder.svg" }).fill("other.svg");
+  await page.keyboard.press("Enter");
+  await expect(explorer).toContainText("The editor data (.editor/page-builder.json) is not valid, so it cannot be checked; nothing was moved.");
+  await page.keyboard.press("Escape");
+  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for images/placeholder.svg" }).getByRole("menuitem", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toHaveText("The editor data (.editor/page-builder.json) is not valid, so it cannot be checked; nothing was deleted. Fix it in Code first.");
+  expect(await storedDrafts(page)).toEqual([]);
+});
