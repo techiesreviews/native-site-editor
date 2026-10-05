@@ -472,6 +472,8 @@ function mountWorkspace() {
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     onMove: (path, item, direction) => {
+      // A master on show keeps the page read-only: no move, and no file switch that would end it.
+      if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return "stayed"; }
       const paintedSource = nativeStructurePaintedSources.get(item);
       if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
         announce("The source changed. Wait for the preview before moving this element."); return "stayed";
@@ -483,7 +485,10 @@ function mountWorkspace() {
       return "pending";
     },
     canDrag: (item) => isNativeSectionTag(item.tag),
-    onMoveTo: (path, item, index) => moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index),
+    onMoveTo: (path, item, index) => {
+      if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return undefined; }
+      return moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index);
+    },
     announce: (text) => { element("status").textContent = text; },
   });
   stylePanel?.dispose();
@@ -2547,9 +2552,12 @@ function moveNativeSection(target: { path: string; node?: number[]; tag: string 
 // still cannot be made is said so rather than passed off as the end of the
 // list.
 async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
+  // Never while a master is on show: opening the page would end it.
+  if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
   const epoch = generation, scope = setupScope(), draft = draftScope();
   const cachedModel = draft ? editorModule?.captureFileModelState(draft, target.path, true) : undefined;
-  await restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === generation && scope === setupScope() && nativeEffectiveSource(target.path) === paintedSource });
+  await restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === generation && scope === setupScope() && nativeEffectiveSource(target.path) === paintedSource && !nativeMasterEdit() });
+  if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
   if (epoch !== generation || scope !== setupScope() || currentPath !== target.path || nativeEffectiveSource(target.path) !== paintedSource) {
     if (epoch !== generation || scope !== setupScope()) return;
     if (draft && nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !editorModule?.isMounted(target.path)) editorModule?.forgetDraftModel(draft, target.path);
@@ -2594,26 +2602,31 @@ async function applyNativeTextEdit({ path, node, before, after, masterSession }:
   // the open file, with the bytes the preview painted. Page text is read-only meanwhile.
   const masterAt = nativeMasterEdit();
   const masterPainted = masterAt ? nativeEffectiveSource(masterAt.masterPath) : undefined;
+  // Pinned through every await: the same session, and the master still exactly as painted
+  // (never a fresher source blessing an older edit).
   const masterAllowed = () => {
     const now = nativeMasterEdit();
     return Boolean(masterAt && now && masterSession === masterAt.session && now.session === masterAt.session
-      && path === now.masterPath && currentPath === path && !versionView);
+      && path === now.masterPath && currentPath === path && !versionView && nativeEffectiveSource(path) === masterPainted);
   };
+  // A page edit stays a page edit only while no master is on show, checked live: a master opened
+  // meanwhile refuses it, and it can neither write the page nor leave the master.
   const allowed = () => openingEpoch === generation && openingScope === setupScope() && (masterAt || masterSession !== undefined
     ? masterAllowed()
-    : path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath());
+    : !nativeMasterEdit() && (path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath()));
   if (!allowed() || masterAt && masterPainted !== masterAt.masterSource) {
     announce(masterAt || masterSession !== undefined ? "While the master is open, edit the master's section; choose Done to edit the page." : "Edit the page instance in Structure, or choose Edit for its shared template.");
     updateNativePreviewSources();
     return;
   }
   // The click that selected the element may still be opening its file.
-  for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000; waited += 50)
+  for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000 && allowed(); waited += 50)
     await new Promise((done) => setTimeout(done, 50));
+  if (!allowed()) return;
   if (currentPath !== path || !editorModule?.isMounted(path)) {
     const epoch = generation;
-    await restoreFile(path, epoch, { linkDefaultStyle: false });
-    if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path)) return;
+    await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: allowed });
+    if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path) || !allowed()) return;
   }
   const editor = editorModule;
   const preview = nativePreview;

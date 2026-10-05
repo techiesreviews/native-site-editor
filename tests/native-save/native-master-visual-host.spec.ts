@@ -139,3 +139,29 @@ test("an invalid master falls back to the page's own copy and Done still works; 
   await expect.poll(async () => (await effective(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading here</h2>");
   expect(await effective(page, baseURL, MASTER)).toBe("broken");
 });
+
+test("while a master is open a Structure row's Alt+Up changes nothing and the master stays; after Done it moves the section, one Undo", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await addIntro(page);
+  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  await editIntro(page);
+  const files = async () => Promise.all(["index.html", "styles/sections.css", JSON_PATH, MASTER].map((path) => effective(page, baseURL, path)));
+  const before = await files();
+  const row = page.getByRole("treeitem", { name: /^Section What we offer/ }).first();
+  await row.focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.waitForTimeout(800);
+  expect(await files()).toEqual(before);
+  await expect(page.locator("#primary-title")).toHaveText(MASTER);
+  await expect(banner(page)).toBeVisible();
+  await expect(page.locator("#status")).toContainText("read-only while its master is open");
+  // After Done the same key moves the section, and one Undo puts it back.
+  await banner(page).getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText("index.html");
+  const home = await effective(page, baseURL, "index.html");
+  await page.getByRole("treeitem", { name: /^Section What we offer/ }).first().focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(async () => effective(page, baseURL, "index.html")).not.toBe(home);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(async () => effective(page, baseURL, "index.html")).toBe(home);
+});
