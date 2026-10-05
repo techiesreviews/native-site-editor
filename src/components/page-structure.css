@@ -199,6 +199,12 @@
 /* Resting actions sit translated past the host's end; keep them from widening the tree. */
 .page-structure__row.row-action-host,
 .page-structure__label.row-action-host { overflow: clip; }
+@media (hover: none), (pointer: coarse) {
+  /* Touch: the bar takes its own room in the label, so nothing is clipped. A
+     narrow row wraps the bar under the name rather than losing buttons. */
+  .page-structure__label.row-action-host { overflow: visible; flex-wrap: wrap; row-gap: 0; }
+  .page-structure__label.row-action-host > .row-action-overlay { margin-left: auto; }
+}
 .page-structure__action {
   display: grid;
   place-items: center;
