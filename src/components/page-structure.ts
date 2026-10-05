@@ -6,6 +6,7 @@ import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
 import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import "./row-action-overlay.css";
 import "./page-structure.css";
+import { createNativeSharedAuthoring, type NativeSharedAuthoringContext, type NativeSharedAuthoringActions } from "./native-shared-authoring";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
@@ -23,7 +24,15 @@ import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession 
 
 export type PageMetaField = "title" | "description";
 
+export type NativeSharedRoot =
+  | { state: "linked"; label: string; recordId: string; edit: () => void; disconnect: () => void }
+  | { state: "available"; context: NativeSharedAuthoringContext; actions: NativeSharedAuthoringActions };
+
 export interface PageStructureHandlers {
+  /** Host proves whole native-root ownership, painted source and edit scope; undefined for held/read-only roots. */
+  nativeSharedRoot?: (path: string, item: NativeStructureItem) => NativeSharedRoot | undefined;
+  /** Include identity, effective sources and repository/session scope; omit to recheck every update. */
+  nativeFieldsRevision?: () => string;
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -647,6 +656,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return result;
   }
 
+  let openShared: { path: string; node: string; key: string; form: ReturnType<typeof createNativeSharedAuthoring>; close: NativeSharedAuthoringActions["close"] } | undefined;
+  function cancelShared() {
+    const previous = openShared;
+    openShared = undefined;
+    if (previous) { previous.form.destroy(); previous.close(previous.key, "cancel"); }
+  }
+  let sharedMounted = false;
   let rowNameSeq = 0;
   function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext): HTMLElement[] {
     const id = key(item.node);
@@ -679,11 +695,17 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     const editing = !!slotContext && editable(slotContext.slot) && openSlot?.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name && openSlot.anchor === id;
     const attributes = !!slotModel && openAttributes === id;
-    const hasChildren = item.children.length > 0 || !!slotModel;
+    const offeredShared = paintFresh !== false && !generated && !ownershipUnknown && !slotModel && !slotContext && !component && structure?.path
+      && ["section", "header", "footer"].includes(item.tag) ? handlers.nativeSharedRoot?.(structure.path, item) : undefined;
+    const shared = offeredShared?.state === "available" && offeredShared.context.kind !== item.tag ? undefined : offeredShared;
+    if (openShared?.node === id && openShared.path === structure?.path
+      && (shared?.state !== "available" || shared.context.key !== openShared.key)) cancelShared();
+    const sharing = openShared?.node === id && openShared.path === structure?.path ? openShared : undefined;
+    const hasChildren = item.children.length > 0 || !!slotModel || !!sharing;
     const label = node("span", "page-structure__label");
-    const kindName = node("span", "page-structure__kind", kind);
-    if (component) {
-      el.classList.add("page-structure__row--component");
+    const kindName = node("span", "page-structure__kind", shared?.state === "linked" ? shared.label : kind);
+    if (component || shared?.state === "linked") {
+      if (component) el.classList.add("page-structure__row--component");
       kindName.prepend(componentIcon(12));
     }
     label.append(kindName);
@@ -714,6 +736,39 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       );
       isolate(actions);
       el.append(actions);
+    }
+    if (shared) {
+      el.classList.add("row-action-host", "page-structure__row--native-shared");
+      kindName.id = `page-structure-kind-${++rowNameSeq}`;
+      const preview = label.querySelector<HTMLElement>(":scope > .page-structure__text");
+      if (preview) preview.id = `page-structure-text-${rowNameSeq}`;
+      el.setAttribute("aria-labelledby", [kindName.id, preview?.id].filter(Boolean).join(" "));
+      const actions = node("div", "row-action-overlay page-structure__component-actions");
+      if (shared.state === "linked") {
+        el.classList.add("page-structure__row--shared-linked");
+        actions.append(iconAction("Edit component", "edit", shared.edit), iconAction("Disconnect this instance", "detach", shared.disconnect));
+      } else {
+        const save = iconAction("Save shared", "add", () => {
+          const fresh = structure?.path && handlers.nativeSharedRoot?.(structure.path, item);
+          if (!fresh || fresh.state !== "available" || fresh.context.key !== shared.context.key) return;
+          cancelShared();
+          const path = structure!.path!;
+          const form = createNativeSharedAuthoring({ submit: fresh.actions.submit, close: (contextKey, reason) => {
+            if (openShared?.key !== contextKey || openShared.form !== form) return;
+            openShared = undefined;
+            form.destroy();
+            fresh.actions.close(contextKey, reason);
+            render(); rows.get(id)?.focus();
+          } });
+          openShared = { path, node: id, key: fresh.context.key, form, close: fresh.actions.close };
+          form.show(fresh.context);
+          foldState.set(id, false);
+          render(); form.focus();
+        });
+        save.setAttribute("aria-expanded", String(Boolean(sharing)));
+        actions.append(save);
+      }
+      isolate(actions); el.append(actions);
     }
     if (slotContext) {
       el.classList.add("page-structure__row--slot");
@@ -759,6 +814,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     group.hidden = isFolded(id);
     const childInMain = insideMain || item.tag === "main";
     if (inline) group.append(inline);
+    if (sharing) {
+      const panel = node("div", "page-structure__shared-authoring");
+      panel.style.setProperty("--depth", String(level));
+      isolate(panel); panel.append(sharing.form.element); group.append(panel);
+      sharedMounted = true;
+    }
     if (attributes && slotModel) {
       const panel = node("div", "page-structure__inline"); panel.dataset.editNode = id;
       panel.style.setProperty("--depth", String(level));
@@ -877,6 +938,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   function render() {
     // The rows are about to be replaced: a drag in progress has nothing to land on.
     finishDrag(false);
+    sharedMounted = false;
     rows.clear();
     slotRows.clear();
     inMain.clear();
@@ -889,6 +951,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       meta.hidden = true;
       tree.hidden = true;
       tree.replaceChildren();
+      cancelShared();
       cleanControls();
       return;
     }
@@ -903,6 +966,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     paintFresh = current === undefined ? undefined : current === structure.paintedSource;
     keepPending = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
+    if (openShared && !sharedMounted) cancelShared();
     // An editor whose anchor went (Hide, Undo, Redo) or a Show that found
     // nothing to anchor to is forgotten, so no later render reopens it.
     // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
@@ -953,6 +1017,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     update(next: NativeStructure | undefined) {
       const path = next?.path ?? "";
       if (path !== structure?.path) {
+        cancelShared();
         foldState.clear();
         selected = undefined; openSlot = undefined; openAttributes = undefined;
       }
@@ -965,8 +1030,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (pending.path === path) selected = key(pending.node);
       }
       const proof = handlers.componentFieldsRevision?.();
-      const signature = next ? `${next.path}\n${JSON.stringify(next.items)}\n${next.paintedSource ?? ""}\n${proof ?? ""}` : "";
-      if ((!handlers.componentSlots || proof !== undefined) && signature === rendered && !tree.hidden === Boolean(next?.path)) return;
+      const nativeProof = handlers.nativeFieldsRevision?.();
+      const signature = next ? `${next.path}\n${JSON.stringify(next.items)}\n${next.paintedSource ?? ""}\n${proof ?? ""}\n${nativeProof ?? ""}` : "";
+      if ((!handlers.componentSlots || proof !== undefined) && (!handlers.nativeSharedRoot || nativeProof !== undefined) && signature === rendered && !tree.hidden === Boolean(next?.path)) return;
       rendered = signature;
       render();
       if (pending?.path === path) {
@@ -989,6 +1055,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (structure?.path) renderMeta(structure.path);
     },
     destroy() {
+      cancelShared();
       for (const close of fieldClosers.values()) close();
       for (const close of uploadClosers.values()) close();
       uploadClosers.clear();
