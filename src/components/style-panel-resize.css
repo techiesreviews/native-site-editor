@@ -6,8 +6,8 @@
 .style-panel-resize:is(:hover, :focus-visible), .style-panel-resizing .style-panel-resize { left: -9px; width: 18px; }
 .style-panel-resize:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .style-panel-resizing { cursor: col-resize; user-select: none; }
-.style-panel-resize:is(:hover, :focus-visible) > .resize-grip, .style-panel-resizing .resize-grip { width: 16px; height: 44px; opacity: 1; background: var(--primary); }
-.style-panel-resize:is(:hover, :focus-visible) svg, .style-panel-resizing .resize-grip svg { opacity: 1; }
+.style-panel-resize:is(:hover, :focus-visible) > .resize-grip, .style-panel-resizing .style-panel-resize > .resize-grip { width: 16px; height: 44px; opacity: 1; background: var(--primary); }
+.style-panel-resize:is(:hover, :focus-visible) svg, .style-panel-resizing .style-panel-resize > .resize-grip svg { opacity: 1; }
 .style-panel-resize:not(.is-collapsed) { --chevron-turn: 180deg; }
 
 /* A collapsed dock occupies no rail; its restore grip stays inside the canvas. */
@@ -27,11 +27,6 @@ main.has-preview > .style-panel.is-collapsed { border-left: 0; }
 main.has-preview > .style-panel.is-collapsed { z-index: 30; }
 /* Short stacked viewports scroll the dock body rather than paint over code. */
 main.has-preview > .style-panel:not(.is-collapsed) > .style-panel__body { overflow: auto; overscroll-behavior: contain; }
-
-/* The collapsed grip keeps Structure's faded bar but shows its chevron so the
-   hidden dock has a visible opener. */
-.style-panel-resize.is-collapsed > .resize-grip { width: 10px; height: 32px; }
-.style-panel-resize.is-collapsed > .resize-grip svg { opacity: .8; }
 
 /* Narrow canvases: an open dock floats over the page as a right-edge drawer
    instead of squeezing the canvas; the grid keeps the canvas full width. */

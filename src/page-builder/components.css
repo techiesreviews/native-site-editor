@@ -49,7 +49,7 @@
 .page-structure__row--component .page-structure__kind {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--component-text);
 }
 .page-structure__row--component[aria-selected="true"] .page-structure__kind {

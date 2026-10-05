@@ -157,12 +157,16 @@
   min-width: 0;
   height: var(--size-compact);
   margin: 0;
-  border: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius);
   padding: 0 6px;
-  background: var(--surface);
+  background: var(--panel-surface);
   color: inherit;
   font: inherit;
+}
+.edit-bar__select:hover {
+  background: var(--hover);
 }
 .edit-bar__button:focus-visible,
 .edit-bar__select:focus-visible {
@@ -586,6 +590,9 @@
   gap: 2px;
   min-width: 0;
   max-width: 100%;
+}
+.edit-bar__group:has(> .edit-bar__select + .edit-bar__select) {
+  gap: 6px;
 }
 /* A thin rule leading each group, so a wrapped line never ends on one. */
 .edit-bar__rule {

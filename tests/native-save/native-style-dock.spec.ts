@@ -22,12 +22,30 @@ for (const width of [1440, 900, 390]) {
       const body = page.locator("#style-dock .style-panel__body");
       if (await style(page).getAttribute("aria-valuenow") !== "0") await style(page).press("Home");
       await expect(body).toBeHidden();
-      // Hidden: no rail, a faded opener stays visible at the canvas edge.
+      // Hidden: no rail, a faded thin bar stays visible at the canvas edge.
       let sizes = await layout(page);
       expect(sizes.panel.width).toBe(0); expect(sizes.overflow).toBeLessThanOrEqual(0);
-      await expect(style(page).locator(".resize-grip svg")).toHaveCSS("opacity", "0.8");
+      // Home may focus the separator; inspect its resting state without focus or hover.
+      await style(page).evaluate(element => (element as HTMLElement).blur());
+      await page.mouse.move(0, 0);
+      const grip = style(page).locator(".resize-grip");
+      await expect(grip).toHaveCSS("width", "4px");
+      await expect(grip).toHaveCSS("height", "28px");
+      await expect(grip).toHaveCSS("opacity", "0.55");
+      await expect(grip.locator("svg")).toHaveCSS("opacity", "0");
+      await style(page).hover();
+      await expect(grip).toHaveCSS("width", "16px");
+      await expect(grip).toHaveCSS("height", "44px");
+      await expect(grip).toHaveCSS("opacity", "1");
+      await expect(grip.locator("svg")).toHaveCSS("opacity", "1");
+      await page.mouse.move(0, 0);
+      await expect(grip.locator("svg")).toHaveCSS("opacity", "0");
       await page.screenshot({ path: `${shots}/${width}-${colorScheme}-hidden.png` });
-      await style(page).focus(); await style(page).press("Enter");
+      await style(page).focus();
+      await expect(grip).toHaveCSS("width", "16px");
+      await expect(grip).toHaveCSS("height", "44px");
+      await expect(grip.locator("svg")).toHaveCSS("opacity", "1");
+      await style(page).press("Enter");
       await expect(body).toBeVisible();
       sizes = await layout(page);
       expect(sizes.overflow).toBeLessThanOrEqual(0);
@@ -76,4 +94,47 @@ test("a narrow drawer clamp never replaces the desktop Style width", async ({ pa
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 844 });
   await expect(style(page)).toHaveAttribute("aria-valuenow", "560");
+});
+
+
+test("pressing Style activates only its own grip until release", async ({ page, baseURL }) => {
+  await load(page, baseURL);
+  await page.mouse.move(0, 0);
+  const otherGrips = page.locator(".code-resize > .resize-grip, .code-width-resize > .resize-grip");
+  const appearance = () => otherGrips.evaluateAll(grips => grips.map(grip => {
+    const css = getComputedStyle(grip);
+    return { width: css.width, height: css.height, opacity: css.opacity,
+      background: css.backgroundColor, chevronOpacity: getComputedStyle(grip.querySelector("svg")!).opacity };
+  }));
+  await expect(otherGrips).toHaveCount(2);
+  const before = await appearance();
+  const box = (await style(page).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  try {
+    await expect(page.locator("#main")).toHaveClass(/style-panel-resizing/);
+    expect(await appearance()).toEqual(before);
+    const grip = style(page).locator(".resize-grip");
+    await expect(grip).toHaveCSS("width", "16px");
+    await expect(grip).toHaveCSS("height", "44px");
+    await expect(grip).toHaveCSS("opacity", "1");
+    await expect(grip.locator("svg")).toHaveCSS("opacity", "1");
+    expect(await grip.evaluate(element => {
+      const sample = document.createElement("span");
+      sample.style.backgroundColor = "var(--primary)";
+      element.append(sample);
+      const primary = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return getComputedStyle(element).backgroundColor === primary;
+    })).toBe(true);
+  } finally { await page.mouse.up(); }
+  await expect(page.locator("#main")).not.toHaveClass(/style-panel-resizing/);
+  await style(page).press("Home");
+  await style(page).evaluate(element => (element as HTMLElement).blur());
+  await page.mouse.move(0, 0);
+  await expect(style(page).locator(".resize-grip")).toHaveCSS("width", "4px");
+  await expect(style(page).locator(".resize-grip")).toHaveCSS("height", "28px");
+  await expect(style(page).locator(".resize-grip")).toHaveCSS("opacity", "0.55");
+  await expect(style(page).locator(".resize-grip svg")).toHaveCSS("opacity", "0");
+  expect(await appearance()).toEqual(before);
 });

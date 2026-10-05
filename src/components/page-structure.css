@@ -293,5 +293,5 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--native-shared .page-structure__action:hover { background: var(--component-surface); }
 .page-structure__shared-authoring { padding: 3px 6px 6px calc(10px + var(--depth) * 16px); }
 .page-structure__row--shared-linked[aria-selected="true"] .page-structure__kind { color: var(--component-text); }
-.page-structure__row--shared-linked .page-structure__kind { display: inline-flex; align-items: center; gap: 4px; }
+.page-structure__row--shared-linked .page-structure__kind { display: inline-flex; align-items: center; gap: 6px; }
 .page-structure__shared-authoring .native-shared-authoring { --primary: var(--component); }
