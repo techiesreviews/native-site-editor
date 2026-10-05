@@ -251,7 +251,24 @@ function crossesReceipt(model: monaco.editor.ITextModel, direction: "undo" | "re
   return (receiptBoundaries.get(model) ?? []).some((mark) => version === (direction === "undo" ? mark.after : mark.before));
 }
 const receiptRefusal = "This change touched several files together and its shared history was cleared, so Undo and Redo here would change only this file. Review the current drafts instead.";
-let historyKeyIds = 0;
+// Monaco stops its editor worker whenever no model is left, as happens for a
+// moment each time one file's editors close and the next file's open, and
+// starts a new one (its script fetched again) once the new editor needs it.
+// An empty model kept for the page's lifetime keeps the one worker.
+monaco.editor.createModel("", "plaintext", monaco.Uri.parse("inmemory://editor/keep-worker"));
+
+// The Undo/Redo keys that route through the shared journal (`guardHistoryKeys`
+// in mountCodeEditor), registered once for every editor: each editor's own
+// context keys say whether they route there, and its route runs them. Keys
+// registered per editor made Monaco rebuild its keybinding lookup in every
+// open editor at each mount and dispose, a good part of opening a file.
+const HISTORY_UNDO_KEY = "aseRoutesUndo", HISTORY_REDO_KEY = "aseRoutesRedo";
+const historyKeyRoutes = new WeakMap<monaco.editor.ICodeEditor, (direction: "undo" | "redo") => Promise<void>>();
+monaco.editor.addEditorAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY,
+  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ], run: (editor) => historyKeyRoutes.get(editor)?.("undo") });
+monaco.editor.addEditorAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY,
+  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY],
+  run: (editor) => historyKeyRoutes.get(editor)?.("redo") });
 const historyFor = (session: string) => {
   let history = visualHistory.get(session);
   if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
@@ -1269,18 +1286,19 @@ export function mountCodeEditor(
     if (!done && crossesReceipt(current.model, direction)) { historyRefused = true; update(undefined, false); }
   }
   function guardHistoryKeys(editor: monaco.editor.IStandaloneCodeEditor) {
-    const id = ++historyKeyIds;
-    const undoKey = `aseRoutesUndo${id}`, redoKey = `aseRoutesRedo${id}`;
-    historyKeys = { undo: editor.createContextKey(undoKey, false), redo: editor.createContextKey(redoKey, false) };
+    historyKeys = { undo: editor.createContextKey(HISTORY_UNDO_KEY, false), redo: editor.createContextKey(HISTORY_REDO_KEY, false) };
+    historyKeyRoutes.set(editor, routeHistoryKey);
+    // The editor's command palette lists them too; their keys are the shared actions'.
     const actions = [
-      editor.addAction({ id: `ase.history.undo.${id}`, label: "Undo", precondition: undoKey,
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ], run: () => routeHistoryKey("undo") }),
-      editor.addAction({ id: `ase.history.redo.${id}`, label: "Redo", precondition: redoKey,
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY],
-        run: () => routeHistoryKey("redo") }),
+      editor.addAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY, run: () => routeHistoryKey("undo") }),
+      editor.addAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY, run: () => routeHistoryKey("redo") }),
     ];
     syncHistoryKeys();
-    return () => { for (const action of actions) action.dispose(); historyKeys = undefined; };
+    return () => {
+      for (const action of actions) action.dispose();
+      if (historyKeyRoutes.get(editor) === routeHistoryKey) historyKeyRoutes.delete(editor);
+      historyKeys = undefined;
+    };
   }
   function render(next: typeof mode) {
     destroyView();

@@ -675,6 +675,10 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       }
       for (const id of [...rects.keys()]) if (!requests.some((item) => item.id === id)) rects.delete(id);
       locate();
+      // With no request and nothing of one on show there is nothing to place:
+      // the layout's box reads would force a layout of the whole editor on
+      // every preview update (several while a file opens).
+      if (!requests.length && !pins.size && !outlines.size && tray.hidden && card.hidden && !openId) return;
       layout();
     },
     /** The runtime's rectangles for the pins (null: not found on the page shown). */

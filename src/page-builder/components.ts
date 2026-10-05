@@ -200,7 +200,20 @@ export function createComponentTools(deps: ComponentDeps) {
     const { start, end } = nativePageBody(html);
     return html.slice(start, end);
   };
-  const usage = (tag: string) => componentUsage(site()!, deps.sources(), tag, pageBody);
+  // Counting reads every page and template; the banner asks again after each
+  // change in the editor (several while a file opens), mostly over the same sources.
+  let counted: { site: NonNullable<ReturnType<typeof site>>; tag: string; sources: Record<string, string>; found: ReturnType<typeof componentUsage> } | undefined;
+  const sameSources = (a: Record<string, string>, b: Record<string, string>) => {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key]);
+  };
+  const usage = (tag: string) => {
+    const now = site()!, sources = deps.sources();
+    if (counted?.site === now && counted.tag === tag && sameSources(counted.sources, sources)) return counted.found;
+    const found = componentUsage(now, sources, tag, pageBody);
+    counted = { site: now, tag, sources: { ...sources }, found };
+    return found;
+  };
 
   // ---- Finding the instance. ----
 

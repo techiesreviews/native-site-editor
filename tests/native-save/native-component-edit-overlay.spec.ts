@@ -141,3 +141,16 @@ test('Edit component puts the caret in the template code, so typing edits it at 
  await page.keyboard.type('Z');
  await expect(page.locator('#content .view-lines').first()).toContainText('Z');
 });
+// The switch keeps Monaco's editor worker: closing the page's editors before
+// the template's open leaves no model for a moment, which used to stop the
+// worker and start a new one (its script fetched again) once the template's
+// editor needed it.
+test('Edit component keeps the one Monaco editor worker',async({page})=>{
+ const editorWorkers=()=>page.workers().filter(worker=>/editor\.worker/.test(worker.url()));
+ await expect.poll(()=>editorWorkers().length).toBe(1);
+ const [worker]=editorWorkers();
+ await root(page);await edit(page).click();
+ await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
+ await page.waitForTimeout(3000);
+ expect(editorWorkers()).toEqual([worker]);
+});
