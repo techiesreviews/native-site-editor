@@ -27,6 +27,7 @@ import type { NativeSharedMetadata } from "./components/native-shared-authoring"
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { NativePageFieldError, planLegacyPageFieldMigration } from "./page-builder/native-page-fields";
+import { findInlineEditorData, planEditorDataMigration } from "./page-builder/editor-data-migration";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
@@ -3758,6 +3759,22 @@ async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<strin
   });
 }
 
+// The one-time move of every page's inline recipes and field tags into the
+// editor's JSON: planned from the whole loaded site, applied as one operation
+// (one draft write, one Undo). `current` is the caller's own staleness proof.
+async function moveNativeEditorData(current: () => boolean): Promise<string | undefined> {
+  const scope = setupScope(), epoch = generation;
+  const problem = await ensureNativeTextIndex();
+  if (problem) return problem;
+  if (scope !== setupScope() || epoch !== generation || !current()) return "The repository or source changed meanwhile. Reopen settings and try again.";
+  const snapshot = nativeCollectionSnapshot();
+  let plan: ReturnType<typeof planEditorDataMigration>;
+  try { plan = planEditorDataMigration(snapshot); } catch (error) { return error instanceof Error ? error.message : "The editor data could not be moved."; }
+  if (!plan) return "No page keeps editor data in its HTML any more.";
+  const files = JSON.stringify(snapshot.files);
+  return applyNativeCollectionOperation({ ...plan.origin, current: () => current() && JSON.stringify(nativeFiles().sort()) === files });
+}
+
 // ---- Page-builder site controls. Kept together to isolate this slice's wiring. ----
 
 function nativeSitePageChoices() {
@@ -3849,6 +3866,10 @@ function nativeSettingsController() {
       if (stale() || sourcesChanged()) return changed;
       return applied(await applyNativeSiteSettings(values, expectedSources));
     },
+    async moveEditorData() {
+      if (stale() || sourcesChanged()) return changed;
+      return applied(await moveNativeEditorData(() => !stale() && !sourcesChanged()));
+    },
     async open404() {
       if (stale() || sourcesChanged() || !nativeSite) return changed;
       if (nativeSite.routes["/404.html"]) { await restoreFile(nativeSite.routes["/404.html"], generation); return undefined; }
@@ -3916,7 +3937,7 @@ async function openNativeSiteSettings() {
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
   try {
-    nativeSettingsController().site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
+    nativeSettingsController().site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]), editorData: findInlineEditorData(nativeCollectionSnapshot().sources) });
   } catch (error) { errorMessage(error); }
 }
 

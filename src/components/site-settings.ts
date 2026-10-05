@@ -4,6 +4,7 @@ import { createUrlChange, type UrlPlan } from "./url-change";
 import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
 import type { NavigationLink } from "../page-builder/site-navigation";
 import type { CollectionsPanel } from "./collections-panel";
+import type { InlineEditorData } from "../page-builder/editor-data-migration";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string }
@@ -18,6 +19,8 @@ export interface SiteSettingsHandlers {
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
   open404: () => Promise<string | undefined>;
+  /** One-time move of every page's inline editor data into the editor's JSON (one draft step). */
+  moveEditorData?: () => Promise<string | undefined>;
   applyNavigation: (path: string, source: string, links: NavigationLink[]) => Promise<string | undefined>;
   uploadImage: () => Promise<string | undefined>;
   imageUrl: (path: string) => Promise<string | undefined>;
@@ -219,6 +222,28 @@ async function uploadInto(input: HTMLInputElement | HTMLTextAreaElement, dialog:
   }
 }
 
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+// Offered only while some page still keeps editor-only data inline. One click
+// moves all of it; the dialog stays open, so typed site values are kept.
+function editorDataSection(parent: HTMLElement, dialog: ReturnType<typeof settingsDialog>, found: InlineEditorData, move: () => Promise<string | undefined>) {
+  const box = section(parent, "Editor data in pages");
+  const what = [found.listings ? count(found.listings, "listing recipe", "listing recipes") : "", found.fields ? count(found.fields, "page field", "page fields") : ""].filter(Boolean).join(" and ");
+  const one = found.pages.length === 1;
+  const summary = node("p", "site-settings__hint", `${count(found.pages.length, "page still keeps", "pages still keep")} editor-only data in ${one ? "its" : "their"} HTML: ${what}. Moving it to the editor's data file changes ${one ? "that page" : "those pages"}, not how ${one ? "it looks" : "they look"}: cards, links and page details stay, and the site works without the .editor folder.`);
+  const run = button("Move editor data out of pages", async () => {
+    if (run.disabled) return;
+    run.disabled = true;
+    dialog.status.textContent = "";
+    try {
+      const error = await move();
+      if (error) { dialog.status.textContent = error; run.disabled = false; return; }
+      summary.textContent = `Moved the editor data out of ${count(found.pages.length, "page", "pages")} as one draft. Undo puts every file back.`;
+      run.remove();
+    } catch (error) { dialog.status.textContent = error instanceof Error ? error.message : "The editor data could not be moved."; run.disabled = false; }
+  }, "site-settings__link");
+  box.append(summary, run);
+}
+
 export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferences = new Map<string, SiteLinkPreference>()) {
   // Link preferences persist while this editor session stays open. On a new session,
   // equal/missing social values follow the page; distinct values remain independent.
@@ -361,11 +386,12 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       });
       dialog.show();
     },
-    site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {
+    site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean; editorData?: InlineEditorData }) {
       const dialog = settingsDialog("Site settings", "Shared across your site");
       const generalPanel = dialog.category("General", "house");
       const socialPanel = dialog.category("Social", "link");
       const pagesPanel = dialog.category("Pages", "file");
+      if (options.editorData?.pages.length && handlers.moveEditorData) editorDataSection(pagesPanel, dialog, options.editorData, handlers.moveEditorData);
       const general = section(generalPanel, "Site identity");
       const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
       const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
