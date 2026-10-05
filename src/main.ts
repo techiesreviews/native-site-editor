@@ -740,10 +740,12 @@ function nativeSectionSavePlan(selection: NativePreviewSelection) {
   const source = nativeEffectiveSource(selection.path);
   const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-  if (source === undefined || !range || docText === undefined) return undefined;
+  // An editor JSON whose saved sections can't be read offers no save action; the bar stays plain.
+  const catalogs = docText === undefined ? undefined : nativeSharedCatalogs(docText);
+  if (source === undefined || !range || docText === undefined || !catalogs) return undefined;
   const plan = planSelectedStaticSectionSave({ pagePath: selection.path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files: nativeFiles().sort(), master: nativeSaveMaster(docText, source, selection.node) });
   if ("error" in plan) return undefined;
-  const entry = readSectionCatalog(docText)[plan.recordId];
+  const entry = catalogs.sections[plan.recordId];
   return entry ? { plan, label: entry.label, master: Object.hasOwn(entry, "htmlPath") } : undefined;
 }
 // The loaded master of the one saved section with a master file whose rootClass the selected
@@ -753,7 +755,7 @@ function nativeSaveMaster(docText: string, source: string, node: number[]): stri
   const tag = locateNativeElement(source, node);
   if (!tag) return undefined;
   const classes = new Set(decodeHtmlEntities(startTagAttribute(source, tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean));
-  const masters = Object.values(readSectionCatalog(docText)).filter((entry): entry is StaticSectionMasterEntry => Object.hasOwn(entry, "htmlPath") && classes.has(entry.rootClass));
+  const masters = Object.values(nativeSharedCatalogs(docText)?.sections ?? {}).filter((entry): entry is StaticSectionMasterEntry => Object.hasOwn(entry, "htmlPath") && classes.has(entry.rootClass));
   return masters.length === 1 ? nativeEffectiveSource(masters[0].htmlPath) : undefined;
 }
 let nativeSectionSaveLoading: Promise<unknown> | undefined;
@@ -807,10 +809,12 @@ async function saveNativeStaticSection(selection: NativePreviewSelection) {
     else element("status").textContent = "Saved sections have loaded. Select the section again to update it.";
     return;
   }
+  // Saved sections that can't be read are refused here, as an error, before anything is planned.
+  if (docText !== undefined && !nativeSharedCatalogs(docText)) { errorMessage(new Error(`Section not saved: ${EDITOR_PAGE_BUILDER_PATH} can't be read. Fix it in Code first.`)); return; }
   const masterSource = docText === undefined ? undefined : nativeSaveMaster(docText, source, node);
   const plan = planSelectedStaticSectionSave({ pagePath: path, pageSource: source, range: { start: range.start, end: range.end }, documentText: docText, files, master: masterSource });
   if ("error" in plan) { errorMessage(new Error(`Section not saved: ${plan.error}`)); return; }
-  const savedEntry = docText === undefined ? undefined : readSectionCatalog(docText)[plan.recordId];
+  const savedEntry = docText === undefined ? undefined : nativeSharedCatalogs(docText)?.sections[plan.recordId];
   const label = savedEntry?.label;
   const intoMaster = savedEntry !== undefined && Object.hasOwn(savedEntry, "htmlPath");
   if (plan.noop) { announce(intoMaster ? `The ${label} master already matches this section.` : `${label ?? "The saved section"} already matches this section; future inserts use it.`); return; }

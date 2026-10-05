@@ -338,3 +338,38 @@ test("an open Use here form refuses after its page source or the editor JSON cha
   await tryUse(form);
   expect(await effective(page, baseURL, JSON_PATH)).toBe(disconnected);
 });
+
+for (const [what, mangle] of [
+  ["malformed", (_: string) => "{ not json\n"],
+  ["unsupported-version", (text: string) => { const parsed = JSON.parse(text); parsed.reusableSections.version = 99; return JSON.stringify(parsed, null, 2) + "\n"; }],
+] as const) {
+  test(`selecting a whole section with a ${what} editor JSON keeps the bar plain and usable, with no save action and no JSON write`, async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await row(page, /^Section About Larkspur/).hover();
+    await row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" }).click();
+    const form = structure(page).getByRole("form", { name: "Share section" });
+    await form.getByRole("textbox", { name: "Name" }).fill("Shared hero");
+    await form.getByRole("textbox", { name: "ID" }).fill("about-hero");
+    await form.getByRole("button", { name: "Save shared" }).click();
+    await expect(row(page, /Shared hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
+    const JSON_FILE = ".editor/page-builder.json";
+    const broken = mangle((await effective(page, baseURL, JSON_FILE))!);
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(JSON_FILE)}`);
+    await expect(page.locator("#primary-title")).toHaveText(JSON_FILE);
+    await replaceCode(page, broken);
+    await expect.poll(() => effective(page, baseURL, JSON_FILE)).toBe(broken);
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
+    await expect(page.locator("#primary-title")).toHaveText(PAGE);
+    // The whole section, selected through Structure: the bar shows, with no shared or save action.
+    await row(page, /^Section About Larkspur/).locator(".page-structure__label").first().click();
+    await expect(bar(page)).toBeVisible();
+    await expect(bar(page)).toContainText("Section");
+    await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
+    await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
+    // Plain editing still works; the JSON stays exactly as written.
+    const source = (await effective(page, baseURL, PAGE))!;
+    await replaceCode(page, source.replace("About Larkspur</h1>", "About us</h1>"));
+    await expect(frame(page).locator("section.hero h1")).toHaveText("About us");
+    expect(await effective(page, baseURL, JSON_FILE)).toBe(broken);
+  });
+}
