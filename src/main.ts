@@ -22,7 +22,8 @@ import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { createNativePreview, routeStylesheets, type NativeFormat, type NativePreviewSelection, type NativeStructureItem, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
-import { createPageStructure, type PageMetaField } from "./components/page-structure";
+import { createPageStructure, type NativeSharedRoot, type PageMetaField } from "./components/page-structure";
+import type { NativeSharedMetadata } from "./components/native-shared-authoring";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { NativePageFieldError, planLegacyPageFieldMigration } from "./page-builder/native-page-fields";
@@ -86,9 +87,12 @@ import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
-import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readSectionCatalog, resolveStaticSection, SECTION_MASTER_FOLDER, type SectionMasterContext, type StaticSectionInsertPlan, type StaticSectionMasterEntry } from "./page-builder/static-sections";
-import { registerInsertedNativeSection } from "./page-builder/native-section-links";
-import { createNativeSectionMasterController, type MasterSelection } from "./page-builder/native-section-master-controller";
+import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readSectionCatalog, resolveStaticSection, SECTION_MASTER_FOLDER, type SectionMasterContext, type StaticSectionInsertPlan, type StaticSectionMasterEntry, type StaticSectionOperation } from "./page-builder/static-sections";
+import { deleteNativeSectionLink, registerInsertedNativeSection, resolveNativeSectionLinks } from "./page-builder/native-section-links";
+import { createNativePagePartController } from "./page-builder/native-page-part-controller";
+import { PAGE_PART_FOLDER, planSavePagePart, planUnlinkPagePart, readPagePartCatalog, resolvePagePartLinks } from "./page-builder/native-page-parts";
+import { planNativeSharedSection } from "./page-builder/native-shared-section";
+import { createNativeSectionMasterController, type MasterControllerHost, type MasterSelection } from "./page-builder/native-section-master-controller";
 import { createMasterBanner } from "./components/master-banner";
 import { planSelectedStaticSectionSave } from "./page-builder/native-section-save";
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
@@ -468,6 +472,8 @@ function mountWorkspace() {
     // Generated cards offer no slot or attribute fields: their HTML is rebuilt from page data.
     componentSlots: (path, node) => nativeNodeGenerated(path, node) ? undefined : componentTools?.structure(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
+    nativeSharedRoot,
+    nativeFieldsRevision: nativeSharedFieldsRevision,
     pageMeta: nativePageMeta,
     onPageSettings: (path) => void openNativePageSettings(path),
     onNavigation: (path) => void openNativeNavigation(path),
@@ -841,16 +847,26 @@ function nativeMasterSelection(selection = lastNativeSelection): MasterSelection
   const painted = selection.paintedSource ?? source;
   return { path: selection.path, node: [...selection.node], range: { start: range.start, end: range.end }, paintedSource: painted };
 }
-const masterController = createNativeSectionMasterController({
+// The private master files a live controller session may open: saved sections and page parts only.
+const isPrivateMasterPath = (path: string) => path.startsWith(SECTION_MASTER_FOLDER) || path.startsWith(PAGE_PART_FOLDER);
+// The last private master an Edit's own open mounted, with the file generation it left; a failed
+// check after that open restores the opening page only while nothing has navigated since.
+let masterOpened: { path: string; fileGeneration: number } | undefined;
+const masterHost: MasterControllerHost = {
   snapshot: () => ({
     revision: masterRevision(), files: nativeFiles().sort(), source: (path) => nativeEffectiveSource(path),
     currentPath: currentPath ?? "", selection: currentPath && lastNativeSelection?.path === currentPath ? nativeMasterSelection() : undefined,
   }),
   async open(path, revision) {
     if (versionView || masterRevision() !== revision) return false;
-    const epoch = generation;
-    await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: () => masterRevision() === revision });
-    return masterRevision() === revision && currentPath === path;
+    const epoch = generation, master = isPrivateMasterPath(path);
+    // A private master mounts only while a live session still wants it: an open that resolves after
+    // Done, or after its session was refused, never takes the Code pane.
+    const owned = () => !master || masterController.context()?.htmlPath === path || pagePartController.context()?.htmlPath === path;
+    await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: () => masterRevision() === revision && owned() });
+    const opened = masterRevision() === revision && currentPath === path;
+    if (opened && master) masterOpened = { path, fileGeneration };
+    return opened;
   },
   // The editor's own browser-built locator: the node only when it maps back to exactly `range`.
   locateCopy: (source, range) => nativeCanonicalCopy(source, range),
@@ -871,7 +887,16 @@ const masterController = createNativeSectionMasterController({
     return true;
   },
   announce,
-});
+};
+const masterController = createNativeSectionMasterController(masterHost);
+const pagePartController = createNativePagePartController(masterHost);
+// The one live master session (a saved section or a shared header/footer), or none.
+function activeMaster() {
+  const section = masterController.context();
+  if (section) return { controller: masterController, context: section };
+  const part = pagePartController.context();
+  return part ? { controller: pagePartController, context: part } : undefined;
+}
 function nativeCanonicalCopy(source: string, range: { start: number; end: number }) {
   const node = elementPathAt(source, range.start);
   const located = node && locateNativeElementRange(source, node);
@@ -879,7 +904,9 @@ function nativeCanonicalCopy(source: string, range: { start: number; end: number
 }
 // The master session the preview shows, as the controller proves it now, or none.
 function nativeMasterEdit() {
-  return versionView ? undefined : masterController.previewInput();
+  if (versionView) return undefined;
+  const section = masterController.previewInput(), part = pagePartController.previewInput();
+  return section && part ? undefined : section ?? part;
 }
 // The open master's path while its session is live and it is the open file; otherwise undefined.
 function nativeOpenMaster() {
@@ -889,7 +916,7 @@ function nativeOpenMaster() {
 // The source the bar and Style edit for `path`: the public source, or, for the open master
 // during its own live session, the master file (editor-private, so not among public sources).
 function nativeEditableSource(path: string): string | undefined {
-  if (path.startsWith(SECTION_MASTER_FOLDER)) return nativeOpenMaster()?.masterPath === path ? nativeEffectiveSource(path) : undefined;
+  if (isPrivateMasterPath(path)) return nativeOpenMaster()?.masterPath === path ? nativeEffectiveSource(path) : undefined;
   return nativeSources()[path];
 }
 let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
@@ -903,26 +930,36 @@ function renderMasterBanner() {
   if (!masterBanner) {
     if (!content) return;
     masterBanner = createMasterBanner(content, {
-      done: () => void masterController.done().then(() => {
-        const revealed = masterRevealedCode, now = codeResize?.state();
-        masterRevealedCode = undefined;
-        // Only the session's own Done after an automatic reveal the person left as it was.
-        if (revealed && now && !masterController.context() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
-        renderMasterBanner();
-        updateNativePreviewSources();
-      }),
-      update: () => void masterController.updateCopies().then(() => { renderMasterBanner(); updateNativePreviewSources(); }),
+      done: () => {
+        const active = activeMaster();
+        if (!active) { renderMasterBanner(); return; }
+        void active.controller.done().then(() => {
+          const revealed = masterRevealedCode, now = codeResize?.state();
+          masterRevealedCode = undefined;
+          // Only the session's own Done after an automatic reveal the person left as it was.
+          if (revealed && now && !activeMaster() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
+          renderMasterBanner();
+          updateNativePreviewSources();
+        });
+      },
+      update: () => {
+        const active = activeMaster();
+        if (!active) { renderMasterBanner(); return; }
+        void active.controller.updateCopies().then(() => { renderMasterBanner(); updateNativePreviewSources(); });
+      },
     });
   }
   // Shown while the master itself is open; another file hides it, and coming back shows it again.
-  const context = masterController.context();
+  const context = activeMaster()?.context;
   masterBanner.show(context && currentPath === context.htmlPath ? context : undefined);
 }
-// The edit bar's label and purple Edit for a whole saved section, or nothing.
+// The edit bar's label and purple Edit for a whole saved section or linked header/footer, or nothing.
 function nativeMasterIdentity(selection: NativePreviewSelection) {
-  if (versionView || !isNativeSectionTag(selection.tag) || selection.tag.includes("-")) return undefined;
+  if (versionView) return undefined;
+  const part = selection.tag === "header" || selection.tag === "footer";
+  if (!part && (!isNativeSectionTag(selection.tag) || selection.tag.includes("-"))) return undefined;
   const at = nativeMasterSelection(selection);
-  const identity = at && masterController.identity(at);
+  const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
   if (!identity) return undefined;
   const scope = draftScope(), revision = masterRevision();
   // Captured as the bar renders: an Edit pressed later on a replaced model (even with the same
@@ -931,23 +968,37 @@ function nativeMasterIdentity(selection: NativePreviewSelection) {
   return {
     kind: identity.label,
     component: {
-      tag: "section",
+      tag: part ? selection.tag : "section",
       onEdit: () => {
         if (!proof || !proof.isCurrent() || masterRevision() !== revision) { announce("The page changed. Select the section again."); return; }
-        masterPageProof = proof;
-        const collapsed = element("main").classList.contains("code-collapsed");
-        void identity.onEdit().finally(() => {
-          masterPageProof = undefined;
-          // The master is usable only with Code showing: reveal it, and remember to fold it back.
-          if (masterController.context() && collapsed && element("main").classList.contains("code-collapsed") && codeResize) {
-            codeResize.toggle();
-            masterRevealedCode = codeResize.state();
-          }
-          renderMasterBanner();
-        });
+        runMasterEdit(identity.onEdit, proof, at.path, revision);
       },
     },
   };
+}
+// Opens a master through its controller with the page's proof pinned for the transaction. Code is
+// revealed for it (and remembered, so Done can fold it back). A master this Edit mounted whose
+// session was then refused is replaced by the opening page, only while no later navigation took over.
+function runMasterEdit(edit: () => Promise<void>, proof: { isCurrent(): boolean }, pagePath: string, revision: string) {
+  masterPageProof = proof;
+  masterOpened = undefined;
+  const collapsed = element("main").classList.contains("code-collapsed");
+  void edit().finally(() => {
+    masterPageProof = undefined;
+    const opened = masterOpened;
+    masterOpened = undefined;
+    if (activeMaster()) {
+      // The master is usable only with Code showing: reveal it, and remember to fold it back.
+      if (collapsed && element("main").classList.contains("code-collapsed") && codeResize) {
+        codeResize.toggle();
+        masterRevealedCode = codeResize.state();
+      }
+    } else if (opened && opened.fileGeneration === fileGeneration && currentPath === opened.path && masterRevision() === revision) {
+      // restoreFile's own file generation drops it when anything navigates meanwhile.
+      void restoreFile(pagePath, generation, { linkDefaultStyle: false, beforeMount: () => !activeMaster() && masterRevision() === revision });
+    }
+    renderMasterBanner();
+  });
 }
 
 let commitHistory: ReturnType<typeof createCommitHistory> | undefined;
@@ -2298,7 +2349,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const master = inMaster ? masterController.context() : undefined;
+  const master = inMaster ? activeMaster()?.context : undefined;
   const masterRoot = Boolean(master && node?.length === 1);
   const model: EditBarModel = {
     origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() },
@@ -2537,7 +2588,7 @@ function applyNativeChange(path: string, source: string, edits: { start: number;
   if (!preview || !editor) return false;
   // A master file is written only as the open file of its live session (a control from a closed
   // session, or for another file, writes nothing).
-  if (path.startsWith(SECTION_MASTER_FOLDER) && nativeOpenMaster()?.masterPath !== path) {
+  if (isPrivateMasterPath(path) && nativeOpenMaster()?.masterPath !== path) {
     announce("That master is no longer open. Choose Edit on the section again.");
     return false;
   }
@@ -3105,6 +3156,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   }
   const reveal = selection.reason !== "refresh";
   lastNativeSelection = selection.path ? selection : undefined;
+  for (const waiter of [...nativeSelectionWaiters]) waiter(selection);
   stylePanel?.update();
   // Agents see the selection (get_selection).
   if (reveal) updateAgentContext();
@@ -3169,6 +3221,175 @@ function nativeComponentFieldsRevision() {
   if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
   nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
   return String(++nativeComponentFieldToken);
+}
+
+// ---- Shared native roots in Structure: Save shared, linked Edit and Disconnect ------------------
+// Callbacks waiting for the preview's own selection of a node (Structure's explicit Edit).
+const nativeSelectionWaiters = new Set<(selection: NativePreviewSelection) => void>();
+// What sharing reads, beyond the page: the file graph, editor JSON, private masters and every
+// loaded public source (pages and stylesheets), the scope, the open file and master session, and
+// the open page's model. Any change is a new revision; a replaced model (same bytes) is one too.
+let nativeSharedToken = 0;
+let nativeSharedSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
+// Authoring contexts offered under the current revision, by key; a new revision drops them all.
+const nativeSharedContexts = new Map<string, { current: () => boolean; plan: (metadata: NativeSharedMetadata) => { operation: StaticSectionOperation; expectedFiles: readonly string[] } | { error: string } }>();
+function nativeSharedFieldsRevision() {
+  const scope = draftScope(), files = nativeFiles().sort();
+  const privateSources = files.filter(isPrivateMasterPath).map(path => [path, nativeEffectiveSource(path) ?? null]);
+  const key = JSON.stringify([generation, setupScope(), versionView ? "history" : "", currentPath ?? "", nativeMasterEdit()?.session ?? "", files, nativeSources(),
+    nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) ?? null, privateSources, Boolean(currentPath && editorModule?.isMounted(currentPath)), Boolean(scope && editorModule)]);
+  if (nativeSharedSnapshot?.key === key && nativeSharedSnapshot.proofs.every(proof => proof.isCurrent())) return `shared-${nativeSharedToken}`;
+  nativeSharedSnapshot = { key, proofs: scope && editorModule && currentPath ? [editorModule.captureFileModelState(scope, currentPath)] : [] };
+  nativeSharedContexts.clear();
+  return `shared-${++nativeSharedToken}`;
+}
+const nativeSharedClassPattern = /^[a-z][a-z0-9_-]*$/;
+let nativeSharedClassCount: { source: string; count: (name: string) => number } | undefined;
+// How many elements of the page's body carry class `name`, as the browser builds the page.
+function nativeClassCount(source: string, name: string) {
+  if (nativeSharedClassCount?.source !== source) {
+    const doc = new DOMParser().parseFromString(source, "text/html");
+    nativeSharedClassCount = { source, count: (cls) => doc.body.getElementsByClassName(cls).length };
+  }
+  return nativeSharedClassCount.count(name);
+}
+function nativeSharedRoot(path: string, item: NativeStructureItem): NativeSharedRoot | undefined {
+  const tag = item.tag;
+  if (tag !== "section" && tag !== "header" && tag !== "footer") return undefined;
+  if (!nativeSite || versionView || nativeMasterEdit() || currentPath !== path || !editorModule?.isMounted(path) || !Object.values(nativeSite.routes).includes(path)) return undefined;
+  const scope = draftScope(), painted = nativeStructurePaintedSources.get(item);
+  if (!scope || painted === undefined || nativeEffectiveSource(path) !== painted || nativeNodeOwnership(path, item.node) !== "plain") return undefined;
+  const range = locateNativeElementRange(painted, item.node);
+  if (!range || range.tag.name.toLowerCase() !== tag) return undefined;
+  const canonical = nativeCanonicalCopy(painted, range);
+  if (!canonical || canonical.node.join(".") !== item.node.join(".")) return undefined;
+  const files = nativeFiles().sort();
+  const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  if (docText === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) return undefined;
+  const revision = nativeSharedFieldsRevision(), epoch = generation, scopeKey = setupScope();
+  const proof = editorModule.captureFileModelState(scope, path);
+  const sources: Record<string, string | undefined> = { ...nativeSources(), [path]: painted };
+  for (const file of files.filter(isPrivateMasterPath)) sources[file] = nativeEffectiveSource(file);
+  const pinned = JSON.stringify([files, docText ?? null, files.filter(isPrivateMasterPath).map(file => sources[file] ?? null)]);
+  // Everything this row was offered for, checked again after every await and before the write.
+  const current = () => !versionView && !nativeMasterEdit() && epoch === generation && scopeKey === setupScope() && currentPath === path
+    && editorModule?.isMounted(path) === true && proof.isCurrent() && nativeEffectiveSource(path) === painted && nativeSharedFieldsRevision() === revision
+    && JSON.stringify([nativeFiles().sort(), nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) ?? null, files.filter(isPrivateMasterPath).map(file => nativeEffectiveSource(file) ?? null)]) === pinned;
+  const exact = { start: range.start, end: range.end };
+  const at = (link: { page: string; start: number; end: number }) => link.page === path && link.start === exact.start && link.end === exact.end;
+  if (tag === "section") {
+    const resolved = resolveNativeSectionLinks({ documentText: docText, sources });
+    if ("error" in resolved) return undefined;
+    const own = resolved.links.filter(at);
+    if (own.length > 1) return undefined;
+    if (own.length === 1) {
+      const record = readSectionCatalog(docText)[own[0].link.recordId];
+      if (!record) return undefined;
+      return { state: "linked", label: record.label, recordId: own[0].link.recordId,
+        edit: () => void nativeStructureEdit(path, item.node, painted, false),
+        disconnect: () => void nativeSharedDisconnect(current, () => {
+          const next = deleteNativeSectionLink(docText!, path, own[0].key);
+          return typeof next === "string" ? { expectedFiles: files, operation: { expectedSources: new Map([[EDITOR_PAGE_BUILDER_PATH, docText], [path, painted]]),
+            edits: new Map([[EDITOR_PAGE_BUILDER_PATH, next]]), creates: [], done: `Disconnected this copy of ${record.label}`, undone: `Reconnected this copy of ${record.label}` } } : next;
+        }) };
+    }
+  } else {
+    const resolved = resolvePagePartLinks({ documentText: docText, sources });
+    if ("error" in resolved) return undefined;
+    const own = resolved.links.filter(at);
+    if (own.length > 1) return undefined;
+    if (own.length === 1) {
+      const record = readPagePartCatalog(docText)[own[0].link.recordId];
+      if (!record || record.rootTag !== tag) return undefined;
+      return { state: "linked", label: record.label, recordId: record.id,
+        edit: () => void nativeStructureEdit(path, item.node, painted, true),
+        disconnect: () => void nativeSharedDisconnect(current, () => {
+          const plan = planUnlinkPagePart({ documentText: docText!, files, pagePath: path, key: own[0].key });
+          if ("error" in plan) return plan;
+          plan.operation.expectedSources.set(path, painted);
+          return { ...plan, operation: { ...plan.operation, done: `Disconnected this ${tag} from ${record.label}`, undone: `Reconnected this ${tag} to ${record.label}` } };
+        }) };
+    }
+  }
+  // Save shared: classes the root itself has that nothing else on the page uses, and the public
+  // stylesheets the page applies (linked, or imported through a loaded chain).
+  const classes = decodeHtmlEntities(startTagAttribute(painted, range.tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/)
+    .filter((name, index, all) => name && all.indexOf(name) === index && nativeSharedClassPattern.test(name) && nativeClassCount(painted, name) === 1);
+  const linked = nativePageStylesheets(painted, path).filter(sheet => !sheet.startsWith(".") && sources[sheet] !== undefined);
+  const sheets = [...new Set([...linked, ...expandStyleImports(linked, (sheet) => sources[sheet]).imported])]
+    .filter(sheet => !sheet.startsWith(".") && /\.css$/i.test(sheet) && sources[sheet] !== undefined);
+  const name = (item.heading || item.text || tag).trim().slice(0, 60) || tag;
+  const used = new Set([...Object.keys(readSectionCatalog(docText)), ...Object.keys(readPagePartCatalog(docText))].map(id => id.toLowerCase()));
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[^a-z]+/, "") || tag;
+  let proposedId = base;
+  for (let n = 2; used.has(proposedId) || files.includes(`${tag === "section" ? SECTION_MASTER_FOLDER : PAGE_PART_FOLDER}${proposedId}.html`); n++) proposedId = `${base}-${n}`;
+  const key = JSON.stringify([revision, path, item.node, exact.start, exact.end]);
+  // The same key is the same revision and root: the context a form already holds stays the one checked.
+  if (!nativeSharedContexts.has(key)) nativeSharedContexts.set(key, {
+    current,
+    plan: (metadata) => {
+      const input = { documentText: docText, files, sources, pagePath: path, pageSource: painted, range: exact, id: metadata.id, label: metadata.label, rootClass: metadata.rootClass, stylesheetPath: metadata.stylesheetPath };
+      return tag === "section" ? planNativeSharedSection(input) : planSavePagePart(input);
+    },
+  });
+  return {
+    state: "available",
+    context: { key, kind: tag, initialName: name, proposedId, availableClasses: classes, availableStylesheetPaths: sheets },
+    actions: {
+      submit: (metadata, contextKey) => nativeSharedSubmit(metadata, contextKey),
+      // Structure calls this from its own render: the context goes now, the UI updates afterwards.
+      close: (contextKey) => { nativeSharedContexts.delete(contextKey); },
+    },
+  };
+}
+async function nativeSharedSubmit(metadata: NativeSharedMetadata, key: string): Promise<{ success: true } | { error: string }> {
+  const offered = nativeSharedContexts.get(key);
+  const changed = "The page or its shared files changed. Select the element again.";
+  if (!offered || !offered.current()) return { error: changed };
+  const plan = offered.plan(metadata);
+  if ("error" in plan) return { error: plan.error };
+  const graph = plan.expectedFiles.join("\n");
+  // A Cancel, a new revision (which drops every offered context) or any change refuses the write.
+  const live = () => nativeSharedContexts.get(key) === offered && offered.current() && nativeFiles().sort().join("\n") === graph;
+  const error = await applyNativeOperation({ ...plan.operation, current: live });
+  if (error) return { error };
+  queueMicrotask(() => { updateNativePreviewSources(); renderNativeShownStructure(); });
+  return { success: true };
+}
+async function nativeSharedDisconnect(current: () => boolean, plan: () => { operation: StaticSectionOperation; expectedFiles: readonly string[] } | { error: string }) {
+  if (!current()) { announce("The page changed. Select the element again."); return; }
+  const made = plan();
+  if ("error" in made) { announce(made.error); return; }
+  const graph = made.expectedFiles.join("\n");
+  const error = await applyNativeOperation({ ...made.operation, current: () => current() && nativeFiles().sort().join("\n") === graph });
+  if (error) { errorMessage(new Error(error)); return; }
+  updateNativePreviewSources();
+  renderNativeShownStructure();
+}
+function renderNativeShownStructure() {
+  if (nativeShownStructure) pageStructure?.update(nativeShownStructure);
+}
+// Structure's Edit selects nothing by itself: it asks the preview for a real selection of the
+// root, waits for that selection as painted, and only then opens the master from it.
+async function nativeStructureEdit(path: string, node: number[], painted: string, part: boolean) {
+  const scope = draftScope(), revision = masterRevision();
+  const refuse = () => announce("The page changed. Select the element again.");
+  if (!scope || !editorModule || !nativePreview || nativeMasterEdit() || currentPath !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
+  const selected = new Promise<NativePreviewSelection | undefined>((resolve) => {
+    const timer = setTimeout(() => { nativeSelectionWaiters.delete(waiter); resolve(undefined); }, 5000);
+    const waiter = (selection: NativePreviewSelection) => {
+      if (selection.path !== path || selection.node?.join(".") !== node.join(".")) return;
+      clearTimeout(timer); nativeSelectionWaiters.delete(waiter); resolve(selection);
+    };
+    nativeSelectionWaiters.add(waiter);
+  });
+  nativePreview.selectNode({ path, node });
+  const selection = await selected;
+  if (!selection || selection.paintedSource !== painted || lastNativeSelection !== selection || masterRevision() !== revision || nativeMasterEdit() || currentPath !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
+  const at = nativeMasterSelection(selection);
+  const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
+  if (!at || !identity || !identity.linked) { refuse(); return; }
+  runMasterEdit(identity.onEdit, editorModule.captureFileModelState(scope, path, true), path, revision);
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
@@ -3989,7 +4210,7 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
 
 async function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
   const epoch = generation, workspace = setupScope();
-  const privateMaster = target.path.startsWith(SECTION_MASTER_FOLDER), master = nativeOpenMaster();
+  const privateMaster = isPrivateMasterPath(target.path), master = nativeOpenMaster();
   if (privateMaster && master?.masterPath !== target.path) { announce("That master is no longer open. Choose Edit on the section again."); return; }
   const scope = draftScope(), proof = privateMaster && scope ? editorModule?.captureFileModelState(scope, target.path) : undefined;
   const currentMaster = () => !privateMaster || nativeOpenMaster()?.session === master?.session && currentPath === target.path && proof?.isCurrent() === true;

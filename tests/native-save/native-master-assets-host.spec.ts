@@ -21,7 +21,7 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const banner = (page: Page) => page.getByRole("region", { name: "Saved section master" });
 const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 async function edit(page: Page) {
-  await page.getByRole("treeitem", { name: /^Section Section heading/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("treeitem", { name: /^(Section|Intro) Section heading/ }).locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
   await expect(banner(page)).toBeVisible();
 }

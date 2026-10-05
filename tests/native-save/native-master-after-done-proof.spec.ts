@@ -21,7 +21,7 @@ test('creating a saved-section master then Done keeps one-step Undo and Redo val
   await page.getByRole('dialog', { name: 'Add to the page' }).getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Add to the page' })).toBeHidden();
   const structure = page.getByRole('complementary', { name: 'Page structure' });
-  await structure.getByRole('treeitem', { name: /^Section Section heading/ }).locator('.page-structure__label').click();
+  await structure.getByRole('treeitem', { name: /^(Section|Intro) Section heading/ }).locator('.page-structure__label').click();
   const bar = page.getByRole('toolbar', { name: 'Edit bar' });
   await expect(bar.locator('.edit-bar__label')).toContainText('Intro');
   const grip = page.getByRole('separator', { name: 'Resize code pane', exact: true });

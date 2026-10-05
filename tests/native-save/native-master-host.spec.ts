@@ -75,7 +75,7 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   await frame(page).locator("section.section-intro h2").click();
   await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
   // Natural route: the Structure row selects the whole section; Code is folded away first.
-  await page.getByRole("treeitem", { name: /^Section Section heading/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("treeitem", { name: /^(Section|Intro) Section heading/ }).locator(".page-structure__label").first().click();
   await expect(bar(page).locator(".edit-bar__label")).toContainText("Intro");
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
   await expect(page.locator("main.code-collapsed, #main.code-collapsed, .code-collapsed").first()).toBeAttached();

@@ -35,7 +35,7 @@ async function addIntro(page: Page) {
   await panel(page).getByRole("button", { name: "Close" }).click();
 }
 async function editIntro(page: Page) {
-  await page.getByRole("treeitem", { name: /^Section Section heading/ }).locator(".page-structure__label").first().click();
+  await page.getByRole("treeitem", { name: /^(Section|Intro) Section heading/ }).locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
   await expect(banner(page)).toBeVisible();
 }
