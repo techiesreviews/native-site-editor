@@ -129,8 +129,17 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     const deletes = new Set(input.deletes ?? []);
     const relocate = input.relocateFolder ?? ((folder: string) => folder);
     const document: PageBuilderDocument = structuredClone(after);
-    // Page metadata follows moved pages and leaves with deleted ones.
+    /**
+     * Page metadata follows moved pages and leaves with deleted ones. This is
+     * the single writer of that metadata for file moves and deletes (whole
+     * entries: fields, sections, page parts and unknown data alike). It never
+     * merges: a move whose destination already has its own metadata (left over
+     * from a file that no longer exists) refuses before anything changes.
+     * Creates, including duplicates, start without metadata or links.
+     */
     const rekey = <T>(map: Record<string, T>) => {
+      for (const [from, to] of moves) if (Object.hasOwn(map, from) && Object.hasOwn(map, to) && !moves.has(to))
+        throw new Error(`${to} already has page data in ${EDITOR_PAGE_BUILDER_PATH}, left from an earlier page there, so moving ${from} onto it would replace that data. Move the page somewhere else, or remove the leftover entry for ${to} in Code first.`);
       for (const [from, to] of moves) if (Object.hasOwn(map, from)) { map[to] = map[from]; delete map[from]; }
       for (const path of deletes) delete map[path];
     };

@@ -167,3 +167,76 @@ test('a bare relative page field is resolved where its cards are written: on eve
   const both = writePageBuilderDocument({ version: 1, pages, collections: { home: listing('index.html'), blog: listing('blog/index.html') } } as never);
   assert.throws(() => planDocumentMediaBatch({}, both, new Map(), move, routes), /^Error: The page field “photo” of work\/one\/index\.html \(images\/a\.jpg\) points at different images on blog\/index\.html and index\.html, which list it, so the image was not renamed\./);
 });
+
+/** Whole-page JSON metadata with native sections, page parts, fields and data the editor does not know. */
+function withPageMetadata(){
+ const s=canonical();
+ const doc=readPageBuilderDocument(s[SIDE]) as PageBuilderDocument & Record<string,unknown>;
+ const meta=(tag:string)=>({fields:{tone:tag},sections:{[`${tag}-hero`]:{kind:'hero',copyOf:'index.html'}},pageParts:{header:{shared:'site-header'}},opaque:{nested:[tag,1,true]}});
+ (doc.pages as Record<string,unknown>)['work/a/index.html']=meta('a');
+ (doc.pages as Record<string,unknown>)['work/b/index.html']=meta('b');
+ (doc.pages as Record<string,unknown>)['about/index.html']=meta('about');
+ doc.catalog={sharedSections:{'site-header':{html:'<header></header>'}}};
+ const raw={...s,'about/index.html':page('About'),[SIDE]:writePageBuilderDocument(doc,s[SIDE])};
+ return {raw,meta,doc:readPageBuilderDocument(raw[SIDE]) as PageBuilderDocument & Record<string,unknown>};
+}
+const sidecarAfter=(r:ReturnType<typeof plan>)=>{if('error'in r)assert.fail(r.error);return readPageBuilderDocument(r.operation.edits!.get(SIDE)) as PageBuilderDocument & Record<string,unknown>;};
+
+test('moving a page carries its complete metadata and leaves other pages, catalog and collections alone',()=>{
+ const {raw,meta,doc}=withPageMetadata();
+ const r=plan(raw,{moves:[{from:'work/a/index.html',to:'work/z/index.html'}]});
+ const after=sidecarAfter(r);
+ assert.deepEqual(after.pages['work/z/index.html'],meta('a'));
+ assert.equal(Object.hasOwn(after.pages,'work/a/index.html'),false);
+ assert.deepEqual(after.pages['work/b/index.html'],doc.pages['work/b/index.html']);
+ assert.deepEqual(after.pages['about/index.html'],doc.pages['about/index.html']);
+ assert.deepEqual(after.catalog,doc.catalog);
+ assert.deepEqual(Object.keys(after.collections),['work']);
+ if('error'in r)return;
+ assert.equal(r.operation.expectedSources.get(SIDE),raw[SIDE],'the exact JSON it was planned from is pinned');
+});
+test('moving a folder carries the metadata of every page inside it',()=>{
+ const {raw,meta,doc}=withPageMetadata();
+ const after=sidecarAfter(plan(raw,{moves:[{from:'work/a/index.html',to:'projects/a/index.html'},{from:'work/b/index.html',to:'projects/b/index.html'}],folders:[{from:'work/',to:'projects/'}]}));
+ assert.deepEqual(after.pages['projects/a/index.html'],meta('a'));
+ assert.deepEqual(after.pages['projects/b/index.html'],meta('b'));
+ assert.deepEqual(after.pages['about/index.html'],doc.pages['about/index.html']);
+ assert.deepEqual(after.catalog,doc.catalog);
+});
+test('deleting a page removes its whole metadata and keeps the rest',()=>{
+ const {raw,doc}=withPageMetadata();
+ const after=sidecarAfter(plan(raw,{deletes:['work/b/index.html']}));
+ assert.equal(Object.hasOwn(after.pages,'work/b/index.html'),false);
+ assert.deepEqual(after.pages['work/a/index.html'],doc.pages['work/a/index.html']);
+ assert.deepEqual(after.pages['about/index.html'],doc.pages['about/index.html']);
+ assert.deepEqual(after.catalog,doc.catalog);
+});
+test('moving a page onto leftover metadata of a missing file is refused and changes nothing',()=>{
+ const {raw,meta}=withPageMetadata();
+ const doc=readPageBuilderDocument(raw[SIDE]) as PageBuilderDocument & Record<string,unknown>;
+ (doc.pages as Record<string,unknown>)['work/z/index.html']={...meta('orphan'),links:['keep-me']};
+ const sources={...raw,[SIDE]:writePageBuilderDocument(doc,raw[SIDE])};
+ const frozen=structuredClone(sources);
+ const moves=[{from:'work/a/index.html',to:'work/z/index.html'}];
+ const r=plan(sources,{moves});
+ assert.ok('error'in r,'no operation is produced');
+ assert.match(r.error,/work\/z\/index\.html/);
+ assert.match(r.error,/already has page data/);
+ assert.deepEqual(sources,frozen);
+ assert.deepEqual(moves,[{from:'work/a/index.html',to:'work/z/index.html'}]);
+});
+test('a page without metadata may still move to a path with leftover metadata',()=>{
+ const {raw,meta}=withPageMetadata();
+ const doc=readPageBuilderDocument(raw[SIDE]) as PageBuilderDocument & Record<string,unknown>;
+ delete (doc.pages as Record<string,unknown>)['work/a/index.html'];
+ (doc.pages as Record<string,unknown>)['work/z/index.html']=meta('orphan');
+ const after=sidecarAfter(plan({...raw,[SIDE]:writePageBuilderDocument(doc,raw[SIDE])},{moves:[{from:'work/a/index.html',to:'work/z/index.html'}]}));
+ assert.deepEqual(after.pages['work/z/index.html'],meta('orphan'));
+});
+test('a duplicated page starts without the original page metadata or links',()=>{
+ const {raw,doc}=withPageMetadata();
+ const r=plan(raw,{creates:[{path:'work/c/index.html',content:raw['work/a/index.html']}]});
+ const after=sidecarAfter(r);
+ assert.equal(Object.hasOwn(after.pages,'work/c/index.html'),false);
+ assert.deepEqual(after.pages['work/a/index.html'],doc.pages['work/a/index.html']);
+});
