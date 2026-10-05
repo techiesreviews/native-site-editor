@@ -184,3 +184,53 @@ test("a folder rename onto a page key that only has leftover metadata is refused
   await expect(fileRow(page, "about")).toBeFocused();
   expect(await storedDrafts(page)).toEqual([]);
 });
+
+// A folder rename rewrites /about/ links in the public header and in its private master alike.
+// That site-managed rewrite is not a customisation: the moved page's pristine header copy must
+// still count as unchanged, so the master's Update copies writes it.
+test("after a folder rename rebases a pristine shared header, Update copies from its master still updates the moved page", async ({ page, baseURL }) => {
+  const MASTER = ".editor/page-parts/site-head.html";
+  const MOVED = "studio/index.html";
+  await open(page, baseURL);
+  await share(page, /^Header/, "header", "site-head", "Site header");
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  const saved = await snapshot(page, baseURL, [PAGE, MASTER, JSON_PATH]);
+  // Pristine at save: the page's header is the master byte for byte, and both link /about/.
+  const header = (source: string | undefined) => source!.match(/<header class="site-header">[\s\S]*?<\/header>/)![0];
+  expect(header(saved[PAGE])).toBe(saved[MASTER]);
+  expect(saved[MASTER]).toContain('href="/about/"');
+
+  await renameFolder(page, "about", "studio");
+  await expect(status(page)).toContainText("Renamed the folder about to studio");
+  await expect.poll(async () => (await effective(page, baseURL, MOVED)) ?? "").toContain('href="/studio/"');
+  const moved = await snapshot(page, baseURL, [MOVED, MASTER, JSON_PATH]);
+  // The rewrite kept them identical to each other: still pristine.
+  expect(moved[MASTER]).toBe(saved[MASTER]!.replaceAll("/about/", "/studio/"));
+  expect(header(moved[MOVED])).toBe(moved[MASTER]);
+
+  // Through the Pages tree to the moved page (its drafts are not saved, so the status is not "Up to date").
+  await explorer(page).getByRole("tab", { name: "Pages" }).click();
+  await explorer(page).getByRole("treeitem", { name: "About · Larkspur Studio" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(MOVED);
+  if (await explorer(page).isVisible()) await page.locator("#explorer-toggle").click();
+  await row(page, /Site header/).hover();
+  await row(page, /Site header/).getByRole("button", { name: "Edit component" }).click();
+  const banner = page.getByRole("region", { name: "Shared header master" });
+  await expect(banner).toBeVisible();
+  await expect(page.locator("#primary-title")).toHaveText(MASTER);
+  const edited = moved[MASTER]!.replace(">Larkspur</a>", ">Larkspur Studio</a>");
+  expect(edited).not.toBe(moved[MASTER]);
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.evaluate(value => navigator.clipboard.writeText(value), edited);
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(edited);
+  await banner.getByRole("button", { name: "Update copies" }).click();
+  // The moved copy was unchanged by the person, so Update writes it.
+  await expect.poll(async () => header(await effective(page, baseURL, MOVED)), { timeout: 5_000 }).toBe(edited);
+  expect(await effective(page, baseURL, MOVED)).toBe(moved[MOVED]!.replace(moved[MASTER]!, edited));
+});
