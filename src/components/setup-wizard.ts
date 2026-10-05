@@ -211,7 +211,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
       return;
     }
     if (options.connectPurpose === "register-app") {
-      registerAppStep(content, footer);
+      registerAppStep(content);
       return;
     }
     const intro = node("p", "wizard-text wizard-signed-in");
@@ -229,7 +229,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
   }
 
   // Step 1 for the owner of a fresh editor: nobody is signed in yet, because the editor has no GitHub App to sign in with.
-  function registerAppStep(content: HTMLElement, footer: HTMLElement) {
+  function registerAppStep(content: HTMLElement) {
     const intro = node("p", "wizard-text");
     intro.append(node("strong", "", "You're not signed in yet."), " This editor has no GitHub App, so first create one for it on GitHub.");
     const how = node("p", "wizard-text", "GitHub asks you to confirm the new App and to install it, then you come back here to sign in and create your site. If you left GitHub before finishing, connect again.");
@@ -237,7 +237,6 @@ export function createSetupWizard(options: SetupWizardOptions) {
     const actions = node("div", "wizard-actions");
     actions.append(connect);
     content.append(intro, how, actions);
-    footer.append(nextButton("Next", () => {}, true));
   }
 
   const nextButton = (text: string, action: () => void, disabled = false, className = "button primary") => {
