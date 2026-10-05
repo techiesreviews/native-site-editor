@@ -124,6 +124,50 @@ test("hovering labels an element, selecting shows its ancestors, and crumbs, Esc
   await expect(crumbs(page)).toHaveText(["body"]);
 });
 
+test("a Code refresh while a breadcrumb is hovered still clears its hint on pointer leave", async ({ page }, testInfo) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await frame.locator(".hero h1").click();
+  await expect(current(page)).toHaveText("h1");
+  const primary = page.locator("#content [role=textbox]").first();
+  await primary.focus();
+  const crumb = crumbs(page).filter({ hasText: "section.hero" });
+  const before = await crumb.elementHandle();
+  await crumb.hover();
+  const hint = frame.locator("[data-native-selection-box=hint]");
+  await expect(hint).toBeVisible();
+  // Keyboard focus stays in Code while the pointer stays over the breadcrumb.
+  await page.keyboard.type("Updated ");
+  await expect(frame.locator(".hero h1")).toHaveText("Updated A native browser preview");
+  await expect(current(page)).toHaveText("h1");
+  await expect.poll(() => before!.evaluate(el => el.isConnected)).toBe(true);
+  await expect(hint).toBeVisible();
+  // Move Code's caret to the main element without moving the pointer. Its
+  // selection removes the hovered section from the breadcrumb entirely.
+  await page.keyboard.press("ControlOrMeta+f");
+  const find = page.locator("#content .find-widget");
+  await find.getByRole("textbox").first().fill('data-key="main"');
+  await expect(find.locator(".matchesCount")).toHaveText("1 of 1");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ArrowRight");
+  await expect(current(page)).toHaveText("main.page");
+  const identity = await before!.evaluate(el => ({ connected: el.isConnected, hovered: el.matches(":hover"), focused: document.activeElement === el }));
+  await testInfo.attach("breadcrumb-refresh-identity", {
+    body: JSON.stringify(identity),
+    contentType: "application/json",
+  });
+  await expect(hint).toBeHidden();
+  await page.mouse.move(10, 500);
+  await expect(hint).toBeHidden();
+  // The original canvas gestures still climb and clear after the refresh.
+  await frame.locator(".hero h1").click();
+  await page.keyboard.press("Escape");
+  await expect(current(page)).toHaveText("section.hero");
+  await page.keyboard.press("ControlOrMeta+ArrowUp");
+  await expect(current(page)).toHaveText("main.page");
+  await page.keyboard.press("Escape");
+  await expect(crumbs(page)).toHaveText(["body"]);
+});
+
 test("the breadcrumb follows a selection into components within components", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await frame.getByText("Shared across cards").first().click();

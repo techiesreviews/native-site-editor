@@ -235,7 +235,24 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   observer.observe(frameHost);
 
   // The breadcrumb: the page's <body>, then the selection's ancestors, then the selection.
+  let renderedCrumbs: { label: string; kind: string }[] | undefined;
+  let hintedCrumb: number | undefined;
+  const hintCrumb = (index: number | undefined) => {
+    hintedCrumb = index;
+    handlers.onCrumbHover(index);
+  };
   function setCrumbs(crumbs: CanvasCrumb[]) {
+    // Refreshes of the same selection keep pointer/focus ownership intact.
+    if (renderedCrumbs?.length === crumbs.length && crumbs.every((crumb, index) =>
+      crumb.label === renderedCrumbs![index].label && crumb.kind === renderedCrumbs![index].kind)) {
+      // Identical labels can name another instance after a canvas refresh.
+      if (hintedCrumb !== undefined) handlers.onCrumbHover(hintedCrumb);
+      return;
+    }
+    // Removing a hovered/focused node need not emit leave/blur. Clear only
+    // this bar's active hint before replacing its path.
+    if (hintedCrumb !== undefined) hintCrumb(undefined);
+    renderedCrumbs = crumbs.map(({ label, kind }) => ({ label, kind }));
     const items: { label: string; kind: CanvasCrumb["kind"] | "page"; index: number }[] = [
       { label: "body", kind: "page", index: -1 },
       ...crumbs.map((crumb, index) => ({ ...crumb, index })),
@@ -255,10 +272,10 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
         ? "Select nothing: the page's body"
         : last ? "The selected element (Esc or Ctrl/⌘+↑ selects its parent)" : `Select this ${item.kind === "component" ? "component" : "element"}`;
       crumb.addEventListener("click", () => handlers.onCrumb(item.index));
-      crumb.addEventListener("pointerenter", () => handlers.onCrumbHover(item.index));
-      crumb.addEventListener("pointerleave", () => handlers.onCrumbHover(undefined));
-      crumb.addEventListener("focus", () => handlers.onCrumbHover(item.index));
-      crumb.addEventListener("blur", () => handlers.onCrumbHover(undefined));
+      crumb.addEventListener("pointerenter", () => hintCrumb(item.index));
+      crumb.addEventListener("pointerleave", () => hintCrumb(undefined));
+      crumb.addEventListener("focus", () => hintCrumb(item.index));
+      crumb.addEventListener("blur", () => hintCrumb(undefined));
       li.append(crumb);
       return li;
     }));
