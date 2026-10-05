@@ -372,3 +372,45 @@ test("with reduced motion the last page has no confetti, only a fade-in", async 
   expect(await page.locator(".wizard__panel--celebrate").evaluate((element) => getComputedStyle(element).animationName)).toBe("celebrate-fade");
   await context.close();
 });
+
+// A fresh self-hosted editor (Deploy to Cloudflare) whose owner has not
+// registered its GitHub App yet: the existing wizard opens on Connect GitHub,
+// and only its button leads to the owner setup handoff.
+const ownerSetupSession = (page: Page, open: boolean) =>
+  page.route("**/api/session", (route) =>
+    route.fulfill({ json: { configured: false, user: null, ownerSetupOpen: open, ownerSetupUrl: open ? "/auth/setup" : undefined } }),
+  );
+
+test("an editor without a GitHub App opens the wizard on Connect GitHub and goes to owner setup only from its button", async ({ page, baseURL }) => {
+  const handoffs: string[] = [];
+  await page.route("**/auth/setup*", (route) => {
+    handoffs.push(route.request().url());
+    return route.fulfill({ contentType: "text/html", body: "<title>owner setup handoff</title>" });
+  });
+  await ownerSetupSession(page, true);
+  // A repository remembered from another session cannot skip step 1.
+  await page.addInitScript(() => localStorage.setItem("native-site-editor:setup-wizard", JSON.stringify({ step: "open", at: Date.now(), repo: { id: 1, owner: "x", name: "y", fullName: "x/y" } })));
+  await page.goto(`${baseURL}/`);
+  const dialog = page.locator(".wizard");
+  await expect(dialog.getByRole("heading", { level: 1, name: "Connect GitHub" })).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(handoffs, "no handoff before the click").toEqual([]);
+  expect(new URL(page.url()).pathname).toBe("/");
+  await expect(dialog.getByText("not signed in", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Create site" })).toHaveCount(0);
+  const connect = dialog.getByRole("link", { name: "Create this editor's GitHub App" });
+  await expect(connect).toHaveAttribute("href", "/auth/setup");
+  await connect.click();
+  await expect(page).toHaveTitle("owner setup handoff");
+  expect(handoffs.length).toBe(1);
+});
+
+test("an editor with a private owner setup link keeps the locked sign-in, with no wizard and no handoff", async ({ page, baseURL }) => {
+  const handoffs: string[] = [];
+  await page.route("**/auth/setup*", (route) => (handoffs.push(route.request().url()), route.abort()));
+  await ownerSetupSession(page, false);
+  await page.goto(`${baseURL}/`);
+  await expect(page.getByText("GitHub sign-in has not been configured for this editor yet.")).toBeVisible();
+  await expect(page.locator(".wizard")).toHaveCount(0);
+  expect(handoffs).toEqual([]);
+});

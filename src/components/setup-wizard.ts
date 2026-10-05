@@ -45,6 +45,12 @@ export interface SetupWizardOptions {
   memory?: WizardMemory;
   /** Where Connect GitHub goes, in this tab: the editor's /auth/install, which signs in on the way back. */
   connectUrl: string;
+  /**
+   * What Connect GitHub does: `install` (the default) installs the App for a signed-in
+   * account; `register-app` is the owner of a fresh editor, not signed in, creating the
+   * editor's own GitHub App first (owner setup). That guest stays on step 1.
+   */
+  connectPurpose?: "install" | "register-app";
   loadOwners: () => Promise<OwnerInstallation[]>;
   create: (choice: CreateChoice) => Promise<WizardCreateOutcome>;
   /** Looks (uncached) for the repository a user was told to create on GitHub; the editor's own list may not have it yet. */
@@ -204,6 +210,10 @@ export function createSetupWizard(options: SetupWizardOptions) {
       footer.append(nextButton("Next", () => goTo("create")));
       return;
     }
+    if (options.connectPurpose === "register-app") {
+      registerAppStep(content, footer);
+      return;
+    }
     const intro = node("p", "wizard-text wizard-signed-in");
     intro.append(node("strong", "", "You're signed in."), " One more step on GitHub: install the editor on your account.");
     const how = node("p", "wizard-text", "This is one trip: GitHub installs the editor and signs you in together, so there is nothing to do twice. If you left GitHub before finishing, connect again.");
@@ -216,6 +226,18 @@ export function createSetupWizard(options: SetupWizardOptions) {
     actions.append(connect);
     content.append(intro, how, heading, trip, actions, agentLink(() => ({ name: state.name || DEFAULT_REPOSITORY_NAME, private: state.visibility === "private" })));
     footer.append(nextButton("Next", () => goTo("create"), true));
+  }
+
+  // Step 1 for the owner of a fresh editor: nobody is signed in yet, because the editor has no GitHub App to sign in with.
+  function registerAppStep(content: HTMLElement, footer: HTMLElement) {
+    const intro = node("p", "wizard-text");
+    intro.append(node("strong", "", "You're not signed in yet."), " This editor has no GitHub App, so first create one for it on GitHub.");
+    const how = node("p", "wizard-text", "GitHub asks you to confirm the new App and to install it, then you come back here to sign in and create your site. If you left GitHub before finishing, connect again.");
+    const connect = link("Create this editor's GitHub App", options.connectUrl, "button primary wizard-connect__button");
+    const actions = node("div", "wizard-actions");
+    actions.append(connect);
+    content.append(intro, how, actions);
+    footer.append(nextButton("Next", () => {}, true));
   }
 
   const nextButton = (text: string, action: () => void, disabled = false, className = "button primary") => {

@@ -4938,9 +4938,10 @@ function renderLogin(
     action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
   } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
     // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
-    // thing left to do, so go there.
-    location.replace(info.ownerSetupUrl);
+    // thing left to do, which the Setup wizard's Connect step explains and
+    // starts. Nothing leaves this page before that click.
     action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
+    if (mode === "ready") openOwnerSetupWizard(info.ownerSetupUrl);
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -8494,6 +8495,34 @@ async function openWizard() {
     remember: (change) => void writeWizard(localStorage, change),
     finish: (repo) => void finishWizard(repo),
     exit: closeWizard,
+  });
+  document.body.append(wizard.root);
+  wizard.focus();
+}
+
+/**
+ * The owner of a fresh editor, not signed in: the wizard on Connect GitHub, whose
+ * button creates the editor's GitHub App. No browser memory is read or written, so
+ * a remembered repository cannot skip the step and the user's own state stays.
+ */
+function openOwnerSetupWizard(ownerSetupUrl: string) {
+  if (wizard || wizardDismissed) return;
+  wizard = createSetupWizard({
+    login: "",
+    connected: false,
+    step: "connect",
+    connectUrl: ownerSetupUrl,
+    connectPurpose: "register-app",
+    loadOwners: async () => [],
+    create: async () => ({ ok: false, message: "Sign in first." }),
+    findRepository: async () => undefined,
+    agentPrompt: () => "",
+    remember: () => {},
+    finish: () => {},
+    exit: () => {
+      removeWizard();
+      wizardDismissed = true;
+    },
   });
   document.body.append(wizard.root);
   wizard.focus();
