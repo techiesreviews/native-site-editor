@@ -142,7 +142,9 @@ starter's Hero, Feature or Contact) into a new shared section, in one operation 
 
 Pages and stylesheets are never written. The plan is composed from `planStaticSectionSave`,
 `planMakeSectionMaster` and `planNativeSectionLink`, but pins only the original state: the editor
-JSON as loaded (or proven absent), the master path absent, the page bytes and the chosen stylesheet.
+JSON as loaded (or proven absent), the master path absent, the page bytes, and the chosen stylesheet
+with every sheet on the loaded link/import chain that proves the page applies it (for the starter,
+`styles/site.css` and `styles/components.css`). Removing that link or import makes the plan stale.
 
 The caller passes `files`, `sources`, `pagePath`, `pageSource`, the section's exact `range`, and an
 explicit `id`, `label`, `rootClass` and `stylesheetPath`. It refuses:

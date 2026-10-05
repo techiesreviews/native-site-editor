@@ -19,7 +19,8 @@ import {
  * The page and every stylesheet stay byte for byte: nothing is added to the published site. The
  * plan composes `planStaticSectionSave`, `planMakeSectionMaster` and `planNativeSectionLink` over
  * intermediate text, then pins only the ORIGINAL state: the editor JSON as loaded (or proven
- * absent), the master path proven absent, the page bytes and the loaded stylesheet. The host applies
+ * absent), the master path proven absent, the page bytes, and the loaded stylesheet with every
+ * sheet that links or imports it on the way from the page. The host applies
  * it as one Undo step and compares `expectedFiles` and every expected source right before writing.
  *
  * The caller chooses `id`, `label`, `rootClass` (a class already on the section's root) and
@@ -56,12 +57,23 @@ export interface NativeSharedSectionPlan {
 
 function reject(message: string): never { throw new Error(message); }
 
-/** Every stylesheet the page applies: its links and what they import, read from loaded sources. */
-function pageStylesheets(pagePath: string, pageSource: string, sources: NativeSharedSectionInput["sources"]) {
+/**
+ * How the page applies `sheet`: the loaded chain from a stylesheet the page links, through each
+ * importing sheet, to `sheet` itself (outermost first). Undefined when no loaded chain reaches it.
+ */
+function stylesheetChain(pagePath: string, pageSource: string, sources: NativeSharedSectionInput["sources"], sheet: string): string[] | undefined {
   const linked = nativePageStylesheets(pageSource, pagePath);
   const read = (path: string) => (Object.hasOwn(sources, path) && typeof sources[path] === "string" ? sources[path] : undefined);
   const expanded = expandStyleImports(linked.filter((path) => read(path) !== undefined), read);
-  return new Set([...linked, ...expanded.imported]);
+  const importer = new Map<string, string | undefined>();
+  for (const item of expanded.sheets) if (item.kind === "sheet" && !importer.has(item.path)) importer.set(item.path, item.importer);
+  if (!importer.has(sheet)) return undefined;
+  const chain = [sheet];
+  for (let at = importer.get(sheet); at !== undefined; at = importer.get(at)) {
+    if (chain.includes(at)) return undefined;
+    chain.unshift(at);
+  }
+  return linked.includes(chain[0]) ? chain : undefined;
 }
 
 export function planNativeSharedSection(input: NativeSharedSectionInput): NativeSharedSectionPlan | { error: string } {
@@ -78,11 +90,15 @@ export function planNativeSharedSection(input: NativeSharedSectionInput): Native
     const sheet = input.stylesheetPath;
     if (typeof sheet !== "string" || !graph.has(sheet)) reject("Choose an existing stylesheet for the section.");
     if (!Object.hasOwn(input.sources, sheet) || typeof input.sources[sheet] !== "string") reject(`Load ${sheet} first.`);
-    if (!pageStylesheets(input.pagePath, input.pageSource, input.sources).has(sheet)) reject(`${input.pagePath} does not use ${sheet}.`);
+    const chain = stylesheetChain(input.pagePath, input.pageSource, input.sources, sheet);
+    if (!chain) reject(`${input.pagePath} does not use ${sheet}.`);
+    // Every sheet the proof read is pinned, so a removed link or import makes the plan stale.
+    for (const path of chain) if (!graph.has(path)) reject(`${path} is not in the site's file list.`);
 
     const range = input.range;
     if (!range || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end > input.pageSource.length || range.end <= range.start) reject("Select a section on the page.");
     const html = input.pageSource.slice(range.start, range.end);
+    if (![...descendants(parseSource(input.pageSource))].some((element) => element.start === range.start && element.end === range.end)) reject("Select a section on the page.");
 
     // The root class must be one the section already has and that nothing else on the page uses.
     const others = [...descendants(parseSource(input.pageSource))].filter((element: SourceElement) =>
@@ -128,7 +144,7 @@ export function planNativeSharedSection(input: NativeSharedSectionInput): Native
           [EDITOR_PAGE_BUILDER_PATH, input.documentText],
           [htmlPath, undefined],
           [input.pagePath, input.pageSource],
-          [sheet, input.sources[sheet]],
+          ...chain.map((path): [string, string | undefined] => [path, input.sources[path]]),
         ]),
         edits: absent ? new Map() : new Map([[EDITOR_PAGE_BUILDER_PATH, finalText]]),
         creates: [...(absent ? [{ path: EDITOR_PAGE_BUILDER_PATH, content: finalText }] : []), { path: htmlPath, content: html }],
