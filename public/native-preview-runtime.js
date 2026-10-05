@@ -2839,7 +2839,20 @@
   // ---- End of canvas ----
 
   window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); }, true);
-  window.addEventListener("resize", function () { updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); });
+  var gridResizeSelectionPending = false;
+  window.addEventListener("resize", function () {
+    updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
+    // The Grid indicator uses resolved tracks, which change with frame width.
+    // Coalesce resize events and read the current selection at the refresh.
+    if (gridResizeSelectionPending) return;
+    gridResizeSelectionPending = true;
+    requestAnimationFrame(function () {
+      gridResizeSelectionPending = false;
+      if (!selected || !selected.isConnected) return;
+      var display = getComputedStyle(selected).display;
+      if (display === "grid" || display === "inline-grid") emitSelection(selected, "refresh");
+    });
+  });
   document.addEventListener("submit", function (e) { e.preventDefault(); });
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;

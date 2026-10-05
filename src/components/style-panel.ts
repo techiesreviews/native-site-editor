@@ -47,7 +47,7 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
   const opened = new Set(["Spacing"]);
   let pending = false, interacting = false;
   let searchQuery = "";
-  let widgets: { kind: "grid" | "focal"; isCurrent(): boolean; dispose(): void; refresh(): void }[] = [];
+  let widgets: { kind: "grid" | "focal"; isCurrent(): boolean; dispose(): void; refresh(computed?: Readonly<Record<string, string | undefined>>): void }[] = [];
   let writing = false;
   let widgetRender = 0;
   let rebuildWidgets: ((focalOnly?: boolean) => void) | undefined;
@@ -201,7 +201,8 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     const context = handlers.context(), own = ownValues();
     renderContext = context; renderOwn = own;
     if (context) syncTarget(context);
-    widgets.forEach(widget => widget.refresh());
+    widgets.forEach(widget => widget.kind === "grid" && context?.key === key
+      ? widget.refresh(context.computed) : widget.refresh());
     if (global && context) {
       const variables = siteVariables(context.files);
       for (const input of body.querySelectorAll<HTMLInputElement>(".style-panel__variable input")) {

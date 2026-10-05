@@ -1,9 +1,58 @@
 import { test, expect, type Page } from '@playwright/test';
 import { showStylePanel } from './style-panel-controls';
 import { storedDrafts } from './drafts';
+import { readFileSync } from 'node:fs';
 
 const source = (page: Page) => page.evaluate(async () =>
   (await import('/src/components/code-editor.ts')).getMountedSource('styles/site.css'));
+
+for (const width of [1100, 1440]) {
+  test(`grid count refreshes after opening Style and changing frame width at ${width}px`, async ({ page, baseURL }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+    const cards = page.frameLocator('.native-preview-frame').locator('.cards');
+    await expect(cards).toBeVisible();
+    const gap = await cards.evaluate(el => {
+      const style = getComputedStyle(el);
+      return parseFloat(style.gridTemplateColumns) + parseFloat(style.columnGap) / 2;
+    });
+    await cards.click({ position: { x: gap, y: 5 } });
+    await showStylePanel(page);
+    const panel = page.getByRole('complementary', { name: 'Style panel' });
+    await panel.getByRole('searchbox', { name: 'Search styles' }).fill('grid');
+    const grid = panel.getByRole('region', { name: 'Grid layout' });
+    const tracks = () => cards.evaluate(el => {
+      const style = getComputedStyle(el);
+      return [style.gridTemplateColumns.split(/\s+/).length, style.gridTemplateRows.split(/\s+/).length];
+    });
+    const [columns, rows] = width === 1100 ? [2, 2] : [3, 1];
+    await expect.poll(tracks).toEqual([columns, rows]);
+    await expect(grid).toContainText(`Currently ${columns} columns at this width`);
+    await expect(grid.getByRole('img')).toHaveAttribute('aria-label', new RegExp(`${columns} columns, ${rows} rows`));
+    await expect(grid.getByRole('img').locator('span')).toHaveCount(columns * rows);
+
+    const columnsInput = grid.getByLabel('Columns', { exact: true });
+    await columnsInput.fill('7');
+    await page.setViewportSize({ width: 900, height: 1000 });
+    await expect.poll(tracks).toEqual([1, 3]);
+    await expect(grid).toContainText('Currently 1 columns at this width');
+    await expect(grid.getByRole('img').locator('span')).toHaveCount(3);
+    await expect(columnsInput).toHaveValue('7');
+    await expect(columnsInput).toBeFocused();
+    expect(await source(page)).toBe(readFileSync('fixtures/native-starter/styles/site.css', 'utf8'));
+    expect(await storedDrafts(page)).toEqual([]);
+
+    const frameWidth = page.getByRole('textbox', { name: 'Frame width in pixels' });
+    await frameWidth.fill('420');
+    await frameWidth.press('Enter');
+    await expect.poll(tracks).toEqual([1, 3]);
+    await expect(grid).toContainText('Currently 1 columns at this width');
+    await expect(grid.getByRole('img').locator('span')).toHaveCount(3);
+    await expect(grid.getByLabel('Columns', { exact: true })).toHaveValue('');
+    expect(await source(page)).toBe(readFileSync('fixtures/native-starter/styles/site.css', 'utf8'));
+    expect(await storedDrafts(page)).toEqual([]);
+  });
+}
 
 test('auto-fit grid indicates its current columns without replacing its custom CSS', async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });

@@ -40,6 +40,8 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     finally { busy = false; if (!disposed) refresh(); }
   };
   const preview = document.createElement('div'); preview.className = 'grid-editor__preview'; preview.setAttribute('role', 'img'); root.append(preview);
+  let computed: Readonly<Record<string, string | undefined>> | undefined = options.computed;
+  const customStatuses: Record<string, { status: HTMLParagraphElement; description: string }> = {};
   const counts: Record<string, number | undefined> = {};
   const resolved: Record<string, number | undefined> = {};
   function renderPreview() {
@@ -68,7 +70,7 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = counts[axis] ? String(counts[axis]) : ''; label.append(input);
     const status = document.createElement('p'); status.className = 'grid-editor__status';
     status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined && raw ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
-    if (!counts[axis]) status.textContent += resolved[axis] ? ` · Currently ${resolved[axis]} ${axis} at this width` : ' · Current track count unavailable';
+    if (!counts[axis]) customStatuses[axis] = { status, description: status.textContent };
     const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = 'Apply'; button.setAttribute('aria-label', `Apply: replace with ${input.value || 'N'} equal ${axis}`); button.title = button.getAttribute('aria-label')!; };
     updateButton(); input.addEventListener('input', updateButton, { signal: events.signal });
     const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
@@ -115,7 +117,17 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Make grid';
     button.addEventListener('click', () => { if (allowed() && !busy) options.makeGrid?.(); }, { signal: events.signal }); root.append(button);
   }
-  function refresh() {
+  function refresh(currentComputed?: Readonly<Record<string, string | undefined>>) {
+    if (currentComputed) computed = currentComputed;
+    for (const axis of ['columns', 'rows']) {
+      resolved[axis] = resolvedTrackCount(computed?.[`grid-template-${axis}`] ?? '');
+      const custom = customStatuses[axis];
+      const collapsed = /(?:^|\s)0(?:\.0+)?px(?:\s|$)/.test(computed?.[`grid-template-${axis}`] ?? '');
+      const caption = resolved[axis] ? ` · Currently ${resolved[axis]} ${axis} at this width${collapsed ? ' (includes collapsed tracks)' : ''}`
+        : ' · Current track count unavailable';
+      if (custom && !counts[axis]) custom.status.textContent = custom.description + caption;
+    }
+    renderPreview();
     root.setAttribute('aria-busy', String(busy));
     for (const control of root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button')) {
       const blocked = busy || !allowed();
@@ -125,6 +137,6 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
       if (control instanceof HTMLInputElement) control.readOnly = blocked;
     }
   }
-  renderPreview(); refresh(); container.append(root);
+  refresh(); container.append(root);
   return { element: root, refresh, dispose() { if (disposed) return; disposed = true; events.abort(); root.remove(); } };
 }
