@@ -36,7 +36,7 @@ export function sidecarCollectionAt(sources: Readonly<Record<string, string>>, p
   return found ? { id: found[0], collection: document.collections[found[0]] } : undefined;
 }
 
-/** Imports every inline recipe (if any) into the document, returning the cleaned page texts. Also used by the one-time editor data move. */
+/** Imports every inline recipe (if any) into the document, returning the cleaned page texts. */
 export function withLegacyImported(site: SidecarSite) {
   const sidecar = site.sources[EDITOR_PAGE_BUILDER_PATH];
   const inline = Object.entries(site.sources).some(([path, text]) => path.endsWith(".html") && /data-each/i.test(text) && (() => { try { return readCollections(text).length > 0; } catch { return true; } })());
