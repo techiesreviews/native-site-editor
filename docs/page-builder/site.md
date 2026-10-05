@@ -9,8 +9,13 @@ those drafts; Undo restores all files affected by one action.
 
 Title and description write ordinary head metadata. Social title and description
 follow their page fields while their respective checkboxes are selected. Uncheck
-a field to maintain a separate sharing value. The choice persists during the
-editor session; reopening an editor infers linkage from missing or equal values.
+a field to maintain a separate sharing value. The page source decides: a
+missing tag, or one equal to the page's own value, is linked (a missing one
+says "Not set, uses page title/description"); a different value, including
+an empty one, is shown unlinked as written. A choice made here persists
+during the editor session only while the tag is still missing or equal, so a
+value written later in Code is never hidden or overwritten. Checking the link
+replaces it with the page's value.
 
 The share card previews social title, description and image. Images may be chosen
 from repository paths, uploaded, or entered as full URLs. The preview uses text

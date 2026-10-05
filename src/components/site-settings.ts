@@ -265,11 +265,20 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       search.append(node("p", "site-settings__hint", "Adds noindex for search engines. This does not make a page private."));
       const theme = textField(search, "Theme colour", values["theme-color"], "A CSS colour for supported browser chrome, for example #2f6d3a.");
       const social = section(socialPanel, "Share card");
+      // The page source is the authority: a share title or description written
+      // there that differs from the page's own is shown unlinked, whatever was
+      // chosen here before. A remembered choice only applies while the tag is
+      // missing or matches the page value.
       const preference = linkPreferences.get(options.path);
-      const titleLink = checkbox(social, "Use page title", preference?.title ?? (!values["og:title"] || values["og:title"] === values.title));
-      const socialTitle = textField(social, "Social title", values["og:title"] || values.title);
-      const descriptionLink = checkbox(social, "Use page description", preference?.description ?? (!values["og:description"] || values["og:description"] === values.description));
-      const socialDescription = textField(social, "Social description", values["og:description"] || values.description);
+      const ownTitle = hasHeadField(options.source, "og:title"), ownDescription = hasHeadField(options.source, "og:description");
+      const titleMatches = !ownTitle || values["og:title"] === values.title;
+      const descriptionMatches = !ownDescription || values["og:description"] === values.description;
+      const titleLink = checkbox(social, "Use page title", titleMatches && (preference?.title ?? true));
+      if (!ownTitle) social.append(node("p", "site-settings__hint", "Not set, uses page title."));
+      const socialTitle = textField(social, "Social title", ownTitle ? values["og:title"] : values.title);
+      const descriptionLink = checkbox(social, "Use page description", descriptionMatches && (preference?.description ?? true));
+      if (!ownDescription) social.append(node("p", "site-settings__hint", "Not set, uses page description."));
+      const socialDescription = textField(social, "Social description", ownDescription ? values["og:description"] : values.description);
       const image = textField(social, "Social image", values["og:image"], "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.");
       addImageChoices(image, options.images);
       const upload = button("Upload social image…", () => uploadInto(image, dialog, handlers, refresh), "site-settings__link");
