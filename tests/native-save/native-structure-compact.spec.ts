@@ -78,7 +78,7 @@ test('row pencil opens one inline editor that keeps caret, refuses foreign chang
 test('the slot badge of a later assigned root selects the first actual root',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card><a slot="cta" href="/a">A</a><p>Between</p><a slot="cta" href="/b">B</a></project-card>';s.version++;s.update();});
  expect(await rows(page)).toEqual(['0','0.0','0.1','0.2']);
- await page.locator('[role=treeitem][data-node="0.2"] .page-structure__slot-badge').click();
+ await page.locator('[role=treeitem][data-node="0.2"] .page-structure__slot-badge').press('Enter');
  expect((await H(page)).selected.at(-1)).toEqual({path:'index.html',node:[0,0]});
  await expect(page.locator('[role=treeitem][data-node="0.0"]')).toHaveAttribute('aria-selected','true');
  await expect(page.locator('[role=treeitem][data-node="0.0"]')).toBeFocused();
@@ -259,7 +259,7 @@ test('Enter applies a field and returns focus to its row',async({page})=>{
 test('rich content slots select their native root without an empty editor',async({page})=>{
  await harness(page);const body=page.locator('[role=treeitem][data-node="0.1"]');
  await expect(body.locator('.page-structure__action[aria-label="Edit Body"]')).toHaveCount(0);
- await body.locator('.page-structure__slot-badge').click();
+ await body.locator('.page-structure__slot-badge').press('Enter');
  await expect(page.locator('.page-structure__inline')).toHaveCount(0);
  expect((await H(page)).selected.at(-1)).toEqual({path:'index.html',node:[0,1]});
  await body.focus();await body.press('F2');await expect(page.locator('.page-structure__inline')).toHaveCount(0);

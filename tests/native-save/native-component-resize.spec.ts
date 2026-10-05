@@ -9,7 +9,7 @@ test("Structure resizes, folds, restores and persists while component slot field
     const instance = page.getByRole('treeitem', {name:/^Project card Reusable cards$/});
     await instance.locator(".page-structure__label").click();
     if (await instance.getAttribute('aria-expanded') === 'false') await instance.locator('.page-structure__toggle').click();
-    await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().click();
+    await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().press('Enter');
     await expect(page.locator('#structure').getByRole('textbox',{name:'Title: Text',exact:true})).toHaveValue('Reusable cards');
   };
   await open();

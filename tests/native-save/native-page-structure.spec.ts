@@ -49,7 +49,7 @@ test("the sidebar lists the page's elements and marks the one selected in the pr
   await expect(bar(page).getByRole('button',{name:'In the title slot of Project card: select the instance',exact:true})).toBeVisible();
   await title.press("F2");
   await expect(tree(page).getByRole('textbox',{name:'Title: Text',exact:true})).toHaveValue('Reusable cards');
-  await tree(page).locator(".page-structure__slot-badge").filter({hasText:/^Body$/}).first().click();
+  await tree(page).locator(".page-structure__slot-badge").filter({hasText:/^Body$/}).first().press("Enter");
   await expect(tree(page).getByRole('textbox',{name:'Body: Text',exact:true})).toHaveValue(/^This card/);
   await expect(page.frameLocator('.native-preview-frame').locator('project-card [slot=title]').first()).toHaveText('Reusable cards');
   await unfold(page, "Section A native browser preview");

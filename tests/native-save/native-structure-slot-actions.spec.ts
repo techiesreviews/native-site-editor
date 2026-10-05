@@ -19,14 +19,14 @@ async function harness(page:any) {
 // Native Structure baseline: every assigned root is a real treeitem; one inline
 // editor opens only on an explicit F2, pencil or badge.
 const row=(page:any,node:string)=>page.locator(`[role=treeitem][data-node="${node}"]`);
-// Slot rows use the same faded bar as every Structure row, revealed by the
-// whole row. It sits in the label and ends where the badge starts, so the
-// badge never moves or hides, and nothing widens the tree.
-test('slot actions fade in just before the badge, which stays where it is',async({page})=>{
+// Slot rows use the same faded bar as every Structure row, at the row's end:
+// it fades in over the badge, which stays exactly where it is, and nothing
+// widens the tree.
+test('slot actions fade in over the badge, which stays where it is',async({page})=>{
  await harness(page);
- const title=row(page,'0.0'),label=title.locator('.page-structure__label');
- await expect(title).toHaveClass(/row-action-trigger/);await expect(label).toHaveClass(/row-action-host/);
- await expect(title.locator('.row-action-overlay')).toHaveCount(1);
+ const title=row(page,'0.0');
+ await expect(title).toHaveClass(/row-action-host/);
+ await expect(title.locator(':scope > .row-action-overlay')).toHaveCount(1);
  const pencil=title.locator('.row-action-overlay').getByRole('button',{name:'Edit Title',exact:true});
  const badge=title.locator('.page-structure__slot-badge');
  await page.mouse.move(0,0);await expect(pencil).toHaveCSS('opacity','0');
@@ -34,13 +34,13 @@ test('slot actions fade in just before the badge, which stays where it is',async
  await title.hover();await expect(pencil).toHaveCSS('opacity','1');await page.waitForTimeout(300);
  const hovered=(await badge.boundingBox())!;
  expect(hovered.x).toBe(rest.x);
- const geo=await title.evaluate((el:HTMLElement)=>{const o=el.querySelector('.row-action-overlay')!,kids=[...o.children].map(c=>c.getBoundingClientRect());return{last:kids[kids.length-1].right,fade:getComputedStyle(o,'::before').opacity,overflow:el.scrollWidth-el.clientWidth,tree:el.closest('[role=tree]')!.scrollWidth-el.closest('[role=tree]')!.clientWidth};});
- expect(geo.last).toBeLessThanOrEqual(hovered.x);expect(hovered.x-geo.last).toBeLessThanOrEqual(8);
+ const geo=await title.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),o=el.querySelector(':scope > .row-action-overlay')!,ob=o.getBoundingClientRect(),kids=[...o.children].map(c=>c.getBoundingClientRect());return{right:r.right,last:kids[kids.length-1].right,barLeft:ob.left,fade:getComputedStyle(o,'::before').opacity,overflow:el.scrollWidth-el.clientWidth,tree:el.closest('[role=tree]')!.scrollWidth-el.closest('[role=tree]')!.clientWidth};});
+ // The bar reaches the row's end and covers the badge.
+ expect(geo.right-geo.last).toBeLessThanOrEqual(6);
+ expect(geo.barLeft).toBeLessThanOrEqual(hovered.x);
  expect(geo.fade).toBe('1');
  expect(geo.overflow).toBeLessThanOrEqual(0);expect(geo.tree).toBeLessThanOrEqual(0);
- await badge.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
- await page.keyboard.press('Escape');await expect(page.locator('.page-structure__inline')).toHaveCount(0);
- await title.hover();await pencil.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
+ await pencil.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
  const field=page.getByRole('textbox',{name:'Title: Text'});await field.fill('Renamed');await field.press('Enter');
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).toContain('<span slot="title">Renamed</span>');
 });
@@ -56,8 +56,8 @@ test('a hidden slot keeps its place in the tree and its Show eye is in the faded
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');
  expect(await order()).toEqual(['host','hidden','title','image','cta','unknown']);
  const hidden=page.locator('.page-structure__row--empty-slot');
- await expect(hidden).toHaveClass(/row-action-trigger/);
- const eye=hidden.locator('.page-structure__label > .row-action-overlay').getByRole('button',{name:'Show Optional',exact:true});
+ await expect(hidden).toHaveClass(/row-action-host/);
+ const eye=hidden.locator(':scope > .row-action-overlay').getByRole('button',{name:'Show Optional',exact:true});
  await page.mouse.move(0,0);await expect(eye).toHaveCSS('opacity','0');
  await hidden.hover();await expect(eye).toHaveCSS('opacity','1');
  await eye.click();
@@ -77,9 +77,10 @@ test('keyboard focus on a slot row reveals its actions at once and Tab reaches t
  const title=row(page,'0.0');await title.focus();
  const pencil=title.locator('.row-action-overlay').getByRole('button',{name:'Edit Title',exact:true});
  await expect(pencil).toHaveCSS('opacity','1');
- // The bar's buttons come first, beside the label they act on, then the badge.
+ await page.keyboard.press('Tab');await expect(title.locator('.page-structure__slot-badge')).toBeFocused();
+ // The pencil ends the bar, at the badge's place: Reset first, then the pencil.
+ await page.keyboard.press('Tab');await expect(title.getByRole('button',{name:'Reset Title to default',exact:true})).toBeFocused();
  await page.keyboard.press('Tab');await expect(pencil).toBeFocused();
- await page.keyboard.press('Tab');await page.keyboard.press('Tab');await expect(title.locator('.page-structure__slot-badge')).toBeFocused();
 });
 test.describe('reduced motion',()=>{test.use({reducedMotion:'reduce'});
  test('the row bar has no transition',async({page})=>{await harness(page);
@@ -128,7 +129,8 @@ test.describe('touch',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width
   expect(clipped).toEqual([]);
   const badge=(await title.locator('.page-structure__slot-badge').boundingBox())!,rowBox=(await title.boundingBox())!;
   expect(badge.x+badge.width).toBeLessThanOrEqual(rowBox.x+rowBox.width+1);
-  const buttonsRight=await title.evaluate((el:HTMLElement)=>Math.max(...[...el.querySelectorAll<HTMLElement>('.row-action-overlay button')].map(b=>b.getBoundingClientRect().right)));
-  expect(buttonsRight).toBeLessThanOrEqual(badge.x+1);
+  // On touch the bar takes its own room: no button sits on the badge.
+  const overlapping=await title.evaluate((el:HTMLElement)=>{const b=el.querySelector('.page-structure__slot-badge')!.getBoundingClientRect();return [...el.querySelectorAll<HTMLElement>('.row-action-overlay button')].filter(x=>{const r=x.getBoundingClientRect();return r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;}).length;});
+  expect(overlapping).toBe(0);
  });
 });

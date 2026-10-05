@@ -7,7 +7,7 @@ const firstCard = (page: Page) => tree(page).getByRole("treeitem", { name: /^Pro
 // Compact Structure opens a slot's fields only from its badge, as an inline disclosure under the
 // row. Only the first card is expanded, so its Title badge is the one in the tree.
 const openTitle = async (page: Page) => {
-  await tree(page).locator(".page-structure__slot-badge").and(page.getByRole("button", { name: "Edit Title", exact: true })).click();
+  await tree(page).locator(".page-structure__slot-badge").and(page.getByRole("button", { name: "Edit Title", exact: true })).press("Enter");
   return tree(page).getByRole("textbox", { name: "Title: Text", exact: true });
 };
 

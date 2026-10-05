@@ -77,7 +77,8 @@ async function expandInstance(page: Page, instance: import('@playwright/test').L
 const slot = (page: Page, name: string) => panel(page).locator(`.page-structure__slot[data-slot-name="${name}"]:visible`);
 async function editSlot(page: Page, name: string) {
   const label = name.charAt(0).toUpperCase() + name.slice(1);
-  await tree(page).locator(".page-structure__slot-badge").filter({ hasText: new RegExp(`^${label}$`) }).first().click();
+  // On hover the row's action bar covers the badge, so the badge opens its slot from the keyboard.
+  await tree(page).locator(".page-structure__slot-badge").filter({ hasText: new RegExp(`^${label}$`) }).first().press("Enter");
 }
 async function openSlotDetails(page: Page, name: string) {
   if (!await slot(page, name).count()) await editSlot(page, name);

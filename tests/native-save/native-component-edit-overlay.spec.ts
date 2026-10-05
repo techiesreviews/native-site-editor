@@ -112,7 +112,7 @@ test('root panel Edit remains usable after typing its instance slot',async({page
  const panel=page.locator('#structure');
  const instance=page.getByRole('treeitem',{name:/^Project card Reusable cards$/});
  if(await instance.getAttribute('aria-expanded')==='false')await instance.locator('.page-structure__toggle').click();
- await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().click();
+ await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().press('Enter');
  const title=panel.getByRole('textbox',{name:'Title: Text',exact:true});
  await title.fill('Edited root title');await title.press('Tab');
  await expect(frame(page).locator('project-card').first().locator('[slot="title"]')).toHaveText('Edited root title');

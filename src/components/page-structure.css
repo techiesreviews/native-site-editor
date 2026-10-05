@@ -184,27 +184,22 @@
 /* The surface Structure actually sits on: the sidebar (style.css .sidebar).
    Row fades end on it, with hover/current tints painted over it. A host on
    another surface sets --structure-surface. */
-/* Row actions are the shared faded bar (row-actions.ts, row-action-overlay.css),
-   revealed by the whole row. Its host is the row, or for a slot row the
-   label, so the badge after it stays put. The fade follows the row's own
-   paint in the order the row rules use: resting surface, then hover/focus,
-   then current. Hover and current are translucent tints, so the opaque base
-   under them is the Structure surface. */
-.page-structure__row { --structure-row-paint: var(--structure-surface, var(--surface-subtle)); }
-.page-structure__row:is(:hover, :focus-visible) { --structure-row-paint: var(--hover); }
-.page-structure__row[aria-selected="true"] { --structure-row-paint: var(--current); }
-.page-structure__row.row-action-host,
-.page-structure__row .row-action-host { --row-action-background: var(--structure-row-paint); --row-action-base: var(--structure-surface, var(--surface-subtle)); }
-.page-structure__label.row-action-host { align-self: stretch; align-items: center; }
-/* Resting actions sit translated past the host's end; keep them from widening the tree. */
-.page-structure__row.row-action-host,
-.page-structure__label.row-action-host { overflow: clip; }
+/* Row actions are the shared faded bar (row-actions.ts, row-action-overlay.css)
+   at the row's end; on a slot row it fades in over the badge, which stays put.
+   The fade follows the row's own paint in the order the row rules use:
+   resting surface, then hover/focus, then current. Hover and current are
+   translucent tints, so the opaque base under them is the Structure surface. */
+.page-structure__row.row-action-host { --row-action-background: var(--structure-surface, var(--surface-subtle)); --row-action-base: var(--structure-surface, var(--surface-subtle)); }
+.page-structure__row.row-action-host:is(:hover, :focus-visible) { --row-action-background: var(--hover); }
+.page-structure__row.row-action-host[aria-selected="true"] { --row-action-background: var(--current); }
+/* Resting actions sit translated past the row's end; keep them from widening the tree. */
+.page-structure__row.row-action-host { overflow: clip; }
 @media (hover: none), (pointer: coarse) {
-  /* Touch: the bar takes its own room in the label, so nothing is clipped. A
-     narrow row wraps the bar under the name, and its buttons onto further
-     lines, rather than losing any. */
-  .page-structure__label.row-action-host { overflow: visible; flex-wrap: wrap; row-gap: 0; }
-  .page-structure__label.row-action-host > .row-action-overlay { flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; min-width: 0; max-width: 100%; margin-left: auto; }
+  /* Touch: the bar takes its own room after the badge. A narrow row wraps
+     the bar onto its own line, and its buttons onto further lines, rather
+     than losing any. */
+  .page-structure__row.row-action-host { overflow: visible; flex-wrap: wrap; }
+  .page-structure__row.row-action-host > .row-action-overlay { flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; min-width: 0; max-width: 100%; margin-left: auto; }
 }
 .page-structure__action {
   display: grid;
