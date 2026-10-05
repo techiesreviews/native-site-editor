@@ -540,7 +540,8 @@ function mountWorkspace() {
       if (!name || /[\t\n\f\r \x00-\x1f]/.test(name)) throw new Error("Enter one class name without spaces.");
       const selected = lastNativeSelection, context = nativeStylePanelContext();
       if (!selected?.node || versionView || currentPath !== selected.path || !styleContextMatches(expected, context)) { staleStyle(); return; }
-      const source = context!.files[selected.path];
+      const source = nativeEditableSource(selected.path);
+      if (source === undefined) { staleStyle(); return; }
       const range = locateNativeElementRange(source, selected.node);
       if (!range) return;
       const classes = context?.classes ?? [];
@@ -871,6 +872,17 @@ function nativeCanonicalCopy(source: string, range: { start: number; end: number
 // The master session the preview shows, as the controller proves it now, or none.
 function nativeMasterEdit() {
   return versionView ? undefined : masterController.previewInput();
+}
+// The open master's path while its session is live and it is the open file; otherwise undefined.
+function nativeOpenMaster() {
+  const master = nativeMasterEdit();
+  return master && currentPath === master.masterPath ? master : undefined;
+}
+// The source the bar and Style edit for `path`: the public source, or, for the open master
+// during its own live session, the master file (editor-private, so not among public sources).
+function nativeEditableSource(path: string): string | undefined {
+  if (path.startsWith(SECTION_MASTER_FOLDER)) return nativeOpenMaster()?.masterPath === path ? nativeEffectiveSource(path) : undefined;
+  return nativeSources()[path];
 }
 let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
 function renderMasterBanner() {
@@ -1432,6 +1444,9 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   const request = reveal ? ++linkedStyleRequest : linkedStyleRequest;
   const epoch = generation;
   const page = selection.path;
+  const master = nativeOpenMaster(), scopeKey = setupScope(), mountedScope = draftScope();
+  const masterProof = master && mountedScope ? editorModule?.captureFileModelState(mountedScope, master.masterPath) : undefined;
+  const currentMaster = () => !master || nativeOpenMaster()?.session === master.session && setupScope() === scopeKey && nativeEffectiveSource(master.masterPath) === master.masterSource && masterProof?.isCurrent() !== false;
   // An element no rule matches shows what it inherits from: the <body> rules.
   const styles = selection.selectors.length
     ? { rules: selection.selectors, cascade: selection.cascade, node: selection.node }
@@ -1459,11 +1474,11 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   linkedStyle = { page, css, rules };
   const current = () => {
     const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
-    return request === linkedStyleRequest && epoch === generation && page === currentPath &&
+    return request === linkedStyleRequest && epoch === generation && page === currentPath && currentMaster() &&
       (!fallbackCss || (!draft?.deleted && !draft?.upload && !draft?.opaque && nativeEffectiveSource(fallbackCss) !== undefined));
   };
   if (css && !(await openSecondary(css, current))) return;
-  if (request !== linkedStyleRequest || epoch !== generation || page !== currentPath) return;
+  if (!current()) return;
   if (!css) closeSecondary();
   renderLinkedStyle();
   // The first rule in the pane's file, which decides the most; the page's
@@ -1480,7 +1495,7 @@ let pendingNativeSelection: { selection: NativePreviewSelection; epoch: number }
 function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   if (!selection.path || currentPath !== selection.path || !editorModule?.isMounted(selection.path)) return;
   if (reveal) pendingNativeSelection = undefined;
-  const source = nativeSources()[selection.path];
+  const source = nativeEditableSource(selection.path);
   const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
   editorModule?.markElement(selection.path, tag, reveal);
 }
@@ -1491,10 +1506,11 @@ let nativeStyleClass: { selectionKey: string; name: string } | undefined;
 function nativeStylePanelContext(): StylePanelContext | undefined {
   if (!nativeSite) return undefined;
   const selection = lastNativeSelection, sources = nativeSources();
-  const source = selection ? sources[selection.path] : undefined;
+  const master = nativeOpenMaster();
+  const source = selection ? nativeEditableSource(selection.path) : undefined;
   const tag = selection?.node && source !== undefined ? locateNativeElement(source, selection.node) : undefined;
   const classes = tag && source !== undefined ? [...new Set(decodeHtmlEntities(startTagAttribute(source, tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean))] : [];
-  const selectionKey = selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}` : `${generation}:${setupScope()}`;
+  const selectionKey = selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}:${master?.session ?? ""}` : `${generation}:${setupScope()}`;
   const className = nativeStyleClass?.selectionKey === selectionKey && classes.includes(nativeStyleClass.name) ? nativeStyleClass.name : classes[0];
   const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
     ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
@@ -1505,7 +1521,7 @@ function nativeStylePanelContext(): StylePanelContext | undefined {
   return {
     key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
     tag: selection?.tag ?? "", className, classes,
-    target, matchedRules: selection?.selectors ?? [], modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) },
+    target, matchedRules: selection?.selectors ?? [], modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) && (!master || nativeOpenMaster()?.session === master.session && nativeEditableSource(master.masterPath) === source) },
     assetRevision: focalPath ? String(nativeAssetVersions.get(focalPath) ?? 0) : "0", files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
   };
 }
@@ -1801,8 +1817,10 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     componentTools?.show(undefined);
     return;
   }
-  const source = nativeSources()[path] ?? "";
+  const source = nativeEditableSource(path) ?? "";
   const range = node ? locateNativeElementRange(source, node) : undefined;
+  // In the open master: one plain section, edited in place, never moved, copied or removed.
+  const inMaster = nativeOpenMaster()?.masterPath === path;
   // A card the page's collection made: its HTML is rebuilt from page data, so
   // the bar points to where the change belongs instead of editing it.
   const generated = range ? generatedRegionAt(source, range.tag.start) : undefined;
@@ -1820,8 +1838,13 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     nativeNewLink = undefined;
   }
   const announce = (text: string) => { element("status").textContent = text; };
-  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) =>
-    applyNativeChange(path, source, edits, next, message);
+  const masterSession = nativeOpenMaster()?.session, epoch = generation, scopeKey = setupScope();
+  const draft = draftScope(), modelProof = draft ? editor.captureFileModelState(draft, path) : undefined;
+  const currentMaster = () => !inMaster || nativeOpenMaster()?.session === masterSession && generation === epoch && setupScope() === scopeKey && currentPath === path;
+  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
+    if (!currentMaster() || inMaster && modelProof?.isCurrent() === false) { announce("The master or source changed. Select the element again."); return false; }
+    return applyNativeChange(path, source, edits, next, message);
+  };
   const controls: EditBarControl[] = [];
   if (range && node && nativeSite) {
     if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
@@ -1993,8 +2016,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // the element at `target` (found again in the source as it is now), grouped
   // into one undo step until the field closes.
   const live = (target: number[], tagName: string, build: (latest: string, tag: StartTag) => { start: number; end: number; text: string }[], message: string) => {
-    if (!node) return;
-    const latest = nativeSources()[path] ?? "";
+    if (!node || !currentMaster()) return;
+    const latest = nativeEditableSource(path) ?? "";
     const tag = locateNativeElementRange(latest, target)?.tag;
     if (!tag || tag.name !== tagName) { announce("The element could not be found in the source."); return; }
     preview.selectAfterUpdate({ path, node });
@@ -2186,7 +2209,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // as do plain Up/Down on the bar's grip, whose drag moves it in the page.
   let onMove: EditBarModel["onMove"];
   let draggable = false;
-  if (range && node && isNativeSectionTag(selection.tag)) {
+  if (range && node && isNativeSectionTag(selection.tag) && !inMaster) {
     const parent = node.slice(0, -1);
     const index = node[node.length - 1];
     const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
@@ -2228,13 +2251,13 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // Only a whole section moves from the bar or the keyboard (Lex: "remove
   // this on not the sections"), so a card's own move arrows are left out and
   // no element move is offered here; the page structure still moves rows.
-  if (cards && !isNativeSectionTag(selection.tag)) {
+  if (cards && !isNativeSectionTag(selection.tag) && !inMaster) {
     controls.push(...cards.controls(selection, source).filter((control) =>
       !(control.kind === "button" && (control.icon === "up" || control.icon === "down" || control.icon === "left" || control.icon === "right"))));
   }
   nativeElementMoveAction = onMove;
   // Edit component, Make component… (src/page-builder/components.ts).
-  if (componentTools) controls.push(...componentTools.controls(selection));
+  if (componentTools && !inMaster) controls.push(...componentTools.controls(selection));
   // Ask agent: a request about this element for a connected agent, pinned on it.
   const menu = agentMenu;
   if (node && menu?.connected() && nativeSite) {
@@ -2257,7 +2280,16 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       },
     });
   }
-  const model: EditBarModel = { origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() }, kind, controls, onFormat: (format) => nativeFormatActions[format]?.(), onMove, draggable, ...componentTools?.identity(selection), ...nativeMasterIdentity(selection) };
+  const master = inMaster ? masterController.context() : undefined;
+  const masterRoot = Boolean(master && node?.length === 1);
+  const model: EditBarModel = {
+    origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() },
+    kind: masterRoot ? master!.label : kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
+    onMove: inMaster ? undefined : onMove, draggable: inMaster ? false : draggable,
+    ...(inMaster ? {} : { ...componentTools?.identity(selection), ...nativeMasterIdentity(selection) }),
+    // Inside the master: "Intro › Heading", the chip selecting the master's section.
+    ...(master && !masterRoot ? { context: { label: master.label, title: `In the ${master.label} master: select its section`, onSelect: () => { if (currentMaster()) nativePreview?.selectNode({ path, node: [0] }); } } } : {}),
+  };
   nativeEditBarModel = model;
   preview.showEditBar(model, rect, nativeTextSelection);
   componentTools?.show(selection);
@@ -2269,7 +2301,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
 function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
   nativeNewLink = undefined;
   const editor = editorModule;
-  const latest = nativeSources()[fresh.path] ?? "";
+  const latest = nativeEditableSource(fresh.path) ?? "";
   const found = locateNativeElementRange(latest, fresh.link);
   if (!editor || found?.tag.name !== "a" || startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
   const selected = lastNativeSelection?.path === fresh.path && lastNativeSelection.node?.join(".") === fresh.node.join(".");
@@ -2299,7 +2331,7 @@ function withoutCollectionRecipes<T extends { paintedSource?: string; items: Nat
 // "generated": proven inside a collection's cards. "unknown": the editor's JSON
 // cannot be read or its collections located, so ownership cannot be checked.
 function nativeNodeOwnership(path: string | undefined, node: readonly number[]): "plain" | "generated" | "unknown" {
-  const source = path === undefined ? undefined : nativeSources()[path];
+  const source = path === undefined ? undefined : nativeEditableSource(path);
   const range = source === undefined ? undefined : locateNativeElementRange(source, [...node]);
   if (!range) return "plain";
   if (generatedRegionAt(source!, range.tag.start)) return "generated";
@@ -2485,7 +2517,13 @@ function applyNativeChange(path: string, source: string, edits: { start: number;
   const preview = nativePreview;
   const editor = editorModule;
   if (!preview || !editor) return false;
-  if (nativeSources()[path] !== source) {
+  // A master file is written only as the open file of its live session (a control from a closed
+  // session, or for another file, writes nothing).
+  if (path.startsWith(SECTION_MASTER_FOLDER) && nativeOpenMaster()?.masterPath !== path) {
+    announce("That master is no longer open. Choose Edit on the section again.");
+    return false;
+  }
+  if (nativeEditableSource(path) !== source) {
     announce("The source changed. Select the element again and try again.");
     return false;
   }
@@ -3079,7 +3117,8 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     void openDefaultLinkedStyle();
     return;
   }
-  if (!snapshot || !nativeSite || !nativeSitePaths(nativeSite).includes(selection.path)) return;
+  // The open master is selectable in its own session (checked above) though it is not a site page.
+  if (!snapshot || !nativeSite || !(nativeSitePaths(nativeSite).includes(selection.path) || masterAt?.masterPath === selection.path)) return;
   const epoch = generation;
   if (currentPath !== selection.path) {
     await restoreFile(selection.path, epoch, { linkDefaultStyle: false });
@@ -3587,7 +3626,9 @@ function nativeLinkedSheets(site: NativeSite, sources: Record<string, string>) {
 function nativePageStyles() {
   if (!nativeSite) return [];
   const sources = nativeSources();
-  const route = nativeRouteForPath(currentPath) ?? nativeDefaultRoute(nativeSite);
+  // With a master open, the styles are those of the page it is shown in.
+  const master = nativeOpenMaster();
+  const route = nativeRouteForPath(master ? master.pagePath : currentPath) ?? nativeDefaultRoute(nativeSite);
   const linked = routeStylesheets(nativeSite, sources, route);
   return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path]).imported])];
 }

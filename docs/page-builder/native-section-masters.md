@@ -9,6 +9,12 @@ copy's place (the page's own HTML and CSS bytes stay as they are). Text typed in
 in Code, changes only the master; the rest of the page is read-only and Add is off until Done.
 Done shows the page's own copy again. An invalid master falls back to the page's copy.
 
+The edit bar identifies the current master and element, for example `Intro › Heading`.
+Heading level, bold, italic and element classes edit the master with ordinary Undo steps.
+Its root and children cannot be moved, duplicated or removed from this bar. Style inspection
+writes nothing; an explicit Style edit writes the site's public CSS. Styles resolve from the
+page where Edit was opened. Controls from a closed session refuse to write after Done.
+
 Status: wired into the editor (`src/main.ts`): the purple Edit on a whole saved section opens its
 master, a compact line over the code offers Done and Update copies, Add links each new copy, and
 Update saved section saves into the master when there is one.
