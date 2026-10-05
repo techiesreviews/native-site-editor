@@ -1250,9 +1250,20 @@ function workerMiddleware(): Connect.NextHandleFunction {
       if (path === "/__demo/external-edit") {
         // Simulate an external commit that advances the branch, so the next save
         // of that file with a now-stale baseSha conflicts.
-        // `delete: true` removes the file instead.
-        const { path: filePath, content, delete: remove } = JSON.parse(bodyBuffer.toString() || "{}");
-        const git = sessions.get(id)!.git!;
+        // `delete: true` removes the file instead; `repo` names a fixture
+        // repository (such as "native-cards") to commit to instead of the demo's.
+        const { path: filePath, content, delete: remove, repo } = JSON.parse(bodyBuffer.toString() || "{}");
+        const slot = sessions.get(id)!;
+        const fixture = repo === undefined ? undefined : FIXTURE_REPOS.find((item) => item.repo.name === repo);
+        if (repo !== undefined && !fixture) {
+          res.statusCode = 404;
+          return res.end();
+        }
+        if (fixture && !(slot.fixtureGits ??= new Map()).has(fixture.repo.name)) {
+          if (!initialFixtureGits.has(fixture.repo.name)) initialFixtureGits.set(fixture.repo.name, buildInitialGit(fixture.root));
+          slot.fixtureGits.set(fixture.repo.name, cloneGit(initialFixtureGits.get(fixture.repo.name)!));
+        }
+        const git = fixture ? slot.fixtureGits!.get(fixture.repo.name)! : slot.git!;
         const tree = writeTree(git, git.commits.get(git.head)!.tree, [
           remove
             ? { segments: String(filePath).split("/"), mode: "100644", sha: null }
