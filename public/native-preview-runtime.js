@@ -5,6 +5,7 @@
   var instances = new Set();
   var pageEl = null;
   var hovered = null;
+  var hoverPointer = null;
   var selected = null;
   var hoverBox = null;
   var selectBox = null;
@@ -1292,6 +1293,10 @@
 
   function deepestElement(e) {
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
+    return deepestElementFromPath(path, e.target);
+  }
+
+  function deepestElementFromPath(path, target) {
     var from = 0;
     // Text is never an event's target: a press on text lands on the element
     // that shows it, which for text a slot shows is the slot. Text the page
@@ -1315,7 +1320,21 @@
       if (n instanceof Element && n.parentNode instanceof ShadowRoot && sectionLike(n.parentNode.host) && n.parentNode.host.localName !== "section") return n.parentNode.host;
       if (n instanceof Element && n !== document.documentElement && n !== document.body && !n.hasAttribute("data-native-selection-box")) return n;
     }
-    return e.target instanceof Element ? e.target : null;
+    return target instanceof Element ? target : null;
+  }
+
+  // Scrolling changes the element under an unmoved pointer. Reuse the same
+  // slot and component-root mapping as mouse movement.
+  function refreshPointerHover() {
+    if (!hoverPointer || sectionDrag || editing) return;
+    var target = document.elementFromPoint(hoverPointer.x, hoverPointer.y);
+    var inner;
+    while (target && target.shadowRoot && typeof target.shadowRoot.elementFromPoint === "function" &&
+           (inner = target.shadowRoot.elementFromPoint(hoverPointer.x, hoverPointer.y)) && inner !== target) target = inner;
+    var path = [];
+    for (var node = target; node; node = node.assignedSlot || node.parentNode || (node instanceof ShadowRoot ? node.host : null)) path.push(node);
+    hovered = deepestElementFromPath(path, target);
+    reportHover();
   }
 
   function ownerPath(el) {
@@ -2301,11 +2320,13 @@
   });
   document.addEventListener("mousemove", function (e) {
     if (sectionDrag) return;
+    hoverPointer = { x: e.clientX, y: e.clientY };
     hovered = deepestElement(e);
     updateBoxes(true);
     reportHover();
   });
   document.documentElement.addEventListener("mouseleave", function () {
+    hoverPointer = null;
     hovered = null;
     updateBoxes();
     reportHover();
@@ -2388,6 +2409,7 @@
     };
     selected.style.opacity = "0.55";
     document.documentElement.style.userSelect = "none";
+    hoverPointer = null;
     hovered = null;
     updateBoxes();
     reportHover();
@@ -2847,7 +2869,7 @@
   });
   // ---- End of canvas ----
 
-  window.addEventListener("scroll", function () { updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); }, true);
+  window.addEventListener("scroll", function () { refreshPointerHover(); updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); }, true);
   var gridResizeSelectionPending = false;
   window.addEventListener("resize", function () {
     updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
