@@ -42,11 +42,20 @@
   // A <main> with nothing in it yet keeps some height, so the editor's
   // "Start with a section" (src/page-builder/canvas-overlays.ts) has room
   // over it; preview only, like the selection boxes.
-  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}" +
-    "*{scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.4) transparent}" +
-    "*::-webkit-scrollbar{width:6px;height:6px}*::-webkit-scrollbar-track{background:transparent}" +
-    "*::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(127,127,127,.4)}*::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.65)}" +
-    "@media(forced-colors:active){*{scrollbar-color:auto}}");
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}");
+  // Subtle scrollbars for the frame's own viewport, only while the site
+  // declares no scrollbar styling of its own (see siteStylesScrollbars). The
+  // sheet is adopted first by the document alone, so its layer comes before
+  // every site layer and any site rule wins over it. The colour inherits, so
+  // every element below the root is put back to `auto`: a site's
+  // ::-webkit-scrollbar rules apply only where scrollbar-color is `auto`.
+  var viewportScrollbarSheet = new CSSStyleSheet();
+  viewportScrollbarSheet.replaceSync("@layer native-preview-viewport{" +
+    ":where(html){scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.4) transparent}:where(html) :where(*){scrollbar-color:auto}" +
+    ":where(html)::-webkit-scrollbar{width:6px;height:6px}:where(html)::-webkit-scrollbar-track{background:transparent}" +
+    ":where(html)::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(127,127,127,.4)}:where(html)::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.65)}" +
+    "@media(forced-colors:active){:where(html){scrollbar-color:auto}}}");
+  var viewportScrollbars = false;
   // Each constructed sheet's source: `{ path, wrappers, importer, kind }`. A
   // shared sheet expanded from an `@import` carries the imported file's path,
   // the chain of import wrappers (outermost first; each may have `layer`,
@@ -422,10 +431,27 @@
     return componentSheets[tag].sheet;
   }
 
-  // The sheets a root adopts: every shared sheet, then (for a component's
-  // shadow root) that component's own sheet, then the runtime's own rules.
+  // Whether any of the site's styling mentions scrollbars: its shared and
+  // component stylesheets, component templates, and the rendered page's
+  // <style> elements and style attributes. A plain text test, so a class
+  // name or comment also counts; the viewport then keeps the browser's own.
+  function siteStylesScrollbars() {
+    var mentions = function (text) { return /scrollbar/i.test(String(text || "")); };
+    var componentStyles = state.componentStyles || {};
+    return state.styles.some(function (item) { return item && mentions(item.source); }) ||
+      Object.keys(componentStyles).some(function (tag) { return componentStyles[tag] && mentions(componentStyles[tag].source); }) ||
+      Object.keys(state.components).some(function (tag) { return mentions(state.components[tag]); }) ||
+      Array.prototype.some.call(pageEl ? pageEl.querySelectorAll("style,[style]") : [], function (el) {
+        return mentions(el.localName === "style" ? el.textContent : el.getAttribute("style"));
+      });
+  }
+
+  // The sheets a root adopts: the viewport's scrollbars (document only),
+  // every shared sheet, then (for a component's shadow root) that
+  // component's own sheet, then the runtime's own rules.
   function sheetsFor(root) {
     var out = sharedSheets.map(function (entry) { return entry.sheet; });
+    if (root === document && viewportScrollbars) out.unshift(viewportScrollbarSheet);
     if (root !== document && root.host) {
       var scoped = componentSheetFor(root.host.localName);
       if (scoped) out.push(scoped);
@@ -484,6 +510,8 @@
     syncStyles();
     state.styleErrors.forEach(reportError);
     renderPage();
+    viewportScrollbars = !siteStylesScrollbars();
+    syncRootStyles(document);
     reportDefaultStyles();
     if (!hadError) emit("clear-error");
     var hadSelection = !!selected;
@@ -1676,7 +1704,7 @@
       }
     }
     sheetsIn(root).forEach(function (sheet) {
-      if (sheet === runtimeSheet) return;
+      if (sheet === runtimeSheet || sheet === viewportScrollbarSheet) return;
       var info = sheetInfo.get(sheet);
       var path = info ? info.path : sheetPath(sheet) || fallback;
       // Rules count per source file. A constructed sheet holds one whole file

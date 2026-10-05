@@ -250,7 +250,8 @@ test("subtle editor and preview scrollbars preserve scrolling and source", async
   })).toBe(true);
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator("html")).toHaveCSS("scrollbar-width", "thin");
-  await expect(frame.locator("project-card article").first()).toHaveCSS("scrollbar-width", "thin");
+  // Only the frame's viewport gets the subtle fallback; the site's own elements keep theirs.
+  await expect(frame.locator("project-card article").first()).toHaveCSS("scrollbar-width", "auto");
   expect(await frame.locator("html").evaluate(() => {
     const root = document.scrollingElement!;
     root.scrollTop = root.scrollHeight;
