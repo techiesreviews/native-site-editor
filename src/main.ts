@@ -88,9 +88,9 @@ import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls 
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderDocument } from "./page-builder/page-builder-document";
 import { listSectionChoices, planStaticSectionInsert, previewStaticSection, readSectionCatalog, resolveStaticSection, SECTION_MASTER_FOLDER, type SectionMasterContext, type StaticSectionInsertPlan, type StaticSectionMasterEntry, type StaticSectionOperation } from "./page-builder/static-sections";
-import { deleteNativeSectionLink, registerInsertedNativeSection, resolveNativeSectionLinks } from "./page-builder/native-section-links";
+import { deleteNativeSectionLink, planNativeSectionLink, registerInsertedNativeSection, resolveNativeSectionLinks, sectionCore } from "./page-builder/native-section-links";
 import { createNativePagePartController } from "./page-builder/native-page-part-controller";
-import { PAGE_PART_FOLDER, planSavePagePart, planUnlinkPagePart, readPagePartCatalog, resolvePagePartLinks } from "./page-builder/native-page-parts";
+import { PAGE_PART_FOLDER, planLinkPagePartCopies, planSavePagePart, planUnlinkPagePart, readPagePartCatalog, resolvePagePartLinks } from "./page-builder/native-page-parts";
 import { planNativeSharedSection } from "./page-builder/native-shared-section";
 import { createNativeSectionMasterController, type MasterControllerHost, type MasterSelection } from "./page-builder/native-section-master-controller";
 import { createMasterBanner } from "./components/master-banner";
@@ -2216,6 +2216,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       if (field.kind === "choice") controls.push({ kind: "select", label: field.label, value: field.value,
         options: [...(field.options ?? [])], onChange: value => writeField(field.property, value, false) });
       else controls.push({ kind: "address", label: field.label, value: field.value,
+        // A button with no name of its own (no text, label, labelledby, title or image alt) is unnamed.
+        warning: selection.tag === "button" && field.property === "aria-label" && !field.value.trim() && !selection.text.trim() && !attribute("aria-labelledby")?.value.trim()
+          && !attribute("title")?.value.trim() && !(range?.close && /\balt\s*=\s*["']?[^"'\s>]/i.test(source.slice(range.tag.end, range.close.start))) ? "Needs a name" : undefined,
         placeholder: field.kind === "url" ? "Local path or web address" : field.label,
         onOpen: () => { if (model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: expectedSource, model, epoch, scope: scopeKey }; },
         onInput: value => writeField(field.property, value, true), onClose: () => {
@@ -2254,7 +2257,8 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     controls.push({
       kind: "address",
       label: "Alt text",
-      warning: alt ? undefined : "Alt text missing",
+      // No file at all comes first; only an image that shows something needs its alt text.
+      warning: !src?.value.trim() ? "No image" : alt ? undefined : "Alt text missing",
       value: alt?.value ?? "",
       initial: alt ? undefined : altFromPath(src?.value ?? ""),
       placeholder: "What the image shows; empty for decorative",
@@ -2376,6 +2380,18 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     // Inside the master: "Intro › Heading", the chip selecting the master's section.
     ...(master && !masterRoot ? { context: { label: master.label, title: `In the ${master.label} master: select its section`, onSelect: () => { if (currentMaster()) nativePreview?.selectNode({ path, node: [0] }); } } } : {}),
   };
+  // A child of a linked page copy, outside any master: "Shared hero › Heading", the chip selecting
+  // that copy's root. Never set over an identity's own context; the child gets no Edit from it.
+  if (!inMaster && !model.context && node && node.length > 1) {
+    const linked = nativeLinkedAncestor(path, source, node);
+    if (linked) {
+      const scope = draftScope(), proof = scope && editorModule?.captureFileModelState(scope, path), epoch = generation, scopeKey = setupScope();
+      model.context = { label: linked.label, title: `In a linked copy of ${linked.label}: select it`, onSelect: () => {
+        if (proof?.isCurrent() && epoch === generation && scopeKey === setupScope() && currentPath === path && nativeEffectiveSource(path) === source) nativePreview?.selectNode({ path, node: linked.node });
+        else announce("The page changed. Select the element again.");
+      } };
+    }
+  }
   nativeEditBarModel = model;
   preview.showEditBar(model, rect, nativeTextSelection);
   componentTools?.show(selection);
@@ -3252,7 +3268,9 @@ const nativeSelectionWaiters = new Set<(selection: NativePreviewSelection) => vo
 let nativeSharedToken = 0;
 let nativeSharedSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
 // Authoring contexts offered under the current revision, by key; a new revision drops them all.
-const nativeSharedContexts = new Map<string, { current: () => boolean; plan: (metadata: NativeSharedMetadata) => { operation: StaticSectionOperation; expectedFiles: readonly string[] } | { error: string } }>();
+const nativeSharedContexts = new Map<string, { current: () => boolean; records: readonly string[];
+  link: (id: string) => { operation: StaticSectionOperation; expectedFiles: readonly string[]; customised: boolean } | { error: string };
+  plan: (metadata: NativeSharedMetadata) => { operation: StaticSectionOperation; expectedFiles: readonly string[] } | { error: string } }>();
 function nativeSharedFieldsRevision() {
   const scope = draftScope(), files = nativeFiles().sort();
   const privateSources = files.filter(isPrivateMasterPath).map(path => [path, nativeEffectiveSource(path) ?? null]);
@@ -3338,17 +3356,44 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   const linked = nativePageStylesheets(painted, path).filter(sheet => !sheet.startsWith(".") && sources[sheet] !== undefined);
   const sheets = [...new Set([...linked, ...expandStyleImports(linked, (sheet) => sources[sheet]).imported])]
     .filter(sheet => !sheet.startsWith(".") && /\.css$/i.test(sheet) && sources[sheet] !== undefined);
-  // Without a class to choose or a stylesheet to name, the form could never be completed: no offer.
-  if (!classes.length || !sheets.length) return undefined;
+  // Existing shared items this exact copy may use: a loaded master of this kind whose root class the
+  // copy carries and whose stylesheet the page applies, and whose link plan succeeds as offered.
+  const rootClasses = new Set(decodeHtmlEntities(startTagAttribute(painted, range.tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean));
+  type LinkPlan = { operation: StaticSectionOperation; expectedFiles: readonly string[]; customised: boolean } | { error: string };
+  const linkPlan = (id: string): LinkPlan => {
+    try {
+      if (tag === "section") {
+        const entry = readSectionCatalog(docText)[id];
+        if (!entry || !Object.hasOwn(entry, "htmlPath") || !rootClasses.has(entry.rootClass) || !sheets.includes(entry.stylesheetPath)) return { error: "That shared section does not fit this section." };
+        const record = resolveStaticSection(entry, { files, sources });
+        const plan = planNativeSectionLink({ documentText: docText, files, pagePath: path, pageSource: painted, range: exact, record });
+        if ("error" in plan) return plan;
+        const core = sectionCore(record.html);
+        return { operation: plan.operation, expectedFiles: files, customised: painted.slice(exact.start, exact.end) !== record.html.slice(core.start, core.end) };
+      }
+      const record = readPagePartCatalog(docText)[id];
+      if (!record || record.rootTag !== tag || !rootClasses.has(record.rootClass) || !sheets.includes(record.stylesheetPath) || docText === undefined) return { error: `That shared ${tag} does not fit this ${tag}.` };
+      const plan = planLinkPagePartCopies({ documentText: docText, files, sources, recordId: id, copies: [{ pagePath: path, range: exact }] });
+      if ("error" in plan) return plan;
+      plan.operation.expectedSources.set(path, painted);
+      return { operation: plan.operation, expectedFiles: plan.expectedFiles, customised: !plan.keys[0]?.unchanged };
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+  };
+  const catalog = tag === "section" ? readSectionCatalog(docText) : readPagePartCatalog(docText);
+  const savedRecords = Object.keys(catalog).sort().filter(id => !("error" in linkPlan(id))).map(id => ({ id, label: catalog[id].label }));
+  // Without a class to choose or a stylesheet to name, and nothing to use, the form could never be completed: no offer.
+  if ((!classes.length || !sheets.length) && !savedRecords.length) return undefined;
   const name = (item.heading || item.text || tag).trim().slice(0, 60) || tag;
   const used = new Set([...Object.keys(readSectionCatalog(docText)), ...Object.keys(readPagePartCatalog(docText))].map(id => id.toLowerCase()));
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[^a-z]+/, "") || tag;
   let proposedId = base;
   for (let n = 2; used.has(proposedId) || files.includes(`${tag === "section" ? SECTION_MASTER_FOLDER : PAGE_PART_FOLDER}${proposedId}.html`); n++) proposedId = `${base}-${n}`;
-  const key = JSON.stringify([revision, path, item.node, exact.start, exact.end]);
+  const key = JSON.stringify([revision, path, item.node, exact.start, exact.end, savedRecords.map(record => record.id)]);
   // The same key is the same revision and root: the context a form already holds stays the one checked.
   if (!nativeSharedContexts.has(key)) nativeSharedContexts.set(key, {
     current,
+    records: savedRecords.map(record => record.id),
+    link: linkPlan,
     plan: (metadata) => {
       const input = { documentText: docText, files, sources, pagePath: path, pageSource: painted, range: exact, id: metadata.id, label: metadata.label, rootClass: metadata.rootClass, stylesheetPath: metadata.stylesheetPath };
       return tag === "section" ? planNativeSharedSection(input) : planSavePagePart(input);
@@ -3356,25 +3401,34 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   });
   return {
     state: "available",
-    context: { key, kind: tag, initialName: name, proposedId, availableClasses: classes, availableStylesheetPaths: sheets },
+    context: { key, kind: tag, initialName: name, proposedId, availableClasses: classes, availableStylesheetPaths: sheets, ...(savedRecords.length ? { savedRecords } : {}) },
     actions: {
       submit: (metadata, contextKey) => nativeSharedSubmit(metadata, contextKey),
+      link: (recordId, contextKey) => nativeSharedSubmit(recordId, contextKey),
       // Structure calls this from its own render: the context goes now, the UI updates afterwards.
       close: (contextKey) => { nativeSharedContexts.delete(contextKey); },
     },
   };
 }
-async function nativeSharedSubmit(metadata: NativeSharedMetadata, key: string): Promise<{ success: true } | { error: string }> {
+// Save shared (metadata) or Use here (a record id offered with this key): one guarded operation.
+const nativeSharedInFlight = new Set<string>();
+async function nativeSharedSubmit(choice: NativeSharedMetadata | string, key: string): Promise<{ success: true } | { error: string }> {
   const offered = nativeSharedContexts.get(key);
   const changed = "The page or its shared files changed. Select the element again.";
   if (!offered || !offered.current()) return { error: changed };
-  const plan = offered.plan(metadata);
+  if (nativeSharedInFlight.has(key)) return { error: "This is already being saved." };
+  if (typeof choice === "string" && !offered.records.includes(choice)) return { error: "Choose a shared item offered for this selection." };
+  const plan = typeof choice === "string" ? offered.link(choice) : offered.plan(choice);
   if ("error" in plan) return { error: plan.error };
-  const graph = plan.expectedFiles.join("\n"), selected = nativeSelectionEpoch;
+  const graph = [...plan.expectedFiles].sort().join("\n"), selected = nativeSelectionEpoch;
   // A Cancel, a new revision (which drops every offered context), another selection or any change refuses the write.
   const live = () => nativeSharedContexts.get(key) === offered && offered.current() && nativeSelectionEpoch === selected && nativeFiles().sort().join("\n") === graph;
-  const error = await applyNativeOperation({ ...plan.operation, current: live });
+  nativeSharedInFlight.add(key);
+  let error: string | undefined;
+  try { error = await applyNativeOperation({ ...plan.operation, current: live }); }
+  finally { nativeSharedInFlight.delete(key); }
   if (error) return { error };
+  if ("customised" in plan && plan.customised) announce("Linked. This copy differs from the shared item, so Update copies leaves it as it is.");
   // After the form has taken this result and closed as saved (a later task, not a microtask that
   // could run first and cancel it): then the preview and Structure show the shared root.
   setTimeout(() => { updateNativePreviewSources(); renderNativeShownStructure(); });
@@ -3416,6 +3470,33 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
   const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
   if (!at || !identity || !identity.linked) { refuse(); return; }
   runMasterEdit(identity.onEdit, proof, path, revision);
+}
+
+// The innermost whole section/header/footer around `node` that is a resolved linked copy (by its
+// exact range in the editor JSON), with its record's label; undefined otherwise.
+function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
+  const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
+  if (docText === undefined || nativeNodeOwnership(path, node) !== "plain") return undefined;
+  const sources: Record<string, string | undefined> = { ...nativeSources(), [path]: source };
+  for (const file of nativeFiles().filter(isPrivateMasterPath)) sources[file] = nativeEffectiveSource(file);
+  let sections: ReturnType<typeof resolveNativeSectionLinks> | undefined, parts: ReturnType<typeof resolvePagePartLinks> | undefined;
+  for (let depth = node.length - 1; depth >= 1; depth--) {
+    const at = node.slice(0, depth), range = locateNativeElementRange(source, at), tag = range?.tag.name.toLowerCase();
+    if (!range || (tag !== "section" && tag !== "header" && tag !== "footer")) continue;
+    const exact = (link: { page: string; start: number; end: number }) => link.page === path && link.start === range.start && link.end === range.end;
+    if (tag === "section") {
+      sections ??= resolveNativeSectionLinks({ documentText: docText, sources });
+      const own = "error" in sections ? [] : sections.links.filter(exact);
+      const label = own.length === 1 ? readSectionCatalog(docText)[own[0].link.recordId]?.label : undefined;
+      if (label) return { node: at, label };
+    } else {
+      parts ??= resolvePagePartLinks({ documentText: docText, sources });
+      const own = "error" in parts ? [] : parts.links.filter(exact);
+      const record = own.length === 1 ? readPagePartCatalog(docText)[own[0].link.recordId] : undefined;
+      if (record?.rootTag === tag) return { node: at, label: record.label };
+    }
+  }
+  return undefined;
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
