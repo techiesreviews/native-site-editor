@@ -1,40 +1,50 @@
-# Performance and test cleanup: preview release checkpoint
+# Reviewed performance cleanup: released preview
 
-Updated 2026-10-05. Read this when resuming the reviewed performance/reuse release. Verify Git and processes before acting. The earlier transfer file retains frozen-demo history; do not load the large 3 October handoff wholesale.
+Updated 2026-10-05. Start here when resuming this work. Verify Git and deployment state rather than assuming this snapshot is current. The earlier transfer file retains historical frozen-demo details.
 
-## Current result
+## Released result
 
-Final candidate `dev` at `5541457` is locally integrated and clean before this documentation commit. No push or deployment has occurred in this continuation. Production/main, starter/main, older worktrees and the frozen demo remain untouched. The requested preview release is unfinished: a fresh actual T3 screenshot of the final real-starter candidate must be displayed in the active chat before each release action. That gate has not passed. Existing authorization covers release after that gate; no additional permission ritual is needed.
+`origin/dev` at `d79d18632e8bfd5568d3762ad993af4a905466b7` is deployed to https://preview-editor.techies.tools. Cloudflare preview Worker `native-site-editor-preview` is 100% on version `d646b2ce-b94e-4b56-99c2-5713c2e3e3ab`; deployment and subsequent deployment listing both confirmed it. Expected preview account was checked against the previously verified account. `wrangler.preview.jsonc` still targets the preview domain only and `STARTER_SOURCE=native-static`. Production/main, starter/main, authentication/tool configuration and old WIP were not changed.
 
-Approved app commits (original -> integrated): `c281819` -> `0b488e7` (Style variables indexed per snapshot); `2b275fa` -> `7525af1` (bounded canvas source index); `d3e6ab9` -> `9ef04a2` (lazy section-link parsing once per operation). Approved tests: `143ecab` -> `d377cdc` (literal expected resolver outcomes), `29d4b54` -> `344ffd1` (durable malformed/implied HTML mapping and cache regression), `4da4df8` -> `5541457` (effectiveSource shared across ten native specs; deleted draft and missing file mean undefined).
+This final documentation commit is intentionally local only, one commit ahead of origin/dev. Its app/test bytes match the deployed commit. Do not push it solely to synchronize documentation: each release action requires a fresh displayed real T3 candidate screenshot, and another push would trigger unnecessary CI.
 
-Both independent reviews used Claude Opus 5.5 MEDIUM and approved all scoped commits. Each result reports `is_error: false`, `permission_denials: []`, and actual Opus model usage. Authors used Claude Opus 5.5 LOW. No real quota was reached. The bounded work is complete; do not describe this as quota exhaustion or expand scope just to consume quota. No broad CSS/cache changes were made.
+Implemented app commits (original -> integrated): `c281819` -> `0b488e7` (Style variable lookup indexed per snapshot); `2b275fa` -> `7525af1` (bounded canvas source index); `d3e6ab9` -> `9ef04a2` (lazy section-link parsing once per operation). Durable tests: `143ecab` -> `d377cdc` (literal resolver expectations), `29d4b54` -> `344ffd1` (malformed/implied HTML mapping and source-cache regression), `4da4df8` -> `5541457` (effectiveSource shared across ten native specs; deleted draft and missing file mean undefined).
 
-## Validation and evidence
+The first push at `9f46e09` exposed a real CI-only test-loader failure on Node 24.21: `collections-panel-static.test.ts` failed to load a resolved Phosphor SVG. Claude fixed only that test's asset load hook (`c98361a` -> `d79d186`), retaining all assertions. The exact reason its earlier resolve hook missed the import was not established; do not present a guessed loader-chain cause as verified. Local Node 24 reproduced failure before the fix and passed all 1102 units afterwards. The subsequent actual GitHub Node 24 job also passed all 1102 units.
 
-Evidence root: `.scratch/t3-continuation/background-lead/`. `review.jsonl` and `review-tests.jsonl` contain final independent results; extract only result records. `helper.jsonl`, `proof.jsonl`, `relay.jsonl` contain author results. Avoid printing thinking blocks or whole streams.
+## Review and validation
 
-- Combined app units: 88/88 (`combined-units.log`); final explicit Style unit tests: 41/41 (`final-css.log`).
-- App and worker types pass (`combined-check.log`); UI build passes (`combined-build.log`), existing chunk-size warning only.
-- Combined default canvas/Style browser tests: 23/23; Code folding/visible tests: 9/9 (`combined-browser.log`, `combined-code.log`).
-- Final combined native authoring/link/lifecycle and new canvas regression browser tests: 21/21 (`final-native.log`).
-- Helper worker separately ran all ten changed native specs: 40/40, evidence `.scratch/effsrc-evidence/run.log`; worktree `.scratch/wt-effsrc` is clean.
-- Proof author checked mutation failures for tie-breaking and source invalidation, restored app source, and committed only tests. Reviewer independently compared all six recorded mapping cases against old and new browser implementations. Scratch review copies were removed.
+All implementations used Claude Opus 5.5 LOW; independent reviews used Opus 5.5 MEDIUM. Actual model usage, successful results and empty permission-denial arrays were checked. No real quota was reached. No broad CSS extraction, library upgrade, test deletion or speculative cache was added. A subsequent Luna investigation of current CSS fields, frame helpers and main parse paths found differing semantics or no measured gain, so those changes were declined.
 
-Measurements remain narrow: Style synthetic Node classification ~75.4 to 1.879 ms at 501 variables; shared resolver pure function 96.4 to 14.6 ms at 120 pages; canvas repeated lookup ~3.3 to 0.5 ms at 10k tags with coarse headless timing. These do not establish whole-editor latency improvements.
+Evidence root: `.scratch/t3-continuation/background-lead/`. Read final result records from JSONL streams, not entire transcripts or thinking blocks.
 
-## Screenshot gate and processes
+- `review.jsonl`, `review-tests.jsonl`, `ci-review.jsonl`: independent approvals for the app, durable tests/helper and CI loader fix.
+- Combined app units 88/88 (`combined-units.log`); final resolver tests 41/41 (`final-css.log`); app+worker types and UI build passed (`combined-check.log`, `combined-build.log`), with the existing chunk-size warning only.
+- Combined default canvas/Style/Code browser tests 32/32 (`combined-browser.log`, `combined-code.log`); combined native authoring/link/lifecycle and new mapping tests 21/21 (`final-native.log`). Helper author ran all ten affected native specs, 40/40 (`.scratch/effsrc-evidence/run.log`).
+- Failed CI https://github.com/techiesreviews/native-site-editor/actions/runs/37280982418 is retained in `ci-failed.log`. Matching local Node 24 fail/pass/full logs are `cc-fail24.log`, `cc-pass24.log`, `cc-full24.log`.
+- Final CI https://github.com/techiesreviews/native-site-editor/actions/runs/37281635237 passed types and 1102/1102 units (`ci-final.log`). Its deploy step explicitly skipped publication because no `CLOUDFLARE_API_TOKEN` secret was configured. After another fresh displayed T3 screenshot, existing local OAuth successfully ran `npm run deploy:preview`; no secret or configuration was changed.
+- `deploy-preview.log`, `deployments-after.log` prove the active version. `public-assets.json` records exact SHA256 and byte matches for eight public artifacts: root HTML, main JS, main CSS, native-preview runtime, v6a9ca44 starter manifest, starter HTML, starter CSS and starter PNG. All matched local deployed build bytes.
 
-T3 public example.com navigation worked. Localhost/127 and LAN 192.168.1.7 attempts failed from the collaborative browser; 192.168.1.125:5356 eventually returned editor title/demo banner and Vite connected, then T3 automation timed out while loading. The cause remains unresolved; an Electron preload error also appears on the successful public page, so it does not establish the cause. LAN HTTP is not a secure context; inspect actual console evidence before blaming the app. No browser trust/configuration or authentication settings were changed. A bounded Claude LOW static diagnosis found that signed-in startup immediately calls `createAgentMenu` (`src/main.ts:9064-9067`), whose `src/components/agent-menu.ts:78` calls `crypto.randomUUID()` without a fallback. That API is unavailable on insecure LAN HTTP; file changes and uploads also require `crypto.subtle`. This strongly explains the partial LAN startup, but no browser console confirmed the exception. Evidence: `startup.jsonl`, successful actual Opus result with no permission denials. No app fix or unsafe browser flag was applied.
+Measurements remain narrow: synthetic Style classification about 75.4 to 1.879 ms at 501 variables; shared resolver pure function 96.4 to 14.6 ms at 120 pages; repeated canvas lookup about 3.3 to 0.5 ms at 10k tags using coarse headless timing. These do not establish whole-editor latency improvements.
 
-Temporary candidate backend: PID `2368039`, exec session `60429`, loopback port `5357`, root checkout real native fixture `.scratch/native-static-preview`, demo mode. Temporary LAN proxy: PID/process group `2369069`, port `5356`, forwards HTTP and WebSocket to 5357. URL: `http://192.168.1.125:5356/#repo=501&branch=main&file=index.html`. Logs and proxy script are in the evidence root. Both temporary processes were stopped after the final T3 attempt failed. Root owns T3 tabs q/r and their cleanup. Recreate only a browser-reachable secure candidate origin when resuming; plain HTTP LAN is unsuitable for this app.
+## T3 evidence and live verification limits
 
-Historical frozen demo PID `2331980`, port `5345`, and TLS relay PID `2332067`, port `5214`, were outside this continuation's cleanup scope. The only stop command targeted own PIDs `2369069` and `2368039`. Final `ps`/`ss` nevertheless found no historical frozen PIDs or 5345/5214 listeners; their exit cause was not established. Verify with the parent session before claiming the old demo remains available. Preserve earlier server configuration and old WIP. All Claude CLI workers/reviewers from this continuation have finished; test servers on 5352/5354/5358 stopped normally.
+The browser is on another machine. LAN HTTP was unsuitable: code inspection identified startup's secure-context `crypto.randomUUID()` requirement, but no browser exception was captured for that attempt. A temporary Cloudflare HTTPS quick tunnel solved remote access. It exposed a strict static whitelist of built dist files and fake API endpoints, never the Vite filesystem. Independent MEDIUM review found and verified a fix for an encoded-query filter that initially blocked repository names containing `/`; sensitive path checks stayed intact. Evidence: `secure-demo.jsonl`, `secure-review.jsonl`, `secure-fix.jsonl`, `secure-verify.jsonl` and `.scratch/t3-continuation/secure-candidate/`.
 
-## Resume release
+Fresh actual T3 screenshots were inspected and displayed inline in the active chat before each push and the final manual deployment. All showed the real Larkspur starter, not a substitute image; final captures showed Global styles variables and both code panes, with no draft edits or Publish clicks. The screenshot platform output was soft; it was not claimed to be sharp.
 
-1. Verify `git status`, candidate HEAD, and available T3 preview state. Display a fresh real-starter final-candidate screenshot in the active chat; old screenshots and automated browser assertions do not satisfy the current T3 gate.
-2. Immediately before push, fetch origin/dev again. Last fetch: `origin/dev=f08701f2483c305dc2eb17dd1e99636ac7a6a76f`, zero remote-only commits, local ahead 504 before checkpoint docs. Preserve unexpected changes.
-3. Push dev only after the gate. Preview CI may need the already-authorized manual `npm run deploy:preview`; inspect actual outcome. Config `wrangler.preview.jsonc` targets `native-site-editor-preview`, `preview-editor.techies.tools`, `STARTER_SOURCE=native-static` only. Obtain a fresh displayed screenshot again before a separate deploy action if needed.
-4. Verify account against earlier `preview-whoami-20261005.log` and current `wrangler-whoami.log`; do not print credentials or change authentication. Latest whoami succeeded with existing OAuth and a missing-scope warning; no login flow was started.
-5. Confirm deployed version and public static assets/native starter. Current recorded preview version remains `103fded7-50e0-41e5-b8b6-0d4ee71ea7c9` from f08701f. Authenticated live preview can redirect to GitHub owner confirmation; do not click sensitive authorization. Record this verification limit honestly.
+Artifacts under `/home/ubulex/.t3/userdata/browser-artifacts/`:
+- Initial push gate: `browser-screenshot-smoking-fees-parker-findings-trycloudfla-muuyls1n-44e802eb.png`.
+- Additional pre-release capture: `browser-screenshot-smoking-fees-parker-findings-trycloudfla-muuyn8p7-518186e3.png`.
+- Final CI-fix push gate: `browser-screenshot-smoking-fees-parker-findings-trycloudfla-muuyu9vm-2da51e7f.png`.
+- Final manual-deploy gate: `browser-screenshot-smoking-fees-parker-findings-trycloudfla-muuyxhd9-f56b3114.png`.
+
+After deployment, root navigated the actual public preview in T3. It loaded Native Site Editor, proceeded through `/auth/setup` for owner `techiesreviews`, and reached GitHub's Confirm access page requiring human passkey/authenticator/email confirmation. Root did not click sensitive confirmation or send a code. Live version and public assets are verified; authenticated editing on the public deployment remains unverified at this owner-confirmation boundary.
+
+## Cleanup and remaining state
+
+All Claude CLI workers/reviewers and the Luna planner have finished. Temporary candidate servers on 5356/5357 and the later secure-demo harness/proxy on 5361/5362 were stopped; the own quick tunnel was stopped. Their operational scripts, logs and reviewed results are retained as evidence, with a STOPPED marker. Temporary invocation briefs and the author's /tmp test logs were removed or moved into the evidence root. Root owns the T3 tabs and screenshot/recording cleanup. Existing T3-managed cloudflared PID 14403 was not touched.
+
+Historical frozen PIDs 2331980/2332067 and ports 5345/5214 were already absent during the earlier final check; this continuation did not send them stop signals. Do not claim that old demo remains running. Preserve all old worktrees and configuration.
+
+No coding or release action remains for this bounded task. Further authenticated public UI verification requires the existing owner's normal GitHub confirmation; do not alter security/trust/tool settings or bypass that boundary.

@@ -2,7 +2,7 @@
 
 ## Handoffs
 
-- [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): start here for the integrated final candidate, passing checks, and unresolved T3 screenshot release gate.
+- [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): start here for the deployed preview version, passing Node 24 CI, public asset checks, and owner-authentication verification limit.
 
 - [5 October transfer to T3 thread 0865866a](handoffs/t3-page-builder-transfer-2026-10-05.md): frozen green demo, three measured refactors awaiting independent review, helper cleanup and preview release next.
 
