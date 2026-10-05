@@ -6618,8 +6618,12 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
   if (!found.length) return `${source.path} has no files to ${operation}.`;
   const ops = found.map((file) => ({ file, to: movedPath(file.path, source.path, to) }));
   // Pages whose URL changes: their links are updated, as Change URL does.
+  // The URL plan reads the site as it is now: pin that, so an edit made while
+  // the dialog is open (another tab, an agent) refuses the move instead of
+  // being written over with these older texts.
+  const pins = nativeMovePins();
   const urls = planFileMoveUrls(ops);
-  if (urls && confirmDialog) return moveFilesWithUrls(source, to, operation, ops, urls);
+  if (urls && confirmDialog) return moveFilesWithUrls(source, to, operation, ops, urls, pins);
   const links = pageLinks(found.map((file) => file.path), new Map(ops.map((op) => [op.file.path, op.to])), "moved");
   if (links && confirmDialog) {
     const verb = operation === "rename" ? "Rename" : "Move";
@@ -6770,7 +6774,21 @@ function planFileMoveUrls(ops: { file: MovableFile; to: string }[]): FileMoveUrl
 // says the new URLs and the links updated, with Keep the old URL working;
 // then one operation (the files, the links, `_redirects`) that Undo takes
 // back.
-async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "rename" | "move", ops: { file: MovableFile; to: string }[], urls: FileMoveUrls): Promise<string | undefined> {
+/**
+ * Every text the URL plan of a Files-tab move reads (pages, stylesheets, the
+ * editor data, the site settings, redirects), with the file list, generation
+ * and repository, as they are before its confirmation dialog.
+ */
+function nativeMovePins(): { expectedSources: Map<string, string | undefined>; current: () => boolean } {
+  const scope = draftScope(), epoch = generation, setup = setupScope();
+  const expectedSources = new Map<string, string | undefined>(Object.entries(nativeLinkSources()));
+  for (const path of [EDITOR_PAGE_BUILDER_PATH, NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH]) expectedSources.set(path, nativeEffectiveSource(path, scope));
+  const key = nativeFiles(scope).sort().join("\n");
+  return { expectedSources, current: () => generation === epoch && setupScope() === setup && nativeFiles(draftScope()).sort().join("\n") === key
+    && [...expectedSources].every(([path, text]) => nativeEffectiveSource(path) === text) };
+}
+
+async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "rename" | "move", ops: { file: MovableFile; to: string }[], urls: FileMoveUrls, pins = nativeMovePins()): Promise<string | undefined> {
   const verb = operation === "rename" ? "Rename" : "Move";
   const [first] = urls.changes;
   const single = urls.changes.length === 1;
@@ -6794,6 +6812,8 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
       : undefined,
   });
   if (!answer.value) { announce(`Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`); return undefined; }
+  const changedWhileAsked = `The site changed while the ${operation === "rename" ? "Rename" : "Move"} dialog was open, so nothing was ${operation === "rename" ? "renamed" : "moved"}. Try again to see the latest links.`;
+  if (!pins.current()) return changedWhileAsked;
   const edits = new Map(urls.links.map((item) => [item.path, item.text]));
   withMovedPageUrls(edits, urls.pages);
   let redirects: string | undefined;
@@ -6808,8 +6828,12 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
       next = editNativeRedirects(next, change.from, change.to, answer.option ? urls.redirect.get(change) ?? [] : [], change.subtree);
     if (next !== (redirects ?? "")) edits.set(NATIVE_REDIRECTS_PATH, next);
   }
+  if (!pins.current()) return changedWhileAsked;
   const references = nativeAssetReferences(ops.map((op) => ({ from: op.file.path, to: op.to })), edits);
   if ("error" in references) return references.error;
+  // The write is checked against the texts the plan was made from, before the dialog.
+  const expectedSources = new Map([...(references.expectedSources ?? []), ...pins.expectedSources]);
+  const current = () => pins.current() && (references.current?.() ?? true);
   const what = source.folder ? `the folder ${source.path}` : source.path;
   const summary = count ? `${count} ${count === 1 ? "link" : "links"} updated in ${urls.links.length} ${urls.links.length === 1 ? "file" : "files"}` : "no links to update";
   const error = await applyNativeCollectionOperation({
@@ -6817,6 +6841,8 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
     ...folderIntent(source, to),
     edits,
     ...references,
+    expectedSources,
+    current,
     done: `${operation === "rename" ? "Renamed" : "Moved"} ${what} to ${to} — ${summary}${answer.option && redirected.length ? `; ${single ? `${first.from} redirects` : "the old URLs redirect"} there` : ""}.`,
     undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.`,
   });

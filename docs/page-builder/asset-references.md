@@ -30,6 +30,15 @@ the dialog, so a reference or file added meanwhile (another tab, an agent)
 refuses the delete. Moves and deletes of pages only are unchanged and read
 nothing extra.
 
+A move that changes page URLs plans its link changes before its
+confirmation dialog. Every page, stylesheet, the editor data, the site
+settings and redirects it read, with the file list, generation and
+repository, are pinned there (`nativeMovePins`) and checked after the dialog
+and again at the write: an edit made meanwhile (another tab, an agent)
+refuses the move ("The site changed while the Rename dialog was open, so
+nothing was renamed. Try again to see the latest links.") instead of being
+written over.
+
 ## Refused, with nothing changed
 
 - deleting a file that a page, stylesheet or the page data still uses; the
