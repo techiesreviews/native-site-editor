@@ -170,3 +170,59 @@ test("cards edited by hand refuse instead of being rebuilt, and an unloaded page
   const { [MEADOW]: _unloaded, ...loaded } = partial;
   assert.throws(() => planEditorDataMigration({ ...snapshot(loaded), files: Object.keys(partial).sort(), routes: deriveNativeRoutes(Object.keys(partial)) }), /meadow-row-allotments\/index\.html is not loaded yet\. Nothing was changed\./);
 });
+
+test("a field tag that also does something for the page (http-equiv, charset, itemprop…) refuses, naming the page, and is never deleted", () => {
+  const functional: [string, RegExp][] = [
+    ['<meta name="field:redirect" http-equiv="refresh" content="0;url=/other/">', /http-equiv/],
+    ['<meta name="field:policy" http-equiv="Content-Security-Policy" content="default-src \'self\'">', /http-equiv/],
+    ['<meta name="field:kind" itemprop="genre" content="Studio">', /itemprop/],
+    ['<meta charset="utf-8" name="field:enc" content="x">', /charset/],
+  ];
+  for (const [tag, attribute] of functional) {
+    for (const sources of [legacySite(), load()]) {
+      sources[FERN] = withMeta(sources[FERN], `  ${tag}\n`);
+      const frozen = deepCopy(sources);
+      assert.ok(findInlineEditorData(sources).pages.includes(FERN), tag);
+      assert.throws(() => planEditorDataMigration(snapshot(sources)), (error: unknown) => error instanceof Error
+        && error.message.startsWith(`${FERN}: `) && attribute.test(error.message) && error.message.endsWith("Nothing was changed."), tag);
+      assert.deepEqual(sources, frozen, tag);
+    }
+  }
+});
+
+test("an entity-encoded field tag is found and moved like any other", () => {
+  const sources = load();
+  sources[FERN] = withMeta(sources[FERN], '  <meta name="field&#58;client" content="Acme &amp; Co">\n');
+  assert.deepEqual(findInlineEditorData(sources), { pages: [FERN], listings: 0, fields: 1 });
+  const plan = planEditorDataMigration(snapshot(sources))!;
+  assert.deepEqual(plan.pages, [FERN]);
+  const { next } = apply(sources, plan.origin);
+  assert.equal(next[FERN], load()[FERN]);
+  assert.deepEqual({ ...readPageBuilderDocument(next[EDITOR_PAGE_BUILDER_PATH]).pages[FERN].fields }, { client: "Acme & Co" });
+  // With other eligible pages it is moved too, never left behind.
+  const mixed = legacySite();
+  mixed["about/index.html"] = withMeta(mixed["about/index.html"], '  <meta name="field&#x3A;mood" content="calm">\n');
+  const moved = apply(mixed, planEditorDataMigration(snapshot(mixed))!.origin).next;
+  assert.doesNotMatch(moved["about/index.html"], /field/);
+  assert.deepEqual({ ...readPageBuilderDocument(moved[EDITOR_PAGE_BUILDER_PATH]).pages["about/index.html"].fields }, { mood: "calm" });
+  assert.deepEqual(findInlineEditorData(moved), { pages: [], listings: 0, fields: 0 });
+});
+
+test("a page or the JSON changed after planning refuses the whole operation", () => {
+  const before = legacySite();
+  const plan = planEditorDataMigration(snapshot(before))!;
+  const refusedAt = (sources: Record<string, string>, path: string) => {
+    const planned = planNativeCollectionOperation({ ...snapshot(sources), origin: plan.origin });
+    assert.ok("error" in planned && planned.error === `Source changed: ${path}.`, path);
+  };
+  // A page the move edits, a page it only reads (the JSON listings read every page), and the JSON appearing.
+  refusedAt({ ...before, [FERN]: `<!-- newer -->\n${before[FERN]}` }, FERN);
+  refusedAt({ ...before, "404.html": `<!-- newer -->\n${before["404.html"]}` }, "404.html");
+  refusedAt({ ...before, [EDITOR_PAGE_BUILDER_PATH]: '{"version":1,"pages":{},"collections":{}}\n' }, EDITOR_PAGE_BUILDER_PATH);
+  // And an existing JSON changed meanwhile.
+  const withJson = { ...before, [EDITOR_PAGE_BUILDER_PATH]: JSON.stringify({ version: 1, pages: {}, collections: {}, keep: 1 }) + "\n" };
+  const second = planEditorDataMigration(snapshot(withJson))!;
+  const changed = { ...withJson, [EDITOR_PAGE_BUILDER_PATH]: JSON.stringify({ version: 1, pages: {}, collections: {}, keep: 2 }) + "\n" };
+  const planned = planNativeCollectionOperation({ ...snapshot(changed), origin: second.origin });
+  assert.ok("error" in planned && planned.error === `Source changed: ${EDITOR_PAGE_BUILDER_PATH}.`);
+});

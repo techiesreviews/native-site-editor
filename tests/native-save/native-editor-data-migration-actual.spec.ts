@@ -159,3 +159,53 @@ test("malformed inline data refuses the move with its reason and writes nothing"
   await expect(box.getByRole("button", { name: "Move editor data out of pages", exact: true })).toBeEnabled();
   expect(await storedDrafts(page)).toEqual([]);
 });
+
+test("a field tag that is also a redirect is refused and kept, with nothing written", async ({ page, baseURL }) => {
+  const files = seeded();
+  const redirect = '<meta name="field:redirect" http-equiv="refresh" content="0;url=/other/">';
+  files[FERN] = files[FERN].replace("</head>", `  ${redirect}\n</head>`);
+  await seed(page, baseURL, files);
+  const settings = await openSiteSettings(page, baseURL);
+  const box = settings.getByRole("group", { name: "Editor data in pages", exact: true });
+  await box.getByRole("button", { name: "Move editor data out of pages", exact: true }).click();
+  await expect(settings.locator(".site-settings__status")).toContainText(`${FERN}: The field tag “field:redirect” also has http-equiv`);
+  await expect(settings.locator(".site-settings__status")).toContainText("Nothing was changed.");
+  expect(await storedDrafts(page)).toEqual([]);
+});
+
+const FOREIGN = "<!-- newer -->\n";
+const foreignEdit = (page: Page) => page.evaluate(async (text) => {
+  const editor = await import("/src/components/code-editor.ts");
+  editor.replaceActiveRange({ path: "index.html", start: 0, end: 0, expected: "", text });
+}, FOREIGN);
+
+test("a page edited while Site settings is open refuses the move and keeps only the newer edit", async ({ page, baseURL }) => {
+  const files = seeded();
+  await seed(page, baseURL, files);
+  const settings = await openSiteSettings(page, baseURL);
+  await foreignEdit(page);
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual([["index.html", FOREIGN + files["index.html"]]]);
+  await settings.getByRole("button", { name: "Move editor data out of pages", exact: true }).click();
+  await expect(settings.locator(".site-settings__status")).toContainText("changed meanwhile");
+  expect((await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual([["index.html", FOREIGN + files["index.html"]]]);
+});
+
+test("a page edited while the move is under way (after its first await) refuses it and writes nothing else", async ({ page, baseURL }) => {
+  const files = seeded();
+  await seed(page, baseURL, files);
+  const settings = await openSiteSettings(page, baseURL);
+  const run = settings.getByRole("button", { name: "Move editor data out of pages", exact: true });
+  // The click handler runs synchronously up to its first await; the edit lands there.
+  const untouched = await run.evaluate(async (button, text) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html");
+    (button as HTMLButtonElement).click();
+    const same = editor.getMountedSource("index.html") === before;
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: 0, expected: "", text });
+    return same;
+  }, FOREIGN);
+  expect(untouched).toBe(true);
+  await expect(settings.locator(".site-settings__status")).toContainText("changed meanwhile");
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual([["index.html", FOREIGN + files["index.html"]]]);
+  await expect(run).toBeEnabled();
+});

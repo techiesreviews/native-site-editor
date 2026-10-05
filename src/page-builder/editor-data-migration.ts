@@ -3,7 +3,10 @@
 // reads a whole-site snapshot and returns one operation for the host to apply
 // (one draft write, one Undo). It reuses the existing importers; it does not
 // parse recipes or fields itself.
+import { startTags } from "../../shared/html-source";
 import { nativePageRoute } from "../../shared/native-routes";
+import { startTagAttributes } from "./component-model";
+import { decodeHtmlEntities } from "./html-entities";
 import { readCollections } from "./collection-model";
 import { withLegacyImported } from "./collection-origins";
 import { planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./native-collection-host";
@@ -37,12 +40,30 @@ function survey(sources: Readonly<Record<string, string>>): Map<string, { listin
     if (/\sdata-each\b/i.test(source)) {
       try { listings = readCollections(source).length; } catch { listings = source.match(/\sdata-each\b/gi)!.length; }
     }
-    if (/field:/i.test(source)) {
-      try { fields = readEditorFieldMetas(source).length; } catch { fields = (source.match(/<meta\b[^>]*field:/gi) ?? []).length; }
+    // Field names are read decoded (field&#58;x is a field), as the importer reads them.
+    if (/<meta\b/i.test(source)) {
+      try { fields = readEditorFieldMetas(source).length; }
+      catch { fields = startTags(source).filter((tag) => tag.name === "meta" && decodeHtmlEntities(source.slice(tag.start, tag.end), true).includes("field:")).length; }
     }
     if (listings || fields) found.set(path, { listings, fields });
   }
   return found;
+}
+
+/**
+ * A field tag is removed whole, so it must hold nothing but its field: a tag
+ * that also has http-equiv (a redirect, a security policy), charset, itemprop,
+ * property or any other attribute does something for the page and refuses.
+ */
+function assertOnlyEditorData(path: string, source: string) {
+  let metas: ReturnType<typeof readEditorFieldMetas>;
+  try { metas = readEditorFieldMetas(source); } catch { return; } // The field importer refuses it with its own reason.
+  const tags = startTags(source);
+  for (const meta of metas) {
+    const tag = tags.find((item) => item.start === meta.start);
+    const extra = tag ? [...new Set(startTagAttributes(source, tag).map((item) => item.name.toLowerCase()).filter((name) => name !== "name" && name !== "content"))] : ["unreadable markup"];
+    if (extra.length) refuse(`${path}: The field tag “field:${meta.field}” also has ${extra.join(", ")}, which the page itself may use, so it is neither moved nor removed. In Code, move that attribute to a tag of its own or take the field name off this tag, then try again.`);
+  }
 }
 
 const refuse = (reason: string): never => { throw new Error(`${reason.trim().replace(/([^.!?])$/, "$1.")} Nothing was changed.`); };
@@ -82,6 +103,7 @@ export function planEditorDataMigration(snapshot: NativeCollectionSnapshot): Edi
   for (const [path, { fields }] of found) {
     if (!fields) continue;
     const source = texts.get(path) ?? sources[path];
+    assertOnlyEditorData(path, source);
     let plan: ReturnType<typeof planLegacyPageFieldMigration>;
     try { plan = planLegacyPageFieldMigration({ files: graph, pagePath: path, source, sidecarText: sidecar }); }
     catch (error) {
