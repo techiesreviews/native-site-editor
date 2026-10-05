@@ -34,3 +34,14 @@ export const storedDraft = async (page: Page, path: string): Promise<StoredDraft
 /** Draft keys still in localStorage (none once the page loaded them into IndexedDB). */
 export const legacyDraftKeys = (page: Page) =>
   page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("astro-site-editor:draft:v1:")));
+
+/**
+ * The editor's text for `path`: its stored draft (undefined when the draft
+ * deletes the file), else the branch file (undefined when the branch has none).
+ */
+export async function effectiveSource(page: Page, baseURL: string | undefined, path: string): Promise<string | undefined> {
+  const draft = await storedDraft(page, path);
+  if (draft) return draft.deleted ? undefined : draft.content;
+  const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
+  return response.ok() ? response.text() : undefined;
+}

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft } from "./drafts";
+import { effectiveSource } from "./drafts";
 
 test.skip(process.env.STATIC_SECTIONS_FIXTURE !== "native", "Requires the native static starter.");
 if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
@@ -8,7 +8,6 @@ const MASTER = ".editor/sections/intro.html", JSON_PATH = ".editor/page-builder.
 const grip = (page: Page) => page.getByRole("separator", { name: "Resize code pane", exact: true });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
-const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 async function openMaster(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
@@ -40,45 +39,45 @@ async function collapse(page: Page, testInfo: Parameters<Parameters<typeof test>
 
 test("Done remains reachable after a person hides Code while editing a master, and preserves their collapsed state", async ({ page, baseURL }, testInfo) => {
   await openMaster(page, baseURL);
-  const master = await effective(page, baseURL, MASTER), home = await effective(page, baseURL, "index.html"), json = await effective(page, baseURL, JSON_PATH);
+  const master = await effectiveSource(page, baseURL, MASTER), home = await effectiveSource(page, baseURL, "index.html"), json = await effectiveSource(page, baseURL, JSON_PATH);
   await collapse(page, testInfo);
-  expect(await effective(page, baseURL, MASTER)).toBe(master);
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(master);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
   const done = page.getByRole("button", { name: "Done", exact: true });
   await expect(done).toBeVisible({ timeout: 3000 });
   await done.click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(grip(page)).toHaveAttribute("aria-valuetext", "Code hidden");
   await expect(grip(page)).toHaveAttribute("aria-valuenow", "0");
-  expect(await effective(page, baseURL, MASTER)).toBe(master);
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(master);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
 });
 
 test("Update copies remains reachable with Code hidden and updates only linked copies as one Undo and Redo", async ({ page, baseURL }, testInfo) => {
   await openMaster(page, baseURL);
   await frame(page).locator("section.section-intro h2").click();
-  const beforeMaster = await effective(page, baseURL, MASTER), home = await effective(page, baseURL, "index.html"), json = await effective(page, baseURL, JSON_PATH);
+  const beforeMaster = await effectiveSource(page, baseURL, MASTER), home = await effectiveSource(page, baseURL, "index.html"), json = await effectiveSource(page, baseURL, JSON_PATH);
   await bar(page).getByRole("combobox", { name: "Heading level", exact: true }).selectOption("h3");
   const editedMaster = beforeMaster.replace(/<h2/g, "<h3").replace(/<\/h2>/g, "</h3>");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(editedMaster);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(editedMaster);
   await collapse(page, testInfo);
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   const update = page.getByRole("button", { name: "Update copies", exact: true });
   await expect(update).toBeVisible({ timeout: 3000 });
   await update.click();
-  await expect.poll(() => effective(page, baseURL, "index.html")).not.toBe(home);
-  const updatedHome = await effective(page, baseURL, "index.html"), updatedJson = await effective(page, baseURL, JSON_PATH);
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html")).not.toBe(home);
+  const updatedHome = await effectiveSource(page, baseURL, "index.html"), updatedJson = await effectiveSource(page, baseURL, JSON_PATH);
   expect(updatedHome).toContain("<h3");
-  expect(await effective(page, baseURL, MASTER)).toBe(editedMaster);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(editedMaster);
   await grip(page).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, "index.html")).toBe(home);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
-  expect(await effective(page, baseURL, MASTER)).toBe(editedMaster);
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(editedMaster);
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(() => effective(page, baseURL, "index.html")).toBe(updatedHome);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(updatedJson);
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(updatedHome);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(updatedJson);
   await expect(grip(page)).toHaveAttribute("aria-valuenow", "0");
 });

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft } from "./drafts";
+import { effectiveSource } from "./drafts";
 
 // A saved section's master shown in its page: the purple Edit opens .editor/sections/<id>.html,
 // and the page on show renders that master in the copy's place while the page's own HTML and CSS
@@ -16,11 +16,6 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const panel = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 const banner = (page: Page) => page.getByRole("region", { name: "Saved section master" });
-const base = async (page: Page, baseURL: string | undefined, path: string) => {
-  const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
-  return response.ok() ? response.text() : undefined;
-};
-const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? await base(page, baseURL, path);
 async function load(page: Page, baseURL: string | undefined, path = "index.html") {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30_000 });
@@ -45,9 +40,9 @@ test("the master shows in its page; typing in the preview or in Code changes onl
   page.on("pageerror", (error) => errors.push(error.message));
   await load(page, baseURL);
   await addIntro(page);
-  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
-  const home = (await effective(page, baseURL, "index.html"))!;
-  const css = await effective(page, baseURL, "styles/sections.css");
+  await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  const home = (await effectiveSource(page, baseURL, "index.html"))!;
+  const css = await effectiveSource(page, baseURL, "styles/sections.css");
   await editIntro(page);
   const heading = frame(page).locator("section.section-intro h2");
   await expect(heading).toHaveText("Section heading");
@@ -57,56 +52,56 @@ test("the master shows in its page; typing in the preview or in Code changes onl
   await page.keyboard.press("End");
   await page.keyboard.type(" Visual");
   await page.keyboard.press("Enter");
-  await expect.poll(async () => (await effective(page, baseURL, MASTER)) ?? "").toContain("Visual");
-  expect(await effective(page, baseURL, MASTER)).toBe(`<section class="section-intro"><h2>Section heading Visual</h2><p>Write a short introduction for this part of the page.</p></section>`);
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
-  expect(await effective(page, baseURL, "styles/sections.css")).toBe(css);
+  await expect.poll(async () => (await effectiveSource(page, baseURL, MASTER)) ?? "").toContain("Visual");
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(`<section class="section-intro"><h2>Section heading Visual</h2><p>Write a short introduction for this part of the page.</p></section>`);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, "styles/sections.css")).toBe(css);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/visual-typed.png` });
   // Add is not offered while the master is on show.
   await expect(page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true })).toBeDisabled();
   // Code: the preview follows the master's text.
-  const typed = (await effective(page, baseURL, MASTER))!;
+  const typed = (await effectiveSource(page, baseURL, MASTER))!;
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+Home");
   for (let i = 0; i < typed.indexOf("Write"); i++) await page.keyboard.press("ArrowRight");
   await page.keyboard.type("Now ");
   await expect(frame(page).locator("section.section-intro p")).toHaveText("Now Write a short introduction for this part of the page.");
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   // The rest of the page is read-only while the master is open.
   await frame(page).locator("main > section h1, main > section h2").first().click();
   await expect(page.locator("#status")).toContainText("read-only while its master is open");
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   // Undo and Redo of the Code typing, from the keyboard outside the code.
-  const coded = (await effective(page, baseURL, MASTER))!;
+  const coded = (await effectiveSource(page, baseURL, MASTER))!;
   await banner(page).getByRole("button", { name: "Done" }).focus();
   // (The code's own Undo goes word by word.)
-  for (let i = 0; i < 4 && (await effective(page, baseURL, MASTER)) !== typed; i++) { await page.keyboard.press("ControlOrMeta+z"); await page.waitForTimeout(150); }
-  await expect.poll(async () => effective(page, baseURL, MASTER)).toBe(typed);
+  for (let i = 0; i < 4 && (await effectiveSource(page, baseURL, MASTER)) !== typed; i++) { await page.keyboard.press("ControlOrMeta+z"); await page.waitForTimeout(150); }
+  await expect.poll(async () => effectiveSource(page, baseURL, MASTER)).toBe(typed);
   await expect(frame(page).locator("section.section-intro p")).toHaveText("Write a short introduction for this part of the page.");
-  for (let i = 0; i < 4 && (await effective(page, baseURL, MASTER)) !== coded; i++) { await page.keyboard.press("ControlOrMeta+Shift+z"); await page.waitForTimeout(150); }
-  await expect.poll(async () => effective(page, baseURL, MASTER)).toBe(coded);
+  for (let i = 0; i < 4 && (await effectiveSource(page, baseURL, MASTER)) !== coded; i++) { await page.keyboard.press("ControlOrMeta+Shift+z"); await page.waitForTimeout(150); }
+  await expect.poll(async () => effectiveSource(page, baseURL, MASTER)).toBe(coded);
   // Done: the page shows its own copy again, byte for byte as before.
   await banner(page).getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("index.html");
   await expect(heading).toHaveText("Section heading");
-  expect(await effective(page, baseURL, "index.html")).toBe(home);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   // Edit again: the master's text is still there.
   await editIntro(page);
   await expect(heading).toHaveText("Section heading Visual");
   await expect(frame(page).locator("section.section-intro p")).toHaveText("Now Write a short introduction for this part of the page.");
   // Update copies: the page's copy takes the master; the master stays on show; one Undo reverts.
-  const json = await effective(page, baseURL, JSON_PATH);
+  const json = await effectiveSource(page, baseURL, JSON_PATH);
   await banner(page).getByRole("button", { name: "Update copies" }).click();
   await expect(page.locator("#status")).toContainText("Updated 1");
-  await expect.poll(async () => (await effective(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading Visual</h2>");
+  await expect.poll(async () => (await effectiveSource(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading Visual</h2>");
   await expect(heading).toHaveText("Section heading Visual");
-  expect(await effective(page, baseURL, "styles/sections.css")).toBe(css);
+  expect(await effectiveSource(page, baseURL, "styles/sections.css")).toBe(css);
   await banner(page).getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(async () => effective(page, baseURL, "index.html")).toBe(home);
-  await expect.poll(async () => effective(page, baseURL, JSON_PATH)).toBe(json);
+  await expect.poll(async () => effectiveSource(page, baseURL, "index.html")).toBe(home);
+  await expect.poll(async () => effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(async () => (await effective(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading Visual</h2>");
+  await expect.poll(async () => (await effectiveSource(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading Visual</h2>");
   // Done after the update: back to the page, its copy selected where it now is.
   await banner(page).getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("index.html");
@@ -118,14 +113,14 @@ test("the master shows in its page; typing in the preview or in Code changes onl
 test("an invalid master falls back to the page's own copy and Done still works; after Done typing edits the page, not the master", async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page);
-  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
   await editIntro(page);
   const heading = frame(page).locator("section.section-intro h2");
   // Code replaces the master with something that is not a section: the preview shows the page's copy.
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("broken");
-  await expect.poll(async () => effective(page, baseURL, MASTER)).toBe("broken");
+  await expect.poll(async () => effectiveSource(page, baseURL, MASTER)).toBe("broken");
   await expect(heading).toHaveText("Section heading");
   await expect(banner(page).getByRole("button", { name: "Update copies" })).toBeDisabled();
   await banner(page).getByRole("button", { name: "Done" }).click();
@@ -136,16 +131,16 @@ test("an invalid master falls back to the page's own copy and Done still works; 
   await page.keyboard.press("End");
   await page.keyboard.type(" here");
   await page.keyboard.press("Enter");
-  await expect.poll(async () => (await effective(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading here</h2>");
-  expect(await effective(page, baseURL, MASTER)).toBe("broken");
+  await expect.poll(async () => (await effectiveSource(page, baseURL, "index.html")) ?? "").toContain("<h2>Section heading here</h2>");
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe("broken");
 });
 
 test("while a master is open a Structure row's Alt+Up changes nothing and the master stays; after Done it moves the section, one Undo", async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page);
-  await expect.poll(async () => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
+  await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
   await editIntro(page);
-  const files = async () => Promise.all(["index.html", "styles/sections.css", JSON_PATH, MASTER].map((path) => effective(page, baseURL, path)));
+  const files = async () => Promise.all(["index.html", "styles/sections.css", JSON_PATH, MASTER].map((path) => effectiveSource(page, baseURL, path)));
   const before = await files();
   const row = page.getByRole("treeitem", { name: /^Section What we offer/ }).first();
   await row.focus();
@@ -158,10 +153,10 @@ test("while a master is open a Structure row's Alt+Up changes nothing and the ma
   // After Done the same key moves the section, and one Undo puts it back.
   await banner(page).getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("index.html");
-  const home = await effective(page, baseURL, "index.html");
+  const home = await effectiveSource(page, baseURL, "index.html");
   await page.getByRole("treeitem", { name: /^Section What we offer/ }).first().focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect.poll(async () => effective(page, baseURL, "index.html")).not.toBe(home);
+  await expect.poll(async () => effectiveSource(page, baseURL, "index.html")).not.toBe(home);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect.poll(async () => effective(page, baseURL, "index.html")).toBe(home);
+  await expect.poll(async () => effectiveSource(page, baseURL, "index.html")).toBe(home);
 });

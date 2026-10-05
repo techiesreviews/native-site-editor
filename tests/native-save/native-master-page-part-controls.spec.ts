@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft } from "./drafts";
+import { effectiveSource } from "./drafts";
 import { showStylePanel } from "./style-panel-controls";
 
 // Shared Header and Footer masters (.editor/page-parts/<id>.html) with the real edit bar and Style panel:
@@ -25,13 +25,7 @@ const structure = (page: Page) => page.getByRole("complementary", { name: "Page 
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const style = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const row = (page: Page, name: RegExp) => structure(page).getByRole("treeitem", { name }).first();
-const effective = async (page: Page, baseURL: string | undefined, path: string) => {
-  const draft = await storedDraft(page, path);
-  if (draft) return draft.content;
-  const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
-  return response.ok() ? response.text() : undefined;
-};
-const snapshot = async (page: Page, baseURL: string | undefined, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effective(page, baseURL, path)] as const)));
+const snapshot = async (page: Page, baseURL: string | undefined, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effectiveSource(page, baseURL, path)] as const)));
 const codeCollapsed = (page: Page) => page.locator("main").evaluate(main => main.classList.contains("code-collapsed"));
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
@@ -73,10 +67,10 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   const img = '<img class="header-photo" src="/images/studio-desk.svg" alt="Studio desk" width="48" height="48">';
   const withImage = before[MASTER]!.replace("</header>", `${img}</header>`);
   await replaceCode(page, withImage);
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(withImage);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(withImage);
   const photo = frame(page).locator("header.site-header .header-photo");
   await expect.poll(() => photo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  const unchanged = async (paths: string[]) => { for (const path of paths) expect(await effective(page, baseURL, path), path).toBe(before[path]); };
+  const unchanged = async (paths: string[]) => { for (const path of paths) expect(await effectiveSource(page, baseURL, path), path).toBe(before[path]); };
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   // Choose image… through the real media picker: only the master's img changes.
   await photo.click();
@@ -87,8 +81,8 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   await chooser.getByRole("button", { name: "Details for about/part-image.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(chooser).toHaveCount(0);
-  await expect.poll(async () => (await effective(page, baseURL, MASTER)) ?? "").toContain('src="/about/part-image.svg"');
-  const chosen = (await effective(page, baseURL, MASTER))!;
+  await expect.poll(async () => (await effectiveSource(page, baseURL, MASTER)) ?? "").toContain('src="/about/part-image.svg"');
+  const chosen = (await effectiveSource(page, baseURL, MASTER))!;
   expect(chosen).toMatch(/<img [^>]*class="header-photo"[^>]*alt="Studio desk"[^>]*><\/header>$/);
   expect(chosen.replace(/<img [^>]*><\/header>$/, "</header>")).toBe(before[MASTER]);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
@@ -99,7 +93,7 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   await alt.fill("Desk in the studio");
   await alt.press("Escape");
   const alted = chosen.replace('alt="Studio desk"', 'alt="Desk in the studio"');
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(alted);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(alted);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   // Image focus in Style: an object-position in the site's CSS, its own Undo and Redo in the master.
   await photo.click();
@@ -111,29 +105,29 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   await focal.getByRole("group").focus();
   await page.keyboard.press("Shift+ArrowRight");
-  const focused = async () => (await Promise.all(CSS.map(path => effective(page, baseURL, path)))).filter((text, i) => text !== before[CSS[i]]);
+  const focused = async () => (await Promise.all(CSS.map(path => effectiveSource(page, baseURL, path)))).filter((text, i) => text !== before[CSS[i]]);
   await expect.poll(async () => (await focused()).length).toBe(1);
   const [focalCss] = await focused();
   expect(focalCss).toMatch(/\.header-photo[^{]*\{[^}]*object-position: 60% 50%/);
-  expect(await effective(page, baseURL, MASTER)).toBe(alted);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
   await unchanged([PAGE, JSON_PATH]);
   await banner.getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(async () => (await focused()).length).toBe(0);
-  expect(await effective(page, baseURL, MASTER)).toBe(alted);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect.poll(async () => (await focused())[0]).toBe(focalCss);
   await expect(page.locator("#primary-title")).toHaveText(MASTER);
-  expect(await effective(page, baseURL, MASTER)).toBe(alted);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
   await unchanged([PAGE, JSON_PATH]);
   // Update copies writes the page's header from the master; one Undo reverts only that.
   await banner.getByRole("button", { name: "Update copies" }).click();
-  await expect.poll(async () => (await effective(page, baseURL, PAGE)) ?? "").toContain('alt="Desk in the studio"');
-  expect(await effective(page, baseURL, PAGE)).toContain('src="/about/part-image.svg"');
+  await expect.poll(async () => (await effectiveSource(page, baseURL, PAGE)) ?? "").toContain('alt="Desk in the studio"');
+  expect(await effectiveSource(page, baseURL, PAGE)).toContain('src="/about/part-image.svg"');
   await banner.getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, PAGE)).toBe(before[PAGE]);
-  expect(await effective(page, baseURL, MASTER)).toBe(alted);
+  await expect.poll(() => effectiveSource(page, baseURL, PAGE)).toBe(before[PAGE]);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
   expect((await focused())[0]).toBe(focalCss);
   // Done returns to the page with Code as it was, writing nothing.
   const atDone = await snapshot(page, baseURL, [PAGE, JSON_PATH, ...CSS, MASTER]);
@@ -150,7 +144,7 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   const banner = await shareAndEdit(page, /^Footer/, "footer", "site-foot", "Site footer", "Shared footer master");
   const MASTER = ".editor/page-parts/site-foot.html";
   const before = await snapshot(page, baseURL, [PAGE, JSON_PATH, ...CSS, MASTER]);
-  const unchanged = async (paths: string[]) => { for (const path of paths) expect(await effective(page, baseURL, path), path).toBe(before[path]); };
+  const unchanged = async (paths: string[]) => { for (const path of paths) expect(await effectiveSource(page, baseURL, path), path).toBe(before[path]); };
   const line = frame(page).locator("footer.site-footer address p").first();
   await line.click();
   await expect(bar(page).getByRole("button", { name: /Site footer/ })).toBeVisible();
@@ -158,7 +152,7 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   await page.keyboard.type(" Since 2019.");
   await page.keyboard.press("Enter");
   const typed = before[MASTER]!.replace("Designed and built by hand.", "Designed and built by hand. Since 2019.");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(typed);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(typed);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   // Bold on a keyboard range of the master's paragraph.
   await line.click();
@@ -166,13 +160,13 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   for (let i = 0; i < "Larkspur".length; i++) await page.keyboard.press("Shift+ArrowRight");
   await bar(page).getByRole("button", { name: "Bold", exact: true }).click();
   const bold = typed.replace("<p>Larkspur Studio", "<p><strong>Larkspur</strong> Studio");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(bold);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(bold);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   // The bar's Text size on the master's paragraph: the master only.
   await line.click();
   await bar(page).getByRole("combobox", { name: "Text size" }).selectOption({ label: "L" });
   const sized = bold.replace("<p><strong>Larkspur", '<p class="text-l"><strong>Larkspur');
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(sized);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(sized);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
   // Style on the footer root (the bar's master crumb): explicit font size and text colour write one stylesheet.
   await line.click();
@@ -196,7 +190,7 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   expect(touched).toHaveLength(1);
   expect(styled[touched[0]]).toMatch(/font-size: 19px;[\s\S]*color: purple|color: purple;[\s\S]*font-size: 19px/);
   expect(styled[touched[0]]).toMatch(/\.site-footer\s*\{/);
-  expect(await effective(page, baseURL, MASTER)).toBe(sized);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(sized);
   await unchanged([PAGE, JSON_PATH]);
   await expect(page.locator("#primary-title")).toHaveText(MASTER);
   // Done goes back with Code as it was and writes nothing; Edit again, then Update copies the pristine page copy.
@@ -209,12 +203,12 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   await row(page, /Site footer/).getByRole("button", { name: "Edit component" }).click();
   await expect(banner).toBeVisible();
   await banner.getByRole("button", { name: "Update copies" }).click();
-  await expect.poll(async () => (await effective(page, baseURL, PAGE)) ?? "").toContain('<p class="text-l"><strong>Larkspur</strong> Studio, Frome, Somerset. Designed and built by hand. Since 2019.');
-  for (const path of CSS) expect(await effective(page, baseURL, path)).toBe(atDone[path]);
+  await expect.poll(async () => (await effectiveSource(page, baseURL, PAGE)) ?? "").toContain('<p class="text-l"><strong>Larkspur</strong> Studio, Frome, Somerset. Designed and built by hand. Since 2019.');
+  for (const path of CSS) expect(await effectiveSource(page, baseURL, path)).toBe(atDone[path]);
   await banner.getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, PAGE)).toBe(before[PAGE]);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(atDone[JSON_PATH]);
-  expect(await effective(page, baseURL, MASTER)).toBe(sized);
+  await expect.poll(() => effectiveSource(page, baseURL, PAGE)).toBe(before[PAGE]);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(atDone[JSON_PATH]);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(sized);
   await expect(page.locator("#primary-title")).toHaveText(MASTER);
 });

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft, storedDrafts } from "./drafts";
+import { storedDraft, storedDrafts, effectiveSource } from "./drafts";
 import { showStylePanel } from "./style-panel-controls";
 
 const kind = fixtureKind();
@@ -13,7 +13,6 @@ const file = async (page: Page, baseURL: string | undefined, path: string) => {
   const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
   return response.ok() ? response.text() : undefined;
 };
-const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? await file(page, baseURL, path);
 const servicePath = "services/design/index.html";
 const service = '<!doctype html><html><head><title>Design service · Larkspur Studio</title><meta name="description" content="An accessible design service."></head><body><main><h1>Design service</h1></main></body></html>';
 async function open(page: Page, baseURL: string | undefined, services = false) {
@@ -47,11 +46,11 @@ function plain(source: string) {
 
 test("the native starter's three literal cards become a JSON collection byte for byte, one Undo and Redo", async ({ page, baseURL }) => {
   const before = await open(page, baseURL);
-  const beforeJson = await effective(page, baseURL, side);
+  const beforeJson = await effectiveSource(page, baseURL, side);
   await expect(panel(page).getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
   await expect(panel(page)).toContainText("3 pages will show, including all 3 current cards exactly");
   await panel(page).getByRole("button", { name: "Convert", exact: true }).click();
-  await expect.poll(async () => Object.keys(JSON.parse((await effective(page, baseURL, side))!).collections ?? {}).length).toBe(1);
+  await expect.poll(async () => Object.keys(JSON.parse((await effectiveSource(page, baseURL, side))!).collections ?? {}).length).toBe(1);
   const home = (await mounted(page))!;
   const cards = (source: string) => source.match(/<article class="card-project">[\s\S]*?<\/article>/g);
   expect(cards(home)).toEqual(cards(before));
@@ -70,11 +69,11 @@ test("the native starter's three literal cards become a JSON collection byte for
   await expect(panel(page).getByRole("combobox", { name: "Sort by", exact: true })).toBeVisible();
   expect(await panel(page).getByRole("combobox", { name: "Sort by", exact: true }).locator("option").allTextContents()).toContain("Card note");
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => effective(page, baseURL, side)).toBe(beforeJson);
+  await expect.poll(() => effectiveSource(page, baseURL, side)).toBe(beforeJson);
   expect(await storedDrafts(page)).toEqual([]);
   expect(await mounted(page)).toBe(before);
   await page.locator(".code-editor__redo").first().click();
-  await expect.poll(() => effective(page, baseURL, side)).toBe(after);
+  await expect.poll(() => effectiveSource(page, baseURL, side)).toBe(after);
   expect(await mounted(page)).toBe(home);
   expect((await storedDrafts(page)).map(draft => draft.path)).toEqual([side, "index.html"]);
   await page.reload();
@@ -86,15 +85,15 @@ test("the native starter's three literal cards become a JSON collection byte for
   await expect(sort.locator(`option[value="${note}"]`)).toHaveText("Card note");
   await sort.selectOption(note!);
   await panel(page).getByRole("button", { name: "Save collection", exact: true }).click();
-  await expect.poll(async () => Object.values(JSON.parse((await effective(page, baseURL, side))!).collections).map((record: any) => record.sort)).toEqual([note]);
-  const [saved] = Object.values(JSON.parse((await effective(page, baseURL, side))!).collections) as { fieldLabels: Record<string, string> }[];
+  await expect.poll(async () => Object.values(JSON.parse((await effectiveSource(page, baseURL, side))!).collections).map((record: any) => record.sort)).toEqual([note]);
+  const [saved] = Object.values(JSON.parse((await effectiveSource(page, baseURL, side))!).collections) as { fieldLabels: Record<string, string> }[];
   expect(saved.fieldLabels[note!]).toBe("Card note");
   await expect(sort.locator(`option[value="${note}"]`)).toHaveText("Card note");
 });
 
 test("work and service folders keep the existing literal cards and page metadata, with atomic Undo and Redo", async ({ page, baseURL }) => {
   const before = await open(page, baseURL, true);
-  const beforeJson = await effective(page, baseURL, side);
+  const beforeJson = await effectiveSource(page, baseURL, side);
   await panel(page).getByRole("checkbox", { name: "/services/", exact: true }).check();
   await expect(panel(page)).toContainText("4 pages will show, including all 3 current cards exactly");
   expect(await storedDrafts(page)).toEqual([]);
@@ -106,7 +105,7 @@ test("work and service folders keep the existing literal cards and page metadata
   for (const text of ["Cafe · Identity and site · 2025", "A quiet portfolio for a working potter", "Read about Harbour Lane Pottery"]) expect(home).toContain(text);
   expect(home).toContain('href="/services/design/"');
   expect(home).toContain("An accessible design service.");
-  expect(await effective(page, baseURL, servicePath)).toBe(service);
+  expect(await effectiveSource(page, baseURL, servicePath)).toBe(service);
   expect(await storedDraft(page, servicePath)).toBeUndefined();
   expect(JSON.parse(json).pages).toEqual(JSON.parse(beforeJson!).pages);
   expect(JSON.parse(json).futureTop).toEqual({ keep: [1, { deep: true }] });
@@ -115,11 +114,11 @@ test("work and service folders keep the existing literal cards and page metadata
   expect(home).toContain(record.outputFingerprint);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(before);
-  await expect.poll(() => effective(page, baseURL, side)).toBe(beforeJson);
+  await expect.poll(() => effectiveSource(page, baseURL, side)).toBe(beforeJson);
   expect(await storedDrafts(page)).toEqual([]);
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(() => mounted(page)).toBe(home);
-  expect(await effective(page, baseURL, side)).toBe(json);
+  expect(await effectiveSource(page, baseURL, side)).toBe(json);
   expect((await storedDrafts(page)).map(draft => draft.path)).toEqual([side, "index.html"]);
 });
 
@@ -137,5 +136,5 @@ test("a natural Code edit after folder choices refuses stale Convert and preserv
   await expect(panel(page)).toContainText("changed");
   expect(await mounted(page)).toBe(foreign);
   expect((await storedDrafts(page)).map(draft => draft.path)).toEqual(["index.html"]);
-  expect(await effective(page, baseURL, servicePath)).toBe(service);
+  expect(await effectiveSource(page, baseURL, servicePath)).toBe(service);
 });

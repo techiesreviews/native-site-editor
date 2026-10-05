@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft } from "./drafts";
+import { effectiveSource } from "./drafts";
 
 // Linked page copies outside a master, and the restored field warnings, on the real host.
 const pageErrors = new WeakMap<Page, string[]>();
@@ -19,12 +19,6 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const structure = (page: Page) => page.getByRole("complementary", { name: "Page structure" });
 const row = (page: Page, name: RegExp) => structure(page).getByRole("treeitem", { name }).first();
-const effective = async (page: Page, baseURL: string | undefined, path: string) => {
-  const draft = await storedDraft(page, path);
-  if (draft) return draft.content;
-  const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
-  return response.ok() ? response.text() : undefined;
-};
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
@@ -46,7 +40,7 @@ test("a child of a linked page copy shows its shared item's context; the chip se
   await form.getByRole("textbox", { name: "ID" }).fill("about-hero");
   await form.getByRole("button", { name: "Save shared" }).click();
   await expect(row(page, /Shared hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
-  const master = await effective(page, baseURL, MASTER);
+  const master = await effectiveSource(page, baseURL, MASTER);
   // The heading inside the linked copy: "Shared hero › Heading", with no Edit of its own.
   await frame(page).locator("section.hero h1").click();
   const chip = bar(page).getByRole("button", { name: /Shared hero/ });
@@ -54,14 +48,14 @@ test("a child of a linked page copy shows its shared item's context; the chip se
   await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath("linked-child-context.png") });
   // A text edit of the page copy changes only the page.
-  const source = (await effective(page, baseURL, PAGE))!;
+  const source = (await effectiveSource(page, baseURL, PAGE))!;
   await replaceCode(page, source.replace("About Larkspur</h1>", "About us</h1>"));
-  await expect.poll(() => effective(page, baseURL, PAGE)).toContain("About us</h1>");
-  expect(await effective(page, baseURL, MASTER)).toBe(master);
+  await expect.poll(() => effectiveSource(page, baseURL, PAGE)).toContain("About us</h1>");
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(master);
   // The edited copy is customised now, so it no longer counts as a linked copy at its old bytes;
   // put the text back and select the heading again to use the chip.
   await replaceCode(page, source);
-  await expect.poll(() => effective(page, baseURL, PAGE)).toBe(source);
+  await expect.poll(() => effectiveSource(page, baseURL, PAGE)).toBe(source);
   await frame(page).locator("section.hero h1").click();
   await bar(page).getByRole("button", { name: /Shared hero/ }).click();
   await expect(row(page, /Shared hero/)).toHaveAttribute("aria-selected", "true");
@@ -73,7 +67,7 @@ test("a child of a linked page copy shows its shared item's context; the chip se
 
 test("an unnamed button and an image with no file show their warnings; a named button does not", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const source = (await effective(page, baseURL, PAGE))!;
+  const source = (await effectiveSource(page, baseURL, PAGE))!;
   await replaceCode(page, source.replace('<section class="contact flow" id="contact">', '<section class="contact flow" id="contact"><button class="unnamed" style="width:40px;height:24px"></button><button class="named" aria-label="Open menu" style="width:40px;height:24px"></button><img class="nofile" src="" alt="" width="40" height="40">'));
   await expect(frame(page).locator("button.unnamed")).toBeVisible();
   await frame(page).locator("button.unnamed").click();
@@ -87,7 +81,7 @@ test("an unnamed button and an image with no file show their warnings; a named b
 
 test("a button named by an icon's aria-label, and images given by srcset or picture, show no warning; a data-alt does not name a button", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const source = (await effective(page, baseURL, PAGE))!;
+  const source = (await effectiveSource(page, baseURL, PAGE))!;
   const svg = '<svg role="img" aria-label="Open menu" width="20" height="20" viewBox="0 0 20 20"><rect width="20" height="20"/></svg>';
   await replaceCode(page, source.replace('<section class="contact flow" id="contact">', `<section class="contact flow" id="contact"><button class="icon" style="width:40px;height:24px">${svg}</button><button class="dataalt" style="width:40px;height:24px"><img data-alt="x" src="/images/studio-desk.svg" alt="" width="20" height="20"></button><img class="srcset" srcset="/images/studio-desk.svg 1x" alt="Desk" width="40" height="40"><picture><source srcset="/images/studio-desk.svg"><img class="pictured" alt="Desk" width="40" height="40"></picture><img class="nofile" src="" alt="" width="40" height="40">`));
   await expect(frame(page).locator("button.icon")).toBeVisible();
@@ -114,14 +108,14 @@ test("an editor JSON whose section catalog has an unsupported version leaves the
   await form.getByRole("button", { name: "Save shared" }).click();
   await expect(row(page, /Shared hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
   const JSON_FILE = ".editor/page-builder.json";
-  const parsed = JSON.parse((await effective(page, baseURL, JSON_FILE))!);
+  const parsed = JSON.parse((await effectiveSource(page, baseURL, JSON_FILE))!);
   parsed.reusableSections.version = 99;
   const broken = JSON.stringify(parsed, null, 2) + "\n";
   // Through the real Code pane, as a person would.
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(JSON_FILE)}`);
   await expect(page.locator("#primary-title")).toHaveText(JSON_FILE);
   await replaceCode(page, broken);
-  await expect.poll(() => effective(page, baseURL, JSON_FILE)).toBe(broken);
+  await expect.poll(() => effectiveSource(page, baseURL, JSON_FILE)).toBe(broken);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
   await expect(page.locator("#primary-title")).toHaveText(PAGE);
   await expect(row(page, /^Section About Larkspur/)).toBeVisible();
@@ -130,10 +124,10 @@ test("an editor JSON whose section catalog has an unsupported version leaves the
   await expect(bar(page)).toBeVisible();
   await expect(bar(page).getByRole("button", { name: /Shared hero/ })).toHaveCount(0);
   // Plain editing still works, and the JSON is left exactly as written.
-  const source = (await effective(page, baseURL, PAGE))!;
+  const source = (await effectiveSource(page, baseURL, PAGE))!;
   await replaceCode(page, source.replace("About Larkspur</h1>", "About us</h1>"));
   await expect(frame(page).locator("section.hero h1")).toHaveText("About us");
-  expect(await effective(page, baseURL, JSON_FILE)).toBe(broken);
+  expect(await effectiveSource(page, baseURL, JSON_FILE)).toBe(broken);
 });
 
 // ---- Use here across the six routes ------------------------------------------------------------
@@ -149,7 +143,7 @@ const ROUTES = {
 type Route = keyof typeof ROUTES;
 const PAGES = Object.keys(ROUTES) as Route[];
 const CSS = ["styles/site.css", "styles/sections.css", "styles/layout.css", "styles/components.css", "styles/elements.css", "styles/tokens.css", "styles/utilities.css"];
-const all = async (page: Page, baseURL: string | undefined, paths: readonly string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effective(page, baseURL, path)] as const)));
+const all = async (page: Page, baseURL: string | undefined, paths: readonly string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effectiveSource(page, baseURL, path)] as const)));
 async function goTo(page: Page, path: Route) {
   await page.locator("#explorer-toggle").click();
   const item = page.locator("#explorer").getByRole("treeitem", { name: ROUTES[path], exact: true });
@@ -192,27 +186,27 @@ test("Use here links the shared header and footer on all six routes and the sect
   await saveShared(page, /^Header/, "header", "site-head", "Site header");
   await saveShared(page, /^Footer/, "footer", "site-foot", "Site footer");
   await saveShared(page, /^Section Need something similar/, "section", "contact-cta", "Contact CTA");
-  for (const path of [...PAGES, ...CSS]) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
+  for (const path of [...PAGES, ...CSS]) expect(await effectiveSource(page, baseURL, path)).toBe(pristine[path]);
   // Every other route: independent until its own explicit Use here; each link writes the JSON only.
   const undoRedo = async (before: string | undefined, after: string) => {
     // One Undo removes just this link; Redo brings it back. Pages and CSS never change.
     await page.getByRole("button", { name: "Undo", exact: true }).click();
-    await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(before);
-    for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
+    await expect.poll(() => effectiveSource(page, baseURL, JSON_PATH)).toBe(before);
+    for (const other of [...PAGES, ...CSS]) expect(await effectiveSource(page, baseURL, other)).toBe(pristine[other]);
     await page.getByRole("button", { name: "Redo", exact: true }).click();
-    await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(after);
-    for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
+    await expect.poll(() => effectiveSource(page, baseURL, JSON_PATH)).toBe(after);
+    for (const other of [...PAGES, ...CSS]) expect(await effectiveSource(page, baseURL, other)).toBe(pristine[other]);
   };
   const undone = new Set<string>();
   for (const path of PAGES.filter(path => path !== "work/fern-and-kettle/index.html")) {
     await goTo(page, path);
     for (const [name, kind, label] of [[/^Header/, "header", "Site header"], [/^Footer/, "footer", "Site footer"]] as const) {
-      const before = await effective(page, baseURL, JSON_PATH);
+      const before = await effectiveSource(page, baseURL, JSON_PATH);
       await useHere(page, name, kind, label);
-      const after = (await effective(page, baseURL, JSON_PATH))!;
+      const after = (await effectiveSource(page, baseURL, JSON_PATH))!;
       expect(after).not.toBe(before);
       expect(JSON.parse(after).pages[path].pageParts).toBeTruthy();
-      for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
+      for (const other of [...PAGES, ...CSS]) expect(await effectiveSource(page, baseURL, other)).toBe(pristine[other]);
       const customised = (path === "index.html" || path === "about/index.html") && kind === "header" || path === "about/index.html" && kind === "footer";
       if (customised) await expect(page.locator("#status")).toContainText("differs from the shared item");
       if (!undone.has(kind)) { undone.add(kind); await undoRedo(before, after); }
@@ -220,14 +214,14 @@ test("Use here links the shared header and footer on all six routes and the sect
   }
   // The section: only the selected Harbour Lane copy is linked; Meadow Row's identical copy stays plain.
   await goTo(page, "work/harbour-lane-pottery/index.html");
-  const beforeSection = await effective(page, baseURL, JSON_PATH);
+  const beforeSection = await effectiveSource(page, baseURL, JSON_PATH);
   await useHere(page, /^Section Need something similar/, "section", "Contact CTA");
-  const afterSection = (await effective(page, baseURL, JSON_PATH))!;
+  const afterSection = (await effectiveSource(page, baseURL, JSON_PATH))!;
   expect(afterSection).not.toBe(beforeSection);
   await undoRedo(beforeSection, afterSection);
   await goTo(page, "work/meadow-row-allotments/index.html");
   await expect(row(page, /^Section Need something similar/).getByRole("button", { name: "Save shared" })).toBeAttached();
-  const json = JSON.parse((await effective(page, baseURL, JSON_PATH))!);
+  const json = JSON.parse((await effectiveSource(page, baseURL, JSON_PATH))!);
   for (const path of PAGES) expect(Object.keys(json.pages[path].pageParts ?? {})).toHaveLength(2);
   const sectionLinks = (path: Route) => Object.values(json.pages[path]?.sections ?? {}).filter((link: any) => link?.kind === "native-section" && link.recordId === "contact-cta");
   expect(sectionLinks("work/fern-and-kettle/index.html")).toHaveLength(1);
@@ -241,14 +235,14 @@ test("Use here links the shared header and footer on all six routes and the sect
   const banner = page.getByRole("region", { name: "Shared header master" });
   await expect(banner).toBeVisible();
   const MASTER = ".editor/page-parts/site-head.html";
-  const master = (await effective(page, baseURL, MASTER))!;
+  const master = (await effectiveSource(page, baseURL, MASTER))!;
   const edited = master.replace('class="brand" href="/">Larkspur</a>', 'class="brand" href="/">Larkspur Studio</a>');
   expect(edited).not.toBe(master);
   await page.locator("#content [role='textbox']").first().focus();
   await page.evaluate(value => navigator.clipboard.writeText(value), edited);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(edited);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(edited);
   const grip = page.getByRole("separator", { name: "Resize code pane", exact: true });
   await grip.focus();
   await page.keyboard.press("Home");
@@ -256,23 +250,23 @@ test("Use here links the shared header and footer on all six routes and the sect
   const beforeUpdate = await all(page, baseURL, [...PAGES, JSON_PATH]);
   await banner.getByRole("button", { name: "Update copies" }).click();
   const pristineHeaders = PAGES.filter(path => path !== "index.html" && path !== "about/index.html");
-  for (const path of pristineHeaders) await expect.poll(async () => (await effective(page, baseURL, path)) ?? "").toContain(">Larkspur Studio</a>");
-  for (const path of ["index.html", "about/index.html"] as const) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
-  for (const path of CSS) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
+  for (const path of pristineHeaders) await expect.poll(async () => (await effectiveSource(page, baseURL, path)) ?? "").toContain(">Larkspur Studio</a>");
+  for (const path of ["index.html", "about/index.html"] as const) expect(await effectiveSource(page, baseURL, path)).toBe(pristine[path]);
+  for (const path of CSS) expect(await effectiveSource(page, baseURL, path)).toBe(pristine[path]);
   await page.screenshot({ path: test.info().outputPath("six-route-update-code-hidden.png") });
   // The whole Update is one Undo across the six pages and the JSON: the edited master, the CSS,
   // the session, its banner and the hidden Code all stay. Redo brings back exactly the update.
   const afterUpdate = await all(page, baseURL, [...PAGES, JSON_PATH]);
   expect(afterUpdate[JSON_PATH]).not.toBe(beforeUpdate[JSON_PATH]);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effective(page, baseURL, path)).toBe(beforeUpdate[path]);
-  expect(await effective(page, baseURL, MASTER)).toBe(edited);
-  for (const path of CSS) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
+  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effectiveSource(page, baseURL, path)).toBe(beforeUpdate[path]);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(edited);
+  for (const path of CSS) expect(await effectiveSource(page, baseURL, path)).toBe(pristine[path]);
   await expect(banner).toBeVisible();
   await expect(grip).toHaveAttribute("aria-valuenow", "0");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
-  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effective(page, baseURL, path)).toBe(afterUpdate[path]);
-  expect(await effective(page, baseURL, MASTER)).toBe(edited);
+  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effectiveSource(page, baseURL, path)).toBe(afterUpdate[path]);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(edited);
   await expect(banner).toBeVisible();
   await expect(grip).toHaveAttribute("aria-valuenow", "0");
   await banner.getByRole("button", { name: "Done" }).click();
@@ -318,25 +312,25 @@ test("an open Use here form refuses after its page source or the editor JSON cha
     }
   };
   // The page source changes under the open form.
-  const json = await effective(page, baseURL, JSON_PATH);
+  const json = await effectiveSource(page, baseURL, JSON_PATH);
   let form = await open();
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n");
-  await expect.poll(async () => (await effective(page, baseURL, "work/harbour-lane-pottery/index.html"))?.endsWith("\n\n") ?? false).toBe(true);
+  await expect.poll(async () => (await effectiveSource(page, baseURL, "work/harbour-lane-pottery/index.html"))?.endsWith("\n\n") ?? false).toBe(true);
   await tryUse(form);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
   await page.keyboard.press("Escape");
   // The editor JSON changes under the open form: the linked footer is disconnected meanwhile.
   await useHere(page, /^Footer/, "footer", "Site footer");
-  const linked = (await effective(page, baseURL, JSON_PATH))!;
+  const linked = (await effectiveSource(page, baseURL, JSON_PATH))!;
   form = await open();
   await row(page, /Site footer/).hover();
   await row(page, /Site footer/).getByRole("button", { name: "Disconnect this instance" }).click();
-  await expect.poll(() => effective(page, baseURL, JSON_PATH)).not.toBe(linked);
-  const disconnected = await effective(page, baseURL, JSON_PATH);
+  await expect.poll(() => effectiveSource(page, baseURL, JSON_PATH)).not.toBe(linked);
+  const disconnected = await effectiveSource(page, baseURL, JSON_PATH);
   await tryUse(form);
-  expect(await effective(page, baseURL, JSON_PATH)).toBe(disconnected);
+  expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(disconnected);
 });
 
 for (const [what, mangle] of [
@@ -353,11 +347,11 @@ for (const [what, mangle] of [
     await form.getByRole("button", { name: "Save shared" }).click();
     await expect(row(page, /Shared hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
     const JSON_FILE = ".editor/page-builder.json";
-    const broken = mangle((await effective(page, baseURL, JSON_FILE))!);
+    const broken = mangle((await effectiveSource(page, baseURL, JSON_FILE))!);
     await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(JSON_FILE)}`);
     await expect(page.locator("#primary-title")).toHaveText(JSON_FILE);
     await replaceCode(page, broken);
-    await expect.poll(() => effective(page, baseURL, JSON_FILE)).toBe(broken);
+    await expect.poll(() => effectiveSource(page, baseURL, JSON_FILE)).toBe(broken);
     await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
     await expect(page.locator("#primary-title")).toHaveText(PAGE);
     // The whole section, selected through Structure: the bar shows, with no shared or save action.
@@ -367,9 +361,9 @@ for (const [what, mangle] of [
     await expect(bar(page).getByRole("button", { name: /^Update / })).toHaveCount(0);
     await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
     // Plain editing still works; the JSON stays exactly as written.
-    const source = (await effective(page, baseURL, PAGE))!;
+    const source = (await effectiveSource(page, baseURL, PAGE))!;
     await replaceCode(page, source.replace("About Larkspur</h1>", "About us</h1>"));
     await expect(frame(page).locator("section.hero h1")).toHaveText("About us");
-    expect(await effective(page, baseURL, JSON_FILE)).toBe(broken);
+    expect(await effectiveSource(page, baseURL, JSON_FILE)).toBe(broken);
   });
 }

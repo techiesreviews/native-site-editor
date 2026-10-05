@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft } from "./drafts";
+import { effectiveSource } from "./drafts";
 import { showStylePanel } from "./style-panel-controls";
 
 const pageErrors = new WeakMap<Page, string[]>();
@@ -19,7 +19,6 @@ const markup = '<section class="section-intro"><h2>Master assets</h2><p><a href=
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const banner = (page: Page) => page.getByRole("region", { name: "Saved section master" });
-const effective = async (page: Page, baseURL: string | undefined, path: string) => (await storedDraft(page, path))?.content ?? (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 async function edit(page: Page) {
   await page.getByRole("treeitem", { name: /^(Section|Intro) Section heading/ }).locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Edit Intro component", exact: true }).click();
@@ -43,15 +42,15 @@ async function seed(page: Page, baseURL: string | undefined) {
   await page.evaluate(text => navigator.clipboard.writeText(text), markup);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup);
   await expect(frame(page).locator(".master-image")).toBeVisible();
   await expect.poll(() => frame(page).locator(".master-image").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  return await effective(page, baseURL, PAGE);
+  return await effectiveSource(page, baseURL, PAGE);
 }
 
 test("a nested page's master image has a trusted focal preview and image/link/alt controls write only the master", async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
-  const css = await effective(page, baseURL, "styles/site.css");
+  const css = await effectiveSource(page, baseURL, "styles/site.css");
   await frame(page).locator(".master-image").click();
   await showStylePanel(page);
   const style = page.getByRole("complementary", { name: "Style panel" });
@@ -59,37 +58,37 @@ test("a nested page's master image has a trusted focal preview and image/link/al
   const focal = style.getByRole("region", { name: "Image focus" });
   await expect(focal).toBeVisible();
   await expect.poll(() => focal.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
-  expect(await effective(page, baseURL, "styles/site.css")).toBe(css);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
+  expect(await effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
   const focus = focal.getByRole("group");
   await focus.focus();
   await page.keyboard.press("Shift+ArrowRight");
-  await expect.poll(() => effective(page, baseURL, "styles/site.css")).toContain("object-position: 60% 50%");
-  const focalCss = await effective(page, baseURL, "styles/site.css");
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toContain("object-position: 60% 50%");
+  const focalCss = await effectiveSource(page, baseURL, "styles/site.css");
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await banner(page).getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, "styles/site.css")).toBe(css);
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(() => effective(page, baseURL, "styles/site.css")).toBe(focalCss);
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(focalCss);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, "styles/site.css")).toBe(css);
+  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   const alt = page.getByRole("textbox", { name: "Alt text", exact: true });
   await expect(alt).toBeVisible();
   await alt.fill("Changed master image");
   await alt.press("Escape");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace("Original master image", "Changed master image"));
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup.replace("Original master image", "Changed master image"));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await banner(page).getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup);
   await page.locator(".canvas-crumb").first().click();
   await frame(page).locator("section.section-intro a").click({ timeout: 15000 });
   await bar(page).getByRole("button", { name: "Address", exact: true }).click();
@@ -97,8 +96,8 @@ test("a nested page's master image has a trusted focal preview and image/link/al
   await expect(address).toHaveValue("../work/fern-and-kettle/");
   await address.fill("../work/harbour-lane-pottery/");
   await address.press("Escape");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace("../work/fern-and-kettle/", "../work/harbour-lane-pottery/"));
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup.replace("../work/fern-and-kettle/", "../work/harbour-lane-pottery/"));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
 });
 
 test("a stale Choose image callback after Done opens no picker and never navigates back to the master", async ({ page, baseURL }) => {
@@ -110,8 +109,8 @@ test("a stale Choose image callback after Done opens no picker and never navigat
   await expect(page.locator("#primary-title")).toHaveText(PAGE);
   await oldChoose!.evaluate(button => (button as HTMLElement).click());
   await expect(page.getByRole("dialog", { name: "Choose image", exact: true })).toHaveCount(0);
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await expect(page.locator("#primary-title")).toHaveText(PAGE);
   await edit(page);
   await oldChoose!.evaluate(button => (button as HTMLElement).click());
@@ -123,11 +122,11 @@ test("a stale Choose image callback after Done opens no picker and never navigat
   await chooser.getByRole("button", { name: "Details for about/master-image.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(chooser).toHaveCount(0);
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup.replace('<img class="master-image" src="master-image.svg" alt="Original master image" width="160" height="100">', '<img loading="lazy" decoding="async" class="master-image" src="/about/master-image.svg" alt="Original master image" width="800" height="600">'));
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup.replace('<img class="master-image" src="master-image.svg" alt="Original master image" width="160" height="100">', '<img loading="lazy" decoding="async" class="master-image" src="/about/master-image.svg" alt="Original master image" width="800" height="600">'));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
   await banner(page).getByRole("button", { name: "Done" }).focus();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(markup);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup);
 });
 
 test("a previous master's Method callback refuses after Done and reopening the same cached model", async ({ page, baseURL }) => {
@@ -140,6 +139,6 @@ test("a previous master's Method callback refuses after Done and reopening the s
   await frame(page).locator(".master-form").click({ position: { x: 4, y: 4 } });
   await expect(bar(page).getByRole("combobox", { name: "Method", exact: true })).toHaveValue("get");
   await method!.evaluate((control: HTMLSelectElement) => { control.value = "post"; control.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(await effective(page, baseURL, MASTER)).toBe(markup);
-  expect(await effective(page, baseURL, PAGE)).toBe(originalPage);
+  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
 });

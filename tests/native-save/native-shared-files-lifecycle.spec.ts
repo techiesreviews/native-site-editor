@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
-import { storedDraft, storedDrafts } from "./drafts";
+import { storedDrafts, effectiveSource } from "./drafts";
 import { publishButton, showPublish } from "./publish";
 
 // Whole-page metadata in .editor/page-builder.json follows the page through the Files tree: a page
@@ -30,13 +30,8 @@ const branch = async (page: Page, baseURL: string | undefined, path: string) => 
   const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
   return response.ok() ? response.text() : undefined;
 };
-const effective = async (page: Page, baseURL: string | undefined, path: string) => {
-  const draft = await storedDraft(page, path);
-  if (draft) return draft.deleted ? undefined : draft.content;
-  return branch(page, baseURL, path);
-};
-const snapshot = async (page: Page, baseURL: string | undefined, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effective(page, baseURL, path)] as const)));
-const json = async (page: Page, baseURL: string | undefined) => JSON.parse((await effective(page, baseURL, JSON_PATH)) ?? "{}");
+const snapshot = async (page: Page, baseURL: string | undefined, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effectiveSource(page, baseURL, path)] as const)));
+const json = async (page: Page, baseURL: string | undefined) => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}");
 
 async function open(page: Page, baseURL: string | undefined, path = PAGE) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(path)}`);
@@ -123,10 +118,10 @@ test("renaming a shared page's folder carries its whole metadata entry; deleting
   expect(moved).toEqual(expected);
   // Pages and masters change only by links to the moved URL; masters stay at their own paths.
   const rebased = (text: string | undefined) => text!.replaceAll("/about/", "/studio/");
-  expect(await effective(page, baseURL, "studio/index.html")).toBe(rebased(before.files[PAGE]));
-  expect(await effective(page, baseURL, "index.html")).toBe(rebased(before.files["index.html"]));
-  expect(await effective(page, baseURL, PAGE)).toBeUndefined();
-  for (const path of MASTERS) expect(await effective(page, baseURL, path)).toBe(rebased(before.files[path]));
+  expect(await effectiveSource(page, baseURL, "studio/index.html")).toBe(rebased(before.files[PAGE]));
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(rebased(before.files["index.html"]));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBeUndefined();
+  for (const path of MASTERS) expect(await effectiveSource(page, baseURL, path)).toBe(rebased(before.files[path]));
   const afterMove = await storedDrafts(page);
   // Every other draft is a link rebase of its branch bytes, or the redirect for the old URL.
   for (const draft of afterMove) {
@@ -158,7 +153,7 @@ test("renaming a shared page's folder carries its whole metadata entry; deleting
   const removed = structuredClone(before.document);
   delete removed.pages[PAGE];
   expect(await json(page, baseURL)).toEqual(removed);
-  for (const path of ["index.html", ...MASTERS]) expect(await effective(page, baseURL, path)).toBe(before.files[path]);
+  for (const path of ["index.html", ...MASTERS]) expect(await effectiveSource(page, baseURL, path)).toBe(before.files[path]);
   const afterDelete = await storedDrafts(page);
 
   await page.keyboard.press("Escape");
@@ -180,7 +175,7 @@ test("a folder rename onto a page key that only has leftover metadata is refused
   await page.waitForTimeout(500);
   expect(await storedDrafts(page)).toEqual([]);
   expect(await snapshot(page, baseURL, [PAGE, "index.html", ...MASTERS, JSON_PATH])).toEqual(before.files);
-  expect(await effective(page, baseURL, "studio/index.html")).toBeUndefined();
+  expect(await effectiveSource(page, baseURL, "studio/index.html")).toBeUndefined();
   expect(JSON.parse(before.files[JSON_PATH]!).pages["studio/index.html"]).toEqual(leftover);
   // The rename field stays open and focused with what was typed, so it can be changed or cancelled.
   const input = explorer(page).getByRole("textbox", { name: "New name for about" });
@@ -212,7 +207,7 @@ test("after a folder rename rebases a pristine shared header, Update copies from
 
   await renameFolder(page, "about", "studio");
   await expect(status(page)).toContainText("Renamed the folder about to studio");
-  await expect.poll(async () => (await effective(page, baseURL, MOVED)) ?? "").toContain('href="/studio/"');
+  await expect.poll(async () => (await effectiveSource(page, baseURL, MOVED)) ?? "").toContain('href="/studio/"');
   const moved = await snapshot(page, baseURL, [MOVED, MASTER, JSON_PATH]);
   // The rewrite kept them identical to each other: still pristine.
   expect(moved[MASTER]).toBe(saved[MASTER]!.replaceAll("/about/", "/studio/"));
@@ -234,9 +229,9 @@ test("after a folder rename rebases a pristine shared header, Update copies from
   await page.evaluate(value => navigator.clipboard.writeText(value), edited);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
-  await expect.poll(() => effective(page, baseURL, MASTER)).toBe(edited);
+  await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(edited);
   await banner.getByRole("button", { name: "Update copies" }).click();
   // The moved copy was unchanged by the person, so Update writes it.
-  await expect.poll(async () => header(await effective(page, baseURL, MOVED)), { timeout: 5_000 }).toBe(edited);
-  expect(await effective(page, baseURL, MOVED)).toBe(moved[MOVED]!.replace(moved[MASTER]!, edited));
+  await expect.poll(async () => header(await effectiveSource(page, baseURL, MOVED)), { timeout: 5_000 }).toBe(edited);
+  expect(await effectiveSource(page, baseURL, MOVED)).toBe(moved[MOVED]!.replace(moved[MASTER]!, edited));
 });
