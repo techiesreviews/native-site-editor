@@ -890,12 +890,16 @@ const masterHost: MasterControllerHost = {
 };
 const masterController = createNativeSectionMasterController(masterHost);
 const pagePartController = createNativePagePartController(masterHost);
-// The one live master session (a saved section or a shared header/footer), or none.
+// The one live master session (a saved section or a shared header/footer), or none. A session
+// left by navigation keeps its context (it resumes when its master is opened again), so two may
+// exist: the one whose master is open, then the one whose preview input is still live, wins.
 function activeMaster() {
-  const section = masterController.context();
-  if (section) return { controller: masterController, context: section };
-  const part = pagePartController.context();
-  return part ? { controller: pagePartController, context: part } : undefined;
+  const all = [
+    { controller: masterController, context: masterController.context(), input: () => masterController.previewInput() },
+    { controller: pagePartController, context: pagePartController.context(), input: () => pagePartController.previewInput() },
+  ].filter(item => item.context);
+  const pick = (found: typeof all) => found.length === 1 ? { controller: found[0].controller, context: found[0].context!, input: found[0].input } : undefined;
+  return all.length < 2 ? pick(all) : pick(all.filter(item => item.context!.htmlPath === currentPath)) ?? pick(all.filter(item => item.input()));
 }
 function nativeCanonicalCopy(source: string, range: { start: number; end: number }) {
   const node = elementPathAt(source, range.start);
@@ -905,8 +909,7 @@ function nativeCanonicalCopy(source: string, range: { start: number; end: number
 // The master session the preview shows, as the controller proves it now, or none.
 function nativeMasterEdit() {
   if (versionView) return undefined;
-  const section = masterController.previewInput(), part = pagePartController.previewInput();
-  return section && part ? undefined : section ?? part;
+  return activeMaster()?.input();
 }
 // The open master's path while its session is live and it is the open file; otherwise undefined.
 function nativeOpenMaster() {
@@ -920,15 +923,18 @@ function nativeEditableSource(path: string): string | undefined {
   return nativeSources()[path];
 }
 let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
+let masterBannerContent: HTMLElement | undefined;
+const masterBannerObserved = new WeakSet<HTMLElement>();
 function renderMasterBanner() {
   const content = document.getElementById("content");
   // A workspace that was rebuilt holds a new code pane: the old line is dropped and made again there.
-  if (masterBanner && (!masterBanner.element.isConnected || masterBanner.element.nextElementSibling !== content)) {
+  if (masterBanner && (!masterBanner.element.isConnected || masterBannerContent !== content)) {
     masterBanner.element.remove();
     masterBanner = undefined;
   }
   if (!masterBanner) {
     if (!content) return;
+    masterBannerContent = content;
     masterBanner = createMasterBanner(content, {
       done: () => {
         const active = activeMaster();
@@ -949,6 +955,17 @@ function renderMasterBanner() {
       },
     });
   }
+  // One line only: over the code, or, while the person keeps Code hidden, at the foot of the
+  // preview, so Done and Update copies stay reachable without reopening Code.
+  if (!content) return;
+  const main = content.closest("main"), preview = main?.querySelector<HTMLElement>(":scope > .preview-pane");
+  if (main && !masterBannerObserved.has(main)) {
+    masterBannerObserved.add(main);
+    new MutationObserver(() => { if (masterBanner) renderMasterBanner(); }).observe(main, { attributes: true, attributeFilter: ["class"] });
+  }
+  const floating = Boolean(preview && main?.classList.contains("code-collapsed"));
+  if (floating && masterBanner.element.parentElement !== preview) preview!.append(masterBanner.element);
+  else if (!floating && masterBanner.element.nextElementSibling !== content) content.before(masterBanner.element);
   // Shown while the master itself is open; another file hides it, and coming back shows it again.
   const context = activeMaster()?.context;
   masterBanner.show(context && currentPath === context.htmlPath ? context : undefined);
@@ -3155,6 +3172,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     }
   }
   const reveal = selection.reason !== "refresh";
+  if (selection.path !== lastNativeSelection?.path || selection.node?.join(".") !== lastNativeSelection?.node?.join(".")) nativeSelectionEpoch++;
   lastNativeSelection = selection.path ? selection : undefined;
   for (const waiter of [...nativeSelectionWaiters]) waiter(selection);
   stylePanel?.update();
@@ -3225,6 +3243,8 @@ function nativeComponentFieldsRevision() {
 
 // ---- Shared native roots in Structure: Save shared, linked Edit and Disconnect ------------------
 // Callbacks waiting for the preview's own selection of a node (Structure's explicit Edit).
+// Counts changes of the selected element: a Save shared in flight refuses when the person selects another.
+let nativeSelectionEpoch = 0;
 const nativeSelectionWaiters = new Set<(selection: NativePreviewSelection) => void>();
 // What sharing reads, beyond the page: the file graph, editor JSON, private masters and every
 // loaded public source (pages and stylesheets), the scope, the open file and master session, and
@@ -3286,7 +3306,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
       const record = readSectionCatalog(docText)[own[0].link.recordId];
       if (!record) return undefined;
       return { state: "linked", label: record.label, recordId: own[0].link.recordId,
-        edit: () => void nativeStructureEdit(path, item.node, painted, false),
+        edit: () => { if (current()) void nativeStructureEdit(path, item.node, painted, false); else announce("The page changed. Select the element again."); },
         disconnect: () => void nativeSharedDisconnect(current, () => {
           const next = deleteNativeSectionLink(docText!, path, own[0].key);
           return typeof next === "string" ? { expectedFiles: files, operation: { expectedSources: new Map([[EDITOR_PAGE_BUILDER_PATH, docText], [path, painted]]),
@@ -3302,7 +3322,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
       const record = readPagePartCatalog(docText)[own[0].link.recordId];
       if (!record || record.rootTag !== tag) return undefined;
       return { state: "linked", label: record.label, recordId: record.id,
-        edit: () => void nativeStructureEdit(path, item.node, painted, true),
+        edit: () => { if (current()) void nativeStructureEdit(path, item.node, painted, true); else announce("The page changed. Select the element again."); },
         disconnect: () => void nativeSharedDisconnect(current, () => {
           const plan = planUnlinkPagePart({ documentText: docText!, files, pagePath: path, key: own[0].key });
           if ("error" in plan) return plan;
@@ -3318,6 +3338,8 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   const linked = nativePageStylesheets(painted, path).filter(sheet => !sheet.startsWith(".") && sources[sheet] !== undefined);
   const sheets = [...new Set([...linked, ...expandStyleImports(linked, (sheet) => sources[sheet]).imported])]
     .filter(sheet => !sheet.startsWith(".") && /\.css$/i.test(sheet) && sources[sheet] !== undefined);
+  // Without a class to choose or a stylesheet to name, the form could never be completed: no offer.
+  if (!classes.length || !sheets.length) return undefined;
   const name = (item.heading || item.text || tag).trim().slice(0, 60) || tag;
   const used = new Set([...Object.keys(readSectionCatalog(docText)), ...Object.keys(readPagePartCatalog(docText))].map(id => id.toLowerCase()));
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[^a-z]+/, "") || tag;
@@ -3348,12 +3370,14 @@ async function nativeSharedSubmit(metadata: NativeSharedMetadata, key: string): 
   if (!offered || !offered.current()) return { error: changed };
   const plan = offered.plan(metadata);
   if ("error" in plan) return { error: plan.error };
-  const graph = plan.expectedFiles.join("\n");
-  // A Cancel, a new revision (which drops every offered context) or any change refuses the write.
-  const live = () => nativeSharedContexts.get(key) === offered && offered.current() && nativeFiles().sort().join("\n") === graph;
+  const graph = plan.expectedFiles.join("\n"), selected = nativeSelectionEpoch;
+  // A Cancel, a new revision (which drops every offered context), another selection or any change refuses the write.
+  const live = () => nativeSharedContexts.get(key) === offered && offered.current() && nativeSelectionEpoch === selected && nativeFiles().sort().join("\n") === graph;
   const error = await applyNativeOperation({ ...plan.operation, current: live });
   if (error) return { error };
-  queueMicrotask(() => { updateNativePreviewSources(); renderNativeShownStructure(); });
+  // After the form has taken this result and closed as saved (a later task, not a microtask that
+  // could run first and cancel it): then the preview and Structure show the shared root.
+  setTimeout(() => { updateNativePreviewSources(); renderNativeShownStructure(); });
   return { success: true };
 }
 async function nativeSharedDisconnect(current: () => boolean, plan: () => { operation: StaticSectionOperation; expectedFiles: readonly string[] } | { error: string }) {
@@ -3375,6 +3399,8 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
   const scope = draftScope(), revision = masterRevision();
   const refuse = () => announce("The page changed. Select the element again.");
   if (!scope || !editorModule || !nativePreview || nativeMasterEdit() || currentPath !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
+  // The page model as Edit was pressed: the same proof is checked after the selection, never retaken.
+  const proof = editorModule.captureFileModelState(scope, path, true);
   const selected = new Promise<NativePreviewSelection | undefined>((resolve) => {
     const timer = setTimeout(() => { nativeSelectionWaiters.delete(waiter); resolve(undefined); }, 5000);
     const waiter = (selection: NativePreviewSelection) => {
@@ -3385,11 +3411,11 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
   });
   nativePreview.selectNode({ path, node });
   const selection = await selected;
-  if (!selection || selection.paintedSource !== painted || lastNativeSelection !== selection || masterRevision() !== revision || nativeMasterEdit() || currentPath !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
+  if (!selection || !proof.isCurrent() || selection.paintedSource !== painted || lastNativeSelection !== selection || masterRevision() !== revision || nativeMasterEdit() || currentPath !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
   const at = nativeMasterSelection(selection);
   const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
   if (!at || !identity || !identity.linked) { refuse(); return; }
-  runMasterEdit(identity.onEdit, editorModule.captureFileModelState(scope, path, true), path, revision);
+  runMasterEdit(identity.onEdit, proof, path, revision);
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;

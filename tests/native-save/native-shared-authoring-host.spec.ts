@@ -59,6 +59,9 @@ test("Save shared on a section and a header writes the private master and JSON a
   // The row now wears the shared label with Edit and Disconnect.
   await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
   await expect(row(page, /About hero/).getByRole("button", { name: "Disconnect this instance" })).toBeAttached();
+  // The form closed as saved and handed focus back to its row (a cancel would not refocus it).
+  await expect(structure(page).getByRole("form", { name: "Share section" })).toHaveCount(0);
+  await expect(row(page, /About hero/)).toBeFocused();
   // The header too, as a page part.
   const header = await share(page, /^Header/, "header", "site-head", "Site header");
   await header.getByRole("button", { name: "Save shared" }).click();
@@ -240,4 +243,66 @@ test("Cancel during the write, a same-bytes model replacement, and a planner err
   expect(await effective(page, baseURL, ".editor/sections/contact.html")).toBeUndefined();
   expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
   for (const path of [PAGE, ...CSS]) expect(await effective(page, baseURL, path)).toBe(before[path]);
+});
+
+test("after a section master is left by navigation and its page changes, a linked header's Edit owns the banner, Done and Update", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await (await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero")).getByRole("button", { name: "Save shared" }).click();
+  await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await (await share(page, /^Header/, "header", "site-head", "Site header")).getByRole("button", { name: "Save shared" }).click();
+  await expect(row(page, /Site header/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await row(page, /About hero/).hover();
+  await row(page, /About hero/).getByRole("button", { name: "Edit component" }).click();
+  await expect(masterBanner(page)).toBeVisible();
+  // Manual navigation back to the public page (no Done), then a real edit of that page in Code.
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("treeitem", { name: "About · Larkspur Studio" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n");
+  await expect.poll(async () => (await effective(page, baseURL, PAGE))?.endsWith("\n\n") || (await effective(page, baseURL, PAGE))?.endsWith("\n")).toBe(true);
+  await expect(row(page, /Site header/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await row(page, /Site header/).hover();
+  await row(page, /Site header/).getByRole("button", { name: "Edit component" }).click();
+  const part = masterBanner(page, "Shared header master");
+  await expect(part).toBeVisible();
+  await expect(page.locator("#primary-title")).toHaveText(".editor/page-parts/site-head.html");
+  await expect(part).toContainText("Site header");
+  const atDone = await snapshot(page, baseURL, [PAGE, JSON_PATH, ".editor/page-parts/site-head.html", ".editor/sections/about-hero.html"]);
+  await part.getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await expect(part).toBeHidden();
+  expect(await snapshot(page, baseURL, [PAGE, JSON_PATH, ".editor/page-parts/site-head.html", ".editor/sections/about-hero.html"])).toEqual(atDone);
+});
+
+test.describe("guards", () => {
+  test("a same-bytes replacement of a stylesheet in the chosen chain refuses Save shared", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const json = await effective(page, baseURL, JSON_PATH);
+    await frame(page).locator("section.hero h1").click();
+    await expect(page.locator("#secondary-title")).toHaveText("styles/sections.css");
+    const form = await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero", "styles/sections.css");
+    await expect(form.getByLabel("Stylesheet")).toHaveValue("styles/sections.css");
+    const css = await effective(page, baseURL, "styles/sections.css");
+    await page.locator("#content-secondary [role='textbox']").first().focus();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type("x");
+    await page.keyboard.press("Backspace");
+    expect(await effective(page, baseURL, "styles/sections.css")).toBe(css);
+    if (await form.isVisible()) await form.getByRole("button", { name: "Save shared" }).click();
+    await page.waitForTimeout(1500);
+    expect(await effective(page, baseURL, ".editor/sections/about-hero.html")).toBeUndefined();
+    expect(await effective(page, baseURL, JSON_PATH)).toBe(json);
+  });
+});
+
+test("a root with no unique class of its own offers no Save shared form", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const source = (await effective(page, baseURL, PAGE))!;
+  await replaceCode(page, source.replace('<section class="contact flow" id="contact">', '<section id="contact">'));
+  await expect.poll(async () => (await effective(page, baseURL, PAGE))?.includes('<section id="contact">')).toBe(true);
+  await expect(row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" })).toBeAttached();
+  await expect(row(page, /^Section Get in touch/).getByRole("button", { name: "Save shared" })).toHaveCount(0);
 });
