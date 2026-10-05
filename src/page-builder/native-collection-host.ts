@@ -322,13 +322,17 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     // change that touches it (its page, or the pages and page data its folders
     // select) is refused; anything else goes ahead and the host tells about it.
     const movedTo = new Map(moves.map(move => [move.to, move.from]));
+    // Code is already in the current graph: dependency changes must compare
+    // against the pinned text and identity that preceded the typing group.
+    const beforeInputs = origin.driftBasis ? { ...sources, [origin.driftBasis.path]: origin.driftBasis.source } : sources;
+    const beforeIdentity = origin.driftBasis?.identity ?? identity;
     const touchedBroken: BrokenListing[] = [], skipped: BrokenListing[] = [];
     for (const item of baked.broken ?? []) {
       const from = movedTo.get(item.path) ?? item.path;
       const pageTouched = creates.some(create => create.path === item.path) || from !== item.path || before.get(from) !== candidateSources[item.path];
       const folders = listingFolders(candidateSources[item.path], item.start);
       const inputsTouched = !pageTouched && folders.length > 0 &&
-        listingInputs(sources, routes, identity, folders, from, input.files) !== listingInputs(candidateSources, afterRoutes, candidateIdentity, folders, item.path, [...afterFiles]);
+        listingInputs(beforeInputs, routes, beforeIdentity, folders, from, input.files) !== listingInputs(candidateSources, afterRoutes, candidateIdentity, folders, item.path, [...afterFiles]);
       // Named by the page as it is now, before this change moves it.
       (pageTouched || inputsTouched ? touchedBroken : skipped).push({ ...item, path: from });
     }

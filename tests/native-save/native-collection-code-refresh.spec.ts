@@ -297,3 +297,29 @@ for (const mode of ['paste', 'typing', 'configured-name'] as const) test(mode ==
     expect((await storedDraft(page, side))!.content).toBe(rebuiltRecipe);
   }
 });
+
+for (const mode of ['selected', 'identity'] as const) test(`a broken inline listing refuses a ${mode} Code change without partially rebuilding healthy cards`, async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const oldHome = home.replace('</head>', '<meta property="og:site_name" content="Old"></head>');
+  const oldItem = source.replace('<title>Lifecycle</title>', '<title>Lifecycle | Old</title>');
+  const inline = '<html><head><title>Broken</title></head><body><div data-each="/work/"><template><a>{nope}</a></template><p>Keep exact</p></div></body></html>';
+  const document = JSON.parse(recipe);
+  document.collections.proof.target = makeCollectionTarget(oldHome, oldHome.indexOf('<div'));
+  const oldRecipe = JSON.stringify(document, null, 2) + '\n';
+  for (const [path, content] of [['index.html', oldHome], [item, oldItem], [side, oldRecipe], ['broken.html', inline], ['.editor/config.json', '{}\n']])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  const editedPath = mode === 'selected' ? item : 'index.html';
+  const typed = mode === 'selected' ? oldItem.replace('<title>Lifecycle | Old</title>', '<title>Code title | Old</title>') : oldHome.replace('content="Old"', 'content="New"');
+  await open(page, baseURL, editedPath);
+  await pasteSource(page, typed);
+  await expect(page.locator('#status')).toContainText(`The cards that list ${editedPath} were not updated: Collection listings (broken.html)`);
+  await expect(page.locator('#status')).toContainText('Unknown collection field: nope');
+  expect((await storedDraft(page, editedPath))!.content).toBe(typed);
+  expect(await paths(page)).toEqual([editedPath]);
+  expect(await storedDraft(page, side)).toBeUndefined();
+  expect(await storedDraft(page, 'broken.html')).toBeUndefined();
+  if (mode === 'selected') expect(await storedDraft(page, 'index.html')).toBeUndefined();
+  else expect(typed).toContain(card);
+  await undo(page);
+  await expect.poll(() => paths(page)).toEqual([]);
+});

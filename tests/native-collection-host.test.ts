@@ -403,3 +403,22 @@ test('a home Code drift basis uses the identity that produced its own inline car
  const refused=planNativeCollectionOperation({sources:{...before,'index.html':manual},routes:deriveNativeRoutes(Object.keys(before)),revision:'r',files:Object.keys(before),identity:{name:'New'},origin:origin({driftBasis:{path:'index.html',source:before['index.html'],identity:{name:'Old'}},expectedSources:new Map([['index.html',manual]])})});
  assert.ok('error'in refused);assert.match(refused.error,/edited by hand/);
 });
+
+for(const mode of ['selected','identity','unrelated'] as const) test(`a broken inline listing checks ${mode} Code changes using their pre-edit basis`,()=>{
+  const raw={'index.html':page('Home',list()),'work/a/index.html':page('Alpha | Old'),'unrelated.html':page('Unrelated')};
+  const original=canonical(raw,'Old');
+  original['broken.html']=page('Broken','<div data-each="/work/"><template><a>{nope}</a></template><p>Keep exact</p></div>');
+  const path=mode==='selected'?'work/a/index.html':mode==='identity'?'index.html':'unrelated.html';
+  const basis=original[path],after=basis.replace('</title>',' changed</title>');
+  const current={...original,[path]:after};
+  const result=planNativeCollectionOperation({sources:current,routes:deriveNativeRoutes(Object.keys(current)),revision:'r',files:Object.keys(current),identity:{name:mode==='identity'?'New':'Old'},origin:origin({refreshCollections:true,driftBasis:{path,source:basis,identity:{name:'Old'}},expectedSources:new Map([[path,after]])})});
+  if(mode==='unrelated'){
+   if('error'in result)assert.fail(result.error);
+   assert.deepEqual(result.skipped.map(item=>item.path),['broken.html']);
+   assert.equal(result.operation.edits!.has('broken.html'),false);
+  }else{
+   assert.ok('error'in result,mode);
+   assert.match(result.error,/broken\.html/);assert.match(result.error,/Unknown collection field: nope/);
+  }
+  assert.equal(current[path],after);assert.equal(current['broken.html'],original['broken.html']);
+});
