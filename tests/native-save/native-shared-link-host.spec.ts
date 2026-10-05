@@ -132,7 +132,7 @@ async function useHere(page: Page, rowName: RegExp, kind: string, label: string)
   await expect(row(page, new RegExp(label)).getByRole("button", { name: "Edit component" })).toBeAttached();
 }
 
-test("Use here links a shared header, footer and section on every route, JSON only and one Undo each; Update changes only pristine copies; Save persists literal pages", async ({ page, baseURL }) => {
+test("Use here links the shared header and footer on all six routes and the section only on the selected copy, JSON only (one Undo/Redo per kind); Update of pristine copies is one Undo/Redo; Save persists literal pages", async ({ page, baseURL }) => {
   test.setTimeout(240_000);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent("work/fern-and-kettle/index.html")}`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
@@ -143,7 +143,16 @@ test("Use here links a shared header, footer and section on every route, JSON on
   await saveShared(page, /^Section Need something similar/, "section", "contact-cta", "Contact CTA");
   for (const path of [...PAGES, ...CSS]) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
   // Every other route: independent until its own explicit Use here; each link writes the JSON only.
-  let first = true;
+  const undoRedo = async (before: string | undefined, after: string) => {
+    // One Undo removes just this link; Redo brings it back. Pages and CSS never change.
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(before);
+    for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(after);
+    for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
+  };
+  const undone = new Set<string>();
   for (const path of PAGES.filter(path => path !== "work/fern-and-kettle/index.html")) {
     await goTo(page, path);
     for (const [name, kind, label] of [[/^Header/, "header", "Site header"], [/^Footer/, "footer", "Site footer"]] as const) {
@@ -155,20 +164,16 @@ test("Use here links a shared header, footer and section on every route, JSON on
       for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
       const customised = (path === "index.html" || path === "about/index.html") && kind === "header" || path === "about/index.html" && kind === "footer";
       if (customised) await expect(page.locator("#status")).toContainText("differs from the shared item");
-      if (first) {
-        // One Undo removes just this link; Redo brings it back.
-        await page.getByRole("button", { name: "Undo", exact: true }).click();
-        await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(before);
-        await page.getByRole("button", { name: "Redo", exact: true }).click();
-        await expect.poll(() => effective(page, baseURL, JSON_PATH)).toBe(after);
-        for (const other of [...PAGES, ...CSS]) expect(await effective(page, baseURL, other)).toBe(pristine[other]);
-        first = false;
-      }
+      if (!undone.has(kind)) { undone.add(kind); await undoRedo(before, after); }
     }
   }
   // The section: only the selected Harbour Lane copy is linked; Meadow Row's identical copy stays plain.
   await goTo(page, "work/harbour-lane-pottery/index.html");
+  const beforeSection = await effective(page, baseURL, JSON_PATH);
   await useHere(page, /^Section Need something similar/, "section", "Contact CTA");
+  const afterSection = (await effective(page, baseURL, JSON_PATH))!;
+  expect(afterSection).not.toBe(beforeSection);
+  await undoRedo(beforeSection, afterSection);
   await goTo(page, "work/meadow-row-allotments/index.html");
   await expect(row(page, /^Section Need something similar/).getByRole("button", { name: "Save shared" })).toBeAttached();
   const json = JSON.parse((await effective(page, baseURL, JSON_PATH))!);
@@ -197,12 +202,28 @@ test("Use here links a shared header, footer and section on every route, JSON on
   await grip.focus();
   await page.keyboard.press("Home");
   await expect(grip).toHaveAttribute("aria-valuenow", "0");
+  const beforeUpdate = await all(page, baseURL, [...PAGES, JSON_PATH]);
   await banner.getByRole("button", { name: "Update copies" }).click();
   const pristineHeaders = PAGES.filter(path => path !== "index.html" && path !== "about/index.html");
   for (const path of pristineHeaders) await expect.poll(async () => (await effective(page, baseURL, path)) ?? "").toContain(">Larkspur Studio</a>");
   for (const path of ["index.html", "about/index.html"] as const) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
   for (const path of CSS) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
   await page.screenshot({ path: test.info().outputPath("six-route-update-code-hidden.png") });
+  // The whole Update is one Undo across the six pages and the JSON: the edited master, the CSS,
+  // the session, its banner and the hidden Code all stay. Redo brings back exactly the update.
+  const afterUpdate = await all(page, baseURL, [...PAGES, JSON_PATH]);
+  expect(afterUpdate[JSON_PATH]).not.toBe(beforeUpdate[JSON_PATH]);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effective(page, baseURL, path)).toBe(beforeUpdate[path]);
+  expect(await effective(page, baseURL, MASTER)).toBe(edited);
+  for (const path of CSS) expect(await effective(page, baseURL, path)).toBe(pristine[path]);
+  await expect(banner).toBeVisible();
+  await expect(grip).toHaveAttribute("aria-valuenow", "0");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  for (const path of [...PAGES, JSON_PATH]) await expect.poll(() => effective(page, baseURL, path)).toBe(afterUpdate[path]);
+  expect(await effective(page, baseURL, MASTER)).toBe(edited);
+  await expect(banner).toBeVisible();
+  await expect(grip).toHaveAttribute("aria-valuenow", "0");
   await banner.getByRole("button", { name: "Done" }).click();
   await expect(page.locator("#primary-title")).toHaveText("work/fern-and-kettle/index.html");
   await expect(grip).toHaveAttribute("aria-valuenow", "0");
