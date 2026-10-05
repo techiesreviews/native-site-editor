@@ -291,3 +291,80 @@ test("a header inside a linked section overlaps it and is refused", () => {
   error(planSavePagePart({ documentText: json(site), files: site.files, sources: { ...site.sources, "index.html": source }, pagePath: "index.html", pageSource: source,
     range: { start, end: start + inner.length }, id: "hero-head", label: "Hero head", rootClass: "hero-head", stylesheetPath: SHEET }), /overlaps section link/);
 });
+
+// ---- Portable URLs: a part is copied to pages at every depth ----
+
+/** Home and a nested work page with byte-identical headers, both linked to one part. */
+function nestedHeaders() {
+  const site = starter();
+  const home = site.sources["index.html"]!;
+  const deep = "work/fern-and-kettle/index.html";
+  const homeHeader = home.slice(rangeOf(home, "header").start, rangeOf(home, "header").end);
+  const d = site.sources[deep]!, r = rangeOf(d, "header");
+  site.sources[deep] = d.slice(0, r.start) + homeHeader + d.slice(r.end);
+  apply(site, ok(planSavePagePart({ ...saveInput(site, "index.html") })));
+  const linked = ok(planLinkPagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header", copies: [{ pagePath: deep, range: rangeOf(site.sources[deep]!, "header") }] }));
+  assert.ok(linked.keys[0].unchanged);
+  apply(site, linked);
+  return { site, deep };
+}
+const MASTER = ".editor/page-parts/site-header.html";
+
+test("a page-relative link added to the master is refused at Update; nothing is written", () => {
+  const { site, deep } = nestedHeaders();
+  const before = { ...site.sources };
+  site.sources[MASTER] = site.sources[MASTER]!.replace(`<a href="/about/">About</a>`, `<a href="/about/">About</a>\n      <a href="contact/">Contact</a>`);
+  error(planUpdatePagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header" }), /"contact\/" would point to different places\. Use a root path starting with \//);
+  for (const page of ["index.html", deep, EDITOR_PAGE_BUILDER_PATH]) assert.equal(site.sources[page], before[page]);
+  // The same edit with a root path updates both pages.
+  site.sources[MASTER] = before[MASTER]!.replace(`<a href="/about/">About</a>`, `<a href="/about/">About</a>\n      <a href="/contact/">Contact</a>`);
+  const update = ok(planUpdatePagePartCopies({ documentText: json(site)!, files: site.files, sources: site.sources, recordId: "site-header" }));
+  assert.deepEqual(update.updated.map((item) => item.page).sort(), [deep, "index.html"].sort());
+});
+
+test("Save and Link refuse page-relative URLs in the copy or the master", () => {
+  const site = prepared();
+  const relative = site.sources["404.html"]!.replace(`<a href="/about/">About</a>`, `<a href="../about/">About</a>`);
+  error(planSavePagePart({ ...saveInput(site, "404.html"), pageSource: relative, sources: { ...site.sources, "404.html": relative }, range: rangeOf(relative, "header") }), /"\.\.\/about\/"/);
+  const saved = savedHeader();
+  const about = saved.sources["about/index.html"]!.replace(`<a href="/about/"`, `<a href="about/"`);
+  const sources = { ...saved.sources, "about/index.html": about };
+  error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(about, "header") }] }), /"about\/"/);
+  // A relative URL edited into the master refuses Link too.
+  const master = saved.sources[MASTER]!.replace(`<a href="/about/">`, `<a href="about/">`);
+  error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources: { ...saved.sources, [MASTER]: master }, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(saved.sources["about/index.html"]!, "header") }] }), /"about\/"/);
+  // A master comment outside its root refuses Link as it refuses Update.
+  error(planLinkPagePartCopies({ documentText: json(saved)!, files: saved.files, sources: { ...saved.sources, [MASTER]: `<!-- n -->\n${saved.sources[MASTER]}` }, recordId: "site-header", copies: [{ pagePath: "about/index.html", range: rangeOf(saved.sources["about/index.html"]!, "header") }] }), /comment outside/);
+});
+
+test("which URLs are portable", () => {
+  const site = prepared();
+  const save = (inner: string) => {
+    const page = site.sources["404.html"]!.replace(`</nav>`, `</nav>${inner}`);
+    return planSavePagePart({ ...saveInput(site, "404.html"), pageSource: page, sources: { ...site.sources, "404.html": page }, range: rangeOf(page, "header") });
+  };
+  for (const inner of [
+    `<a href="/contact/">c</a>`, `<a href="#main">m</a>`, `<a href="">self</a>`, `<a href="https://example.com/x">x</a>`, `<a href="mailto:a@b.example">m</a>`, `<a href="//cdn.example/x">x</a>`,
+    `<img src="/images/a.svg" alt="">`, `<video poster="/images/p.jpg"></video>`,
+    `<span style="background-image: url('/images/a.svg'), url(data:image/png;base64,AA)">s</span>`,
+    `<form action="/search/" method="get"><button formaction="https://example.com/">b</button></form>`,
+  ]) ok(save(inner));
+  // The existing insert policy already refuses srcset lists and data: URLs in attributes (unchanged here).
+  error(save(`<img src="/images/a.svg" srcset="/images/a.svg 1x, data:image/png;base64,AA,BB= 2x" alt="">`), /malformed|placed safely/);
+  error(save(`<img src="data:image/png;base64,iVBORw0KGgo=" alt="">`), /malformed|placed safely/);
+  for (const [inner, bad] of [
+    [`<img src="images/a.svg" alt="">`, "images/a.svg"],
+    [`<img src="/images/a.svg" srcset="/images/a.svg 1x, images/a@2x.svg 2x" alt="">`, "images/a@2x.svg"],
+    [`<span style="background: url(img/a.png)">s</span>`, "img/a.png"],
+    [`<video poster="poster.jpg"></video>`, "poster.jpg"],
+    [`<a href="?page=2">next</a>`, "?page=2"],
+    [`<form action="search/" method="get"></form>`, "search/"],
+    [`<form action="/s/" method="get"><button formaction="go/">b</button></form>`, "go/"],
+  ]) error(save(inner), new RegExp(`"${bad.replace(/[.?*+()[\]\\/]/g, "\\$&")}"`));
+  // The starter's own headers and footers use root paths only.
+  for (const page of PAGES) for (const tag of ["header", "footer"]) {
+    const source = site.sources[page]!;
+    const result = planSavePagePart({ ...saveInput(site, page), range: rangeOf(source, tag), id: `p-${tag}`, rootClass: `site-${tag}` });
+    assert.ok(!("error" in result) || !/would point/.test(result.error), `${page} ${tag}`);
+  }
+});

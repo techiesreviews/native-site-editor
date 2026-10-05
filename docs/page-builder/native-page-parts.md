@@ -49,6 +49,14 @@ JSON. CSS is never written.
   images; no scripts, event handlers, `javascript:` URLs, embedded styles, custom or foreign
   elements, templates, editor attributes, duplicate ids or duplicate attributes. Refused, never
   sanitised.
+- URLs must work at every page depth, since a part is copied to pages in different folders. A
+  page-relative URL (`contact/`, `../images/a.png`, `?page=2`) in `href`, `src`, `srcset`, `poster`,
+  an inline-style `url()`, or a form `action`/`formaction` is refused with a request for a root path
+  (`/contact/`). Root paths, `#fragments`, `//host` and scheme URLs are accepted; an empty `href`
+  (the page itself) too. Nothing is rewritten. Save, Link and Update all check the copy or master.
+  Other attributes holding URLs (`cite`, `background`, `longdesc`) aren't checked. The existing
+  insert policy still refuses `srcset` lists and `data:` URLs in attributes.
+- A master with a comment outside its root is refused by Link as well as Update.
 - A part inside a component, template, foreign markup or another header/footer is refused. Links
   may not overlap each other, a section link or a collection; a missing or ambiguous link refuses
   the whole update. Ids, master paths (any case) and root classes (across parts and saved

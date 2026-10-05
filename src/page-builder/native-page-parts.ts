@@ -5,6 +5,7 @@ import { attribute } from "./collection-model";
 import { descendants, parseSource, startTagAttributes, type SourceElement, type SourceNode } from "./component-model";
 import { readNativeSectionLinks } from "./native-section-links";
 import { nativeMarkupInsertEdit } from "./native-operations";
+import { scanMediaReferences } from "./media-references";
 import {
   EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
   type CollectionTarget, type JsonValue, type PageBuilderDocument,
@@ -106,9 +107,33 @@ function checkPartMarkup(html: string, root: SourceElement): void {
       if (URL_ATTRIBUTES.has(attrName) && /^javascript:/i.test((attribute(html, element, attrName) ?? "").replace(/[\s\x00-\x1f]+/g, ""))) fail("javascript: URLs are unsupported in a page part.");
     }
   }
+  checkPortableUrls(html, root);
   const ids = [root, ...descendants(root.children)].map((element) => attribute(html, element, "id")).filter((id): id is string => Boolean(id));
   if (new Set(ids).size !== ids.length) fail("A page part can't contain duplicate ids.");
   if (!nativeMarkupInsertEdit("<html><head></head><body></body></html>", [], 0, html)) fail("The page part's markup is malformed or can't be placed safely.");
+}
+
+/**
+ * A part is copied to pages at every depth, so a page-relative URL (`contact/`, `../img/a.png`,
+ * `?q`) would point somewhere different on each. Root paths (`/contact/`), fragments (`#main`),
+ * protocol-relative (`//cdn…`) and scheme URLs are kept; an empty `href` (the page itself) too.
+ * Covers href, src, srcset, poster and inline-style `url()` through the media reference scanner,
+ * plus form `action`/`formaction`. Nothing is rewritten: the user is asked for a root path.
+ */
+function checkPortableUrls(html: string, root: SourceElement): void {
+  const relative = (value: string) => !value.trim().startsWith("/");
+  const found = scanMediaReferences("page.html", html).find((reference) => relative(reference.value));
+  let bad = found?.value;
+  if (bad === undefined) {
+    for (const element of [root, ...descendants(root.children)]) {
+      for (const name of ["action", "formaction"]) {
+        const value = attribute(html, element, name)?.trim();
+        if (value && !/^(?:[a-z][\w+.-]*:|\/|#)/i.test(value)) { bad = value; break; }
+      }
+      if (bad !== undefined) break;
+    }
+  }
+  if (bad !== undefined) fail(`A shared header or footer appears on pages at different depths, so "${bad.trim().slice(0, 80)}" would point to different places. Use a root path starting with / (such as /contact/ or /images/photo.svg).`);
 }
 
 /** The part's root inside master HTML: one complete header/footer, only whitespace and comments around it. */
@@ -424,6 +449,8 @@ export function planLinkPagePartCopies(input: LinkPagePartInput): (PagePartPlan 
     if (!Object.hasOwn(catalog, input.recordId)) fail("That page part no longer exists.");
     const record = catalog[input.recordId];
     const masterSource = readPagePartMaster(record, { files: input.files, sources: input.sources });
+    // Same rule as Update, so a link made now can be updated later.
+    if (pagePartCore(masterSource).outsideComment) fail(`${record.htmlPath} has a comment outside its ${record.rootTag}; move it inside or delete it.`);
     const basis = coreOf(masterSource);
     if (!Array.isArray(input.copies) || !input.copies.length) fail("Choose copies to link.");
     const document = readPageBuilderDocument(input.documentText);
