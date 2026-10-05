@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cssClassSelector, locateClassRule, locateWriteRule, scanCss, siteVariables, resolveVariableValue, writeCssProperties } from "../src/page-builder/css-write";
+import { cssClassSelector, locateClassRule, locateWriteRule, scanCss, siteVariables, resolveVariableValue, variableResolver, writeCssProperties } from "../src/page-builder/css-write";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint } from "../src/page-builder/breakpoints";
 const write = (css: string, values: Record<string, string | null>, extra = {}) => writeCssProperties(css, { selector: ".card", ...extra }, values);
 
@@ -134,6 +134,21 @@ test("site color aliases resolve from site variables rather than editor tokens",
   assert.equal(resolveVariableValue("var(--card)", variables), "#abc");
   assert.equal(resolveVariableValue("var(--space-m)", variables), "4px");
   assert.equal(resolveVariableValue("var(--missing, red)", variables), "red");
+});
+test("one resolver per variable snapshot resolves exactly as resolveVariableValue, and only from that snapshot", () => {
+  const chain = Array.from({ length: 14 }, (_, i) => `--c${i}: ${i === 13 ? "#0f0" : `var(--c${i + 1})`};`).join(" ");
+  const variables = siteVariables({ "a.css": `:root { --ink: #111; --a: var(--b); --b: var(--a); --pad: calc(var(--gap, 2px) * 2); ${chain} }`, "b.css": ":root { --ink: #222; }" });
+  const resolve = variableResolver(variables);
+  // A later duplicate wins, fallbacks and missing names, a cycle, and a chain cut at depth 12.
+  const values = ["var(--ink)", "var(--missing)", "var(--missing, red)", "var(--a)", "var(--pad)", "var(--c0)", "var(--c1)", "var(--c2)", "1px var(--ink) solid", "plain"];
+  for (const value of values) assert.equal(resolve(value), resolveVariableValue(value, variables), value);
+  assert.equal(resolve("var(--ink)"), "#222");
+  assert.equal(resolve("var(--c2)"), "#0f0");
+  assert.equal(resolve("var(--c1)"), "var(--c13)");
+  assert.equal(resolve("var(--c0)"), "var(--c12)");
+  // Nothing carries over to another snapshot.
+  assert.equal(variableResolver([])("var(--ink)"), "var(--ink)");
+  assert.equal(variableResolver(siteVariables({ "c.css": ":root { --ink: #333; }" }))("var(--ink)"), "#333");
 });
 test("variable selector lists are edited in their original rule", () => {
   const source = ":root, :host { --ink: #123; }";

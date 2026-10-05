@@ -13,7 +13,7 @@ import { node, button } from "../ui/dom";
 import { icon } from "../icons";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint, type Breakpoint } from "../page-builder/breakpoints";
 import { breakpointWidths } from "../page-builder/breakpoints";
-import { cssClassSelector, writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVariables, resolveVariableValue, type CssTarget, type SiteVariable } from "../page-builder/css-write";
+import { cssClassSelector, writeCssProperties, validateCssSource, locateWriteRule, scanCss, siteVariables, variableResolver, type CssTarget, type SiteVariable } from "../page-builder/css-write";
 
 export type StyleState = "" | ":hover" | ":focus-visible";
 export interface StylePanelContext {
@@ -204,12 +204,15 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     widgets.forEach(widget => widget.kind === "grid" && context?.key === key
       ? widget.refresh(context.computed) : widget.refresh());
     if (global && context) {
-      const variables = siteVariables(context.files);
+      const variables = siteVariables(context.files), resolve = variableResolver(variables);
+      // The first variable of each name, as a row shows.
+      const byName = new Map<string, SiteVariable>();
+      for (const variable of variables) if (!byName.has(variable.name)) byName.set(variable.name, variable);
       for (const input of body.querySelectorAll<HTMLInputElement>(".style-panel__variable input")) {
-        const variable = variables.find((v) => v.name === input.name);
+        const variable = byName.get(input.name);
         if (variable && input !== document.activeElement) input.value = variable.value;
         const swatch = input.parentElement?.querySelector<HTMLElement>(".style-panel__swatch");
-        if (swatch && variable) swatch.style.backgroundColor = resolveVariableValue(variable.value, variables);
+        if (swatch && variable) swatch.style.backgroundColor = resolve(variable.value);
       }
     }
     for (const input of body.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-property]")) {
@@ -649,13 +652,20 @@ export function createStylePanel(handlers: StylePanelHandlers, workspace: HTMLEl
     if (global) {
       const content = node("div", "style-panel__scroll");
       content.append(node("p", "style-panel__hint", "Site variables. Changes apply everywhere they are used."));
+      // Each variable is resolved and sorted into its group once.
+      const resolve = variableResolver(variables);
+      const sorted = variables.map((variable) => {
+        const resolved = resolve(variable.value);
+        const title = CSS.supports("color", resolved) && !resolved.includes("var(") ? "Colours" : /^--(?:font|text|line)-/.test(variable.name) ? "Typography" : /^--(?:space|spacing|gap|size)-/.test(variable.name) ? "Spacing" : "Other";
+        return { variable, resolved, title };
+      });
       for (const title of ["Colours", "Typography", "Spacing", "Other"]) {
-        const group = variables.filter((v) => (CSS.supports("color", resolveVariableValue(v.value, variables)) && !resolveVariableValue(v.value, variables).includes("var(") ? "Colours" : /^--(?:font|text|line)-/.test(v.name) ? "Typography" : /^--(?:space|spacing|gap|size)-/.test(v.name) ? "Spacing" : "Other") === title);
+        const group = sorted.filter((item) => item.title === title);
         if (!group.length) continue;
         const heading = node("h3", "style-panel__section-title", title); content.append(heading);
-        for (const variable of group) {
+        for (const { variable, resolved } of group) {
           const row = node("label", "style-panel__variable"); row.append(node("span", "", variable.name)); row.title = variable.path;
-          if (title === "Colours") { const swatch = node("span", "style-panel__swatch"); swatch.style.backgroundColor = resolveVariableValue(variable.value, variables); row.append(swatch); }
+          if (title === "Colours") { const swatch = node("span", "style-panel__swatch"); swatch.style.backgroundColor = resolved; row.append(swatch); }
           const input = node("input"); input.type = "text"; input.name = variable.name; input.value = variable.value; input.setAttribute("aria-label", variable.name); input.disabled = !!context.readOnly;
           let expected = context;
           input.addEventListener("focus", () => { expected = handlers.context() ?? expected; });

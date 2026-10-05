@@ -286,7 +286,18 @@ export function siteVariables(files: Readonly<Record<string, string>>): SiteVari
 
 /** Resolve site variables for swatches; never borrow the editor's own tokens. */
 export function resolveVariableValue(value: string, variables: readonly SiteVariable[]): string {
+  return variableResolver(variables)(value);
+}
+
+/**
+ * `resolveVariableValue` for one snapshot of `variables`, indexed once (a later duplicate
+ * name wins): call it for every value of that snapshot. Holds nothing beyond it.
+ */
+export function variableResolver(variables: readonly SiteVariable[]): (value: string) => string {
   const values = new Map(variables.map((v) => [v.name, v.value]));
+  return (value) => resolveWith(value, values);
+}
+function resolveWith(value: string, values: ReadonlyMap<string, string>): string {
   for (let depth = 0; depth < 12; depth++) {
     const next = value.replace(/var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*))?\)/g, (original, name: string, fallback: string | undefined) => values.get(name) ?? fallback?.trim() ?? original);
     if (next === value) break;
