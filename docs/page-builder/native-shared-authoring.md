@@ -34,3 +34,25 @@ keyboard behavior, labels, validation, single-choice display, duplicate-submit
 refusal, host errors, pending cancellation, and old-context result refusal.
 This does not prove main editor placement, repository writes, or editor Undo/Redo.
 Independent Claude review remains pending.
+
+
+## Optional existing-record choice
+
+A host can pass `savedRecords?: readonly { id: string; label: string }[]` in the context and
+provide `actions.link?(recordId, contextKey): Promise<NativeSharedSubmitResult>`. The list must
+already be filtered for the selected ordinary section/header/footer. The host owns catalog,
+source, file graph, portability and write-authority checks; this leaf never finds links by tag
+or class and never writes repository files. Change the context key when the offered records or
+selection/source authority changes.
+
+With both options present, a quiet native select defaults to `New shared section/header/footer`
+and offers `Use <friendly label> here`. Choosing a record hides the new-record fields and path;
+`Use here` is a separate explicit confirmation. Switching back preserves the typed new draft.
+Enter on the select does not submit, pending work disables confirmation and selection, and host
+errors retain the choice. Cancel/Escape and a new context detach old callbacks/results; a late
+result cannot close or alter the new form. Linking success uses the existing `close(key, "saved")`
+reason. Without the optional callback/list, the previous new-only form remains.
+
+The UI epoch protects this form only. Cancellation does not stop an already-started host write:
+the host must check the current key/session/model and source/graph pins at its write boundary.
+This leaf proof is not MAIN wiring or completion of the six-route sharing workflow.

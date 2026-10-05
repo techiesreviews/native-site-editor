@@ -96,3 +96,89 @@ test("empty names and unoffered classes/stylesheets never reach host", async ({ 
   await expect(page.getByRole("status")).toHaveText("Choose an existing stylesheet this page uses.");
   expect(await page.evaluate(() => (window as any).calls)).toEqual([]);
 });
+
+const existing = { ...context, key: "existing-a", savedRecords: [{ id: "navigation", label: "Site navigation" }, { id: "footer", label: "Footer links" }] };
+test("existing choice requires Use here, preserves new draft and sends only the offered ID and exact context", async ({ page }) => {
+  await page.evaluate(context => (window as any).authoring.show(context), existing);
+  const choice = page.getByRole("combobox", { name: "Shared item", exact: true });
+  await expect(choice).toHaveValue("");
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("My typed header");
+  await page.getByRole("textbox", { name: "ID", exact: true }).fill("typed-header");
+  await choice.selectOption("navigation");
+  await choice.press("Enter");
+  expect(await page.evaluate(() => (window as any).linkCalls)).toEqual([]);
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeHidden();
+  await expect(page.getByLabel("Master source path")).toBeHidden();
+  await choice.selectOption("");
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("My typed header");
+  await expect(page.getByRole("textbox", { name: "ID", exact: true })).toHaveValue("typed-header");
+  await choice.selectOption("navigation");
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Using…", exact: true })).toBeDisabled();
+  await expect(choice).toBeDisabled();
+  await page.evaluate(() => (window as any).authoring.element.requestSubmit());
+  expect(await page.evaluate(() => (window as any).linkCalls)).toEqual([{ recordId: "navigation", contextKey: "existing-a" }]);
+  expect(await page.evaluate(() => (window as any).calls)).toEqual([]);
+  await page.evaluate(() => (window as any).finish(0, { success: true }));
+  expect(await page.evaluate(() => (window as any).authoringClosed)).toEqual([{ contextKey: "existing-a", reason: "saved" }]);
+  await expect(choice).toBeHidden();
+});
+
+test("link errors retain the choice; Cancel and Escape close explicitly and late success cannot close a new context", async ({ page }) => {
+  await page.evaluate(context => (window as any).authoring.show(context), existing);
+  const choice = page.getByRole("combobox", { name: "Shared item", exact: true });
+  await choice.selectOption("footer");
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await page.evaluate(() => (window as any).finish(0, { error: "The saved header changed. Select again." }));
+  await expect(page.getByRole("status")).toHaveText("The saved header changed. Select again.");
+  await expect(choice).toHaveValue("footer");
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.evaluate(context => (window as any).authoring.show(context), { ...existing, key: "existing-b", kind: "footer" });
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("New footer draft");
+  await page.evaluate(() => (window as any).finish(1, { success: true }));
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("New footer draft");
+  await expect(page.getByRole("button", { name: "Save shared", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).authoringClosed)).toEqual([{ contextKey: "existing-a", reason: "cancel" }]);
+  await choice.selectOption("footer");
+  await choice.press("Escape");
+  expect(await page.evaluate(() => (window as any).authoringClosed)).toEqual([{ contextKey: "existing-a", reason: "cancel" }, { contextKey: "existing-b", reason: "cancel" }]);
+});
+
+test("detached old choice and pending callbacks cannot act after context replacement or disposal", async ({ page }) => {
+  await page.evaluate(context => (window as any).authoring.show(context), existing);
+  const choice = page.getByRole("combobox", { name: "Shared item", exact: true });
+  const old = await choice.elementHandle();
+  await choice.selectOption("navigation");
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await page.evaluate(context => (window as any).authoring.show(context), { ...existing, key: "replacement" });
+  await old!.evaluate((select: HTMLSelectElement) => { select.value = "footer"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await expect(choice).toHaveValue("");
+  await page.evaluate(() => (window as any).finish(0, { error: "Old error" }));
+  await expect(page.locator(".native-shared-authoring__error")).toHaveText("");
+  await expect(page.locator(".native-shared-authoring__error")).toBeHidden();
+  await choice.selectOption("footer");
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await page.evaluate(() => (window as any).authoring.destroy());
+  await page.evaluate(() => (window as any).finish(1, { success: true }));
+  await page.evaluate(context => { (window as any).authoring.show(context); (window as any).authoring.element.requestSubmit(); }, existing);
+  expect(await page.evaluate(() => (window as any).calls)).toEqual([]);
+  expect(await page.evaluate(() => (window as any).authoringClosed)).toEqual([]);
+  await expect(page.getByRole("form")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).linkCalls)).toEqual([{ recordId: "navigation", contextKey: "existing-a" }, { recordId: "footer", contextKey: "replacement" }]);
+});
+
+test("unoffered ID refuses locally and missing optional link action keeps the original new-only form", async ({ page }) => {
+  await page.evaluate(context => (window as any).authoring.show(context), existing);
+  const choice = page.getByRole("combobox", { name: "Shared item", exact: true });
+  await choice.evaluate((select: HTMLSelectElement) => { const option = new Option("Foreign", "foreign"); select.append(option); select.value = "foreign"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  await page.getByRole("button", { name: "Use here", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Choose a shared item offered for this selection.");
+  expect(await page.evaluate(() => (window as any).linkCalls)).toEqual([]);
+  await page.evaluate(() => (window as any).legacy());
+  await page.evaluate(context => (window as any).authoring.show(context), existing);
+  await expect(choice).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Site header");
+  await page.getByRole("button", { name: "Save shared", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).calls.length)).toBe(1);
+});

@@ -26,3 +26,7 @@
 .native-shared-authoring__actions button:disabled { opacity: .55; cursor: default; }
 
 .native-shared-authoring__source { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
+
+.native-shared-authoring__row[hidden],
+.native-shared-authoring__fields[hidden],
+.native-shared-authoring__source[hidden] { display: none; }
