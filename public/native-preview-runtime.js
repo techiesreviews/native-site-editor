@@ -2,6 +2,7 @@
   var state = null;
   var defined = {};
   var shadowRoots = new Set();
+  var scrollRoots = new WeakSet();
   var instances = new Set();
   var pageEl = null;
   var hovered = null;
@@ -209,6 +210,10 @@
     try {
       var root = host.shadowRoot || host.attachShadow({ mode: "open" });
       shadowRoots.add(root);
+      if (!scrollRoots.has(root)) {
+        scrollRoots.add(root);
+        root.addEventListener("scroll", refreshScroll, true);
+      }
       reconcileChildren(root, freshContent(html));
       markCurrentPage(root);
       syncRootStyles(root);
@@ -2869,7 +2874,16 @@
   });
   // ---- End of canvas ----
 
-  window.addEventListener("scroll", function () { refreshPointerHover(); updateBoxes(); scheduleInsertPoints(); scheduleItemGrids(); }, true);
+  function refreshScroll(event) {
+    var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
+    if (event.currentTarget instanceof ShadowRoot) {
+      // Slotted light-DOM scrolls belong to the window listener. Detached
+      // instances retain their listener until collected, but do no work.
+      if (root !== event.currentTarget || !event.currentTarget.host.isConnected) return;
+    } else if (root instanceof ShadowRoot) return;
+    refreshPointerHover(); updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
+  }
+  window.addEventListener("scroll", refreshScroll, true);
   var gridResizeSelectionPending = false;
   window.addEventListener("resize", function () {
     updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
