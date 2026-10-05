@@ -51,8 +51,10 @@ the editor's JSON in its canonical key order. Save collection stays an explicit 
 An inline listing whose own recipe cannot be read or baked (an unknown field, a
 malformed folder, a missing template), or a collection in a valid editor JSON
 document whose target or recipe cannot be baked, no longer blocks unrelated page operations.
-Each operation bakes the healthy listings and leaves a broken one byte for byte; the
-status line names the listing's page and its reason. An operation that touches the
+An unrelated operation bakes healthy listings on other pages and leaves a broken
+one byte for byte; the status line names its page and reason. If a healthy listing
+shares that page and would change, the operation refuses until the broken listing
+is repaired. An operation that touches the
 broken listing is still refused with that reason: a change to its own page (an edit
 or a move; deleting the page removes the listing and goes ahead), or a change to what its
 folders select (a selected page's fields, URL, existence or page data, including a

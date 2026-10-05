@@ -69,6 +69,7 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
 import { createCommitHistory } from "./components/commit-history";
+import { gridOfItem } from "./page-builder/card-source";
 import { createCards, type Cards } from "./page-builder/cards";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -3157,6 +3158,20 @@ function refuseNativeSelection(selection: NativePreviewSelection, message: strin
   if (selection.reason !== "refresh") announce(message);
 }
 
+/** Instance content uses the same text/inline boundary as native canvas typing. */
+function nativeInstanceContent(source: string, node: readonly number[], tag: string): boolean {
+  const range = locateNativeElementRange(source, [...node]);
+  if (!range || range.tag.name !== tag) return false;
+  if (["img", "picture", "a", "button"].includes(tag)) return true;
+  const route = nativePreview?.route();
+  if (route && gridOfItem(source, [...node], { route, routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
+  if (!range.close || !(nativeTextTags.has(tag) || ["strong", "em", "b", "i", "cite", "q", "mark", "code"].includes(tag))) return false;
+  const template = document.createElement("template");
+  template.innerHTML = source.slice(range.tag.end, range.close.start);
+  const inline = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd)$/;
+  return Boolean(template.content.textContent?.trim()) && [...template.content.querySelectorAll("*")].every(element => inline.test(element.localName));
+}
+
 async function selectNativeSource(selection: NativePreviewSelection) {
   nativeElementMoveAction = undefined;
   const sources = nativeSources();
@@ -3187,7 +3202,7 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   if (selection.reason !== "refresh" && selection.path === pagePath) nativeSourceIntent = undefined;
   const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : nativeEditableTemplatePath() ?? pagePath;
   if (selection.path && scopePath && nativeSite && !masterAt) {
-    const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name);
+    const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name, nativeInstanceContent);
     if (!mapped) { refuseNativeSelection(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
     if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
       if (!mapped.node || sources[mapped.path] === undefined) { refuseNativeSelection(selection, "The instance is no longer available. Select it again."); return; }

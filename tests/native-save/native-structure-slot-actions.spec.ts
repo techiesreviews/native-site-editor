@@ -1,4 +1,5 @@
-import {expect,test} from '@playwright/test';
+import {expect,test,type Page} from '@playwright/test';
+import { storedDraft } from './drafts';
 test.beforeEach(async({page,baseURL})=>{await page.goto(new URL('/tests/slot-ghosts/fixture.html',baseURL!).href);});
 async function harness(page:any) {
  await page.evaluate(async()=>{
@@ -12,7 +13,7 @@ async function harness(page:any) {
   const update=()=>{const doc=new DOMParser().parseFromString(state.source,'text/html');const walk=(el:Element,node:number[]):any=>item(el.localName,node,el.textContent??'',el.getAttribute('slot')??'',[...el.children].map((child,index)=>walk(child,[...node,index])));sidebar.update({path:'index.html',items:[...doc.body.children].map((el,index)=>walk(el,[index]))});};
   const editor={isMounted:()=>true,captureHistoryHost:()=>{const model=state.model;return{isCurrent:()=>state.model===model};},prepareHistorySources:()=>{const model=state.model,version=state.version;return{isCurrent:()=>state.model===model&&state.version===version,dispose:()=>{}};},replaceActiveRange:(edit:any)=>{expectSource(edit);state.source=state.source.slice(0,edit.start)+edit.text+state.source.slice(edit.end);state.version++;update();},replaceActiveRanges:(edits:any[])=>{for(const edit of [...edits].sort((a,b)=>b.start-a.start)){expectSource(edit);state.source=state.source.slice(0,edit.start)+edit.text+state.source.slice(edit.end);}state.version++;update();},closeActiveEditGroup:()=>state.closed++};
   function expectSource(edit:any){if(state.source.slice(edit.start,edit.end)!==edit.expected)throw Error('stale range');}
-  state.tools=createComponentTools({structureFields:true,site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),revision:()=>state.revision,sources:()=>({'index.html':state.source,[templatePath]:state.template}),editor:()=>editor,preview:()=>({selectNode:(target:any)=>state.selected.push(target),selectAfterUpdate:()=>{}}),currentPath:()=>current,selection:()=>({path:'index.html',node:[0],tag:'project-card',text:'',reason:'click',selectors:[]}),openFile:async(path:string)=>{state.opened.push(path);current=path;return true;},announce:(value:string)=>state.notices.push(value),error:(error:any)=>{throw error;},images:()=>["media/suggested.png"],upload:async()=>{state.uploadCalls=(state.uploadCalls??0)+1;return await new Promise(resolve=>state.finishUpload=resolve);},links:()=>[{label:"About",value:"/about/"}],pageLabel:(path:string)=>path,createFiles:async()=>({error:'Unused'}),panelHost:host,addStrip:(element:any)=>host.append(element),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
+  state.tools=createComponentTools({structureFields:true,site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),revision:()=>state.revision,sources:()=>({'index.html':state.source,[templatePath]:state.template}),editor:()=>editor,preview:()=>({flushPendingUpdate:()=>state.flushes=(state.flushes??0)+1,selectNode:(target:any)=>state.selected.push(target),selectAfterUpdate:()=>{}}),currentPath:()=>current,selection:()=>({path:'index.html',node:[0],tag:'project-card',text:'',reason:'click',selectors:[]}),openFile:async(path:string)=>{state.opened.push(path);current=path;return true;},announce:(value:string)=>state.notices.push(value),error:(error:any)=>{throw error;},images:()=>["media/suggested.png"],upload:async()=>{state.uploadCalls=(state.uploadCalls??0)+1;return await new Promise(resolve=>state.finishUpload=resolve);},links:()=>[{label:"About",value:"/about/"}],pageLabel:(path:string)=>path,createFiles:async()=>({error:'Unused'}),panelHost:host,addStrip:(element:any)=>host.append(element),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
   sidebar=createPageStructure(host,{announce:(value:string)=>state.notices.push(value),label:(item:any)=>({kind:item.tag==='project-card'?'Project card':item.tag,text:item.text,component:item.tag==='project-card'}),onSelect:(path:string,node:number[])=>state.selected.push({path,node}),componentSlots:(path:string,node:number[])=>state.tools.structure(path,node)});state.sidebar=sidebar;state.update=update;update();
  });
 }
@@ -142,4 +143,116 @@ test.describe('touch',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width
   const overlapping=await title.evaluate((el:HTMLElement)=>{const b=el.querySelector('.page-structure__slot-badge')!.getBoundingClientRect();return [...el.querySelectorAll<HTMLElement>('.row-action-overlay button')].filter(x=>{const r=x.getBoundingClientRect();return r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;}).length;});
   expect(overlapping).toBe(0);
  });
+});
+
+
+// Real host timing: source, native preview bridge and the conditional slot all participate.
+async function realConditionalSlot(page:Page,baseURL:string|undefined) {
+ await page.request.post(`${baseURL}/__demo/external-edit`,{data:{path:'components/media-card/media-card.html',content:'<figure><figcaption data-if="caption"><slot name="caption"></slot></figcaption></figure>'}});
+ const about=await (await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`)).text();
+ await page.request.post(`${baseURL}/__demo/external-edit`,{data:{path:'about/index.html',content:about.replace('<section class="prose" data-key="prose">','<media-card><span slot="caption">Instant caption</span></media-card><section class="prose" data-key="prose">')}});
+ await page.goto(`${baseURL}/#repo=501&branch=main&file=about%2Findex.html`);
+ const preview=page.frameLocator('.native-preview-frame');
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveText('Instant caption');
+ const instance=page.getByRole('tree',{name:'Page structure',exact:true}).getByRole('treeitem',{name:'Media card',exact:true});
+ await instance.locator('.page-structure__label').click();
+ if(await instance.getAttribute('aria-expanded')==='false') await instance.locator('.page-structure__toggle').click();
+ const eye=page.locator('#structure').getByRole('button',{name:'Show Caption',exact:true});
+ await expect(eye).toHaveAttribute('aria-pressed','true');
+ return {preview,eye};
+}
+// Observe the existing cross-origin postMessage call only during the synchronous
+// click handler. Restore the real WindowProxy before any message can return.
+async function armEyeSendProbe(eye:import('@playwright/test').Locator) {
+ await eye.evaluate(element=>{
+  const frame=document.querySelector<HTMLIFrameElement>('.native-preview-frame')!,target=frame.contentWindow!;
+  const probe:any=(window as any).visibilitySendProbe={posts:[]};
+  element.addEventListener('click',()=>{
+   probe.start=performance.now();
+   Object.defineProperty(frame,'contentWindow',{configurable:true,get:()=>({postMessage:(message:any,origin:string)=>{
+    if(message.type==='update')probe.posts.push({at:performance.now(),id:message.id,context:message.payload.context,page:message.payload.pages['/about/']});
+    target.postMessage(message,origin);
+   }})});
+  },{capture:true,once:true});
+  element.addEventListener('click',()=>{probe.end=performance.now();delete (frame as any).contentWindow;},{once:true});
+ });
+}
+
+test('accepted real slot Hide and Show post the new source before the eye handler returns',async({page,baseURL})=>{
+ const {preview,eye}=await realConditionalSlot(page,baseURL);
+ await eye.locator('xpath=ancestor::*[@role="treeitem"][1]').hover();
+ await armEyeSendProbe(eye);await eye.click();
+ const hidden=await page.evaluate(()=>(window as any).visibilitySendProbe);
+ expect(hidden.posts).toHaveLength(1);
+ expect(hidden.posts[0].at).toBeLessThanOrEqual(hidden.end);
+ expect(hidden.posts[0].page).not.toContain('slot="caption"');
+ await expect(eye).toHaveAttribute('aria-pressed','false');
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(0);
+ await expect(preview.locator('media-card figcaption')).toHaveCSS('display','none');
+ await eye.locator('xpath=ancestor::*[@role="treeitem"][1]').hover();
+ await armEyeSendProbe(eye);await eye.click();
+ const shown=await page.evaluate(()=>(window as any).visibilitySendProbe);
+ expect(shown.posts).toHaveLength(1);
+ expect(shown.posts[0].at).toBeLessThanOrEqual(shown.end);
+ expect(shown.posts[0].id).toBeGreaterThan(hidden.posts[0].id);
+ expect(shown.posts[0].page).toContain('slot="caption"');
+ await expect(eye).toHaveAttribute('aria-pressed','true');
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(1);
+ await expect(preview.locator('media-card figcaption')).not.toHaveCSS('display','none');
+ // An ordinary editor change still waits for the existing coalesced RAF.
+ const synchronousPosts=await page.evaluate(async()=>{
+  const editor=await import('/src/components/code-editor.ts');
+  const source=editor.getMountedSource('about/index.html')!;
+  const match=/<span slot="caption">([^<]*)<\/span>/.exec(source)!;
+  const start=match.index+match[0].indexOf('>')+1;
+  const frame=document.querySelector<HTMLIFrameElement>('.native-preview-frame')!,target=frame.contentWindow!;
+  let posts=0;
+  Object.defineProperty(frame,'contentWindow',{configurable:true,get:()=>({postMessage:(message:any,origin:string)=>{if(message.type==='update')posts++;target.postMessage(message,origin);}})});
+  try{editor.replaceActiveRange({path:'about/index.html',start,end:start+match[1].length,text:'Typed caption',expected:match[1]});return posts;}
+  finally{delete(frame as any).contentWindow;}
+ });
+ expect(synchronousPosts).toBe(0);
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveText('Typed caption');
+});
+
+
+test('rapid real slot Hide and Show keep preview, drafts and Undo/Redo on the same source',async({page,baseURL})=>{
+ const {preview,eye}=await realConditionalSlot(page,baseURL);
+ const source=()=>page.evaluate(async()=>(await import('/src/components/code-editor.ts')).getMountedSource('about/index.html'));
+ const before=await source();
+ await eye.locator('xpath=ancestor::*[@role="treeitem"][1]').hover();
+ await eye.click();
+ const hidden=await source();
+ expect(hidden).not.toContain('slot="caption"');
+ await eye.locator('xpath=ancestor::*[@role="treeitem"][1]').hover();
+ await eye.click();
+ const shown=await source();
+ expect(shown).toContain('slot="caption"');
+ await expect(eye).toHaveAttribute('aria-pressed','true');
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(1);
+ expect((await storedDraft(page,'about/index.html'))?.content).toBe(shown);
+ await page.evaluate(async()=>{await(await import('/src/components/code-editor.ts')).runVisualHistory('undo','about/index.html');});
+ await expect.poll(source).toBe(hidden);
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(0);
+ await page.evaluate(async()=>{await(await import('/src/components/code-editor.ts')).runVisualHistory('undo','about/index.html');});
+ await expect.poll(source).toBe(before);
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveText('Instant caption');
+ await page.evaluate(async()=>{await(await import('/src/components/code-editor.ts')).runVisualHistory('redo','about/index.html');});
+ await expect.poll(source).toBe(hidden);
+ await page.evaluate(async()=>{await(await import('/src/components/code-editor.ts')).runVisualHistory('redo','about/index.html');});
+ await expect.poll(source).toBe(shown);
+ await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(1);
+ expect((await storedDraft(page,'about/index.html'))?.content).toBe(shown);
+});
+
+test('a stale slot transaction refuses without flushing a preview update',async({page})=>{
+ await harness(page);await addOptional(page);
+ await page.evaluate(()=>{const h=(window as any).slotHarness;h.flushes=0;h.source+='<!-- changed outside the old slot target -->';});
+ const before=await page.evaluate(()=>(window as any).slotHarness.source);
+ const eye=row(page,'0.4').getByRole('button',{name:'Show Optional',exact:true});
+ await row(page,'0.4').hover();await eye.click();
+ await expect(eye).toHaveAttribute('aria-pressed','true');
+ expect(await page.evaluate(()=>(window as any).slotHarness.source)).toBe(before);
+ expect(await page.evaluate(()=>(window as any).slotHarness.flushes)).toBe(0);
+ expect(await page.evaluate(()=>(window as any).slotHarness.notices)).toContain('The instance changed; reopen its field before editing.');
 });

@@ -7,8 +7,31 @@ export function nativeComponentScopeSelection(
   components: Readonly<Record<string, string>>,
   sources: Readonly<Record<string, string>>,
   hostTag: (source: string, node: readonly number[]) => string | undefined,
+  isContent: (source: string, node: readonly number[], tag: string) => boolean = (_source, _node, tag) =>
+    /^(h[1-6]|p|span|a|button|img|picture|blockquote|figcaption|small|label|strong|em|b|i|cite|q|mark|code)$/.test(tag),
 ): NativePreviewSelection | undefined {
-  if (selection.path === scopePath) return selection;
+  if (selection.path === scopePath) {
+    // Explicit template Edit unlocks its structure. Page-owned slot assignments still
+    // belong to their component instance, so only their content can be targeted.
+    if (Object.values(components).includes(scopePath) || !selection.node) return selection;
+    const source = sources[scopePath];
+    if (source === undefined) return;
+    let hostDepth = -1;
+    for (let depth = selection.node.length - 1; depth > 0; depth--) {
+      const tag = hostTag(source, selection.node.slice(0, depth));
+      if (tag && components[tag]) { hostDepth = depth; break; }
+    }
+    if (hostDepth < 0 || components[selection.tag] || isContent(source, selection.node, selection.tag)) return selection;
+    for (let depth = selection.node.length - 1; depth >= hostDepth; depth--) {
+      const node = selection.node.slice(0, depth);
+      const tag = hostTag(source, node);
+      if (tag && (depth === hostDepth || isContent(source, node, tag))) return {
+        ...selection, node, tag, selectors: [], cascade: undefined, text: "", link: undefined,
+        host: undefined, hostChain: undefined, selector: undefined,
+      };
+    }
+    return;
+  }
   const chain = selection.hostChain ?? (selection.host ? [selection.host] : []);
   if (!chain.length || chain.length > 16) return;
   let innerPath = selection.path;

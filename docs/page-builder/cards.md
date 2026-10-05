@@ -25,6 +25,13 @@ drafts like any other edit, readable in the code pane as they happen.
   last card; the card is selected. **One ⌘Z takes both back**, redo brings
   both: the card is an edit in the page's editor and the page's draft goes
   and comes back with it (a history companion, `replaceActiveRange(…, companion)`).
+- The URL prefix is an editable autocomplete input. It starts with the folder
+  inferred from this section's cards or its collection recipe, and keeps an
+  intentionally cleared value while the title changes. Typing filters eligible
+  prefixes; Arrow keys and Enter or a pointer choose a suggestion. There is no
+  dropdown arrow. A canonical existing prefix is accepted, and a single new
+  folder below an eligible parent uses the existing folder-creation checks.
+  Empty, invalid or uncovered destinations cannot create a page.
 - A selected item's edit bar: **Move left / Move right** (Move up / down in a
   list; Alt+↑/↓ too), **Duplicate** (an exact copy), **Remove**, **Add card**
   (the same as the ghost's button, so it is reachable by keyboard) and, for an

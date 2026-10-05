@@ -115,6 +115,20 @@ export function cardFolderChoices(folders: string[], parent: string | undefined,
   return parent ? [parent, ...out.filter((folder) => folder !== parent)] : out;
 }
 
+/** Translate a typed URL prefix into the existing page creation request. */
+export function cardPrefixRequest(title: string, prefix: string, folders: string[], newFolders: boolean): Checked<CardPageRequest> {
+  if (!prefix) return { ok: false, error: "Enter the URL prefix." };
+  const normal = normalizeRoute(prefix);
+  if (!normal.ok || normal.value !== prefix || !prefix.endsWith("/"))
+    return { ok: false, error: `${prefix} is not a folder a page can be in.` };
+  if (folders.includes(prefix)) return { ok: true, value: { title, parent: prefix } };
+  const parent = folders.filter((folder) => prefix.startsWith(folder)).sort((a, b) => b.length - a.length)[0];
+  const name = parent ? prefix.slice(parent.length, -1) : "";
+  if (!newFolders || !parent || !name || name.includes("/"))
+    return { ok: false, error: "Choose an existing folder or add one folder inside it." };
+  return { ok: true, value: { title, parent, newFolder: name } };
+}
+
 /**
  * The source folders of the generated listing a grid (its first item at
  * `first`) is in: from `.editor/page-builder.json` (`sidecar`, its text) or

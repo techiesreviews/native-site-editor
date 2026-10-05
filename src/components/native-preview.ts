@@ -992,6 +992,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   return {
+    /** Send an already scheduled source change immediately after a direct user action. */
+    flushPendingUpdate() {
+      if (!rafHandle) return;
+      cancelAnimationFrame(rafHandle);
+      post();
+    },
     /** Puts a strip above the frame (the page builder's banner over a component's template). */
     addStrip(strip: HTMLElement) {
       pane.insertBefore(strip, frameHost);

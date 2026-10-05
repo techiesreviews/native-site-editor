@@ -46,3 +46,36 @@ test("oversized chains refuse and light DOM retains its real source position", (
   assert.equal(nativeComponentScopeSelection({ ...selection, hostChain: Array(17).fill(selection.hostChain![0]) }, "index.html", components, sources, hostTag), undefined);
   assert.equal(nativeComponentScopeSelection(selection, "inner.html", components, sources, hostTag), selection);
 });
+
+test("page-owned layout descendants cannot select their container inside an instance", () => {
+  const page = '<outer-card><div><p>Page text</p></div></outer-card><div>Outside</div>';
+  const ownSources = { ...sources, "index.html": page };
+  const tags: Record<string, string> = { "0": "outer-card", "0.0": "div", "0.0.0": "p", "1": "div" };
+  const tagAt = (_source: string, node: readonly number[]) => tags[node.join(".")];
+  const wrapper = { ...selection, path: "index.html", node: [0, 0], tag: "div", hostChain: undefined };
+  const mapped = nativeComponentScopeSelection(wrapper, "index.html", components, ownSources, tagAt)!;
+  assert.deepEqual(mapped.node, [0]);
+  assert.equal(mapped.tag, "outer-card");
+  const text = { ...wrapper, node: [0, 0, 0], tag: "p" };
+  assert.equal(nativeComponentScopeSelection(text, "index.html", components, ownSources, tagAt), text);
+  const outside = { ...wrapper, node: [1] };
+  assert.equal(nativeComponentScopeSelection(outside, "index.html", components, ownSources, tagAt), outside);
+});
+
+test("content and card targets remain selected; a container inside a link resolves to the link", () => {
+  const page = '<outer-card><a><div></div></a><button>Go</button><img><article>Card</article></outer-card>';
+  const tags: Record<string, string> = { "0": "outer-card", "0.0": "a", "0.0.0": "div", "0.1": "button", "0.2": "img", "0.3": "article" };
+  const tagAt = (_source: string, node: readonly number[]) => tags[node.join(".")];
+  const ownSources = { ...sources, "index.html": page };
+  const wrapper = { ...selection, path: "index.html", node: [0, 0, 0], tag: "div", hostChain: undefined };
+  const mapped = nativeComponentScopeSelection(wrapper, "index.html", components, ownSources, tagAt)!;
+  assert.deepEqual(mapped.node, [0, 0]); assert.equal(mapped.tag, "a");
+  for (const [node, tag] of [[[0, 0], "a"], [[0, 1], "button"], [[0, 2], "img"]] as const) {
+    const atom = { ...wrapper, node: [...node], tag };
+    assert.equal(nativeComponentScopeSelection(atom, "index.html", components, ownSources, tagAt), atom);
+  }
+  const card = { ...wrapper, node: [0, 3], tag: "article" };
+  assert.equal(nativeComponentScopeSelection(card, "index.html", components, ownSources, tagAt, (_source, node) => node.join(".") === "0.3"), card);
+  const direct = { ...wrapper, path: "outer.html" };
+  assert.equal(nativeComponentScopeSelection(direct, "outer.html", components, sources, tagAt), direct);
+});

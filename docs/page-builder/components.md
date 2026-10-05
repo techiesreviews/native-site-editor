@@ -36,6 +36,19 @@ everything that is a component, in both schemes:
 
 The host retires the separate properties panel only when it enables `structureFields` alongside the Structure adapter; otherwise the existing panel remains available. A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
 
+In the normal page view, layout wrappers inside an instance's page-owned slot
+content select their nearest editable content ancestor or the outer instance.
+Text, links, buttons, images and card items remain selectable. Explicit template
+Edit unlocks its layout containers; ordinary containers outside components keep
+their normal selection behavior. This rule governs committed selection; runtime
+hover outlines are unchanged.
+
+After a guarded Structure visibility change commits its source, the host sends
+the pending preview update during the same click handler instead of waiting for
+its next animation frame. Refused changes send nothing. Code typing retains its
+normal frame batching, and the sandboxed preview still receives messages
+asynchronously; this is not a guarantee about its first paint.
+
 - Text is editable inline. An empty slot shows its fallback; typing copies that content into the page in template slot order.
 - Image details unfold into Image and Alt text. Link details unfold into Button text and Link / URL. Unsupported rich text remains Content and selects the authored element instead of flattening it.
 - Optional slots use a native checkbox. On fills the slot from its fallback; off removes the page's assignment. Filled slots with a fallback offer Reset so the shared fallback shows again. These remain the starter's `hideEmpty`/`applyEmptyRules` semantics.

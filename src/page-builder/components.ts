@@ -90,7 +90,7 @@ export interface ComponentDeps {
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
   editor: () => CodeEditor | undefined;
-  preview: () => { selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } | undefined;
+  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } | undefined;
   /** The file open in the code pane. */
   currentPath: () => string | undefined;
   /** The preview's selection, as the editor last heard it. */
@@ -1395,11 +1395,15 @@ export function createComponentTools(deps: ComponentDeps) {
       setVisible(name, on) {
         const at = read(), slot = at?.slots.find(slot => slot.name === name);
         if (!at || !slot) return false;
+        let changed: boolean;
         if (on) {
           const edit = fillInsertEdit(at.source, at.instance, at.slots, name, fillMarkup(at.template, slot));
-          return !!edit && change(path, [edit], `${slotLabel(name)} shown`, at.node);
+          changed = !!edit && change(path, [edit], `${slotLabel(name)} shown`, at.node);
+        } else {
+          changed = change(path, fillRemoveEdits(at.source, at.instance, name), `${slotLabel(name)} ${at.states.get(name)?.whenEmpty === "fallback" ? "reset to the component’s default" : "hidden"}`, at.node);
         }
-        return change(path, fillRemoveEdits(at.source, at.instance, name), `${slotLabel(name)} ${at.states.get(name)?.whenEmpty === "fallback" ? "reset to the component’s default" : "hidden"}`, at.node);
+        if (changed) deps.preview()?.flushPendingUpdate?.();
+        return changed;
       },
       selectSlot(name) {
         const at = read(); if (!at) return;

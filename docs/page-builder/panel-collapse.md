@@ -13,6 +13,9 @@ targets are 44px thick. Code
 has no residual source tabs or editors when collapsed. Style has no 32px rail or
 vertical opener. Hidden content is inert and hidden from accessibility APIs;
 focus returns to the grip when a control inside a panel initiates its collapse.
+At rest, Style uses the same faded thin bar as the other grips. Its chevron
+appears on hover, keyboard focus or press, and pressing Style highlights only
+its own grip.
 The separator exposes zero with `aria-valuenow` and describes the hidden state
 with `aria-valuetext`; it does not use the unsupported `aria-expanded` attribute.
 

@@ -29,6 +29,7 @@ const folder = (page: Page) => popover(page).locator(".card-add__path");
 const folders = (page: Page) => page.getByRole("listbox", { name: "Folder for the new page" });
 const message = (page: Page) => popover(page).locator(".card-add__message");
 const cards = (page: Page) => frame(page).locator(".cards card-project");
+const shownUrl = (page: Page) => popover(page).locator(".card-add__url").evaluate((row) => [...row.childNodes].map((child) => child instanceof HTMLInputElement ? child.value : child.textContent ?? "").join("").replace(/\s+/g, " ").trim());
 const shots = ".scratch/inline-paths/json";
 
 async function load(page: Page, baseURL: string | undefined) {
@@ -75,7 +76,7 @@ test("a saved JSON collection is read, not left Checking: a page in a new folder
   await openPopover(page);
   await title(page).fill("Oak");
   await expect(message(page)).toBeHidden();
-  await expect(popover(page).locator(".card-add__url")).toHaveText("URL /work/oak/");
+  await expect.poll(() => shownUrl(page)).toBe("URL /work/oak/");
   await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeEnabled();
   // Only folders the collection covers are offered.
   await folder(page).click();
@@ -83,8 +84,15 @@ test("a saved JSON collection is read, not left Checking: a page in a new folder
   await expect(folders(page).getByRole("option", { name: "/about/", exact: true })).toHaveCount(0);
   await expect(folders(page).getByRole("option", { name: "/", exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${shots}/json-folders-light.png` });
-  await folders(page).getByRole("option", { name: "New folder in /work/" }).click();
-  await popover(page).getByRole("textbox", { name: "New folder's name" }).fill("chairs");
+  await folder(page).fill("/about/chairs/");
+  await expect(popover(page).getByRole("button", { name: "Create page and card" })).toBeDisabled();
+  await expect(message(page)).toContainText("Choose an existing folder");
+  await folder(page).fill("");
+  await title(page).fill("Oak updated");
+  await expect(folder(page)).toHaveValue("");
+  await expect(message(page)).toHaveText("Enter the URL prefix.");
+  await title(page).fill("Oak");
+  await popover(page).getByRole("combobox", { name: "URL prefix" }).fill("/work/chairs/");
   await page.getByRole("button", { name: "Create page and card" }).click();
   await expect(popover(page)).toBeHidden();
   await expect(page.locator("#status")).toContainText("Created the page Oak at /work/chairs/oak/");
@@ -107,7 +115,7 @@ test("an existing subfolder of the collection takes the page and its baked card;
   await title(page).fill("Kiln notes");
   await folder(page).click();
   await folders(page).getByRole("option", { name: "/work/harbour-lane-pottery/", exact: true }).click();
-  await expect(popover(page).locator(".card-add__url")).toHaveText("URL /work/harbour-lane-pottery/kiln-notes/");
+  await expect.poll(() => shownUrl(page)).toBe("URL /work/harbour-lane-pottery/kiln-notes/");
   await title(page).press("Enter");
   await expect(page.locator("#status")).toContainText("Created the page Kiln notes at /work/harbour-lane-pottery/kiln-notes/");
   await expect(cards(page)).toHaveCount(4);

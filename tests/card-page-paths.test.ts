@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFolderChoices, cardFolderCovered, cardPageFolders, cardRecipeFolders, mixedParent, planCardPage } from "../src/page-builder/cards.ts";
+import { cardFolderChoices, cardFolderCovered, cardPageFolders, cardRecipeFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
 import { EDITOR_PAGE_BUILDER_PATH, makeCollectionTarget } from "../src/page-builder/page-builder-document.ts";
 
 // The new page a card grid's "Add card" makes: which folder it goes in, a
@@ -110,4 +110,17 @@ test("an inline legacy data-each recipe gives its folders", () => {
   const legacy = `<main><div data-each="/work/ /press/"><template><article><a href="{url}">{title}</a></article></template><article><a href="/work/a/">A</a></article><article><a href="/work/b/">B</a></article></div></main>`;
   const at = legacy.lastIndexOf("<article>");
   assert.deepEqual(cardRecipeFolders("index.html", legacy, { start: at, end: legacy.indexOf("</article>", at) + 10 }, undefined, false), { folders: ["/work/", "/press/"] });
+});
+
+
+test("typed prefixes use existing folders or one new segment under the longest allowed parent", () => {
+  const allowed = cardFolderChoices(folders, "/work/", ["/work/"]);
+  assert.deepEqual(cardPrefixRequest("Oak", "/work/studio/", allowed, true), { ok: true, value: { title: "Oak", parent: "/work/studio/" } });
+  const fresh = cardPrefixRequest("Oak", "/work/studio/chairs/", allowed, true);
+  assert.deepEqual(fresh, { ok: true, value: { title: "Oak", parent: "/work/studio/", newFolder: "chairs" } });
+  assert.deepEqual(fresh.ok && plan(fresh.value, ["/work/"]), { ok: true, value: { route: "/work/studio/chairs/oak/", file: "work/studio/chairs/oak/index.html" } });
+  for (const prefix of ["", "/about/", "/work/chairs/tall/", "/work/../", "work/", "/work//", "/work/.git/"]) {
+    assert.equal(cardPrefixRequest("Oak", prefix, allowed, true).ok, false, prefix);
+  }
+  assert.equal(cardPrefixRequest("Oak", "/work/chairs/", allowed, false).ok, false);
 });

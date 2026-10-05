@@ -90,7 +90,8 @@ test("a card grid listing pages makes a new page and its card together, selected
   await title.fill("Harbour Lane Pottery");
   await expect(popover(page)).toContainText("The URL /work/harbour-lane-pottery/ is taken by work/harbour-lane-pottery/index.html.");
   await title.fill("Oak & Ash");
-  await expect(popover(page).locator(".card-add__url")).toHaveText("URL /work/oak-ash/");
+  await expect(popover(page).getByRole("combobox", { name: "URL prefix" })).toHaveValue("/work/");
+  await expect(popover(page).locator(".card-add__slug")).toHaveText("oak-ash/");
   await page.keyboard.press("Enter");
   await expect(popover(page)).toBeHidden();
   await expect(status(page)).toHaveText("Created the page Oak & Ash at /work/oak-ash/ and its card in Recent work");

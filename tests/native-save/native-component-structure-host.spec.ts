@@ -60,6 +60,8 @@ test("explicit Edit permits the outer template while nested clicks stay in that 
   const path = "components/project-card/project-card.html";
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
   const before = await source(page, path);
+  await frame(page).locator("project-card").first().locator("article.project-card").click({ position: { x: 3, y: 3 } });
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Article");
   await frame(page).locator("project-card").first().locator("card-note p").click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Card note");
@@ -225,4 +227,24 @@ test("a nested host-chain report from an older render cannot replace a fresh pag
   await expect(kind).toHaveText("Heading");
   await expect(firstCard(page)).not.toHaveAttribute("aria-selected", "true");
   expect(await source(page)).toBe(changed);
+});
+
+test("page-owned slot content selects atoms, while its layout wrapper selects the component instance", async ({ page }) => {
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const at = before.indexOf('</project-card>');
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<div class="slot-layout" style="padding:30px"><p>Slot paragraph</p><a href="/about/">Slot link</a><button>Slot button</button><img src="/images/project.svg" alt="Slot image"></div>' });
+  });
+  const host = frame(page).locator("project-card").first();
+  const wrapper = host.locator(".slot-layout");
+  await expect(wrapper).toBeVisible();
+  await host.locator("article.project-card").click({ position: { x: 3, y: 3 } });
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Project card");
+  await wrapper.click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Project card");
+  for (const [selector, kind] of [[".slot-layout p", "Paragraph"], [".slot-layout a", "Link"], [".slot-layout button", "Button"], [".slot-layout img", "Image"]]) {
+    await host.locator(selector).click({ position: { x: 3, y: 3 } });
+    await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(kind);
+  }
 });
