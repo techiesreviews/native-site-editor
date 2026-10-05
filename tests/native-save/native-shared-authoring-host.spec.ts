@@ -306,3 +306,46 @@ test("a root with no unique class of its own offers no Save shared form", async 
   await expect(row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" })).toBeAttached();
   await expect(row(page, /^Section Get in touch/).getByRole("button", { name: "Save shared" })).toHaveCount(0);
 });
+
+test("with a section session kept from earlier, a header Edit reveals hidden Code for itself and its Done folds it back", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await (await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero")).getByRole("button", { name: "Save shared" }).click();
+  await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await (await share(page, /^Header/, "header", "site-head", "Site header")).getByRole("button", { name: "Save shared" }).click();
+  await expect(row(page, /Site header/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  const grip = page.getByRole("separator", { name: "Resize code pane", exact: true });
+  const hide = async () => { await grip.focus(); await page.keyboard.press("Home"); await expect(grip).toHaveAttribute("aria-valuenow", "0"); };
+  await row(page, /About hero/).hover();
+  await row(page, /About hero/).getByRole("button", { name: "Edit component" }).click();
+  await expect(masterBanner(page)).toBeVisible();
+  // Left by navigation, no Done: the section session is kept. The page is then edited in Code.
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("treeitem", { name: "About · Larkspur Studio" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n");
+  await expect(row(page, /Site header/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await hide();
+  const files = [PAGE, JSON_PATH, ".editor/page-parts/site-head.html", ".editor/sections/about-hero.html"];
+  const before = await snapshot(page, baseURL, files);
+  await row(page, /Site header/).hover();
+  await row(page, /Site header/).getByRole("button", { name: "Edit component" }).click();
+  const part = masterBanner(page, "Shared header master");
+  await expect(part).toBeVisible();
+  await expect(grip).not.toHaveAttribute("aria-valuenow", "0");
+  await part.getByRole("button", { name: "Done" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await expect(grip).toHaveAttribute("aria-valuenow", "0");
+  expect(await snapshot(page, baseURL, files)).toEqual(before);
+  // The kept section session still resumes when its master is opened again.
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Files" }).click();
+  const tree = page.locator("#explorer").getByRole("navigation", { name: "Repository files" });
+  await tree.getByRole("button", { name: /^\.editor/ }).click();
+  await tree.getByRole("button", { name: /^sections/ }).click();
+  await tree.getByRole("button", { name: /^about-hero\.html/ }).click();
+  await expect(page.locator("#primary-title")).toHaveText(".editor/sections/about-hero.html");
+  await expect(masterBanner(page)).toBeVisible();
+});

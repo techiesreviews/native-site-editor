@@ -942,8 +942,9 @@ function renderMasterBanner() {
         void active.controller.done().then(() => {
           const revealed = masterRevealedCode, now = codeResize?.state();
           masterRevealedCode = undefined;
-          // Only the session's own Done after an automatic reveal the person left as it was.
-          if (revealed && now && !activeMaster() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
+          // Only the session's own Done after an automatic reveal the person left as it was (a
+          // session kept from earlier, with its master not open, does not hold Code open).
+          if (revealed && now && !active.controller.context() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
           renderMasterBanner();
           updateNativePreviewSources();
         });
@@ -988,7 +989,7 @@ function nativeMasterIdentity(selection: NativePreviewSelection) {
       tag: part ? selection.tag : "section",
       onEdit: () => {
         if (!proof || !proof.isCurrent() || masterRevision() !== revision) { announce("The page changed. Select the section again."); return; }
-        runMasterEdit(identity.onEdit, proof, at.path, revision);
+        runMasterEdit(part ? pagePartController : masterController, identity.onEdit, proof, at.path, revision);
       },
     },
   };
@@ -996,7 +997,7 @@ function nativeMasterIdentity(selection: NativePreviewSelection) {
 // Opens a master through its controller with the page's proof pinned for the transaction. Code is
 // revealed for it (and remembered, so Done can fold it back). A master this Edit mounted whose
 // session was then refused is replaced by the opening page, only while no later navigation took over.
-function runMasterEdit(edit: () => Promise<void>, proof: { isCurrent(): boolean }, pagePath: string, revision: string) {
+function runMasterEdit(controller: { context(): { htmlPath: string } | undefined }, edit: () => Promise<void>, proof: { isCurrent(): boolean }, pagePath: string, revision: string) {
   masterPageProof = proof;
   masterOpened = undefined;
   const collapsed = element("main").classList.contains("code-collapsed");
@@ -1004,15 +1005,19 @@ function runMasterEdit(edit: () => Promise<void>, proof: { isCurrent(): boolean 
     masterPageProof = undefined;
     const opened = masterOpened;
     masterOpened = undefined;
-    if (activeMaster()) {
+    // Only this Edit's own session decides: another session kept from earlier (left by navigation,
+    // resumable when its master is opened again) neither reveals Code nor keeps a refused master open.
+    const own = controller.context();
+    if (own && currentPath === own.htmlPath) {
       // The master is usable only with Code showing: reveal it, and remember to fold it back.
       if (collapsed && element("main").classList.contains("code-collapsed") && codeResize) {
         codeResize.toggle();
         masterRevealedCode = codeResize.state();
       }
     } else if (opened && opened.fileGeneration === fileGeneration && currentPath === opened.path && masterRevision() === revision) {
+      // A master this Edit mounted, whose session was refused after: the opening page comes back.
       // restoreFile's own file generation drops it when anything navigates meanwhile.
-      void restoreFile(pagePath, generation, { linkDefaultStyle: false, beforeMount: () => !activeMaster() && masterRevision() === revision });
+      void restoreFile(pagePath, generation, { linkDefaultStyle: false, beforeMount: () => activeMaster()?.context.htmlPath !== opened.path && masterRevision() === revision });
     }
     renderMasterBanner();
   });
@@ -3469,7 +3474,7 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
   const at = nativeMasterSelection(selection);
   const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
   if (!at || !identity || !identity.linked) { refuse(); return; }
-  runMasterEdit(identity.onEdit, proof, path, revision);
+  runMasterEdit(part ? pagePartController : masterController, identity.onEdit, proof, path, revision);
 }
 
 // The innermost whole section/header/footer around `node` that is a resolved linked copy (by its
