@@ -314,3 +314,80 @@ test("a file an agent adds to the page's folder while the delete-with-subpages d
   expect((await storedDraft(page, NOTES))!.content).toBe("Opening hours change in May.\n");
   expect(await mounted(page)).toBe(original);
 });
+
+// ---- Page settings: a successful Apply remounts Fields over the applied page, keeping newer typing. ----
+
+// With the text index loaded, the real host's Apply makes no request: its
+// success and the Fields remount follow in microtasks. Typing is put in the
+// same task as the Apply click, so it lands after the values are captured
+// and before the success decides between closing and remounting.
+test("Fields typed in the same task as a real Apply survive its success remount, and Apply again writes them over the earlier values in the page and the editor's JSON", async ({ page, baseURL }) => {
+  const SIDE = ".editor/page-builder.json";
+  await page.goto(baseURL!);
+  // The branch has the editor's JSON, with another page's fields that must stay.
+  const seed = { version: 1, pages: { "work/fern-and-kettle/index.html": { fields: { mood: "Warm" } } }, collections: {} };
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: SIDE, content: JSON.stringify(seed, null, 2) + "\n" } });
+  const requests: string[] = [];
+  let counting = false;
+  page.on("request", (request) => { if (counting && new URL(request.url()).pathname.startsWith("/api/")) requests.push(request.url()); });
+  {
+    await openCards(page, baseURL);
+    const original = (await mounted(page))!;
+    await openPages(page);
+    await page.locator("#page-settings-toggle").click();
+    const dialog = page.getByRole("dialog", { name: "Page settings", exact: true });
+    await dialog.getByRole("tab", { name: "Fields", exact: true }).click();
+    await dialog.getByLabel("Date", { exact: true }).fill("2027-05-01");
+    await dialog.getByLabel("New custom field name", { exact: true }).fill("category");
+    await dialog.getByLabel("New custom field value", { exact: true }).fill("Clay");
+    counting = true;
+    const sameTask = await page.evaluate(() => {
+      const dialog = [...document.querySelectorAll("dialog")].find((item) => item.open && item.querySelector(".collections-panel"))!;
+      const field = (label: string) => [...dialog.querySelectorAll(".collections-panel label")].find((wrap) => wrap.querySelector("span")?.textContent === label)!.querySelector("input")!;
+      const apply = [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Apply page settings")!;
+      apply.click();
+      const status = dialog.querySelector(".site-settings__status")!.textContent;
+      for (const [label, value] of [["New custom field value", "Glaze"], ["Date", "2028-02-02"]]) {
+        const input = field(label);
+        input.focus();
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return status;
+    });
+    expect(sameTask).toBe("Applying drafts…");
+
+    await expect(dialog.getByRole("status")).toHaveText("Applied the earlier values as drafts. Your newer changes are not applied yet; Apply again to add them.");
+    counting = false;
+    expect(requests.filter((url) => !/\/api\/(?:agent|session)/.test(url))).toEqual([]);
+    const first = (await storedDraft(page, "index.html"))!.content;
+    expect(first).toContain('<meta name="date" content="2027-05-01">');
+    expect(first).not.toContain("Clay");
+    expect(JSON.parse((await storedDraft(page, SIDE))!.content).pages["index.html"].fields).toEqual({ category: "Clay" });
+    // Remounted over the applied page: the added field is its own, holding the newer value, and Date keeps focus.
+    await expect(dialog.getByLabel("Date", { exact: true })).toHaveValue("2028-02-02");
+    await expect(dialog.getByLabel("Date", { exact: true })).toBeFocused();
+    await expect(dialog.getByLabel("Category", { exact: true })).toHaveValue("Glaze");
+    await expect(dialog.getByLabel("New custom field name", { exact: true })).toHaveValue("");
+
+    await dialog.getByRole("button", { name: "Apply page settings", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const second = (await storedDraft(page, "index.html"))!.content;
+    expect(second).toContain('<meta name="date" content="2028-02-02">');
+    expect(second).not.toContain("2027-05-01");
+    expect(JSON.parse((await storedDraft(page, SIDE))!.content).pages).toEqual({ ...seed.pages, "index.html": { fields: { category: "Glaze" } } });
+    expect(second.replace(/\n?\s*<meta name="date" content="2028-02-02">/, "")).toBe(original);
+
+    // Two Applies, two Undo steps; Redo repeats them.
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(first);
+    await expect.poll(async () => JSON.parse((await storedDraft(page, SIDE))?.content ?? "{}").pages?.["index.html"]?.fields).toEqual({ category: "Clay" });
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+    expect(await mounted(page)).toBe(original);
+    await page.locator(".code-editor__redo").first().click();
+    await page.locator(".code-editor__redo").first().click();
+    await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(second);
+    await expect.poll(async () => JSON.parse((await storedDraft(page, SIDE))?.content ?? "{}").pages?.["index.html"]?.fields).toEqual({ category: "Glaze" });
+  }
+});
