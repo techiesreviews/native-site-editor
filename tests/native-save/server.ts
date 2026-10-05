@@ -152,7 +152,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { realpathSync } from "node:fs";
-import { createServer, type Connect, type Plugin } from "vite";
+import { createServer, preview, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
@@ -162,6 +162,12 @@ import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
+// `ASE_NATIVE_SAVE_DIST=1` serves the production build in `dist/` (run
+// `npm run build:ui` first) instead of the Vite dev server, with the headers of
+// `public/_headers`, to measure the editor as it ships (tests/perf/). Any other
+// value names the build's folder (to compare two builds side by side).
+const distDir = process.env.ASE_NATIVE_SAVE_DIST === "1" ? "dist" : process.env.ASE_NATIVE_SAVE_DIST;
+const distMode = Boolean(distDir);
 const projectRoot = process.cwd();
 // `ASE_NATIVE_SAVE_FIXTURE` serves another site as the demo repository (a
 // checkout of a real project, to try the editor against it by hand).
@@ -1354,8 +1360,37 @@ function demoBannerPlugin(): Plugin {
   };
 }
 
+// The production headers (`public/_headers`, as Cloudflare applies them to dist).
+function productionHeaders(): Connect.NextHandleFunction {
+  const headers = readFileSync(resolve(projectRoot, "public/_headers"), "utf8").split("\n")
+    .map((line) => line.trim().match(/^([A-Za-z-]+):\s*(.+)$/)).filter((match) => match !== null)
+    .map((match) => [match[1], match[2]] as const);
+  return (_req, res, next) => {
+    for (const [name, value] of headers) res.setHeader(name, value);
+    next();
+  };
+}
+
 async function main() {
   initialGit = buildInitialGit();
+  if (distMode) {
+    const server = await preview({
+      configFile: false,
+      root: projectRoot,
+      plugins: [{ name: "ase-native-save-worker-dist", configurePreviewServer(server) {
+        server.middlewares.use(productionHeaders());
+        server.middlewares.use(workerMiddleware());
+      } }],
+      build: { outDir: resolve(projectRoot, distDir!) },
+      preview: { host: "127.0.0.1", port: appPort, strictPort: true },
+    });
+    const close = () => void server.close().catch(() => undefined).finally(() => process.exit(0));
+    process.once("SIGTERM", close);
+    process.once("SIGINT", close);
+    // eslint-disable-next-line no-console
+    console.log(`native-save server (${distDir}) listening on http://127.0.0.1:${appPort}`);
+    return;
+  }
   const app = await createServer({
     configFile: false,
     root: projectRoot,
