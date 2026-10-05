@@ -2,9 +2,7 @@ import { button, link, node } from "../ui/dom";
 import { icon } from "../icons";
 import {
   DEFAULT_REPOSITORY_NAME,
-  repositoryNameProblem,
   siteNameFromRepository,
-  suggestedRepositoryName,
   type StartingPoint,
 } from "../../shared/starting-point";
 import type { OwnerInstallation } from "../../shared/types";
@@ -18,6 +16,7 @@ import {
 } from "../setup-wizard";
 import { closeLightbox, createGithubTrip } from "./github-trip";
 import { newRepositoryUrl, type CreateChoice } from "./get-started";
+import { createRepositoryNameField } from "./repository-name-field";
 import "./onboarding.css";
 import "./setup-wizard.css";
 
@@ -245,35 +244,23 @@ export function createSetupWizard(options: SetupWizardOptions) {
     ownerSelect.name = "owner";
     ownerLabel.append(node("span", "onboard-field__label", "Owner"), ownerSelect);
     ownerLabel.hidden = true;
-    const nameLabel = node("label", "onboard-field");
-    const nameInput = node("input", "onboard-input");
-    nameInput.name = "name";
-    nameInput.value = state.name;
-    nameInput.autocomplete = "off";
-    nameInput.spellcheck = false;
-    nameInput.maxLength = 100;
-    const hint = node("span", "onboard-field__hint");
-    hint.id = "wizard-name-hint";
-    nameInput.setAttribute("aria-describedby", hint.id);
-    nameLabel.append(node("span", "onboard-field__label", "Repository name"), nameInput, hint);
     const ownerName = () => (ownerSelect.value && !ownerLabel.hidden ? ownerSelect.value : login);
-    const showName = () => {
-      const name = nameInput.value.trim();
-      const problem = repositoryNameProblem(name);
-      nameInput.setAttribute("aria-invalid", String(Boolean(problem && name)));
-      hint.classList.toggle("is-error", Boolean(problem && name));
-      hint.textContent = problem && name ? problem : `github.com/${ownerName()}/${name || "…"}`;
-      return problem;
-    };
+    const {
+      label: nameLabel,
+      input: nameInput,
+      hint,
+      show: showName,
+    } = createRepositoryNameField({
+      value: state.name,
+      hintId: "wizard-name-hint",
+      preview: (name) => `github.com/${ownerName()}/${name || "…"}`,
+      normalised: () => {
+        state.name = nameInput.value;
+      },
+    });
     nameInput.addEventListener("input", () => {
       state.name = nameInput.value;
       options.remember({ name: nameInput.value });
-      showName();
-    });
-    nameInput.addEventListener("change", () => {
-      const suggested = suggestedRepositoryName(nameInput.value);
-      if (suggested && suggested !== nameInput.value) nameInput.value = suggested;
-      state.name = nameInput.value;
       showName();
     });
     ownerSelect.addEventListener("change", () => {

@@ -2,12 +2,11 @@ import { button, link, node } from "../ui/dom";
 import { icon } from "../icons";
 import {
   DEFAULT_REPOSITORY_NAME,
-  repositoryNameProblem,
-  suggestedRepositoryName,
   type StartingPoint,
 } from "../../shared/starting-point";
 import type { OwnerInstallation } from "../../shared/types";
 import { createCommand, setupPrompt } from "./agent-menu";
+import { createRepositoryNameField } from "./repository-name-field";
 import "./onboarding.css";
 
 // Get started: the screen of a signed-in account with no repository in the
@@ -102,17 +101,16 @@ export function createGetStarted(options: {
   form.setAttribute("aria-labelledby", "create-site-title");
   const createTitle = node("h2", "onboard-card__title", "Create a site");
   createTitle.id = "create-site-title";
-  const nameLabel = node("label", "onboard-field");
-  const nameInput = node("input", "onboard-input");
-  nameInput.name = "name";
-  nameInput.value = DEFAULT_REPOSITORY_NAME;
-  nameInput.autocomplete = "off";
-  nameInput.spellcheck = false;
-  nameInput.maxLength = 100;
-  const nameHint = node("span", "onboard-field__hint");
-  nameHint.id = "repository-name-hint";
-  nameInput.setAttribute("aria-describedby", nameHint.id);
-  nameLabel.append(node("span", "onboard-field__label", "Repository name"), nameInput, nameHint);
+  const {
+    label: nameLabel,
+    input: nameInput,
+    hint: nameHint,
+    show: showName,
+  } = createRepositoryNameField({
+    value: DEFAULT_REPOSITORY_NAME,
+    hintId: "repository-name-hint",
+    preview: (name) => (ownerLabel.hidden ? `github.com/${options.login}/${name || "…"}` : `Creates ${ownerSelect.value}/${name || "…"}`),
+  });
   // Owner: the personal account or an organisation with an installation, shown once there is a choice.
   const ownerLabel = node("label", "onboard-field");
   const ownerSelect = node("select", "onboard-input");
@@ -145,23 +143,9 @@ export function createGetStarted(options: {
     private: (form.elements.namedItem("visibility") as RadioNodeList).value === "private",
     point: (form.elements.namedItem("point") as RadioNodeList).value === "blank" ? "blank" : "starter",
   });
-  function showName() {
-    const name = nameInput.value.trim();
-    const problem = repositoryNameProblem(name);
-    nameInput.setAttribute("aria-invalid", String(Boolean(problem && name)));
-    nameHint.classList.toggle("is-error", Boolean(problem && name));
-    nameHint.textContent = problem && name ? problem : ownerLabel.hidden ? `github.com/${options.login}/${name || "…"}` : `Creates ${ownerSelect.value}/${name || "…"}`;
-    return problem;
-  }
   nameInput.addEventListener("input", () => {
     showName();
     agentPrompt();
-  });
-  // A name typed with spaces becomes the name GitHub would make of it.
-  nameInput.addEventListener("change", () => {
-    const suggested = suggestedRepositoryName(nameInput.value);
-    if (suggested && suggested !== nameInput.value) nameInput.value = suggested;
-    showName();
   });
   showName();
   ownerSelect.addEventListener("change", () => {
