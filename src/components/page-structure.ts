@@ -4,7 +4,7 @@ import { createUrlChange, type UrlPlan } from "./url-change";
 import { mark, componentIcon } from "../page-builder/component-icon";
 import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
 import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
-import "./row-action-overlay.css";
+import { rowActions } from "./row-actions";
 import "./page-structure.css";
 import { createNativeSharedAuthoring, type NativeSharedAuthoringContext, type NativeSharedAuthoringActions } from "./native-shared-authoring";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
@@ -510,24 +510,20 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     paint(slot.filled);
     return toggle;
   }
-  // Pencil and visibility for a slot row: they fade in over the row's text
-  // while the row is hovered or focused, never covering the badge.
+  // Pencil and visibility for a slot row.
   function slotActions(model: ComponentStructureModel, slot: SlotRowContext["slot"], edit: () => void) {
-    const actions = node("div", "row-action-overlay page-structure__slot-actions");
-    if (editable(slot)) actions.append(iconAction(`Edit ${slot.label}`, "edit", edit));
+    const actions: HTMLElement[] = [];
+    if (editable(slot)) actions.push(iconAction(`Edit ${slot.label}`, "edit", edit));
     const visibility = slot.filled ? visibilityControl(model, slot) : undefined;
-    if (visibility) actions.append(visibility);
-    isolate(actions);
-    return actions.childElementCount ? actions : undefined;
+    if (visibility) actions.push(visibility);
+    return actions;
   }
-  // A slot row's actions sit at the row's far right, after the badge, which
-  // steps aside while they show. A row that already carries the component
-  // actions keeps the slot actions inside its label instead.
-  function hostSlotActions(row: HTMLElement, label: HTMLElement, actions: HTMLElement) {
-    if (row.classList.contains("row-action-host")) { label.classList.add("row-action-host"); label.append(actions); return; }
-    row.classList.add("row-action-host", "page-structure__row--slot-host");
-    row.style.setProperty("--slot-action-count", String(actions.childElementCount));
-    row.append(actions);
+  // Every row's actions share one faded bar at its far right (rowActions);
+  // a row that is both an instance and a slot gets them all in that one bar.
+  function addRowActions(row: HTMLElement, actions: HTMLElement[]) {
+    if (!actions.length) return;
+    for (const action of actions) isolate(action);
+    rowActions(row, ...actions);
   }
   // Keep row controls from starting a drag, choosing the row or moving focus by arrow keys.
   function isolate(control: Element) {
@@ -556,14 +552,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const badge = editable(slot) ? button(slot.label, edit, "page-structure__slot-badge") : node("span", "page-structure__slot-badge", slot.label);
     if (badge instanceof HTMLButtonElement) { badge.title = `Edit ${slot.label}`; badge.setAttribute("aria-label", `Edit ${slot.label}`); isolate(badge); }
     el.append(label, badge);
-    if (slot.filled) {
-      const actions = slotActions(model, slot, edit);
-      if (actions) hostSlotActions(el, label, actions);
-    } else {
-      // Missing: an optional slot's Show stays visible; a defaulted slot's pencil fades in.
-      const show = visibilityControl(model, slot);
-      if (show) { isolate(show); el.append(show); }
-      else if (editable(slot)) { const actions = node("div", "row-action-overlay page-structure__slot-actions"); actions.append(iconAction(`Edit ${slot.label}`, "edit", edit)); isolate(actions); hostSlotActions(el, label, actions); }
+    if (slot.filled) addRowActions(el, slotActions(model, slot, edit));
+    else {
+      // Missing: an optional slot offers Show, a defaulted slot its pencil, in the same faded bar.
+      const show = visibilityControl(model, slot) ?? (editable(slot) ? iconAction(`Edit ${slot.label}`, "edit", edit) : undefined);
+      if (show) addRowActions(el, [show]);
     }
     el.addEventListener("click", () => { if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); } });
     el.addEventListener("keydown", event => {
@@ -719,8 +712,6 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (preview) { preview.id = `page-structure-text-${rowNameSeq}`; parts.push(preview.id); }
       el.setAttribute("aria-labelledby", parts.join(" "));
       el.classList.add("page-structure__row--instance");
-      el.classList.add("row-action-host");
-      const actions = node("div", "row-action-overlay page-structure__component-actions");
       const attributesAction = iconAction("Attributes", "content", () => {
           openSlot = undefined;
           openAttributes = openAttributes === id ? undefined : id;
@@ -729,24 +720,21 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           if (!openAttributes) rows.get(id)?.focus();
         });
       attributesAction.setAttribute("aria-expanded", String(attributes));
-      actions.append(
+      addRowActions(el, [
         attributesAction,
         iconAction("Edit component", "edit", slotModel.edit),
         iconAction("Disconnect this instance", "detach", slotModel.disconnect),
-      );
-      isolate(actions);
-      el.append(actions);
+      ]);
     }
     if (shared) {
-      el.classList.add("row-action-host", "page-structure__row--native-shared");
+      el.classList.add("page-structure__row--native-shared");
       kindName.id = `page-structure-kind-${++rowNameSeq}`;
       const preview = label.querySelector<HTMLElement>(":scope > .page-structure__text");
       if (preview) preview.id = `page-structure-text-${rowNameSeq}`;
       el.setAttribute("aria-labelledby", [kindName.id, preview?.id].filter(Boolean).join(" "));
-      const actions = node("div", "row-action-overlay page-structure__component-actions");
       if (shared.state === "linked") {
         el.classList.add("page-structure__row--shared-linked");
-        actions.append(iconAction("Edit component", "edit", shared.edit), iconAction("Disconnect this instance", "detach", shared.disconnect));
+        addRowActions(el, [iconAction("Edit component", "edit", shared.edit), iconAction("Disconnect this instance", "detach", shared.disconnect)]);
       } else {
         const save = iconAction("Save shared", "add", () => {
           const fresh = structure?.path && handlers.nativeSharedRoot?.(structure.path, item);
@@ -766,9 +754,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           render(); form.focus();
         });
         save.setAttribute("aria-expanded", String(Boolean(sharing)));
-        actions.append(save);
+        addRowActions(el, [save]);
       }
-      isolate(actions); el.append(actions);
     }
     if (slotContext) {
       el.classList.add("page-structure__row--slot");
@@ -778,9 +765,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       badge.setAttribute("aria-label", editable(slot) ? `Edit ${slot.label}` : `Select ${slot.label}`);
       if (!editable(slot)) badge.title = `Select ${slot.label}`;
       isolate(badge);
-      const actions = slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext));
-      el.append(badge);
-      if (actions) hostSlotActions(el, label, actions);
+      // The badge goes before the bar so Tab reaches it first.
+      const bar = el.querySelector(":scope > .row-action-overlay");
+      if (bar) bar.before(badge); else el.append(badge);
+      addRowActions(el, slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext)));
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
@@ -831,12 +819,17 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // Every authored child stays a real row in native source order; a known
     // slot's rows share one editor anchor at its first assigned root.
     if (slotModel) settlePending(slotModel, item.children);
+    // A hidden slot keeps its place: its row sits where Show puts the slot
+    // back, before the first child of a later slot (fillInsertEdit's order).
+    const missing = slotModel ? slotModel.slots.filter(slot => !slot.assignedNodes.length) : [];
+    const slotOrder = (name: string) => { const at = slotModel!.slots.findIndex(slot => slot.name === name); return at < 0 ? slotModel!.slots.length : at; };
     for (const child of item.children) {
+      while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
       group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined));
     }
-    if (slotModel) for (const slot of slotModel.slots) if (!slot.assignedNodes.length) group.append(...slotOnlyRow(slotModel, slot, level + 1));
+    for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));
     return [el, group];
   }
 

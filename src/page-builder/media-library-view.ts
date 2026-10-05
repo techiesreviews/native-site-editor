@@ -1,5 +1,5 @@
 import { setIcon } from "../icons";
-import "../components/row-action-overlay.css";
+import { rowActions } from "../components/row-actions";
 import { button, node } from "../ui/dom";
 import { formatBytes, uploadImageType, WARN_IMAGE_BYTES } from "../uploads";
 import { cleanMediaTags, type MediaMetadata, type MediaMetadataMap } from "./media-metadata";
@@ -276,7 +276,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
       checkbox.addEventListener("change", () => { checkbox.checked ? selected.add(item.path) : selected.delete(item.path); bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`; });
       selectLabel.append(checkbox); card.append(thumb, selectLabel);
-      const nameLine = node("div", "media-library__name-line row-action-host");
+      const nameLine = node("div", "media-library__name-line");
       nameLine.append(node("h3", "media-library__name", basename(item.path)));
       card.append(nameLine, node("p", "media-library__folder", parent(item.path) || "Repository root"));
       const meta = node("p", "media-library__stats", item.size === undefined ? "Reading image…" : formatBytes(item.size));
@@ -290,7 +290,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       const used = button("", () => void showDetail(item.path, true), "media-library__usage");
       setIcon(used, "dots-three");
       used.setAttribute("aria-label", usageLabel); used.title = usageLabel;
-      const actions = node("span", "row-action-overlay"); actions.append(used); nameLine.append(actions);
+      rowActions(nameLine, used);
       grid.append(card);
       // Observe thumbnails rather than downloading the whole repository on open.
       const observer = new IntersectionObserver((entries) => {

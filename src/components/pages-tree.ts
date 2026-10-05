@@ -7,7 +7,7 @@ import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
-import "./row-action-overlay.css";
+import { rowActions } from "./row-actions";
 
 /** A new page, as typed in the tree. */
 export interface NativeNewRequest {
@@ -583,7 +583,7 @@ export function createPagesTree(options: {
       });
       row.append(url);
     } else row.append(node("span", "pages-url", page.route));
-    const actions = node("span", "row-action-overlay");
+    const actions: HTMLElement[] = [];
     if (isFolderRoute(page.route)) {
       const add = node("button", "pages-add");
       setIcon(add, "plus");
@@ -596,7 +596,7 @@ export function createPagesTree(options: {
         setActive(item);
         startEditing(page.special === "home" ? "/" : page.route, item.dataset.key!);
       });
-      actions.append(add);
+      actions.push(add);
     }
     if (items(page).length) {
       const more = moreButton(`Actions for ${page.label}`);
@@ -606,9 +606,9 @@ export function createPagesTree(options: {
         if (menu.isOpen() && menu.opener === more) { menu.close(false); item.focus(); return; }
         menu.open(more, items(page));
       });
-      actions.append(more);
+      actions.push(more);
     }
-    if (actions.childElementCount) row.append(actions);
+    if (actions.length) rowActions(row, ...actions);
     item.append(row);
     item.addEventListener("click", (event) => {
       if (!ownEvent(event, item)) return;

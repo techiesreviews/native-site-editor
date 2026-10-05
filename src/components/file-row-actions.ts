@@ -4,7 +4,7 @@ import { renameSelection } from "../native-files";
 import { dragHasFiles } from "../uploads";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import "./file-row-actions.css";
-import "./row-action-overlay.css";
+import { rowActions } from "./row-actions";
 
 /** A row of the Files tree an action applies to. */
 export interface FileRowTarget {
@@ -77,11 +77,7 @@ export function createFileRowActions(options: {
       if (menu.isOpen() && menu.opener === more) { menu.close(false); row.focus(); return; }
       openMenu(row, target, more);
     });
-    line.classList.add("row-action-host");
-    const actions = node("span", "row-action-overlay");
-    for (const existing of line.querySelectorAll(":scope > .file-add, :scope > .file-restore")) actions.append(existing);
-    actions.append(more);
-    line.append(actions);
+    rowActions(line, ...line.querySelectorAll<HTMLElement>(":scope > .file-add, :scope > .file-restore"), more);
     line.addEventListener("contextmenu", (event) => {
       if (!(event.target instanceof Element) || event.target.closest(".file-rename")) return;
       event.preventDefault();

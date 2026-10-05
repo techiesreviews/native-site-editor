@@ -89,7 +89,7 @@ test('the slot badge of a later assigned root selects the first actual root',asy
 
 test('a missing optional slot restores from its dim row and focuses its new field',async({page})=>{
  await harness(page);const show=page.getByRole('button',{name:'Show Optional',exact:true});await expect(show).toHaveAttribute('aria-pressed','false');
- await show.click();
+ await page.locator('.page-structure__row--empty-slot').hover();await show.click();
  const field=page.getByRole('textbox',{name:'Optional: Text',exact:true});await expect(field).toBeFocused();
  expect((await H(page)).source).toContain('slot="optional"');
  await expect(page.locator('.page-structure__row--empty-slot')).toHaveCount(0);
@@ -116,6 +116,8 @@ test('deep canvas selection reveals once without fields or focus theft, and a la
 test('row controls never start a drag or choose the row',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card><section slot="body">A</section><section slot="body">B</section></project-card>';s.version++;s.update();});
  const before=(await H(page)).selected.length;
+ // Hovered first, as a pointer reaches a badge: it has stepped aside for the row's actions.
+ await page.locator('[role=treeitem][data-node="0.1"]').hover();await page.waitForTimeout(300);
  const badge=page.locator('[role=treeitem][data-node="0.1"] .page-structure__slot-badge'),box=(await badge.boundingBox())!;
  await page.mouse.move(box.x+4,box.y+4);await page.mouse.down();await page.mouse.move(box.x+4,box.y-30);await expect(page.locator('.page-structure__tree')).not.toHaveClass(/is-dragging/);await page.mouse.up();
  expect((await H(page)).movesTo).toEqual([]);

@@ -184,57 +184,15 @@
 /* The surface Structure actually sits on: the sidebar (style.css .sidebar).
    Row fades end on it, with hover/current tints painted over it. A host on
    another surface sets --structure-surface. */
-/* Row actions use the shared fade (row-action-overlay.css). Its background
-   follows the row's own paint in the same order the row rules use: resting
-   surface, then hover/focus, then current. An instance row hosts its actions
-   itself; a slot row's label hosts them, so the badge stays uncovered. */
-.page-structure__row.row-action-host,
-.page-structure__row > .page-structure__label.row-action-host { --row-action-background: var(--structure-surface, var(--surface-subtle)); }
-.page-structure__row.row-action-host:is(:hover, :focus-visible),
-.page-structure__row:is(:hover, :focus-visible) > .page-structure__label.row-action-host { --row-action-background: var(--hover); }
-.page-structure__row.row-action-host[aria-selected="true"],
-.page-structure__row[aria-selected="true"] > .page-structure__label.row-action-host { --row-action-background: var(--current); }
-/* The label is the host, but the whole row (hover, or keyboard focus on the
-   row or its badge) reveals its actions. */
-.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
-.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay::before,
-.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay > * > * { opacity: 1; transform: none; }
-.page-structure__row:focus-within > .row-action-host > .row-action-overlay::before,
-.page-structure__row:focus-within > .row-action-host > .row-action-overlay > *,
-.page-structure__row:focus-within > .row-action-host > .row-action-overlay > * > * { transition: none; }
-/* Hover and current are translucent tints over the Structure surface. The shared fade
-   paints only the tint, so an opaque surface layer goes under it: together they
-   end in the row's actual composited colour and hide the text beneath. It
-   slides and fades with the shared layer. */
-.page-structure__row .row-action-host > .row-action-overlay::after,
-.page-structure__row.row-action-host > .row-action-overlay::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  border-radius: inherit;
-  background: linear-gradient(to right, transparent, var(--structure-surface, var(--surface-subtle)) 20px);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateX(40%);
-  transition: transform 140ms ease-out, opacity 140ms ease-out;
-}
-.page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .row-action-overlay::after,
-.page-structure__row:is(:hover, :focus-within) > .row-action-host > .row-action-overlay::after { opacity: 1; transform: none; }
-.page-structure__row.row-action-host:focus-within > .row-action-overlay::after,
-.page-structure__row:focus-within > .row-action-host > .row-action-overlay::after { transition: none; }
-@media (hover: none), (pointer: coarse) {
-  .page-structure__row .row-action-host > .row-action-overlay::after,
-  .page-structure__row.row-action-host > .row-action-overlay::after { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .page-structure__row .row-action-host > .row-action-overlay::after,
-  .page-structure__row.row-action-host > .row-action-overlay::after { transition: none; transform: none; }
-}
-.page-structure__label.row-action-host { align-self: stretch; align-items: center; }
+/* Row actions are the shared faded bar (row-actions.ts, row-action-overlay.css).
+   Its fade follows the row's own paint in the order the row rules use:
+   resting surface, then hover/focus, then current. Hover and current are
+   translucent tints, so the opaque base under them is the Structure surface. */
+.page-structure__row.row-action-host { --row-action-background: var(--structure-surface, var(--surface-subtle)); --row-action-base: var(--structure-surface, var(--surface-subtle)); }
+.page-structure__row.row-action-host:is(:hover, :focus-visible) { --row-action-background: var(--hover); }
+.page-structure__row.row-action-host[aria-selected="true"] { --row-action-background: var(--current); }
 /* Resting actions sit translated past the row's end; keep them from widening the tree. */
-.page-structure__row.row-action-host,
-.page-structure__label.row-action-host { overflow: clip; }
+.page-structure__row.row-action-host { overflow: clip; }
 .page-structure__action {
   display: grid;
   place-items: center;
@@ -268,8 +226,8 @@
 }
 button.page-structure__slot-badge { cursor: pointer; }
 button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
-/* Visibility is an eye toggle (aria-pressed), drawn like the other row actions.
-   A hidden slot's closed eye stays on its dim row; touch gets 44px. */
+/* Visibility is an eye toggle (aria-pressed), drawn like the other row actions
+   and in the same faded bar, a hidden slot's closed eye too; touch gets 44px. */
 .page-structure__slot-toggle { flex: none; }
 .page-structure__slot-toggle[aria-pressed="false"] { color: var(--muted); }
 @media (hover: none), (pointer: coarse) {
@@ -279,7 +237,6 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--empty-slot { color: var(--muted); }
 .page-structure__row--empty-slot .page-structure__kind,
 .page-structure__row--empty-slot .page-structure__text { opacity: 0.6; font-style: italic; }
-.page-structure__row--slot-only > .page-structure__slot-toggle { margin-left: 4px; }
 .page-structure__row--empty-slot .page-structure__slot-badge { opacity: 0.7; }
 
 /* The inline editor: one disclosure under its row. */
@@ -322,25 +279,21 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }
 
-/* A slot row hosts its own actions at its far right, after the badge. Nothing
-   sits under them: while they show, the badge steps left by their width and
-   the label gives up the room, so no fade is needed over the text. */
-.page-structure__row--slot-host {
-  --slot-actions-width: calc(var(--slot-action-count, 1) * 22px + (var(--slot-action-count, 1) - 1) * 2px);
+/* A slot's badge steps left of the bar while it shows, so the badge stays
+   readable and clickable; the fade covers only the label. The bar is its
+   buttons (22px, 2px apart) plus 4px end padding and the 20px fade. */
+.page-structure__row.row-action-host > .page-structure__slot-badge { transition: margin-right 140ms ease-out; }
+.page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .page-structure__slot-badge {
+  margin-right: calc(var(--row-action-count, 1) * 24px - 2px + 4px + 16px);
 }
-.page-structure__row--slot-host > .row-action-overlay { padding: 0 4px; }
-.page-structure__row--slot-host > .row-action-overlay::before,
-.page-structure__row--slot-host > .row-action-overlay::after { display: none; }
-.page-structure__row--slot-host > .page-structure__slot-badge { transition: margin-right 140ms ease-out; }
-.page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: var(--slot-actions-width); }
-.page-structure__row--slot-host:focus-within > .page-structure__slot-badge { transition: none; }
+.page-structure__row.row-action-host:focus-within > .page-structure__slot-badge { transition: none; }
 @media (hover: none), (pointer: coarse) {
-  /* Actions already take their own room after the badge. */
-  .page-structure__row--slot-host:is(:hover, :focus-within) > .page-structure__slot-badge { margin-right: 0; }
-  .page-structure__row--slot-host > .page-structure__slot-badge { transition: none; }
+  /* The bar already takes its own room after the badge. */
+  .page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .page-structure__slot-badge { margin-right: 0; }
+  .page-structure__row.row-action-host > .page-structure__slot-badge { transition: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .page-structure__row--slot-host > .page-structure__slot-badge { transition: none; }
+  .page-structure__row.row-action-host > .page-structure__slot-badge { transition: none; }
 }
 
 /* Native shared roots reuse the compact component affordance without slot rails. */

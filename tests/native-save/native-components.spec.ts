@@ -186,6 +186,8 @@ test("Structure edits an instance's slots and attributes as page source", async 
   // An optional part: the link paragraph shows only when the page gives it a link.
   const link = panel(page).getByRole("button", { name: "Show Link", exact: true });
   await expect(link).toHaveAttribute("aria-pressed", "false");
+  // Row actions fade in on hover, like every Structure row action.
+  await link.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
   await link.click();
   await expect(link).toHaveAttribute("aria-pressed", "true");
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
@@ -363,6 +365,8 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   const caption = panel(page).getByRole("button", { name: "Show Caption", exact: true });
   await expect(caption).toHaveAttribute("aria-pressed", "false");
   await expect.poll(() => frame(page).locator("media-card figcaption").evaluate((el) => getComputedStyle(el).display)).toBe("none");
+  // Row actions fade in on hover, like every Structure row action.
+  await caption.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
   await caption.click();
   await expect(caption).toHaveAttribute("aria-pressed", "true");
   await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).fill("Where it happens");
