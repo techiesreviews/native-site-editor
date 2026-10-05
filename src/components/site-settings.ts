@@ -170,7 +170,14 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
 
 // Remounts the page Fields panel on the source as it is now, carrying over
 // values the user typed after the last Apply was submitted.
-function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined, mount: () => CollectionsPanel) {
+function pageFieldsInputs(host: HTMLElement): Map<string, string> {
+  return new Map([...host.querySelectorAll(".collections-panel label")].flatMap((wrap) => {
+    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    return input ? [[wrap.querySelector("span")?.textContent ?? "", input.value] as const] : [];
+  }));
+}
+
+function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined, submitted: Map<string, string>, mount: () => CollectionsPanel) {
   const previous = host.querySelector(".collections-panel");
   const typed = new Map<string, string>();
   let focusLabel: string | undefined, caret: [number | null, number | null] | undefined;
@@ -178,7 +185,7 @@ function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined,
     const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
     const text = wrap.querySelector("span")?.textContent ?? "";
     if (!input) continue;
-    typed.set(text, input.value);
+    if (input.value !== submitted.get(text)) typed.set(text, input.value);
     if (document.activeElement === input) { focusLabel = text; caret = [input.selectionStart, input.selectionEnd]; }
   }
   old?.destroy();
@@ -189,11 +196,11 @@ function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined,
     if (input) inputs.set(wrap.querySelector("span")?.textContent ?? "", input);
   }
   // A custom field the earlier Apply added is now a field of its own.
-  const customName = typed.get("New custom field name")?.trim() ?? "";
+  const customName = submitted.get("New custom field name")?.trim() ?? "";
   const added = customName ? inputs.get(customName[0].toUpperCase() + customName.slice(1)) : undefined;
-  if (added) {
-    typed.set(customName[0].toUpperCase() + customName.slice(1), typed.get("New custom field value") ?? "");
-    typed.set("New custom field name", ""); typed.set("New custom field value", "");
+  if (added && !typed.has("New custom field name")) {
+    if (typed.has("New custom field value")) typed.set(customName[0].toUpperCase() + customName.slice(1), typed.get("New custom field value")!);
+    typed.delete("New custom field value");
     if (focusLabel === "New custom field value") focusLabel = customName[0].toUpperCase() + customName.slice(1);
   }
   for (const [text, value] of typed) {
@@ -232,6 +239,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const fieldsPanel = handlers.pageFields ? dialog.category("Fields", "file-dashed") : undefined;
       let pageFields: CollectionsPanel | undefined;
       let stampAtApply: string | undefined;
+      let fieldsAtApply = new Map<string, string>();
       if (fieldsPanel) {
         fieldsPanel.append(node("p", "site-settings__hint", "Date and custom fields that collection listings can show, sort and filter by."));
         pageFields = handlers.pageFields!(fieldsPanel, options.path);
@@ -344,6 +352,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         const linked = { title: titleLink.checked, description: descriptionLink.checked };
         const panel = pageFields;
         stampAtApply = panel?.pageFieldsStamp();
+        fieldsAtApply = fieldsPanel ? pageFieldsInputs(fieldsPanel) : new Map();
         const submitted = { fields, socialTitle: socialTitle.value, socialDescription: socialDescription.value, titleLink: titleLink.checked, descriptionLink: descriptionLink.checked };
         const error = await handlers.applyPage(options.path, fields, panel ? (source) => panel.pageFieldSource(source) : undefined);
         if (!error) { linkPreferences.set(options.path, linked); applied = submitted; }
@@ -357,7 +366,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         initialSocialTitle = applied.socialTitle; initialSocialDescription = applied.socialDescription;
         initialTitleLink = applied.titleLink; initialDescriptionLink = applied.descriptionLink;
         applied = undefined;
-        if (fieldsPanel && handlers.pageFields) pageFields = remountPageFields(fieldsPanel, pageFields, () => handlers.pageFields!(fieldsPanel, options.path));
+        if (fieldsPanel && handlers.pageFields) pageFields = remountPageFields(fieldsPanel, pageFields, fieldsAtApply, () => handlers.pageFields!(fieldsPanel, options.path));
       });
       dialog.show();
     },

@@ -5768,13 +5768,28 @@ async function duplicateNativePage(file: string) {
   if (error) errorMessage(new Error(error));
 }
 
+// Index loading fills source caches; draft mutations are independent evidence
+// that the target changed while its delete entry waited for that index.
+function deleteTargetDraftStamp(path: string, prefix?: string): string {
+  const scope = draftScope();
+  return JSON.stringify((scope ? draftStore().list(scope) : []).filter(draft => draft.path === path || (prefix && draft.path.startsWith(prefix)))
+    .sort((a, b) => a.path.localeCompare(b.path)));
+}
+
 // Delete in the Pages tab. A page with subpages asks whether they go too
 // ("Delete About and its 2 subpages", with everything in its folder) or
 // stay ("Delete only this page": its folder is then a URL with no page).
 async function removeNativePagesTarget(target: NativePagesTarget) {
   const site = nativeSite;
   if (!target.file || !site || !confirmDialog) return;
+  const scope = setupScope(), epoch = generation, indexScope = nativeTextIndexScopeKey();
+  const source = nativeEffectiveSource(target.file), fileList = nativeFiles().sort().join("\n");
+  const targetDrafts = deleteTargetDraftStamp(target.file, isFolderRoute(target.route) ? routeFolder(target.route) : undefined);
+  const stale = () => scope !== setupScope() || epoch !== generation || indexScope !== nativeTextIndexScopeKey()
+    || nativeSite?.routes[target.route] !== target.file || (source !== undefined && nativeEffectiveSource(target.file!) !== source) || nativeFiles().sort().join("\n") !== fileList
+    || deleteTargetDraftStamp(target.file!, isFolderRoute(target.route) ? routeFolder(target.route) : undefined) !== targetDrafts;
   const indexed = await ensureNativeTextIndex();
+  if (stale()) { errorMessage(new Error("The repository or source changed meanwhile. Try again.")); return; }
   if (indexed) { errorMessage(new Error(indexed)); return; }
   const files = nativeFiles();
   const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
@@ -5791,7 +5806,6 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
   const cardOption = card ? { label: card.label, checked: true } : undefined;
   // The card's edits and the deletes were computed from these sources: an
   // agent or resync write while the dialog is open refuses, never overwritten.
-  const scope = setupScope(), epoch = generation;
   const expectedSources = new Map([...everything, ...(card?.edits.keys() ?? [])].map((path) => [path, nativeEffectiveSource(path)] as const));
   let removeCard = false;
   if (target.subpages > 0) {
@@ -7477,9 +7491,15 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   if (target.gone) return `${target.path} is deleted already.`;
   const guarded = protectedProblem(target, "delete");
   if (guarded) { errorMessage(new Error(guarded)); announce(guarded); return guarded; }
+  const epoch = generation, scope = setupScope(), indexScope = nativeTextIndexScopeKey();
+  const files = treeSignature(treeState()), source = nativeEffectiveSource(target.path);
+  const targetDrafts = deleteTargetDraftStamp(target.path, target.folder ? `${target.path}/` : undefined);
+  const stale = () => epoch !== generation || scope !== setupScope() || indexScope !== nativeTextIndexScopeKey()
+    || treeSignature(treeState()) !== files || (source !== undefined && nativeEffectiveSource(target.path) !== source)
+    || deleteTargetDraftStamp(target.path, target.folder ? `${target.path}/` : undefined) !== targetDrafts;
   const indexed = await ensureNativeTextIndex();
+  if (stale()) { const error = "The repository or source changed meanwhile. Try again."; errorMessage(new Error(error)); return error; }
   if (indexed) { errorMessage(new Error(indexed)); return indexed; }
-  const epoch = generation;
   let found: MovableFile[];
   try {
     found = await targetFiles(target, false);
@@ -7487,7 +7507,7 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
     errorMessage(error);
     return error instanceof Error ? error.message : "The files could not be read.";
   }
-  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+  if (stale()) return "The repository or source changed meanwhile. Try again.";
   if (!found.length) return `${target.path} has no files to delete.`;
   // A file still in use is not deleted: no page, stylesheet or card is left pointing at nothing.
   // The snapshot checked here is pinned through the dialog to the write.
@@ -7517,6 +7537,7 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
     action: "Delete",
   });
   if (!ok) { announce(`Cancelled deleting ${target.path}`); return "Cancelled."; }
+  if (stale()) { const error = "The repository or source changed meanwhile. Try again."; errorMessage(new Error(error)); return error; }
   const done = target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`;
   const native = !!nativeSite;
   const error = native ? await applyNativeCollectionOperation({ deletes: found.map(file => file.path), ...pins, done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
