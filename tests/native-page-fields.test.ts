@@ -177,3 +177,18 @@ test("a malformed non-field meta mentioning field: fails closed", () => {
 test("property and name field: together are ambiguous", () => {
   code(() => readEditorFieldMetas("<html><head><meta property=\"field:a\" name=\"field:a\" content=\"1\"></head></html>"), "native-page-fields/duplicate-meta");
 });
+
+test("a field tag that also does something for the page is never removed: the move refuses with the shared message", () => {
+  for (const [tag, attribute] of [
+    ['<meta name="field:redirect" http-equiv="refresh" content="0;url=/other/">', "http-equiv"],
+    ['<meta name="field:policy" http-equiv="Content-Security-Policy" content="default-src \'self\'">', "http-equiv"],
+    ['<meta name="field:kind" itemprop="genre" content="Studio">', "itemprop"],
+    ['<meta charset="utf-8" name="field:enc" content="x">', "charset"],
+    ['<meta name="field:x" content="1" id="keep">', "id"],
+  ]) {
+    const source = `<html><head><title>T</title><meta name="field:ok" content="1">${tag}</head></html>`;
+    assert.throws(() => planLegacyPageFieldMigration({ files: ["index.html"], pagePath: "index.html", source }), (error: unknown) =>
+      error instanceof NativePageFieldError && error.code === "native-page-fields/functional-attribute"
+      && error.message.startsWith("The field tag “field:") && error.message.includes(`also has ${attribute}, which the page itself may use, so it is neither moved nor removed.`), tag);
+  }
+});

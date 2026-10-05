@@ -21,7 +21,8 @@ export type NativePageFieldErrorCode =
   | "native-page-fields/reserved-field"
   | "native-page-fields/unsafe-key"
   | "native-page-fields/invalid-sidecar"
-  | "native-page-fields/conflict";
+  | "native-page-fields/conflict"
+  | "native-page-fields/functional-attribute";
 
 export class NativePageFieldError extends Error {
   constructor(readonly code: NativePageFieldErrorCode, message: string) {
@@ -176,6 +177,21 @@ function removalRange(source: string, start: number, end: number): [number, numb
   return [start, end];
 }
 
+/**
+ * A field tag is removed whole, so it must hold nothing but its field: a tag
+ * that also has http-equiv (a redirect, a security policy), charset, itemprop,
+ * property or any other attribute does something for the page and refuses.
+ * Every move of field tags (one page, or the whole site) goes through this.
+ */
+export function assertOnlyEditorData(source: string, metas: readonly EditorFieldMeta[]): void {
+  const tags = startTags(source);
+  for (const meta of metas) {
+    const tag = tags.find((item) => item.start === meta.start);
+    const extra = tag ? [...new Set(startTagAttributes(source, tag).map((item) => item.name.toLowerCase()).filter((name) => name !== "name" && name !== "content"))] : ["unreadable markup"];
+    if (extra.length) fail("native-page-fields/functional-attribute", `The field tag “field:${meta.field}” also has ${extra.join(", ")}, which the page itself may use, so it is neither moved nor removed. In Code, move that attribute to a tag of its own or take the field name off this tag, then try again.`);
+  }
+}
+
 export interface LegacyPageFieldMigrationInput {
   /** Every path in the current file graph, loaded or not. */
   files: readonly string[];
@@ -192,6 +208,7 @@ export function planLegacyPageFieldMigration(input: LegacyPageFieldMigrationInpu
   assertPagePath(pagePath);
   const expectedFiles = assertGraph(input.files, pagePath, sidecarText);
   const metas = readEditorFieldMetas(source);
+  assertOnlyEditorData(source, metas);
   const overrides = input.expectedOverrides ?? {};
   if (!metas.length) {
     if (Object.keys(overrides).length) fail("native-page-fields/conflict", "An override names a field that is not in conflict.");

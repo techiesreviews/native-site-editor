@@ -5,7 +5,6 @@
 // parse recipes or fields itself.
 import { startTags } from "../../shared/html-source";
 import { nativePageRoute } from "../../shared/native-routes";
-import { startTagAttributes } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { readCollections } from "./collection-model";
 import { withLegacyImported } from "./collection-origins";
@@ -50,22 +49,6 @@ function survey(sources: Readonly<Record<string, string>>): Map<string, { listin
   return found;
 }
 
-/**
- * A field tag is removed whole, so it must hold nothing but its field: a tag
- * that also has http-equiv (a redirect, a security policy), charset, itemprop,
- * property or any other attribute does something for the page and refuses.
- */
-function assertOnlyEditorData(path: string, source: string) {
-  let metas: ReturnType<typeof readEditorFieldMetas>;
-  try { metas = readEditorFieldMetas(source); } catch { return; } // The field importer refuses it with its own reason.
-  const tags = startTags(source);
-  for (const meta of metas) {
-    const tag = tags.find((item) => item.start === meta.start);
-    const extra = tag ? [...new Set(startTagAttributes(source, tag).map((item) => item.name.toLowerCase()).filter((name) => name !== "name" && name !== "content"))] : ["unreadable markup"];
-    if (extra.length) refuse(`${path}: The field tag “field:${meta.field}” also has ${extra.join(", ")}, which the page itself may use, so it is neither moved nor removed. In Code, move that attribute to a tag of its own or take the field name off this tag, then try again.`);
-  }
-}
-
 const refuse = (reason: string): never => { throw new Error(`${reason.trim().replace(/([^.!?])$/, "$1.")} Nothing was changed.`); };
 
 /**
@@ -103,7 +86,6 @@ export function planEditorDataMigration(snapshot: NativeCollectionSnapshot): Edi
   for (const [path, { fields }] of found) {
     if (!fields) continue;
     const source = texts.get(path) ?? sources[path];
-    assertOnlyEditorData(path, source);
     let plan: ReturnType<typeof planLegacyPageFieldMigration>;
     try { plan = planLegacyPageFieldMigration({ files: graph, pagePath: path, source, sidecarText: sidecar }); }
     catch (error) {

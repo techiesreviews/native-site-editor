@@ -180,6 +180,17 @@ test("keeping the editor value, and a stale choice refuses with no write", async
   expect(await storedDraft(page, "index.html")).toBeUndefined();
 });
 
+test("a field tag that is also a redirect is refused and kept: the move writes nothing", async ({ page, baseURL }) => {
+  const files = seeded();
+  files[POTTERY] = files[POTTERY].replace("</head>", '  <meta name="field:redirect" http-equiv="refresh" content="0;url=/other/">\n</head>');
+  await seed(page, baseURL, files);
+  await load(page, baseURL, POTTERY);
+  const settings = await openFields(page);
+  await moveButton(settings).click();
+  await expect(settings.locator(".collections-panel__status")).toContainText("The field tag “field:redirect” also has http-equiv, which the page itself may use, so it is neither moved nor removed.");
+  expect(await storedDrafts(page)).toEqual([]);
+});
+
 test("a page changed after the fields opened refuses the move and keeps the newer text", async ({ page, baseURL }) => {
   await seed(page, baseURL, { ...seeded(), [SIDECAR]: existingJson });
   await load(page, baseURL, POTTERY);
