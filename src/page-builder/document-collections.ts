@@ -152,7 +152,7 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
       for (const path of deletes) delete map[path];
     };
     rekey(document.pages);
-    if (input.rewriteLinks) rebaseSharedLinks(input, document, beforeText, moves, deletes, input.rewriteLinks);
+    if (input.rewriteLinks) rebaseSharedLinks(input, document, beforeText, afterText, moves, deletes, input.rewriteLinks);
     const pageEdits = new Map<string, { start: number; end: number; text: string; id: string }[]>();
     const previews: DocumentCollectionPreview[] = [];
     // Page paths and folders are updated first so each page's collections are located together.
@@ -207,19 +207,26 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
 /**
  * Native section and page part links whose copy the origin's URL rewrite changed. Only a copy
  * that was pristine before (its exact bytes were its basis) and is now exactly the rewritten
- * basis is rebased; a customised copy, any other change to it, or a basis the origin itself
- * changed stays as it is. Malformed recognised links refuse the whole plan.
+ * basis is rebased; a customised copy, any other change to it, or a link the origin itself
+ * changed (its kind, record, target or basis) stays as it is. Malformed recognised links, before
+ * or in the candidate JSON, refuse the whole plan.
  */
-function rebaseSharedLinks(input: DocumentBakeInput, document: PageBuilderDocument, beforeText: string | undefined,
+function rebaseSharedLinks(input: DocumentBakeInput, document: PageBuilderDocument, beforeText: string | undefined, afterText: string | undefined,
   moves: ReadonlyMap<string, string>, deletes: ReadonlySet<string>, rewrite: (html: string) => string) {
-  type Link = { basis: string; target: Parameters<typeof locateCollectionTarget>[1] };
-  const kinds: [string, Record<string, Record<string, Link>>][] = [["sections", readNativeSectionLinks(beforeText)], ["pageParts", readPagePartLinks(beforeText)]];
-  for (const [field, links] of kinds) for (const [from, entries] of Object.entries(links)) {
+  type Link = { kind: string; recordId: string; basis: string; target: Parameters<typeof locateCollectionTarget>[1] };
+  const kinds: [string, Record<string, Record<string, Link>>, Record<string, Record<string, Link>>][] = [
+    ["sections", readNativeSectionLinks(beforeText), readNativeSectionLinks(afterText)],
+    ["pageParts", readPagePartLinks(beforeText), readPagePartLinks(afterText)],
+  ];
+  for (const [field, links, afterLinks] of kinds) for (const [from, entries] of Object.entries(links)) {
     if (deletes.has(from)) continue;
     const page = moves.get(from) ?? from;
     const old = input.before.sources[from], now = input.candidate.sources[page];
     if (old === undefined || now === undefined) continue;
     for (const [key, link] of Object.entries(entries)) {
+      // Still the same recognised link in the candidate JSON (keyed as before the move).
+      const same = Object.hasOwn(afterLinks, from) && Object.hasOwn(afterLinks[from], key) ? afterLinks[from][key] : undefined;
+      if (!same || same.kind !== link.kind || same.recordId !== link.recordId || same.basis !== link.basis || !sameJson(same.target, link.target)) continue;
       const was = locateCollectionTarget(old, link.target);
       if ("error" in was || old.slice(was.element.start, was.element.end) !== link.basis) continue;
       const basis = rewrite(link.basis);
@@ -232,6 +239,15 @@ function rebaseSharedLinks(input: DocumentBakeInput, document: PageBuilderDocume
       entry.basis = basis;
     }
   }
+}
+
+/** Structural equality of JSON values; object key order does not matter. */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, index) => sameJson(item, b[index]));
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const left = Object.keys(a), right = Object.keys(b);
+  return left.length === right.length && left.every((key) => Object.hasOwn(b, key) && sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }
 
 /**

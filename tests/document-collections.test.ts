@@ -323,3 +323,42 @@ test('a malformed recognised link refuses a URL move atomically; the leftover-me
  const leftover=urlMove({...sources,[SIDE]:writePageBuilderDocument(left,sources[SIDE])},'about/','studio/');
  assert.ok('error'in leftover);assert.match(leftover.error,/studio\/index\.html already has page data/);
 });
+
+/** The move's candidate JSON as its own edit, keyed as before the move (the bake rekeys it). */
+const candidateSide=(sources:Record<string,string>,mutate:(doc:PageBuilderDocument)=>void)=>{
+ const doc=readPageBuilderDocument(sources[SIDE]);mutate(doc);
+ return writePageBuilderDocument(doc,sources[SIDE]);
+};
+test('a link the same change turns opaque, points elsewhere or gives another record keeps its basis; the rest is preserved',()=>{
+ const {sources,head,hero}=sharedSite();
+ const cases:[string,(doc:PageBuilderDocument)=>void,(after:PageBuilderDocument)=>Record<string,unknown>,string][]=[
+  ['kind',doc=>{page_(doc,'about/index.html').sections['hero-1'].kind='not-native';},after=>page_(after,'studio/index.html').sections['hero-1'],hero],
+  ['target',doc=>{const link=page_(doc,'index.html').pageParts['site-head-1'];link.target={...(link.target as object),path:[0,1,9]};},after=>page_(after,'index.html').pageParts['site-head-1'],head],
+  ['recordId',doc=>{page_(doc,'about/index.html').sections['hero-1'].recordId='another-hero';},after=>page_(after,'studio/index.html').sections['hero-1'],hero],
+ ];
+ for(const [what,mutate,pick,basis] of cases){
+  const side=candidateSide(sources,mutate);
+  const after=sidecarAfter(urlMove(sources,'about/','studio/',{[SIDE]:side}));
+  assert.equal(pick(after).basis,basis,`${what}: the changed link keeps its basis`);
+  const expected=readPageBuilderDocument(side);
+  assert.deepEqual(pick(after),pick({...expected,pages:{...expected.pages,'studio/index.html':expected.pages['about/index.html']}} as PageBuilderDocument),`${what}: the changed link is kept exactly`);
+  // Links the candidate left alone are still rebased.
+  assert.equal(page_(after,'studio/index.html').pageParts['site-head-1'].basis,head.replace('/about/','/studio/'),what);
+  if(what!=='target')assert.equal(page_(after,'index.html').pageParts['site-head-1'].basis,head.replace('/about/','/studio/'),what);
+  assert.deepEqual((after.pages['studio/index.html'] as Record<string,unknown>).opaque,{nested:['/about/']},what);
+ }
+});
+test('a malformed recognised link in the candidate JSON refuses the move without writing',()=>{
+ const {sources}=sharedSite();
+ const frozen=structuredClone(sources);
+ const broken:[(doc:PageBuilderDocument)=>void,RegExp][]=[
+  [doc=>{page_(doc,'about/index.html').sections['hero-1'].basis='<div>not a section</div>';},/basis must be exactly one section/],
+  [doc=>{page_(doc,'index.html').pageParts['site-head-1'].target=makeCollectionTarget(sources['index.html'],sources['index.html'].indexOf('<main')) as never;},/needs a header target/],
+ ];
+ for(const [mutate,reason] of broken){
+  const r=urlMove(sources,'about/','studio/',{[SIDE]:candidateSide(sources,mutate)});
+  assert.ok('error'in r,'no operation is produced');
+  assert.match(r.error,reason);
+ }
+ assert.deepEqual(sources,frozen);
+});
