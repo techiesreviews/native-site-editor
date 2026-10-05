@@ -91,6 +91,21 @@ route, identity and repository revision snapshot; stale controls reject Apply.
 
 ### Choosing pages for a hand-written card grid
 
+Ordinary HTML cards, including the native static starter's `.cards > article.card-project`,
+also expose Collection in Style when a card or its content is selected. Convert keeps each
+existing card's literal bytes, stores its recipe and any card text overrides in
+`.editor/page-builder.json`, and bakes complete HTML cards into the page. It may normalise
+whitespace between cards. Choosing additional folders adds their pages using the existing
+card shape. Page metadata and other JSON data stay intact; conversion is one Undo/Redo step.
+Opening the controls or changing folder choices writes nothing. A source or scope change
+after the controls opened refuses the stale conversion.
+Declared card fields keep explicit friendly labels in the recipe's private `fieldLabels`
+metadata, so Sort and Filter display “Card note” while retaining the exact field key.
+Those labels survive Save and reopening; older recipes retain their existing label fallback.
+
+The native-starter browser proof runs directly with
+`STATIC_SECTIONS_FIXTURE=native ASE_NATIVE_SAVE_FIXTURE=<native-static-preview> ASE_TEST_PORT=<free-port> npm run test:browser -- tests/native-save/native-static-grid-collection-host.spec.ts`.
+
 A grid of two or more same-tag custom-element cards without `data-each` offers
 "Choose pages for this grid" (`src/page-builder/native-grid-collection.ts`). Opening it
 or changing folders writes nothing; Apply converts the grid, the linked pages' fields

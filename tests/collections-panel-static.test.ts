@@ -156,6 +156,24 @@ test("the starter's three article cards open in the ordinary-card form and conve
   for (const path of Object.keys(site.sources).filter((path) => path.endsWith(".html"))) assert.equal(plan.expectedSources.get(path), site.sources[path], path);
   assert.ok(plan.expectedSources.has(EDITOR_PAGE_BUILDER_PATH));
   assert.equal(plan.expectedSources.get(EDITOR_PAGE_BUILDER_PATH), undefined);
+  const data = JSON.parse(plan.creates[0].content);
+  const [record] = Object.values(data.collections) as { fields: string[]; fieldLabels: Record<string, string> }[];
+  const note = record.fields.find(field => field.endsWith("-card-note"))!;
+  assert.equal(record.fieldLabels[note], "Card note");
+  assert.deepEqual(Object.keys(record.fieldLabels), record.fields);
+  // Reopen using the applied recipe, not its unrelated collection id, to get the labels.
+  for (const [path, source] of plan.edits) site.sources[path] = source;
+  site.sources[EDITOR_PAGE_BUILDER_PATH] = plan.creates[0].content;
+  site.files.push(EDITOR_PAGE_BUILDER_PATH);
+  const reopened = open(site);
+  const noteOption = reopened.root.all().find(el => el.localName === "option" && el.value === note);
+  assert.equal(noteOption?.textContent, "Card note");
+  const legacy = JSON.parse(site.sources[EDITOR_PAGE_BUILDER_PATH]);
+  delete legacy.collections[Object.keys(legacy.collections)[0]].fieldLabels;
+  site.sources[EDITOR_PAGE_BUILDER_PATH] = JSON.stringify(legacy);
+  const oldRecipe = open(site);
+  const oldOption = oldRecipe.root.all().find(el => el.localName === "option" && el.value === note);
+  assert.match(oldOption?.textContent ?? "", /^G[a-z0-9]{5} card note$/i);
 });
 
 test("cards from mixed folders select every current folder; other local folders can be added", async () => {

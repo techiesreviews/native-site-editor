@@ -98,6 +98,7 @@ import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMess
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
+import { isStaticCardGrid } from "./page-builder/native-static-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
 import { bakePageData, documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
@@ -1539,7 +1540,7 @@ function nativeSelectedCollection(): SelectedCollection | undefined {
   for (let depth = selection.node.length; depth > 0; depth--) {
     const range = locateNativeElementRange(source, selection.node.slice(0, depth));
     const element = range && elements.find((item) => item.start === range.tag.start);
-    if (element && isManualCardGrid(source, element)) return { path: selection.path, start: element.start,
+    if (element && (isManualCardGrid(source, element) || isStaticCardGrid(source, element))) return { path: selection.path, start: element.start,
       key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
   }
   return undefined;

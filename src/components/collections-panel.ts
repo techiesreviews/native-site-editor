@@ -401,11 +401,11 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     if (!el?.close) { report("Choose a complete grid in the page source."); return; }
     const first = el.children.find((child) => child.type === "element" && child.name !== "template");
     const form = node("form", "collections-panel__form");
-    let existing: { spec: { folders: string[]; sort: string; filter: string; limit: number }; fields: string[]; template: string; namespace?: string } | undefined;
+    let existing: { spec: { folders: string[]; sort: string; filter: string; limit: number }; fields: string[]; template: string; namespace?: string; fieldLabels?: unknown } | undefined;
     try {
       const stored = sidecarCollectionAt(saved.sources, path, sourceStart);
       const inline = stored ? undefined : readCollections(source).find((collection) => collection.element.start === sourceStart);
-      existing = stored ? { spec: stored.collection, fields: stored.collection.fields, template: stored.collection.template, namespace: stored.id }
+      existing = stored ? { spec: stored.collection, fields: stored.collection.fields, template: stored.collection.template, namespace: stored.id, fieldLabels: stored.collection.fieldLabels }
         : inline ? { spec: inline.spec, fields: inline.fields, template: source.slice(inline.template.tag.end, inline.template.close!.start), namespace: attribute(source, inline.element, "data-collection-id") } : undefined;
     }
     catch (error) { root.replaceChildren(status); report(error instanceof Error ? error.message : "The collection could not be read."); return; }
@@ -435,6 +435,9 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity))), ...jsonFieldNames(saved)])];
     const namespace = existing?.namespace;
     const fieldLabel = (name: string) => {
+      const labels = existing?.fieldLabels;
+      const explicit = labels && typeof labels === "object" && !Array.isArray(labels) && Object.hasOwn(labels, name) ? Reflect.get(labels, name) : undefined;
+      if (existing?.fields.includes(name) && typeof explicit === "string" && explicit.trim()) return explicit;
       const text = namespace && name.startsWith(`${namespace}-`) ? `Card ${name.slice(namespace.length + 1)}` : name;
       return text.replace(/[_-]/g, " ").replace(/^./, (first) => first.toUpperCase());
     };
@@ -620,6 +623,23 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
           else if (saved.sources[file] === undefined) throw new Error(`Load ${file} before converting.`);
           else origin.edits.set(file, text);
         }
+        // The planner's explicit token maps these declared fields to their card part names.
+        // Store labels in editor-only data; the record id is not this field namespace.
+        const createdJson = origin.creates.find(file => file.path === EDITOR_PAGE_BUILDER_PATH);
+        const text = origin.edits.get(EDITOR_PAGE_BUILDER_PATH) ?? createdJson?.content;
+        if (text === undefined) throw new Error("The converted grid's page data is missing.");
+        const candidate = { ...saved.sources, ...Object.fromEntries(origin.edits), ...Object.fromEntries(origin.creates.map(file => [file.path, file.content])) };
+        const stored = sidecarCollectionAt(candidate, path, sourceStart);
+        if (!stored) throw new Error("The converted grid could not be found in its page data.");
+        const document = readSidecar(text);
+        document.collections[stored.id].fieldLabels = Object.fromEntries((converted.recipe.fields ?? []).map(field => {
+          if (!field.startsWith(`${token}-`)) throw new Error("The converted field does not belong to this grid.");
+          const label = field.slice(token.length + 1).replace(/[_-]/g, " ").replace(/^./, first => first.toUpperCase());
+          return [field, label];
+        }));
+        const labelled = writePageBuilderDocument(document, text);
+        if (createdJson) createdJson.content = labelled;
+        else origin.edits.set(EDITOR_PAGE_BUILDER_PATH, labelled);
         if (JSON.stringify(converted.expectedFiles) !== JSON.stringify(files) || JSON.stringify(converted.expectedRoutes) !== JSON.stringify(saved.routes) || JSON.stringify(converted.expectedIdentity) !== JSON.stringify(saved.identity))
           throw new Error("The site changed while planning. Reopen the collection panel.");
         previewSidecar(saved, origin, path, files);
