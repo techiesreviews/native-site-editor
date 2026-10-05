@@ -18,6 +18,13 @@ export function equalTrackCount(raw: string): number | undefined {
   const count = repeat ? Number(repeat[1]) : /^(?:1fr\s+)*1fr$/i.test(value) ? value.split(/\s+/).length : 0;
   return count >= 1 && count <= MAX_GRID_TRACKS ? count : undefined;
 }
+/** Resolved browser tracks only: unresolved functions and subgrid cannot give a current count. */
+export function resolvedTrackCount(raw: string): number | undefined {
+  const value = raw.replace(/\[[^\[\]]*\]/g, ' ').trim();
+  const tracks = value ? value.split(/\s+/) : [];
+  return tracks.length >= 1 && tracks.length <= MAX_GRID_TRACKS &&
+    tracks.every(track => /^(?:\d+(?:\.\d+)?|\.\d+)px$/i.test(track)) ? tracks.length : undefined;
+}
 export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOptions<T>) {
   const root = document.createElement('section'); root.className = 'grid-editor'; root.setAttribute('aria-label', 'Grid layout');
   const expected = options.expected;
@@ -34,11 +41,20 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
   };
   const preview = document.createElement('div'); preview.className = 'grid-editor__preview'; preview.setAttribute('role', 'img'); root.append(preview);
   const counts: Record<string, number | undefined> = {};
+  const resolved: Record<string, number | undefined> = {};
   function renderPreview() {
-    const columns = counts.columns, rows = counts.rows;
+    const columns = counts.columns ?? resolved.columns, rows = counts.rows ?? resolved.rows;
+    const equal = Boolean(counts.columns && counts.rows);
     preview.replaceChildren();
-    preview.setAttribute('aria-label', columns && rows ? `Equal grid preview: ${columns} columns, ${rows} rows` : 'Schematic preview; custom tracks are not represented');
-    preview.dataset.custom = String(!columns || !rows);
+    preview.dataset.custom = String(!equal);
+    preview.style.height = columns || rows ? '' : 'auto';
+    if (!columns && !rows) {
+      preview.setAttribute('aria-label', 'Grid track preview unavailable: current tracks could not be resolved');
+      preview.textContent = 'Current track count unavailable';
+      return;
+    }
+    preview.setAttribute('aria-label', equal ? `Equal grid preview: ${columns} columns, ${rows} rows`
+      : `Current grid track count at this width: ${columns ? `${columns} columns` : 'columns unresolved'}, ${rows ? `${rows} rows` : 'rows unresolved'}. Track sizes are schematic.`);
     preview.style.gridTemplateColumns = `repeat(${columns ?? 1}, minmax(0, 1fr))`;
     preview.style.gridTemplateRows = `repeat(${rows ?? 1}, minmax(0, 1fr))`;
     for (let i = 0; i < (columns ?? 1) * (rows ?? 1); i++) preview.append(document.createElement('span'));
@@ -47,10 +63,12 @@ export function mountGridEditor<T>(container: HTMLElement, options: GridEditorOp
     const property = `grid-template-${axis}`, authored = options.authored[property];
     const raw = authored ?? options.computed?.[property] ?? '';
     counts[axis] = equalTrackCount(raw);
+    resolved[axis] = resolvedTrackCount(options.computed?.[property] ?? '');
     const label = document.createElement('label'); label.className = 'grid-editor__field'; label.append(axis === 'columns' ? 'Columns' : 'Rows');
     const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = String(MAX_GRID_TRACKS); input.step = '1'; input.value = counts[axis] ? String(counts[axis]) : ''; label.append(input);
     const status = document.createElement('p'); status.className = 'grid-editor__status';
     status.textContent = counts[axis] ? `${counts[axis]} equal tracks${authored === undefined ? ' · computed' : ''}` : `${authored === undefined && raw ? 'Computed' : 'Custom'} ${axis}: ${raw || 'default / implicit tracks'}`;
+    if (!counts[axis]) status.textContent += resolved[axis] ? ` · Currently ${resolved[axis]} ${axis} at this width` : ' · Current track count unavailable';
     const button = document.createElement('button'); button.type = 'button'; const updateButton = () => { button.textContent = 'Apply'; button.setAttribute('aria-label', `Apply: replace with ${input.value || 'N'} equal ${axis}`); button.title = button.getAttribute('aria-label')!; };
     updateButton(); input.addEventListener('input', updateButton, { signal: events.signal });
     const error = document.createElement('p'); error.className = 'grid-editor__error'; error.hidden = true;
