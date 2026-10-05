@@ -159,3 +159,10 @@ Demo target2026-10-05T10:00Z (12:00 CEST): Lex permits incomplete nonblocking wo
 
 
 Demo checkpoint06:40Z: native full group41PASS/13expectedSKIP on634; actual73PASS/1expectedSKIP/1truecorrupt-JSONfailure. Default749 continues with its own output directory. Initial parallel runs shared Playwright outputDir, causing an ENOENT trace close; interrupted runs and all collision artifacts remain retained. Corrected runs use --output pergroup, and native41PASS confirms the routing case itself. Acde soleMAIN/test lease in NEW native-save-catalog-guard isolatedfromroot328; actual section/container save controls still read malformedcatalog unguarded, to be fixed/reviewed beforeintegration. Rootapplication634 stays frozen; no root appmutation. AddSplit realT3 createsnative literal HTML withouteditorreferences; oneUndo restoresownJSON/index/CSS, noPublish. UXreview39 noP1/P2 fornormalflows; later list: mastermodeStructuremarker, generatedcardownershiphint, classlessmatchingrulechoice, lighterStyleheader, swatchrefreshcheck and observedimage-replacement sizing check (notyetdiagnosed). Highres6captures retained; websiteJSoffproofunchanged. No timer/deploy/productionchange.
+
+
+## 5 October, 07:15 UTC checkpoint
+
+The frozen native demo `cb5abfc` passes 1,101 unit tests, app/worker types, build, 43 native browser cases (13 expected skips), and 74 existing-starter cases (one expected skip). The unchanged `634115a` base passes all 749 default browser cases. Root dev `9708488` integrates the final independently approved corrupt-container guard and matches the frozen application/test files. The current local demo is on ports 5345/5214, separate from continued dev.
+
+Lex now requests a bounded performance, duplicate-code and test-helper cleanup before a preview-only release. These improvements are pending measured investigation; no performance gain is claimed. Keep the stable demo and all old worktrees/drafts available. Production/main stays untouched. See the handoff for worker leases, evidence and release prerequisites.
