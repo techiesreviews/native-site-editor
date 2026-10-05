@@ -54,12 +54,36 @@ const own = (sources: Readonly<Record<string, string>>, path: string) => Object.
 const sameRoutes = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
   Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([route, path]) => Object.hasOwn(b, route) && b[route] === path);
 
+function collectionGraphIsCurrent(expected: Omit<NativeCollectionSnapshot, 'sources'>, snapshot: NativeCollectionSnapshot): boolean {
+  const files = [...new Set(snapshot.files)].sort();
+  return snapshot.revision === expected.revision && snapshot.identity.name === expected.identity.name &&
+    files.length === expected.files.length && files.every((path, index) => path === expected.files[index]) &&
+    sameRoutes(snapshot.routes, deriveNativeRoutes(files)) && sameRoutes(expected.routes, snapshot.routes);
+}
+
+/**
+ * Capture before awaiting Save work, then check the current snapshot afterwards.
+ * Copies the anchor: mutating the caller's maps cannot bless later changes.
+ * Loaded source keys and bytes must stay exact, including partial-load changes.
+ * Selection, model identity and session guards remain the caller's responsibility.
+ */
+export function captureNativeCollectionSnapshotProof(snapshot: NativeCollectionSnapshot): (current: NativeCollectionSnapshot) => boolean {
+  const sources = { ...snapshot.sources };
+  const paths = Object.keys(sources);
+  const expected = {
+    revision: snapshot.revision, identity: { name: snapshot.identity.name },
+    files: [...new Set(snapshot.files)].sort(), routes: { ...snapshot.routes },
+  };
+  const validSources = paths.every(path => expected.files.includes(path) && typeof sources[path] === 'string');
+  return current => validSources && collectionGraphIsCurrent(expected, current) &&
+    Object.keys(current.sources).length === paths.length &&
+    paths.every(path => own(current.sources, path) === sources[path]);
+}
+
 /** No writes or async work: call again immediately before the atomic host apply. */
 export function nativeCollectionPlanIsCurrent(plan: NativeCollectionPlan, snapshot: NativeCollectionSnapshot): boolean {
-  const files = [...new Set(snapshot.files)].sort();
-  return snapshot.revision === plan.expectedRevision && snapshot.identity.name === plan.expectedIdentity.name &&
-    files.length === plan.expectedFiles.length && files.every((path, index) => path === plan.expectedFiles[index]) &&
-    sameRoutes(snapshot.routes, deriveNativeRoutes(files)) && sameRoutes(plan.expectedRoutes, snapshot.routes) &&
+  return collectionGraphIsCurrent({ revision: plan.expectedRevision, identity: plan.expectedIdentity,
+    files: plan.expectedFiles, routes: plan.expectedRoutes }, snapshot) &&
     [...plan.operation.expectedSources].every(([path, expected]) => own(snapshot.sources, path) === expected);
 }
 
