@@ -131,3 +131,28 @@ open file and last native selection, `restoreFile` with an epoch guard for `open
 `applyNativeOperation` (one Undo) for `apply`, adding the file graph and the page model proof
 captured at Edit to `current`. Saved sections are resolved one by one, so a broken master hides
 only its own section.
+## Save a section as a new shared section (`native-shared-section.ts`, not wired yet)
+
+`planNativeSharedSection(input)` turns an ordinary `<section>` already on a page (such as the
+starter's Hero, Feature or Contact) into a new shared section, in one operation (one Undo):
+
+- creates `.editor/sections/<id>.html` with the section's exact bytes;
+- adds one record to `.editor/page-builder.json` (`htmlPath`, `css: ""`, no `html`) and a link
+  from the selected copy, whose basis is exactly that copy.
+
+Pages and stylesheets are never written. The plan is composed from `planStaticSectionSave`,
+`planMakeSectionMaster` and `planNativeSectionLink`, but pins only the original state: the editor
+JSON as loaded (or proven absent), the master path absent, the page bytes and the chosen stylesheet.
+
+The caller passes `files`, `sources`, `pagePath`, `pageSource`, the section's exact `range`, and an
+explicit `id`, `label`, `rootClass` and `stylesheetPath`. It refuses:
+
+- an id, master path (any case) or rootClass already in use; no overwrite;
+- a rootClass the section's root doesn't have, or that another element on the page uses;
+- a stylesheet that is missing, unloaded, or not linked or imported by the page;
+- stale page bytes or a range that isn't a complete ordinary section (header, footer, a section
+  inside a component or template, scripts, SVG, custom tags, duplicate ids or attributes).
+
+Header and footer are not sections; supporting them needs a separate extension. Nothing runs on
+load: the host must offer an explicit control and apply the operation as one Undo. That UI is not
+built yet.
