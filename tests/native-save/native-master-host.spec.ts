@@ -111,7 +111,8 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   await expect.poll(async () => (await effective(page, baseURL, MASTER)) ?? "").toContain("<h2>Section intro</h2>");
   expect(await effective(page, baseURL, "index.html")).toBe(homeLinked);
   expect(await effective(page, baseURL, "about/index.html")).toBe(aboutCustom);
-  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
+  // The preview shows the master in the copy's place; the page's own bytes are unchanged (above).
+  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section intro");
   // Update copies: the home copy follows; the customised About copy stays.
   const jsonBeforeUpdate = (await effective(page, baseURL, JSON_PATH))!;
   await banner(page).getByRole("button", { name: "Update copies" }).click();

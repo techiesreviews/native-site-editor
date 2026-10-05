@@ -4,6 +4,11 @@ Saved sections can keep their HTML in a master file. The website stays plain HTM
 page holds its own full copy of each section, and deleting `.editor/` leaves a complete site.
 Nothing here is a runtime, a framework or a marker in the published HTML.
 
+Visual editing: while a master is open in Code, the page on show renders the master in its
+copy's place (the page's own HTML and CSS bytes stay as they are). Text typed in that copy, or
+in Code, changes only the master; the rest of the page is read-only and Add is off until Done.
+Done shows the page's own copy again. An invalid master falls back to the page's copy.
+
 Status: wired into the editor (`src/main.ts`): the purple Edit on a whole saved section opens its
 master, a compact line over the code offers Done and Update copies, Add links each new copy, and
 Update saved section saves into the master when there is one.

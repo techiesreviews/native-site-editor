@@ -818,15 +818,12 @@ let masterPageProof: { isCurrent(): boolean } | undefined;
 // after that reveal. Done folds Code back only while that state is unchanged; a resize or fold the
 // person made meanwhile is theirs and stays.
 let masterRevealedCode: { collapsed: boolean; height: number } | undefined;
-// Nodes of selections the controller may select again (it remembers ranges).
-const masterNodes = new Map<string, number[]>();
 function nativeMasterSelection(selection = lastNativeSelection): MasterSelection | undefined {
   if (!selection?.path || !selection.node || selection.host) return undefined;
   const source = nativeEffectiveSource(selection.path);
   const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
   if (!range || source === undefined) return undefined;
   const painted = selection.paintedSource ?? source;
-  masterNodes.set(`${selection.path}:${range.start}:${range.end}`, [...selection.node]);
   return { path: selection.path, node: [...selection.node], range: { start: range.start, end: range.end }, paintedSource: painted };
 }
 const masterController = createNativeSectionMasterController({
@@ -840,9 +837,13 @@ const masterController = createNativeSectionMasterController({
     await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: () => masterRevision() === revision });
     return masterRevision() === revision && currentPath === path;
   },
+  // The editor's own browser-built locator: the node only when it maps back to exactly `range`.
+  locateCopy: (source, range) => nativeCanonicalCopy(source, range),
   select(path, range) {
-    const node = masterNodes.get(`${path}:${range.start}:${range.end}`);
-    if (node) nativePreview?.selectNode({ path, node });
+    // Recomputed on the page as it is now, never from a remembered node.
+    const source = nativeEffectiveSource(path);
+    const located = source === undefined ? undefined : nativeCanonicalCopy(source, range);
+    if (located) nativePreview?.selectNode({ path, node: located.node });
   },
   async apply(operation, expectedFiles, current) {
     const files = expectedFiles?.join("\n");
@@ -856,6 +857,15 @@ const masterController = createNativeSectionMasterController({
   },
   announce,
 });
+function nativeCanonicalCopy(source: string, range: { start: number; end: number }) {
+  const node = elementPathAt(source, range.start);
+  const located = node && locateNativeElementRange(source, node);
+  return located && located.start === range.start && located.end === range.end ? { node: [...node!], range: { start: located.start, end: located.end } } : undefined;
+}
+// The master session the preview shows, as the controller proves it now, or none.
+function nativeMasterEdit() {
+  return versionView ? undefined : masterController.previewInput();
+}
 let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
 function renderMasterBanner() {
   const content = document.getElementById("content");
@@ -873,8 +883,9 @@ function renderMasterBanner() {
         // Only the session's own Done after an automatic reveal the person left as it was.
         if (revealed && now && !masterController.context() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
         renderMasterBanner();
+        updateNativePreviewSources();
       }),
-      update: () => void masterController.updateCopies().then(renderMasterBanner),
+      update: () => void masterController.updateCopies().then(() => { renderMasterBanner(); updateNativePreviewSources(); }),
     });
   }
   // Shown while the master itself is open; another file hides it, and coming back shows it again.
@@ -2576,12 +2587,26 @@ function moveNativeSectionTo(target: { path: string; node?: number[]; tag: strin
 // step: only the changed stretch of text is replaced, so formatting around
 // it stays. A change that cannot be placed exactly (it crosses a tag) is
 // dropped and the preview shows the source again.
-async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
+async function applyNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
   if (!nativePreview) return;
   const openingEpoch = generation, openingScope = setupScope();
-  const allowed = () => openingEpoch === generation && openingScope === setupScope() &&
-    (path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath());
-  if (!allowed()) { announce("Edit the page instance in Structure, or choose Edit for its shared template."); updateNativePreviewSources(); return; }
+  // While a master is on show, only text typed in that very session's master is taken; it is
+  // the open file, with the bytes the preview painted. Page text is read-only meanwhile.
+  const masterAt = nativeMasterEdit();
+  const masterPainted = masterAt ? nativeEffectiveSource(masterAt.masterPath) : undefined;
+  const masterAllowed = () => {
+    const now = nativeMasterEdit();
+    return Boolean(masterAt && now && masterSession === masterAt.session && now.session === masterAt.session
+      && path === now.masterPath && currentPath === path && !versionView);
+  };
+  const allowed = () => openingEpoch === generation && openingScope === setupScope() && (masterAt || masterSession !== undefined
+    ? masterAllowed()
+    : path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath());
+  if (!allowed() || masterAt && masterPainted !== masterAt.masterSource) {
+    announce(masterAt || masterSession !== undefined ? "While the master is open, edit the master's section; choose Done to edit the page." : "Edit the page instance in Structure, or choose Edit for its shared template.");
+    updateNativePreviewSources();
+    return;
+  }
   // The click that selected the element may still be opening its file.
   for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000; waited += 50)
     await new Promise((done) => setTimeout(done, 50));
@@ -2593,7 +2618,7 @@ async function applyNativeTextEdit({ path, node, before, after }: NativeTextEdit
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview || !allowed()) return;
-  const source = nativeSources()[path] ?? "";
+  const source = (masterAt ? nativeEffectiveSource(path) : nativeSources()[path]) ?? "";
   const range = locateNativeElementRange(source, node);
   // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
   let start = 0;
@@ -2966,6 +2991,16 @@ function refuseNativeSelection(selection: NativePreviewSelection, message: strin
 async function selectNativeSource(selection: NativePreviewSelection) {
   nativeElementMoveAction = undefined;
   const sources = nativeSources();
+  // While a master is on show, only its own copy can be selected, from this session; the rest
+  // of the page is read-only until Done.
+  const masterAt = nativeMasterEdit();
+  // (A cleared selection has no path and always passes.)
+  if (selection.path && (masterAt || selection.masterSession !== undefined)) {
+    if (!masterAt || selection.masterSession !== masterAt.session || selection.path !== masterAt.masterPath || currentPath !== masterAt.masterPath) {
+      refuseNativeSelection(selection, masterAt ? "The page is read-only while its master is open. Choose Done to edit it." : "That master is no longer open.");
+      return;
+    }
+  }
   if (pendingNativeInstanceSelection) {
     const pending = pendingNativeInstanceSelection;
     pendingNativeInstanceSelection = undefined;
@@ -2974,13 +3009,15 @@ async function selectNativeSource(selection: NativePreviewSelection) {
       refuseNativeSelection(selection, "The instance changed before it could be selected. Select it again."); return;
     }
   }
-  if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== sources[selection.path]) {
+  // A master is editor-private (not among the public sources): its bytes are its effective source.
+  const selectedSource = masterAt && selection.path === masterAt.masterPath ? nativeEffectiveSource(selection.path) : sources[selection.path];
+  if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== selectedSource) {
     refuseNativeSelection(selection, "The source changed. Wait for the preview before selecting this element."); return;
   }
   const pagePath = nativeSite?.routes[nativePreview?.route() ?? ""];
   if (selection.reason !== "refresh" && selection.path === pagePath) nativeSourceIntent = undefined;
   const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : nativeEditableTemplatePath() ?? pagePath;
-  if (selection.path && scopePath && nativeSite) {
+  if (selection.path && scopePath && nativeSite && !masterAt) {
     const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name);
     if (!mapped) { refuseNativeSelection(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
     if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
@@ -3557,6 +3594,7 @@ function updateNativePreview() {
     route: nativeRouteForPath(currentPath),
     component: currentPath ? nativeComponentTagForPath(currentPath) : undefined,
     editableTemplatePath: nativeEditableTemplatePath(),
+    masterEdit: nativeMasterEdit(),
   });
 }
 
@@ -3564,7 +3602,7 @@ function updateNativePreview() {
 // the preview is on About (with a different file open) does not snap it Home.
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath() });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath(), masterEdit: nativeMasterEdit() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
 }
@@ -4137,6 +4175,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     assets: Object.fromEntries(nativeAssets),
     route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(site),
     editableTemplatePath: nativeEditableTemplatePath(),
+    masterEdit: nativeMasterEdit(),
   });
   updateAgentContext();
   void loadNativeAssets();
