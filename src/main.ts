@@ -94,7 +94,7 @@ import { planSelectedStaticSectionSave } from "./page-builder/native-section-sav
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
-import { generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
@@ -1577,10 +1577,16 @@ function mountNativeSelectedCollection(host: HTMLElement) {
     async apply(plan, expectedRevision, label) {
       const target = nativeSelectedCollection(), saved = nativeCollectionSnapshot();
       if (!target || revision() !== expectedRevision) throw new Error("The selection changed. Reopen the collection before applying.");
+      const snapshotCurrent = captureNativeCollectionSnapshotProof(saved);
+      const scope = draftScope(), editor = editorModule;
+      if (!scope || !editor) throw new Error("Open a page before changing this collection.");
+      const modelProofs = Object.keys(saved.sources).map(path => editor.captureFileModelState(scope, path, true));
+      const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
+        snapshotCurrent(nativeCollectionSnapshot()) && modelProofs.every(proof => proof.isCurrent());
       if ("creates" in plan) {
         // A JSON recipe change: the host plans it again from the current graph,
         // bakes the cards, and applies HTML and JSON as one undo step.
-        const error = await applyNativeCollectionOperation({ ...plan, done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
+        const error = await applyNativeCollectionOperation({ ...plan, current, done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
         if (error) throw new Error(error);
         return true;
       }
@@ -1592,9 +1598,6 @@ function mountNativeSelectedCollection(host: HTMLElement) {
       if (named("edited")) throw new Error(`The cards in ${named("edited")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
       if (named("unbuilt")) throw new Error(`The cards in ${named("unbuilt")} have not been built yet. Choose “Build cards from page data” first.`);
       if (named("unchecked")) throw new Error(`The cards in ${named("unchecked")} cannot be checked against page data. Choose “Use manual cards” to keep them first.`);
-      const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
-        JSON.stringify(nativeCollectionSnapshot().routes) === JSON.stringify(saved.routes) &&
-        JSON.stringify(nativeCollectionSnapshot().identity) === JSON.stringify(saved.identity);
       const edits = new Map(Object.entries(plan.edits).map(([path, edits]) => [path, applyCollectionEdits(plan.expectedSources[path], edits)]));
       const error = await applyNativeOperation({ edits, expectedSources: new Map(Object.entries(plan.expectedSources)), current,
         done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
@@ -5672,10 +5675,10 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
   // Only HTML (pages, components, templates), the site config and folder
   // relocations can change a listing; anything else (CSS, images, scripts)
   // is applied as it was, without reading or baking other pages.
-  const listingInput = Boolean(origin.folders?.length) || Boolean(origin.acceptGeneratedDrift?.length) || Boolean(origin.acceptCollections?.length)
+  const listingInput = origin.refreshCollections === true || Boolean(origin.folders?.length) || Boolean(origin.acceptGeneratedDrift?.length) || Boolean(origin.acceptCollections?.length)
     || touched.some((path) => path === NATIVE_CONFIG_PATH || path === EDITOR_PAGE_BUILDER_PATH || /\.html?$/i.test(path));
   if (!listingInput) {
-    const { folders: _none, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...plain } = origin;
+    const { refreshCollections: _refresh, folders: _none, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...plain } = origin;
     return applyNativeOperation(plain);
   }
   // The editor's JSON drives every stored listing: pin its bytes (or absence) as
@@ -5694,6 +5697,7 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
     const error = await ensureNativeTextIndex();
     if (error) return error;
     if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
+    if (extraCurrent && !extraCurrent()) return "The repository or source changed meanwhile. Review the latest files and try again.";
     snapshot = nativeCollectionSnapshot();
   }
   // The site name may change in this very operation: read it from the result,

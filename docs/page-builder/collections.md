@@ -8,6 +8,15 @@ bindings, authoring attributes or recipe templates. Migration must preserve
 ordinary source, existing native Web Component behavior, atomic Save and Undo.
 See [the current native contract](README.md#collections-editor-recipes-ordinary-website-html).
 
+For JSON-backed collections, Save collection refreshes literal cards even when the
+recipe is unchanged, using the current persisted Code metadata. HTML and the JSON
+output fingerprint form one Undo step; Undo keeps any earlier Code edit. Save pins
+the loaded source bytes and keys, complete file and route graph, site identity,
+selection and editor model state before asynchronous host work. A changed input is
+refused rather than silently used as a new basis. Refresh does not authorize
+replacing hand-edited cards; that requires the explicit rebuild action.
+
+
 A collection lives in a page's HTML. `data-each="/work/"` selects pages strictly
 below that folder. A mixed collection uses an HTML ASCII whitespace token list,
 for example `data-each="/work/ /services/ /portfolio/ /articles/ /videos/"`.
