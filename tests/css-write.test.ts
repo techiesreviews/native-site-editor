@@ -135,17 +135,27 @@ test("site color aliases resolve from site variables rather than editor tokens",
   assert.equal(resolveVariableValue("var(--space-m)", variables), "4px");
   assert.equal(resolveVariableValue("var(--missing, red)", variables), "red");
 });
-test("one resolver per variable snapshot resolves exactly as resolveVariableValue, and only from that snapshot", () => {
+test("one resolver per variable snapshot resolves explicit outcomes, and only from that snapshot", () => {
   const chain = Array.from({ length: 14 }, (_, i) => `--c${i}: ${i === 13 ? "#0f0" : `var(--c${i + 1})`};`).join(" ");
   const variables = siteVariables({ "a.css": `:root { --ink: #111; --a: var(--b); --b: var(--a); --pad: calc(var(--gap, 2px) * 2); ${chain} }`, "b.css": ":root { --ink: #222; }" });
   const resolve = variableResolver(variables);
-  // A later duplicate wins, fallbacks and missing names, a cycle, and a chain cut at depth 12.
-  const values = ["var(--ink)", "var(--missing)", "var(--missing, red)", "var(--a)", "var(--pad)", "var(--c0)", "var(--c1)", "var(--c2)", "1px var(--ink) solid", "plain"];
-  for (const value of values) assert.equal(resolve(value), resolveVariableValue(value, variables), value);
-  assert.equal(resolve("var(--ink)"), "#222");
-  assert.equal(resolve("var(--c2)"), "#0f0");
-  assert.equal(resolve("var(--c1)"), "var(--c13)");
-  assert.equal(resolve("var(--c0)"), "var(--c12)");
+  const expected: Array<[string, string]> = [
+    ["var(--ink)", "#222"], // a later duplicate wins
+    ["var(--missing)", "var(--missing)"], // missing without fallback stays as written
+    ["var(--missing, red)", "red"],
+    ["var(--a)", "var(--a)"], // a two-step cycle stops at depth 12 on its starting name
+    ["var(--b)", "var(--b)"],
+    ["var(--pad)", "calc(2px * 2)"], // a fallback inside calc resolves
+    ["var(--c2)", "#0f0"], // eleven steps reach the end of the chain
+    ["var(--c1)", "var(--c13)"], // depth 12 cuts longer chains
+    ["var(--c0)", "var(--c12)"],
+    ["1px var(--ink) solid", "1px #222 solid"],
+    ["plain", "plain"],
+  ];
+  for (const [value, result] of expected) {
+    assert.equal(resolve(value), result, value);
+    assert.equal(resolveVariableValue(value, variables), result, value);
+  }
   // Nothing carries over to another snapshot.
   assert.equal(variableResolver([])("var(--ink)"), "var(--ink)");
   assert.equal(variableResolver(siteVariables({ "c.css": ":root { --ink: #333; }" }))("var(--ink)"), "#333");
