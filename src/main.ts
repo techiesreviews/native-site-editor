@@ -5827,6 +5827,13 @@ async function removeNativePagesTarget(target: NativePagesTarget) {
     ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
     : `the page ${target.label}`;
   if (scope !== setupScope() || epoch !== generation) { errorMessage(new Error("The repository changed meanwhile. Try again.")); return; }
+  // Unless only the page goes, its folder goes as the dialog listed it: a file
+  // added to it (or gone) while the dialog was open refuses, never left behind.
+  const listed = (list: string[]) => [...list].sort().join("\n");
+  if (paths.length > 1 || target.subpages === 0) {
+    const insideNow = folder === undefined ? [] : nativeFiles().filter((path) => path.startsWith(folder) && path !== target.file);
+    if (listed(insideNow) !== listed(inside)) { errorMessage(new Error("The repository or source changed meanwhile. Review the latest files and try again.")); return; }
+  }
   const error = await applyNativeCollectionOperation({
     expectedSources,
     deletes: paths,

@@ -304,4 +304,13 @@ test("a file an agent adds to the page's folder while the delete-with-subpages d
     await expect(page.locator("#notice")).toContainText(/changed meanwhile/);
     expect(await mounted(page)).toBe(original);
   } finally { await client.close(); }
+  // Asked again, Delete all takes the agent's file too (unsaved, so discarded), and one Undo brings it all back.
+  const again = await askDeleteWithSubpages(page);
+  await again.getByRole("button", { name: "Delete Fern & Kettle · Larkspur Studio and its 1 subpage" }).click();
+  await expect(status(page)).toHaveText("Deleted Fern & Kettle · Larkspur Studio and its 1 subpage and its card.");
+  expect((await storedDrafts(page)).map((draft) => [draft.path, draft.deleted ?? false])).toEqual([["index.html", false], [FERN, true], [MENU, true]]);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).map((draft) => [draft.path, draft.deleted ?? false])).toEqual([[NOTES, false]]);
+  expect((await storedDraft(page, NOTES))!.content).toBe("Opening hours change in May.\n");
+  expect(await mounted(page)).toBe(original);
 });
