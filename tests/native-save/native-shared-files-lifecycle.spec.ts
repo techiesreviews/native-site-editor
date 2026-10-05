@@ -7,7 +7,8 @@ import { publishButton, showPublish } from "./publish";
 // whose section and header were saved shared (actual Save shared, then saved to GitHub) keeps its
 // whole entry when its folder is renamed, loses it when the page is deleted, and a move onto a
 // leftover entry for a missing file is refused. Private masters and every other key stay as they
-// were; one Undo and one Redo take each change back and forth exactly.
+// were; one Undo and one Redo take each change back and forth exactly. The same holds for a shared
+// footer, and for a page moved by the Pages tab's Change URL rather than through Files.
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
@@ -56,18 +57,22 @@ async function share(page: Page, rowName: RegExp, kind: string, id: string, labe
  * GitHub's own external edit, as another writer would — opaque data added to its entry, a foreign
  * page entry and a future top-level key. Returns the branch bytes, with no drafts left.
  */
-async function seeded(page: Page, baseURL: string | undefined, extraPages: Record<string, unknown> = {}) {
+type Share = readonly [RegExp, string, string, string];
+const SECTION: Share = [/^Section About Larkspur/, "section", "about-hero", "About hero"];
+const HEADER: Share = [/^Header/, "header", "site-head", "Site header"];
+const FOOTER: Share = [/^Footer/, "footer", "site-foot", "Site footer"];
+const FOOTER_MASTER = ".editor/page-parts/site-foot.html";
+async function seeded(page: Page, baseURL: string | undefined, extraPages: Record<string, unknown> = {}, shares: readonly Share[] = [SECTION, HEADER], masters = MASTERS) {
   await open(page, baseURL);
-  await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero");
-  await share(page, /^Header/, "header", "site-head", "Site header");
+  for (const [rowName, kind, id, label] of shares) await share(page, rowName, kind, id, label);
   await showPublish(page);
   for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   await page.keyboard.press("Escape");
   const document = JSON.parse((await branch(page, baseURL, JSON_PATH))!);
-  expect(document.pages[PAGE].sections).toBeTruthy();
-  expect(document.pages[PAGE].pageParts).toBeTruthy();
+  if (shares.includes(SECTION)) expect(document.pages[PAGE].sections).toBeTruthy();
+  if (shares.some(item => item !== SECTION)) expect(document.pages[PAGE].pageParts).toBeTruthy();
   document.pages[PAGE].keep = { opaque: [1, "two"] };
   document.pages = { ...document.pages, "index.html": { fields: { mood: "calm" }, foreign: { untouched: true } }, ...extraPages };
   document.futureKey = { nested: true };
@@ -75,7 +80,7 @@ async function seeded(page: Page, baseURL: string | undefined, extraPages: Recor
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: JSON_PATH, content: sidecar } })).status()).toBe(204);
   await open(page, baseURL, "index.html");
   expect(await storedDrafts(page)).toEqual([]);
-  return { sidecar, document, files: await snapshot(page, baseURL, [PAGE, "index.html", ...MASTERS, JSON_PATH]) };
+  return { sidecar, document, files: await snapshot(page, baseURL, [PAGE, "index.html", ...masters, JSON_PATH]) };
 }
 
 async function filesTab(page: Page) {
@@ -234,4 +239,157 @@ test("after a folder rename rebases a pristine shared header, Update copies from
   // The moved copy was unchanged by the person, so Update writes it.
   await expect.poll(async () => header(await effectiveSource(page, baseURL, MOVED)), { timeout: 5_000 }).toBe(edited);
   expect(await effectiveSource(page, baseURL, MOVED)).toBe(moved[MOVED]!.replace(moved[MASTER]!, edited));
+});
+
+// The literal header or footer in a page's public HTML.
+const chrome = (tag: "header" | "footer", source: string | undefined) => source!.match(new RegExp(`<${tag} class="site-${tag}">[\\s\\S]*?</${tag}>`))![0];
+type PartLink = { recordId: string; basis: string };
+function partLink(entry: { pageParts?: Record<string, PartLink> }, recordId: string) {
+  const found = Object.entries(entry.pageParts ?? {}).filter(([, link]) => link.recordId === recordId);
+  expect(found, recordId).toHaveLength(1);
+  return found[0];
+}
+// The public page is plain HTML: no custom element, editor marker or .editor reference stands in for a shared part.
+const literal = (source: string | undefined) => expect(source).not.toMatch(/<site-(header|footer)|data-ase|data-shared|\.editor\//);
+
+async function deleteFromFiles(page: Page, path: string) {
+  await filesTab(page);
+  const folder = fileRow(page, path.split("/")[0]);
+  if ((await folder.getAttribute("aria-expanded")) === "false") await folder.click();
+  await explorer(page).locator(`.file-row[data-path="${path}"]`).click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${path}` }).getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: `Delete ${path}?` }).getByRole("button", { name: "Delete" }).click();
+  await expect(status(page)).toContainText(`Deleted ${path}`);
+}
+// Opens the moved about page through the Pages tree (its drafts are unsaved, so the status is not "Up to date").
+async function openMoved(page: Page, path: string) {
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer(page).getByRole("tab", { name: "Pages" }).click();
+  await explorer(page).getByRole("treeitem", { name: "About · Larkspur Studio" }).click();
+  await expect(page.locator("#primary-title")).toHaveText(path);
+  if (await explorer(page).isVisible()) await page.locator("#explorer-toggle").click();
+}
+// One Undo restores the saved bytes with no drafts; one Redo restores exactly the drafts the change made.
+async function undoRedo(page: Page, baseURL: string | undefined, before: Record<string, string | undefined>, after: Awaited<ReturnType<typeof storedDrafts>>) {
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(await snapshot(page, baseURL, Object.keys(before))).toEqual(before);
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect.poll(() => storedDrafts(page)).toEqual(after);
+}
+
+test("a linked shared footer follows its page through a Files folder rename and goes with it on delete; the pristine copy stays linked; each is one exact Undo/Redo", async ({ page, baseURL }) => {
+  const MOVED = "studio/index.html";
+  const before = await seeded(page, baseURL, {}, [FOOTER], [FOOTER_MASTER]);
+  const entry = before.document.pages[PAGE];
+  const [footerKey, footerLink] = partLink(entry, "site-foot");
+  // Pristine at save: the public footer is the master byte for byte, and links /about/.
+  expect(chrome("footer", before.files[PAGE])).toBe(before.files[FOOTER_MASTER]);
+  expect(footerLink.basis).toBe(before.files[FOOTER_MASTER]);
+  expect(footerLink.basis).toContain('href="/about/"');
+  literal(before.files[PAGE]);
+
+  await renameFolder(page, "about", "studio");
+  await expect(status(page)).toContainText("Renamed the folder about to studio");
+  await expect.poll(async () => Object.keys((await json(page, baseURL)).pages ?? {}).sort()).toEqual(["index.html", MOVED]);
+  // The entry moves whole (footer link, opaque data); only the footer basis follows the /about/ link rewrite.
+  const expected = structuredClone(before.document);
+  delete expected.pages[PAGE];
+  expected.pages[MOVED] = structuredClone(entry);
+  expected.pages[MOVED].pageParts[footerKey].basis = footerLink.basis.replaceAll("/about/", "/studio/");
+  expect(await json(page, baseURL)).toEqual(expected);
+  const rebased = (text: string | undefined) => text!.replaceAll("/about/", "/studio/");
+  const moved = await snapshot(page, baseURL, [MOVED, "index.html", FOOTER_MASTER]);
+  expect(moved[MOVED]).toBe(rebased(before.files[PAGE]));
+  expect(moved["index.html"]).toBe(rebased(before.files["index.html"]));
+  expect(moved[FOOTER_MASTER]).toBe(rebased(before.files[FOOTER_MASTER]));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBeUndefined();
+  // Still pristine: the public copy, its basis and the master agree, and the page stays literal HTML.
+  expect(chrome("footer", moved[MOVED])).toBe(moved[FOOTER_MASTER]);
+  expect(expected.pages[MOVED].pageParts[footerKey].basis).toBe(moved[FOOTER_MASTER]);
+  literal(moved[MOVED]);
+  const afterMove = await storedDrafts(page);
+  expect(afterMove.find(draft => draft.path === MOVED)?.movedFrom).toBe(PAGE);
+
+  // The moved page's preview shows the literal footer with its new link, and the footer row is still linked.
+  await openMoved(page, MOVED);
+  await expect(frame(page).locator("footer.site-footer nav a[aria-current='page']")).toHaveAttribute("href", "/studio/");
+  await expect(row(page, /Site footer/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  await expect(row(page, /Site footer/).getByRole("button", { name: "Save shared" })).toHaveCount(0);
+
+  await undoRedo(page, baseURL, before.files, afterMove);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+
+  // Deleting the page from its Files menu drops its entry, footer link and all; the master stays.
+  await deleteFromFiles(page, PAGE);
+  await expect.poll(async () => Object.keys((await json(page, baseURL)).pages ?? {})).toEqual(["index.html"]);
+  const removed = structuredClone(before.document);
+  delete removed.pages[PAGE];
+  expect(await json(page, baseURL)).toEqual(removed);
+  expect(await effectiveSource(page, baseURL, PAGE)).toBeUndefined();
+  for (const path of ["index.html", FOOTER_MASTER]) expect(await effectiveSource(page, baseURL, path)).toBe(before.files[path]);
+  await undoRedo(page, baseURL, before.files, await storedDrafts(page));
+});
+
+test("changing a page's URL from the Pages tab carries its shared section, header and footer links; pristine copies stay linked; one exact Undo/Redo", async ({ page, baseURL }) => {
+  const MOVED = "studio/index.html";
+  const HEAD_MASTER = ".editor/page-parts/site-head.html";
+  const masters = [...MASTERS, FOOTER_MASTER];
+  const before = await seeded(page, baseURL, {}, [SECTION, HEADER, FOOTER], masters);
+  const entry = before.document.pages[PAGE];
+  const [headerKey, headerLink] = partLink(entry, "site-head");
+  const [footerKey, footerLink] = partLink(entry, "site-foot");
+  expect(Object.values(entry.sections as Record<string, { recordId: string }>).map(link => link.recordId)).toEqual(["about-hero"]);
+  for (const link of [headerLink, footerLink]) expect(link.basis).toContain('href="/about/"');
+
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer(page).getByRole("tab", { name: "Pages" }).click();
+  await explorer(page).getByRole("treeitem", { name: "About · Larkspur Studio" }).focus();
+  await page.keyboard.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "Change URL…" }).click();
+  const url = explorer(page).getByRole("textbox", { name: "URL of About · Larkspur Studio" });
+  await expect(url).toHaveValue("/about/");
+  await url.fill("/studio/");
+  await expect(explorer(page).locator(".url-change__message")).toContainText("Moves about/index.html to studio/index.html");
+  await expect(explorer(page).getByRole("checkbox", { name: /^Keep the old URL working/ })).toBeChecked();
+  await page.keyboard.press("Enter");
+  await expect(status(page)).toContainText("URL changed to /studio/");
+  await expect(status(page)).toContainText("/about/ redirects there");
+  await expect.poll(async () => Object.keys((await json(page, baseURL)).pages ?? {}).sort()).toEqual(["index.html", MOVED]);
+
+  // One rekeyed entry: section link, both page-part links and opaque data; the header and footer bases
+  // follow the same /about/ link rewrite as the page. The other page's entry and future keys stay.
+  const expected = structuredClone(before.document);
+  delete expected.pages[PAGE];
+  expected.pages[MOVED] = structuredClone(entry);
+  expected.pages[MOVED].pageParts[headerKey].basis = headerLink.basis.replaceAll("/about/", "/studio/");
+  expected.pages[MOVED].pageParts[footerKey].basis = footerLink.basis.replaceAll("/about/", "/studio/");
+  expect(await json(page, baseURL)).toEqual(expected);
+  const rebased = (text: string | undefined) => text!.replaceAll("/about/", "/studio/");
+  const moved = await snapshot(page, baseURL, [MOVED, "index.html", ...masters]);
+  expect(moved[MOVED]).toBe(rebased(before.files[PAGE]));
+  expect(moved["index.html"]).toBe(rebased(before.files["index.html"]));
+  for (const path of masters) expect(moved[path], path).toBe(rebased(before.files[path]));
+  expect(await effectiveSource(page, baseURL, PAGE)).toBeUndefined();
+  // Pristine copies stay pristine, and the public page stays literal HTML.
+  expect(chrome("header", moved[MOVED])).toBe(moved[HEAD_MASTER]);
+  expect(chrome("footer", moved[MOVED])).toBe(moved[FOOTER_MASTER]);
+  expect(expected.pages[MOVED].pageParts[headerKey].basis).toBe(moved[HEAD_MASTER]);
+  expect(expected.pages[MOVED].pageParts[footerKey].basis).toBe(moved[FOOTER_MASTER]);
+  literal(moved[MOVED]);
+  const afterMove = await storedDrafts(page);
+  expect(afterMove.find(draft => draft.path === MOVED)?.movedFrom).toBe(PAGE);
+  expect(afterMove.find(draft => draft.path === "_redirects")?.content).toBe("/about/ /studio/ 301\n");
+
+  // The home page's preview links the new URL; the moved page's preview shows the literal parts with
+  // it, and every shared row there is still linked.
+  await expect(frame(page).locator('header.site-header nav a[href="/studio/"]')).toBeVisible();
+  await openMoved(page, MOVED);
+  await expect(frame(page).locator("h1")).toHaveText("About Larkspur");
+  await expect(frame(page).locator("footer.site-footer nav a[aria-current='page']")).toHaveAttribute("href", "/studio/");
+  for (const label of [/About hero/, /Site header/, /Site footer/]) await expect(row(page, label).getByRole("button", { name: "Edit component" })).toBeAttached();
+
+  await undoRedo(page, baseURL, before.files, afterMove);
 });
