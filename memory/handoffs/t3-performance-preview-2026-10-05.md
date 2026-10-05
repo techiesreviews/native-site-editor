@@ -29,7 +29,7 @@ T3 public example.com navigation worked. Localhost/127 and LAN 192.168.1.7 attem
 
 Temporary candidate backend: PID `2368039`, exec session `60429`, loopback port `5357`, root checkout real native fixture `.scratch/native-static-preview`, demo mode. Temporary LAN proxy: PID/process group `2369069`, port `5356`, forwards HTTP and WebSocket to 5357. URL: `http://192.168.1.125:5356/#repo=501&branch=main&file=index.html`. Logs and proxy script are in the evidence root. Both temporary processes were stopped after the final T3 attempt failed. Root owns T3 tabs q/r and their cleanup. Recreate only a browser-reachable secure candidate origin when resuming; plain HTTP LAN is unsuitable for this app.
 
-Frozen demo PID `2331980`, port `5345`, and existing TLS relay PID `2332067`, port `5214`, must remain running. Do not alter earlier servers or old WIP. All Claude CLI workers/reviewers from this continuation have finished; test servers on 5352/5354/5358 stopped normally.
+Historical frozen demo PID `2331980`, port `5345`, and TLS relay PID `2332067`, port `5214`, were outside this continuation's cleanup scope. The only stop command targeted own PIDs `2369069` and `2368039`. Final `ps`/`ss` nevertheless found no historical frozen PIDs or 5345/5214 listeners; their exit cause was not established. Verify with the parent session before claiming the old demo remains available. Preserve earlier server configuration and old WIP. All Claude CLI workers/reviewers from this continuation have finished; test servers on 5352/5354/5358 stopped normally.
 
 ## Resume release
 
