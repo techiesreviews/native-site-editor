@@ -85,6 +85,57 @@ test("an unnamed button and an image with no file show their warnings; a named b
   await expect(bar(page)).not.toContainText("Alt text missing");
 });
 
+test("a button named by an icon's aria-label, and images given by srcset or picture, show no warning; a data-alt does not name a button", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const source = (await effective(page, baseURL, PAGE))!;
+  const svg = '<svg role="img" aria-label="Open menu" width="20" height="20" viewBox="0 0 20 20"><rect width="20" height="20"/></svg>';
+  await replaceCode(page, source.replace('<section class="contact flow" id="contact">', `<section class="contact flow" id="contact"><button class="icon" style="width:40px;height:24px">${svg}</button><button class="dataalt" style="width:40px;height:24px"><img data-alt="x" src="/images/studio-desk.svg" alt="" width="20" height="20"></button><img class="srcset" srcset="/images/studio-desk.svg 1x" alt="Desk" width="40" height="40"><picture><source srcset="/images/studio-desk.svg"><img class="pictured" alt="Desk" width="40" height="40"></picture><img class="nofile" src="" alt="" width="40" height="40">`));
+  await expect(frame(page).locator("button.icon")).toBeVisible();
+  // Each case follows one that warns, so the warning must actually go away.
+  await frame(page).locator("button.dataalt").click({ position: { x: 36, y: 12 } });
+  await expect(bar(page)).toContainText("Needs a name");
+  await frame(page).locator("button.icon").click();
+  await expect(bar(page)).not.toContainText("Needs a name");
+  for (const name of ["img.srcset", "img.pictured"]) {
+    await frame(page).locator("img.nofile").click({ force: true });
+    await expect(bar(page)).toContainText("No image");
+    await frame(page).locator(name).click({ force: true });
+    await expect(bar(page)).not.toContainText("No image");
+  }
+});
+
+test("an editor JSON whose section catalog has an unsupported version leaves the page plainly editable and offers no shared label", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await row(page, /^Section About Larkspur/).hover();
+  await row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" }).click();
+  const form = structure(page).getByRole("form", { name: "Share section" });
+  await form.getByRole("textbox", { name: "Name" }).fill("Shared hero");
+  await form.getByRole("textbox", { name: "ID" }).fill("about-hero");
+  await form.getByRole("button", { name: "Save shared" }).click();
+  await expect(row(page, /Shared hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  const JSON_FILE = ".editor/page-builder.json";
+  const parsed = JSON.parse((await effective(page, baseURL, JSON_FILE))!);
+  parsed.reusableSections.version = 99;
+  const broken = JSON.stringify(parsed, null, 2) + "\n";
+  // Through the real Code pane, as a person would.
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(JSON_FILE)}`);
+  await expect(page.locator("#primary-title")).toHaveText(JSON_FILE);
+  await replaceCode(page, broken);
+  await expect.poll(() => effective(page, baseURL, JSON_FILE)).toBe(broken);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
+  await expect(page.locator("#primary-title")).toHaveText(PAGE);
+  await expect(row(page, /^Section About Larkspur/)).toBeVisible();
+  await expect(structure(page).getByRole("button", { name: "Edit component" })).toHaveCount(0);
+  await frame(page).locator("section.hero h1").click();
+  await expect(bar(page)).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: /Shared hero/ })).toHaveCount(0);
+  // Plain editing still works, and the JSON is left exactly as written.
+  const source = (await effective(page, baseURL, PAGE))!;
+  await replaceCode(page, source.replace("About Larkspur</h1>", "About us</h1>"));
+  await expect(frame(page).locator("section.hero h1")).toHaveText("About us");
+  expect(await effective(page, baseURL, JSON_FILE)).toBe(broken);
+});
+
 // ---- Use here across the six routes ------------------------------------------------------------
 const JSON_PATH = ".editor/page-builder.json";
 const ROUTES = {

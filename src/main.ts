@@ -2223,7 +2223,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       else controls.push({ kind: "address", label: field.label, value: field.value,
         // A button with no name of its own (no text, label, labelledby, title or image alt) is unnamed.
         warning: selection.tag === "button" && field.property === "aria-label" && !field.value.trim() && !selection.text.trim() && !attribute("aria-labelledby")?.value.trim()
-          && !attribute("title")?.value.trim() && !(range?.close && /\balt\s*=\s*["']?[^"'\s>]/i.test(source.slice(range.tag.end, range.close.start))) ? "Needs a name" : undefined,
+          && !attribute("title")?.value.trim() && !(range && nativeNamedDescendant(source, range)) ? "Needs a name" : undefined,
         placeholder: field.kind === "url" ? "Local path or web address" : field.label,
         onOpen: () => { if (model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: expectedSource, model, epoch, scope: scopeKey }; },
         onInput: value => writeField(field.property, value, true), onClose: () => {
@@ -2263,7 +2263,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
       kind: "address",
       label: "Alt text",
       // No file at all comes first; only an image that shows something needs its alt text.
-      warning: !src?.value.trim() ? "No image" : alt ? undefined : "Alt text missing",
+      warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && nativePictureSources(source, node)) ? "No image" : alt ? undefined : "Alt text missing",
       value: alt?.value ?? "",
       initial: alt ? undefined : altFromPath(src?.value ?? ""),
       placeholder: "What the image shows; empty for decorative",
@@ -3296,6 +3296,17 @@ function nativeClassCount(source: string, name: string) {
   }
   return nativeSharedClassCount.count(name);
 }
+// The section and page part catalogs of `docText`, read once per JSON text; undefined when either
+// can't be read (an unsupported version, say), so no shared label or action is offered from it.
+let nativeSharedCatalogRead: { text: string | undefined; catalogs: { sections: ReturnType<typeof readSectionCatalog>; parts: ReturnType<typeof readPagePartCatalog> } | undefined } | undefined;
+function nativeSharedCatalogs(docText: string | undefined) {
+  if (!nativeSharedCatalogRead || nativeSharedCatalogRead.text !== docText) {
+    let catalogs;
+    try { catalogs = { sections: readSectionCatalog(docText), parts: readPagePartCatalog(docText) }; } catch { catalogs = undefined; }
+    nativeSharedCatalogRead = { text: docText, catalogs };
+  }
+  return nativeSharedCatalogRead.catalogs;
+}
 function nativeSharedRoot(path: string, item: NativeStructureItem): NativeSharedRoot | undefined {
   const tag = item.tag;
   if (tag !== "section" && tag !== "header" && tag !== "footer") return undefined;
@@ -3309,6 +3320,9 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   const files = nativeFiles().sort();
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   if (docText === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) return undefined;
+  // An editor JSON whose shared catalogs can't be read offers no shared actions; the row stays plain.
+  const catalogs = nativeSharedCatalogs(docText);
+  if (!catalogs) return undefined;
   const revision = nativeSharedFieldsRevision(), epoch = generation, scopeKey = setupScope();
   const proof = editorModule.captureFileModelState(scope, path);
   const sources: Record<string, string | undefined> = { ...nativeSources(), [path]: painted };
@@ -3326,7 +3340,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
     const own = resolved.links.filter(at);
     if (own.length > 1) return undefined;
     if (own.length === 1) {
-      const record = readSectionCatalog(docText)[own[0].link.recordId];
+      const record = catalogs.sections[own[0].link.recordId];
       if (!record) return undefined;
       return { state: "linked", label: record.label, recordId: own[0].link.recordId,
         edit: () => { if (current()) void nativeStructureEdit(path, item.node, painted, false); else announce("The page changed. Select the element again."); },
@@ -3342,7 +3356,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
     const own = resolved.links.filter(at);
     if (own.length > 1) return undefined;
     if (own.length === 1) {
-      const record = readPagePartCatalog(docText)[own[0].link.recordId];
+      const record = catalogs.parts[own[0].link.recordId];
       if (!record || record.rootTag !== tag) return undefined;
       return { state: "linked", label: record.label, recordId: record.id,
         edit: () => { if (current()) void nativeStructureEdit(path, item.node, painted, true); else announce("The page changed. Select the element again."); },
@@ -3368,7 +3382,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   const linkPlan = (id: string): LinkPlan => {
     try {
       if (tag === "section") {
-        const entry = readSectionCatalog(docText)[id];
+        const entry = catalogs.sections[id];
         if (!entry || !Object.hasOwn(entry, "htmlPath") || !rootClasses.has(entry.rootClass) || !sheets.includes(entry.stylesheetPath)) return { error: "That shared section does not fit this section." };
         const record = resolveStaticSection(entry, { files, sources });
         const plan = planNativeSectionLink({ documentText: docText, files, pagePath: path, pageSource: painted, range: exact, record });
@@ -3376,7 +3390,7 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
         const core = sectionCore(record.html);
         return { operation: plan.operation, expectedFiles: files, customised: painted.slice(exact.start, exact.end) !== record.html.slice(core.start, core.end) };
       }
-      const record = readPagePartCatalog(docText)[id];
+      const record = catalogs.parts[id];
       if (!record || record.rootTag !== tag || !rootClasses.has(record.rootClass) || !sheets.includes(record.stylesheetPath) || docText === undefined) return { error: `That shared ${tag} does not fit this ${tag}.` };
       const plan = planLinkPagePartCopies({ documentText: docText, files, sources, recordId: id, copies: [{ pagePath: path, range: exact }] });
       if ("error" in plan) return plan;
@@ -3384,12 +3398,12 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
       return { operation: plan.operation, expectedFiles: plan.expectedFiles, customised: !plan.keys[0]?.unchanged };
     } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
   };
-  const catalog = tag === "section" ? readSectionCatalog(docText) : readPagePartCatalog(docText);
+  const catalog = tag === "section" ? catalogs.sections : catalogs.parts;
   const savedRecords = Object.keys(catalog).sort().filter(id => !("error" in linkPlan(id))).map(id => ({ id, label: catalog[id].label }));
   // Without a class to choose or a stylesheet to name, and nothing to use, the form could never be completed: no offer.
   if ((!classes.length || !sheets.length) && !savedRecords.length) return undefined;
   const name = (item.heading || item.text || tag).trim().slice(0, 60) || tag;
-  const used = new Set([...Object.keys(readSectionCatalog(docText)), ...Object.keys(readPagePartCatalog(docText))].map(id => id.toLowerCase()));
+  const used = new Set([...Object.keys(catalogs.sections), ...Object.keys(catalogs.parts)].map(id => id.toLowerCase()));
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[^a-z]+/, "") || tag;
   let proposedId = base;
   for (let n = 2; used.has(proposedId) || files.includes(`${tag === "section" ? SECTION_MASTER_FOLDER : PAGE_PART_FOLDER}${proposedId}.html`); n++) proposedId = `${base}-${n}`;
@@ -3481,7 +3495,8 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
 // exact range in the editor JSON), with its record's label; undefined otherwise.
 function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-  if (docText === undefined || nativeNodeOwnership(path, node) !== "plain") return undefined;
+  const catalogs = nativeSharedCatalogs(docText);
+  if (docText === undefined || !catalogs || nativeNodeOwnership(path, node) !== "plain") return undefined;
   const sources: Record<string, string | undefined> = { ...nativeSources(), [path]: source };
   for (const file of nativeFiles().filter(isPrivateMasterPath)) sources[file] = nativeEffectiveSource(file);
   let sections: ReturnType<typeof resolveNativeSectionLinks> | undefined, parts: ReturnType<typeof resolvePagePartLinks> | undefined;
@@ -3492,16 +3507,30 @@ function nativeLinkedAncestor(path: string, source: string, node: readonly numbe
     if (tag === "section") {
       sections ??= resolveNativeSectionLinks({ documentText: docText, sources });
       const own = "error" in sections ? [] : sections.links.filter(exact);
-      const label = own.length === 1 ? readSectionCatalog(docText)[own[0].link.recordId]?.label : undefined;
+      const label = own.length === 1 ? catalogs.sections[own[0].link.recordId]?.label : undefined;
       if (label) return { node: at, label };
     } else {
       parts ??= resolvePagePartLinks({ documentText: docText, sources });
       const own = "error" in parts ? [] : parts.links.filter(exact);
-      const record = own.length === 1 ? readPagePartCatalog(docText)[own[0].link.recordId] : undefined;
+      const record = own.length === 1 ? catalogs.parts[own[0].link.recordId] : undefined;
       if (record?.rootTag === tag) return { node: at, label: record.label };
     }
   }
   return undefined;
+}
+
+// Whether an element inside `range` names it: a non-empty aria-label (an svg role="img", say) or
+// an image's non-empty alt, read from the parsed start tags (not a data-alt or other lookalike).
+function nativeNamedDescendant(source: string, range: { start: number; end: number }) {
+  return [...descendants(parseSource(source))].some(item => item.start > range.start && item.end <= range.end
+    && (Boolean(startTagAttribute(source, item.tag, "aria-label")?.value.trim()) || item.name.toLowerCase() === "img" && Boolean(startTagAttribute(source, item.tag, "alt")?.value.trim())));
+}
+// Whether the image at `node` sits in a <picture> whose <source> elements give a non-empty srcset.
+function nativePictureSources(source: string, node: readonly number[]) {
+  const parent = node.length > 1 ? locateNativeElementRange(source, node.slice(0, -1)) : undefined;
+  if (!parent || parent.tag.name.toLowerCase() !== "picture") return false;
+  return [...descendants(parseSource(source))].some(item => item.start > parent.start && item.end <= parent.end && item.name.toLowerCase() === "source"
+    && Boolean(startTagAttribute(source, item.tag, "srcset")?.value.trim()));
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
