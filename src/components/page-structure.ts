@@ -753,7 +753,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           if (!fresh || fresh.state !== "available" || fresh.context.key !== shared.context.key) return;
           cancelShared();
           const path = structure!.path!;
-          const form = createNativeSharedAuthoring({ submit: fresh.actions.submit, close: (contextKey, reason) => {
+          const form = createNativeSharedAuthoring({ submit: fresh.actions.submit, link: fresh.actions.link, close: (contextKey, reason) => {
             if (openShared?.key !== contextKey || openShared.form !== form) return;
             openShared = undefined;
             form.destroy();
