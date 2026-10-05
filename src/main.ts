@@ -193,6 +193,7 @@ async function openCodeEditor(
       element("editor-toolbar-host"),
     );
     nativeHistoryMountCapture?.(file.path);
+    if (!nativeHistoryMountCapture) for (const adopt of nativePaneMountAdopters) adopt(file.path);
   } catch (error) {
     if (request !== editorRequest) return;
     content.replaceChildren(
