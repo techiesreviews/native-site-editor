@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The style panel against sites whose CSS differs in structure, one fixture
@@ -218,6 +218,16 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   const link = frame.locator("site-footer a");
   await expect(link).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => frame.locator("site-footer footer").evaluate((el) => getComputedStyle(el).paddingTop)).toBe("24px");
+  await link.click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await expect.poll(() => page.evaluate(async () =>
+    (await import("/src/components/code-editor.ts")).getMountedSource("index.html")))
+    .toBe(readFileSync("fixtures/cascade/starter/index.html", "utf8"));
+  await page.getByRole("toolbar", { name: "Edit bar" })
+    .getByRole("button", { name: "Edit Site footer component", exact: true }).click();
+  await expect.poll(() => page.evaluate(async () =>
+    (await import("/src/components/code-editor.ts")).getMountedSource("components/site-footer/site-footer.html")))
+    .toBe(readFileSync("fixtures/cascade/starter/components/site-footer/site-footer.html", "utf8"));
   await link.click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-footer/site-footer.html");
   await expect(page.locator("#secondary-title")).toHaveText("components/site-footer/site-footer.css");
