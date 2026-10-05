@@ -267,9 +267,15 @@ const masterJson = (links: Record<string, unknown>) => JSON.stringify({
   reusableSections: { version: 2, records: { intro: { id: "intro", label: "Intro", rootClass: "intro", stylesheetPath: "styles/sections.css", css: "", htmlPath: masterPath } } },
 });
 const linkTo = (id: string, basis: string) => ({ kind: "native-section", recordId: "intro", basis, target: { authoredId: id, path: [1], tag: "section", openingTagFingerprint: `<section class="intro" id="${id}">` } });
+// The host's canonical locator for these fixtures (a <main> holding only sections): the node is the
+// section's position under <main>, as the browser builds it; the browser spec
+// native-master-preview-locator proves the editor's real locator on the implied-</p> case.
+const sectionsLocator = (source: string, range: { start: number; end: number }) =>
+  ({ node: [0, source.slice(0, range.start).split("<section").length - 1], range: { ...range } });
 // After Edit, Code shows the master (as the editor does when it opens it).
-async function openMaster(files: Record<string, string>, html: string) {
+async function openMaster(files: Record<string, string>, html: string, locateCopy: typeof sectionsLocator | null = sectionsLocator) {
   const made = makeHost(files);
+  if (locateCopy) (made.host as unknown as { locateCopy: typeof sectionsLocator }).locateCopy = locateCopy;
   const host = made.host as unknown as { open: (path: string, revision: string) => Promise<boolean> };
   const open = host.open.bind(made.host);
   host.open = async (path, revision) => { const ok = await open(path, revision); if (ok) made.state.currentPath = path; return ok; };
@@ -368,4 +374,20 @@ test("Done after the session's own Update re-selects the linked copy at its move
   assert.deepEqual(await controller.updateCopies(), { changed: 1, skipped: 1 });
   await controller.done();
   assert.deepEqual(state.selected, [`index.html@${state.files["index.html"].indexOf(b)}`]);
+});
+
+test("previewInput takes the node only from the host's canonical locator, verified to map back exactly", async () => {
+  const master = `<section class="intro"><h2>Hello</h2></section>`;
+  // An implied </p>: the browser closes the <p>, so the section is <main>'s second child, [0, 1].
+  const home = page(`<p>lead${copyA}`);
+  const files = { "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: masterJson({ a: linkTo("a", master) }), [masterPath]: master };
+  const at = home.indexOf(copyA), range = { start: at, end: at + copyA.length };
+  const browser = (_source: string, asked: { start: number; end: number }) => ({ node: [0, 1], range: { ...asked } });
+  const { controller } = await openMaster(files, copyA, browser);
+  assert.deepEqual(controller.previewInput()!.node, [0, 1]);
+  // No locator, a locator that maps elsewhere, or an invalid node: nothing.
+  assert.equal((await openMaster(files, copyA, null)).controller.previewInput(), undefined);
+  assert.equal((await openMaster(files, copyA, () => ({ node: [0, 1], range: { start: range.start + 1, end: range.end } }))).controller.previewInput(), undefined);
+  assert.equal((await openMaster(files, copyA, () => ({ node: [0, -1], range: { ...range } }))).controller.previewInput(), undefined);
+  assert.equal((await openMaster(files, copyA, (() => undefined) as unknown as typeof sectionsLocator)).controller.previewInput(), undefined);
 });

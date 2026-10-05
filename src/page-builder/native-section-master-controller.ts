@@ -56,6 +56,14 @@ export interface MasterControllerHost {
    * no longer matches or `current()` is false. The controller waits for it before going on.
    */
   apply(operation: StaticSectionOperation, expectedFiles: readonly string[] | undefined, current: () => boolean): Promise<boolean>;
+  /**
+   * Optional: the element at exactly `range` of `source`, as the browser builds the page, with its
+   * element-child path from `<body>` and its exact source range (the editor's own locator, such as
+   * `elementPathAt` and `locateNativeElementRange`). Only needed by `previewInput`, which refuses
+   * without it: this module's source parser can place elements differently from the browser
+   * (an implied `</p>` before a `<section>`), so it never computes the node itself.
+   */
+  locateCopy?(source: string, range: { start: number; end: number }): { node: number[]; range: { start: number; end: number } } | undefined;
   announce(message: string): void;
 }
 /** What the edit bar shows on a whole saved section, and its explicit Edit. */
@@ -120,22 +128,6 @@ function linkedAt(snapshot: MasterHostSnapshot, json: string | undefined, page: 
   const at = linkRange(snapshot, json, page, pageSource, key, recordId);
   return Boolean(at) && at!.start === range.start && at!.end === range.end;
 }
-/** Element-child indexes from `<body>` to the ordinary section at exactly `range`; undefined otherwise. */
-function bodyNode(source: string, range: { start: number; end: number }): number[] | undefined {
-  const element = sectionAt(source, range);
-  if (!element) return undefined;
-  const node: number[] = [];
-  let at: SourceElement = element;
-  while (at.parent && at.parent.name.toLowerCase() !== "body") {
-    const siblings = at.parent.children.filter((child): child is SourceElement => child.type === "element");
-    node.unshift(siblings.indexOf(at));
-    at = at.parent;
-  }
-  if (!at.parent) return undefined;
-  node.unshift(at.parent.children.filter((child): child is SourceElement => child.type === "element").indexOf(at));
-  return node.every((index) => index >= 0) ? node : undefined;
-}
-
 export function createNativeSectionMasterController(host: MasterControllerHost) {
   let session: Session | undefined;
 
@@ -245,9 +237,12 @@ export function createNativeSectionMasterController(host: MasterControllerHost) 
         const entry = readSectionCatalog(snapshot.source(EDITOR_PAGE_BUILDER_PATH))[current.recordId];
         if (!entry || (entry as StaticSectionMasterEntry).htmlPath !== current.htmlPath) return undefined;
         const master = masterRecord(snapshot, entry);
-        if (snapshot.source(current.pagePath) !== current.pageSource) return undefined;
-        const node = bodyNode(current.pageSource, current.range);
-        if (!node) return undefined;
+        if (snapshot.source(current.pagePath) !== current.pageSource || !sectionAt(current.pageSource, current.range)) return undefined;
+        // The node comes from the host's canonical locator, and only when it maps back to exactly this range.
+        const located = host.locateCopy?.(current.pageSource, { ...current.range });
+        if (!located || located.range.start !== current.range.start || located.range.end !== current.range.end) return undefined;
+        if (!Array.isArray(located.node) || !located.node.length || !located.node.every((index) => Number.isSafeInteger(index) && index >= 0)) return undefined;
+        const node = [...located.node];
         return { session: current.token, pagePath: current.pagePath, pageSource: current.pageSource, node, basis: current.pageSource.slice(current.range.start, current.range.end), masterPath: current.htmlPath, masterSource: master.html };
       } catch { return undefined; }
     },

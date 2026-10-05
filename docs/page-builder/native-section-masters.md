@@ -111,7 +111,10 @@ It returns:
 - `previewInput()`: for a master preview, read-only and only while exact:
   `{ session, pagePath, pageSource, node, basis, masterPath, masterSource }`. `session` is an opaque
   token that stays the same for the whole session (typing in the master changes only
-  `masterSource`); `node` is the copy's element path from `<body>`; `basis` its outer HTML. It is
+  `masterSource`); `node` is the copy's element path from `<body>`, taken only from the host's
+  optional `locateCopy(source, range)` (the editor's own browser-built locator, `elementPathAt`
+  with `locateNativeElementRange`) and only when it maps back to exactly the copy's range;
+  `basis` is its outer HTML. Without `locateCopy` there is no preview input. It is
   undefined unless the master is the open file and valid, the revision is the session's, and the
   page holds exactly the bytes the session knows. Those are the painted bytes at Edit, or the bytes
   the session's own Update wrote, verified file by file after the write, with the selected copy found
