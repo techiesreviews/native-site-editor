@@ -10,7 +10,7 @@ function launch(args: string[], env: Record<string, string> = {}) {
 }
 const nativeHosts = [
   "native-master-after-done-proof.spec.ts", "native-master-assets-host.spec.ts", "native-master-code-collapse.spec.ts",
-  "native-master-controls.spec.ts", "native-master-host.spec.ts", "native-master-visual-host.spec.ts",
+  "native-master-controls.spec.ts", "native-master-host.spec.ts", "native-master-page-part-controls.spec.ts", "native-master-visual-host.spec.ts",
   "native-shared-authoring-host.spec.ts", "native-static-grid-collection-host.spec.ts",
   // Supported future native-only hosts count once their spec lands.
   ...["native-shared-link-host.spec.ts", "native-shared-files-lifecycle.spec.ts"].filter(name => existsSync(`tests/native-save/${name}`)),
