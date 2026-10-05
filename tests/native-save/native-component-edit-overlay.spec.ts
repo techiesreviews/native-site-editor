@@ -132,3 +132,12 @@ test('the revealed pencil shows a pointer and a hover tint, and clicking it edit
  await expect(icon).not.toHaveCSS('background-color','rgba(0, 0, 0, 0)');
  await overlay.click();await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
 });
+// Edit component lands in the template's code with the caret there: typing
+// edits it at once, with no click into the code first.
+test('Edit component puts the caret in the template code, so typing edits it at once',async({page})=>{
+ await root(page);await edit(page).click();
+ await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
+ await expect.poll(()=>page.evaluate(()=>Boolean(document.activeElement?.closest('#content .monaco-editor')))).toBe(true);
+ await page.keyboard.type('Z');
+ await expect(page.locator('#content .view-lines').first()).toContainText('Z');
+});

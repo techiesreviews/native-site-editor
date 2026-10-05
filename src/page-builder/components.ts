@@ -403,6 +403,8 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!(await deps.openFile(template.path))) return;
     if (deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) return;
     explicitTemplate = { path: template.path, revision: deps.revision() };
+    // The template's code takes the caret straight away: typing edits it at once.
+    deps.editor()?.focusEditor?.(template.path);
     const source = deps.sources()[template.path] ?? template.source;
     const target = templateSlots(source).find((entry) => entry.name === slot);
     // The element that shows the slot: its nearest ancestor that is not a slot.

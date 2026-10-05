@@ -129,6 +129,7 @@ type RangeApi = {
   replaceMany(edits: RangeEdit[]): void;
   closeGroup(): void;
   reveal(start: number, end: number): void;
+  focus(): void;
   highlight(ranges: HighlightRange[]): void;
   markElement(tag: { start: number; end: number } | undefined, reveal: boolean): void;
   review(on: boolean): void;
@@ -605,6 +606,10 @@ export function closeActiveEditGroup(path: string) {
 export function revealRange(path: string, start: number, end: number) {
   mounted.get(path)?.range.reveal(start, end);
 }
+// Puts the caret in a mounted file's code, so typing goes there at once.
+export function focusEditor(path: string) {
+  mounted.get(path)?.range.focus();
+}
 // A CSS rule styling the selected element: dimmed when the cascade overrides
 // all of it, with the declarations it overrides (`struck`) crossed out.
 export interface HighlightRange {
@@ -850,6 +855,9 @@ export function mountCodeEditor(
       const target = monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
       view?.setSelection(monaco.Range.fromPositions(target.getStartPosition(), target.getStartPosition()));
       view?.revealRangeNearTop(target);
+    },
+    focus() {
+      view?.focus();
     },
     highlight(ranges: HighlightRange[]) {
       const model = current.model;
