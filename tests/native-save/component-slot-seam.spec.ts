@@ -87,3 +87,88 @@ test("slot seam rejects stale snapshots and fills duplicated outlets as one nati
   expect(result.opens).toBe(0);
   expect(result.focused).toBe("href:link");
 });
+
+// The two entry points for an empty optional slot, the canvas fill-in
+// (fillInstanceSlot) and Structure's eye (structure().setVisible), must write
+// the same bytes in one transaction, agree that the slot is then filled, and
+// hiding it again from Structure restores the page (exactly, or up to blank
+// white space).
+test("canvas fill-in and Structure Show write identical source for every slot shape", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30000 });
+  const cases = [
+    { name: "link", template: '<h2><slot name="title"></slot></h2><p data-if="link"><slot name="link"></slot></p>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
+    { name: "image", template: '<figure data-if="image"><slot name="image"></slot></figure><h2><slot name="title">T</slot></h2>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
+    { name: "cta", template: '<slot name="cta"><a href="/x" class="b">Go &amp; see</a></slot>', page: '<test-card><span slot="title">One line</span></test-card>' },
+    { name: "note", template: '<slot name="note" data-if><p>One</p> <em>two</em></slot>', page: '<test-card></test-card>' },
+    { name: "", template: '<h2><slot name="title"></slot></h2><slot></slot>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
+  ];
+  const results = await page.evaluate(async (cases) => {
+    const modulePath = "/src/page-builder/components.ts";
+    const { createComponentTools } = await import(/* @vite-ignore */ modulePath);
+    const pagePath = "index.html", templatePath = "components/test-card/test-card.html";
+    const out: any[] = [];
+    for (const entry of cases) {
+      const run = (via: "canvas" | "structure") => {
+        let sources: Record<string, string> = { [pagePath]: entry.page, [templatePath]: entry.template };
+        let transactions = 0;
+        const selection: any = { path: pagePath, node: [0], tag: "test-card", text: "", reason: "click", selectors: [] };
+        const panelHost = document.createElement("div"), codeTitle = document.createElement("div");
+        document.body.append(panelHost, codeTitle);
+        const editor: any = {
+          isMounted: (path: string) => path === pagePath,
+          getMountedSource: () => sources[pagePath],
+          captureHistoryHost: () => ({ isCurrent: () => true }),
+          closeActiveEditGroup() {},
+          replaceActiveRanges(edits: any[]) {
+            transactions++;
+            for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+              if (edit.expected !== sources[pagePath].slice(edit.start, edit.end)) throw new Error("unexpected source");
+              sources[pagePath] = sources[pagePath].slice(0, edit.start) + edit.text + sources[pagePath].slice(edit.end);
+            }
+          },
+        };
+        const tools = createComponentTools({
+          structureFields: via === "structure",
+          site: () => ({ components: { "test-card": templatePath }, routes: { "/": pagePath } }), revision: () => "one",
+          sources: () => sources, editor: () => editor, currentPath: () => pagePath, selection: () => selection, previewPage: () => pagePath,
+          preview: () => ({ selectAfterUpdate() {}, selectNode() {} }), openFile: async () => false, announce() {}, error(error: unknown) { throw error; },
+          images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
+          createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {},
+        });
+        const before = tools.structure(pagePath, [0])?.slots.find((slot: any) => slot.name === entry.name);
+        let accepted: boolean;
+        if (via === "canvas") {
+          tools.show(selection);
+          accepted = tools.fillInstanceSlot({ pagePath, pageNode: [0], tag: "test-card", templatePath, expectedRevision: "one",
+            expectedPageSource: entry.page, expectedTemplateSource: entry.template, expectedSelection: selection, isCurrent: () => true }, entry.name);
+        } else accepted = tools.structure(pagePath, [0])!.setVisible(entry.name, true);
+        const filled = sources[pagePath];
+        const after = tools.structure(pagePath, [0])?.slots.find((slot: any) => slot.name === entry.name);
+        const hidden = tools.structure(pagePath, [0])!.setVisible(entry.name, false);
+        const result = { accepted, filled, transactions, before: before && { filled: before.filled, whenEmpty: before.whenEmpty },
+          after: after && { filled: after.filled }, restored: hidden && sources[pagePath].replace(/\s+/g, "") === entry.page.replace(/\s+/g, ""), exact: sources[pagePath] === entry.page, template: sources[templatePath] === entry.template };
+        tools.destroy(); panelHost.remove(); codeTitle.remove();
+        return result;
+      };
+      out.push({ name: entry.name, canvas: run("canvas"), structure: run("structure") });
+    }
+    return out;
+  }, cases);
+  for (const { name, canvas, structure } of results) {
+    expect(canvas.accepted, name).toBe(true);
+    expect(canvas.filled, name).not.toBe(cases.find((entry) => entry.name === name)!.page);
+    expect(canvas, name).toEqual(structure);
+    expect(canvas.before, name).toEqual({ filled: false, whenEmpty: canvas.before!.whenEmpty });
+    expect(canvas.after, name).toEqual({ filled: true });
+    expect(canvas.transactions, name).toBe(2);
+    expect(canvas.restored && canvas.template, name).toBe(true);
+    expect(canvas.filled, name).not.toMatch(/data-native|contenteditable|slot-ghost|page-structure|<slot/);
+  }
+  // Hide gives back the exact bytes for elements on lines of their own; a one-line instance, a
+  // multi-element fallback and bare text keep only blank white space, which renders nothing.
+  expect(results.map((entry) => [entry.name, entry.canvas.exact])).toEqual([["link", true], ["image", true], ["cta", false], ["note", false], ["", false]]);
+  // The exact bytes of two shapes, so "identical" is not identically wrong.
+  expect(results[0].canvas.filled).toBe('<test-card>\n  <span slot="title">Kept</span>\n  <a slot="link" href="">Link</a>\n</test-card>');
+  expect(results[1].canvas.filled).toBe('<test-card>\n  <img slot="image" src="" alt="">\n  <span slot="title">Kept</span>\n</test-card>');
+});
