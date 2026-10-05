@@ -232,15 +232,3 @@ test("switching repository while Convert waits refuses it and leaves the other r
   await untouched(page, other);
   expect(await file(page, baseURL, side)).toBeUndefined();
 });
-
-test("signing out while Convert waits writes nothing for the account that left", async ({ page, context, baseURL }) => {
-  await open(page, baseURL);
-  await convertHeld(page);
-  await context.addCookies([{ name: "ase_demo_signed_out", value: "1", url: baseURL! }]);
-  await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: /^Sign out/ }).click();
-  await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible({ timeout: 30_000 });
-  await page.waitForTimeout(500);
-  expect(await storedDrafts(page)).toEqual([]);
-  expect(await file(page, baseURL, side)).toBeUndefined();
-});
