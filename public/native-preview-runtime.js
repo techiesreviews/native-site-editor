@@ -281,10 +281,15 @@
   function readMaster(payload) {
     var m = payload && payload.master;
     if (!m || typeof m !== "object") return null;
-    if (typeof m.path !== "string" || !/^\.editor\/sections\/[a-z][a-z0-9_-]*\.html$/.test(m.path)) return null;
-    if (typeof m.session !== "string" || !m.session || typeof m.section !== "string") return null;
+    var part = m.kind === "page-part";
+    var pattern = part ? /^\.editor\/page-parts\/[a-z][a-z0-9_-]*\.html$/ : /^\.editor\/sections\/[a-z][a-z0-9_-]*\.html$/;
+    if (m.kind !== undefined && !part) return null;
+    if (typeof m.path !== "string" || !pattern.test(m.path)) return null;
+    if (part && m.rootTag !== "header" && m.rootTag !== "footer") return null;
+    var markup = part ? m.part : m.section;
+    if (typeof m.session !== "string" || !m.session || typeof markup !== "string") return null;
     if (!Array.isArray(m.node) || !m.node.length || m.node.length > 500 || !m.node.every(function (i) { return typeof i === "number" && i >= 0 && Math.floor(i) === i; })) return null;
-    return { path: m.path, session: m.session, node: m.node.slice(), section: m.section };
+    return { path: m.path, session: m.session, node: m.node.slice(), section: markup, rootTag: part ? m.rootTag : "section" };
   }
   // The element tree's tag names, which fix every element's index path.
   function tagShape(el) {
@@ -296,9 +301,9 @@
   function findMasterRoot() {
     if (!state || !state.master || !pageEl) return null;
     var el = walkNodePath(pageEl, state.master.node);
-    if (!el || el.localName !== "section") { reportError("The master could not be shown on this page."); return null; }
+    if (!el || el.localName !== state.master.rootTag) { reportError("The master could not be shown on this page."); return null; }
     var expected = makeTemplate(state.master.section).content.firstElementChild;
-    if (!expected || tagShape(expected) !== tagShape(el)) { reportError("The master could not be shown on this page."); return null; }
+    if (!expected || expected.localName !== state.master.rootTag || tagShape(expected) !== tagShape(el)) { reportError("The master could not be shown on this page."); return null; }
     return el;
   }
   function inMaster(el) {

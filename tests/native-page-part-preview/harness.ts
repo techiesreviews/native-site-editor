@@ -1,0 +1,34 @@
+// Standalone host page for the master preview browser proof: the real
+// createNativePreview and runtime, with no editor, server or repository.
+import { createNativePreview, type NativeMasterEditInput, type NativePagePartMasterEditInput } from "../../src/components/native-preview";
+
+import { createMasterBanner } from "../../src/components/master-banner";
+const banner = createMasterBanner(document.getElementById("host")!, { done: () => {}, update: () => {} });
+const events: unknown[] = [];
+const preview = createNativePreview(document.getElementById("host")!, {
+  onSelect: (selection) => events.push({ type: "select", path: selection.path, node: selection.node, tag: selection.tag, reason: selection.reason, paintedSource: selection.paintedSource, masterSession: selection.masterSession }),
+  onTextEdit: (edit) => events.push({ type: "text-edit", ...edit }),
+  onStructure: (structure) => events.push({ type: "structure", structure }),
+  // One Add choice, inserted after the page's first section place, as main's pointFor would.
+  insertChoices: () => [{ tag: "x-note", label: "Note" }],
+  insertPointFor: () => ({ path: "index.html", parent: [1], index: 2, top: 0, left: 0, width: 100, before: "" }),
+  onInsert: (point, choice) => events.push({ type: "insert", point: { path: point.path, parent: point.parent, index: point.index }, tag: choice.tag }),
+});
+const add = document.createElement("button");
+add.id = "add";
+add.textContent = "+ Add";
+document.body.prepend(add);
+preview.attachAddButton(add);
+Object.assign(window, {
+  events,
+  banner,
+  preview,
+  start(site: { routes: Record<string, string>; components: Record<string, string> }, sources: Record<string, string>) {
+    preview.activate(site);
+    preview.update({ sources });
+  },
+  setMaster(input: NativeMasterEditInput | NativePagePartMasterEditInput | undefined, sources?: Record<string, string>) {
+    preview.update(sources ? { sources, masterEdit: input } : { masterEdit: input });
+    return preview.masterEditStatus();
+  },
+});

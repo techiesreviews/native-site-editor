@@ -90,7 +90,7 @@ export function createNativePagePartController(host: MasterControllerHost) {
       if ("error" in plan) { fail(plan.error); return false; }
       return host.apply(plan.operation, plan.expectedFiles, () => host.snapshot().revision === snapshot.revision);
     },
-    previewInput(): NativePagePartEditInput | undefined {
+    previewInput(): (NativePagePartEditInput & { kind: "page-part"; rootTag: "header" | "footer" }) | undefined {
       const active = session;
       if (!active) return undefined;
       try {
@@ -102,7 +102,7 @@ export function createNativePagePartController(host: MasterControllerHost) {
           || !located.node.length || !located.node.every(index => Number.isSafeInteger(index) && index >= 0)) return undefined;
         const basis = active.pageSource.slice(active.range.start, active.range.end);
         if (pagePartCore(basis).rootTag !== record.rootTag) return undefined;
-        return { session: active.token, pagePath: active.pagePath, pageSource: active.pageSource, node: [...located.node], basis,
+        return { kind: "page-part", rootTag: record.rootTag, session: active.token, pagePath: active.pagePath, pageSource: active.pageSource, node: [...located.node], basis,
           masterPath: active.htmlPath, masterSource: readPagePartMaster(record, { files: snapshot.files, sources: sources(snapshot) }) };
       } catch { return undefined; }
     },
@@ -114,9 +114,10 @@ export function createNativePagePartController(host: MasterControllerHost) {
         const snapshot = host.snapshot();
         const record = activeRecord(active, snapshot);
         readPagePartMaster(record, { files: snapshot.files, sources: sources(snapshot) });
-        return { recordId: record.id, label: record.label, htmlPath: active.htmlPath, pagePath: active.pagePath };
+        return { kind: "page-part" as const, rootTag: record.rootTag, recordId: record.id, label: record.label, htmlPath: active.htmlPath, pagePath: active.pagePath };
       } catch (error) {
-        return { recordId: active.recordId, htmlPath: active.htmlPath, pagePath: active.pagePath,
+        const original = JSON.parse(active.record) as PagePartRecord;
+        return { kind: "page-part" as const, rootTag: original.rootTag, label: original.label, recordId: active.recordId, htmlPath: active.htmlPath, pagePath: active.pagePath,
           masterError: error instanceof Error ? error.message : String(error) };
       }
     },

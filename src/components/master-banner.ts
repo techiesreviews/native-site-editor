@@ -4,7 +4,7 @@ import "./master-banner.css";
 // One compact line over the code while a saved section's master is open:
 // "Editing Intro master · Done · Update copies". Typing in the master changes
 // no page; Update copies is the only way copies change. No dialog.
-export interface MasterBannerState { label: string; htmlPath: string; masterError?: string }
+export interface MasterBannerState { label: string; htmlPath: string; masterError?: string; kind?: "page-part"; rootTag?: "header" | "footer" }
 
 export function createMasterBanner(before: HTMLElement, actions: { done: () => void; update: () => void }) {
   const bar = node("div", "master-banner");
@@ -23,6 +23,7 @@ export function createMasterBanner(before: HTMLElement, actions: { done: () => v
     show(state: MasterBannerState | undefined) {
       bar.hidden = !state;
       if (!state) return;
+      bar.setAttribute("aria-label", state.kind === "page-part" ? `Shared ${state.rootTag ?? "page part"} master` : "Saved section master");
       text.textContent = `Editing ${state.label} master`;
       text.title = `${state.htmlPath}. Pages change only with Update copies.`;
       problem.textContent = state.masterError ?? "";

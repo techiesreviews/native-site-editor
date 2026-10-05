@@ -32,6 +32,7 @@ export interface NativePagePartComposition {
   masterPart: string;
   /** Canonical root path in the master file. */
   masterNode: [0];
+  rootTag: "header" | "footer";
 }
 
 export const NATIVE_PAGE_PART_PATH = /^\.editor\/page-parts\/[a-z][a-z0-9_-]*\.html$/;
@@ -96,5 +97,5 @@ export function composeNativePagePartEdit(
 
   const masterPart = input.masterSource.slice(core.start, core.end);
   const pageBody = input.pageSource.slice(body.start, found.start) + masterPart + input.pageSource.slice(found.end, body.end);
-  return { input, pageBody, masterPart, masterNode: [0] };
+  return { input, pageBody, masterPart, masterNode: [0], rootTag: core.rootTag };
 }

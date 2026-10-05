@@ -26,6 +26,10 @@ import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
 import { composeNativeMasterEdit, type NativeMasterComposition, type NativeMasterEditInput } from "./native-master-preview";
 export type { NativeMasterEditInput } from "./native-master-preview";
+import { composeNativePagePartEdit, type NativePagePartComposition, type NativePagePartEditInput } from "./native-page-part-preview";
+export type NativePagePartMasterEditInput = NativePagePartEditInput & { kind: "page-part"; rootTag: "header" | "footer" };
+type NativeEditingInput = NativeMasterEditInput | NativePagePartMasterEditInput;
+type NativeEditingComposition = NativeMasterComposition | NativePagePartComposition;
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -69,10 +73,11 @@ interface UpdateInput {
   editableTemplatePath?: string;
   /**
    * An explicit native master session: the page on show renders with its one
-   * copy replaced by the master's `<section>`, editable as the master file.
+   * copy replaced by the master's root, editable as the master file.
+   * Header/footer masters use the explicit `kind: "page-part"` variant.
    * `undefined` ends the session; an invalid one is refused (see masterEditStatus).
    */
-  masterEdit?: NativeMasterEditInput;
+  masterEdit?: NativeEditingInput;
 }
 
 /** Whether a master session is on show, or why the last one was refused or ended. */
@@ -273,7 +278,7 @@ function composePayload(
   selectText: { start: number; end: number } | undefined,
   hash?: string,
   editableTemplatePath?: string,
-  master?: { composition: NativeMasterComposition; token: string },
+  master?: { composition: NativeEditingComposition; token: string },
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -318,7 +323,9 @@ function composePayload(
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
   return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath,
-    master: master && !alone ? { path: master.composition.input.masterPath, session: master.token, node: [...master.composition.input.node], section: master.composition.masterSection } : undefined };
+    master: master && !alone ? { path: master.composition.input.masterPath, session: master.token, node: [...master.composition.input.node], ...("masterPart" in master.composition
+      ? { kind: "page-part", rootTag: master.composition.rootTag, part: master.composition.masterPart }
+      : { section: master.composition.masterSection }) } : undefined };
 }
 
 export function createNativePreview(host: HTMLElement, handlers: NativePreviewHandlers = {}) {
@@ -434,8 +441,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let editableTemplatePath: string | undefined;
   // The master session input as the host last gave it, its checked composition
   // and a token unique to this activation (stamped on the runtime's messages).
-  let masterInput: NativeMasterEditInput | undefined;
-  let master: { composition: NativeMasterComposition; token: string } | undefined;
+  let masterInput: NativeEditingInput | undefined;
+  let master: { composition: NativeEditingComposition; token: string } | undefined;
   let masterError: string | undefined;
   let masterEpoch = 0;
   let context = "";
@@ -498,8 +505,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const before = master;
     if (!masterInput || !site) master = undefined;
     else {
-      const composed = composeNativeMasterEdit(masterInput, { sources, pagePath: alone ? undefined : site.routes[route] });
-      if ("error" in composed) {
+      const pagePart = "kind" in masterInput && masterInput.kind === "page-part";
+      const composed = pagePart
+        ? composeNativePagePartEdit(masterInput, { sources, pagePath: alone ? undefined : site.routes[route] })
+        : composeNativeMasterEdit(masterInput, { sources, pagePath: alone ? undefined : site.routes[route] });
+      if (!("error" in composed) && pagePart
+        && (!("rootTag" in masterInput) || !("rootTag" in composed) || composed.rootTag !== masterInput.rootTag)) {
+        master = undefined; masterInput = undefined; masterError = "The page part master has a different root tag.";
+      } else if ("error" in composed) {
         master = undefined;
         masterInput = undefined;
         masterError = composed.error;
