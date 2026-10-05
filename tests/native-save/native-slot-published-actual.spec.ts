@@ -108,9 +108,11 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(CARD)}`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   // Conditions in the shared template: the actions paragraph follows the link,
-  // and a new optional image figure follows an image the page may give.
-  const T1 = T0.replace('<p class="actions">', '<p class="actions" data-if="link">')
-    .replace('  <slot name="title">', '  <figure class="media" data-if="image"><slot name="image"></slot></figure>\n  <slot name="title">');
+  // and a new optional image figure follows an image the page may give. Each wrapper has static
+  // text of its own, so the automatic empty-wrapper rule would keep it shown: only data-if hides it.
+  const T1 = T0.replace('<p class="actions"><slot name="link"></slot></p>', '<p class="actions" data-if="link">More: <slot name="link"></slot></p>')
+    .replace('  <slot name="title">', '  <figure class="media" data-if="image"><slot name="image"></slot><figcaption>Photo</figcaption></figure>\n  <slot name="title">');
+  expect(T1).toContain('data-if="link">More: ');
   expect(T1).not.toBe(T0);
   await expect.poll(() => mounted(page, CARD)).toBe(T0);
   await replaceCode(page, T1);
@@ -171,7 +173,9 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
   await history(page, "redo");
   await expect.poll(() => mounted(page)).toBe(P2);
   await agree(page, 0, "Link", "link", "p.actions", true);
-  await slotRow(page, 0, "Link").locator(".page-structure__slot-badge").click();
+  // The pencil in the row's action bar (it covers the badge while the row is hovered).
+  await slotRow(page, 0, "Link").hover();
+  await slotRow(page, 0, "Link").locator(".page-structure__action[aria-label='Edit Link']").click();
   const text = tree(page).getByRole("textbox", { name: "Link: Button text", exact: true });
   await text.fill("Visit Fern & Kettle");
   await text.press("Enter");
@@ -284,7 +288,14 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
     for (const card of [0, 1, 2]) await expect.poll(() => shown(card, "figure.media")).toBe("none");
     // The hero's hidden slot shows nothing, not even its fallback link.
     await expect(site.locator("section-hero a[slot=primary]")).toBeVisible();
-    await expect(site.locator("section-hero a", { hasText: "See our work" })).toBeHidden();
+    // The hero's template has rendered and its fallback link exists, but does not show.
+    const fallback = () => site.locator("section-hero").evaluate((el) => {
+      const link = el.shadowRoot?.querySelector('slot[name="secondary"] > a');
+      return link ? { text: link.textContent, width: link.getBoundingClientRect().width } : null;
+    });
+    await expect.poll(fallback).toEqual({ text: "See our work", width: 0 });
+    await expect(site.locator("section-hero a:not([slot])", { hasText: "See our work" })).toHaveCount(1);
+    await expect(site.locator("section-hero a:not([slot])", { hasText: "See our work" })).toBeHidden();
     expect((await attributeNames(site)).filter((name) => /^data-native|^contenteditable$|^spellcheck$/.test(name))).toEqual([]);
     const box = await site.locator("card-project").nth(1).evaluate((el) => el.shadowRoot!.querySelector("p.actions")!.getBoundingClientRect().height);
     expect(box).toBe(0);
