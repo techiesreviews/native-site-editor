@@ -3,7 +3,7 @@ import { nativePageStylesheets } from "../../shared/native-project";
 import { nativePageRoute } from "../../shared/native-routes";
 import { attribute } from "./collection-model";
 import { descendants, parseSource, startTagAttributes, type SourceElement, type SourceNode } from "./component-model";
-import { readNativeSectionLinks } from "./native-section-links";
+import { readNativeSectionLinks, type NativeSectionLinks } from "./native-section-links";
 import { nativeMarkupInsertEdit } from "./native-operations";
 import { scanMediaUrlTokens } from "./media-references";
 import {
@@ -260,10 +260,15 @@ export function readPagePartMaster(record: PagePartRecord, context: { files: rea
   return source;
 }
 
+/** The section links, read (and validated) on first use, then reused for the rest of one operation. */
+function sectionLinksOnce(documentText: string | undefined): () => NativeSectionLinks {
+  let links: NativeSectionLinks | undefined;
+  return () => links ??= readNativeSectionLinks(documentText);
+}
 /** Ranges another editor feature already owns on a page: section links and collections. */
-function otherOwnedRanges(document: PageBuilderDocument, documentText: string | undefined, page: string, source: string): { start: number; end: number; what: string }[] {
+function otherOwnedRanges(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string): { start: number; end: number; what: string }[] {
   const out: { start: number; end: number; what: string }[] = [];
-  for (const [key, link] of Object.entries(readNativeSectionLinks(documentText)[page] ?? {})) {
+  for (const [key, link] of Object.entries(sectionLinks()[page] ?? {})) {
     const located = locateCollectionTarget(source, link.target);
     if ("error" in located) fail(`Section link ${key} on ${page} can't be found; fix it first.`);
     out.push({ start: located.element.start, end: located.element.end, what: `section link ${key}` });
@@ -278,9 +283,9 @@ function otherOwnedRanges(document: PageBuilderDocument, documentText: string | 
 }
 const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end;
 
-function resolvePage(document: PageBuilderDocument, documentText: string | undefined, page: string, source: string, entries: Record<string, PagePartLink>): ResolvedPagePartLink[] {
+function resolvePage(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string, entries: Record<string, PagePartLink>): ResolvedPagePartLink[] {
   const found: ResolvedPagePartLink[] = [];
-  const owned = otherOwnedRanges(document, documentText, page, source);
+  const owned = otherOwnedRanges(document, sectionLinks, page, source);
   for (const [key, link] of Object.entries(entries)) {
     const located = locateCollectionTarget(source, link.target);
     if ("error" in located) fail(`Page part link ${key} on ${page}: ${located.error} Relink it.`);
@@ -298,10 +303,11 @@ export function resolvePagePartLinks(input: { documentText: string | undefined; 
   return result(() => {
     const document = readPageBuilderDocument(input.documentText);
     const links: ResolvedPagePartLink[] = [];
+    const sectionLinks = sectionLinksOnce(input.documentText);
     for (const [page, entries] of Object.entries(readPagePartLinks(input.documentText))) {
       const source = sourceOf(input.sources, page);
       if (source === undefined) fail(`Load ${page} before using its page parts.`);
-      links.push(...resolvePage(document, input.documentText, page, source, entries));
+      links.push(...resolvePage(document, sectionLinks, page, source, entries));
     }
     return { links };
   });
@@ -341,8 +347,9 @@ function addLink(document: PageBuilderDocument, page: string, source: string, el
 /** A new link must not land on, in or around anything already linked or owned on its page. */
 function checkFree(document: PageBuilderDocument, documentText: string | undefined, page: string, source: string, element: SourceElement): void {
   const existing = readPagePartLinks(documentText)[page] ?? {};
-  for (const link of resolvePage(document, documentText, page, source, existing)) if (overlaps(link, element)) fail(`This ${element.name} on ${page} is already linked (${link.key}).`);
-  for (const other of otherOwnedRanges(document, documentText, page, source)) if (overlaps(other, element)) fail(`This ${element.name} on ${page} overlaps ${other.what}.`);
+  const sectionLinks = sectionLinksOnce(documentText);
+  for (const link of resolvePage(document, sectionLinks, page, source, existing)) if (overlaps(link, element)) fail(`This ${element.name} on ${page} is already linked (${link.key}).`);
+  for (const other of otherOwnedRanges(document, sectionLinks, page, source)) if (overlaps(other, element)) fail(`This ${element.name} on ${page} overlaps ${other.what}.`);
 }
 const sorted = (graph: Set<string>) => [...graph].sort();
 
