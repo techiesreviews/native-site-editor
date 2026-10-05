@@ -1,9 +1,9 @@
 import { deriveNativeRoutes, nativePageRoute } from '../../shared/native-routes';
 import { groupRouteChanges, rewriteRouteLinks, type FileMove } from '../native-page-moves';
-import { attributeEdit } from './component-model';
-import { applyCollectionEdits, planBake, type CollectionPreview } from './collection-bake';
-import { collectionFolders, readCollections, validCollectionRoute } from './collection-model';
-import type { CollectionIdentity } from './collection-fields';
+import { attributeEdit, descendants, parseSource } from './component-model';
+import { applyCollectionEdits, planBake, type BrokenListing, type CollectionPreview } from './collection-bake';
+import { attribute, collectionFolders, collectionRecords, readCollections, validCollectionRoute } from './collection-model';
+import { resolvePageFields, type CollectionIdentity } from './collection-fields';
 import { bakePageData, planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
 import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
 
@@ -49,6 +49,8 @@ export interface NativeCollectionPlan {
   collections: CollectionPreview[];
   /** Sidecar collections as baked for the candidate graph. */
   documentCollections: DocumentCollectionPreview[];
+  /** Listings that cannot be baked and that this change does not touch: left exactly as they are. */
+  skipped: BrokenListing[];
 }
 const own = (sources: Readonly<Record<string, string>>, path: string) => Object.hasOwn(sources, path) ? sources[path] : undefined;
 const sameRoutes = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
@@ -129,10 +131,11 @@ export interface GeneratedDrift {
   pageData?: true;
 }
 /**
- * Legacy inline listings (recipe still in the page HTML). When the whole graph
- * bakes, each listing is compared exactly. When it does not, every page that
- * holds a listing (readable or not) is "unchecked": any bake that would then
- * change that page is refused after the fact, page by page.
+ * Legacy inline listings (recipe still in the page HTML). Each listing whose
+ * own recipe bakes is compared exactly. A listing that cannot be baked (or a
+ * page whose listings cannot be read) is "unchecked": any bake that would then
+ * change that page is refused after the fact, page by page. When the graph
+ * itself cannot be baked (unreadable page data), every listing is unchecked.
  */
 /** `files`: every path in the graph, read or not, so an unread editor JSON is never taken as absent. */
 export function generatedDrift(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, files?: readonly string[]): GeneratedDrift[] {
@@ -140,25 +143,52 @@ export function generatedDrift(sources: Readonly<Record<string, string>>, routes
     .filter(path => sources[path] !== undefined && /data-each/i.test(sources[path]));
   if (!listingPages.length) return [];
   let baked: ReturnType<typeof planBake>;
-  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }, bakePageData(sources, files)); } catch (error) { baked = { error: String(error) }; }
+  try { baked = planBake({ ...sources }, { ...routes }, { name: identity.name }, bakePageData(sources, files), { skipBroken: true }); } catch (error) { baked = { error: String(error) }; }
   const drift: GeneratedDrift[] = [];
   let htmlOnly: ReturnType<typeof planBake> | undefined;
+  const isBroken = (plan: Exclude<ReturnType<typeof planBake>, { error: string }>, path: string, start: number) => (plan.broken ?? []).some(item => item.path === path && item.start === start);
   for (const path of listingPages) {
     const source = sources[path];
     let collections: ReturnType<typeof readCollections> | undefined;
     try { collections = readCollections(source); } catch { collections = undefined; }
     if (!collections) { drift.push({ path, start: -1, kind: 'unchecked' }); continue; }
     for (const collection of collections) {
-      if ('error' in baked) { drift.push({ path, start: collection.element.start, kind: 'unchecked' }); continue; }
+      if ('error' in baked || isBroken(baked, path, collection.element.start)) { drift.push({ path, start: collection.element.start, kind: 'unchecked' }); continue; }
       if (!(baked.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end)) continue;
       const region = source.slice(collection.template.end, collection.element.close!.start);
       if (!region.trim()) { drift.push({ path, start: collection.element.start, kind: 'unbuilt' }); continue; }
-      htmlOnly ??= planBake({ ...sources }, { ...routes }, { name: identity.name });
-      const pageData = !('error' in htmlOnly) && !(htmlOnly.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end);
+      htmlOnly ??= planBake({ ...sources }, { ...routes }, { name: identity.name }, undefined, { skipBroken: true });
+      const pageData = !('error' in htmlOnly) && !isBroken(htmlOnly, path, collection.element.start) && !(htmlOnly.edits[path] ?? []).some(edit => edit.start === collection.element.tag.end);
       drift.push({ path, start: collection.element.start, kind: 'edited', ...(pageData ? { pageData: true as const } : {}) });
     }
   }
   return drift;
+}
+
+/**
+ * The folders a listing that cannot be baked selects, read from its data-each
+ * alone (every listing on the page when `start` is -1). None when even that
+ * cannot be read: such a listing selects no pages.
+ */
+function listingFolders(source: string, start: number): string[] {
+  let elements;
+  try { elements = [...descendants(parseSource(source))].filter(element => attribute(source, element, 'data-each') !== undefined); } catch { return []; }
+  return [...new Set(elements.filter(element => start < 0 || element.start === start).flatMap(element => {
+    try { return collectionFolders({ folder: attribute(source, element, 'data-each') }); } catch { return []; }
+  }))];
+}
+/** Everything the pages under `folders` give a listing on `self`: paths, URLs and resolved fields. */
+function listingInputs(sources: Readonly<Record<string, string>>, routes: Readonly<Record<string, string>>, identity: CollectionIdentity, folders: string[], self: string, files: readonly string[]): string {
+  const pages = bakePageData(sources, files)().pages;
+  const records = collectionRecords({ ...sources }, { ...routes }, identity, { folder: folders.join(' '), folders, sort: '', filter: '', limit: Number.MAX_SAFE_INTEGER }, self);
+  return JSON.stringify(records.map(record => [record.path, record.url, resolvePageFields(record.fields, Object.hasOwn(pages, record.path) ? pages[record.path] : undefined)]));
+}
+
+/** The status line's words for listings an operation left as they are. */
+export function skippedListingsMessage(skipped: readonly BrokenListing[]): string {
+  if (!skipped.length) return '';
+  const pages = [...new Set(skipped.map(item => item.path))];
+  return ` The collection ${pages.length === 1 ? `listing on ${pages[0]} was` : `listings on ${pages.join(', ')} were`} left as ${pages.length === 1 ? 'it is' : 'they are'} because ${pages.length === 1 ? 'it is' : 'they are'} not valid (${[...new Set(skipped.map(item => item.error))].join(' ')}). Fix ${pages.length === 1 ? 'it' : 'them'} in Code to update ${pages.length === 1 ? 'its' : 'their'} cards.`;
 }
 
 /** Apply the origin to a candidate graph, bake once, and return one operation. */
@@ -253,7 +283,8 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       if (loaded === undefined) throw Error(`Load ${path} before baking collections.`);
       let source: string = loaded;
       let parsed: ReturnType<typeof readCollections>;
-      try { parsed = readCollections(source); } catch (error) { throw Error(`${path}: ${error instanceof Error ? error.message : "Invalid listing."}`); }
+      // A page whose listings cannot be read is never rewritten here; the bake below names it.
+      try { parsed = readCollections(source); } catch { continue; }
       const changes = parsed.flatMap(collection => {
         const folders = collection.spec.folders.map(relocatedFolder);
         return folders.some((folder, index) => folder !== collection.spec.folders[index])
@@ -263,10 +294,28 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       candidate.set(path, source);
     }
     const candidateSources = Object.fromEntries(candidate);
-    const baked = planBake(candidateSources, afterRoutes, candidateIdentity, bakePageData(candidateSources, [...afterFiles]));
+    const baked = planBake(candidateSources, afterRoutes, candidateIdentity, bakePageData(candidateSources, [...afterFiles]), { skipBroken: true });
     if ('error' in baked) {
-      const listings = Object.entries(afterRoutes).filter(([url, path]) => validCollectionRoute(url, path) && readCollections(candidateSources[path]).length).map(([, path]) => path);
+      const listings = Object.entries(afterRoutes).filter(([url, path]) => validCollectionRoute(url, path) && /data-each/i.test(candidateSources[path] ?? '')).map(([, path]) => path);
       return { error: `${listings.length ? `Collection listings (${listings.join(", ")})` : "Collection route inputs"}: ${baked.error}` };
+    }
+    // A listing whose own recipe cannot be baked is left exactly as it is. Only a
+    // change that touches it (its page, or the pages and page data its folders
+    // select) is refused; anything else goes ahead and the host tells about it.
+    const movedTo = new Map(moves.map(move => [move.to, move.from]));
+    const touchedBroken: BrokenListing[] = [], skipped: BrokenListing[] = [];
+    for (const item of baked.broken ?? []) {
+      const from = movedTo.get(item.path) ?? item.path;
+      const pageTouched = creates.some(create => create.path === item.path) || from !== item.path || before.get(from) !== candidateSources[item.path];
+      const folders = listingFolders(candidateSources[item.path], item.start);
+      const inputsTouched = !pageTouched && folders.length > 0 &&
+        listingInputs(sources, routes, identity, folders, from, input.files) !== listingInputs(candidateSources, afterRoutes, candidateIdentity, folders, item.path, [...afterFiles]);
+      // Named by the page as it is now, before this change moves it.
+      (pageTouched || inputsTouched ? touchedBroken : skipped).push({ ...item, path: from });
+    }
+    if (touchedBroken.length) {
+      const paths = [...new Set(touchedBroken.map(item => item.path))];
+      return { error: `Collection listings (${paths.join(", ")}): ${[...new Set(touchedBroken.map(item => item.error))].join(" ")}` };
     }
     for (const [path, ranges] of Object.entries(baked.edits)) candidate.set(path, applyCollectionEdits(candidate.get(path)!, ranges));
     // A page whose listings could not be checked before must not be rebaked now.
@@ -323,7 +372,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     const { refreshCollections: _refresh, folders: _folderIntent, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...nativeOrigin } = origin;
     const operation = { ...nativeOrigin, moves, deletes, creates: creates.map(create => ({ ...create, content: candidate.get(create.path)! })), edits: finalEdits, expectedSources: expected,
       ...(origin.focus ? { focus: { ...origin.focus } } : {}) };
-    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections };
+    return { operation, expectedRevision: revision, expectedFiles: [...files].sort(), expectedIdentity: { name: identity.name }, expectedRoutes: { ...routes }, afterRoutes, collections: baked.collections, documentCollections: document.collections, skipped };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Collection operation could not be planned.' };
   }

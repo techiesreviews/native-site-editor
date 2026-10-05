@@ -98,7 +98,7 @@ import { planSelectedStaticSectionSave } from "./page-builder/native-section-sav
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, listDefaultSectionChoices, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
-import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
 import { isManualCardGrid } from "./page-builder/native-grid-collection";
@@ -6163,7 +6163,8 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
   // A caller's own whole-graph proof (a file list it planned from) is checked with the plan's.
   const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot()) && (extraCurrent?.() ?? true);
   if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
-  return applyNativeOperation({ ...plan.operation, current });
+  // Listings that cannot be baked and that this change does not touch stay as they are; the status says so.
+  return applyNativeOperation({ ...plan.operation, done: plan.operation.done + skippedListingsMessage(plan.skipped), current });
 }
 
 // A branch file's blob and text, for a draft of an edit to it.

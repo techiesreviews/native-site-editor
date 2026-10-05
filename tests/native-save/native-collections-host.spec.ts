@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { deriveNativeRoutes } from "../../shared/native-routes";
 import { applyCollectionEdits, planBake } from "../../src/page-builder/collection-bake";
-import { storedDraft } from "./drafts";
+import { storedDraft, storedDrafts } from "./drafts";
 
 // Collections through the real host: Monaco, native preview, drafts, Undo/Redo.
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name, exact: true });
@@ -244,6 +244,58 @@ test("an asset delete is not blocked by an invalid listing elsewhere and writes 
   // Only the deleted file's own blob (kept for Undo) is read: no page index.
   expect(fetched.length).toBeLessThanOrEqual(1);
   for (const url of fetched) expect(new URL(url).searchParams.get("shas")?.split(",")).toHaveLength(1);
+});
+
+test("an unrelated page edit and move go ahead while another page's listing is broken; changing that page is refused", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  // About lists /news/ with a field no page has: it cannot be baked. Nothing here touches /news/.
+  const about = (await (await page.request.get(`${baseURL}/__demo/file?path=about/index.html`)).text())
+    .replace('<section class="prose"', '<section class="news" data-each="/news/"><template><p>{nope}</p></template><p>Kept as is</p></section>\n  <section class="prose"');
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: about } });
+  const warning = /The collection listing on about\/index\.html was left as it is because it is not valid \(Unknown collection field: nope\.\)\. Fix it in Code to update its cards\./;
+
+  // A page edit: the healthy listing on Home is baked, About is left byte for byte.
+  await open(page, baseURL, "work/one/index.html");
+  let panel = await openPageSettings(page);
+  await panel.getByLabel("Title", { exact: true }).fill("One renamed");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel).not.toBeVisible();
+  await expect(page.locator("#status")).toContainText("Page settings applied as a draft.");
+  await expect(page.locator("#status")).toContainText(warning);
+  await expect.poll(() => homeDraft(page)).toContain(">One renamed</a>");
+  expect(await storedDraft(page, "about/index.html")).toBeUndefined();
+
+  // A move: the folder of a listed page is renamed; its card follows, About is still untouched.
+  await open(page, baseURL, "index.html");
+  await openFiles(page);
+  const work = explorerRow(page, "work").first();
+  if ((await work.getAttribute("aria-expanded")) === "false") await work.click();
+  await explorerRow(page, "two").focus();
+  await page.keyboard.press("F2");
+  await page.locator("#explorer").getByRole("textbox", { name: "New name for work/two" }).fill("second");
+  await page.keyboard.press("Enter");
+  const confirm = page.getByRole("dialog", { name: /^Rename work\/two to work\/second/ });
+  const keep = confirm.getByRole("checkbox");
+  if (await keep.count() && await keep.isChecked()) await keep.uncheck();
+  await confirm.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Renamed the folder work/two to work/second");
+  await expect(page.locator("#status")).toContainText(warning);
+  await expect.poll(async () => listingOf(await homeDraft(page))).toContain('href="/work/second/"');
+  expect(listingOf(await homeDraft(page))).toContain(">One renamed</a>");
+  expect(await storedDraft(page, "work/second/index.html")).toBeDefined();
+  expect(await storedDraft(page, "about/index.html")).toBeUndefined();
+  expect(await mounted(page, "index.html")).toBe(await homeDraft(page));
+
+  // Changing the broken listing's own page is refused with the listing's message, writing nothing.
+  await open(page, baseURL, "about/index.html");
+  const drafts = (await storedDrafts(page)).map((draft) => [draft.path, draft.content]);
+  panel = await openPageSettings(page);
+  await panel.getByLabel("Title", { exact: true }).fill("About, retitled");
+  await panel.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(panel.getByRole("status")).toHaveText("Collection listings (about/index.html): Unknown collection field: nope.");
+  expect(await storedDraft(page, "about/index.html")).toBeUndefined();
+  expect((await storedDrafts(page)).map((draft) => [draft.path, draft.content])).toEqual(drafts);
+  expect(await mounted(page, "about/index.html")).toBe(about);
 });
 
 test("dirty Fields refuse Apply after the branch changes, writing nothing", async ({ page, baseURL }) => {

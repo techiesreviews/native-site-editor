@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveNativeRoutes } from '../shared/native-routes';
 import { applyCollectionEdits, planBake } from '../src/page-builder/collection-bake';
-import { planNativeCollectionOperation, nativeCollectionPlanIsCurrent, type NativeCollectionOrigin } from '../src/page-builder/native-collection-host';
+import { planNativeCollectionOperation, nativeCollectionPlanIsCurrent, skippedListingsMessage, type NativeCollectionOrigin } from '../src/page-builder/native-collection-host';
 const page=(title:string,body='')=>`<html><head><title>${title}</title></head><body>${body}</body></html>`;
 const list=(folders='/work/')=>`<div data-each="${folders}"><template><a href="{url}">{title}</a></template><p>Old</p></div>`;
 // Fixtures start as canonical baked listings: hand-edited cards are refused.
@@ -292,4 +292,72 @@ test('two listings on one page, one invalid: fixing it never discards the other 
  const fixed=page('Home',valid+'<div data-each="/work/"><template><a>{title}</a></template></div>');
  const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['index.html',fixed]])})});
  assert.ok('error'in result);assert.match(result.error,/index\.html/);
+});
+// Unrelated broken listings: only an operation that touches one is refused.
+const brokenNews='<div data-each="/news/"><template><a>{nope}</a></template><p>Kept as is</p></div>';
+const unreadable='<section data-each="work"><template><p>{title}</p></template></section>';
+const withBroken=(body:string,path='broken.html')=>{const before=snapshot();before.sources[path]=page('Broken',body);before.files=[...before.files,path];before.routes=deriveNativeRoutes(before.files);return before;};
+test('planBake can skip a broken listing, naming it, while graph inputs still fail the plan',()=>{
+ const before=withBroken(brokenNews);
+ assert.ok('error'in planBake(before.sources,before.routes,{name:'Studio'}));
+ const skipped=planBake(before.sources,before.routes,{name:'Studio'},undefined,{skipBroken:true});
+ if('error'in skipped)assert.fail(skipped.error);
+ assert.deepEqual(skipped.broken?.map(item=>[item.path,item.start]),[['broken.html',before.sources['broken.html'].indexOf('<div data-each')]]);
+ assert.match(skipped.broken![0].error,/Unknown collection field: nope/);
+ assert.equal(skipped.edits['broken.html'],undefined);
+ assert.equal(skipped.collections.length,2);
+ const unread=withBroken(unreadable);
+ const whole=planBake(unread.sources,unread.routes,{name:'Studio'},undefined,{skipBroken:true});
+ if('error'in whole)assert.fail(whole.error);
+ assert.equal(whole.broken![0].path,'broken.html');assert.equal(whole.broken![0].start,unread.sources['broken.html'].indexOf('<section'));
+ const missing:Record<string,string>={...before.sources};delete missing['work/a/index.html'];
+ assert.ok('error'in planBake(missing,before.routes,{name:'Studio'},undefined,{skipBroken:true}));
+ assert.ok('error'in planBake(before.sources,before.routes,{name:'Studio'},()=>{throw Error('bad page data');},{skipBroken:true}));
+});
+test('an unrelated edit, create, move and delete bake healthy listings and leave a broken one byte for byte',()=>{
+ for(const body of [brokenNews,unreadable]){
+  const before=withBroken(body),broken=before.sources['broken.html'];
+  for(const change of [{edits:new Map([['work/a/index.html',page('Renamed')]])},{creates:[{path:'work/new/index.html',content:page('New')}]},{moves:[{from:'work/a/index.html',to:'work/moved/index.html'}]},{deletes:['work/a/index.html']},{edits:new Map([['unrelated.html',page('Unrelated','<p>More</p>')]])}] as Partial<NativeCollectionOrigin>[]){
+   const plan=good(change,before);
+   assert.equal(plan.operation.edits!.has('broken.html'),false);
+   assert.equal(plan.operation.expectedSources.get('broken.html'),broken);
+   assert.deepEqual(plan.skipped.map(item=>item.path),['broken.html']);
+  }
+  const renamed=good({edits:new Map([['work/a/index.html',page('Renamed')]])},before);
+  assert.ok(renamed.operation.edits!.get('index.html')!.includes('>Renamed</a>'));
+  assert.ok(renamed.operation.edits!.get('other.html')!.includes('>Renamed</a>'));
+ }
+});
+test('an operation on a broken listing, its page or the pages it selects is refused with its own message',()=>{
+ const before=withBroken(brokenNews);
+ const refuse=(change:Partial<NativeCollectionOrigin>)=>{const result=planNativeCollectionOperation({...before,origin:origin(change)});assert.ok('error'in result,JSON.stringify(change));assert.match(result.error,/broken\.html/);assert.match(result.error,/Unknown collection field: nope/);};
+ refuse({edits:new Map([['broken.html',page('Broken, retitled',brokenNews)]])});
+ refuse({moves:[{from:'broken.html',to:'moved.html'}]});
+ refuse({edits:new Map([['news/b/index.html',page('News, retitled')]])});
+ refuse({creates:[{path:'news/c/index.html',content:page('More news')}]});
+ refuse({deletes:['news/b/index.html']});
+ refuse({moves:[{from:'news/b/index.html',to:'news/c/index.html'}]});
+ refuse({folders:[{from:'news/',to:'press/'}],moves:[{from:'news/b/index.html',to:'press/b/index.html'}]});
+ // Page data for a page it selects is one of its inputs too.
+ refuse({creates:[{path:'.editor/page-builder.json',content:JSON.stringify({version:1,pages:{'news/b/index.html':{fields:{category:'From data'}}},collections:{}})}]});
+ // A body change that leaves every field of a selected page as it was does not touch it.
+ const body=good({edits:new Map([['news/b/index.html',page('News','<p>Body only</p>')]])},before);
+ assert.deepEqual(body.skipped.map(item=>item.path),['broken.html']);
+ assert.equal(body.operation.edits!.has('broken.html'),false);
+ // Deleting the broken listing's page removes it: nothing is left to refuse.
+ assert.deepEqual(good({deletes:['broken.html']},before).skipped,[]);
+});
+test('a listing whose folders cannot be read selects no pages and refuses only changes to its own page',()=>{
+ const before=withBroken(unreadable),broken=before.sources['broken.html'];
+ const moved=good({folders:[{from:'work/',to:'portfolio/'}],moves:[{from:'work/index.html',to:'portfolio/index.html'},{from:'work/a/index.html',to:'portfolio/a/index.html'}]},before);
+ assert.equal(moved.operation.edits!.has('broken.html'),false);
+ assert.equal(moved.operation.expectedSources.get('broken.html'),broken);
+ const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['broken.html',page('Retitled',unreadable)]])})});
+ assert.ok('error'in result);assert.match(result.error,/broken\.html/);
+});
+test('a skipped listing is named with its page and reason in the status words',()=>{
+ assert.equal(skippedListingsMessage([]),'');
+ const one=skippedListingsMessage([{path:'broken.html',start:3,error:'Unknown collection field: nope.'}]);
+ assert.match(one,/listing on broken\.html was left as it is/);assert.match(one,/Unknown collection field: nope\./);assert.match(one,/Fix it in Code/);
+ assert.match(skippedListingsMessage([{path:'a.html',start:1,error:'X.'},{path:'b.html',start:1,error:'Y.'}]),/listings on a\.html, b\.html were left as they are/);
 });

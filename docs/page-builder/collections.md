@@ -16,6 +16,17 @@ selection and editor model state before asynchronous host work. A changed input 
 refused rather than silently used as a new basis. Refresh does not authorize
 replacing hand-edited cards; that requires the explicit rebuild action.
 
+An inline listing whose own recipe cannot be read or baked (an unknown field, a
+malformed folder, a missing template) no longer blocks unrelated page operations.
+Each operation bakes the healthy listings and leaves a broken one byte for byte; the
+status line names the listing's page and its reason. An operation that touches the
+broken listing is still refused with that reason: a change to its own page (an edit
+or a move; deleting the page removes the listing and goes ahead), or a change to what its
+folders select (a selected page's fields, URL, existence or page data, including a
+folder relocation). A listing whose folders cannot be read selects nothing, so only
+its own page counts. The editor's JSON collections still refuse as a whole when one
+cannot be baked.
+
 
 A collection lives in a page's HTML. `data-each="/work/"` selects pages strictly
 below that folder. A mixed collection uses an HTML ASCII whitespace token list,

@@ -1,16 +1,20 @@
 import { startTags, VOID_ELEMENTS } from "../../shared/html-source";
-import { parseSource, type SourceNode } from "./component-model";
+import { descendants, parseSource, type SourceNode } from "./component-model";
 import { builtinFields, fieldName, ownPageField, resolvePageFields, type CollectionIdentity, type PageDataRecord, type PageFields } from "./collection-fields";
-import { attribute, collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord } from "./collection-model";
+import { attribute, collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord, type SourceCollection } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { escapeText } from "./site-head";
 
 export interface CollectionEdit { start: number; end: number; text: string }
 export interface CollectionPreview { path: string; start: number; folder: string; folders: string[]; records: CollectionRecord[]; template: string; output: string }
+/** A listing whose own recipe cannot be read or baked. `start` is -1 when its page's listings cannot be told apart. */
+export interface BrokenListing { path: string; start: number; error: string }
 export interface BakePlan {
   edits: Record<string, CollectionEdit[]>;
   expectedSources: Record<string, string>;
   collections: CollectionPreview[];
+  /** With `skipBroken` only: listings left out of the bake, each with its own reason. */
+  broken?: BrokenListing[];
 }
 export type BakeResult = BakePlan | { error: string };
 export function applyCollectionEdits(source: string, edits: CollectionEdit[]): string {
@@ -179,10 +183,41 @@ export function selectCollectionRecords(records: CollectionRecord[], spec: { fil
  */
 export type BakePageData = () => { pages: Readonly<Record<string, PageDataRecord>> };
 
-/** Computes all dependent listing edits as one fail-closed, immutable source plan. */
-export function planBake(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, pageData?: BakePageData): BakeResult {
+const reason = (error: unknown) => error instanceof Error ? error.message : "The collection could not be baked.";
+/** Where a page's first listing starts, found without validating it (-1 when it cannot be found). */
+function firstListingStart(source: string): number {
+  try { return [...descendants(parseSource(source))].find((element) => attribute(source, element, "data-each") !== undefined)?.start ?? -1; }
+  catch { return -1; }
+}
+/** One listing's finished cards, or the reason its own recipe cannot be baked. */
+function bakeListing(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, pages: Readonly<Record<string, PageDataRecord>>, path: string, collection: SourceCollection) {
+  const source = sources[path];
+  const { element, template, spec } = collection;
+  const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path)
+    .map((record) => ({ ...record, fields: resolvePageFields(record.fields, Object.hasOwn(pages, record.path) ? pages[record.path] : undefined) }));
+  const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
+  validateTemplate(source.slice(template.start, template.end));
+  const markup = source.slice(template.tag.end, template.close!.start);
+  // An empty list still validates its template instead of silently accepting a typo.
+  bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
+  const records = selectCollectionRecords(all, spec, collection.fields);
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  const output = records.map((record) => bindCollectionTemplate(markup, record.fields, known)).join(newline);
+  const text = source.slice(template.start, template.end) + output;
+  const edit = { start: element.tag.end, end: element.close!.start, text };
+  const preview: CollectionPreview = { path, start: element.start, folder: spec.folder, folders: spec.folders, records, template: markup, output };
+  return { ...(source.slice(edit.start, edit.end) !== text ? { edit } : {}), preview };
+}
+
+/**
+ * Computes all dependent listing edits as one fail-closed, immutable source plan.
+ * With `skipBroken`, a listing whose own recipe cannot be read or baked is left
+ * out (no edit: its bytes stay exactly as they are) and named in `broken`.
+ * Graph inputs (a missing page source, unreadable page data) still fail the plan.
+ */
+export function planBake(sources: Record<string, string>, routes: Record<string, string>, identity: CollectionIdentity, pageData?: BakePageData, options: { skipBroken?: boolean } = {}): BakeResult {
   try {
-    const edits: BakePlan["edits"] = {}, expectedSources: Record<string, string> = {}, collections: CollectionPreview[] = [];
+    const edits: BakePlan["edits"] = {}, expectedSources: Record<string, string> = {}, collections: CollectionPreview[] = [], broken: BrokenListing[] = [];
     // Without page data (standalone callers), cards read the pages' HTML fields only.
     let pages: Readonly<Record<string, PageDataRecord>> | undefined;
     const pagePaths = [...new Set(Object.entries(routes).filter(([url, path]) => validCollectionRoute(url, path)).map(([, path]) => path))];
@@ -192,26 +227,28 @@ export function planBake(sources: Record<string, string>, routes: Record<string,
     }
     for (const path of pagePaths) {
       const source = sources[path];
-      for (const collection of readCollections(source)) {
-        const { element, template, spec } = collection;
+      let parsed: SourceCollection[];
+      try { parsed = readCollections(source); }
+      catch (error) {
+        if (!options.skipBroken) throw error;
+        broken.push({ path, start: firstListingStart(source), error: reason(error) });
+        continue;
+      }
+      for (const collection of parsed) {
+        // Page data is a graph input: unreadable, it fails the whole plan.
         pages ??= pageData ? pageData().pages : {};
-        const all = collectionRecords(sources, routes, identity, { ...spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, path)
-          .map((record) => ({ ...record, fields: resolvePageFields(record.fields, Object.hasOwn(pages!, record.path) ? pages![record.path] : undefined) }));
-        const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
-        validateTemplate(source.slice(template.start, template.end));
-        const markup = source.slice(template.tag.end, template.close!.start);
-        // An empty list still validates its template instead of silently accepting a typo.
-        bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
-        const records = selectCollectionRecords(all, spec, collection.fields);
-        const newline = source.includes("\r\n") ? "\r\n" : "\n";
-        const output = records.map((record) => bindCollectionTemplate(markup, record.fields, known)).join(newline);
-        const text = source.slice(template.start, template.end) + output;
-        const edit = { start: element.tag.end, end: element.close!.start, text };
-        if (source.slice(edit.start, edit.end) !== text) (edits[path] ??= []).push(edit);
-        collections.push({ path, start: element.start, folder: spec.folder, folders: spec.folders, records, template: markup, output });
+        let baked: { edit?: CollectionEdit; preview: CollectionPreview };
+        try { baked = bakeListing(sources, routes, identity, pages, path, collection); }
+        catch (error) {
+          if (!options.skipBroken) throw error;
+          broken.push({ path, start: collection.element.start, error: reason(error) });
+          continue;
+        }
+        if (baked.edit) (edits[path] ??= []).push(baked.edit);
+        collections.push(baked.preview);
       }
     }
-    return { edits, expectedSources, collections };
+    return { edits, expectedSources, collections, ...(options.skipBroken ? { broken } : {}) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The collections could not be baked." };
   }
