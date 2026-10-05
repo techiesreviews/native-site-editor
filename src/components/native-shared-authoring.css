@@ -1,0 +1,28 @@
+.native-shared-authoring {
+  display: grid;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.native-shared-authoring[hidden] { display: none; }
+.native-shared-authoring__heading { color: var(--muted); }
+.native-shared-authoring__fields { display: grid; gap: 3px; }
+.native-shared-authoring__row { display: grid; grid-template-columns: 68px minmax(0, 1fr); align-items: center; gap: 6px; }
+.native-shared-authoring__label { color: var(--muted); }
+.native-shared-authoring .inline-field,
+.native-shared-authoring__choice {
+  width: 100%; min-width: 0; border: 0; border-radius: 0;
+  padding: 3px 2px; color: inherit; font: inherit;
+}
+.native-shared-authoring__choice { background: transparent; }
+.native-shared-authoring__choice:focus-visible { outline: 2px solid var(--primary); }
+.native-shared-authoring__error { color: var(--danger); }
+.native-shared-authoring__error:empty { display: none; }
+.native-shared-authoring__actions { display: flex; gap: 6px; }
+.native-shared-authoring__actions button { border: 0; padding: 4px 7px; font: inherit; border-radius: 4px; cursor: pointer; }
+.native-shared-authoring__save { color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.native-shared-authoring__cancel { color: var(--muted); background: transparent; }
+.native-shared-authoring__actions button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.native-shared-authoring__actions button:disabled { opacity: .55; cursor: default; }
+
+.native-shared-authoring__source { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
