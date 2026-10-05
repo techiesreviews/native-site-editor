@@ -120,3 +120,15 @@ test('root panel Edit remains usable after typing its instance slot',async({page
  await page.getByRole('treeitem',{name:/^Project card Edited root title$/}).getByRole('button',{name:'Edit component',exact:true}).click();
  await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
 });
+// The pencil reads as a click target: a pointer over it and a tint of its own
+// (on a section's name, which drags, the rest of the name keeps the grab cursor).
+test('the revealed pencil shows a pointer and a hover tint, and clicking it edits the component',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await root(page);
+ const button=edit(page),overlay=button.locator('.edit-bar__component-edit'),icon=overlay.locator('.edit-bar__icon');
+ await button.hover();await expect(overlay).toHaveCSS('opacity','1');
+ await expect(icon).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+ await overlay.hover();
+ await expect(overlay).toHaveCSS('cursor','pointer');await expect(overlay).toHaveCSS('pointer-events','auto');
+ await expect(icon).not.toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+ await overlay.click();await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
+});

@@ -77,7 +77,7 @@ export function createFileRowActions(options: {
       if (menu.isOpen() && menu.opener === more) { menu.close(false); row.focus(); return; }
       openMenu(row, target, more);
     });
-    rowActions(line, ...line.querySelectorAll<HTMLElement>(":scope > .file-add, :scope > .file-restore"), more);
+    rowActions(line, [...line.querySelectorAll<HTMLElement>(":scope > .file-add, :scope > .file-restore"), more]);
     line.addEventListener("contextmenu", (event) => {
       if (!(event.target instanceof Element) || event.target.closest(".file-rename")) return;
       event.preventDefault();

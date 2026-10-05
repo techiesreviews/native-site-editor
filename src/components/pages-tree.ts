@@ -608,7 +608,7 @@ export function createPagesTree(options: {
       });
       actions.push(more);
     }
-    if (actions.length) rowActions(row, ...actions);
+    if (actions.length) rowActions(row, actions);
     item.append(row);
     item.addEventListener("click", (event) => {
       if (!ownEvent(event, item)) return;

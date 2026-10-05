@@ -290,7 +290,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       const used = button("", () => void showDetail(item.path, true), "media-library__usage");
       setIcon(used, "dots-three");
       used.setAttribute("aria-label", usageLabel); used.title = usageLabel;
-      rowActions(nameLine, used);
+      rowActions(nameLine, [used]);
       grid.append(card);
       // Observe thumbnails rather than downloading the whole repository on open.
       const observer = new IntersectionObserver((entries) => {

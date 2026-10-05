@@ -538,10 +538,23 @@
   pointer-events: none;
   transition: transform 140ms ease-out, opacity 140ms ease-out;
 }
+/* The pencil is a click target of its own: on a section's name, which drags
+   (grab), it is where a click edits, so it takes a pointer and a hover tint. */
+.edit-bar__component-edit > .edit-bar__icon {
+  box-sizing: content-box;
+  padding: 2px;
+  border-radius: var(--radius-small);
+  transition: background-color 120ms ease-out;
+}
 @media (hover: hover) and (pointer: fine) {
   .edit-bar__component-name:hover .edit-bar__component-edit {
     opacity: 1;
     transform: translateX(0);
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .edit-bar__component-edit:hover > .edit-bar__icon {
+    background-color: color-mix(in oklch, currentColor 16%, transparent);
   }
 }
 .edit-bar__component-name:focus-visible {
@@ -559,6 +572,7 @@
     transform: none;
     transition: none;
   }
+  .edit-bar__component-edit > .edit-bar__icon { transition: none; }
 }
 
 

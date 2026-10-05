@@ -184,15 +184,21 @@
 /* The surface Structure actually sits on: the sidebar (style.css .sidebar).
    Row fades end on it, with hover/current tints painted over it. A host on
    another surface sets --structure-surface. */
-/* Row actions are the shared faded bar (row-actions.ts, row-action-overlay.css).
-   Its fade follows the row's own paint in the order the row rules use:
-   resting surface, then hover/focus, then current. Hover and current are
-   translucent tints, so the opaque base under them is the Structure surface. */
-.page-structure__row.row-action-host { --row-action-background: var(--structure-surface, var(--surface-subtle)); --row-action-base: var(--structure-surface, var(--surface-subtle)); }
-.page-structure__row.row-action-host:is(:hover, :focus-visible) { --row-action-background: var(--hover); }
-.page-structure__row.row-action-host[aria-selected="true"] { --row-action-background: var(--current); }
-/* Resting actions sit translated past the row's end; keep them from widening the tree. */
-.page-structure__row.row-action-host { overflow: clip; }
+/* Row actions are the shared faded bar (row-actions.ts, row-action-overlay.css),
+   revealed by the whole row. Its host is the row, or for a slot row the
+   label, so the badge after it stays put. The fade follows the row's own
+   paint in the order the row rules use: resting surface, then hover/focus,
+   then current. Hover and current are translucent tints, so the opaque base
+   under them is the Structure surface. */
+.page-structure__row { --structure-row-paint: var(--structure-surface, var(--surface-subtle)); }
+.page-structure__row:is(:hover, :focus-visible) { --structure-row-paint: var(--hover); }
+.page-structure__row[aria-selected="true"] { --structure-row-paint: var(--current); }
+.page-structure__row.row-action-host,
+.page-structure__row .row-action-host { --row-action-background: var(--structure-row-paint); --row-action-base: var(--structure-surface, var(--surface-subtle)); }
+.page-structure__label.row-action-host { align-self: stretch; align-items: center; }
+/* Resting actions sit translated past the host's end; keep them from widening the tree. */
+.page-structure__row.row-action-host,
+.page-structure__label.row-action-host { overflow: clip; }
 .page-structure__action {
   display: grid;
   place-items: center;
@@ -278,23 +284,6 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, min(40%, 96px)) minmax(0, 1fr); }
 .page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }
-
-/* A slot's badge steps left of the bar while it shows, so the badge stays
-   readable and clickable; the fade covers only the label. The bar is its
-   buttons (22px, 2px apart) plus 4px end padding and the 20px fade. */
-.page-structure__row.row-action-host > .page-structure__slot-badge { transition: margin-right 140ms ease-out; }
-.page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .page-structure__slot-badge {
-  margin-right: calc(var(--row-action-count, 1) * 24px - 2px + 4px + 16px);
-}
-.page-structure__row.row-action-host:focus-within > .page-structure__slot-badge { transition: none; }
-@media (hover: none), (pointer: coarse) {
-  /* The bar already takes its own room after the badge. */
-  .page-structure__row.row-action-host:is(:hover, :focus-within, :has(> .row-action-overlay [aria-expanded="true"])) > .page-structure__slot-badge { margin-right: 0; }
-  .page-structure__row.row-action-host > .page-structure__slot-badge { transition: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .page-structure__row.row-action-host > .page-structure__slot-badge { transition: none; }
-}
 
 /* Native shared roots reuse the compact component affordance without slot rails. */
 .page-structure__row--shared-linked .page-structure__kind { color: var(--component-text); max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

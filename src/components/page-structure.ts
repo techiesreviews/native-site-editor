@@ -518,12 +518,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (visibility) actions.push(visibility);
     return actions;
   }
-  // Every row's actions share one faded bar at its far right (rowActions);
-  // a row that is both an instance and a slot gets them all in that one bar.
-  function addRowActions(row: HTMLElement, actions: HTMLElement[]) {
+  // Every row's actions share one faded bar (rowActions), revealed by the
+  // whole row. A row with a slot badge keeps the bar in its label, which ends
+  // where the badge starts, so the badge never moves or hides; a row that is
+  // both an instance and a slot gets all its actions in that one bar.
+  function addRowActions(row: HTMLElement, host: HTMLElement, actions: HTMLElement[]) {
     if (!actions.length) return;
     for (const action of actions) isolate(action);
-    rowActions(row, ...actions);
+    rowActions(host, actions, { trigger: row });
   }
   // Keep row controls from starting a drag, choosing the row or moving focus by arrow keys.
   function isolate(control: Element) {
@@ -552,11 +554,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const badge = editable(slot) ? button(slot.label, edit, "page-structure__slot-badge") : node("span", "page-structure__slot-badge", slot.label);
     if (badge instanceof HTMLButtonElement) { badge.title = `Edit ${slot.label}`; badge.setAttribute("aria-label", `Edit ${slot.label}`); isolate(badge); }
     el.append(label, badge);
-    if (slot.filled) addRowActions(el, slotActions(model, slot, edit));
+    if (slot.filled) addRowActions(el, label, slotActions(model, slot, edit));
     else {
       // Missing: an optional slot offers Show, a defaulted slot its pencil, in the same faded bar.
       const show = visibilityControl(model, slot) ?? (editable(slot) ? iconAction(`Edit ${slot.label}`, "edit", edit) : undefined);
-      if (show) addRowActions(el, [show]);
+      if (show) addRowActions(el, label, [show]);
     }
     el.addEventListener("click", () => { if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); } });
     el.addEventListener("keydown", event => {
@@ -704,6 +706,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     label.append(kindName);
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
+    const actionHost = slotContext ? label : el;
     if (slotModel) {
       // The row is named by its kind and preview only; its action buttons keep their own names.
       kindName.id = `page-structure-kind-${++rowNameSeq}`;
@@ -720,7 +723,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           if (!openAttributes) rows.get(id)?.focus();
         });
       attributesAction.setAttribute("aria-expanded", String(attributes));
-      addRowActions(el, [
+      addRowActions(el, actionHost, [
         attributesAction,
         iconAction("Edit component", "edit", slotModel.edit),
         iconAction("Disconnect this instance", "detach", slotModel.disconnect),
@@ -734,7 +737,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       el.setAttribute("aria-labelledby", [kindName.id, preview?.id].filter(Boolean).join(" "));
       if (shared.state === "linked") {
         el.classList.add("page-structure__row--shared-linked");
-        addRowActions(el, [iconAction("Edit component", "edit", shared.edit), iconAction("Disconnect this instance", "detach", shared.disconnect)]);
+        addRowActions(el, actionHost, [iconAction("Edit component", "edit", shared.edit), iconAction("Disconnect this instance", "detach", shared.disconnect)]);
       } else {
         const save = iconAction("Save shared", "add", () => {
           const fresh = structure?.path && handlers.nativeSharedRoot?.(structure.path, item);
@@ -754,7 +757,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           render(); form.focus();
         });
         save.setAttribute("aria-expanded", String(Boolean(sharing)));
-        addRowActions(el, [save]);
+        addRowActions(el, actionHost, [save]);
       }
     }
     if (slotContext) {
@@ -765,10 +768,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       badge.setAttribute("aria-label", editable(slot) ? `Edit ${slot.label}` : `Select ${slot.label}`);
       if (!editable(slot)) badge.title = `Select ${slot.label}`;
       isolate(badge);
-      // The badge goes before the bar so Tab reaches it first.
-      const bar = el.querySelector(":scope > .row-action-overlay");
-      if (bar) bar.before(badge); else el.append(badge);
-      addRowActions(el, slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext)));
+      el.append(badge);
+      addRowActions(el, label, slotActions(slotContext.model, slot, () => requestSlotEdit(slotContext)));
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;

@@ -19,24 +19,25 @@ async function harness(page:any) {
 // Native Structure baseline: every assigned root is a real treeitem; one inline
 // editor opens only on an explicit F2, pencil or badge.
 const row=(page:any,node:string)=>page.locator(`[role=treeitem][data-node="${node}"]`);
-// Slot rows use the same faded bar as every Structure row: at the far right,
-// over the row's end, without widening the tree.
-test('slot actions fade in at the far right in the shared row bar without overflow',async({page})=>{
+// Slot rows use the same faded bar as every Structure row, revealed by the
+// whole row. It sits in the label and ends where the badge starts, so the
+// badge never moves or hides, and nothing widens the tree.
+test('slot actions fade in just before the badge, which stays where it is',async({page})=>{
  await harness(page);
- const title=row(page,'0.0');
- await expect(title).toHaveClass(/row-action-host/);
- await expect(title.locator(':scope > .row-action-overlay')).toHaveCount(1);
- const pencil=title.getByRole('button',{name:'Edit Title',exact:true}).last();
- await expect(pencil).toHaveCSS('opacity','0');
+ const title=row(page,'0.0'),label=title.locator('.page-structure__label');
+ await expect(title).toHaveClass(/row-action-trigger/);await expect(label).toHaveClass(/row-action-host/);
+ await expect(title.locator('.row-action-overlay')).toHaveCount(1);
+ const pencil=title.locator('.row-action-overlay').getByRole('button',{name:'Edit Title',exact:true});
+ const badge=title.locator('.page-structure__slot-badge');
+ await page.mouse.move(0,0);await expect(pencil).toHaveCSS('opacity','0');
+ const rest=(await badge.boundingBox())!;
  await title.hover();await expect(pencil).toHaveCSS('opacity','1');await page.waitForTimeout(300);
- const geo=await title.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),o=el.querySelector(':scope > .row-action-overlay')!,kids=[...o.children].map(c=>c.getBoundingClientRect());return{right:r.right,last:kids[kids.length-1].right,fade:getComputedStyle(o,'::before').opacity,overflow:el.scrollWidth-el.clientWidth,tree:el.closest('[role=tree]')!.scrollWidth-el.closest('[role=tree]')!.clientWidth};});
- expect(geo.right-geo.last).toBeLessThanOrEqual(6);
+ const hovered=(await badge.boundingBox())!;
+ expect(hovered.x).toBe(rest.x);
+ const geo=await title.evaluate((el:HTMLElement)=>{const o=el.querySelector('.row-action-overlay')!,kids=[...o.children].map(c=>c.getBoundingClientRect());return{last:kids[kids.length-1].right,fade:getComputedStyle(o,'::before').opacity,overflow:el.scrollWidth-el.clientWidth,tree:el.closest('[role=tree]')!.scrollWidth-el.closest('[role=tree]')!.clientWidth};});
+ expect(geo.last).toBeLessThanOrEqual(hovered.x);expect(hovered.x-geo.last).toBeLessThanOrEqual(8);
  expect(geo.fade).toBe('1');
  expect(geo.overflow).toBeLessThanOrEqual(0);expect(geo.tree).toBeLessThanOrEqual(0);
- // The badge steps left of the bar, clear of its fade, and stays clickable.
- const badge=title.locator('.page-structure__slot-badge');const box=(await badge.boundingBox())!;
- const barLeft=await title.evaluate((el:HTMLElement)=>el.querySelector(':scope > .row-action-overlay')!.getBoundingClientRect().left);
- expect(box.x+box.width).toBeLessThanOrEqual(barLeft);
  await badge.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
  await page.keyboard.press('Escape');await expect(page.locator('.page-structure__inline')).toHaveCount(0);
  await title.hover();await pencil.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
@@ -55,8 +56,8 @@ test('a hidden slot keeps its place in the tree and its Show eye is in the faded
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');
  expect(await order()).toEqual(['host','hidden','title','image','cta','unknown']);
  const hidden=page.locator('.page-structure__row--empty-slot');
- await expect(hidden).toHaveClass(/row-action-host/);
- const eye=hidden.locator(':scope > .row-action-overlay').getByRole('button',{name:'Show Optional',exact:true});
+ await expect(hidden).toHaveClass(/row-action-trigger/);
+ const eye=hidden.locator('.page-structure__label > .row-action-overlay').getByRole('button',{name:'Show Optional',exact:true});
  await page.mouse.move(0,0);await expect(eye).toHaveCSS('opacity','0');
  await hidden.hover();await expect(eye).toHaveCSS('opacity','1');
  await eye.click();
@@ -74,15 +75,15 @@ test('slot visibility toggle at the row edge hides the slot and resting rows sta
 test('keyboard focus on a slot row reveals its actions at once and Tab reaches them',async({page})=>{
  await harness(page);
  const title=row(page,'0.0');await title.focus();
- const pencil=title.getByRole('button',{name:'Edit Title',exact:true}).last();
+ const pencil=title.locator('.row-action-overlay').getByRole('button',{name:'Edit Title',exact:true});
  await expect(pencil).toHaveCSS('opacity','1');
- await page.keyboard.press('Tab');await expect(title.locator('.page-structure__slot-badge')).toBeFocused();
+ // The bar's buttons come first, beside the label they act on, then the badge.
  await page.keyboard.press('Tab');await expect(pencil).toBeFocused();
+ await page.keyboard.press('Tab');await page.keyboard.press('Tab');await expect(title.locator('.page-structure__slot-badge')).toBeFocused();
 });
 test.describe('reduced motion',()=>{test.use({reducedMotion:'reduce'});
- test('the row bar and the badge step have no transition',async({page})=>{await harness(page);
-  await expect(row(page,'0.0').locator(':scope > .row-action-overlay > *').first()).toHaveCSS('transition-duration','0s');
-  await expect(row(page,'0.0').locator('.page-structure__slot-badge')).toHaveCSS('transition-duration','0s');});});
+ test('the row bar has no transition',async({page})=>{await harness(page);
+  await expect(row(page,'0.0').locator('.row-action-overlay > *').first()).toHaveCSS('transition-duration','0s');});});
 // Visibility is an eye toggle: open while shown, closed while hidden.
 const addOptional=(page:any)=>page.evaluate(()=>{const h=(window as any).slotHarness;h.source=h.source.replace('</project-card>','<p slot="optional">Extra</p></project-card>');h.update();});
 test('the visibility eye shows state, hides and shows by keyboard, and leaves no checkbox behind',async({page})=>{
