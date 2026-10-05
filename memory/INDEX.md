@@ -2,9 +2,11 @@
 
 ## Handoffs
 
-- [Reviewed listings continuation and preview release](handoffs/t3-listings-continuation-2026-10-05.md): migration action removed, visibility eye follows Edit, collection Code refresh and settings/delete races fixed; Claude approved application `634d69f`, released through `dev@abb5566` to preview version `e574d5aa`. Human screen-reader testing remains open.
+- [Builder UX, scroll and speed continuation, released to preview](handoffs/t3-builder-ux-continuation-2026-10-06.md): start here. Chat checklist complete; approved `5e3dc66`, released via `dev@ed5386c` to preview version `76144585`, 57/57 public files verified. Human screen-reader and live authenticated editing remain open.
 
-- [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): start here for the latest component reuse release, passing Node 24 CI, public asset checks, and owner-authentication verification limit.
+- [Reviewed listings continuation and preview release](handoffs/t3-listings-continuation-2026-10-05.md): previous checkpoint. Migration action removed, visibility eye follows Edit, collection Code refresh and settings/delete races fixed; Claude approved application `634d69f`, released through `dev@abb5566` to preview version `e574d5aa`. Human screen-reader testing remains open.
+
+- [Reviewed performance cleanup and preview release](handoffs/t3-performance-preview-2026-10-05.md): earlier checkpoint for the component reuse release, passing Node 24 CI, public asset checks, and owner-authentication verification limit.
 
 - [5 October transfer to T3 thread 0865866a](handoffs/t3-page-builder-transfer-2026-10-05.md): frozen green demo, three measured refactors awaiting independent review, helper cleanup and preview release next.
 
