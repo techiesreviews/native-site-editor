@@ -197,4 +197,10 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   assert.equal(field.input.value, "My-New-Site");
   assert.equal(field.hint.textContent, "github.com/techies/My-New-Site");
   assert.deepEqual(field.invalid(), ["false", false]);
+
+  // The tidied name is the one the wizard keeps: back to Connect and on again, the step is rebuilt with it.
+  const press = (text: string) => root.all().find((el) => el.localName === "button" && el.textContent === text)!.dispatchEvent(new FakeEvent("click"));
+  press("Back");
+  press("Next");
+  assert.equal(fieldOf(root, "wizard-name-hint").input.value, "My-New-Site");
 });
