@@ -167,3 +167,25 @@ test("a host remount over the exact step bytes adopts its proof; a changed remou
   const g = fixture(), prepared = prepareNativeTextHistory(g.host, g.plan)!;
   assert.equal(prepared.adoptOwnMount("untouched.css", g.host.modelState("untouched.css"), "same"), false);
 });
+
+test("repeated adoption keeps one lease per model, and disposal releases it", () => {
+  const f = fixture(), held = new Map<object, number>();
+  const host = { ...f.host, persistentModels: true, retainModel(path: string) {
+    const model = f.models.get(path); if (!model) return () => {};
+    held.set(model, (held.get(model) ?? 0) + 1);
+    let released = false;
+    return () => { if (!released) { released = true; held.set(model, held.get(model)! - 1); } };
+  } };
+  const receipt = prepareNativeTextHistory(host, f.plan)!; assert.equal(receipt.apply(), true);
+  const first = f.models.get("untouched.css")!;
+  assert.equal(held.get(first), 1);
+  // Adopting the same model again and again keeps one lease on it.
+  for (let n = 0; n < 1000; n++) assert.equal(receipt.adoptOwnMount("untouched.css", host.modelState("untouched.css"), "same"), true);
+  assert.equal(held.get(first), 1);
+  // A new model for the path takes the lease over; the earlier one is released.
+  const second = { text: "same", version: 1 }; f.models.set("untouched.css", second);
+  assert.equal(receipt.adoptOwnMount("untouched.css", host.modelState("untouched.css"), "same"), true);
+  assert.equal(held.get(first), 0); assert.equal(held.get(second), 1);
+  receipt.dispose();
+  assert.deepEqual([...held.values()], [0, 0, 0]);
+});

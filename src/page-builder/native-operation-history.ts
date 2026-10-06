@@ -35,7 +35,9 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   const preparedSources = host.prepareSources(modelEdits as { path: string; expectedSource: string; text: string }[]);
   if (!preparedSources) return;
   const sources: Sources = preparedSources;
-  const leases = host.persistentModels ? paths.map(path => host.retainModel?.(path)).filter((dispose): dispose is () => void => !!dispose) : [];
+  // One lease per path: the model this receipt proves for it now.
+  const leases = new Map<string, () => void>();
+  if (host.persistentModels) for (const path of paths) { const lease = host.retainModel?.(path); if (lease) leases.set(path, lease); }
   let lastError: string | undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
   const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
@@ -178,9 +180,11 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     proofs.set(path, proof); mounted.set(path, true);
     // Lease the adopted model like the ones captured at prepare time, so
     // leaving the page keeps it (clean) instead of disposing the proven model.
+    // It replaces the path's earlier lease (taken first, so a model adopted
+    // again is never released in between): adoptions never pile up.
     const lease = host.persistentModels ? host.retainModel?.(path) : undefined;
-    if (lease) leases.push(lease);
+    if (lease) { const earlier = leases.get(path); leases.set(path, lease); earlier?.(); }
     return true;
   }
-  return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases) dispose(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+  return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases.values()) dispose(); leases.clear(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
 }
