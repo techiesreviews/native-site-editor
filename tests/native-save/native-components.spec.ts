@@ -281,6 +281,13 @@ test("Edit component from its root opens the template, says what an edit changes
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeFocused();
+  for (const key of ["Enter", "Space"]) {
+    await page.keyboard.press(key);
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeFocused();
+  }
   // Choosing a page opens it with the first instance selected.
   await banner.getByRole("button", { name: "Used on 1 page" }).click();
   await menu.getByRole("menuitem").first().click();

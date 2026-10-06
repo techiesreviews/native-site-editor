@@ -190,6 +190,11 @@ export function createComponentTools(deps: ComponentDeps) {
   usedOn.setAttribute("aria-label", "Used on");
   document.body.append(usedOn);
   const usedOnDropdown = mountDropdown({ trigger: usedOnButton, panel: usedOn, anchor: "--component-used-on", hoverDelay: 150 });
+  // Enter or Space (a click with no pointer) opens it with the focus on its first item;
+  // hover and pointer clicks leave the focus where it is.
+  usedOnButton.addEventListener("click", (event) => {
+    if (event.detail === 0 && usedOnDropdown.isOpen()) usedOn.querySelector<HTMLElement>("[role='menuitem']")?.focus();
+  });
   const doneButton = node("button", "canvas-component__done");
   doneButton.type = "button";
   doneButton.setAttribute("aria-label", "Done editing component");
