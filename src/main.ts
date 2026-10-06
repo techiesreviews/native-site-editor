@@ -143,6 +143,53 @@ function loadEditorModule() {
     },
   ));
 }
+// Monaco (the code editor chunk, ~1 MB gzip) never competes with the reads
+// the preview needs: a native site's first code pane waits until the preview
+// has painted, the boot reads have settled and the browser is idle. Anything
+// that needs the editor sooner (opening a code pane, a click in the preview,
+// an agent's command) asks for it and it loads at once.
+let editorGateOpen = false;
+let openEditorGate: () => void = () => {};
+const editorGate = new Promise<void>((resolve) => {
+  openEditorGate = () => { editorGateOpen = true; resolve(); };
+});
+let bootEditorDeferred = false;
+let previewPainted = false;
+let apiReadsInFlight = 0;
+function wantEditor() {
+  openEditorGate();
+  return loadEditorModule();
+}
+// The first preview paint (the runtime has rendered and reported the page's
+// structure): Monaco follows once the reads settle and the browser is idle.
+function notePreviewPainted() {
+  if (previewPainted || editorGateOpen) return;
+  previewPainted = true;
+  requestAnimationFrame(() => void (async () => {
+    // The page's remaining reads (styles, images, the site's text index) go first, for at most 3 s.
+    for (let waited = 0; apiReadsInFlight > 0 && waited < 3000 && !editorGateOpen; waited += 100)
+      await new Promise((done) => setTimeout(done, 100));
+    if (editorGateOpen) return;
+    const load = () => void wantEditor().catch(() => {});
+    if (typeof requestIdleCallback === "function") requestIdleCallback(load, { timeout: 1500 });
+    else setTimeout(load, 200);
+  })());
+}
+// Resolves with the editor module: at once when the editor is wanted, else
+// (a native site's first code pane) once the preview has painted. A preview
+// that never paints (an error) does not hold the code back for long.
+function editorModuleWhenDue(defer: boolean) {
+  if (!defer || editorGateOpen) return wantEditor();
+  setTimeout(() => openEditorGate(), 8000);
+  return editorGate.then(loadEditorModule);
+}
+// The editor as soon as it is wanted, with the code pane that was opening
+// at boot mounted: for actions that need a mounted source.
+let editorOpening: Promise<void> | undefined;
+async function editorReady() {
+  await wantEditor().catch(() => undefined);
+  await editorOpening;
+}
 let disposeEditor: (() => void) | undefined;
 // The live primary keeps its journal even when a completed operation releases its alias.
 let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
@@ -169,15 +216,27 @@ function closeEditor() {
   disposeEditor = undefined;
 }
 
-async function openCodeEditor(
+function openCodeEditor(
+  file: import("./components/code-editor").SourceFile,
+  beforeMount?: () => boolean,
+) {
+  const opening = mountCodeEditorWhenDue(file, beforeMount);
+  editorOpening = opening;
+  return opening;
+}
+async function mountCodeEditorWhenDue(
   file: import("./components/code-editor").SourceFile,
   beforeMount?: () => boolean,
 ) {
   closeEditor();
   const request = editorRequest;
-  content.replaceChildren(node("p", "empty-message", "Opening editor…"));
+  // Only a native site's first code pane waits for the preview; any later
+  // open was asked for and loads the editor at once.
+  const defer = !editorGateOpen && !bootEditorDeferred && nativeModeActive();
+  bootEditorDeferred = true;
+  content.replaceChildren(node("p", "empty-message", defer ? "The code loads once the page is on screen." : "Opening editor…"));
   try {
-    editorModule = await loadEditorModule();
+    editorModule = await editorModuleWhenDue(defer);
     if (request !== editorRequest || !info.user) return;
     if (beforeMount && !beforeMount()) { content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again.")); return; }
     const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
@@ -363,6 +422,9 @@ function mountWorkspace() {
     }
   });
   codeResize = mountCodeResize(element("main"), element("code-split"));
+  // Reaching for the code before Monaco's idle load fetches it now.
+  for (const type of ["pointerdown", "focusin"])
+    element("code-split").addEventListener(type, () => void wantEditor().catch(() => {}), { once: true });
   codeWidthResize = mountCodeWidthResize(
     element("code-split"),
     element("code-split").querySelector<HTMLElement>(".code-pane")!,
@@ -405,6 +467,7 @@ function mountWorkspace() {
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
       if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
+      notePreviewPainted();
       const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
       const proof = scope && editorModule?.captureFileModelState(scope, path);
       const capture = (item: NativeStructureItem) => {
@@ -1260,7 +1323,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
     const [source, editor] = await Promise.all([
       entry ? readFile(scope.repo, entry.sha) : "",
-      loadEditorModule(),
+      wantEditor(),
     ]);
     if (request !== secondaryRequest || !current() || draftStore().get(scope, css)?.deleted) return false;
     disposeSecondary?.();
@@ -2183,6 +2246,8 @@ function moveNativeSectionTo(target: { path: string; node?: number[]; tag: strin
 // it stays. A change that cannot be placed exactly (it crosses a tag) is
 // dropped and the preview shows the source again.
 async function applyNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
+  // The edit lands in the page's editor: fetch it now if it is not here yet.
+  void wantEditor().catch(() => {});
   if (!nativePreview) return;
   const openingEpoch = generation, openingScope = setupScope();
   // While a master is on show, only text typed in that very session's master is taken; it is
@@ -2602,6 +2667,8 @@ async function selectNativeSource(selection: NativePreviewSelection) {
     }
   }
   const reveal = selection.reason !== "refresh";
+  // Editing what was selected needs the code editor: fetch it now if it is not here yet.
+  if (reveal && selection.path) void wantEditor().catch(() => {});
   if (selection.path !== lastNativeSelection?.path || selection.node?.join(".") !== lastNativeSelection?.node?.join(".")) nativeSelectionEpoch++;
   lastNativeSelection = selection.path ? selection : undefined;
   for (const waiter of [...nativeSelectionWaiters]) waiter(selection);
@@ -4062,11 +4129,17 @@ async function api<T>(
   path: string,
   params?: Record<string, string>,
 ): Promise<T> {
-  const response = await fetchWithReadRetry(
-    `/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`,
-    { credentials: "same-origin", cache: "no-store" },
-  );
-  const data = await response.json();
+  apiReadsInFlight++;
+  let response: Response, data: { error?: string };
+  try {
+    response = await fetchWithReadRetry(
+      `/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`,
+      { credentials: "same-origin", cache: "no-store" },
+    );
+    data = await response.json();
+  } finally {
+    apiReadsInFlight--;
+  }
   if (!response.ok)
     throw new ApiError(
       response.status,
@@ -7238,9 +7311,15 @@ const agentSiteActions: AgentSiteActions = {
   },
   legacy: applyAgentCommand,
 };
-function applyAgentSiteCommand(command: AgentCommand) {
+async function applyAgentSiteCommand(command: AgentCommand) {
   if (!snapshot || command.branch !== snapshot.branch || command.commit !== snapshot.commit)
     throw new Error("The editor changed branch or revision.");
+  // Commands edit and read the mounted sources: the editor and the open file's pane come first.
+  if (!editorModule?.isMounted(currentPath ?? "")) {
+    await editorReady();
+    if (!snapshot || command.branch !== snapshot.branch || command.commit !== snapshot.commit)
+      throw new Error("The editor changed branch or revision.");
+  }
   return agentActing(() => applySiteCommand(agentSiteActions, command));
 }
 // While an agent's command runs, file operations leave .github alone (see applyNativeOperation).
@@ -7640,7 +7719,6 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   });
   // A branch lookup may fail first or navigation may supersede this request.
   void prefetched.catch(() => {});
-  void loadEditorModule().catch(() => {});
   try {
     const branches = await api<string[]>("branches", {
       repo: currentRepo.full_name,
@@ -8335,9 +8413,6 @@ async function start() {
     }
     if (session.user) {
       rememberSignedIn(storage("local"));
-      // The editor bundle is large; start it downloading before any
-      // repository data arrives so opening the first file never waits for it.
-      void loadEditorModule().catch(() => {});
       // Drafts are read synchronously from here on: they load before
       // anything can read them (src/drafts.ts).
       await draftStore().load(session.user.login);
