@@ -41,6 +41,7 @@ Decided with Lex.
 2. `@smoke` slice and byte budget (ticket 02) on every push; nightly full suite in 4 shards.
 
 **Phase 4: boot path**
+Split into small tasks on 2026-10-06 so more run at once (Lex). Started alongside phase 2–3: 4a `html-entities` fast path; 4b parallel installation listing; 4c `/api/files` through GraphQL `prefetchTexts`; 4d the Monaco-free draft store as a standalone module with tests (wired in later); 4e on-demand loading for the command palette, history, media, onboarding and agent panel. Waiting on the image and Monaco slices: wiring the draft store, the front-end boot steps, the session without the repository list and the repository listing in the session DO. New tasks run targeted specs only; the full suite runs once per merge.
 1. ★ Monaco-free draft store (ticket 03 point 4).
 2. ★ Boot requests: session without repository list, parallel installations, GraphQL file batches, DO session tweaks, repository listing in the session DO (tickets 04, 05, 13).
 3. Front-end boot steps: parallel drafts load, `findDeletedUpstream` after paint, parallel `@import` levels, image/font wait capped (ticket 05).
