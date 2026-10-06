@@ -380,9 +380,7 @@ test("file batches use one GraphQL query and share exact UTF-8 blobs with other 
   assert.deepEqual(await github.files(repo, [...shas, shas[0]]), Object.fromEntries(shas.map((sha) => [sha, text])));
   assert.deepEqual(queries, [MAX_BATCH_FILES]);
   const other = new GitHub("another-token", fetcher);
-  const raw = await other.raw(repo, shas[0]);
-  assert.equal(raw.size, bytes.length);
-  assert.deepEqual(Uint8Array.from(atob(raw.content), (char) => char.charCodeAt(0)), bytes);
+  assert.deepEqual(await other.bytes(repo, shas[0]), bytes);
   assert.equal(await other.file(repo, shas[0]), text);
   await other.files(repo, shas);
   assert.deepEqual(queries, [MAX_BATCH_FILES], "cached blobs are not prefetched again");
