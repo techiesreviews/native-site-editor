@@ -1,5 +1,6 @@
 import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
+import { editorMounted } from "./drafts";
 
 const panel = (page: Page) => page.locator(".pb-add-panel:visible");
 async function open(page: Page, baseURL: string | undefined) {
@@ -13,6 +14,8 @@ async function open(page: Page, baseURL: string | undefined) {
 // became sections-only; plain HTML sections show whole, like components.
 test("section thumbnails show the whole section at the canvas's width, with no code peek", async ({ page, baseURL }) => {
   await open(page, baseURL);
+  // Monaco loads after the preview paints: compare against the mounted source.
+  await editorMounted(page);
   const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   const add = panel(page);
   for (const name of [/^Feature block/, /^Intro HTML$/, /^Split HTML$/]) {
