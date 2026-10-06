@@ -743,10 +743,12 @@ async function route(
     // workspace opens in one round trip. A listing failure is not a session
     // failure; the browser retries through /api/repositories and shows the error.
     const current = cookie(request, "session");
+    const github = user ? new GitHub(user.token, fetcher) : undefined;
+    const owners = user ? github!.ownerInstallations(user.login) : undefined;
     const [repositories, accounts] = user
       ? await Promise.all([
-          new GitHub(user.token, fetcher)
-            .repositories(user.login)
+          github!
+            .repositories(user.login, 0, owners)
             .catch(() => null),
           Promise.all(
             accountIds(request).map(async (id) => {
@@ -764,8 +766,8 @@ async function route(
     // (or the listing failed and nothing is known).
     let onboarding: "install" | "create" | null = null;
     if (user && Array.isArray(repositories) && repositories.length === 0) {
-      const owners = await new GitHub(user.token, fetcher).ownerInstallations(user.login).catch(() => undefined);
-      if (owners) onboarding = owners.length ? "create" : "install";
+      const installations = await owners!.catch(() => undefined);
+      if (installations) onboarding = installations.length ? "create" : "install";
     }
     return json({
       configured: Boolean(app),

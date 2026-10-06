@@ -28,6 +28,7 @@ const maxPages = 50;
 const maxFileBytes = 1024 * 1024;
 const maxAssetBytes = 2 * 1024 * 1024;
 const batchConcurrency = 8;
+const installationConcurrency = 6;
 
 // Selected-repository listings are remembered briefly per access token so the
 // editor's burst of requests after sign-in (branches, snapshot, files) does not
@@ -249,7 +250,8 @@ export class GitHub {
     );
   }
 
-  async repositories(login: string, maxAge = 0): Promise<Repository[]> {
+  /** With maxAge 0, callers may share a request-local installation lookup for onboarding. */
+  async repositories(login: string, maxAge = 0, installations?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
     const fetcher = this.fetcher;
     let byToken = listings.get(fetcher);
     if (!byToken) listings.set(fetcher, (byToken = new Map()));
@@ -264,7 +266,7 @@ export class GitHub {
       if (byToken.size >= maxListings)
         byToken.delete(byToken.keys().next().value!);
     }
-    const repos = this.listRepositories(login);
+    const repos = this.listRepositories(login, installations);
     byToken.set(key, { fetchedAt: now, repos });
     repos.catch(() => {
       if (byToken!.get(key)?.repos === repos) byToken!.delete(key);
@@ -360,16 +362,30 @@ export class GitHub {
     };
   }
 
-  private async listRepositories(login: string): Promise<Repository[]> {
-    const installations = await this.ownerInstallations(login);
+  private async listRepositories(login: string, owners?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
+    const installations = await (owners ?? this.ownerInstallations(login));
+    const listings: PromiseSettledResult<Repository[]>[] = new Array(installations.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(installationConcurrency, installations.length) }, async () => {
+      while (next < installations.length) {
+        const index = next++;
+        try {
+          // GitHub intersects an installation's repositories with the user's own access.
+          listings[index] = { status: "fulfilled", value: await this.pages<Repository>(
+            `/user/installations/${installations[index].id}/repositories`,
+            "repositories",
+          ) };
+        } catch (reason) {
+          listings[index] = { status: "rejected", reason };
+        }
+      }
+    }));
     const repos = new Map<number, Repository>();
-    for (const installation of installations) {
-      // GitHub intersects an installation's repositories with the user's own access.
-      const rows = await this.pages<Repository>(
-        `/user/installations/${installation.id}/repositories`,
-        "repositories",
-      );
-      for (const repo of rows) {
+    for (const [index, installation] of installations.entries()) {
+      const listing = listings[index];
+      // Merge and report failures in installation order, regardless of completion order.
+      if (listing.status === "rejected") throw listing.reason;
+      for (const repo of listing.value) {
         if (repo.owner.login.toLowerCase() === installation.login.toLowerCase()) {
           // Return only the fields the browser needs, not the full GitHub response.
           repos.set(repo.id, {

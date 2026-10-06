@@ -236,6 +236,23 @@ test("an account without the App is told to install it by /api/session, and a fa
   assert.equal(unknown.repositories, null);
 });
 
+test("/api/session reuses one installation lookup for empty-account onboarding", async () => {
+  for (const installed of [false, true]) {
+    const { env } = environment();
+    const response = await signIn(env, account({ installed: true }));
+    const upstream = account({ installed });
+    let lookups = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === "/user/installations") lookups++;
+      return upstream(input, init);
+    };
+    const info = await (await handle(get("/api/session", sessionCookie(response)), env, fetcher)).json();
+    assert.deepEqual(info.repositories, []);
+    assert.equal(info.onboarding, installed ? "create" : "install");
+    assert.equal(lookups, 1);
+  }
+});
+
 test("no loop: a sign-in that ends the install trip, with the App still missing (cancelled), stays in the editor", async () => {
   // State from /auth/install (case (a) of the return): the sign-in is the end of that trip.
   {
