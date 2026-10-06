@@ -1,5 +1,8 @@
 import { defineConfig, type PlaywrightTestConfig } from "@playwright/test";
 
+type Use = PlaywrightTestConfig["use"];
+type WebServer = Extract<PlaywrightTestConfig["webServer"], unknown[]>[number];
+
 // Every browser suite, one project each. Pick one with --project, a slice with
 // --grep (tags: @smoke, @actual, @native-static), e.g.
 //   npx playwright test --project=native-save
@@ -33,7 +36,7 @@ function runs(project: string) {
   if (!names.length) return true;
   return names.some((name) => new RegExp(`^${name.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "i").test(project));
 }
-function server(project: string, port: number): NonNullable<PlaywrightTestConfig["webServer"]> {
+function server(project: string, port: number): WebServer {
   return {
     command: `ASE_NATIVE_SAVE_PORT=${port} tsx tests/native-save/server.ts`,
     url: `http://127.0.0.1:${port}/api/session`,
@@ -43,17 +46,17 @@ function server(project: string, port: number): NonNullable<PlaywrightTestConfig
   };
 }
 
-const app = {
+const app: Use = {
   viewport: { width: 1440, height: 1000 },
   colorScheme: "light",
   reducedMotion: "reduce",
   screenshot: "only-on-failure",
   trace: "retain-on-failure",
   permissions: ["clipboard-read", "clipboard-write"],
-} as const;
+};
 
 // Component harnesses (no app server): small viewport, short timeouts.
-const harness = { viewport: { width: 800, height: 700 }, reducedMotion: "reduce", screenshot: "only-on-failure" } as const;
+const harness: Use = { viewport: { width: 800, height: 700 }, reducedMotion: "reduce", screenshot: "only-on-failure" };
 
 export default defineConfig({
   testDir: "./tests",
