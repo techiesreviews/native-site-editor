@@ -113,7 +113,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect(pane(page).getByRole("button", { name: "Delete image…", exact: true })).toBeInViewport();
     await pane(page).getByRole("button", { name: "Back to grid", exact: true }).scrollIntoViewIfNeeded();
     await expect(pane(page).getByRole("button", { name: "Back to grid", exact: true })).toBeInViewport();
-    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-narrow-${colorScheme}.png` });
+    await page.screenshot({ path: `.scratch/t3-continuation/media-manager-narrow-${colorScheme}.png` });
   });
 }
 
@@ -234,10 +234,10 @@ for (const colorScheme of ["light", "dark"] as const) {
     await test.info().attach("pane-geometry", { body: JSON.stringify(box), contentType: "application/json" });
     expect(box?.height).toBeLessThanOrEqual(495);
     expect((box?.y ?? 900) + (box?.height ?? 900)).toBeLessThan(700);
-    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
+    await page.screenshot({ path: `.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await expect(pane(page).getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
-    await page.screenshot({ path: `/home/ubulex/Projects/native-site-editor/.scratch/t3-continuation/media-manager-details-desktop-${colorScheme}.png` });
+    await page.screenshot({ path: `.scratch/t3-continuation/media-manager-details-desktop-${colorScheme}.png` });
   });
 }
 

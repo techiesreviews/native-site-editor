@@ -16,7 +16,7 @@
 import { startTagAttribute } from "../../shared/html-source";
 import { attributeEdit, descendants, parseSource, startTagAttributes, type SourceElement } from "./component-model";
 import { applyCollectionEdits, safeCollectionUrl } from "./collection-bake";
-import { fieldName, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { collectionFieldName, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionSpec, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
 import { planSidecarRecipe, type CollectionRecipe } from "./collection-origins";
 import { planDocumentBake } from "./document-collections";
@@ -235,7 +235,7 @@ export function planStaticCardConversion(input: StaticConversionInput): StaticCo
   const edits: { start: number; end: number; text: string }[] = [];
   for (const [index, part] of first.parts.entries()) {
     const field = `${token}-${part.name}`;
-    if (!fieldName.test(field)) return fail(`The ${part.name} part cannot be named as a field.`);
+    if (!collectionFieldName.test(field)) return fail(`The ${part.name} part cannot be named as a field.`);
     const { element } = part;
     let open = source.slice(element.start, element.tag.end);
     const close = element.close ? source.slice(element.close.start, element.close.end) : "";

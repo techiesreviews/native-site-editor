@@ -1,14 +1,14 @@
 import { descendants, parseSource, startTagAttributes, type RangeEdit, type SourceElement, type SourceNode } from "./component-model";
 import { collectionSpec, readCollections, collectionRecords, type SourceCollection } from "./collection-model";
 import { assertJsonValue as json, assertSectionTarget as targetValid, attribute, locateSectionTarget, makeSectionTarget, setOpeningTagFingerprint, type JsonValue, type LocatedSectionTarget, type SectionTarget } from "./source-target";
-import { builtinFields, fieldName, resolvePageFields, type CollectionIdentity } from "./collection-fields";
+import { builtinCollectionFields, collectionFieldName, resolvePageFields, type CollectionIdentity } from "./collection-fields";
 import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords } from "./collection-bake";
 import { escapeText } from "./site-head";
 import { nativePageRoute } from "../../shared/native-routes";
 
 export const EDITOR_PAGE_BUILDER_PATH = ".editor/page-builder.json";
 export type { JsonValue };
-export interface PageBuilderPage { [key: string]: JsonValue | undefined; fields?: { [key: string]: string }; sections?: { [key: string]: JsonValue } }
+export interface PageBuilderPage { [key: string]: JsonValue | undefined; sections?: { [key: string]: JsonValue } }
 export interface PageBuilderCollection {
   pagePath: string;
   target: SectionTarget;
@@ -48,10 +48,6 @@ function validate(document: unknown): asserts document is PageBuilderDocument {
   object(document.pages, "Pages"); object(document.collections, "Collections");
   for (const [path, page] of Object.entries(document.pages)) {
     pagePath(path); object(page, "Page metadata");
-    if (page.fields !== undefined) {
-      object(page.fields, "Page fields");
-      for (const [name, value] of Object.entries(page.fields)) if (!fieldName.test(name) || builtinFields.some((field) => field === name) || typeof value !== "string") fail("Page fields must use custom field names and string values.");
-    }
     if (page.sections !== undefined) object(page.sections, "Page sections");
   }
   const targets = new Set<string>();
@@ -61,7 +57,7 @@ function validate(document: unknown): asserts document is PageBuilderDocument {
     if (!Array.isArray(record.folders) || record.folders.some((folder) => typeof folder !== "string") || typeof record.sort !== "string" || typeof record.filter !== "string" || !Number.isSafeInteger(record.limit)) fail("Invalid collection specification.");
     const spec = collectionSpec({ folders: record.folders, sort: record.sort, filter: record.filter, limit: String(record.limit) });
     if (spec.folders.length !== record.folders.length) fail("Duplicate collection folders.");
-    if (typeof record.template !== "string" || !Array.isArray(record.fields) || record.fields.some((field) => typeof field !== "string" || !fieldName.test(field) || builtinFields.some((builtin) => builtin === field)) || new Set(record.fields).size !== record.fields.length) fail("Invalid collection template or fields.");
+    if (typeof record.template !== "string" || !Array.isArray(record.fields) || record.fields.some((field) => typeof field !== "string" || !collectionFieldName.test(field) || builtinCollectionFields.some((builtin) => builtin === field)) || new Set(record.fields).size !== record.fields.length) fail("Invalid collection template or fields.");
     bindCollectionTemplate(record.template, Object.fromEntries(record.fields.map((field) => [field, ""])), record.fields);
     object(record.overrides, "Collection overrides");
     for (const [path, fields] of Object.entries(record.overrides)) {
@@ -99,7 +95,12 @@ export function readPageBuilderDocument(text: string | undefined): PageBuilderDo
   validate(document); return document;
 }
 export function writePageBuilderDocument(document: PageBuilderDocument, previousText?: string): string {
-  validate(document); const text = stable(document);
+  validate(document);
+  const next = { ...document, pages: Object.fromEntries(Object.entries(document.pages).map(([path, page]) => {
+    const { fields: _fields, ...kept } = page;
+    return [path, kept];
+  })) };
+  validate(next); const text = stable(next);
   return previousText !== undefined && stable(readPageBuilderDocument(previousText)) === text ? previousText : text;
 }
 function elements(nodes: SourceNode[]): SourceElement[] { return nodes.filter((node): node is SourceElement => node.type === "element"); }
@@ -183,7 +184,7 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
       if (!collections.length) continue;
       for (const collection of collections) {
         if (startTagAttributes(source, collection.template.tag).length) fail("A recipe template with authored attributes cannot be removed safely.");
-        if (collection.fields.some((field) => builtinFields.some((builtin) => builtin === field))) fail("Collection field declarations cannot replace builtin fields.");
+        if (collection.fields.some((field) => builtinCollectionFields.some((builtin) => builtin === field))) fail("Collection field declarations cannot replace builtin fields.");
         const attrs = startTagAttributes(source, collection.element.tag);
         if ([...recipeAttributes].some((name) => attrs.filter((attr) => attr.name === name).length > 1)) fail("Duplicate collection recipe attributes.");
         const existing = attribute(source, collection.element, "data-collection-id");
@@ -193,7 +194,7 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
         if (ids.has(id)) fail(`Duplicate collection id: ${id}.`);
         ids.add(id);
         const markup = source.slice(collection.template.tag.end, collection.template.close!.start);
-        // Fields as every bake reads them: the page's HTML, then this JSON's page records.
+        // Collection values come from HTML, with an authored JSON date as fallback.
         const all = collectionRecords(input.sources, input.routes, input.identity, { ...collection.spec, sort: "", filter: "", limit: Number.MAX_SAFE_INTEGER }, pagePath)
           .map((record) => ({ ...record, fields: resolvePageFields(record.fields, Object.hasOwn(document.pages, record.path) ? document.pages[record.path] : undefined) }));
         const records = selectCollectionRecords(all, collection.spec, collection.fields);
@@ -201,7 +202,7 @@ export function planLegacyCollectionImport(input: LegacyCollectionImportInput): 
         const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
         bindCollectionTemplate(markup, Object.fromEntries(known.map((field) => [field, ""])), known);
         for (const record of records) expectedSources[record.path] = input.sources[record.path];
-        discovered.push({ pagePath, source, collection, id, fields: known.filter((field) => !builtinFields.some((builtin) => builtin === field)), privateFields: privateFields(source, collection, existing) });
+        discovered.push({ pagePath, source, collection, id, fields: known.filter((field) => !builtinCollectionFields.some((builtin) => builtin === field)), privateFields: privateFields(source, collection, existing) });
         (edits[pagePath] ??= []).push(...attrs.filter((attr) => recipeAttributes.has(attr.name)).map((attr) => ({ start: attr.start, end: attr.end, text: "" })), { start: collection.template.start, end: collection.template.end, text: "" });
       }
     }

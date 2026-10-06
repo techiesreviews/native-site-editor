@@ -1,6 +1,6 @@
 import { startTags, VOID_ELEMENTS } from "../../shared/html-source";
 import { descendants, parseSource, type SourceNode } from "./component-model";
-import { builtinFields, fieldName, ownPageField, resolvePageFields, type CollectionIdentity, type PageDataRecord, type PageFields } from "./collection-fields";
+import { builtinCollectionFields, collectionFieldName, ownPageField, resolvePageFields, type CollectionIdentity, type PageDataRecord, type PageFields } from "./collection-fields";
 import { collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord, type SourceCollection } from "./collection-model";
 import { attribute } from "./source-target";
 import { decodeHtmlEntities } from "./html-entities";
@@ -98,7 +98,7 @@ function validateTemplate(source: string): void {
 /** Source-preserving binding: text and attribute values only, never tag names or comments. */
 export function bindCollectionTemplate(template: string, fields: PageFields, knownFields = Object.keys(fields)): string {
   validateTemplate(template);
-  const known = new Set([...builtinFields, ...knownFields]);
+  const known = new Set([...builtinCollectionFields, ...knownFields]);
   const tree = parseSource(template);
   const raw = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]);
   const render = (nodes: SourceNode[], from: number, to: number): string => {
@@ -117,7 +117,7 @@ export function bindCollectionTemplate(template: string, fields: PageFields, kno
       // data-if="field" renders when the field has text; data-if="!field" only when it is empty.
       const negated = condition?.startsWith("!") ?? false;
       const conditionField = negated ? condition!.slice(1) : condition;
-      if (conditionField !== undefined && (!fieldName.test(conditionField) || !known.has(conditionField))) throw new Error(`Unknown or malformed collection condition: ${condition}.`);
+      if (conditionField !== undefined && (!collectionFieldName.test(conditionField) || !known.has(conditionField))) throw new Error(`Unknown or malformed collection condition: ${condition}.`);
       let tag = template.slice(node.start, node.tag.end);
       const edits: CollectionEdit[] = [];
       // Attribute scanner covers quoted > and unquoted values. Attribute names cannot be bindings.
@@ -200,7 +200,7 @@ function bakeListing(sources: Record<string, string>, routes: Record<string, str
   validateTemplate(source.slice(template.start, template.end));
   const markup = source.slice(template.tag.end, template.close!.start);
   // An empty list still validates its template instead of silently accepting a typo.
-  bindCollectionTemplate(markup, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
+  bindCollectionTemplate(markup, Object.fromEntries([...builtinCollectionFields, ...known].map((field) => [field, ""])), known);
   const records = selectCollectionRecords(all, spec, collection.fields);
   const newline = source.includes("\r\n") ? "\r\n" : "\n";
   const output = records.map((record) => bindCollectionTemplate(markup, record.fields, known)).join(newline);

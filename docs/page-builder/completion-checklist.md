@@ -1,5 +1,7 @@
 # Native builder completion checklist
 
+
+**Current status (P1.4, 2026-10-06):** Page settings › Fields and its migration action are removed. Completed Fields entries below record historical delivery, not current UI. Collections remain until P1.5; HTML metadata and recipe overrides supply their values. See [P1.4](../wayfinder/lean-fast-editor/build/p1-4-page-fields.md).
 Latest requests override earlier panel and catalogue behavior. GitHub must contain ready, directly served pages without human or AI cleanup, editor-dependent page loading, a framework build or a publishing transform. Prefer native HTML/CSS where it suffices. Lex's 5 October permission allows Web Components in both the editor and generated sites where they improve reuse or behavior; no wholesale migration is required. Preserve the ordinary static starter and its JavaScript-disabled output checks. Editor controls and reusable authoring data stay in the editor project or deletable `.editor` files. Preserve all worktrees and uncommitted work. Production/main stays untouched. Independent code, UX and design review uses Claude Opus 5.5 through CLI.
 
 ## Current chat requests, in execution order

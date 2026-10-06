@@ -14,7 +14,7 @@ const card = '<article><a href="/work/lifecycle/">Lifecycle</a><img src="/images
 const external = '<img src="https://example.com/images/studio-desk.svg" alt="">';
 const home = `<!doctype html><html><head><title>Collection proof</title></head><body><main><div id="proof-cards">${card}</div><p>${external}</p></main></body></html>`;
 const source = '<!doctype html><html><head><title>Lifecycle</title><meta name="description" content="Original description"><meta property="og:image" content="/images/studio-desk.svg"></head><body><main><h1>Lifecycle</h1></main></body></html>';
-const recipe = JSON.stringify({ version: 1, pages: { [item]: { fields: { keep: "yes" } } }, futureKey: { keep: true }, collections: { proof: { pagePath: "index.html", target: makeSectionTarget(home, home.indexOf("<div")), folders: ["/work/"], sort: "title", filter: "", limit: 500, template: '<article><a href="{url}">{title}</a><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + "\n";
+const recipe = JSON.stringify({ version: 1, pages: { [item]: { sections: { keep: "yes" } } }, futureKey: { keep: true }, collections: { proof: { pagePath: "index.html", target: makeSectionTarget(home, home.indexOf("<div")), folders: ["/work/"], sort: "title", filter: "", limit: 500, template: '<article><a href="{url}">{title}</a><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + "\n";
 const mounted = (page: Page, path: string) => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 
 async function seed(page: Page, baseURL: string | undefined) {
@@ -106,7 +106,7 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   expect(homeAfter).toContain(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
   const json = JSON.parse((await storedDraft(page, side))!.content);
   expect(json.futureKey).toEqual({ keep: true });
-  expect(json.pages["work/renamed/index.html"]).toEqual({ fields: { keep: "yes" } });
+  expect(json.pages["work/renamed/index.html"]).toEqual({ sections: { keep: "yes" } });
   expect(json.collections.proof.outputFingerprint).toBe(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);

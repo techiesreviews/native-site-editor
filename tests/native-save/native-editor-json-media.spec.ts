@@ -113,12 +113,12 @@ test("a literal image in the card template follows a rename, so a later title re
   expect(errors).toEqual([]);
 });
 
-test("a bare relative image in a listed page's JSON field follows a rename as the listing page sees it, and the next rebuild keeps the new path", async ({ page, baseURL }) => {
+test("a relative image recipe override follows a rename and the next rebuild keeps the new path", async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });
-  // Home lists /work/; work/one keeps photo "images/studio-desk.svg" in the JSON, which on Home means /images/studio-desk.svg.
-  const seeded = seed('<article class="card"><img src="{photo}" data-if="photo" alt=""><h3>{title}</h3></article>', { "work/one/index.html": { fields: { photo: "images/studio-desk.svg" } } }, {});
+  // The recipe override is resolved on Home, where the card image is written.
+  const seeded = seed('<article class="card"><img src="{photo}" data-if="photo" alt=""><h3>{title}</h3></article>', undefined, { "work/one/index.html": { photo: "images/studio-desk.svg" } });
   expect(seeded[2][1]).toContain('<img src="images/studio-desk.svg" alt=""><h3>One</h3>');
   await page.goto(`${baseURL}/`);
   for (const [path, content] of seeded) await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
@@ -132,7 +132,7 @@ test("a bare relative image in a listed page's JSON field follows a rename as th
   await panel.getByRole("button", { name: "Rename", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain("garden-desk.svg");
   const renamedJson = (await storedDraft(page, SIDECAR))!.content;
-  expect(JSON.parse(renamedJson).pages["work/one/index.html"].fields).toEqual({ photo: "/images/garden-desk.svg" });
+  expect(Object.values(JSON.parse(renamedJson).collections)[0].overrides["work/one/index.html"]).toEqual({ photo: "/images/garden-desk.svg" });
   // The field takes exactly what the page rewriter wrote into the card, so the card still matches its recorded output.
   expect((await storedDraft(page, "index.html"))!.content).toContain('<img src="/images/garden-desk.svg" alt=""><h3>One</h3>');
   await page.keyboard.press("Escape");

@@ -1,7 +1,7 @@
 import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
-import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
+import { readPageFields, type CollectionIdentity } from "../page-builder/collection-fields";
 import { collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
 import { attribute, locateSectionTarget } from "../page-builder/source-target";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
@@ -9,7 +9,6 @@ import { isStaticCardGrid, planStaticCardConversion, readStaticCardGrid } from "
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
 import { bakePageData, locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
-import { readEditorFieldMetas } from "../page-builder/native-page-fields";
 import { EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
@@ -33,35 +32,22 @@ export interface CollectionsDeps {
    * keeping the page's cards and all other page data. Resolves to a refusal, if any.
    */
   forget?(id: string, sidecar: string): Promise<string | undefined>;
-  /**
-   * Moves the open page's old `field:` metadata into the editor's JSON as one
-   * undoable step. Resolves to a refusal, if any.
-   */
-  migrateFields?(path: string, choices: Record<string, string>): Promise<string | undefined>;
 }
 export interface CollectionsPanel {
   update(): void;
   openGrid(path: string, sourceStart: number): void;
   dirty(): boolean;
-  pageFieldsDirty(): boolean;
-  pageFieldsStamp(): string | undefined;
-  pageFieldSource(source: string): string;
-  /** The editor's JSON with this page's custom fields and authored date applied; unchanged bytes when nothing changed. */
-  pageFieldDocument(sidecar: string | undefined): string | undefined;
   destroy(): void;
 }
 export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, options: { settings?: boolean; grid?: () => { path: string; start: number } | undefined } = {}): CollectionsPanel {
   const root = node("section", "collections-panel");
-  root.setAttribute("aria-label", options.grid ? "Collection settings" : "Collections and page fields");
+  root.setAttribute("aria-label", options.grid ? "Collection settings" : "Collections");
   host.append(root);
   let destroyed = false;
   let applying = false;
   let activeForm: HTMLElement | undefined;
   let cleanStamp = "";
-  let fieldSource: ((source: string) => string) | undefined;
-  let fieldDocument: ((sidecar: string | undefined) => string | undefined) | undefined;
   let activeSnapshot: ReturnType<typeof snapshot> | undefined;
-  let fieldForm: HTMLElement | undefined;
   let activeGrid: { path: string; start: number } | undefined;
   const stamp = (form: HTMLElement) => JSON.stringify([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")].map(input => [input.value, input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : null]));
   const dirty = () => Boolean(activeForm && stamp(activeForm) !== cleanStamp);
@@ -131,80 +117,9 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
       return;
     }
     activeForm = undefined; activeSnapshot = undefined;
-    fieldSource = undefined; fieldForm = undefined;
-    root.replaceChildren(...(options.settings ? [] : [node("h2", "", "Page fields")]));
+    root.replaceChildren();
     const path = deps.page(), saved = snapshot();
-    if (!path || saved.sources[path] === undefined) { root.append(node("p", "", "Open a page to edit its fields."), status); return; }
-    const url = Object.entries(saved.routes).find(([, file]) => file === path)?.[0] ?? "";
-    root.append(node("p", "collections-panel__scope", `Page fields · ${url}`));
-    appendLegacyFields(path, saved);
-    // Real head fields stay in the page; custom fields and an authored date come from the editor's JSON.
-    const htmlFields = readPageFields(saved.sources[path], url, saved.identity);
-    let stored: PageBuilderDocument;
-    try { stored = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]); }
-    catch (error) { root.append(node("p", "collections-panel__refusal", (error as Error).message), status); return; }
-    const storedPage = stored.pages[path] ?? {};
-    const jsonFields: Record<string, string> = {};
-    for (const [name, value] of Object.entries(storedPage.fields ?? {})) if (typeof value === "string") jsonFields[name] = value;
-    if (typeof storedPage.date === "string" && !Object.hasOwn(htmlFields, "date")) jsonFields.date = storedPage.date;
-    if (!Object.hasOwn(htmlFields, "date") && !Object.hasOwn(jsonFields, "date")) jsonFields.date = "";
-    // Same precedence as the bake: a JSON custom value stands over the page's own; a JSON date only where the page has none.
-    const fields: Record<string, string> = { ...htmlFields, ...jsonFields };
-    const inHtml = (name: string) => Object.hasOwn(htmlFields, name) && !Object.hasOwn(jsonFields, name) && name !== "url";
-    const form = node(options.settings ? "div" : "form", "collections-panel__form");
-    const inputs = Object.entries(fields).filter(([name]) => name !== "url" && (!options.settings || !["title", "description", "image"].includes(name))).map(([name, value]) => ({ name, input: control(form, name[0].toUpperCase() + name.slice(1), value) }));
-    const customName = control(form, "New custom field name", "");
-    const customValue = control(form, "New custom field value", "");
-    const newName = () => {
-      const name = customName.value.trim();
-      if (!name && customValue.value !== "") throw new Error("Name the new custom field, or clear its value.");
-      if (name && ["title", "description", "image", "date", "url"].includes(name)) throw new Error(`${name} is a built-in field. Edit its own control above.`);
-      if (name && Object.hasOwn(fields, name)) throw new Error(`${name} already exists. Edit its existing field instead.`);
-      if (name && !/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error("Use a valid editable page field name: lowercase letters, digits, - or _.");
-      return name;
-    };
-    // Fields that are real page metadata are edited where they are; nothing new is written into the head.
-    const stage = (source: string) => {
-      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
-      for (const { name, input } of inputs) if (inHtml(name) && input.value !== fields[name]) source = withPageField(source, name, input.value, saved.identity);
-      newName();
-      return source;
-    };
-    const stageDocument = (sidecar: string | undefined) => {
-      if (!current(saved)) throw new Error("The page or repository changed. Reopen the collection panel before applying.");
-      const document = readSidecar(sidecar);
-      const page = { ...(document.pages[path] ?? {}) };
-      const custom: Record<string, string> = { ...(page.fields ?? {}) };
-      for (const { name, input } of inputs) {
-        if (inHtml(name) || input.value === fields[name]) continue;
-        if (name === "date") { if (input.value) page.date = input.value; else delete page.date; }
-        else custom[name] = input.value;
-      }
-      const name = newName();
-      if (name) custom[name] = customValue.value;
-      if (Object.keys(custom).length) page.fields = custom; else delete page.fields;
-      if (Object.keys(page).length) document.pages[path] = page; else delete document.pages[path];
-      const empty = !Object.keys(document.pages).length && !Object.keys(document.collections).length;
-      return sidecar === undefined && empty ? undefined : writePageBuilderDocument(document, sidecar);
-    };
-    fieldSource = stage; fieldDocument = stageDocument; fieldForm = form;
-    if (!options.settings) {
-      const apply = node("button", "button primary", "Apply page fields"); apply.type = "submit";
-      form.append(apply, button("Cancel changes", () => { activeForm = undefined; update(); }));
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        try {
-          const source = stage(saved.sources[path]);
-          const sidecar = saved.sources[EDITOR_PAGE_BUILDER_PATH], next = stageDocument(sidecar);
-          const edits = new Map<string, string>(source === saved.sources[path] ? [] : [[path, source]]);
-          const creates: { path: string; content: string }[] = [];
-          if (next !== undefined && next !== sidecar) { if (sidecar === undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: next }); else edits.set(EDITOR_PAGE_BUILDER_PATH, next); }
-          void submit(saved, { edits, creates, expectedSources: new Map<string, string | undefined>([[path, saved.sources[path]], [EDITOR_PAGE_BUILDER_PATH, sidecar]]) }, "Page fields and collections updated");
-        } catch (error) { report(error instanceof Error ? error.message : "The fields could not be changed."); }
-      });
-    }
-    track(form, saved);
-    root.append(form, ...(options.settings ? [] : [node("h2", "", "Collections")]));
+    if (!path || saved.sources[path] === undefined) { appendUnlocatable(saved); root.append(status); return; }
     const baked = planBake(saved.sources, saved.routes, saved.identity, bakePageData(saved.sources, deps.files?.()));
     // Collections stored in the editor's JSON are listed from their recipe, with the cards the host would bake.
     let fromJson: { folders: string[]; template: string; records: DocumentCollectionPreview["records"] }[] = [];
@@ -235,67 +150,6 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     }
     if (!options.grid) appendUnlocatable(saved);
     root.append(status);
-  }
-  /**
-   * Old custom fields kept as page metadata: one inline action moves them into
-   * the editor's data. A field whose editor value differs offers two inline
-   * choices; Move stays off until each is chosen. Choices belong to this view
-   * only: any change redraws the panel and clears them.
-   */
-  function appendLegacyFields(path: string, saved: ReturnType<typeof snapshot>) {
-    if (!deps.migrateFields) return;
-    let metas: { field: string; value: string }[];
-    try { metas = readEditorFieldMetas(saved.sources[path]); }
-    catch (error) { root.append(node("p", "collections-panel__refusal", error instanceof Error ? error.message : "This page's old fields could not be read.")); return; }
-    if (!metas.length) return;
-    let stored: Record<string, unknown> = {};
-    try { const fields = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).pages[path]?.fields; if (fields) stored = fields; }
-    catch { stored = {}; }
-    const conflicts = metas.filter((meta) => Object.hasOwn(stored, meta.field) && typeof stored[meta.field] === "string" && stored[meta.field] !== meta.value)
-      .map((meta) => ({ field: meta.field, page: meta.value, editor: stored[meta.field] as string }));
-    const row = node("div", "collections-panel__legacy");
-    const names = metas.map((meta) => meta.field), list = names.join(", ");
-    row.append(node("p", "collections-panel__hint", `This page keeps ${names.length === 1 ? "the field" : "the fields"} ${list} in its published HTML. Move ${names.length === 1 ? "it" : "them"} to the editor's data so visitors get clean pages.`
-      + (conflicts.length ? " Where the two differ, choose which value to keep; cards then show that value." : " Cards and values stay the same.")));
-    const choices: Record<string, string> = Object.create(null);
-    const shown = (value: string) => value === "" ? "(empty)" : `“${value}”`;
-    const move = button("Move legacy fields to editor data", async () => {
-      if (applying || destroyed) return;
-      if (dirty()) { report("Apply or cancel your field changes first, then move the legacy fields."); return; }
-      if (!current(saved)) { report("The page or repository changed. Reopen the fields before moving them."); return; }
-      if (conflicts.some((conflict) => !Object.hasOwn(choices, conflict.field))) { report("Choose which value to keep for each field first."); return; }
-      applying = true; move.disabled = true;
-      let error: string | undefined;
-      try { error = await deps.migrateFields!(path, { ...choices }); }
-      catch (caught) { error = caught instanceof Error ? caught.message : "The fields could not be moved."; }
-      finally { applying = false; }
-      if (destroyed) return;
-      if (error) { move.disabled = false; report(error); return; }
-      activeForm = undefined; update(); report(`Moved ${list} to the editor's data. Undo puts them back.`);
-    });
-    for (const conflict of conflicts) {
-      const group = node("fieldset", "collections-panel__conflict");
-      group.append(node("legend", "", `${conflict.field}: the page has ${shown(conflict.page)}, the editor's data has ${shown(conflict.editor)}`));
-      for (const [label, value] of [["Keep page value", conflict.page], ["Keep editor value", conflict.editor]] as const) {
-        const wrap = node("label", "collections-panel__source");
-        const input = node("input"); input.type = "radio"; input.name = `legacy-${conflict.field}`;
-        input.setAttribute("aria-label", `${label} for ${conflict.field}`);
-        input.addEventListener("change", () => { if (input.checked) choices[conflict.field] = value; move.disabled = conflicts.some((item) => !Object.hasOwn(choices, item.field)); });
-        wrap.append(input, document.createTextNode(label)); group.append(wrap);
-      }
-      row.append(group);
-    }
-    move.disabled = conflicts.length > 0;
-    row.append(move);
-    root.append(row);
-  }
-  /** Custom field names (and an authored date) the editor's JSON keeps for the site's pages: the bake reads them too. */
-  function jsonFieldNames(saved: ReturnType<typeof snapshot>): string[] {
-    try {
-      const pages = readSidecar(saved.sources[EDITOR_PAGE_BUILDER_PATH]).pages, routed = new Set(Object.values(saved.routes));
-      return Object.entries(pages).filter(([file]) => routed.has(file))
-        .flatMap(([, page]) => [...Object.keys(page.fields ?? {}), ...(typeof page.date === "string" ? ["date"] : [])]);
-    } catch { return []; }
   }
   /**
    * Collections anywhere on the site whose grid cannot be found exactly (or
@@ -394,8 +248,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   function openGrid(path: string, sourceStart: number) {
     if (destroyed) return;
     if (options.settings) { report("Select a grid and open its collection settings."); return; }
-    if (dirty()) { report("Apply or reopen the current fields before opening another collection."); return; }
-    fieldSource = undefined; fieldForm = undefined;
+    if (dirty()) { report("Apply or reopen the current collection before opening another collection."); return; }
     const saved = snapshot(), source = saved.sources[path];
     if (source === undefined) { report("Load the page before making a collection."); return; }
     const el = [...descendants(parseSource(source))].find((item) => item.start === sourceStart);
@@ -433,7 +286,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
     });
     form.append(sourceGroup);
     const fieldNames = [...new Set(["title", "date", "url", ...(existing?.fields ?? []), ...Object.entries(saved.routes).flatMap(([url, file]) =>
-      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity))), ...jsonFieldNames(saved)])];
+      saved.sources[file] === undefined ? [] : Object.keys(readPageFields(saved.sources[file], url, saved.identity)))])];
     const namespace = existing?.namespace;
     const fieldLabel = (name: string) => {
       const labels = existing?.fieldLabels;
@@ -658,19 +511,5 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
   if (options.grid) root.addEventListener("focusout", () => queueMicrotask(update));
   update();
   return { update, openGrid, dirty,
-    pageFieldsDirty: () => Boolean(fieldForm && activeForm === fieldForm && dirty()),
-    pageFieldsStamp: () => !destroyed && fieldForm && activeForm === fieldForm ? stamp(fieldForm) : undefined,
-    pageFieldDocument(sidecar) {
-      if (destroyed) throw new Error("Open a page to edit its fields.");
-      if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return sidecar;
-      if (!fieldDocument) throw new Error("Open a page to edit its fields.");
-      return fieldDocument(sidecar);
-    },
-    pageFieldSource(source) {
-      if (destroyed) throw new Error("Open a page to edit its fields.");
-      if (options.settings && !(fieldForm && activeForm === fieldForm && dirty())) return source;
-      if (!fieldSource) throw new Error("Open a page to edit its fields.");
-      return fieldSource(source);
-    },
     destroy() { destroyed = true; root.remove(); } };
 }

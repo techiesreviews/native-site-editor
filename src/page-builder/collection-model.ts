@@ -4,7 +4,7 @@ import { descendants, parseSource, type SourceElement } from "./component-model"
 import { escapeText } from "./site-head";
 import { decodeHtmlEntities } from "./html-entities";
 import { attribute } from "./source-target";
-import { fieldName, ownPageField, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { collectionFieldName, ownPageField, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 
 export interface CollectionSpec {
   folder: string;
@@ -26,7 +26,7 @@ export function declaredCollectionFields(source: string, element: SourceElement)
   const value = attribute(source, element, "data-fields");
   if (value === undefined) return [];
   const fields = value.split(/[\t\n\f\r ]+/).filter(Boolean);
-  if (fields.some((field) => !fieldName.test(field))) throw new Error("Declare collection fields as space-separated field names.");
+  if (fields.some((field) => !collectionFieldName.test(field))) throw new Error("Declare collection fields as space-separated field names.");
   return [...new Set(fields)];
 }
 export interface CollectionInput { folder?: string; folders?: readonly string[]; sort?: string; filter?: string; limit?: string }
@@ -107,7 +107,7 @@ export function collectionRecords(sources: Record<string, string>, routes: Recor
   return records.slice(0, spec.limit);
 }
 export function knownCollectionField(field: string, records: CollectionRecord[], declared: readonly string[] = []): boolean {
-  return fieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || declared.includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
+  return collectionFieldName.test(field) && (["title", "description", "image", "date", "url"].includes(field) || declared.includes(field) || records.some((record) => Object.hasOwn(record.fields, field)));
 }
 
 export function makeGridCollection(source: string, start: number, input: CollectionInput & { template: string }): string {

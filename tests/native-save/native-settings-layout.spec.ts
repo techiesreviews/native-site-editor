@@ -45,7 +45,7 @@ test("keyboard categories and scrolling leave the footer visible; Escape restore
   await general.press("ArrowDown");
   await expect(panel.getByRole("tab", { name: "Search", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("End");
-  await expect(panel.getByRole("tab", { name: "Fields", exact: true })).toBeFocused();
+  await expect(panel.getByRole("tab", { name: "Social", exact: true })).toBeFocused();
   const footer = panel.locator(".site-settings__footer");
   const before = await footer.boundingBox();
   await panel.locator(".site-settings__content").evaluate((element) => { element.scrollTop = element.scrollHeight; });
@@ -78,7 +78,7 @@ test("all settings families fit 390px with horizontal categories and stacked con
       await expect(panel.locator(".site-settings__actions")).toBeInViewport();
     }
     if (family === "Page settings") { await mkdir(".scratch/settings-layout", { recursive: true }); await page.screenshot({ path: ".scratch/settings-layout/page-mobile.png" }); }
-    await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+    await panel.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   }
 });
 test("site categories preserve identity and image edits until Cancel, returning focus to the settings control", async ({ page, baseURL }) => {
@@ -95,7 +95,7 @@ test("site categories preserve identity and image edits until Cancel, returning 
   await expect(panel.getByLabel("Site name", { exact: true })).toHaveValue("Unsaved identity");
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(panel.getByLabel("Default social image")).toHaveValue("https://studio.example/share.png");
-  await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+  await panel.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
   await expect(page.locator("#explorer-toggle")).toBeFocused();
 });

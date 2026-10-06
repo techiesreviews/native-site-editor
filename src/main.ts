@@ -26,7 +26,6 @@ import { createPageStructure, type NativeSharedRoot, type PageMetaField } from "
 import type { NativeSharedMetadata } from "./components/native-shared-authoring";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
-import { NativePageFieldError, planLegacyPageFieldMigration } from "./page-builder/native-page-fields";
 import { readPageFields } from "./page-builder/collection-fields";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
@@ -99,7 +98,7 @@ import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, planDefaultStat
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
 import { graphHasCollections, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
-import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
+import { mountCollectionsPanel } from "./components/collections-panel";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { planBake } from "./page-builder/collection-bake";
 import { bakePageData, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
@@ -1489,14 +1488,14 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
  * they are. No page is read or baked, so a collection that cannot be found (or
  * whose page is gone) can always be let go of. The JSON is pinned as shown.
  */
-async function forgetNativeCollection(id: string, sidecar: string): Promise<string | undefined> {
+async function forgetNativeCollection(id: string, sidecar: string, current?: () => boolean): Promise<string | undefined> {
   if (nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) !== sidecar) return "The editor's page data changed meanwhile. Review it and try again.";
   let document: PageBuilderDocument;
   try { document = readPageBuilderDocument(sidecar); } catch (error) { return (error as Error).message; }
   if (!Object.hasOwn(document.collections, id)) return `The collection “${id}” is no longer in the editor's page data.`;
   delete document.collections[id];
   return applyNativeOperation({ edits: new Map([[EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument(document, sidecar)]]),
-    expectedSources: new Map([[EDITOR_PAGE_BUILDER_PATH, sidecar]]),
+    expectedSources: new Map([[EDITOR_PAGE_BUILDER_PATH, sidecar]]), current,
     done: `Forgot the recipe of collection “${id}”; its cards stay as they are. Save to GitHub to keep it.`, undone: "Undid forgetting the collection recipe." });
 }
 
@@ -3386,77 +3385,6 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
   });
 }
 
-// Moves a page's old `field:` metadata into the editor's JSON: the page loses
-// only those tags, the JSON gains the values, and listings that show them are
-// rebuilt from the same values in the same step (one draft write, one Undo).
-// The page and JSON are pinned as the caller saw them; a conflicting value,
-// an unreadable JSON or any change made during a load refuses, writing nothing.
-async function migrateNativeLegacyFields(path: string, pinned: ReadonlyMap<string, string | undefined> = new Map(), choices: Record<string, string> = {}): Promise<string | undefined> {
-  if (!nativeRouteForPath(path)) return "This page has no URL in the site.";
-  const scope = setupScope(), epoch = generation;
-  const source = nativeEffectiveSource(path);
-  if (source === undefined) return "The page could not be read.";
-  const files = nativeFiles().sort();
-  const pins = new Map(pinned);
-  pins.set(path, pins.has(path) ? pins.get(path) : source);
-  // The editor's JSON is pinned as it is now (bytes, or absent/unread) unless the caller pinned it:
-  // a JSON read or changed during a load below refuses instead of being trusted.
-  if (!pins.has(EDITOR_PAGE_BUILDER_PATH)) pins.set(EDITOR_PAGE_BUILDER_PATH, nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH));
-  // Every pinned file must still have exactly the bytes it was planned from
-  // (or still be absent/unread): anything read or changed meanwhile refuses.
-  const verify = (): string | undefined => {
-    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
-    if (JSON.stringify(nativeFiles().sort()) !== JSON.stringify(files)) return "The site's files changed meanwhile. Nothing was moved; try again.";
-    for (const [file, expected] of pins) {
-      if (nativeEffectiveSource(file) === expected) continue;
-      return file === path ? "The page changed meanwhile. Nothing was moved; reopen the fields and try again."
-        : file === EDITOR_PAGE_BUILDER_PATH ? "The editor's page data changed meanwhile. Nothing was moved; reopen the fields and try again."
-        : `${file} changed meanwhile. Nothing was moved; reopen the fields and try again.`;
-    }
-    return undefined;
-  };
-  let refused = verify();
-  if (refused) return refused;
-  // The editor's JSON must be read before it is changed: never written over unseen bytes.
-  if (nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) === undefined && files.includes(EDITOR_PAGE_BUILDER_PATH)) {
-    const error = await ensureNativeTextIndex();
-    if (error) return error;
-    refused = verify();
-    if (refused) return refused;
-  }
-  const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-  if (sidecar === undefined && nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH)) return `${EDITOR_PAGE_BUILDER_PATH} could not be read, so nothing was moved.`;
-  let plan: ReturnType<typeof planLegacyPageFieldMigration>;
-  // Explicit choices only for current conflicts; the planner refuses one that no longer matches.
-  const expectedOverrides: Record<string, string> = Object.create(null);
-  for (const [field, value] of Object.entries(choices)) if (typeof value === "string") expectedOverrides[field] = value;
-  try { plan = planLegacyPageFieldMigration({ files, pagePath: path, source, sidecarText: sidecar, expectedOverrides }); }
-  catch (error) {
-    const message = error instanceof Error ? error.message : "The fields could not be moved.";
-    return error instanceof NativePageFieldError && error.code === "native-page-fields/conflict"
-      ? `${message} Nothing was moved. Choose “Keep page value” or “Keep editor value” for it, then move the fields.` : `${message} Nothing was moved.`;
-  }
-  if (plan.noop) { element("status").textContent = "This page has no legacy fields to move."; return undefined; }
-  // The planner's file list is a proof of the whole graph; the operation itself does not check it.
-  const sameGraph = () => JSON.stringify([...plan.expectedFiles].sort()) === JSON.stringify(nativeFiles().sort());
-  if (!sameGraph()) return "The site's files changed meanwhile. Try again.";
-  const edits = new Map(plan.edits), creates: { path: string; content: string }[] = [];
-  if (sidecar === undefined) {
-    const created = edits.get(EDITOR_PAGE_BUILDER_PATH);
-    edits.delete(EDITOR_PAGE_BUILDER_PATH);
-    if (created !== undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: created });
-  }
-  const names = Object.keys(plan.fields).join(", ");
-  const expectedSources = new Map<string, string | undefined>([...pins, ...plan.expectedSources]);
-  return applyNativeCollectionOperation({
-    expectedSources, edits, creates,
-    current: sameGraph,
-    done: `Moved ${names} out of the page's HTML into the editor's data. Save to GitHub to keep it.`,
-    undone: `Undid moving ${names} into the editor's data.`,
-    focus: { file: path },
-  });
-}
-
 // ---- Page-builder site controls. Kept together to isolate this slice's wiring. ----
 
 function nativeSitePageChoices() {
@@ -3483,7 +3411,7 @@ let siteLinkPreferences = new Map<string, SiteLinkPreference>();
 function nativeSettingsController() {
   const scope = setupScope(), epoch = generation;
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
-  // The editor's page data file holds custom fields: pinned (bytes or absence) with the pages.
+  // Pin collection recipes and page data (bytes or absence) with the pages.
   const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH, EDITOR_PAGE_BUILDER_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
   let routes = JSON.stringify(nativeSite?.routes);
   // After this dialog's own Apply succeeds, its result is the new baseline,
@@ -3496,51 +3424,35 @@ function nativeSettingsController() {
     }
     return error;
   };
-  let fieldPanel: CollectionsPanel | undefined;
   const sourcesChanged = () => routes !== JSON.stringify(nativeSite?.routes) || [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
   const stale = () => scope !== setupScope() || epoch !== generation;
   const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
   return createSiteSettings({
-    async applyPage(path, fields, pageFields) {
+    async applyPage(path, fields) {
       if (stale() || sourcesChanged()) return changed;
       const source = nativeEffectiveSource(path);
       if (source === undefined || !nativeRouteForPath(path)) return "The page could not be read.";
-      // General, Search, Social and staged Fields all apply to one candidate
-      // from the source captured with this dialog: one write, one Undo.
       let next = source;
       try {
         for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value);
-        if (pageFields) next = pageFields(next);
       } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
-      // Custom fields and an authored date live in the editor's JSON, applied with the page in one step.
-      const sidecar = expectedSources.get(EDITOR_PAGE_BUILDER_PATH);
-      let sidecarNext: string | undefined;
-      try { sidecarNext = pageFields && fieldPanel ? fieldPanel.pageFieldDocument(sidecar) : undefined; } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
-      const edits = new Map<string, string>(next === source ? [] : [[path, next]]);
-      const creates: { path: string; content: string }[] = [];
-      if (sidecarNext !== undefined && sidecarNext !== sidecar) {
-        if (sidecar === undefined) creates.push({ path: EDITOR_PAGE_BUILDER_PATH, content: sidecarNext });
-        else edits.set(EDITOR_PAGE_BUILDER_PATH, sidecarNext);
-      }
-      if (!edits.size && !creates.length) return undefined;
-      return applied(await applyNativeCollectionOperation({ expectedSources, edits, creates, done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
+      if (next === source) return undefined;
+      return applied(await applyNativeCollectionOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
     },
-    pageFields(host, path) {
-      // Date and custom fields, staged against this dialog's own snapshot.
-      const saved = nativeCollectionSnapshot();
-      return fieldPanel = mountCollectionsPanel(host, {
+    collections(host) {
+      const panel = mountCollectionsPanel(host, {
         sources: () => stale() ? {} : nativeCollectionSnapshot().sources,
         routes: () => stale() ? {} : nativeCollectionSnapshot().routes,
         identity: () => nativeCollectionSnapshot().identity,
         revision: () => stale() ? "" : nativeCollectionSnapshot().revision,
-        page: () => saved.sources[path] === undefined ? undefined : path,
+        page: () => undefined,
         apply: () => false,
         openPage: () => {},
         announce,
         files: () => nativeFiles(),
-        forget: forgetNativeCollection,
-        migrateFields: async (page, choices) => stale() || sourcesChanged() ? changed : applied(await migrateNativeLegacyFields(page, expectedSources, choices)),
+        forget: async (id, sidecar) => stale() || sourcesChanged() ? changed : applied(await forgetNativeCollection(id, sidecar, () => !stale() && !sourcesChanged())),
       }, { settings: true });
+      return () => panel.destroy();
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
     applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep, expectedSources),

@@ -11,7 +11,7 @@ function input(extra: Partial<StaticSectionInsertInput> = {}): StaticSectionInse
 }
 function good(value: StaticSectionInsertInput) { const before = structuredClone(value); const r = planDefaultStaticSectionInsert(value); if ("error" in r) assert.fail(r.error); assert.deepEqual(value, before); return r; }
 function bad(value: StaticSectionInsertInput, reason: string) { const before = structuredClone(value); assert.deepEqual(planDefaultStaticSectionInsert(value), { error: reason }); assert.deepEqual(value, before); }
-const existing = JSON.stringify({ version: 1, pages: { "index.html": { fields: { tagline: "Hi" } } }, collections: {}, future: { kept: true }, reusableSections: { version: 1, future: [1], records: { other: { id: "other", label: "Other", rootClass: "other-box", stylesheetPath: css, html: '<section class="other-box"></section>', css: ".other-box { margin: 0; }" } } } });
+const existing = JSON.stringify({ version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, collections: {}, future: { kept: true }, reusableSections: { version: 1, future: [1], records: { other: { id: "other", label: "Other", rootClass: "other-box", stylesheetPath: css, html: '<section class="other-box"></section>', css: ".other-box { margin: 0; }" } } } });
 
 test("every default is plain, valid and insertable", () => {
   assert.deepEqual((listDefaultSectionChoices(undefined) as { id: string }[]).map((c) => c.id), ["static-section:intro", "static-section:features", "static-section:split", "static-section:contact"]);

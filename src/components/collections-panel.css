@@ -41,14 +41,3 @@
 .collections-panel__recovery-details p { margin: .25rem 0 0; overflow-wrap: anywhere; }
 @media (hover: none), (pointer: coarse) { .collections-panel__recovery-action { opacity: 1; min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .collections-panel__recovery-action { transition: none; } }
-
-/* A field whose page and editor values differ: a quiet inline row, not a box. */
-.collections-panel__legacy { display: grid; gap: .5rem; }
-.collections-panel__conflict { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1rem; row-gap: .25rem; min-width: 0; margin: 0; padding: .25rem 0 .25rem .75rem; border: 0; border-left: 2px solid var(--line); }
-.collections-panel__conflict legend { float: left; width: 100%; padding: 0; overflow-wrap: anywhere; font-size: .875rem; }
-.collections-panel__conflict .collections-panel__source { min-height: 32px; cursor: pointer; }
-.collections-panel__conflict input[type="radio"] { width: 16px; height: 16px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--link); }
-.collections-panel__conflict input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.collections-panel__legacy > button { justify-self: start; }
-.collections-panel__legacy > button:disabled { opacity: .6; cursor: default; }
-@media (hover: none), (pointer: coarse) { .collections-panel__conflict .collections-panel__source { min-height: 44px; } }

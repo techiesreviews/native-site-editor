@@ -8,7 +8,7 @@
 import { startTagAttribute } from "../../shared/html-source";
 import { attributeEdit, descendants, parseSource, type SourceElement } from "./component-model";
 import { applyCollectionEdits, bindCollectionTemplate, planCollectionChange, type BakePlan } from "./collection-bake";
-import { readPageFields, withCustomPageField, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, declaredCollectionFields, makeGridCollection, MAX_COLLECTION_ITEMS, validCollectionRoute } from "./collection-model";
 import { decodeHtmlEntities } from "./html-entities";
 import type { CollectionRecipe } from "./collection-origins";

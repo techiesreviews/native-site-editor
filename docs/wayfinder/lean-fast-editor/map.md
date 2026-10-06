@@ -33,7 +33,7 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 
 - [Measure today's cold start](tickets/01-measure-cold-start-baseline.md): `tests/perf/cold-start.ts`; local throttled cold paint 1.7 s with 1.4 MB fetched first, 70% of it Monaco + code-editor; warm still 1.2 s from revalidation; signed-in remote numbers pending Lex's sign-in
 - [Decide what "usable" means before Monaco loads](tickets/03-what-usable-means-before-monaco.md): select, edit bar, inline text and pages tree must work; drafts/undo/Save work too via a Monaco-free draft store; Monaco loads on idle after first paint
-- [Decide what remains after the removals](tickets/07-what-is-left-after-removals.md): sidecar keeps `pages.sections` only and strips the rest; helpers to a neutral renamed module; generated rows and asset hooks go; style panel first, then helpers, Fields, collections, docs
+- [Decide what remains after the removals](tickets/07-what-is-left-after-removals.md): sidecar strips `collections` and `pages[*].fields` after the full removal sequence, keeping `reusableSections`, page `sections`, page `pageParts` and other supported data (ticket 14 correction); helpers to a neutral renamed module; generated rows and asset hooks go; style panel first, then helpers, Fields, collections, docs
 - [Decide which leftovers are deleted](tickets/11-which-leftovers-go.md): all of them go
 - [Decide whether the code panes keep JS IntelliSense](tickets/12-keep-js-intellisense.md): keep it; ts.worker stays
 - [Set the cold-start budget](tickets/02-set-cold-start-budget.md): throttled local ≤350 KB before paint, cold paint ≤1.0 s, warm ≤0.4 s; bytes gated in CI, timings by hand per slice; remote target after sign-in run
@@ -48,6 +48,12 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 - [Research faster session and GitHub reads in the Worker](tickets/04-research-session-and-github-reads.md): parallel installation listing, repository list out of /api/session, GraphQL file batches, keep the DO session minus blockConcurrencyWhile, no webhooks; cross-isolate cache only if still slow
 - [Research the toolchain pins](tickets/10-research-toolchain-pins.md): Node 24 everywhere, keep Miniflare alpha pinned in lockstep with Wrangler, keep tweetnacl+blakejs, align esbuild with Wrangler, drop the undici override, keep dompurify
 - [Research bundle splitting and asset caching](tickets/06-research-bundle-split-and-asset-caching.md): defer the Monaco prefetch until after first preview, immutable cache on /assets/*, load secondary panels on demand after the removals, trim Monaco contributions last, reload once on a failed chunk load
+
+## Build status
+
+[P1.4: Page settings › Fields](build/p1-4-page-fields.md) removes Fields first.
+Collections remain until P1.5; P1.4 strips only legacy `pages[*].fields` on the next
+sidecar write and preserves the other supported data, including collections.
 
 ## Not yet specified
 
