@@ -62,12 +62,12 @@ The complete component-root name button in the edit bar (or *Edit* on its Struct
 component accent and starts with an instance breadcrumb, **Editing `<project-card>`** (it shows even
 with the code pane collapsed; the code pane's title is tinted too). Beside it,
 *Used on 1 page* opens a list (resting the mouse on it for a moment, a click,
-Enter, Space or ↓; Esc closes) that says what an edit changes (*Changes apply
-to 3 instances on 1 page*), then the pages using it (title, address and
-count, nested uses included) and the components whose templates use it; a
-page opens with its first instance selected, a component opens its template.
-The **✓ Done** button at the bar's end (*Done editing component*) goes back to the page the preview shows, with the instance
-worked on selected.
+Enter, Space or ↓; Esc closes) of the pages using it (title, address and
+count, nested uses included) and, under a Components heading, the components
+whose templates use it; a page opens with its first instance selected, a
+component opens its template. The check button after it (*Done editing
+component*, its "Done" label showing on hover or keyboard focus) goes back to
+the page the preview shows, with the instance worked on selected.
 
 ## Detach (Unlink)
 

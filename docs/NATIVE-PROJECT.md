@@ -10,7 +10,7 @@ Copied 224 source files from the `astro-site-editor-shared-preview` checkout, br
 
 Working:
 
-- Component editing lives in the canvas bar: the instance breadcrumb says **Editing `<tag>`**, followed by **Used on N pages** and **✓ Done**. Hover Used on to open the usage dropdown. Done returns to the page instance. Structure uses Phosphor icons for element kinds. Page-mode hover inside a template points to its instance.
+- Component editing lives in the canvas bar: the instance breadcrumb says **Editing `<tag>`**, followed by **Used on N pages** and a check button whose "Done" label shows on hover or keyboard focus. Hover Used on to open the usage dropdown. Done returns to the page instance. Structure uses Phosphor icons for element kinds. Page-mode hover inside a template points to its instance.
 - Static grids keep Add card and linked-page creation. The deletable page-builder sidecar preserves reusable sections, section links, page parts and unknown metadata.
 
 - Integrated components (2026-10-03): instance slots and attributes, component identity, shared-edit impact and Used on, Make and Detach are merged in `bdd2876`; switching keeps the page canvas. `36b6303` completes reviewed-plan and original-scope creation receipts. Attribute escaping, detach whitespace/entities, stale modal source and safe cleanup are covered; types, 458 unit tests and 56 focused browser checks pass. The real starter's own loader renders newly made components without editor code.
