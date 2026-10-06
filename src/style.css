@@ -127,7 +127,7 @@ select {
 .sidebar {
   background: var(--surface-subtle);
 
-  padding: 27px 20px 0;
+  padding: 0 20px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -136,7 +136,11 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 25px;
+  /* A strip as tall as the canvas bar beside it, in the sidebar's colour. */
+  min-height: 36px;
+  margin: 0 -20px 8px;
+  padding: 4px 12px 4px 20px;
+  border-bottom: 1px solid var(--control-line);
 }
 /* A section heading: the same in the sidebar, the explorer and the menus. */
 .eyebrow,
@@ -661,13 +665,14 @@ dd {
   /* The shown sidebar leaves room at its bottom for its handle bar
      (sidebar-resize.css); the hidden one keeps a strip for it. */
   .sidebar {
-    padding: 18px 18px 28px;
+    padding: 0 18px 28px;
   }
   .workspace--sidebar-collapsed .sidebar {
     min-height: 20px;
   }
   .sidebar-heading {
-    margin-bottom: 13px;
+    margin: 0 -18px 8px;
+    padding-left: 18px;
   }
   .files-heading {
     margin-top: 20px;
