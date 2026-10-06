@@ -59,6 +59,7 @@ test("GET /api/blob answers a blob's bytes, cached privately for good and sandbo
   assert.equal(response.headers.get("Content-Type"), "image/svg+xml");
   assert.equal(response.headers.get("Cache-Control"), "private, max-age=31536000, immutable");
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(response.headers.get("Vary"), "Cookie", "another account's cached copy is never reused");
   const csp = response.headers.get("Content-Security-Policy") ?? "";
   assert.match(csp, /default-src 'none'/);
   assert.match(csp, /(^|; )sandbox($|;)/, "an SVG opened on its own runs no script in the editor's origin");

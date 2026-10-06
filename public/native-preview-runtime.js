@@ -152,19 +152,21 @@
     var t = document.createElement("template");
     t.innerHTML = html || "";
     sanitize(t.content);
-    resolveAssets(t.content);
     return t;
   }
 
   // The markup each rendered element was made from, so a later render can
   // tell an element that only moved (a section moved, inserted around,
-  // duplicated or removed) from one that changed.
+  // duplicated or removed) from one that changed. It is the source's markup,
+  // taken before images are swapped for their data URLs: an image arriving
+  // later (showArrivedAssets) changes no element's identity.
   var markupOf = new WeakMap();
 
   /** A fresh copy of `html` to render, each element remembering its markup. */
   function freshContent(html) {
     var content = makeTemplate(html).content.cloneNode(true);
     content.querySelectorAll("*").forEach(function (el) { markupOf.set(el, el.outerHTML); });
+    resolveAssets(content);
     return content;
   }
 

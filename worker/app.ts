@@ -114,6 +114,10 @@ function blobResponse(bytes: Uint8Array, type: string | null) {
       "Content-Type": known ?? "application/octet-stream",
       "Content-Length": String(bytes.length),
       "Cache-Control": "private, max-age=31536000, immutable",
+      // A cached copy belongs to the signed-in session that read it: another
+      // account (or none) on this browser sends other cookies and asks again,
+      // so its own access is checked.
+      Vary: "Cookie",
       "Content-Security-Policy": BLOB_CONTENT_SECURITY_POLICY,
       "X-Content-Type-Options": "nosniff",
       ...(known ? {} : { "Content-Disposition": "attachment" }),
