@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { storedDrafts } from "./drafts";
+import { storedDrafts, editorMounted } from "./drafts";
 
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
   for (const nested of [false, true]) {
@@ -15,6 +15,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
         await page.reload();
         await expect(frame.locator(".hero h1")).toBeVisible();
       }
+      await editorMounted(page);
       const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
       const beforeSource = await source(), beforeDrafts = await storedDrafts(page);
       const local = await frame.locator("section.hero").evaluate((element, nested) => {

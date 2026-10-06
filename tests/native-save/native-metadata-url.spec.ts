@@ -1,10 +1,12 @@
 import { openPageSettingsFromPages } from "./settings-entry";
+import { editorMounted } from "./drafts";
 import { expect, test } from "@playwright/test";
 
 for (const dirty of [false, true]) test(`page URL ${dirty ? "refuses changed" : "accepts untouched fallback"} social metadata`, async ({ page, baseURL }) => {
   const path = "notes/first-note/index.html";
   await page.goto(`${baseURL}/#repo=531&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await editorMounted(page, "notes/first-note/index.html");
   const before = await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path)!, path);
   expect(before).not.toContain('property="og:title"');
   await page.locator("#explorer-toggle").click();
@@ -30,6 +32,7 @@ for (const dirty of [false, true]) test(`page URL ${dirty ? "refuses changed" : 
     await expect(panel).toBeHidden();
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "notes/hello/index.html");
     await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+    await editorMounted(page, "notes/hello/index.html");
     const after = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("notes/hello/index.html")!);
     expect(after).not.toContain('property="og:title"');
     expect(after).not.toContain('property="og:description"');
@@ -40,6 +43,7 @@ for (const roundtrip of [false, true]) test(`applying ${roundtrip ? "round-trip"
   const path = "notes/first-note/index.html";
   await page.goto(`${baseURL}/#repo=531&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await editorMounted(page, "notes/first-note/index.html");
   const before = await page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path)!, path);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
@@ -63,6 +67,7 @@ test("missing linked social tags stay absent when the title changes, but indepen
   const path = "notes/first-note/index.html";
   await page.goto(`${baseURL}/#repo=531&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await editorMounted(page, "notes/first-note/index.html");
   const open = async () => {
     await page.locator("#explorer-toggle").click();
     await page.getByRole("tab", { name: "Pages", exact: true }).click();
@@ -111,6 +116,7 @@ test("unlinking untouched social text preserves its old title and description wh
   const path = "notes/first-note/index.html";
   await page.goto(`${baseURL}/#repo=531&branch=main&file=${encodeURIComponent(path)}`);
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await editorMounted(page, "notes/first-note/index.html");
   // Give this no-OG page an authored description so both independent values
   // must survive a changed primary value, rather than only testing emptiness.
   await page.evaluate(async path => {
@@ -149,6 +155,7 @@ test("unlinking untouched social text preserves its old title and description wh
 test("URL changes refuse an unsaved link preference", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=531&branch=main&file=notes/first-note/index.html`);
   await expect(page.frameLocator(".native-preview-frame").locator("h1")).toHaveText("First note");
+  await editorMounted(page, "notes/first-note/index.html");
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
   await openPageSettingsFromPages(page);

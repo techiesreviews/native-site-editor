@@ -1,6 +1,6 @@
 import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
-import { storedDraft } from "./drafts";
+import { storedDraft, editorMounted } from "./drafts";
 import { mkdir } from "node:fs/promises";
 
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name, exact: true });
@@ -130,6 +130,7 @@ test("Edit bar has no Effects generator and preserves authored effects CSS", asy
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/effects.css", content: authored } });
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await editorMounted(page);
   const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   await frame(page).locator(".hero h1").click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();

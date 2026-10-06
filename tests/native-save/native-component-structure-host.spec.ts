@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { storedDraft } from "./drafts";
+import { storedDraft, editorMounted } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page, path = "index.html") => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure", exact: true });
@@ -14,6 +14,7 @@ const openTitle = async (page: Page) => {
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await editorMounted(page);
   await tree(page).getByRole("treeitem", { name: "Section", exact: true }).locator(".page-structure__toggle").click();
   await firstCard(page).locator(".page-structure__toggle").click();
 });
