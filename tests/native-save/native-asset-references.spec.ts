@@ -125,7 +125,7 @@ test("a reference added in another tab while the Delete dialog is open stops the
   await expect.poll(async () => (await storedDraft(other, "styles/site.css"))?.content).toBe(used);
   await other.close();
   await dialog.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator("#explorer")).toContainText("The repository or source changed meanwhile. Review the latest files and try again.");
+  await expect(page.locator("#explorer")).toContainText("The repository or source changed meanwhile. Try again.");
   await expect(page.locator("#explorer").getByRole("button", { name: "placeholder.svg", exact: true })).toBeVisible();
   expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
   expect((await storedDraft(page, "styles/site.css"))?.content).toBe(used);
