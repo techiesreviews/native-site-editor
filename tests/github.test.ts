@@ -99,6 +99,31 @@ test("installation failures are reported in installation order despite reverse c
     error.status === 403 && /GitHub denied access/.test(error.message));
 });
 
+test("an ordered installation failure rejects without waiting for later stalled reads", async () => {
+  let finishLater!: (response: Response) => void;
+  let failure: HttpError | undefined;
+  const github = new GitHub("secret", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return reply({ installations: [
+      { id: 1, account: { type: "User", login: "lex" } },
+      { id: 2, account: { type: "Organization", login: "org" } },
+    ] });
+    if (path.includes("/1/")) return reply({ message: "Forbidden" }, 403);
+    return new Promise<Response>((resolve) => { finishLater = resolve; });
+  });
+  const listing = github.repositories("lex");
+  void listing.catch((error: HttpError) => { failure = error; });
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(failure?.status, 403, "the earlier failure settles while the later read is stalled");
+    await assert.rejects(listing, (error: HttpError) => /GitHub denied access/.test(error.message));
+  } finally {
+    // A later failure must remain handled after the listing has already rejected.
+    finishLater(reply({ message: "Bad credentials" }, 401));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+});
+
 test("repository discovery paginates and excludes unselected repositories and other personal accounts", async () => {
   const calls: string[] = [];
   const github = new GitHub("secret", async (input, init) => {

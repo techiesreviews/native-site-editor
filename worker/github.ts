@@ -364,27 +364,34 @@ export class GitHub {
 
   private async listRepositories(login: string, owners?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
     const installations = await (owners ?? this.ownerInstallations(login));
-    const listings: PromiseSettledResult<Repository[]>[] = new Array(installations.length);
+    const complete: ((listing: PromiseSettledResult<Repository[]>) => void)[] = [];
+    const listings = installations.map(() => new Promise<PromiseSettledResult<Repository[]>>((resolve) => {
+      complete.push(resolve);
+    }));
     let next = 0;
-    await Promise.all(Array.from({ length: Math.min(installationConcurrency, installations.length) }, async () => {
-      while (next < installations.length) {
+    let stopped = false;
+    for (let worker = 0; worker < Math.min(installationConcurrency, installations.length); worker++) void (async () => {
+      while (!stopped && next < installations.length) {
         const index = next++;
         try {
           // GitHub intersects an installation's repositories with the user's own access.
-          listings[index] = { status: "fulfilled", value: await this.pages<Repository>(
+          complete[index]({ status: "fulfilled", value: await this.pages<Repository>(
             `/user/installations/${installations[index].id}/repositories`,
             "repositories",
-          ) };
+          ) });
         } catch (reason) {
-          listings[index] = { status: "rejected", reason };
+          complete[index]({ status: "rejected", reason });
         }
       }
-    }));
+    })();
     const repos = new Map<number, Repository>();
     for (const [index, installation] of installations.entries()) {
-      const listing = listings[index];
+      const listing = await listings[index];
       // Merge and report failures in installation order, regardless of completion order.
-      if (listing.status === "rejected") throw listing.reason;
+      if (listing.status === "rejected") {
+        stopped = true;
+        throw listing.reason;
+      }
       for (const repo of listing.value) {
         if (repo.owner.login.toLowerCase() === installation.login.toLowerCase()) {
           // Return only the fields the browser needs, not the full GitHub response.
