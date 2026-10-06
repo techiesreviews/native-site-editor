@@ -580,10 +580,15 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     void loadPanels().then(() => {
       if (pending !== opening) return;
       const query = input.value;
+      // The caret and selection made while loading carry over with the text.
+      const { selectionStart, selectionEnd, selectionDirection } = input;
       const blocked = disposed || otherModalOpen();
       cancelPending();
       if (!blocked) {
         palette?.open(opening.scope, query);
+        const real = document.activeElement;
+        if (real instanceof HTMLInputElement && real.value === query && selectionStart !== null && selectionEnd !== null)
+          real.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
         if (opening.runWhenReady) void palette?.runActive();
       }
     });
