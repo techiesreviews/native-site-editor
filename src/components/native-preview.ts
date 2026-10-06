@@ -1,3 +1,4 @@
+import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
 import { button, node } from "../ui/dom";
@@ -11,7 +12,7 @@ import {
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
-import { createAgentPins, type PinRequest } from "./agent-pins";
+import type { createAgentPins, PinRequest } from "./agent-pins";
 import { createCardGridControls, type CardGridHandlers, type ItemGridReport, type ItemGridsReport } from "./card-grid-controls";
 import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
@@ -377,7 +378,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     move: (at) => toRuntime("drag-move", at),
     end: (at) => toRuntime("drag-end", at),
     cancel: () => toRuntime("drag-cancel"),
-  }, (rect) => pins.row(rect));
+  }, (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 });
   const insertControls = createInsertControls(pane, frame, {
     onOpen: (point) => pageBuilder.openFor(point),
     onClose: () => pageBuilder.closeGap(),
@@ -416,17 +417,24 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards) : undefined;
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
-  const pins = createAgentPins(pane, frame, {
-    locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
-    onDismiss: (id) => handlers.onDismissRequest?.(id),
-    onAnswer: async (id, text) => {
-      if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
-      await handlers.onAnswerRequest(id, text);
-    },
-    onShowPage: (target) => void followRoute(target),
-    onShowElement: (id) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "show-pin", id }, "*"),
-    onLayout: () => editBar.refit(),
-  });
+  let pins: ReturnType<typeof createAgentPins> | undefined;
+  let pinsLoading: Promise<void> | undefined;
+  let pinsDisposed = false;
+  const loadPins = () => pinsLoading ??= import("./agent-pins").then(({ createAgentPins }) => {
+    if (pinsDisposed) return;
+    pins = createAgentPins(pane, frame, {
+      locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
+      onDismiss: (id) => handlers.onDismissRequest?.(id),
+      onAnswer: async (id, text) => {
+        if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
+        await handlers.onAnswerRequest(id, text);
+      },
+      onShowPage: (target) => void followRoute(target),
+      onShowElement: (id) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "show-pin", id }, "*"),
+      onLayout: () => editBar.refit(),
+    });
+    pins?.update(pinRequests, route);
+  }).catch((error) => { pinsLoading = undefined; void handleChunkLoadFailure(error); });
 
   let site: NativeSite | undefined;
   // The bar over the page while History shows an earlier version.
@@ -551,7 +559,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
       Object.keys(assets).join("|"),
     ].join("\n");
-    pins.update(pinRequests, route);
+    pins?.update(pinRequests, route);
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
   }
@@ -661,7 +669,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "pin-rects") {
       const raw = (data as { rects?: unknown }).rects;
       if (!Array.isArray(raw)) return;
-      pins.rects(raw.slice(0, 200).flatMap((item) =>
+      pins?.rects(raw.slice(0, 200).flatMap((item) =>
         item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
           ? [{ id: (item as { id: string }).id, rect: readRect((item as { rect?: unknown }).rect) ?? null }]
           : []));
@@ -688,7 +696,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       lastAvoid = "";
       postAvoid();
       postFocus();
-      pins.reset();
+      pins?.reset();
       schedule();
       return;
     }
@@ -1119,11 +1127,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** The requests to agents to pin on their elements (src/components/agent-pins.ts). */
     setRequests(requests: PinRequest[]) {
       pinRequests = requests;
-      pins.update(pinRequests, route);
+      if (requests.length) void loadPins();
+      pins?.update(pinRequests, route);
     },
     /** Show a request's pin and hold its card open (src/components/agent-pins.ts `show`). */
     showRequest(id: string) {
-      pins.show(id);
+      void loadPins().then(() => { if (!pinsDisposed) pins?.show(id); });
     },
     /**
      * History shows an earlier version: its bar goes over the page, and the
@@ -1228,7 +1237,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       canvas.destroy();
       codeLink.destroy();
       avoidWatch.disconnect();
-      pins.destroy();
+      pinsDisposed = true;
+      pins?.destroy();
       stopTheme();
       insertControls.destroy();
       pageBuilder.destroy();

@@ -1,3 +1,4 @@
+import { handleChunkLoadFailure } from "../chunk-recovery";
 // The keyboard layer of the editor: the command palette (⌘K, and ⌘P to go
 // to a page or file), the keyboard shortcuts sheet (?), and the editor's
 // commands registered for both (src/page-builder/commands.ts). main.ts hands
@@ -12,8 +13,8 @@ import type { AddChoice } from "./add-catalog";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./native-operations";
 import { nativeChoiceMarkup } from "./native-elements";
 import type { EditBarControl, EditBarModel } from "../components/edit-bar";
-import { createCommandPalette, type CommandPalette } from "../components/command-palette";
-import { createShortcutSheet, type ShortcutSheet } from "../components/shortcut-sheet";
+import type { CommandPalette } from "../components/command-palette";
+import type { ShortcutSheet } from "../components/shortcut-sheet";
 import { parseMarked } from "../native-source-location";
 import { availableCommands, guardCommand, matchesKeys, registerCommand, registerCommandSource, registerShortcut, shortcutSheet, type Command, type Keys } from "./commands";
 
@@ -474,49 +475,63 @@ function listShortcuts() {
 export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
   const mac = isMac();
   let sheet: ShortcutSheet | undefined;
-  const showShortcuts = () => {
-    palette.close();
+  let palette: CommandPalette | undefined;
+  let disposed = false;
+  let loading: Promise<void> | undefined;
+  const showShortcuts = () => void loadPanels().then(() => {
+    if (disposed || otherModalOpen()) return;
+    palette?.close();
     sheet?.open();
-  };
-  const palette: CommandPalette = createCommandPalette({
-    commands: availableCommands,
-    fromQuery: (text) => {
-      // Ask agent with what was typed, about the selected element.
-      const model = deps.editBar();
-      const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
-      if (!model || !prompt || text.length < 3) return [];
-      const revision = deps.revision?.();
-      const selection = deps.selection();
-      const source = selection && deps.source(selection.path);
-      const identity = JSON.stringify(selection);
-      return [{
-        id: "agent.ask-typed",
-        title: `Ask agent: “${text}”`,
-        hint: deps.editBar()?.kind,
-        group: "Agent",
-        icon: "sparkle",
-        run: guardCommand(async () => {
-          const problem = await prompt.onSend(text);
-          if (problem) deps.onError(new Error(problem));
-        }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
-        () => deps.announce("The selection changed. Reopen the command palette and try again.")),
-      }];
-    },
-    showShortcuts,
-    onError: deps.onError,
   });
-  sheet = createShortcutSheet(shortcutSheet);
-  host.append(palette.root, sheet.root);
+  const loadPanels = () => loading ??= Promise.all([
+    import("../components/command-palette"), import("../components/shortcut-sheet"),
+  ]).then(([{ createCommandPalette }, { createShortcutSheet }]) => {
+    if (disposed) return;
+    palette = createCommandPalette({
+      commands: availableCommands,
+      fromQuery: (text) => {
+        // Ask agent with what was typed, about the selected element.
+        const model = deps.editBar();
+        const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
+        if (!model || !prompt || text.length < 3) return [];
+        const revision = deps.revision?.();
+        const selection = deps.selection();
+        const source = selection && deps.source(selection.path);
+        const identity = JSON.stringify(selection);
+        return [{
+          id: "agent.ask-typed",
+          title: `Ask agent: “${text}”`,
+          hint: deps.editBar()?.kind,
+          group: "Agent",
+          icon: "sparkle",
+          run: guardCommand(async () => {
+            const problem = await prompt.onSend(text);
+            if (problem) deps.onError(new Error(problem));
+          }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+          () => deps.announce("The selection changed. Reopen the command palette and try again.")),
+        }];
+      },
+      showShortcuts,
+      onError: deps.onError,
+    });
+    sheet = createShortcutSheet(shortcutSheet);
+    host.append(palette.root, sheet.root);
+
+  }).catch((error) => { loading = undefined; void handleChunkLoadFailure(error); deps.onError(error); });
+  const openPalette = (scope: "all" | "go", toggle = false) => void loadPanels().then(() => {
+    if (disposed || otherModalOpen()) return;
+    if (toggle) palette?.toggle(scope); else palette?.open(scope);
+  });
 
   const removers = [
     ...actionCommands(deps).map(registerCommand),
     registerCommand({
       id: "editor.palette", title: "Command palette", group: "Actions", icon: "search", area: "Everywhere",
-      shortcut: [MOD_K], when: () => false, run: () => palette.open("all"),
+      shortcut: [MOD_K], when: () => false, run: () => openPalette("all"),
     }),
     registerCommand({
       id: "editor.go-to", title: "Go to page or file", group: "Actions", icon: "pages", area: "Everywhere",
-      shortcut: [MOD_P], keywords: ["open", "find", "quick open"], run: () => palette.open("go"),
+      shortcut: [MOD_P], keywords: ["open", "find", "quick open"], run: () => openPalette("go"),
     }),
     registerCommand({
       id: "editor.shortcuts", title: "Keyboard shortcuts", group: "Actions", icon: "keyboard", area: "Everywhere",
@@ -528,7 +543,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     ...listShortcuts(),
   ];
 
-  const otherModalOpen = () => [...document.querySelectorAll("dialog[open]")].some((dialog) => dialog !== palette.root && dialog !== sheet?.root && dialog.matches(":modal"));
+  const otherModalOpen = () => [...document.querySelectorAll("dialog[open]")].some((dialog) => dialog !== palette?.root && dialog !== sheet?.root && dialog.matches(":modal"));
   // A selection key (⌘D, Delete, Shift+Enter) runs its edit bar control.
   const runBar = (label: string) => {
     const command = selectionCommands(deps).find((item) => item.title === label);
@@ -536,8 +551,8 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     return Boolean(command);
   };
   const shortcut = (name: string) => {
-    if (name === "palette") palette.toggle("all");
-    else if (name === "go") palette.toggle("go");
+    if (name === "palette") openPalette("all", true);
+    else if (name === "go") openPalette("go", true);
     else if (name === "shortcuts") { if (!otherModalOpen()) showShortcuts(); }
     else if (name === "undo" || name === "redo") { if (deps.editing()) deps.history(name); }
     else if (name === "duplicate") runBar("Duplicate");
@@ -558,17 +573,17 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       if (otherModalOpen()) return;
       event.preventDefault();
       event.stopPropagation();
-      palette.toggle("all");
+      openPalette("all", true);
       return;
     }
     if (matchesKeys(event, MOD_P, mac)) {
       if (otherModalOpen()) return;
       event.preventDefault();
       event.stopPropagation();
-      palette.toggle("go");
+      openPalette("go", true);
       return;
     }
-    if (palette.isOpen() || sheet?.isOpen()) return;
+    if (palette?.isOpen() || sheet?.isOpen()) return;
     if (event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey && !isTypingTarget(target) && !otherModalOpen()) {
       event.preventDefault();
       showShortcuts();
@@ -604,7 +619,8 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       for (const remove of removers) remove();
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("message", onMessage);
-      palette.root.remove();
+      disposed = true;
+      palette?.root.remove();
       sheet?.root.remove();
     },
   };

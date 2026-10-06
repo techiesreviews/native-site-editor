@@ -5,7 +5,7 @@ import {
   type StartingPoint,
 } from "../../shared/starting-point";
 import type { OwnerInstallation } from "../../shared/types";
-import { createCommand, setupPrompt } from "./agent-menu";
+import { createCommand, setupPrompt } from "../agent-prompts";
 import { createRepositoryNameField } from "./repository-name-field";
 import "./onboarding.css";
 

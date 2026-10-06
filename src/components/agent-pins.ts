@@ -1,3 +1,5 @@
+import { NOTE_GAP, PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
+export { NOTE_GAP, PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
@@ -83,10 +85,6 @@ const replied = (state: string) => state === "done" || state === "answered" || s
 // The question an agent asks the user, shown in its pin ("" when none).
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
 
-/** Space between an element's top edge and the notes on it. */
-export const NOTE_GAP = 4;
-/** A pin's height, and Ask agent's note's on one line. */
-export const PIN_HEIGHT = 22;
 // Between two pins of one element.
 const STACK_GAP = 3;
 // A request's pin pops in when it shows up this soon after it was asked.
@@ -105,23 +103,6 @@ const CARD_GAP = 6;
 const CARD_MARGIN = 8;
 const sizesItself = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
 
-/**
- * Where the notes on an element start, in frame coordinates: its left edge
- * kept inside the frame, and its top edge, which the notes stand above or,
- * with no room at the top of the frame, hang under (`below`).
- */
-export function noteAnchor(rect: SelectionRect, frame: { width: number; height: number }) {
-  const edge = Math.max(0, Math.min(rect.top, frame.height));
-  return {
-    x: Math.max(4, Math.min(rect.left, frame.width - 4 - PIN_HEIGHT)),
-    edge,
-    below: edge - NOTE_GAP - PIN_HEIGHT < 4,
-  };
-}
-/** The top of a note `height` tall at `anchor`. */
-export function noteTop(anchor: ReturnType<typeof noteAnchor>, height: number) {
-  return anchor.below ? anchor.edge + NOTE_GAP : anchor.edge - NOTE_GAP - height;
-}
 const sameRect = (a: SelectionRect, b: SelectionRect) =>
   Math.abs(a.top - b.top) < 1 && Math.abs(a.left - b.left) < 1 && Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
 

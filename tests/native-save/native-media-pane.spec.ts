@@ -4,6 +4,12 @@ import { storedDraft } from "./drafts";
 async function mount(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  // The repository adapter is configured on the first Images use.
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Images", exact: true }).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.keyboard.press("Escape");
   await page.evaluate(async () => {
     const { mountMediaLibrary } = await import("/src/page-builder/media-picker.ts");
     const host = document.createElement("div"); host.id = "media-pane-harness";

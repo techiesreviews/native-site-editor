@@ -98,6 +98,7 @@ test("actions and the selected section's controls run from the palette, keys wor
   const frame = page.frameLocator(".native-preview-frame");
   // Hide and show the code, and the page structure.
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(palette(page)).toBeVisible();
   await page.keyboard.type("hide code");
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toHaveClass(/code-collapsed/);
