@@ -9,6 +9,7 @@ import type {
 import { EMPTY_COMMIT, MAX_BATCH_FILES } from "../shared/types";
 import { repositoryNameProblem } from "../shared/starting-point";
 import { ObjectCache } from "./blob-cache";
+import { baseFetch } from "./timing";
 
 export class HttpError extends Error {
   constructor(
@@ -34,6 +35,7 @@ const batchConcurrency = 8;
 // pay for two GitHub round trips each. Entries are scoped to the fetch
 // implementation, so tests and fakes with their own fetcher never share state.
 // Callers opt in with `maxAge`; the default rechecks membership every request.
+// Kept per fetch implementation, under any per-request wrapper (worker/timing.ts).
 interface RepositoryListing {
   fetchedAt: number;
   repos: Promise<Repository[]>;
@@ -251,8 +253,8 @@ export class GitHub {
 
   async repositories(login: string, maxAge = 0): Promise<Repository[]> {
     const fetcher = this.fetcher;
-    let byToken = listings.get(fetcher);
-    if (!byToken) listings.set(fetcher, (byToken = new Map()));
+    let byToken = listings.get(baseFetch(fetcher));
+    if (!byToken) listings.set(baseFetch(fetcher), (byToken = new Map()));
     const key = `${login.toLowerCase()}\n${this.token}`;
     const cached = byToken.get(key);
     const now = Date.now();
@@ -298,7 +300,7 @@ export class GitHub {
 
   /** Forgets the remembered repository listing of `login`, so the next one asks GitHub. */
   forgetRepositories(login: string) {
-    listings.get(this.fetcher)?.delete(`${login.toLowerCase()}\n${this.token}`);
+    listings.get(baseFetch(this.fetcher))?.delete(`${login.toLowerCase()}\n${this.token}`);
   }
 
   /**

@@ -5,7 +5,9 @@
 // read after the caller has authorized the repository, like any GitHub read.
 // Memory entries are scoped to the fetch implementation, so tests and fakes
 // with their own fetcher never share state; the Cache API is used only with
-// the platform's own fetch.
+// the platform's own fetch. A colo cache write runs after the response when
+// the request has a waitUntil (worker/timing.ts).
+import { afterResponse, baseFetch } from "./timing";
 
 const maxEntries = 2000;
 const maxMemoryBytes = 32 * 1024 * 1024;
@@ -26,17 +28,24 @@ function memoryFor(fetcher: typeof fetch): Memory {
   return memory;
 }
 
-function platformCache(fetcher: typeof fetch): Promise<Cache> | undefined {
+// Opened once per isolate; a failed open is tried again by the next request.
+let opened: Promise<Cache | undefined> | undefined;
+function platformCache(fetcher: typeof fetch): Promise<Cache | undefined> | undefined {
   if (fetcher !== globalThis.fetch || typeof caches === "undefined") return undefined;
-  return caches.open(cacheName).catch(() => undefined) as Promise<Cache>;
+  return (opened ??= caches.open(cacheName).catch(() => {
+    opened = undefined;
+    return undefined;
+  }));
 }
 
 const cacheUrl = (key: string) => `${cacheHost}/${key}`;
 
 export class ObjectCache {
   private memory: Memory;
+  private base: typeof fetch;
   constructor(private fetcher: typeof fetch) {
-    this.memory = memoryFor(fetcher);
+    this.base = baseFetch(fetcher);
+    this.memory = memoryFor(this.base);
   }
 
   async get(key: string): Promise<string | undefined> {
@@ -48,7 +57,7 @@ export class ObjectCache {
       return held;
     }
     try {
-      const cache = await platformCache(this.fetcher);
+      const cache = await platformCache(this.base);
       const response = await cache?.match(cacheUrl(key));
       if (!response) return undefined;
       const value = await response.text();
@@ -69,20 +78,24 @@ export class ObjectCache {
     if (value.length <= maxValueBytes) this.remember(key, value);
   }
 
+  /** Keeps `value` in memory at once; the colo cache write finishes after the response when it can. */
   async put(key: string, value: string): Promise<void> {
     if (value.length > maxValueBytes) return;
     this.remember(key, value);
-    try {
-      const cache = await platformCache(this.fetcher);
-      await cache?.put(
-        cacheUrl(key),
-        new Response(value, {
-          headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=31536000, immutable" },
-        }),
-      );
-    } catch {
+    const pending = platformCache(this.base);
+    if (!pending) return;
+    const write = pending
+      .then((cache) =>
+        cache?.put(
+          cacheUrl(key),
+          new Response(value, {
+            headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=31536000, immutable" },
+          }),
+        ),
+      )
       // The memory copy still serves this isolate.
-    }
+      .catch(() => undefined);
+    await afterResponse(this.fetcher, write);
   }
 
   /** The cached value of `key`, or `load()`'s, which is then kept. */

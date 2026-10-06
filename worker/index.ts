@@ -72,4 +72,6 @@ export class SessionStore extends DurableObject {
   }
 }
 
-export default { fetch: (request: Request, env: Env) => handle(request, env) };
+export default {
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) => handle(request, env, fetch, ctx),
+};

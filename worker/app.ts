@@ -13,7 +13,6 @@ import {
   type AgentGrant,
   type AgentHub,
 } from "./agent-context";
-import { handleMcp } from "./mcp";
 import { requestIdPattern, requestSummary, validateAnswer, validateAsk } from "./agent-requests";
 import {
   handleOAuth,
@@ -29,6 +28,7 @@ import { publishHosts } from "./hosts";
 import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError } from "./github";
+import { requestFetch, startTiming, timed } from "./timing";
 import {
   configuredApp,
   convertManifest,
@@ -174,7 +174,7 @@ async function sessionWithId(request: Request, env: Env) {
 }
 async function session(request: Request, env: Env): Promise<Session | null> {
   const id = cookie(request, "session");
-  return id ? loadSession(env, id) : null;
+  return id ? timed(request, "session", loadSession(env, id)) : null;
 }
 async function loadSession(env: Env, id: string): Promise<Session | null> {
   const response = await store(env, id);
@@ -183,12 +183,19 @@ async function loadSession(env: Env, id: string): Promise<Session | null> {
   return value.kind === "user" && value.expiresAt > Date.now() ? value : null;
 }
 
+// An isolate's first request is marked `cold` in its Server-Timing.
+let warm = false;
+
 export async function handle(
   request: Request,
   env: Env,
   fetcher: typeof fetch = fetch,
+  ctx?: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<Response> {
   const url = new URL(request.url);
+  const timing = url.pathname.startsWith("/api/") ? startTiming(request, !warm) : undefined;
+  warm = true;
+  fetcher = requestFetch(fetcher, timing, ctx && ((promise) => ctx.waitUntil(promise)));
   let response: Response;
   try {
     response = await route(request, env, url, fetcher);
@@ -232,6 +239,7 @@ export async function handle(
     url.pathname === "/mcp"
   )
     secured.headers.set("Cache-Control", "no-store");
+  if (timing) secured.headers.set("Server-Timing", timing.header());
   return secured;
 }
 
@@ -431,6 +439,9 @@ async function route(
         connection.grant,
         body?.method === "initialize" ? body.params?.clientInfo?.name : undefined,
       ).catch(() => undefined);
+    // Loaded on first use: the MCP server and its schema library are most of
+    // the bundle, and most isolates never serve /mcp.
+    const { handleMcp } = await import("./mcp");
     return handleMcp(request, connection, env, body);
   }
   if (path.startsWith("/api/agent/")) {
@@ -737,7 +748,7 @@ async function route(
   if (path === "/api/session") {
     const [user, app] = await Promise.all([
       session(request, env),
-      config(env),
+      timed(request, "config", config(env)),
     ]);
     // A signed-in session also carries the selected repositories so the
     // workspace opens in one round trip. A listing failure is not a session
@@ -914,11 +925,11 @@ async function route(
       ].includes(path)
     )
       throw new HttpError(404, "Endpoint not found.");
-    const repo = await github.authorizeRepository(
+    const repo = await timed(request, "auth", github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
       readAuthorizationMaxAge,
-    );
+    ));
     if (path === "/api/branches") return json(await github.branches(repo));
     // `commit`: the head the tab already saw, so a lagging read is not a step back.
     if (path === "/api/snapshot")

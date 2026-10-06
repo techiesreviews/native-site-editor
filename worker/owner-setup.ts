@@ -85,6 +85,13 @@ export function githubAppManifest(origin: string, aliases: string[] = [], owner 
   };
 }
 
+// The stored App config is written once and never changed or deleted (the
+// store refuses a second PUT), so once found it is kept for the isolate's life
+// and the shared config object is no longer asked. Until then every call asks,
+// so a setup finished on another isolate shows at once. Scoped to the Durable
+// Object binding, so test environments never share it.
+const knownApps = new WeakMap<object, GitHubAppConfig>();
+
 export async function configuredApp(
   env: Env,
 ): Promise<GitHubAppConfig | null> {
@@ -94,12 +101,16 @@ export async function configuredApp(
       clientSecret: env.GITHUB_CLIENT_SECRET,
       slug: env.GITHUB_APP_SLUG,
     };
+  const known = knownApps.get(env.SESSIONS);
+  if (known) return known;
   const response = await env.SESSIONS.get(env.SESSIONS.idFromName(configId)).fetch(
     new Request("https://session.internal/config"),
   );
   if (!response.ok) return null;
   const value = (await response.json()) as GitHubAppConfig;
-  return value.clientId && value.clientSecret && value.slug ? value : null;
+  if (!(value.clientId && value.clientSecret && value.slug)) return null;
+  knownApps.set(env.SESSIONS, value);
+  return value;
 }
 
 export async function writeConfiguredApp(env: Env, value: GitHubAppConfig) {
