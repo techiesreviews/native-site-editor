@@ -31,7 +31,7 @@ async function replaceCode(page: Page, text: string) {
   await page.keyboard.press("ControlOrMeta+V");
 }
 
-test("a child of a linked page copy shows its shared item's context; the chip selects the copy, the child has no Edit, and its text edits stay on the page", async ({ page, baseURL }) => {
+test("a child of a linked page copy shows its shared item's context; the chip selects the copy, the child has no Edit, and its text edits stay on the page", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await row(page, /^Section About Larkspur/).hover();
   await row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" }).click();
@@ -65,7 +65,7 @@ test("a child of a linked page copy shows its shared item's context; the chip se
   await expect(bar(page).getByRole("button", { name: /Shared hero/ })).toHaveCount(0);
 });
 
-test("an unnamed button and an image with no file show their warnings; a named button does not", async ({ page, baseURL }) => {
+test("an unnamed button and an image with no file show their warnings; a named button does not", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const source = (await effectiveSource(page, baseURL, PAGE))!;
   await replaceCode(page, source.replace('<section class="contact flow" id="contact">', '<section class="contact flow" id="contact"><button class="unnamed" style="width:40px;height:24px"></button><button class="named" aria-label="Open menu" style="width:40px;height:24px"></button><img class="nofile" src="" alt="" width="40" height="40">'));
@@ -79,7 +79,7 @@ test("an unnamed button and an image with no file show their warnings; a named b
   await expect(bar(page)).not.toContainText("Alt text missing");
 });
 
-test("a button named by an icon's aria-label, and images given by srcset or picture, show no warning; a data-alt does not name a button", async ({ page, baseURL }) => {
+test("a button named by an icon's aria-label, and images given by srcset or picture, show no warning; a data-alt does not name a button", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const source = (await effectiveSource(page, baseURL, PAGE))!;
   const svg = '<svg role="img" aria-label="Open menu" width="20" height="20" viewBox="0 0 20 20"><rect width="20" height="20"/></svg>';
@@ -98,7 +98,7 @@ test("a button named by an icon's aria-label, and images given by srcset or pict
   }
 });
 
-test("an editor JSON whose section catalog has an unsupported version leaves the page plainly editable and offers no shared label", async ({ page, baseURL }) => {
+test("an editor JSON whose section catalog has an unsupported version leaves the page plainly editable and offers no shared label", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await row(page, /^Section About Larkspur/).hover();
   await row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" }).click();
@@ -177,7 +177,7 @@ async function useHere(page: Page, rowName: RegExp, kind: string, label: string)
   await expect(row(page, new RegExp(label)).getByRole("button", { name: "Edit component" })).toBeAttached();
 }
 
-test("Use here links the shared header and footer on all six routes and the section only on the selected copy, JSON only (one Undo/Redo per kind); Update of pristine copies is one Undo/Redo; Save persists literal pages", async ({ page, baseURL }) => {
+test("Use here links the shared header and footer on all six routes and the section only on the selected copy, JSON only (one Undo/Redo per kind); Update of pristine copies is one Undo/Redo; Save persists literal pages", { tag: "@native-static" }, async ({ page, baseURL }) => {
   test.setTimeout(240_000);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent("work/fern-and-kettle/index.html")}`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
@@ -292,7 +292,7 @@ test("Use here links the shared header and footer on all six routes and the sect
   expect(await head(JSON_PATH)).toContain("site-head");
 });
 
-test("an open Use here form refuses after its page source or the editor JSON changes", async ({ page, baseURL }) => {
+test("an open Use here form refuses after its page source or the editor JSON changes", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent("work/fern-and-kettle/index.html")}`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
   await saveShared(page, /^Header/, "header", "site-head", "Site header");
@@ -337,7 +337,7 @@ for (const [what, mangle] of [
   ["malformed", (_: string) => "{ not json\n"],
   ["unsupported-version", (text: string) => { const parsed = JSON.parse(text); parsed.reusableSections.version = 99; return JSON.stringify(parsed, null, 2) + "\n"; }],
 ] as const) {
-  test(`selecting a whole section with a ${what} editor JSON keeps the bar plain and usable, with no save action and no JSON write`, async ({ page, baseURL }) => {
+  test(`selecting a whole section with a ${what} editor JSON keeps the bar plain and usable, with no save action and no JSON write`, { tag: "@native-static" }, async ({ page, baseURL }) => {
     await open(page, baseURL);
     await row(page, /^Section About Larkspur/).hover();
     await row(page, /^Section About Larkspur/).getByRole("button", { name: "Save shared" }).click();

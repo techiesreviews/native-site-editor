@@ -40,7 +40,7 @@ async function addIntro(page: Page, select: string) {
   await option.press("Enter");
 }
 
-test("Add links each copy; the purple Edit opens the master; Update copies changes only unchanged copies, one Undo", async ({ page, baseURL }) => {
+test("Add links each copy; the purple Edit opens the master; Update copies changes only unchanged copies, one Undo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await load(page, baseURL);
@@ -148,7 +148,7 @@ test("Add links each copy; the purple Edit opens the master; Update copies chang
   expect(errors).toEqual([]);
 });
 
-test("a broken master can still be left with Done; Update copies refuses; other sections stay available", async ({ page, baseURL }) => {
+test("a broken master can still be left with Done; Update copies refuses; other sections stay available", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page, "main > section h2");
   await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
@@ -179,7 +179,7 @@ test("a broken master can still be left with Done; Update copies refuses; other 
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/broken-master-add.png` });
 });
 
-test("Update Intro saves the page's section into the master as written; pages and CSS stay; the banner shows a broken master at once", async ({ page, baseURL }) => {
+test("Update Intro saves the page's section into the master as written; pages and CSS stay; the banner shows a broken master at once", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page, "main > section h2");
   await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
@@ -230,7 +230,7 @@ test("Update Intro saves the page's section into the master as written; pages an
   expect(await effectiveSource(page, baseURL, MASTER)).toBe(master);
 });
 
-test("the master line hides on other files, comes back on the master, and is rebuilt when its code pane is replaced", async ({ page, baseURL }) => {
+test("the master line hides on other files, comes back on the master, and is rebuilt when its code pane is replaced", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page, "main > section h2");
   await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
@@ -263,7 +263,7 @@ test("the master line hides on other files, comes back on the master, and is reb
   await expect(page.locator("#primary-title")).toHaveText("index.html");
 });
 
-test("Done folds Code back only when the person left the revealed pane as it was", async ({ page, baseURL }) => {
+test("Done folds Code back only when the person left the revealed pane as it was", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const grip = page.getByRole("separator", { name: "Resize code pane", exact: true });
   await load(page, baseURL);
   await addIntro(page, "main > section h2");

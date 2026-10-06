@@ -102,7 +102,7 @@ async function renameFolder(page: Page, from: string, to: string) {
   await dialog.getByRole("button", { name: "Rename", exact: true }).click();
 }
 
-test("renaming a shared page's folder carries its whole metadata entry; deleting it removes the entry; each is one exact Undo/Redo", async ({ page, baseURL }) => {
+test("renaming a shared page's folder carries its whole metadata entry; deleting it removes the entry; each is one exact Undo/Redo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const before = await seeded(page, baseURL);
   const entry = before.document.pages[PAGE];
 
@@ -169,7 +169,7 @@ test("renaming a shared page's folder carries its whole metadata entry; deleting
   await expect.poll(() => storedDrafts(page)).toEqual(afterDelete);
 });
 
-test("a folder rename onto a page key that only has leftover metadata is refused, writing nothing", async ({ page, baseURL }) => {
+test("a folder rename onto a page key that only has leftover metadata is refused, writing nothing", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const leftover = { sections: { note: "An old page" }, orphan: { kept: true } };
   const before = await seeded(page, baseURL, { "studio/index.html": leftover });
   expect(before.files["studio/index.html" as never]).toBeUndefined();
@@ -194,7 +194,7 @@ test("a folder rename onto a page key that only has leftover metadata is refused
 // A folder rename rewrites /about/ links in the public header and in its private master alike.
 // That site-managed rewrite is not a customisation: the moved page's pristine header copy must
 // still count as unchanged, so the master's Update copies writes it.
-test("after a folder rename rebases a pristine shared header, Update copies from its master still updates the moved page", async ({ page, baseURL }) => {
+test("after a folder rename rebases a pristine shared header, Update copies from its master still updates the moved page", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const MASTER = ".editor/page-parts/site-head.html";
   const MOVED = "studio/index.html";
   await open(page, baseURL);
@@ -279,7 +279,7 @@ async function undoRedo(page: Page, baseURL: string | undefined, before: Record<
   await expect.poll(() => storedDrafts(page)).toEqual(after);
 }
 
-test("a linked shared footer follows its page through a Files folder rename and goes with it on delete; the pristine copy stays linked; each is one exact Undo/Redo", async ({ page, baseURL }) => {
+test("a linked shared footer follows its page through a Files folder rename and goes with it on delete; the pristine copy stays linked; each is one exact Undo/Redo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const MOVED = "studio/index.html";
   const before = await seeded(page, baseURL, {}, [FOOTER], [FOOTER_MASTER]);
   const entry = before.document.pages[PAGE];
@@ -333,7 +333,7 @@ test("a linked shared footer follows its page through a Files folder rename and 
   await undoRedo(page, baseURL, before.files, await storedDrafts(page));
 });
 
-test("changing a page's URL from the Pages tab carries its shared section, header and footer links; pristine copies stay linked; one exact Undo/Redo", async ({ page, baseURL }) => {
+test("changing a page's URL from the Pages tab carries its shared section, header and footer links; pristine copies stay linked; one exact Undo/Redo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const MOVED = "studio/index.html";
   const HEAD_MASTER = ".editor/page-parts/site-head.html";
   const masters = [...MASTERS, FOOTER_MASTER];

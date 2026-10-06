@@ -40,7 +40,7 @@ async function collapse(page: Page, testInfo: Parameters<Parameters<typeof test>
   await testInfo.attach("collapsed-master-state", { body: JSON.stringify(state, null, 2), contentType: "application/json" });
 }
 
-test("Done remains reachable after a person hides Code while editing a master, and preserves their collapsed state", async ({ page, baseURL }, testInfo) => {
+test("Done remains reachable after a person hides Code while editing a master, and preserves their collapsed state", { tag: "@native-static" }, async ({ page, baseURL }, testInfo) => {
   await openMaster(page, baseURL);
   const master = await effectiveSource(page, baseURL, MASTER), home = await effectiveSource(page, baseURL, "index.html"), json = await effectiveSource(page, baseURL, JSON_PATH);
   await collapse(page, testInfo);
@@ -58,7 +58,7 @@ test("Done remains reachable after a person hides Code while editing a master, a
   expect(await effectiveSource(page, baseURL, JSON_PATH)).toBe(json);
 });
 
-test("Update copies remains reachable with Code hidden and updates only linked copies as one Undo and Redo", async ({ page, baseURL }, testInfo) => {
+test("Update copies remains reachable with Code hidden and updates only linked copies as one Undo and Redo", { tag: "@native-static" }, async ({ page, baseURL }, testInfo) => {
   await openMaster(page, baseURL);
   await frame(page).locator("section.section-intro h2").click();
   const beforeMaster = await effectiveSource(page, baseURL, MASTER), home = await effectiveSource(page, baseURL, "index.html"), json = await effectiveSource(page, baseURL, JSON_PATH);

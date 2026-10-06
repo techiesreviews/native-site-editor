@@ -34,7 +34,7 @@ async function openHeld(page: Page, baseURL: string | undefined, codeHidden: boo
 }
 
 for (const codeHidden of [false, true]) {
-  test(`Structure gains component fields once the editor mounts on the same bytes${codeHidden ? " (code pane hidden)" : ""}`, async ({ page, baseURL }) => {
+  test(`Structure gains component fields once the editor mounts on the same bytes${codeHidden ? " (code pane hidden)" : ""}`, { tag: "@actual" }, async ({ page, baseURL }) => {
     await openHeld(page, baseURL, codeHidden);
     const start = await source(page);
     expect(typeof start).toBe("string");

@@ -53,7 +53,7 @@ async function replaceCode(page: Page, text: string) {
   await page.keyboard.press("ControlOrMeta+V");
 }
 
-test("a shared header master's image: chooser and Alt write only the master; Update then one Undo keeps the master edits", async ({ page, baseURL }) => {
+test("a shared header master's image: chooser and Alt write only the master; Update then one Undo keeps the master edits", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   const asset = await (await page.request.get(`${baseURL}/__demo/file?path=images%2Fstudio-desk.svg`)).text();
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/part-image.svg", content: asset } })).status()).toBe(204);
@@ -110,7 +110,7 @@ test("a shared header master's image: chooser and Alt write only the master; Upd
   expect(await codeCollapsed(page)).toBe(codeBefore);
 });
 
-test("a shared footer master's text: canvas typing and Bold target the master; Update when pristine, one Undo", async ({ page, baseURL }) => {
+test("a shared footer master's text: canvas typing and Bold target the master; Update when pristine, one Undo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const codeBefore = await codeCollapsed(page);
   const banner = await shareAndEdit(page, /^Footer/, "footer", "site-foot", "Site footer", "Shared footer master");

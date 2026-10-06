@@ -1,33 +1,30 @@
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fixtureKind } from "../tests/native-save/fixture-contract.ts";
 
-const actualOnly = new Set([
-  "native-card-paths-starter.spec.ts",
-  "native-static-section-save-host.spec.ts",
-  "native-social-preview.spec.ts",
-  "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",
-]);
-// Native-only: these need the native static starter (or create it) and skip elsewhere.
-// Listed names that do not exist yet simply match nothing.
-const nativeOnly = new Set([
-  "native-static-starter-create.spec.ts",
-  "native-master-host.spec.ts", "native-master-visual-host.spec.ts", "native-master-controls.spec.ts",
-  "native-master-assets-host.spec.ts", "native-master-code-collapse.spec.ts", "native-master-after-done-proof.spec.ts",
-  "native-master-page-part-controls.spec.ts",
-  "native-shared-authoring-host.spec.ts", "native-shared-link-host.spec.ts", "native-shared-files-lifecycle.spec.ts",
-]);
+// The native save suite in three fixture groups, chosen by the specs' own
+// Playwright tags: `@actual` needs the actual starter, `@native-static` the
+// native static starter (a spec can carry both); the default group is
+// everything else.
+const grep = {
+  default: ["--grep-invert", "@actual|@native-static"],
+  actual: ["--grep", "@actual"],
+  "native-static": ["--grep", "@native-static"],
+};
+const tagged = (name, tag) => readFileSync(`tests/native-save/${name}`, "utf8").includes(`"${tag}"`);
+const inGroup = (name, group) => group === "default"
+  ? !tagged(name, "@actual") && !tagged(name, "@native-static")
+  : tagged(name, `@${group}`);
+
 const args = process.argv.slice(2);
 const group = args.shift();
 try {
-  if (!["default", "actual", "native-static"].includes(group)) throw new Error("Choose default, actual, or native-static.");
+  if (!Object.hasOwn(grep, group)) throw new Error("Choose default, actual, or native-static.");
   const env = { ...process.env };
-  let files = readdirSync("tests/native-save").filter(name => name.endsWith(".spec.ts")).sort().filter(name => {
-    const actual = actualOnly.has(name) || /-actual\.spec\.ts$/.test(name);
-    return group === "default" ? !actual && !nativeOnly.has(name) : group === "actual" ? actual : name === "native-static-sections-host.spec.ts" || nativeOnly.has(name);
-  });
+  // Files holding at least one test of the group (a file can mix groups; the grep picks the tests).
+  let files = readdirSync("tests/native-save").filter(name => name.endsWith(".spec.ts")).sort().filter(name => inGroup(name, group));
   const forwarded = [];
   let check = false;
   for (let i = 0; i < args.length; i++) {
@@ -56,10 +53,12 @@ try {
   if (!files.length) throw new Error("No specs match this fixture group and --spec selection.");
   if (env.ASE_TEST_PORT && (!/^\d+$/.test(env.ASE_TEST_PORT) || +env.ASE_TEST_PORT < 1 || +env.ASE_TEST_PORT > 65535)) throw new Error("--port must be an integer from 1 to 65535.");
   if (check) {
-    console.log(`Fixture: ${group} (${resolve(env.ASE_NATIVE_SAVE_FIXTURE)})\n${files.join("\n")}`);
+    console.log(`Fixture: ${group} (${resolve(env.ASE_NATIVE_SAVE_FIXTURE)})\n${grep[group].join(" ")}\n${files.join("\n")}`);
   } else {
     if (!forwarded.includes("--list") && !existsSync(resolve(env.ASE_NATIVE_SAVE_FIXTURE))) throw new Error(`Fixture does not exist: ${resolve(env.ASE_NATIVE_SAVE_FIXTURE)}. --check can inspect the selection without a server.`);
-    const result = spawnSync(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", "-c", "playwright.native-save.config.ts", ...files, ...forwarded], { env, stdio: "inherit" });
+    // Only the group's files load: a spec may refuse another group's fixture at import.
+    const paths = files.map(name => `tests/native-save/${name}`);
+    const result = spawnSync(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", "--project=native-save", ...grep[group], ...paths, ...forwarded], { env, stdio: "inherit" });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;
   }

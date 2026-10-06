@@ -5,7 +5,7 @@ import { fixtureKind } from './fixture-contract';
 
 test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
-test('creating a saved-section master then Done keeps one-step Undo and Redo valid without Code typing', async ({ page, baseURL }) => {
+test('creating a saved-section master then Done keeps one-step Undo and Redo valid without Code typing', { tag: "@native-static" }, async ({ page, baseURL }) => {
   test.skip(process.env.STATIC_SECTIONS_FIXTURE !== 'native', 'Runs on the native static starter (STATIC_SECTIONS_FIXTURE=native).');
   expect(fixtureKind()).toBe('native-static');
   page.setDefaultTimeout(10_000);

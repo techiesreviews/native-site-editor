@@ -50,7 +50,7 @@ async function seed(page: Page, baseURL: string | undefined) {
   return await effectiveSource(page, baseURL, PAGE);
 }
 
-test("a nested page's image/link/alt controls write only the master", async ({ page, baseURL }) => {
+test("a nested page's image/link/alt controls write only the master", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
   const css = await effectiveSource(page, baseURL, "styles/site.css");
   await frame(page).locator(".master-image").click();
@@ -75,7 +75,7 @@ test("a nested page's image/link/alt controls write only the master", async ({ p
   expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
 });
 
-test("a stale Choose image callback after Done opens no picker and never navigates back to the master", async ({ page, baseURL }) => {
+test("a stale Choose image callback after Done opens no picker and never navigates back to the master", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
   await frame(page).locator(".master-image").click();
   const oldChoose = await bar(page).getByRole("button", { name: "Choose image…", exact: true }).elementHandle();
@@ -104,7 +104,7 @@ test("a stale Choose image callback after Done opens no picker and never navigat
   await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(markup);
 });
 
-test("a previous master's Method callback refuses after Done and reopening the same cached model", async ({ page, baseURL }) => {
+test("a previous master's Method callback refuses after Done and reopening the same cached model", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
   await frame(page).locator(".master-form").click({ position: { x: 4, y: 4 } });
   const method = await bar(page).getByRole("combobox", { name: "Method", exact: true }).elementHandle();

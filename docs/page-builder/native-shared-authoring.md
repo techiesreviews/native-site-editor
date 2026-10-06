@@ -28,7 +28,7 @@ A new context key replaces the fields and detaches old pending results. Calling
 key whenever the offered values or source/selection context change. `show(undefined)`
 hides and invalidates the form; `destroy()` detaches it and pending results.
 
-Verification: `npx playwright test -c playwright.native-shared-authoring.config.ts`
+Verification: `npx playwright test --project=native-shared-authoring`
 uses the actual component and CSS, with a small standalone host. It covers native
 keyboard behavior, labels, validation, single-choice display, duplicate-submit
 refusal, host errors, pending cancellation, and old-context result refusal.

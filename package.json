@@ -15,12 +15,16 @@
     "deploy": "wrangler deploy",
     "deploy:techies": "wrangler deploy --config wrangler.techies.jsonc",
     "test": "tsx --test tests/*.test.ts",
-    "test:browser": "playwright test -c playwright.native-save.config.ts",
-    "test:browser-preview": "playwright test -c playwright.native-preview.config.ts",
+    "test:browser": "playwright test --project=native-save",
+    "test:browser-preview": "playwright test --project=native-preview",
     "deploy:preview": "wrangler deploy --config wrangler.preview.jsonc",
     "test:browser:default": "node --import tsx scripts/native-browser-tests.mjs default",
     "test:browser:actual": "node --import tsx scripts/native-browser-tests.mjs actual",
-    "test:browser:native-static": "node --import tsx scripts/native-browser-tests.mjs native-static"
+    "test:browser:native-static": "node --import tsx scripts/native-browser-tests.mjs native-static",
+    "test:browser:shared-authoring": "playwright test --project=native-shared-authoring",
+    "test:browser:shared-structure": "playwright test --project=native-shared-structure",
+    "test:browser:page-part-preview": "playwright test --project=native-page-part-preview",
+    "test:browser:all": "playwright test"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",

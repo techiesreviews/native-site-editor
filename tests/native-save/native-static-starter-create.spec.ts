@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { NATIVE_STARTER_VERSION } from '../../worker/starter';
 
 // Native source only: the ordinary demo fixture supplies the pre-creation account.
-test('Create site commits the native starter and every public page works without JavaScript', async ({ page, context, browser, baseURL }) => {
+test('Create site commits the native starter and every public page works without JavaScript', { tag: "@native-static" }, async ({ page, context, browser, baseURL }) => {
   test.skip(!process.env.ASE_NATIVE_STARTER_SOURCE, 'Run test:browser:native-static -- --spec native-static-starter-create.');
   expect(process.env.ASE_NATIVE_STARTER_SOURCE).toBe('native-static');
   const errors: string[] = [];

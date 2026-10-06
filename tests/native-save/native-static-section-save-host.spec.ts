@@ -41,7 +41,7 @@ async function addIntro(page: Page, select: string) {
   await option.press("Enter");
 }
 
-test("Update Intro updates only the saved JSON record; one Undo; future Adds use it; copies stay", async ({ page, baseURL }) => {
+test("Update Intro updates only the saved JSON record; one Undo; future Adds use it; copies stay", { tag: "@actual" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   const sectionsCss = await file(page, baseURL, CSS);
   await addIntro(page, "section.flow h2");
@@ -161,7 +161,7 @@ test("Update Intro updates only the saved JSON record; one Undo; future Adds use
 
 // The stylesheet pane is already open beside the page (elements.css) before Add:
 // it is not part of the operation, so Add, Undo and Redo neither warn nor touch it.
-test("Add with an unchanged stylesheet pane open: no warning, page and JSON drafts, one Undo and Redo, also after the pane follows another stylesheet", async ({ page, baseURL }) => {
+test("Add with an unchanged stylesheet pane open: no warning, page and JSON drafts, one Undo and Redo, also after the pane follows another stylesheet", { tag: "@actual" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   const elementsCss = await file(page, baseURL, "styles/elements.css");
   const notice = page.locator("#notice");
@@ -201,7 +201,7 @@ test("Add with an unchanged stylesheet pane open: no warning, page and JSON draf
 // Typing in the open stylesheet pane after Add clears the shared journal. The
 // primary Undo must then refuse as a whole: the Add's page and JSON drafts, the page
 // source and the typed stylesheet bytes all stay exactly as they were.
-test("Undo after typing in the stylesheet pane following Add refuses without a partial revert", async ({ page, baseURL }) => {
+test("Undo after typing in the stylesheet pane following Add refuses without a partial revert", { tag: "@actual" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await frame(page).locator("section.flow h2").click();
   await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css");
@@ -257,7 +257,7 @@ async function addWithPane(page: Page, baseURL: string | undefined) {
   return { before, added: (await mounted(page))!, drafts: await storedDrafts(page) };
 }
 
-test("Monaco Undo and Redo keys in the page editor run the whole Add", async ({ page, baseURL }) => {
+test("Monaco Undo and Redo keys in the page editor run the whole Add", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { before, added, drafts } = await addWithPane(page, baseURL);
   // A valid shared history: Undo is available with its plain title.
   await expect(page.locator(".code-editor__undo").first()).toBeEnabled();
@@ -273,7 +273,7 @@ test("Monaco Undo and Redo keys in the page editor run the whole Add", async ({ 
   await expect(refusal(page)).toHaveCount(0);
 });
 
-test("Monaco Undo in the page editor refuses after the stylesheet pane cleared the history", async ({ page, baseURL }) => {
+test("Monaco Undo in the page editor refuses after the stylesheet pane cleared the history", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { added } = await addWithPane(page, baseURL);
   await typeInPane(page, "/* foreign */");
   const typed = await mounted(page, "styles/elements.css");
@@ -295,7 +295,7 @@ test("Monaco Undo in the page editor refuses after the stylesheet pane cleared t
   expect(await mounted(page)).toBe(added);
 });
 
-test("Monaco Undo in the page editor removes later typing, then stops at the Add", async ({ page, baseURL }) => {
+test("Monaco Undo in the page editor removes later typing, then stops at the Add", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { added, drafts: added3 } = await addWithPane(page, baseURL);
   // Typing and undoing it re-saves the page draft; only its timestamp moves.
   const content = async () => (await storedDrafts(page)).map(({ updatedAt: _updatedAt, ...draft }) => draft);
@@ -315,7 +315,7 @@ test("Monaco Undo in the page editor removes later typing, then stops at the Add
   expect(await content()).toEqual(drafts);
 });
 
-test("Monaco Redo in the page editor refuses to redo only the page after the history was cleared", async ({ page, baseURL }) => {
+test("Monaco Redo in the page editor refuses to redo only the page after the history was cleared", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { before } = await addWithPane(page, baseURL);
   await focusPrimary(page);
   await page.keyboard.press("ControlOrMeta+z");
@@ -332,7 +332,7 @@ test("Monaco Redo in the page editor refuses to redo only the page after the his
   }
 });
 
-test("Monaco Undo and Redo keys in the page editor follow a Source editor edit made after Add", async ({ page, baseURL }) => {
+test("Monaco Undo and Redo keys in the page editor follow a Source editor edit made after Add", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { before, added, drafts } = await addWithPane(page, baseURL);
   const strip = (list: Awaited<ReturnType<typeof storedDrafts>>) => list.map(({ updatedAt: _updatedAt, ...draft }) => draft);
   const added3 = strip(drafts);
@@ -379,7 +379,7 @@ test("Monaco Undo and Redo keys in the page editor follow a Source editor edit m
 
 // After a fresh load the editor JSON is only on the branch: selecting the added
 // section reads it, then offers Update for that same selection only.
-test("after a fresh load, Update appears once the editor JSON is read", async ({ page, baseURL }) => {
+test("after a fresh load, Update appears once the editor JSON is read", { tag: "@actual" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page, "section.flow h2");
   await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain("section-intro");
@@ -399,7 +399,7 @@ test("after a fresh load, Update appears once the editor JSON is read", async ({
 // The editor JSON is read once, slowly (a held response); another matching
 // section picked meanwhile gets Update when the read ends, and the first
 // pick is not drawn again over it.
-test("a section picked while the editor JSON is still read gets Update when the read ends", async ({ page, baseURL }) => {
+test("a section picked while the editor JSON is still read gets Update when the read ends", { tag: "@actual" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page, "section.flow h2");
   await expect(frame(page).locator("section.flow + section.section-intro")).toHaveCount(1);
@@ -437,7 +437,7 @@ test("a section picked while the editor JSON is still read gets Update when the 
 // Undo and Redo of an Add select what the step restores: Undo the element
 // selected for the Add (not the section that took the new one's place), Redo
 // the added section again, also with a Source editor edit undone and redone around it.
-test("Undo and Redo of an Add with a Source editor edit keep the selection on the restored elements", async ({ page, baseURL }) => {
+test("Undo and Redo of an Add with a Source editor edit keep the selection on the restored elements", { tag: "@actual" }, async ({ page, baseURL }) => {
   const { before, added } = await addWithPane(page, baseURL);
   const crumb = page.locator(".canvas-crumb[aria-current=true]");
   const selectedIs = (selector: string) => frame(page).locator("html").evaluate((_, selector) => {
