@@ -39,7 +39,7 @@ Per ticket 11, `tests/perf/edit-component-latency.ts` goes; `cold-start.ts` is t
 
 ## Remote signed-in baseline (2026-10-06, added after close)
 
-preview-editor.techies.tools, starter repository 1389746318, real network from Lex's machine (no throttling), median of 5:
+preview-editor.techies.tools, Lex's real site `techiesreviews/techies-reviews` (repository 1389746318, 171 images), real network from Lex's machine (no throttling), median of 5:
 
 | Load | session | paint | usable | Monaco | bytes before paint | requests before paint | bytes total |
 |---|---|---|---|---|---|---|---|

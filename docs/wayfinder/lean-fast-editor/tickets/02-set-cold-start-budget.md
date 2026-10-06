@@ -18,4 +18,4 @@ Decided with Lex. Budget on the throttled local profile (100 ms / 20 Mbps, `test
 - cold first preview paint at most 1.0 s;
 - warm first preview paint at most 0.4 s.
 
-A remote signed-in target on preview-editor.techies.tools is set once Lex's sign-in run gives a baseline. The byte budget is enforced in CI (deterministic); timings are checked by hand with the script on each build slice and recorded in the slice's notes.
+Remote signed-in target (set with ticket 16, on preview with Lex's site): usable at most paint + 0.5 s, no image bytes before paint, cold paint at most 2.5 s, warm at most 1.5 s. The byte budget is enforced in CI (deterministic); timings are checked by hand with the script on each build slice and recorded in the slice's notes.

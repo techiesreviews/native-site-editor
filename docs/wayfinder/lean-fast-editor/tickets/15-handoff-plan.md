@@ -28,9 +28,10 @@ Decided with Lex.
 
 **Phase 2: quick performance wins**
 1. Immutable `/assets/*` cache header; reload-once on failed chunk loads.
-2. ★ Defer Monaco to idle after first preview paint (ticket 03 point 3).
-3. Toolchain pins (ticket 10).
-4. Worker: lazy-load MCP, cache App config per isolate, `waitUntil` for blob cache, `Server-Timing` (ticket 13).
+2. ★ Image blobs (ticket 16): `/api/blob` raw bytes cached by SHA, preview uses plain URLs and draws once, no image fetch before paint.
+3. ★ Defer Monaco to idle after first preview paint (ticket 03 point 3).
+4. Toolchain pins (ticket 10).
+5. Worker: lazy-load MCP, cache App config per isolate, `waitUntil` for blob cache, `Server-Timing` (ticket 13).
 
 **Phase 3: tests in CI** (ticket 09)
 1. One `playwright.config.ts` with projects; tags replace the hand lists.
@@ -46,4 +47,4 @@ Decided with Lex.
 1. ★ `@preact/signals-core` store, then `main.ts` split one module per PR, lazy features first (ticket 08). `code-editor.ts` becomes the Monaco-only code pane module.
 2. Monaco contribution trim, last (ticket 06 point 5).
 
-**Done** when the budget holds on the throttled profile (≤350 KB, ≤1.0 s cold, ≤0.4 s warm) and a remote signed-in target, set after Lex's sign-in run, holds on preview.
+**Done** when the budget holds on the throttled profile (≤350 KB, ≤1.0 s cold, ≤0.4 s warm) and the remote target holds on preview with Lex's site (usable ≤ paint + 0.5 s, no image bytes before paint, cold paint ≤ 2.5 s, warm ≤ 1.5 s).
