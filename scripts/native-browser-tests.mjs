@@ -8,6 +8,7 @@ const actualOnly = new Set([
   "native-card-paths-json.spec.ts", "native-card-paths-starter.spec.ts",
   "native-editor-json-lifecycle.spec.ts",
   "native-static-section-save-host.spec.ts",
+  "native-social-preview.spec.ts",
   "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",
 ]);
 // Native-only: these need the native static starter (or create it) and skip elsewhere.
