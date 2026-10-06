@@ -42,6 +42,7 @@ Decided with Lex.
 
 **Phase 4: boot path**
 Split into small tasks on 2026-10-06 so more run at once (Lex). Started alongside phase 2–3: 4a `html-entities` fast path; 4b parallel installation listing; 4c `/api/files` through GraphQL `prefetchTexts`; 4d the Monaco-free draft store as a standalone module with tests (wired in later); 4e on-demand loading for the command palette, history, media, onboarding and agent panel. Waiting on the image and Monaco slices: wiring the draft store, the front-end boot steps, the session without the repository list and the repository listing in the session DO. New tasks run targeted specs only; the full suite runs once per merge.
+4a dropped (2026-10-06): making the entity table load on demand saved 13 KB but needed readiness waits in shared targets, image drops, JSON metadata and the Add panel, each found broken in review; the boot budget is met without it, so the table stays synchronous. Branch `build/p4a-entities` kept for reference.
 4d landed standalone (`src/draft-store.ts`, after Astra's three fixes). Open point for wiring: once a code pane closes, its typing undoes as one step, where today the kept Monaco model still undoes stop by stop; decide when wiring whether to keep closed panes' models alive.
 1. ★ Monaco-free draft store (ticket 03 point 4).
 2. ★ Boot requests: session without repository list, parallel installations, GraphQL file batches, DO session tweaks, repository listing in the session DO (tickets 04, 05, 13).
