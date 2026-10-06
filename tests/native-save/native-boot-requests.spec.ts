@@ -1,0 +1,71 @@
+import { test, expect, type Page } from '@playwright/test';
+
+// The first preview paint reads only the page on show (lean-fast-editor
+// ticket 05, task 4g): its stylesheets and components, never the site's
+// other pages, which the text index reads after the paint.
+
+interface Read { shas: string[]; at: number }
+
+// Every preview document reports its first contentful paint, and the editor
+// each /api/file and /api/files read with its start, on the browser's clock.
+async function watchReads(page: Page) {
+  const paints: number[] = [];
+  const reads: Read[] = [];
+  await page.exposeBinding('__asePaint', (_source, at: number) => { paints.push(at); });
+  await page.exposeBinding('__aseRead', (_source, url: string, at: number) => {
+    const params = new URL(url).searchParams;
+    reads.push({ shas: [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])], at });
+  });
+  await page.addInitScript(() => {
+    const report = window as unknown as { __asePaint(at: number): void; __aseRead(url: string, at: number): void };
+    if (window.top !== window) {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) if (entry.name === 'first-contentful-paint') report.__asePaint(performance.timeOrigin + entry.startTime);
+      }).observe({ type: 'paint', buffered: true });
+      return;
+    }
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries())
+        if (/^\/api\/files?$/.test(new URL(entry.name).pathname)) report.__aseRead(entry.name, performance.timeOrigin + entry.startTime);
+    }).observe({ type: 'resource', buffered: true });
+  });
+  return { paints, reads };
+}
+
+// The blob SHA of each file on the branch, as the editor's snapshot lists them.
+async function blobShas(page: Page) {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main', { credentials: 'same-origin' });
+    const snapshot = await response.json() as { tree?: { path: string; sha: string; type: string }[] };
+    return Object.fromEntries((snapshot.tree ?? []).filter((entry) => entry.type === 'blob').map((entry) => [entry.path, entry.sha]));
+  });
+}
+
+const preview = (page: Page) => page.frameLocator('.native-preview-frame');
+
+test('pages other than the open one are not read before the first paint', async ({ page, baseURL }) => {
+  const { paints, reads } = await watchReads(page);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+  await expect.poll(() => paints.length, { message: 'the preview reported its first paint' }).toBeGreaterThan(0);
+  const shas = await blobShas(page);
+  const about = shas['about/index.html'];
+  expect(about).toBeTruthy();
+  const paint = Math.min(...paints);
+  const early = reads.filter((read) => read.at < paint);
+  expect(early.some((read) => read.shas.includes(shas['index.html'])), 'the open page is read before paint').toBe(true);
+  expect(early.filter((read) => read.shas.includes(about)), 'another page read before paint').toEqual([]);
+  // The text index reads it once the page is on screen.
+  await expect.poll(() => reads.some((read) => read.shas.includes(about)), { timeout: 15_000 }).toBe(true);
+});
+
+test('a page deep-linked by its address paints without the home page being read', async ({ page, baseURL }) => {
+  const { paints, reads } = await watchReads(page);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
+  await expect(preview(page).locator('h1[data-key="about-title"]')).toHaveText('About this project');
+  await expect.poll(() => paints.length).toBeGreaterThan(0);
+  const shas = await blobShas(page);
+  const paint = Math.min(...paints);
+  const early = reads.filter((read) => read.at < paint);
+  expect(early.filter((read) => read.shas.includes(shas['index.html'])), 'the home page read before paint').toEqual([]);
+});

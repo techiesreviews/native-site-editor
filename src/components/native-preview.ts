@@ -1269,6 +1269,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }));
       warningBox.hidden = !warnings.length;
     },
+    /** What the Add panel offers changed (the host read more of the site): its list is built again, the page is not drawn again. */
+    choicesChanged() {
+      pageBuilder.sourcesChanged();
+    },
     /** The route the frame last drew ("/" for a component shown alone); none before its first draw. */
     shownRoute() {
       return site ? shownRoute : undefined;
