@@ -466,16 +466,16 @@ export class GitHub {
     }
   }
 
-  /** A blob's bytes as base64 (an image for the preview), up to `maxAssetBytes`. */
-  async raw(repo: Repository, sha: string): Promise<{ content: string; size: number }> {
+  /** A blob's bytes (an image for the preview, a file to download), up to `maxAssetBytes`. */
+  async bytes(repo: Repository, sha: string): Promise<Uint8Array> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid file revision.");
     const data = await this.blob(repo, sha, maxAssetBytes * 2);
     if (data.size > maxAssetBytes)
-      throw new HttpError(413, "Images in the preview are limited to 2 MB.");
+      throw new HttpError(413, "Files read in the editor are limited to 2 MB.");
     if (data.encoding !== "base64")
       throw new HttpError(415, "This file cannot be read.");
-    return { content: data.content.replace(/\s/g, ""), size: data.size };
+    return Uint8Array.from(atob(data.content.replace(/\s/g, "")), (char) => char.charCodeAt(0));
   }
 
   /** A blob as GitHub returns it; blobs never change, so each is read from GitHub once. */

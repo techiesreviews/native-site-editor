@@ -19,15 +19,8 @@ export interface SiteFiles {
   blob(path: string): Promise<string | undefined>;
   /** Text blobs by SHA. */
   readTexts(shas: string[]): Promise<Record<string, string>>;
-  /** A blob's bytes as base64. */
-  readBase64(sha: string): Promise<string>;
-}
-
-function fromBase64(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  /** A blob's bytes. */
+  readBytes(sha: string): Promise<Uint8Array>;
 }
 
 /** Collects every file of the site: text where the editor holds it or it reads as text, bytes otherwise. */
@@ -48,7 +41,7 @@ export async function collectSiteFiles(site: SiteFiles): Promise<Record<string, 
   }
   for (let start = 0; start < binaries.length; start += 6) {
     await Promise.all(binaries.slice(start, start + 6).map(async ({ path, sha }) => {
-      files[path] = fromBase64(await site.readBase64(sha));
+      files[path] = await site.readBytes(sha);
     }));
   }
   return files;

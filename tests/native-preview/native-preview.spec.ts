@@ -262,3 +262,51 @@ test("a stylesheet a shared sheet imports applies in its layer and lists its rul
   expect(await filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("9px");
   await expect(page.locator(".native-preview-error")).toBeHidden();
 });
+
+test("repository images arrive after the page is drawn, from /api/blob, shown in place without drawing the page again", async ({ page }) => {
+  // Each image answer waits, so it surely lands after the first paint.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const blobs: { cache: string; type: string }[] = [];
+  const raws: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/raw") raws.push(request.url()); });
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname === "/api/blob")
+      blobs.push({ cache: response.headers()["cache-control"] ?? "", type: response.headers()["content-type"] ?? "" });
+  });
+  await page.route("**/api/blob?*", async (route) => { await held; await route.continue(); });
+  // Counts the host's messages to the preview frame.
+  await page.addInitScript(() => {
+    if (window.top === window) return;
+    const seen: string[] = [];
+    (window as unknown as { seen: string[] }).seen = seen;
+    window.addEventListener("message", (event) => {
+      const type = (event.data as { type?: string } | null)?.type;
+      if (type === "update" || type === "assets") seen.push(type);
+    }, true);
+  });
+  await page.reload();
+  const frame = await frameWindow(page);
+  const hero = frame.locator("img.hero-image");
+  const structureRow = page.locator('[role=tree][aria-label="Page structure"] [role=treeitem]').first();
+  await expect(hero).toBeAttached({ timeout: 30_000 });
+  // Drawn and usable while the image is still on its way.
+  await expect(structureRow).toBeVisible({ timeout: 30_000 });
+  expect(await hero.getAttribute("src")).toBe("/images/placeholder.svg");
+  const seen = () => frame.evaluate(() => [...(window as unknown as { seen: string[] }).seen]);
+  await expect.poll(seen).toContain("update");
+  const before = (await seen()).filter((type) => type === "update").length;
+  release();
+  await expect(hero).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/, { timeout: 15_000 });
+  await expect.poll(() => hero.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const after = await seen();
+  expect(after).toContain("assets");
+  expect(after.filter((type) => type === "update").length, "the image did not draw the page again").toBe(before);
+  await expect(structureRow).toBeVisible();
+  expect(blobs.length).toBeGreaterThan(0);
+  for (const blob of blobs) {
+    expect(blob.cache).toBe("private, max-age=31536000, immutable");
+    expect(blob.type).toBe("image/svg+xml");
+  }
+  expect(raws).toEqual([]);
+});

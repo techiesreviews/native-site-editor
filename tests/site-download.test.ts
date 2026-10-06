@@ -64,7 +64,7 @@ function fixtureSite(held: Record<string, string>, deleted: string[] = []): Site
     held: (path) => held[path],
     blob: async (path) => (all.includes(path) ? `sha:${path}` : undefined),
     readTexts: async (shas) => Object.fromEntries(shas.map((sha) => [sha, readFileSync(join(root, sha.slice(4)), "utf8")])),
-    readBase64: async (sha) => readFileSync(join(root, sha.slice(4))).toString("base64"),
+    readBytes: async (sha) => new Uint8Array(readFileSync(join(root, sha.slice(4)))),
   };
 }
 

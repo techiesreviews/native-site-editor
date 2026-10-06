@@ -199,6 +199,8 @@ export interface NativeTextEdit {
 }
 
 export interface NativePreviewHandlers {
+  /** The frame drew another page (the first, a followed link, a file opened): the host reads its images. */
+  onRouteShown?: (route: string) => void;
   /** Caller must check current source and revision before filling the page instance. */
   onSlotGhostFill?: (target: SlotGhostFillTarget) => void;
   onSelect?: (selection: NativePreviewSelection) => void;
@@ -266,11 +268,45 @@ export function routeStylesheets(site: NativeSite, sources: Record<string, strin
 /** A selection queued for the next render; `reveal: "center"` brings a just-added element fully into view. */
 type QueuedSelection = NativeNodeRequest & { reveal?: "center" };
 
+// The page's stylesheets and the components' own, each `url()` naming an
+// asset the host has read shown from it.
+function composeStyles(
+  site: NativeSite,
+  sources: Record<string, string>,
+  componentStyles: Record<string, string>,
+  assets: Record<string, string>,
+  route: string,
+  alone: string | undefined,
+) {
+  // Each component rule also styles what a page slots in (shared/slotted-css.ts).
+  const stylesByComponent: Record<string, { path: string; source: string }> = {};
+  for (const [tag, path] of Object.entries(componentStyles)) {
+    if (!Object.hasOwn(site.components, tag)) continue;
+    stylesByComponent[tag] = { path, source: withAssetUrls(withSlottedRules(sources[path] ?? ""), path, assets) };
+  }
+  // The page's linked stylesheets with their `@import`s expanded: one sheet
+  // per file, each import before the sheet that imports it (see
+  // shared/css-imports.ts).
+  const linked = routeStylesheets(site, sources, alone ? "/" : route);
+  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path]);
+  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
+  const page = site.routes[alone ? "/" : route] ?? "";
+  const styleErrors = [
+    ...linked.filter((path) => sources[path] === undefined).map((path) => `${page} links ${path}, which is missing from this branch.`),
+    ...expanded.errors,
+  ];
+  return { styles, styleErrors, componentStyles: stylesByComponent };
+}
+
+/** Assets the runtime does not have yet (`set`) and ones it should forget (`drop`). */
+export interface AssetChanges { set: Record<string, string>; drop: string[] }
+
 function composePayload(
   site: NativeSite,
   sources: Record<string, string>,
   componentStyles: Record<string, string>,
   assets: Record<string, string>,
+  assetChanges: AssetChanges,
   route: string,
   alone: string | undefined,
   context: string,
@@ -301,28 +337,12 @@ function composePayload(
     componentPaths[tag] = filePath;
     components[tag] = sources[filePath] ?? "";
   }
-  // Each component rule also styles what a page slots in (shared/slotted-css.ts).
-  const stylesByComponent: Record<string, { path: string; source: string }> = {};
-  for (const [tag, path] of Object.entries(componentStyles)) {
-    if (!Object.hasOwn(site.components, tag)) continue;
-    stylesByComponent[tag] = { path, source: withAssetUrls(withSlottedRules(sources[path] ?? ""), path, assets) };
-  }
-  // The page's linked stylesheets with their `@import`s expanded: one sheet
-  // per file, each import before the sheet that imports it (see
-  // shared/css-imports.ts).
-  const linked = routeStylesheets(site, sources, alone ? "/" : route);
-  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path]);
-  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
-  const page = site.routes[alone ? "/" : route] ?? "";
-  const styleErrors = [
-    ...linked.filter((path) => sources[path] === undefined).map((path) => `${page} links ${path}, which is missing from this branch.`),
-    ...expanded.errors,
-  ];
+  const { styles, styleErrors, componentStyles: stylesByComponent } = composeStyles(site, sources, componentStyles, assets, route, alone);
   // Section components count as sections when the runtime looks for places to insert one.
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
-  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assets, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath,
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assetChanges, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath,
     master: master && !alone ? { path: master.composition.input.masterPath, session: master.token, node: [...master.composition.input.node], ...("masterPart" in master.composition
       ? { kind: "page-part", rootTag: master.composition.rootTag, part: master.composition.masterPart }
       : { section: master.composition.masterSection }) } : undefined };
@@ -434,6 +454,29 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let sources: Record<string, string> = {};
   let componentStyles: Record<string, string> = {};
   let assets: Record<string, string> = {};
+  // The assets the runtime holds (it keeps them across renders), so each
+  // message carries only what changed: a page's images are posted once, not
+  // with every render.
+  const sentAssets = new Map<string, string>();
+  function assetChanges(): AssetChanges {
+    const set: Record<string, string> = {};
+    const drop: string[] = [];
+    for (const [path, url] of Object.entries(assets))
+      if (sentAssets.get(path) !== url) { set[path] = url; sentAssets.set(path, url); }
+    for (const path of [...sentAssets.keys()])
+      if (!Object.hasOwn(assets, path)) { drop.push(path); sentAssets.delete(path); }
+    return { set, drop };
+  }
+  // Assets that arrived after the page was drawn: the runtime shows them in
+  // place (its images and stylesheets) without drawing the page again, so the
+  // Page structure it reported stays current. A render on its way takes them.
+  function postAssets() {
+    if (!site || !ready || !mounted || rafHandle) return;
+    const changes = assetChanges();
+    if (!Object.keys(changes.set).length && !changes.drop.length) return;
+    const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "assets", assetChanges: changes, styles, componentStyles: styled }, "*");
+  }
   let route = "/";
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
@@ -487,14 +530,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!site || !ready || !mounted) return;
-    const payload = composePayload(site, sources, componentStyles, assets, route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
     selectNode = undefined;
     selectText = undefined;
     scrollHash = undefined;
     sentStructureSnapshot = { context, sources: { ...sources }, master: master && !alone
       ? { path: master.composition.input.masterPath, source: master.composition.input.masterSource, token: master.token } : undefined };
+    postedRoutes.set(++messageId, alone ? "/" : route);
     frame.contentWindow?.postMessage(
-      { source: "astro-native-preview-host", type: "update", id: ++messageId, payload },
+      { source: "astro-native-preview-host", type: "update", id: messageId, payload },
       "*",
     );
   }
@@ -538,6 +582,18 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (addButtonEl && locked && !viewing) addButtonEl.title = "Finish editing the saved section to add sections to the page";
   }
   const masterPath = () => (master && !alone ? master.composition.input.masterPath : undefined);
+  // The route each posted render shows, until the runtime acknowledges it
+  // (after the frame drew it): the host reads that page's images only then,
+  // so no image is read before the page is on screen.
+  const postedRoutes = new Map<number, string>();
+  let shownRoute: string | undefined;
+  function renderDrawn(id: number) {
+    const drawn = postedRoutes.get(id);
+    for (const key of [...postedRoutes.keys()]) if (key <= id) postedRoutes.delete(key);
+    if (drawn === undefined || drawn === shownRoute) return;
+    shownRoute = drawn;
+    handlers.onRouteShown?.(drawn);
+  }
   function schedule() {
     if (!site) return;
     syncMaster();
@@ -549,7 +605,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       route,
       alone ?? "",
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
-      Object.keys(assets).join("|"),
     ].join("\n");
     pins.update(pinRequests, route);
     if (rafHandle) return;
@@ -682,8 +737,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       inspections.get(Number(answer.id))?.(answer.report);
       return;
     }
+    if (data.type === "ack") {
+      renderDrawn(Number((data as { id?: unknown }).id));
+      return;
+    }
     if (data.type === "ready") {
       ready = true;
+      sentAssets.clear();
+      postedRoutes.clear();
+      shownRoute = undefined;
       postTheme();
       lastAvoid = "";
       postAvoid();
@@ -1003,6 +1065,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** Show the pane and adopt a site. Idempotent for the same site. */
     activate(next: NativeSite) {
       editableTemplatePath = undefined;
+      // Another site (or the same one found again): its next draw reads its images.
+      if (site !== next) shownRoute = undefined;
       site = next;
       if (!Object.hasOwn(next.routes, route)) {
         route = nativeDefaultRoute(next);
@@ -1196,10 +1260,21 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }));
       warningBox.hidden = !warnings.length;
     },
+    /** The route the frame last drew ("/" for a component shown alone); none before its first draw. */
+    shownRoute() {
+      return site ? shownRoute : undefined;
+    },
+    /** Images and fonts read after the page was drawn: shown in place, the page is not drawn again. */
+    setAssets(next: Record<string, string>) {
+      assets = next;
+      postAssets();
+    },
     deactivate() {
       if (!mounted) return;
       mounted = false;
       site = undefined;
+      shownRoute = undefined;
+      postedRoutes.clear();
       editableTemplatePath = undefined;
       masterInput = undefined;
       master = undefined;

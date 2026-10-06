@@ -1,4 +1,5 @@
 import { requestJson } from "./http";
+import { ASSET_TYPES } from "../shared/asset-types";
 import { INSPECTION_LIMIT } from "../shared/agent";
 import {
   authenticateAgent,
@@ -96,6 +97,28 @@ async function config(env: Env) {
 const readAuthorizationMaxAge = 60_000;
 function json(body: unknown, status = 200) {
   return Response.json(body, { status });
+}
+// A blob's bytes (GET /api/blob?repo&sha&type): an image or font as the media
+// type its extension `type` names (shared/asset-types.ts), anything else as
+// plain bytes to download. A blob never changes, so the browser keeps it for
+// good, privately: the address names the repository and the SHA. The policy
+// sandboxes the file if it is opened on its own, so a repository's SVG runs
+// no script in the editor's origin; as an <img> the policy does not apply.
+export const BLOB_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+function blobResponse(bytes: Uint8Array, type: string | null) {
+  const extension = (type ?? "").toLowerCase();
+  const known = extension && Object.hasOwn(ASSET_TYPES, extension) ? ASSET_TYPES[extension] : undefined;
+  if (type && !known) throw new HttpError(415, "This file type is not shown in the editor.");
+  return new Response(bytes as BodyInit, {
+    headers: {
+      "Content-Type": known ?? "application/octet-stream",
+      "Content-Length": String(bytes.length),
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "Content-Security-Policy": BLOB_CONTENT_SECURITY_POLICY,
+      "X-Content-Type-Options": "nosniff",
+      ...(known ? {} : { "Content-Disposition": "attachment" }),
+    },
+  });
 }
 function randomId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
@@ -227,9 +250,10 @@ export async function handle(
       `Bearer resource_metadata="${resourceMetadataUrl(url.origin)}", scope="site"`,
     );
   if (
-    url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/auth/") ||
-    url.pathname === "/mcp"
+    (url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/auth/") ||
+      url.pathname === "/mcp") &&
+    !(url.pathname === "/api/blob" && request.method === "GET" && response.ok)
   )
     secured.headers.set("Cache-Control", "no-store");
   return secured;
@@ -807,7 +831,7 @@ async function route(
       await publishHosts(request, url, new GitHub(user.token, fetcher), user.login, fetcher, readAuthorizationMaxAge),
     );
   }
-  if (path === "/api/blob") {
+  if (path === "/api/blob" && request.method !== "GET" && request.method !== "HEAD") {
     // An uploaded file's bytes, made a blob for the publish that follows.
     if (request.headers.get("Origin") !== url.origin)
       throw new HttpError(403, "Invalid request origin.");
@@ -906,7 +930,7 @@ async function route(
         "/api/tree",
         "/api/file",
         "/api/files",
-        "/api/raw",
+        "/api/blob",
         "/api/history",
         "/api/file-at",
         "/api/commit",
@@ -955,8 +979,8 @@ async function route(
       );
     if (path === "/api/change-status")
       return json(await changeStatus(github, repo, url.searchParams.get("sha") ?? ""));
-    if (path === "/api/raw")
-      return json(await github.raw(repo, url.searchParams.get("sha") ?? ""));
+    if (path === "/api/blob")
+      return blobResponse(await github.bytes(repo, url.searchParams.get("sha") ?? ""), url.searchParams.get("type"));
     if (path === "/api/files")
       return json({
         files: await github.files(

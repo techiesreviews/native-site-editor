@@ -93,25 +93,58 @@
 
   // Repository images (a root path such as "/images/x.svg", or one relative
   // to the page's URL, as on the live site) shown from the data URLs the
-  // host read for them.
+  // host read for them. The host sends each asset once (`assetChanges`, with
+  // a render or on its own as images arrive after the page is drawn); they
+  // are kept here across renders.
   var SITE = "https://site.invalid";
+  var assetUrls = Object.create(null);
+  function applyAssetChanges(changes) {
+    if (!changes || typeof changes !== "object") return false;
+    var changed = false;
+    var set = changes.set && typeof changes.set === "object" ? changes.set : {};
+    Object.keys(set).forEach(function (key) {
+      if (typeof set[key] === "string" && /^data:/i.test(set[key])) { assetUrls[key] = set[key]; changed = true; }
+    });
+    (Array.isArray(changes.drop) ? changes.drop : []).forEach(function (key) {
+      if (typeof key === "string" && key in assetUrls) { delete assetUrls[key]; changed = true; }
+    });
+    return changed;
+  }
   function assetFor(src) {
-    if (!state || !state.assets || typeof src !== "string") return null;
+    if (typeof src !== "string") return null;
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src.trim())) return null;
     var key;
     try {
-      var url = new URL(src.trim(), SITE + (state.base || "/"));
+      var url = new URL(src.trim(), SITE + ((state && state.base) || "/"));
       if (url.origin !== SITE) return null;
       key = decodeURI(url.pathname).replace(/^\//, "");
     } catch (e) {
       return null;
     }
-    return Object.prototype.hasOwnProperty.call(state.assets, key) ? state.assets[key] : null;
+    return key in assetUrls ? assetUrls[key] : null;
   }
   function resolveAssets(fragment) {
     fragment.querySelectorAll("img[src]").forEach(function (el) {
       var url = assetFor(el.getAttribute("src"));
       if (url) el.setAttribute("src", url);
+    });
+  }
+  // Assets that arrived after the page was drawn: images still showing their
+  // repository path take theirs in place, and the stylesheets (their url()s
+  // filled in by the host) are applied again. The page is not drawn again,
+  // so nothing the host was told about it (its structure) goes stale.
+  function showArrivedAssets(msg) {
+    if (!applyAssetChanges(msg.assetChanges) || !state) return;
+    if (Array.isArray(msg.styles)) state.styles = msg.styles;
+    if (msg.componentStyles && typeof msg.componentStyles === "object") state.componentStyles = msg.componentStyles;
+    syncStyles();
+    var roots = [pageEl].concat(Array.from(shadowRoots));
+    roots.forEach(function (root) {
+      if (!root) return;
+      root.querySelectorAll("img[src]").forEach(function (el) {
+        var url = assetFor(el.getAttribute("src"));
+        if (url) el.setAttribute("src", url);
+      });
     });
   }
 
@@ -488,6 +521,7 @@
     // A master session that ends or changes drops typing not yet sent: it belongs to that session.
     if ((state && state.master ? state.master.session : "") !== (nextMaster ? nextMaster.session : "")) stopEditing(false);
     masterRoot = null;
+    applyAssetChanges(payload.assetChanges);
     state = {
       pages: payload.pages || {},
       pagePaths: payload.pagePaths || {},
@@ -497,7 +531,6 @@
       styles: Array.isArray(payload.styles) ? payload.styles : [],
       styleErrors: Array.isArray(payload.styleErrors) ? payload.styleErrors : [],
       componentStyles: payload.componentStyles || {},
-      assets: payload.assets || {},
       route: payload.route || "/",
       base: typeof payload.base === "string" ? payload.base : "/",
       sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
@@ -2991,6 +3024,10 @@
       var target = shownPin && locatePin(shownPin);
       var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (target && target.scrollIntoView) target.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+      return;
+    }
+    if (msg.type === "assets") {
+      showArrivedAssets(msg);
       return;
     }
     if (msg.type !== "update") return;

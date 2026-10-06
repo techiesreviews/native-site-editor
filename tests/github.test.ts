@@ -373,7 +373,7 @@ test("blobs and trees are read from GitHub once, per repository, and failures ar
   // Another request's GitHub instance, even another token, shares what was read.
   assert.equal(await new GitHub("other", fetcher).file(repo, sha), "hello");
   assert.deepEqual(await github.files(repo, [sha]), { [sha]: "hello" });
-  assert.equal((await github.raw(repo, sha)).size, 5);
+  assert.equal((await github.bytes(repo, sha)).length, 5);
   assert.equal(asked.filter((path) => path.includes("/git/blobs/")).length, 2, "the failure, then one read");
   // Another repository with the same blob is asked separately.
   await github.file({ ...repo, id: 2, name: "other", full_name: "lex/other" }, sha);
