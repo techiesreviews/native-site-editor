@@ -55,8 +55,8 @@ write strips `collections` and `pages[*].fields` without changing the version.
 Deleting `.editor` leaves the website's HTML and CSS intact.
 
 Styling, image positioning and grid layout are edited in the Source editor.
-Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Existing
-native component `data-if` support remains until the next removal slice.
+Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty section slots and wrappers hide automatically; explicit visibility
+conditions were removed in P1.6.
 
 ### Wave 2 slices
 

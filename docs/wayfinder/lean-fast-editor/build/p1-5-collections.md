@@ -19,7 +19,7 @@ card, creates linked pages and records page/card edits in one undo operation.
   errors. The listing recipe attribute exception is removed.
 - Static Add card infers page folders from ordinary links. Recipe folder
   restrictions and automatic collection baking are removed. Native component
-  `data-if` handling remains in the runtime, card-grid helpers and site conventions.
+  `data-if` handling remained after P1.5; P1.6 removes it from the runtime, card-grid helpers and site conventions.
 - Removed ten collection-only unit files, eleven browser specs and their fixture;
   retained and adapted mixed coverage. Browser launcher lists retain existing specs.
 - Deleted four collection-only documents and updated current feature documentation.

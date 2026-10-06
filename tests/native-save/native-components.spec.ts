@@ -370,7 +370,7 @@ test("native-first: a plain page section without a saved record offers no Update
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {
   // A component with an image slot and a caption shown only when the page gives one, used on About.
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure class="media-card">\n  <slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot>\n  <figcaption data-if="caption"><slot name="caption"></slot></figcaption>\n</figure>\n` } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure class="media-card">\n  <slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot>\n  <figcaption><slot name="caption"></slot></figcaption>\n</figure>\n` } });
   const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
   const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<media-card></media-card>\n  <section class="prose" data-key="prose">`);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
@@ -389,7 +389,7 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   await image.getByRole("textbox", { name: "Image: Alt text" }).press("Enter");
   expect(await editorText(page)).toContain(`<media-card>\n    <img slot="image" src="/images/studio-desk.svg" alt="A desk">\n  </media-card>`);
   await expect(frame(page).locator("media-card > img")).toHaveAttribute("alt", "A desk");
-  // The caption is optional (data-if): off until switched on.
+  // The caption is empty until filled: off until switched on.
   const caption = panel(page).getByRole("button", { name: "Show Caption", exact: true });
   await expect(caption).toHaveAttribute("aria-pressed", "false");
   await expect.poll(() => frame(page).locator("media-card figcaption").evaluate((el) => getComputedStyle(el).display)).toBe("none");

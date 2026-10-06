@@ -3,13 +3,11 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // Conditional template parts in the preview: an element whose slots the
-// page left empty is hidden, `data-if` follows a named slot, and both
+// page left empty is hidden, including fallbacks, and wrappers
 // follow the page as it changes.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
-const cardPath = "components/project-card/project-card.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
-const cardSource = readFileSync(resolve(fixture, cardPath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -49,38 +47,6 @@ test("an empty slot's wrapper is hidden until the page fills it", async ({ page 
   await expect.poll(() => display(page, 0)).toBe("none");
 });
 
-test("data-if shows an element only when its named slot is filled", async ({ page }) => {
-  const frame = page.frameLocator(".native-preview-frame");
-  const note = (index: number) => frame.locator("project-card").nth(index)
-    .evaluate((el) => getComputedStyle(el.shadowRoot!.querySelector("card-note")!).display);
-  await expect.poll(() => note(0)).not.toBe("none");
-  // Select the page instance, then explicitly enter its shared template.
-  await frame.locator("project-card").first().click({ position: { x: 5, y: 5 } });
-  const bar = page.getByRole("toolbar", { name: "Edit bar" });
-  await expect(bar.locator(".edit-bar__kind")).toHaveText("Project card");
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
-  const changed = cardSource.replace(`<card-note data-key="card-note">`, `<card-note data-if="link" data-key="card-note">`);
-  const mounted = () => page.evaluate(async () => {
-    const modulePath = "/src/components/code-editor.ts";
-    return (await import(modulePath)).getMountedSource("components/project-card/project-card.html");
-  });
-  await expect.poll(mounted).toBe(cardSource);
-  await pasteInto(page, "#content", changed);
-  await expect.poll(mounted).toBe(changed);
-  for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
-
-  // One source edit changes all instances; Undo and Redo restore exact bytes.
-  await page.locator("#content [role=textbox]").first().focus();
-  await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(mounted).toBe(cardSource);
-  for (const index of [0, 1, 2]) await expect.poll(() => note(index)).not.toBe("none");
-  await page.keyboard.press("ControlOrMeta+Shift+Z");
-  await expect.poll(mounted).toBe(changed);
-  for (const index of [0, 1, 2]) await expect.poll(() => note(index)).toBe("none");
-});
-
 test("a section component hides the parts its instance leaves out, unless it fills none", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const shown = (selector: string) => frame.locator("feature-block")
@@ -88,7 +54,7 @@ test("a section component hides the parts its instance leaves out, unless it fil
   await pasteInto(page, "#content", indexSource.replace("</main>", `  <feature-block>\n    <span slot="title">Only a title</span>\n  </feature-block>\n</main>`));
   await expect(frame.locator("feature-block [slot='title']")).toHaveText("Only a title");
   await expect.poll(() => shown("h2")).not.toBe("none");
-  // No data-if: the body the instance left out is hidden, fallback and all.
+  // The body the instance left out is hidden, fallback and all.
   await expect.poll(() => shown("p")).toBe("none");
 
   // A bare instance shows the template's fallbacks.

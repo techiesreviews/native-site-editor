@@ -82,8 +82,6 @@ indentation, line breaks), put on its own lines after it:
 - every other text part says the component's fallback for its slot ("Project",
   "No description yet."), else a placeholder for its kind ("A sentence or two
   about this card.", "Heading", "New item", "Text");
-- a part in a slot the component shows only when filled (`data-if`) is left
-  out, so the new card hides it, as a new instance would;
 - its link to the copied item's page goes to the new page, or is emptied
   (`href=""`, which the edit bar flags as "No address") for Card only;
 - images and other attributes stay as they are.

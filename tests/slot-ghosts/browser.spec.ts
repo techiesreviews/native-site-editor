@@ -14,7 +14,7 @@ test("native slot reports preserve authored content without an Empty slots canva
     state.preview = createNativePreview(host, { onSlotGhostFill: (target: unknown) => state.fills.push(target) });
     state.sources = {
       "index.html": '<html><body><test-card><span slot="title">Assigned</span></test-card><test-card></test-card></body></html>',
-      "components/test-card.html": '<style>:host{display:block;width:400px;height:150px}.hidden{display:none}</style><h2><slot name="title">Fallback title</slot></h2><div data-if="image" class="hidden"><slot name="image"></slot><slot name="image"></slot></div><slot name="empty"></slot><slot name="measured" style="display:block;width:60px;height:12px">Measure</slot>',
+      "components/test-card.html": '<style>:host{display:block;width:400px;height:150px}.hidden{display:none}</style><h2><slot name="title">Fallback title</slot></h2><div class="hidden"><slot name="image"></slot><slot name="image"></slot></div><slot name="empty"></slot><slot name="measured" style="display:block;width:60px;height:12px">Measure</slot>',
     };
     state.preview.activate({ routes: { "/": "index.html" }, components: { "test-card": "components/test-card.html" } });
     state.preview.update({ sources: state.sources });

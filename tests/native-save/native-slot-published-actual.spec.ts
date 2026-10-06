@@ -8,7 +8,7 @@ import { publishButton } from "./publish";
 requireActualFixture();
 
 // Optional slots on the actual starter: Structure's eye and its inline fields
-// fill, hide and edit slots; data-if conditions hide what the page leaves
+// fill, hide and edit slots; automatic rules hide what the page leaves
 // empty. Nothing of the editor (overlays, its runtime attributes, Structure
 // state, the slot reports that drive canvas fill-ins) may reach the bytes
 // that are drafted and published, or what the static site then serves with
@@ -104,15 +104,12 @@ const attributeNames = (site: Page) => site.evaluate(() => {
   return [...names].sort();
 });
 
-test("Structure fills, hides and edits optional slots, with data-if, and only authored bytes are drafted, published and served", async ({ page, baseURL, browser }) => {
+test("Structure fills, hides and edits optional slots, and only authored bytes are drafted, published and served", async ({ page, baseURL, browser }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(CARD)}`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  // Conditions in the shared template: the actions paragraph follows the link,
-  // and a new optional image figure follows an image the page may give. Each wrapper has static
-  // text of its own, so the automatic empty-wrapper rule would keep it shown: only data-if hides it.
-  const T1 = T0.replace('<p class="actions"><slot name="link"></slot></p>', '<p class="actions" data-if="link">More: <slot name="link"></slot></p>')
-    .replace('  <slot name="title">', '  <figure class="media" data-if="image"><slot name="image"></slot><figcaption>Photo</figcaption></figure>\n  <slot name="title">');
-  expect(T1).toContain('data-if="link">More: ');
+  // Empty wrappers follow the slots the page fills, including an image figure.
+  const T1 = T0.replace('  <slot name="title">', '  <figure class="media"><slot name="image"></slot></figure>\n  <slot name="title">');
+  expect(T1).toContain('<figure class="media">');
   expect(T1).not.toBe(T0);
   await expect.poll(() => mounted(page, CARD)).toBe(T0);
   await replaceCode(page, T1);
@@ -192,14 +189,14 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
   await history(page, "redo");
   await expect.poll(() => mounted(page)).toBe(P4);
 
-  // 3. Hide the second card's link: its data-if paragraph is left empty.
+  // 3. Hide the second card's link: its paragraph is left empty.
   const link1 = '          <a slot="link" href="/work/harbour-lane-pottery/">Read about Harbour Lane Pottery</a>\n';
   const P5 = P4.replace(link1, "");
   await toggle(page, 1, "Link", false);
   await expect.poll(() => mounted(page)).toBe(P5);
   await agree(page, 1, "Link", "link", "p.actions", false);
 
-  // 4. Show an image in the third card (an empty data-if slot), Undo, Redo, then hide it again
+  // 4. Show an image in the third card (an empty slot), Undo, Redo, then hide it again
   // with the eye, with Undo and Redo of that too.
   const title2 = '<h3 slot="title">Meadow Row Allotments</h3>';
   const P6 = P5.replace(title2, `<img slot="image" src="" alt="">\n          ${title2}`);
@@ -222,7 +219,7 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
   await expect.poll(() => mounted(page)).toBe(P5);
   await agree(page, 2, "Image", "image", "figure.media", false);
 
-  // 5. A section component without data-if: hiding a slot its instance otherwise fills leaves the
+  // 5. A section component with fallbacks: hiding a slot its instance otherwise fills leaves the
   // slot out, fallback and all (the section rule).
   const hero = tree(page).locator(".page-structure__row[aria-level='2']").filter({ hasText: "Section hero" });
   if (await hero.getAttribute("aria-expanded") === "false") await hero.locator(".page-structure__toggle").first().click();
@@ -275,7 +272,7 @@ test("Structure fills, hides and edits optional slots, with data-if, and only au
     expect(requested.some((path) => path.startsWith(".editor/"))).toBe(false);
     await context.close();
   }
-  // Scripts on: the site's own loader applies the same conditions. The emptied data-if paragraph
+  // Scripts on: the site's own loader applies the same conditions. The emptied paragraph
   // and the image figures render nothing; the editor's attributes are nowhere, light or shadow DOM.
   {
     const { context, site } = await servedSite(browser, page, baseURL, true);

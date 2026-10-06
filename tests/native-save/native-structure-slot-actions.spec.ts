@@ -6,7 +6,7 @@ async function harness(page:any) {
   const componentPath='/src/page-builder/components.ts',structurePath='/src/components/page-structure.ts';
   const {createComponentTools}=await import(componentPath),{createPageStructure}=await import(structurePath);
   document.body.replaceChildren();const host=document.createElement('aside');host.style.cssText='width:320px;height:700px';document.body.append(host);
-  const state:any=(window as any).slotHarness={source:'<project-card id="card" class="caf&eacute; cards" title="A &amp; B" data-note="old"><span slot="title">Original</span><img slot="image" src="/old.png" alt="Old"><a slot="cta" href="/before">Go</a><div slot="unknown">Keep unknown</div></project-card>',template:'<article><h2><slot name="title">Title</slot></h2><slot name="image"><img src="/fallback.png" alt="Fallback"></slot><slot name="cta"><a href="/fallback">Fallback link</a></slot><div data-if="optional"><slot name="optional"><p>Optional</p></slot></div></article>',revision:'A',model:1,version:0,closed:0,selected:[],opened:[],notices:[]};
+  const state:any=(window as any).slotHarness={source:'<project-card id="card" class="caf&eacute; cards" title="A &amp; B" data-note="old"><span slot="title">Original</span><img slot="image" src="/old.png" alt="Old"><a slot="cta" href="/before">Go</a><div slot="unknown">Keep unknown</div></project-card>',template:'<article><h2><slot name="title">Title</slot></h2><slot name="image"><img src="/fallback.png" alt="Fallback"></slot><slot name="cta"><a href="/fallback">Fallback link</a></slot><div><slot name="optional"></slot></div></article>',revision:'A',model:1,version:0,closed:0,selected:[],opened:[],notices:[]};
   const templatePath='components/project-card.html';let current='index.html';let sidebar:any;
   const item=(tag:string,node:number[],text='',slot='',children:any[]=[])=>({tag,node,text,slot,heading:'',children});
   // Paint what the page source actually parses to, as the preview would: real nodes in source order.
@@ -49,7 +49,7 @@ test('slot actions fade in over the badge, which stays where it is',async({page}
 // not at the end, and its Show eye fades in like every other row action.
 test('a hidden slot keeps its place in the tree and its Show eye is in the faded bar',async({page})=>{
  await harness(page);
- await page.evaluate(()=>{const h=(window as any).slotHarness;const optional='<div data-if="optional"><slot name="optional"><p>Optional</p></slot></div>';
+ await page.evaluate(()=>{const h=(window as any).slotHarness;const optional='<div><slot name="optional"></slot></div>';
   h.template=h.template.replace(optional,'').replace('<article>','<article>'+optional);h.source=h.source.replace('<span slot="title">','<p slot="optional">Extra</p><span slot="title">');h.version++;h.update();});
  const order=()=>page.locator('[role=treeitem]').evaluateAll((els:HTMLElement[])=>els.map(e=>e.dataset.slotRow?'hidden':e.dataset.slot??'host'));
  expect(await order()).toEqual(['host','optional','title','image','cta','unknown']);
@@ -62,7 +62,7 @@ test('a hidden slot keeps its place in the tree and its Show eye is in the faded
  await page.mouse.move(0,0);await expect(eye).toHaveCSS('opacity','0');
  await hidden.hover();await expect(eye).toHaveCSS('opacity','1');
  await eye.click();
- await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).toMatch(/<p slot="optional">Optional<\/p>\s*<span slot="title">/);
+ await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).toMatch(/<span slot="optional">Optional<\/span>\s*<span slot="title">/);
 });
 test('slot visibility toggle at the row edge hides the slot and resting rows stay compact',async({page})=>{
  await harness(page);
@@ -148,7 +148,7 @@ test.describe('touch',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width
 
 // Real host timing: source, native preview bridge and the conditional slot all participate.
 async function realConditionalSlot(page:Page,baseURL:string|undefined) {
- await page.request.post(`${baseURL}/__demo/external-edit`,{data:{path:'components/media-card/media-card.html',content:'<figure><figcaption data-if="caption"><slot name="caption"></slot></figcaption></figure>'}});
+ await page.request.post(`${baseURL}/__demo/external-edit`,{data:{path:'components/media-card/media-card.html',content:'<figure><figcaption><slot name="caption"></slot></figcaption></figure>'}});
  const about=await (await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`)).text();
  await page.request.post(`${baseURL}/__demo/external-edit`,{data:{path:'about/index.html',content:about.replace('<section class="prose" data-key="prose">','<media-card><span slot="caption">Instant caption</span></media-card><section class="prose" data-key="prose">')}});
  await page.goto(`${baseURL}/#repo=501&branch=main&file=about%2Findex.html`);

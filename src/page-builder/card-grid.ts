@@ -244,8 +244,6 @@ export interface ItemCopyOptions {
   isLinked?: (href: string) => boolean;
   /** The text a component shows for each slot when the page fills none (its template's fallback). */
   fallbacks?: Record<string, string>;
-  /** Slots the component shows only when the page fills them (`data-if`). */
-  optional?: Set<string>;
 }
 
 /** Text edits on a source, as ranges of it. */
@@ -315,9 +313,7 @@ function withTitle(inner: string, from: string | undefined, to: string) {
  * a leaf that is or holds a link keeps its words with the item's old title
  * swapped for the new one ("Read about Fern & Kettle" → "Read about
  * Oak & Ash"); every other leaf says its slot's fallback, else a
- * placeholder for its kind (`placeholderFor`). A leaf in a slot the
- * component shows only when filled (`data-if`) is left out, so the copy
- * hides that part as a new instance would. Links to the item's page go to
+ * placeholder for its kind (`placeholderFor`). Links to the item's page go to
  * `href` instead. Undefined when the item's markup is not a clean tree.
  */
 export function itemCopy(source: string, item: SourceElement, options: ItemCopyOptions): string | undefined {
@@ -329,13 +325,8 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
     || (titleAt && slotOf(titleAt) && options.fallbacks?.[slotOf(titleAt)!])
     || `New ${options.noun}`;
   const edits: Edit[] = [];
-  const removed: SourceElement[] = [];
   for (const leaf of leaves) {
     const slot = slotOf(leaf);
-    if (slot && options.optional?.has(slot) && leaf !== item) {
-      removed.push(leaf);
-      continue;
-    }
     let text: string;
     if (leaf === titleAt) {
       // The title keeps a wrapping link (`<h3><a href>Title</a></h3>`), with only its words changed.
@@ -355,9 +346,8 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
     edits.push({ start: leaf.innerStart, end: leaf.innerEnd, text });
   }
   // Links to the item's own page go to the new one (or nowhere yet).
-  // Not inside a leaf left out, nor one whose whole content was replaced.
-  const inRemoved = (at: number) => removed.some((leaf) => at >= leaf.start && at < leaf.end) ||
-    edits.some((edit) => at >= edit.start && at < edit.end);
+  // Not inside a leaf whose whole content was replaced.
+  const inRemoved = (at: number) => edits.some((edit) => at >= edit.start && at < edit.end);
   if (options.href !== undefined)
     for (const element of allElements([item])) {
       if (element.name !== "a" || inRemoved(element.start)) continue;
@@ -365,7 +355,6 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
       if (!href || !source.slice(href.start, href.end).includes("=") || (options.isLinked && !options.isLinked(href.value))) continue;
       edits.push(hrefEdit(href, options.href));
     }
-  for (const leaf of removed) edits.push({ ...ownLines(source, leaf), text: "" });
   // Applied to the item's own markup.
   const own = edits
     .map((edit) => ({ start: Math.max(edit.start, item.start) - item.start, end: Math.min(edit.end, item.end) - item.start, text: edit.text }));
@@ -492,21 +481,17 @@ export function leafSummary(source: string, range: { start: number; end: number 
 
 /**
  * The text a component template shows for each of its named slots when
- * the page fills none (its fallback, as plain text), and the slots it shows
- * only when filled (`data-if` naming them, or a bare `data-if`).
+ * the page fills none (its fallback, as plain text).
  */
-export function slotFallbacks(template: string): { fallbacks: Record<string, string>; optional: Set<string> } {
+export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
   const fallbacks: Record<string, string> = {};
-  const optional = new Set<string>();
   for (const tag of startTags(template)) {
     if (tag.name !== "slot") continue;
     const name = startTagAttribute(template, tag, "name")?.value.trim();
     if (!name) continue;
-    const condition = startTagAttribute(template, tag, "data-if");
-    if (condition) for (const part of (condition.value.trim() || name).split(/\s+/)) if (part === name) optional.add(name);
     const close = template.toLowerCase().indexOf("</slot", tag.end);
     const text = close < 0 ? "" : plainText(template.slice(tag.end, close));
     if (text && !(name in fallbacks)) fallbacks[name] = text;
   }
-  return { fallbacks, optional };
+  return { fallbacks };
 }

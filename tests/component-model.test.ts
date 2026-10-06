@@ -88,7 +88,7 @@ test("a template's slots: names, fallbacks and kinds", () => {
   ]);
 });
 
-test("slot states follow the loader's rules: fallbacks, optional parts, sections and data-if", () => {
+test("slot states follow the loader's rules: fallbacks, optional parts, bare instances", () => {
   const range = rangeOf(page, "project-card");
   const instance = readInstance(page, range);
   assert.deepEqual([...instance.fills.keys()], ["title", "body"]);
@@ -115,10 +115,10 @@ test("slot states follow the loader's rules: fallbacks, optional parts, sections
   // Its only filled slot emptied, the tag is bare again and shows its fallback.
   assert.equal(heroStates.get("title")?.whenEmpty, "fallback");
 
-  const conditional = `<div><p data-if="price"><slot name="price">Free</slot></p><slot name="note" data-if>Note</slot></div>`;
-  const plainSource = `<x-a><span slot="other">o</span></x-a>`;
+  const conditional = `<section><p><slot name="price">Free</slot></p><slot name="note">Note</slot></section>`;
+  const plainSource = `<x-a><span slot="price">Paid</span></x-a>`;
   const plain = readInstance(plainSource, rangeOf(plainSource, "x-a"));
-  assert.equal(slotStates(conditional, plain).get("price")?.shown, false);
+  assert.equal(slotStates(conditional, plain).get("price")?.shown, true);
   assert.equal(slotStates(conditional, plain).get("note")?.whenEmpty, "hidden");
 });
 
@@ -247,14 +247,14 @@ test("detach writes what the instance shows: slots filled, hidden parts left out
       <card-note data-key="card-note">Shared across cards</card-note>
     </article>`);
   // Fallbacks show where the page gives nothing; a slot passed on keeps its target.
-  const template = `<article class="card" data-if-ignored>
+  const template = `<article class="card" data-note>
   <card-note><slot name="note" slot="text"><p>Project</p></slot></card-note>
   <slot name="title"><h3>Untitled</h3></slot>
-  <p data-if="link" class="actions"><slot name="link"></slot></p>
+  <p class="actions"><slot name="link"></slot></p>
 </article>`;
   const source = `<card-project class="wide" id="one">\n  <p slot="note">Cafe</p>\n</card-project>`;
   const result = detachMarkup(source, template, readInstance(source, rangeOf(source, "card-project")));
-  assert.equal(result.markup, `<article class="card wide" data-if-ignored id="one">
+  assert.equal(result.markup, `<article class="card wide" data-note id="one">
   <card-note><p slot="text">Cafe</p></card-note>
   <h3>Untitled</h3>
 </article>`);

@@ -86,7 +86,7 @@ plus buttons between sections used to open.
   unavailable until layout CSS integration is complete.
 - Thumbnails show the template's fallback content; a slot whose fallback is not text (a list,
   another component) shows what the template has.
-- Templates with `data-if` or slots that the preview hides when empty are shown as written.
+- Templates with slots that the preview hides when empty are shown as written.
 - Touch dragging uses the same pointer events but was only tried with a mouse.
 
 ## Review fixes

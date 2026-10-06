@@ -109,14 +109,14 @@ test("a card for a new page is titled and links to it, the title swapped in its 
   assert.match(copy!, /<p slot="note">Project<\/p>/);
 });
 
-test("without fallbacks the copy says placeholders by kind; optional slots are left out", () => {
+test("without fallbacks the copy says placeholders by kind and keeps slots", () => {
   const html = `<ul>
   <li class="post"><h2><a href="/blog/a/">First</a></h2><p>Intro to the first.</p><span slot="tag">News</span></li>
   <li class="post"><h2><a href="/blog/b/">Second</a></h2><p>Intro.</p><span slot="tag">Notes</span></li>
 </ul>`;
   const item = elementTree(html)![0].children[1];
-  const copy = itemCopy(html, item, { noun: "post", href: "", optional: new Set(["tag"]) });
-  assert.equal(copy, `<li class="post"><h2><a href="">New post</a></h2><p>A sentence or two about this post.</p></li>`);
+  const copy = itemCopy(html, item, { noun: "post", href: "" });
+  assert.equal(copy, `<li class="post"><h2><a href="">New post</a></h2><p>A sentence or two about this post.</p><span slot="tag">Text</span></li>`);
   const plain = `<ul>\n  <li>One</li>\n  <li>Two</li>\n</ul>`;
   assert.equal(itemCopy(plain, elementTree(plain)![0].children[1], { noun: "item" }), "<li>New item</li>");
 });

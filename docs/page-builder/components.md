@@ -76,7 +76,7 @@ worked on selected.
 it: the template with each slot replaced by what the page gives it (a bare
 `<span slot>` or a block slotted into a line of text reduced to its content),
 else its fallback; parts the template hides on this instance left out;
-`data-if` dropped; the instance tag's attributes moved onto the template's
+the instance tag's attributes moved onto the template's
 single top-level element (classes merged). Components the template uses stay
 components. The dialog says when the component's own stylesheet will stop
 styling the copy (it applies inside the shadow root only) and when attributes
@@ -163,7 +163,7 @@ The seam browser test runs the production component controller with mocked compo
   stale selection/model/source/context rejection, one assignment for duplicate
   outlets, one transaction and existing field focus.
 - `tests/component-model.test.ts` (unit): slots and kinds, slot states
-  (fallback, optional, section rule, `data-if`), slot values, text edits that
+  (fallbacks, empty wrappers and section rules), slot values, text edits that
   keep formatting, filling and emptying slots in template order, attribute
   edits, usage counting through nested components, detach, make component and
   tag names.
@@ -171,7 +171,7 @@ The seam browser test runs the production component controller with mocked compo
   bar, structure and canvas and the chip back to the instance; the instance fields’
   text, link, optional, reset and attribute edits as source with undo; Edit
   component with the canvas bar, Used on and Done; Detach; Make component with
-  undo and redo of its files; an image slot and a `data-if` slot on a
+  undo and redo of its files; an image slot and an empty slot on a
   component added to About.
 
 ## Known gaps
