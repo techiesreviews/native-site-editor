@@ -505,3 +505,19 @@ test("wiring: hasTyping follows a live pane's typing steps; retry writes a faile
   assert.equal(store.unpersisted(), false);
   assert.equal(persistence.map.get("a.html")?.content, "xyz");
 });
+
+test("wiring: Save's drafts are the store's, including a change whose write keeps failing", () => {
+  const persistence = records();
+  const { store } = setup(persistence);
+  store.open(scope, "a.html", { text: "a", baseSha: sha("a") });
+  store.open(scope, "b.html", { text: "b", baseSha: sha("b") });
+  store.edit({ scope, path: "a.html", text: "a1" });
+  persistence.fail = true;
+  store.edit({ scope, path: "b.html", text: "b1" });
+  const drafts = store.drafts(scope, () => [...persistence.map.values()]);
+  assert.deepEqual(drafts.map(draft => [draft.path, draft.content]), [["a.html", "a1"], ["b.html", "b1"]]);
+  assert.equal(store.drafts({ ...scope, branch: "other" }, () => []).length, 0);
+  persistence.fail = false;
+  assert.equal(store.drafts(scope, () => [...persistence.map.values()]).length, 2);
+  assert.equal(persistence.map.get("b.html")?.content, "b1");
+});

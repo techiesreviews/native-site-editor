@@ -300,10 +300,13 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     persisting++;
     try { return persistEntry(entry, persistence, preferred); } finally { persisting--; }
   }
-  function persistEntry(entry: Entry, persistence: DraftPersistence, preferred?: SavedDraft) {
+  const recordOf = (entry: Entry): SavedDraft => {
     const { account, repoId, repo, branch } = entry.scope;
-    const draft: SavedDraft = { ...entry.flags, account, repoId, repo, branch, version: 1, path: entry.path,
+    return { ...entry.flags, account, repoId, repo, branch, version: 1, path: entry.path,
       baseSha: entry.baseSha as string | null, original: entry.base, content: entry.text, updatedAt: now() };
+  };
+  function persistEntry(entry: Entry, persistence: DraftPersistence, preferred?: SavedDraft) {
+    const draft = recordOf(entry);
     const existing = persistence.get(entry.scope, entry.path);
     // A refresh that changes nothing keeps the exact record, so its identity proves no foreign write.
     const ok = persistence.save(preferred && sameRecord(preferred, draft) ? preferred : existing && sameRecord(existing, draft) ? existing : draft);
@@ -831,6 +834,19 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   function retry() {
     for (const entry of files.values()) if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry)) persist(entry);
   }
+  /**
+   * The drafts of `scope` as Save sends them: the persisted records, with
+   * each changed file whose last write did not reach persistence as this
+   * store holds it (failed writes are tried again first).
+   */
+  function drafts(scope: DraftScope, list: () => readonly SavedDraft[]) {
+    retry();
+    const out = new Map(list().map(record => [record.path, record]));
+    const same = (other: DraftScope) => other.account.toLowerCase() === scope.account.toLowerCase() && other.repoId === scope.repoId && other.branch === scope.branch;
+    for (const entry of files.values())
+      if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry) && same(entry.scope)) out.set(entry.path, recordOf(entry));
+    return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
+  }
   /** Any Undo or Redo step is held in memory (lost on reload). */
   const hasHistory = () => [...journals.values()].some(found => found.undo.length + found.redo.length > 0);
 
@@ -869,6 +885,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     hasTyping,
     hasHistory,
     retry,
+    drafts,
     markSaved,
     acceptBase,
     reload: (scope: DraftScope, path: string) => batch(() => reload(scope, path)),

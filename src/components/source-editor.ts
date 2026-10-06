@@ -749,7 +749,7 @@ export function mountSourceEditor(
   if (file.onDiscardAll) discard.title = "Discard every unsaved change on this branch";
   // With Discard all, the button waits for any draft of the branch, not only this file's.
   const refreshDiscard = (changed: boolean) => {
-    discard.disabled = !!file.readOnly || (file.onDiscardAll && file.scope ? listChanges(draftStore().list(file.scope)).length === 0 : !changed);
+    discard.disabled = !!file.readOnly || (file.onDiscardAll && file.scope ? listChanges(store.drafts(file.scope, () => draftStore().list(file.scope!))).length === 0 : !changed);
   };
   const publisher =
     file.scope && !file.readOnly
@@ -762,6 +762,8 @@ export function mountSourceEditor(
           onSettleDeleted: file.onSettleDeleted,
           head: file.publishHead,
           onRefused: file.onRefused,
+          // Save sends what the draft store holds.
+          drafts: () => store.drafts(file.scope!, () => draftStore().list(file.scope!)),
           onExpired: () => file.onSessionExpired?.(),
           onPublished: (result, submitted) => {
             reconcilePublished(result, submitted);
