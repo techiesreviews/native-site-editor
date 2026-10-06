@@ -15,6 +15,116 @@ const repo: Repository = {
 };
 const reply = (data: unknown, status = 200) => Response.json(data, { status });
 
+test("installation repository reads run six at a time and merge in installation order", async () => {
+  const pending = new Map<number, (response: Response) => void>();
+  let active = 0;
+  let peak = 0;
+  const installations = Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1, account: { type: "Organization", login: `org-${index + 1}` },
+  }));
+  const github = new GitHub("secret", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return reply({ installations: [...installations].reverse() });
+    const id = Number(path.split("/")[3]);
+    active++;
+    peak = Math.max(peak, active);
+    const response = await new Promise<Response>((resolve) => pending.set(id, resolve));
+    active--;
+    return response;
+  });
+  const listing = github.repositories("lex");
+  const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+  await tick();
+  assert.deepEqual([...pending.keys()], [1, 2, 3, 4, 5, 6]);
+  const finish = (id: number) => pending.get(id)!(reply({ repositories: [{
+    ...repo, id, name: "site", full_name: `org-${id}/site`,
+    owner: { login: `org-${id}`, type: "Organization" },
+  }] }));
+  finish(6);
+  await tick();
+  assert.ok(pending.has(7), "a completed read frees its slot");
+  finish(7);
+  await tick();
+  assert.ok(pending.has(8));
+  for (const id of [8, 5, 4, 3, 2, 1]) finish(id);
+  assert.deepEqual((await listing).map((item) => item.installation_id), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(peak, 6);
+});
+
+test("a partial installation failure rejects the whole listing and is not cached", async () => {
+  let fail = true;
+  const github = new GitHub("secret", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return reply({ installations: [
+      { id: 1, account: { type: "User", login: "lex" } },
+      { id: 2, account: { type: "Organization", login: "org" } },
+    ] });
+    if (path.includes("/2/") && fail) return reply({ message: "Forbidden" }, 403);
+    return reply({ repositories: path.includes("/1/") ? [repo] : [] });
+  });
+  await assert.rejects(() => github.repositories("lex", 60_000), (error: HttpError) =>
+    error.status === 403 && /GitHub denied access/.test(error.message));
+  fail = false;
+  assert.deepEqual((await github.repositories("lex", 60_000)).map((item) => item.id), [1]);
+});
+
+test("repository discovery can reuse the installation lookup for an empty account", async () => {
+  let lookups = 0;
+  const github = new GitHub("secret", async (input) => {
+    if (new URL(String(input)).pathname === "/user/installations") {
+      lookups++;
+      return reply({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
+    }
+    return reply({ repositories: [] });
+  });
+  const owners = github.ownerInstallations("lex");
+  assert.deepEqual(await github.repositories("lex", 0, owners), []);
+  assert.equal((await owners).length, 1);
+  assert.equal(lookups, 1);
+});
+
+test("installation failures are reported in installation order despite reverse completion", async () => {
+  let finishFirst!: (response: Response) => void;
+  const github = new GitHub("secret", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return reply({ installations: [
+      { id: 1, account: { type: "User", login: "lex" } },
+      { id: 2, account: { type: "Organization", login: "org" } },
+    ] });
+    if (path.includes("/1/")) return new Promise<Response>((resolve) => { finishFirst = resolve; });
+    // Let the second installation fail before the first completes.
+    setImmediate(() => finishFirst(reply({ message: "Forbidden" }, 403)));
+    return reply({ message: "Bad credentials" }, 401);
+  });
+  await assert.rejects(() => github.repositories("lex"), (error: HttpError) =>
+    error.status === 403 && /GitHub denied access/.test(error.message));
+});
+
+test("an ordered installation failure rejects without waiting for later stalled reads", async () => {
+  let finishLater!: (response: Response) => void;
+  let failure: HttpError | undefined;
+  const github = new GitHub("secret", async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return reply({ installations: [
+      { id: 1, account: { type: "User", login: "lex" } },
+      { id: 2, account: { type: "Organization", login: "org" } },
+    ] });
+    if (path.includes("/1/")) return reply({ message: "Forbidden" }, 403);
+    return new Promise<Response>((resolve) => { finishLater = resolve; });
+  });
+  const listing = github.repositories("lex");
+  void listing.catch((error: HttpError) => { failure = error; });
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(failure?.status, 403, "the earlier failure settles while the later read is stalled");
+    await assert.rejects(listing, (error: HttpError) => /GitHub denied access/.test(error.message));
+  } finally {
+    // A later failure must remain handled after the listing has already rejected.
+    finishLater(reply({ message: "Bad credentials" }, 401));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+});
+
 test("repository discovery paginates and excludes unselected repositories and other personal accounts", async () => {
   const calls: string[] = [];
   const github = new GitHub("secret", async (input, init) => {
