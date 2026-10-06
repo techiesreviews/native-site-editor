@@ -266,11 +266,12 @@ test("Edit component from its root opens the template, says what an edit changes
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
   await expect(frame(page).locator("[data-native-selection-box='instance']:visible")).toHaveCount(3);
   await expect(status(page)).toHaveText("Editing the Project card component: changes apply to 3 instances on 1 page.");
-  // Used on opens on hover, says what an edit changes and lists the pages.
+  // Used on opens on hover and lists the pages, with no summary or heading above them.
   await banner.getByRole("button", { name: "Used on 1 page" }).hover();
   const menu = page.getByRole("menu", { name: "Used on" });
   await expect(menu).toBeVisible();
-  await expect(menu).toContainText("Changes apply to 3 instances on 1 page");
+  await expect(menu).not.toContainText("Changes apply to");
+  await expect(menu.locator(".component-menu__heading")).toHaveCount(0);
   await expect(menu.getByRole("menuitem")).toHaveText(["Home/ · 3×"]);
   // The keyboard opens it too, and Escape closes it.
   await page.mouse.move(0, 0);

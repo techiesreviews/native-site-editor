@@ -496,11 +496,10 @@ export function createComponentTools(deps: ComponentDeps) {
     if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: host.node });
   }
 
-  /** Used on: what an edit changes, then the pages (and components) showing `tag`. */
+  /** Used on: the pages (and components) showing `tag`. */
   function renderUsedOn(tag: string) {
     const found = usage(tag);
-    const items: HTMLElement[] = [node("p", "component-menu__summary", `Changes apply to ${usageSummary(found)}`)];
-    if (found.pages.length) items.push(node("p", "component-menu__heading", "Pages"));
+    const items: HTMLElement[] = [];
     for (const page of found.pages) {
       const item = button("", () => { usedOnDropdown.close(); void openUse(page.file, tag); }, "component-menu__item");
       item.setAttribute("role", "menuitem");
