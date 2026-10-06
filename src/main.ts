@@ -11,7 +11,8 @@ import {
   rememberWorkspace,
   type WorkspaceLocation,
 } from "./workspace-state";
-import { createAgentMenu, setupPrompt } from "./components/agent-menu";
+import type { createAgentMenu } from "./components/agent-menu";
+import { setupPrompt } from "./agent-prompts";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
@@ -35,14 +36,14 @@ import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
-import { createGetStarted, type CreateChoice, type CreateOutcome } from "./components/get-started";
-import { createStartSite } from "./components/start-site";
-import { createSetupWizard, type WizardCreateOutcome } from "./components/setup-wizard";
+import type { createGetStarted, CreateChoice, CreateOutcome } from "./components/get-started";
+import type { createStartSite } from "./components/start-site";
+import type { createSetupWizard, WizardCreateOutcome } from "./components/setup-wizard";
 import { clearWizard, connectionFromOnboarding, openingStep, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
-import { spotlight } from "./components/spotlight";
+
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
-import { createSetupChecklist } from "./components/setup-checklist";
+import type { createSetupChecklist } from "./components/setup-checklist";
 import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker, type PagePickerItem } from "./components/page-picker";
@@ -67,14 +68,14 @@ import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/nativ
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
-import { createCommitHistory } from "./components/commit-history";
+import type { createCommitHistory } from "./components/commit-history";
 import { gridOfItem } from "./page-builder/card-source";
 import { createCards, type Cards } from "./page-builder/cards";
 import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
-import { configureMediaPicker, mountMediaLibrary, openMediaPicker, closeMediaPicker } from "./page-builder/media-picker";
+import type { mountMediaLibrary } from "./page-builder/media-picker";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext } from "./page-builder/media-workspace";
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { mediaExistingAlt, mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
@@ -157,6 +158,29 @@ function loadEditorModule() {
     },
   ));
 }
+// Failed imports can be retried; chunk recovery owns the reload policy.
+function lazyModule<T>(load: () => Promise<T>) {
+  let pending: Promise<T> | undefined;
+  return () => pending ??= load().catch((error) => {
+    pending = undefined;
+    void handleChunkLoadFailure(error);
+    throw error;
+  });
+}
+const loadHistory = lazyModule(() => import("./components/commit-history"));
+let mediaModule: typeof import("./page-builder/media-picker") | undefined;
+const loadMedia = lazyModule(async () => {
+  const module = await import("./page-builder/media-picker");
+  module.configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
+  mediaModule = module;
+  return module;
+});
+const loadChecklist = lazyModule(() => import("./components/setup-checklist"));
+const loadWizard = lazyModule(() => import("./components/setup-wizard"));
+const loadGetStarted = lazyModule(() => import("./components/get-started"));
+const loadStartSite = lazyModule(() => import("./components/start-site"));
+const loadSpotlight = lazyModule(() => import("./components/spotlight"));
+const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
 let disposeEditor: (() => void) | undefined;
 // The live primary keeps its journal even when a completed operation releases its alias.
 let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
@@ -274,9 +298,11 @@ function mountWorkspace() {
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
   disposeExplorerImages();
-  configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
-  mountSetupChecklist();
+  const menuPanel = element("repository-actions");
+  menuPanel.addEventListener("toggle", () => {
+    if (menuPanel.matches(":popover-open")) { void ensureAgentMenu().catch(errorMessage); void mountSetupChecklist().catch(errorMessage); }
+  });
   repositorySelect = element<HTMLSelectElement>("repository");
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
@@ -937,7 +963,13 @@ window.addEventListener("resize", () => {
 // History shows the open file's commits, or the whole site's (the tab
 // chosen last).
 let historyScope: "file" | "site" = "file";
-function openHistory(force = false) {
+let historyOpening = 0;
+async function openHistory(force = false) {
+  const opening = ++historyOpening;
+  const epochBeforeLoad = generation;
+  const pathBeforeLoad = currentPath;
+  const { createCommitHistory } = await loadHistory();
+  if (opening !== historyOpening || generation !== epochBeforeLoad || currentPath !== pathBeforeLoad) return;
   const panel = element("changes");
   const anchor = document.getElementById("history-button");
   if (!anchor || !info.user || !currentRepo || !snapshot) return;
@@ -959,7 +991,7 @@ function openHistory(force = false) {
   commitHistory = createCommitHistory({
     repo: scope.repo, branch: scope.branch, path, isCurrent,
     scope: site ? "site" : "file",
-    onScope: (next) => { historyScope = next; openHistory(true); },
+    onScope: (next) => { historyScope = next; void openHistory(true).catch(errorMessage); },
     onOpenFile: (file, commit, head) => void openFileVersion(file, commit, head),
     hasDraft: () => Boolean(path && draftStore().get(scope, path)),
     onExpired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
@@ -3630,6 +3662,8 @@ async function chooseMediaForImage(target: { path: string; node: number[]; width
   // The picker offers the replaced image's own alt (empty: decorative) first;
   // left unchanged, the attribute stays exactly as written.
   const initialAlt = mediaExistingAlt(expected);
+  const { openMediaPicker } = await loadMedia();
+  if (epoch !== generation || workspace !== setupScope() || !currentMaster() || nativeEffectiveSource(target.path) !== source) return;
   await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
     if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Choose an image again.");
     if (!currentMaster()) throw new Error("The master changed. Choose an image again.");
@@ -3678,8 +3712,7 @@ function adoptNativeBaseSources(
 
 function deactivateNative() {
   disposeExplorerImages();
-  configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
-  closeMediaPicker();
+  mediaModule?.closeMediaPicker();
   nativeSite = undefined;
   updateExplorerTabs();
   nativeBaseFiles = [];
@@ -4143,8 +4176,16 @@ function renderLogin(
 ) {
   editorPalette?.dispose();
   editorPalette = undefined;
+  stopAgentProbe();
   agentMenu?.destroy();
   agentMenu = undefined;
+  setupChecklist?.close();
+  setupChecklist?.root.remove();
+  setupChecklist = undefined;
+  setupAsked = undefined;
+  if (setupFinishing) clearTimeout(setupFinishing.timer);
+  setupFinishing = undefined;
+  litEntry?.abort();
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
@@ -4205,7 +4246,7 @@ function renderLogin(
     // thing left to do, which the Setup wizard's Connect step explains and
     // starts. Nothing leaves this page before that click.
     action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
-    if (mode === "ready") openOwnerSetupWizard(info.ownerSetupUrl);
+    if (mode === "ready") void openOwnerSetupWizard(info.ownerSetupUrl).catch(errorMessage);
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -4235,11 +4276,13 @@ function renderLogin(
 // Start your site: in place of the preview when the repository has nothing
 // to show, because it is empty or has no index.html at its top.
 let startDialog: ReturnType<typeof createConfirmDialog> | undefined;
-function startSitePanel() {
+async function startSitePanel() {
   const repo = currentRepo!;
+  const empty = Boolean(snapshot?.empty);
+  const { createStartSite } = await loadStartSite();
   return createStartSite({
     repository: repo.name,
-    empty: Boolean(snapshot?.empty),
+    empty,
     start: writeStartingPoint,
     agent: async (about) => {
       const prompt = setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: repo.name, private: repo.private, about, repository: repo.full_name });
@@ -4273,19 +4316,25 @@ function setupScope() {
  * the project menu's tile, where the agent connection lives. "Show me" opens
  * the menu with Connect with MCP lit; "Got it" just closes.
  */
-function spotlightAgentConnection() {
+async function spotlightAgentConnection() {
+  const trigger = repositoryMenu?.trigger;
+  const { spotlight } = await loadSpotlight();
+  if (trigger !== repositoryMenu?.trigger) return;
   spotlight(repositoryMenu?.trigger, {
     title: "Connect an agent",
     text: [AGENT_EXPLAINER.join(" "), agentWhere()],
     actions: [
-      { label: "Show me", primary: true, run: showAgentConnection },
+      { label: "Show me", primary: true, run: () => void showAgentConnection().catch(errorMessage) },
       { label: "Got it" },
     ],
   });
 }
 
 let litEntry: AbortController | undefined;
-function showAgentConnection() {
+async function showAgentConnection() {
+  const menu = repositoryMenu;
+  await ensureAgentMenu();
+  if (!menu || menu !== repositoryMenu) return;
   litEntry?.abort();
   repositoryMenu?.open();
   const entry = document.querySelector<HTMLElement>(".agent-menu__action");
@@ -4299,40 +4348,47 @@ function showAgentConnection() {
   requestAnimationFrame(() => entry.focus());
 }
 
+let checklistLoading: Promise<void> | undefined;
 function mountSetupChecklist() {
-  const checklist = createSetupChecklist({
-    start: () => {
-      const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
-      if (choice) choice.focus();
-      else announce("This repository has a home page already.");
-    },
-    save: () => {
-      const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
-      if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
-      trigger.focus();
-      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-    },
-    saveName: async (name) => {
-      const problem = await writeSiteSettings({ name });
-      if (!problem) setupRemember({ named: true });
-      return problem;
-    },
-    connect: spotlightAgentConnection,
-    dismiss: () => {
-      setupAsked = undefined;
-      setupRemember({ dismissed: true });
-    },
-  });
-  setupChecklist = checklist;
-  element("setup-checklist").append(checklist.root);
-  // The project menu's item, above the agent's.
-  // Setup remains available through its progress control.
-  checklist.onRequest(() => {
-    setupAsked = currentRepo?.id;
+  if (setupChecklist) return Promise.resolve();
+  const host = element("setup-checklist"), account = info.user?.login;
+  return checklistLoading ??= loadChecklist().then(({ createSetupChecklist }) => {
+    if (!host || host !== element("setup-checklist") || account !== info.user?.login) return;
+    const checklist = createSetupChecklist({
+      start: () => {
+        const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
+        if (choice) choice.focus();
+        else announce("This repository has a home page already.");
+      },
+      save: () => {
+        const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
+        if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
+        trigger.focus();
+        trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      },
+      saveName: async (name) => {
+        const problem = await writeSiteSettings({ name });
+        if (!problem) setupRemember({ named: true });
+        return problem;
+      },
+      connect: () => void spotlightAgentConnection().catch(errorMessage),
+      dismiss: () => {
+        setupAsked = undefined;
+        setupRemember({ dismissed: true });
+      },
+    });
+    setupChecklist = checklist;
+    host.append(checklist.root);
+    // The project menu's item, above the agent's.
+    // Setup remains available through its progress control.
+    checklist.onRequest(() => {
+      setupAsked = currentRepo?.id;
+      refreshSetup();
+      // After the menu has closed and given its focus back.
+      setTimeout(() => checklist.open(), 0);
+    });
     refreshSetup();
-    // After the menu has closed and given its focus back.
-    setTimeout(() => checklist.open(), 0);
-  });
+  }).finally(() => { checklistLoading = undefined; });
 }
 
 function setupRemember(change: SetupMemory) {
@@ -4370,7 +4426,11 @@ function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
 
 function refreshSetup() {
   const checklist = setupChecklist;
-  if (!checklist) return;
+  if (!checklist) {
+    if (info.user && currentRepo && setupVisible(readSetupMemory(localStorage, info.user.login, currentRepo.id), setupAsked === currentRepo.id))
+      void mountSetupChecklist().catch(errorMessage);
+    return;
+  }
   const repo = currentRepo;
   const state = setupState();
   const account = info.user?.login;
@@ -4563,7 +4623,10 @@ function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
   setCurrentPage();
   if (!path && !nativeEngaged && currentRepo && snapshot) {
-    content.replaceChildren(startSitePanel());
+    const host = content, epoch = generation, fileEpoch = fileGeneration;
+    void startSitePanel().then((panel) => {
+      if (host === content && generation === epoch && fileGeneration === fileEpoch) host.replaceChildren(panel);
+    }).catch(errorMessage);
     return;
   }
   const panel = node("section", "directory-summary");
@@ -4720,12 +4783,16 @@ function imagesSignature() {
   const scope = draftScope();
   return JSON.stringify([generation, setupScope(), snapshot?.commit, scope ? draftStore().list(scope) : []]);
 }
-function ensureExplorerImages() {
+let imagesOpening = 0;
+async function ensureExplorerImages() {
+  const opening = ++imagesOpening;
   if (!nativeSite || !snapshot || !draftScope()) return;
   const scope = `${generation}:${setupScope()}`;
   if (explorerImages && explorerImagesScope === scope) { requestExplorerImagesRefresh(); return; }
   disposeExplorerImages(); explorerImagesScope = scope;
   explorerImagesSignature = imagesSignature();
+  const { mountMediaLibrary } = await loadMedia();
+  if (opening !== imagesOpening || scope !== `${generation}:${setupScope()}` || explorerTab !== "images") return;
   explorerImages = mountMediaLibrary(element("explorer-images"), { refreshKey: imagesSignature });
 }
 function explorerImagesVisible() { return !element("explorer-images").hidden && element("explorer").matches(":popover-open"); }
@@ -4764,7 +4831,7 @@ function mountExplorerTabs() {
   explorer.addEventListener("toggle", () => {
     // Closing a popover queues its toggle; session expiry may detach it before dispatch.
     if (!explorer.isConnected) return;
-    if (explorerImagesVisible() && explorerTab === "images") ensureExplorerImages();
+    if (explorerImagesVisible() && explorerTab === "images") void ensureExplorerImages().catch(errorMessage);
   });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
@@ -4784,7 +4851,7 @@ function selectExplorerTab(name: ExplorerTab) {
   explorerTab = name;
   updateExplorerTabs();
   if (name === "pages") renderPagesTree();
-  if (name === "images") ensureExplorerImages();
+  if (name === "images") void ensureExplorerImages().catch(errorMessage);
 }
 
 function updateExplorerTabs(reset = false) {
@@ -6996,7 +7063,7 @@ async function mountSource(
       // A heading or title typed in the open file renames it in the top bar.
       updateCurrentPageLabel();
     },
-    onHistory: openHistory,
+    onHistory: () => void openHistory().catch(errorMessage),
     onDiscardAll: () => void discardAllChanges(),
     publishHead: () => (snapshot?.branch === scope.branch && currentRepo?.id === scope.repoId ? (snapshot.empty && (!headSeen || headSeen.commit === EMPTY_COMMIT) ? EMPTY_COMMIT : trustedHead()) : undefined),
     onRefused: () => void checkBranchHead(true),
@@ -7742,10 +7809,13 @@ async function wizardConnection(): Promise<Connection> {
 async function openWizard() {
   if (wizard || !info.user) return;
   wizardDismissed = false;
+  const login = info.user.login;
+  const { createSetupWizard } = await loadWizard();
+  if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const memory = readWizard(localStorage);
   // The session says what is left to do (and a reload keeps it); asked again only when it did not.
   const connection = connectionFromOnboarding(info.onboarding) ?? (await wizardConnection());
-  if (wizard) return;
+  if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const step = openingStep(memory, connection);
   const kept = writeWizard(localStorage, { step });
   wizard = createSetupWizard({
@@ -7773,8 +7843,9 @@ async function openWizard() {
  * button creates the editor's GitHub App. No browser memory is read or written, so
  * a remembered repository cannot skip the step and the user's own state stays.
  */
-function openOwnerSetupWizard(ownerSetupUrl: string) {
-  if (wizard || wizardDismissed) return;
+async function openOwnerSetupWizard(ownerSetupUrl: string) {
+  const { createSetupWizard } = await loadWizard();
+  if (wizard || wizardDismissed || info.user || info.ownerSetupUrl !== ownerSetupUrl) return;
   wizard = createSetupWizard({
     login: "",
     connected: false,
@@ -7806,7 +7877,7 @@ function closeWizard() {
   removeWizard();
   clearWizard(localStorage);
   wizardDismissed = true;
-  if (info.user && !repositories.length) showGetStarted();
+  if (info.user && !repositories.length) void showGetStarted().catch(errorMessage);
 }
 
 /** Create site: the repository, with its starting point already committed (POST /api/repositories). */
@@ -8035,7 +8106,10 @@ function knownRepositories(): number[] | undefined {
     return undefined;
   }
 }
-function showGetStarted() {
+async function showGetStarted() {
+  const host = content, login = info.user?.login;
+  const { createGetStarted } = await loadGetStarted();
+  if (host !== content || login !== info.user?.login || repositories.length) return;
   const screen = createGetStarted({
     login: info.user?.login ?? "",
     installUrl: info.installUrl,
@@ -8154,11 +8228,11 @@ async function loadRepositories(prefetched?: Repository[]) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
       ]);
-      if (wizardDismissed) showGetStarted();
+      if (wizardDismissed) void showGetStarted().catch(errorMessage);
       else {
         // A new user: the Setup wizard, full screen, in place of Get started.
         content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
-        void openWizard();
+        void openWizard().catch(errorMessage);
       }
       return;
     }
@@ -8335,6 +8409,73 @@ draftStore().baseline = (scope, path) => {
     : undefined;
 };
 
+let agentMenuLoading: Promise<void> | undefined;
+function ensureAgentMenu() {
+  if (agentMenu || !info?.user) return Promise.resolve();
+  const account = info.user.login;
+  const host = element("agent-menu");
+  return agentMenuLoading ??= loadAgentMenu().then(({ createAgentMenu }) => {
+    if (agentMenu || info.user?.login !== account || host !== element("agent-menu")) return;
+    agentMenu = createAgentMenu({
+      account: account,
+      repository: agentRepository,
+      context: agentContext,
+      onCommand: applyAgentSiteCommand,
+      // Ask agent shows in the edit bar while an agent is connected.
+      onConnection: (connected) => { noteSetupAgent(connected); if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
+      onRequests: (requests) => nativePreview?.setRequests(requests),
+      onQuestions: (count) => repositoryMenu?.setQuestions(count),
+      // A question in the selector's list: its pin, card open, answer box focused.
+      onShowRequest: (id) => {
+        repositoryMenu?.close();
+        nativePreview?.showRequest(id);
+      },
+    });
+    host.append(agentMenu.root);
+    stopAgentProbe();
+  }).finally(() => { agentMenuLoading = undefined; });
+}
+let agentProbe: ReturnType<typeof setInterval> | undefined;
+let agentProbeRetry: ReturnType<typeof setTimeout> | undefined;
+let agentProbing = false;
+function stopAgentProbe() {
+  clearInterval(agentProbe);
+  clearTimeout(agentProbeRetry);
+  agentProbe = agentProbeRetry = undefined;
+}
+async function restoreAgentMenu(now = false) {
+  if (agentProbing || agentMenu || !info?.user || (!now && document.visibilityState !== "visible")) return;
+  const account = info.user.login, host = element("agent-menu");
+  agentProbing = true;
+  try {
+    const response = await fetch("/api/agent/hub", { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Could not check the agent connection.");
+    const hub = await response.json() as { grants?: unknown[]; requests?: unknown[] };
+    if (account !== info.user?.login || host !== element("agent-menu")) return;
+    if (hub.grants?.length || hub.requests?.length) await ensureAgentMenu();
+  } finally {
+    agentProbing = false;
+  }
+}
+function startAgentProbe() {
+  stopAgentProbe();
+  agentProbe = setInterval(() => void restoreAgentMenu().catch(() => {}), 30_000);
+  void restoreAgentMenu(true).catch(() => {
+    // A transient boot failure gets one early retry; visible polling continues afterwards.
+    if (agentProbe) agentProbeRetry = setTimeout(() => void restoreAgentMenu().catch(() => {}), 3000);
+  });
+}
+const wakeAgentProbe = () => { if (agentProbe) void restoreAgentMenu().catch(() => {}); };
+window.addEventListener("focus", wakeAgentProbe);
+document.addEventListener("visibilitychange", wakeAgentProbe);
+window.addEventListener("storage", (event) => {
+  if (event.key !== "native-site-editor:agent-connected" || agentMenu || !info?.user) return;
+  const account = info.user.login;
+  void ensureAgentMenu().then(() => {
+    if (info.user?.login === account) agentMenu?.consentGranted();
+  }).catch(errorMessage);
+});
+
 async function start() {
   try {
     const session = await api<SessionInfo>("session");
@@ -8361,22 +8502,7 @@ async function start() {
     if (info.user) {
       resumeWorkspaceLink();
       mountWorkspace();
-      agentMenu = createAgentMenu({
-        account: info.user.login,
-        repository: agentRepository,
-        context: agentContext,
-        onCommand: applyAgentSiteCommand,
-        // Ask agent shows in the edit bar while an agent is connected.
-        onConnection: (connected) => { noteSetupAgent(connected); if (lastNativeSelection) renderNativeEditBar(lastNativeSelection); },
-        onRequests: (requests) => nativePreview?.setRequests(requests),
-        onQuestions: (count) => repositoryMenu?.setQuestions(count),
-        // A question in the selector's list: its pin, card open, answer box focused.
-        onShowRequest: (id) => {
-          repositoryMenu?.close();
-          nativePreview?.showRequest(id);
-        },
-      });
-      element("agent-menu").append(agentMenu.root);
+      startAgentProbe();
       // GitHub sends the user back here after the App was installed or its
       // repositories changed: list them afresh, and tidy the address.
       const returned = new URL(location.href);

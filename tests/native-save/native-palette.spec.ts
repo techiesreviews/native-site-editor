@@ -33,6 +33,48 @@ async function editorText(page: Page) {
   return text;
 }
 
+test("loading palette replaces selected text and inserts at the caret before handing over the query", async ({ page }) => {
+  let releaseChunk!: () => void;
+  const chunkGate = new Promise<void>((resolve) => { releaseChunk = resolve; });
+  const chunkRoute = /\/(?:src\/components\/command-palette\.ts|assets\/command-palette-[^/]+\.js)(?:\?|$)/;
+  await page.route(chunkRoute, async (route) => {
+    await chunkGate;
+    await route.continue();
+  });
+  try {
+    await page.locator("#explorer-toggle").focus();
+    await page.keyboard.press("ControlOrMeta+K");
+    await expect(search(page)).toBeFocused();
+    await expect(search(page)).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.type("discard this query");
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.type("abut");
+    await expect(search(page)).toHaveValue("abut");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.type("o");
+    await expect(search(page)).toHaveValue("about");
+    await expect(search(page)).toHaveAttribute("aria-expanded", "false");
+    // A selection made while loading survives the handover.
+    await page.keyboard.press("ControlOrMeta+A");
+
+    releaseChunk();
+    await expect(search(page)).toHaveAttribute("aria-expanded", "true");
+    await expect(search(page)).toBeFocused();
+    await expect(search(page)).toHaveValue("about");
+    expect(await search(page).evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 5]);
+    await page.keyboard.type("abo");
+    await expect(search(page)).toHaveValue("abo");
+    await expect(active(page)).toHaveAttribute("aria-label", /^About/);
+    await page.keyboard.press("Enter");
+    await expect(palette(page)).toBeHidden();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  } finally {
+    releaseChunk();
+    await page.unroute(chunkRoute);
+  }
+});
+
 test("Ctrl+K finds a page by name or URL and opens it; Escape closes back to where focus was", async ({ page }) => {
   const toggle = page.locator("#explorer-toggle");
   await toggle.focus();
@@ -98,6 +140,7 @@ test("actions and the selected section's controls run from the palette, keys wor
   const frame = page.frameLocator(".native-preview-frame");
   // Hide and show the code, and the page structure.
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(palette(page)).toBeVisible();
   await page.keyboard.type("hide code");
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toHaveClass(/code-collapsed/);
@@ -339,6 +382,8 @@ test("searching again after a source edit cannot bless old edit bar closures", a
   await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
   await page.keyboard.press("ControlOrMeta+K");
   await expect(search(page)).toBeFocused();
+  // This exercises commands captured before the edit, after the loading field hands over.
+  await expect(search(page)).toHaveAttribute("aria-expanded", "true");
   await search(page).fill("duplicate");
   const changed = await page.evaluate(async () => {
     const modulePath = "/src/components/monaco.ts";

@@ -1,6 +1,6 @@
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
-import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pins";
+import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
 import { componentIcon, mark } from "../page-builder/component-icon";
 import "./edit-bar.css";
 

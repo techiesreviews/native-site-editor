@@ -384,6 +384,8 @@ export function createCommandPalette(options: CommandPaletteOptions) {
     open,
     close,
     isOpen: () => dialog.open,
+    /** Runs the highlighted result, including a query submitted while loading. */
+    runActive: () => run(active),
     /** Toggles: opens with `scope`, or closes when open in it already. */
     toggle(nextScope: PaletteScope = "all") {
       if (dialog.open && scope === nextScope) close();
