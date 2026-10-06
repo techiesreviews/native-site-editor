@@ -1324,12 +1324,18 @@
     return el instanceof Element && el !== root ? el : null;
   }
 
-  function deepestElement(e) {
+  function deepestElement(e, forHover) {
     var path = typeof e.composedPath === "function" ? e.composedPath() : [];
-    return deepestElementFromPath(path, e.target);
+    return deepestElementFromPath(path, e.target, forHover);
   }
 
-  function deepestElementFromPath(path, target) {
+  function templateLocked(el) {
+    if (!state) return false;
+    var root = el.getRootNode && el.getRootNode();
+    return root instanceof ShadowRoot && ownerPath(el) !== state.editableTemplatePath;
+  }
+
+  function deepestElementFromPath(path, target, forHover) {
     var from = 0;
     // Text is never an event's target: a press on text lands on the element
     // that shows it, which for text a slot shows is the slot. Text the page
@@ -1348,6 +1354,11 @@
       var n = path[i];
       // A slot is how a template shows text, not an element of its own: its parent is the target.
       if (n instanceof HTMLSlotElement) continue;
+      // Hovering on a page, a component's template is not the page's to pick
+      // apart: its own elements (wrappers, fallbacks) point at the instance,
+      // as a click on them selects it. Only the template open for editing
+      // shows its elements.
+      if (forHover && n instanceof Element && templateLocked(n)) continue;
       // A section component's root <section> is the instance on the page: the
       // page stays open, and Remove takes the instance out of this page alone.
       if (n instanceof Element && n.parentNode instanceof ShadowRoot && sectionLike(n.parentNode.host) && n.parentNode.host.localName !== "section") return n.parentNode.host;
@@ -1366,7 +1377,7 @@
            (inner = target.shadowRoot.elementFromPoint(hoverPointer.x, hoverPointer.y)) && inner !== target) target = inner;
     var path = [];
     for (var node = target; node; node = node.assignedSlot || node.parentNode || (node instanceof ShadowRoot ? node.host : null)) path.push(node);
-    hovered = deepestElementFromPath(path, target);
+    hovered = deepestElementFromPath(path, target, true);
     reportHover();
   }
 
@@ -2349,7 +2360,7 @@
   document.addEventListener("mousemove", function (e) {
     if (sectionDrag) return;
     hoverPointer = { x: e.clientX, y: e.clientY };
-    hovered = deepestElement(e);
+    hovered = deepestElement(e, true);
     updateBoxes(true);
     reportHover();
   });

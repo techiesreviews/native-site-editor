@@ -80,9 +80,9 @@ test("hovering labels an element, selecting shows its ancestors, and crumbs, Esc
   await frame.locator(".hero p.lead").hover();
   await expect(label).toBeVisible();
   await expect(label).toHaveText("p.lead");
-  // Inside a component's template.
+  // Inside a component's template on a page: the instance, not the template's own elements.
   await frame.locator("project-card").first().locator("article").hover({ position: { x: 4, y: 4 } });
-  await expect(label).toHaveText("article.project-card");
+  await expect(label).toHaveText("project-card");
 
   await expect(crumbs(page)).toHaveText(["body"]);
   await frame.locator(".hero h1").click();
