@@ -3,17 +3,15 @@ import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
 import type { NavigationLink } from "../page-builder/site-navigation";
-import type { CollectionsPanel } from "./collections-panel";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string }
 export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
-  /** `pageFields` overlays staged Date/custom fields on the metadata candidate. */
-  applyPage: (path: string, fields: Partial<Record<HeadField, string>>, pageFields?: (source: string) => string) => Promise<string | undefined>;
-  /** Mounts the staged Date/custom page fields; the dialog destroys it on close. */
-  pageFields?: (host: HTMLElement, path: string) => CollectionsPanel;
+  applyPage: (path: string, fields: Partial<Record<HeadField, string>>) => Promise<string | undefined>;
+  /** Mounts collection recipe recovery controls; returns their cleanup. */
+  collections?: (host: HTMLElement) => () => void;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
@@ -168,50 +166,6 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
 }
 
-// Remounts the page Fields panel on the source as it is now, carrying over
-// values the user typed after the last Apply was submitted.
-function pageFieldsInputs(host: HTMLElement): Map<string, string> {
-  return new Map([...host.querySelectorAll(".collections-panel label")].flatMap((wrap) => {
-    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
-    return input ? [[wrap.querySelector("span")?.textContent ?? "", input.value] as const] : [];
-  }));
-}
-
-function remountPageFields(host: HTMLElement, old: CollectionsPanel | undefined, submitted: Map<string, string>, mount: () => CollectionsPanel) {
-  const previous = host.querySelector(".collections-panel");
-  const typed = new Map<string, string>();
-  let focusLabel: string | undefined, caret: [number | null, number | null] | undefined;
-  for (const wrap of previous?.querySelectorAll("label") ?? []) {
-    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
-    const text = wrap.querySelector("span")?.textContent ?? "";
-    if (!input) continue;
-    if (input.value !== submitted.get(text)) typed.set(text, input.value);
-    if (document.activeElement === input) { focusLabel = text; caret = [input.selectionStart, input.selectionEnd]; }
-  }
-  old?.destroy();
-  const panel = mount();
-  const inputs = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
-  for (const wrap of host.querySelectorAll(".collections-panel label")) {
-    const input = wrap.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
-    if (input) inputs.set(wrap.querySelector("span")?.textContent ?? "", input);
-  }
-  // A custom field the earlier Apply added is now a field of its own.
-  const customName = submitted.get("New custom field name")?.trim() ?? "";
-  const added = customName ? inputs.get(customName[0].toUpperCase() + customName.slice(1)) : undefined;
-  if (added && !typed.has("New custom field name")) {
-    if (typed.has("New custom field value")) typed.set(customName[0].toUpperCase() + customName.slice(1), typed.get("New custom field value")!);
-    typed.delete("New custom field value");
-    if (focusLabel === "New custom field value") focusLabel = customName[0].toUpperCase() + customName.slice(1);
-  }
-  for (const [text, value] of typed) {
-    const input = inputs.get(text);
-    if (input && input.value !== value) input.value = value;
-  }
-  const focus = focusLabel ? inputs.get(focusLabel) : undefined;
-  if (focus) { focus.focus(); if (caret) focus.setSelectionRange(caret[0], caret[1]); }
-  return panel;
-}
-
 async function uploadInto(input: HTMLInputElement | HTMLTextAreaElement, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
   const before = input.value;
   try {
@@ -236,15 +190,6 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const generalPanel = dialog.category("General", "file");
       const searchPanel = dialog.category("Search", "list-checks");
       const socialPanel = dialog.category("Social", "link");
-      const fieldsPanel = handlers.pageFields ? dialog.category("Fields", "file-dashed") : undefined;
-      let pageFields: CollectionsPanel | undefined;
-      let stampAtApply: string | undefined;
-      let fieldsAtApply = new Map<string, string>();
-      if (fieldsPanel) {
-        fieldsPanel.append(node("p", "site-settings__hint", "Date and custom fields that collection listings can show, sort and filter by."));
-        pageFields = handlers.pageFields!(fieldsPanel, options.path);
-        dialog.root.addEventListener("close", () => pageFields?.destroy(), { once: true });
-      }
       const details = section(generalPanel, "Page details");
       const title = textField(details, "Title", values.title, "Shown in browser tabs and search results.");
       title.placeholder = new DOMParser().parseFromString(options.source, "text/html").querySelector("h1")?.textContent?.trim() ?? "";
@@ -254,13 +199,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         plan: (value) => handlers.planUrl(options.path, value),
         apply: async (value, keep) => {
           const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
-          if (fieldsChanged || pageFields?.pageFieldsDirty()) return "Apply page details before changing the URL, so those edits are kept.";
-          const submitted = formStamp(dialog.root), fieldsStamp = pageFields?.pageFieldsStamp();
+          if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";
+          const submitted = formStamp(dialog.root);
           const error = await handlers.applyUrl(options.path, value, keep);
           if (error || !dialog.root.isConnected) return error;
           // Close only when nothing was typed while the URL change waited.
           // The page moved, so newer details can't be applied from here.
-          if (formStamp(dialog.root) === submitted && pageFields?.pageFieldsStamp() === fieldsStamp) dialog.root.close();
+          if (formStamp(dialog.root) === submitted) dialog.root.close();
           else dialog.status.textContent = "The URL changed. Edits typed meanwhile were not applied, and closing this dialog discards them. Reopen Page settings to apply them to the moved page.";
           return undefined;
         }, cancel: () => {},
@@ -350,14 +295,11 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         if ((title.value !== values.title || titleLink.checked !== initialTitleLink || socialTitle.value !== initialSocialTitle) && socialTitle.value !== effectiveTitle) fields["og:title"] = socialTitle.value;
         if ((description.value !== values.description || descriptionLink.checked !== initialDescriptionLink || socialDescription.value !== initialSocialDescription) && socialDescription.value !== effectiveDescription) fields["og:description"] = socialDescription.value;
         const linked = { title: titleLink.checked, description: descriptionLink.checked };
-        const panel = pageFields;
-        stampAtApply = panel?.pageFieldsStamp();
-        fieldsAtApply = fieldsPanel ? pageFieldsInputs(fieldsPanel) : new Map();
         const submitted = { fields, socialTitle: socialTitle.value, socialDescription: socialDescription.value, titleLink: titleLink.checked, descriptionLink: descriptionLink.checked };
-        const error = await handlers.applyPage(options.path, fields, panel ? (source) => panel.pageFieldSource(source) : undefined);
+        const error = await handlers.applyPage(options.path, fields);
         if (!error) { linkPreferences.set(options.path, linked); applied = submitted; }
         return error;
-      }, () => pageFields?.pageFieldsStamp() === stampAtApply, () => {
+      }, () => true, () => {
         // The page now holds what was applied: compare newer typing with that.
         if (!applied) return;
         Object.assign(values, applied.fields);
@@ -366,8 +308,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         initialSocialTitle = applied.socialTitle; initialSocialDescription = applied.socialDescription;
         initialTitleLink = applied.titleLink; initialDescriptionLink = applied.descriptionLink;
         applied = undefined;
-        if (fieldsPanel && handlers.pageFields) pageFields = remountPageFields(fieldsPanel, pageFields, fieldsAtApply, () => handlers.pageFields!(fieldsPanel, options.path));
       });
+      if (handlers.collections) {
+        const recovery = node("div");
+        generalPanel.append(recovery);
+        const destroy = handlers.collections(recovery);
+        dialog.root.addEventListener("close", destroy, { once: true });
+      }
       dialog.show();
     },
     site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {

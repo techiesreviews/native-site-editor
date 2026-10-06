@@ -76,7 +76,6 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   await pagesTab(page);
   await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
-  await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
   const [id] = Object.keys(JSON.parse(sidecar).collections);
   // One plain row: which grid on which page, why, and its action; the technical error only in its details.
@@ -98,8 +97,17 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   const broken = home.slice(0, at) + ' data-x="1"' + home.slice(at);
   expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
   await expect(list).toHaveCount(0);
-  // Forget is one Undo step of its own: Undo brings the recipe back exactly, Redo forgets it again; the page is untouched.
-  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  // Apply from the same dialog uses the baseline after Forget, keeping both operations undoable.
+  await settings.getByLabel("Title", { exact: true }).fill("Home after forgetting recipe");
+  await settings.getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(settings).toBeHidden();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("<title>Home after forgetting recipe</title>");
+  expect((await storedDraft(page, SIDECAR))!.content).toBe(forgotten);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(broken);
+  expect((await storedDraft(page, SIDECAR))!.content).toBe(forgotten);
+  // Forget is one Undo step of its own: Undo brings the recipe back exactly, Redo forgets it again.
+
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, SIDECAR)).toBeUndefined();
   expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
@@ -108,7 +116,7 @@ test("a grid broken in Code shows in Page settings, and forgetting its recipe ke
   expect((await storedDraft(page, "index.html"))!.content).toBe(broken);
 });
 
-test("a collection whose page was deleted outside the editor can be forgotten alone, keeping other recipes and page fields", async ({ page, baseURL }) => {
+test("a collection whose page was deleted outside the editor can be forgotten alone, keeping other recipes and page data", async ({ page, baseURL }) => {
   const { sidecar } = await saved(page, baseURL);
   const document = JSON.parse(sidecar);
   const [id] = Object.keys(document.collections);
@@ -120,7 +128,6 @@ test("a collection whose page was deleted outside the editor can be forgotten al
   await pagesTab(page);
   await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
-  await settings.getByRole("tab", { name: "Fields", exact: true }).click();
   const list = settings.getByRole("region", { name: "Collections that cannot be found" });
   const row = list.getByRole("listitem");
   await expect(row).toHaveCount(1);
@@ -129,7 +136,7 @@ test("a collection whose page was deleted outside the editor can be forgotten al
   await row.getByRole("button", { name: "Forget recipe, keep cards: Old blog cards on gone/index.html" }).click();
   await expect.poll(async () => Object.keys((await json(page)).collections ?? {}).sort()).toEqual([id]);
   const after = await json(page);
-  expect(after.pages["about/index.html"]).toEqual({ fields: { mood: "calm" }, keep: { unknown: true } });
+  expect(after.pages["about/index.html"]).toEqual({ keep: { unknown: true } });
   expect(after.collections[id]).toEqual(document.collections[id]);
   expect((await storedDrafts(page)).map((draft: { path: string }) => draft.path)).toEqual([SIDECAR]);
 });
@@ -167,24 +174,23 @@ test("with two JSON grids from the same pages, only the broken one is listed, ro
     await page.evaluate(async ({ at, text }) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, text, expected: "" }), { at, text });
     await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain(text.trim());
   };
-  const openFields = async () => {
+  const openRecovery = async () => {
     await pagesTab(page);
     await openPageSettingsFromPages(page);
     const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
-    await settings.getByRole("tab", { name: "Fields", exact: true }).click();
     return settings;
   };
   // Only the first grid changed in Code: one row, for it alone.
   await edit('<div class="cards">', ' data-x="1"');
-  let settings = await openFields();
+  let settings = await openRecovery();
   let rows = settings.getByRole("region", { name: "Collections that cannot be found" }).getByRole("listitem");
   await expect(rows).toHaveCount(1);
   await expect(rows.locator(".collections-panel__recovery-reason")).toHaveText("Its grid was changed in Code, so the editor cannot tell which element it is.");
   await expect(rows.locator("details p")).toContainText(`Recipe “${first}”`);
-  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await settings.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   // Both changed: two rows that would read the same say which grid each is, with distinct action names.
   await edit('<div class="cards more">', ' data-y="1"');
-  settings = await openFields();
+  settings = await openRecovery();
   rows = settings.getByRole("region", { name: "Collections that cannot be found" }).getByRole("listitem");
   await expect(rows).toHaveCount(2);
   const names = await rows.locator(".collections-panel__recovery-name").allTextContents();
@@ -197,7 +203,7 @@ test("with two JSON grids from the same pages, only the broken one is listed, ro
   const expected = JSON.parse(seeded); delete expected.collections[first];
   expect(JSON.parse(forgotten)).toEqual(expected);
   const page2 = (await storedDraft(page, "index.html"))!.content;
-  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await settings.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDraft(page, SIDECAR)).toBeUndefined();
   expect((await storedDraft(page, "index.html"))!.content).toBe(page2);

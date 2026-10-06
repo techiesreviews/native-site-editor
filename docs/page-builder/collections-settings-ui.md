@@ -1,50 +1,19 @@
-# Collections in Page settings
+# Page settings after Fields removal
 
-`mountCollectionsPanel(host, deps, {settings: true})` stages Date and custom fields.
-Title belongs to General, Description to Search and Image to Social in the parent
-settings dialog. This mode omits their duplicate controls, section headings and
-its own Apply button. `pageFieldsDirty()` reports pending field input;
-`pageFieldSource(candidateSource)` overlays only changed Date/custom values onto
-the supplied candidate source, using existing field helpers for validation and
-escaping. Invalid/reserved names and stale snapshots throw without writing.
-The default standalone mode retains its own guarded Apply. Grid editing uses
-that default controller mode; `openGrid` in settings mode refuses with an action
-message and never calls `deps.apply`.
+Page settings › Fields and its Date/custom-field controller were removed in P1.4.
+General, Search and Social remain available and write ordinary HTML metadata with
+the existing guarded Apply and Undo/Redo operation. There is no page-field form,
+custom-field migration action, or sidecar page-field authoring API.
 
-The parent must capture the same before-source/session proof for all settings,
-apply metadata to that candidate, then call `pageFieldSource` before the single
-collection bake and atomic host operation. This leaf does not write drafts or
-history in settings mode. Main integration and the single Apply/Undo transaction
-remain pending; these browser tests use a DOM controller harness, not Monaco.
+Collections remain until P1.5. Collection recovery controls move to General. They read page values from HTML metadata and keep
+card-specific values in collection recipe overrides. Grid editing and collection
+baking retain their existing source, route, identity and repository guards.
 
-Grid source folders, sort, exact filter, limit and matching-page count stay in the
-common form. Raw card HTML, binding instructions and the long output preview live
-inside a keyboard-operable Advanced disclosure, closed initially. Edit card design
-in source remains an explicit action. Existing conversion/bake helpers are unchanged.
+Legacy `pages[*].fields` in `.editor/page-builder.json` is ignored on read and
+stripped on the next sidecar write, without a version bump. Other supported data,
+including `reusableSections`, `pages[*].sections`, `pages[*].pageParts` and
+`collections`, remains intact. Legacy HTML `field:` metadata remains source and
+can still supply collection values; P1.4 does not migrate or delete those tags.
 
-Dirty refreshes preserve input and caret, retaining the original sources, routes,
-identity, page and revision proof. Stale changes refuse submission and require
-reopening rather than silently rebasing. After asynchronous Apply, only the exact
-submitted form is reset; typing performed while it waits remains visible and is
-not included in that earlier operation. Cancel/reopening intentionally discards
-local form input. The host still verifies all expected sources immediately before
-its atomic write and owns Undo/Redo.
-
-Untouched settings Fields return the supplied candidate verbatim, without checking
-an unrelated old Fields snapshot; the parent still guards General/Search/Social
-and the whole atomic operation. Once Fields are dirty, their captured proof is
-required. Settings mode omits navigation actions that could abandon other staged
-settings. New custom names must be unique; edit an existing row to change its value.
-
-On successful parent Apply, the host may destroy/remount the Fields controller
-only if the captured submitted form and all its input values still match. Capture
-`pageFieldsStamp()` when starting Apply, before awaiting the host operation,
-and compare it on the same controller afterward. This readonly getter returns
-the actual field input stamp (including the new custom name/value), or
-`undefined` when no page-field form is active. Do not call `update()` after an own
-success before making that stamp comparison. If the user
-typed newer values during that wait, retain the controller and those values;
-its old proof refuses another write until the dialog is deliberately reopened.
-`update()` is a refresh, not a success-reset hook, and does not discard dirty input.
-The standalone submit path already compares its exact submitted form stamp before
-resetting. Stale refresh announcements are suppressed during that apply wait.
+Existing sidecar `pages[path].date` remains a collection fallback when HTML supplies
+no date; P1.4 strips only `pages[*].fields`, not other supported page data.

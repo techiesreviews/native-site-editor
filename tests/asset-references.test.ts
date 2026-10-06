@@ -50,8 +50,9 @@ test("a file in use by pages, stylesheets or the JSON recipe cannot be deleted",
   const users = assetUsers(sources, ["images/a.svg", "images/s.svg", "images/t.svg", "images/o.svg", "images/p.svg", "images/free.svg"]);
   assert.deepEqual(Object.fromEntries(users), {
     "images/a.svg": ["index.html"], "images/s.svg": ["styles/site.css"],
-    "images/t.svg": [".editor/page-builder.json"], "images/o.svg": [".editor/page-builder.json"], "images/p.svg": [".editor/page-builder.json"],
+    "images/t.svg": [".editor/page-builder.json"], "images/o.svg": [".editor/page-builder.json"],
   });
+  assert.equal(users.has("images/p.svg"), false);
   assert.match(assetInUseProblem(users)!, /images\/a\.svg is used by index\.html;.*nothing was deleted\.$/);
   assert.equal(assetInUseProblem(assetUsers(sources, ["images/free.svg"])), undefined);
   // Deleted together with the page that uses it: nothing is left pointing at it.

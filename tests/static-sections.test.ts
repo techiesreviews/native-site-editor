@@ -194,7 +194,7 @@ test("every inline stylesheet import requires a supplied snapshot and participat
 });
 
 const other: StaticSectionRecord = { id: "outro", label: "Outro", rootClass: "outro-section", stylesheetPath: "styles/sections.css", html: '<section class="outro-section"><p>Bye</p></section>', css: '.outro-section { margin: 0; }' };
-const rich = JSON.stringify({version:1,pages:{"index.html":{fields:{tagline:"Hi"}}},collections:{},future:{kept:true},reusableSections:{version:1,records:{outro:other},future:["unknown"]}},null,2)+"\n";
+const rich = JSON.stringify({version:1,pages:{"index.html":{sections:{tagline:"Hi"}}},collections:{},future:{kept:true},reusableSections:{version:1,records:{outro:other},future:["unknown"]}},null,2)+"\n";
 const saveFiles = ["index.html", EDITOR_PAGE_BUILDER_PATH];
 function saved(value: StaticSectionSaveInput) { const before = structuredClone(value); const result = planStaticSectionSave(value); if ("error" in result) assert.fail(result.error); assert.deepEqual(value, before); return result; }
 function saveFailure(value: StaticSectionSaveInput, reason: string) { const before = structuredClone(value); assert.deepEqual(planStaticSectionSave(value), { error: reason }); assert.deepEqual(value, before); }

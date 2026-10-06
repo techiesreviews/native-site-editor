@@ -339,7 +339,7 @@ test('an operation on a broken listing, its page or the pages it selects is refu
  refuse({moves:[{from:'news/b/index.html',to:'news/c/index.html'}]});
  refuse({folders:[{from:'news/',to:'press/'}],moves:[{from:'news/b/index.html',to:'press/b/index.html'}]});
  // Page data for a page it selects is one of its inputs too.
- refuse({creates:[{path:'.editor/page-builder.json',content:JSON.stringify({version:1,pages:{'news/b/index.html':{fields:{category:'From data'}}},collections:{}})}]});
+ refuse({creates:[{path:'.editor/page-builder.json',content:JSON.stringify({version:1,pages:{'news/b/index.html':{date:'2027-01-01'}},collections:{}})}]});
  // A body change that leaves every field of a selected page as it was does not touch it.
  const body=good({edits:new Map([['news/b/index.html',page('News','<p>Body only</p>')]])},before);
  assert.deepEqual(body.skipped.map(item=>item.path),['broken.html']);

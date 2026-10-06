@@ -55,17 +55,21 @@ function imported(sources: Record<string, string>, routes: Record<string, string
 }
 function output(source: string, result: ReturnType<typeof imported>, path: string) { return applyCollectionEdits(source, result.edits[path] ?? []); }
 
-test("document preserves unknown JSON and unchanged source bytes", () => {
-  assert.deepEqual(readPageBuilderDocument(undefined), { version: 1, pages: {}, collections: {} });
-  const text = '{ "version": 1, "pages": {"index.html":{"fields":{"release-date":"2026-10-04"},"sections":{"hero":{"folded":true}},"future":[null,4]}}, "collections":{}, "future":{"x":true} }';
+test("writes strip legacy page fields, preserving all other data without changing the read document", () => {
+  const text = JSON.stringify({ version: 1, pages: {
+    "index.html": { fields: { note: "old" }, sections: { hero: { folded: true } }, pageParts: { note: "part" }, future: [null, 4] },
+    "about.html": { fields: "obsolete", date: "2026-10-04" },
+  }, collections: {}, reusableSections: { saved: { html: "<section>Keep</section>" } }, future: { x: true } });
   const document = readPageBuilderDocument(text);
-  assert.equal(writePageBuilderDocument(document, text), text);
-  document.pages["index.html"].fields!["release-date"] = "2026-10-05";
+  const before = structuredClone(document);
   const written = writePageBuilderDocument(document, text);
-  assert.ok(written.endsWith("\n"));
-  assert.match(written, /\n  "collections":/);
-  assert.deepEqual(readPageBuilderDocument(written).future, { x: true });
-  assert.deepEqual(readPageBuilderDocument(written).pages["index.html"].sections, { hero: { folded: true } });
+  assert.notEqual(written, text);
+  assert.deepEqual(document, before);
+  const expected = structuredClone(before);
+  for (const page of Object.values(expected.pages)) delete page.fields;
+  assert.deepEqual(readPageBuilderDocument(written), expected);
+  assert.equal(writePageBuilderDocument(document, written), written);
+  assert.equal(writePageBuilderDocument(readPageBuilderDocument(written), written), written);
 });
 
 test("malformed versions, unsafe objects and paths refuse", () => {
@@ -300,7 +304,7 @@ test("head metadata removal shifts target offsets while preserving exact generat
   assert.equal(record.overrides['index.html']['gabc12-title'], 'Custom A');
 });
 
-test("native metadata paths, custom field strings, empty ids and inert templates validate explicitly", () => {
+test("native metadata paths, empty ids and inert templates validate explicitly", () => {
   const document = imported({ 'index.html': '<div id="" class="cards" data-each="/work/"><template><p>{title}</p></template></div>' }).document;
   const record = Object.values(document.collections)[0];
   assert.equal(record.target.authoredId, undefined);
@@ -312,10 +316,7 @@ test("native metadata paths, custom field strings, empty ids and inert templates
     const override = readPageBuilderDocument(text); Object.values(override.collections)[0].overrides[path] = {};
     assert.throws(() => writePageBuilderDocument(override), { message: 'Collection metadata must refer to a native HTML page.' });
   }
-  for (const fields of [{ title: 'Native title' }, { 'Bad name': 'Text' }, { note: 3 }]) {
-    const malformed = JSON.parse(text); malformed.pages['index.html'] = { fields };
-    assert.throws(() => readPageBuilderDocument(JSON.stringify(malformed)), { message: 'Page fields must use custom field names and string values.' });
-  }
+
   assert.throws(() => readPageBuilderDocument('{"version":"1","pages":{},"collections":{}}'), { message: 'Unsupported page builder document version.' });
   assert.throws(() => makeSectionTarget('<template><div id="inside"></div></template>', 10), { message: 'Collection target must be a complete authored element.' });
   const target = makeSectionTarget('<div id="inside"></div>', 0);

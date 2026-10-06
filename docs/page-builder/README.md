@@ -45,10 +45,9 @@ or editor runtime in the site.
 
 ### Collections: editor recipes, ordinary website HTML
 
-Lex clarified the storage contract on 2026-10-04: editor-only page, section and
+Lex clarified the storage contract on 2026-10-04: editor-only section and
 collection information belongs in deletable `.editor` JSON. Collection recipes,
-bindings, filters and custom authoring fields must not be embedded in published
-HTML. This supersedes the earlier `data-each` and inline `<template>` design.
+bindings, filters and card overrides must not be embedded in published HTML. This supersedes the earlier `data-each` and inline `<template>` design.
 The existing implementation still uses that legacy format; migration is active
 work, not a completed feature.
 
@@ -59,7 +58,7 @@ recipes, not the website's content.
 
 - Collection sources can combine folders such as `/work/`, `/services/`,
   `/portfolio/`, `/articles/` and `/videos/`.
-- Real page content and useful SEO remain in HTML. Custom editor fields, collection
+- Real page content and useful SEO remain in HTML. Collection card overrides,
   bindings, sort/filter/limit settings and section bookkeeping belong in `.editor`.
 - Changes to recipes and affected website files must save and undo together.
 - Classes, links, image attributes and the site's native Web Component slot
@@ -85,9 +84,9 @@ The Style panel and its selected-collection inspector were removed in P1.2.
 
 ### Wave 2 slices
 
-- **collections**: loops as above, a fields panel for a page (CMS-like editing of its
-  title, description, date, image and custom fields), and "Make this grid a collection"
-  for a card grid.
+- **collections**: loops as above and "Make this grid a collection" for a card grid.
+  Page settings › Fields was removed in P1.4. Collections read HTML metadata and
+  recipe card overrides; collections remain until P1.5.
 - **elements**: inserting inside sections: heading, text, image, button, list, columns
   or grid, video or embed, divider, and native forms (`<form action>` with fields).
   Insertion inside sections was removed on 2026-09-25 at Lex's request, so this slice
@@ -104,3 +103,6 @@ The Style panel and its selected-collection inspector were removed in P1.2.
 - **component content on the canvas**: empty optional slots show as ghost placeholders
   ("+ Add image", "+ Add text") where they would appear; click an image to replace it,
   drop a file on it, remove an optional part with its ×, type into text in place.
+
+Existing sidecar `pages[path].date` remains a collection fallback when HTML supplies
+no date; P1.4 strips only `pages[*].fields`, not other supported page data.

@@ -32,6 +32,21 @@ test('sidecar recipes bake clean HTML and record the exact output in JSON only',
  assert.ok(readPageBuilderDocument(created.operation.edits!.get(SIDE)).collections.work.outputFingerprint!.includes('Gamma'));
  assert.equal(created.operation.expectedSources.get(SIDE),s[SIDE]);
 });
+test('collections read HTML metadata and recipe overrides, ignoring legacy JSON page fields', () => {
+  const source = home();
+  const document = recipe(source, { template: '<p>{note}</p>', fields: ['note'], overrides: { 'work/b/index.html': { note: 'Recipe value' } } });
+  document.pages = { 'work/a/index.html': { fields: { note: 'Obsolete JSON value' }, sections: { keep: true } } };
+  const html = page('Alpha').replace('</head>', '<meta name="field:note" content="HTML value"></head>');
+  const sources = { 'index.html': source, 'work/a/index.html': html, 'work/b/index.html': page('Beta'), [SIDE]: JSON.stringify(document) };
+  const result = plan(sources, { acceptCollections: ["work"], expectedSources: pins(sources) });
+  if ('error' in result) assert.fail(result.error);
+  assert.equal(result.operation.edits!.get('index.html'), home('<p>HTML value</p>\n<p>Recipe value</p>'));
+  assert.equal(sources['work/a/index.html'], html);
+  const written = readPageBuilderDocument(result.operation.edits!.get(SIDE));
+  assert.deepEqual(written.pages['work/a/index.html'], { sections: { keep: true } });
+  assert.deepEqual(written.collections.work.overrides, document.collections.work.overrides);
+});
+
 test('a title change on a listed page rebuilds the card and fingerprint in the same operation',()=>{
  const s=canonical();
  const r=plan(s,{edits:new Map([['work/a/index.html',page('Alpha 2')]])});
@@ -75,12 +90,12 @@ test('a shifted but unique target rebinds in the same operation',()=>{
 });
 test('moving and deleting pages carry their JSON metadata; deleting the sidecar leaves the cards',()=>{
  const s=canonical();
- const doc=readPageBuilderDocument(s[SIDE]);doc.pages['work/a/index.html']={fields:{tone:'warm'}};doc.collections.work.fields=['tone'];doc.collections.work.overrides={'work/a/index.html':{tone:'hot'}};
+ const doc=readPageBuilderDocument(s[SIDE]);doc.pages['work/a/index.html']={sections:{tone:'warm'}};doc.collections.work.fields=['tone'];doc.collections.work.overrides={'work/a/index.html':{tone:'hot'}};
  const withMeta={...s,[SIDE]:writePageBuilderDocument(doc,s[SIDE])};
  const moved=plan(withMeta,{moves:[{from:'work/a/index.html',to:'work/aa/index.html'}]});
  if('error'in moved)assert.fail(moved.error);
  const after=readPageBuilderDocument(moved.operation.edits!.get(SIDE));
- assert.deepEqual(after.pages['work/aa/index.html'],{fields:{tone:'warm'}});
+ assert.deepEqual(after.pages['work/aa/index.html'],{sections:{tone:'warm'}});
  assert.deepEqual(after.collections.work.overrides,{'work/aa/index.html':{tone:'hot'}});
  const gone=plan(s,{deletes:[SIDE]});
  if('error'in gone)assert.fail(gone.error);
@@ -112,7 +127,7 @@ test('same-page collections are located together: nested, duplicate or missing t
  assert.ok('error'in r);assert.match(r.error,/can no longer be found exactly/);
 });
 
-test('an image rename carries a clean JSON collection output, its overrides and page fields along; hand-edited cards stay edited', async () => {
+test('an image rename carries a clean JSON collection output, its overrides along; hand-edited cards stay edited', async () => {
   const { planDocumentMediaBatch } = await import('../src/page-builder/document-collections');
   const cards = '<a><img src="/images/a.jpg">One</a>';
   const home = `<html><body><div class="cards">${cards}</div><div class="other"><b>x</b></div></body></html>`;
@@ -127,7 +142,7 @@ test('an image rename carries a clean JSON collection output, its overrides and 
   assert.equal(doc.collections.clean.outputFingerprint, '<a><img src="/images/b.jpg">One</a>');
   assert.equal(doc.collections.edited.outputFingerprint, '<b>y</b>');
   assert.deepEqual(doc.collections.clean.overrides['work/one/index.html'], { photo: '/images/b.jpg', label: 'Keep' });
-  assert.deepEqual(doc.pages['work/one/index.html'].fields, { hero: '/images/b.jpg', mood: 'calm' });
+  assert.equal(doc.pages['work/one/index.html'].fields, undefined);
   assert.equal(planDocumentMediaBatch({ 'about.html': '<p></p>' }, sidecar, new Map([['about.html', '<p>x</p>']]), []), undefined);
   assert.equal(planDocumentMediaBatch({}, undefined, new Map(), []), undefined);
 });
@@ -145,26 +160,8 @@ test('an image rename moves literal template references, relative and suffixed v
   const doc = readPageBuilderDocument(text!);
   assert.equal(doc.collections.work.template, template.replace("../images/a.jpg?v=2#x", "/images/b.jpg?v=2#x").replace('src="/images/a.jpg"', 'src="/images/b.jpg"'));
   assert.deepEqual(doc.collections.work.overrides['work/one/index.html'], { photo: '/images/b.jpg#top', label: 'images/a.jpg' });
-  assert.deepEqual(doc.pages['work/one/index.html'].fields, { hero: '/images/b.jpg?v=3', far: 'https://x.example/images/a.jpg', mood: 'calm' });
+  assert.equal(doc.pages['work/one/index.html'].fields, undefined);
   assert.deepEqual((doc as Record<string, unknown>).keep, { unknown: [1] });
-});
-
-test('a bare relative page field is resolved where its cards are written: on every page that lists it, refusing when they disagree', async () => {
-  const { planDocumentMediaBatch } = await import('../src/page-builder/document-collections');
-  const home = '<html><body><main><div class="cards"></div></main></body></html>';
-  const listing = (pagePath: string) => ({ pagePath, target: makeSectionTarget(home, home.indexOf('<div class="cards">')), folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<img src="{photo}" alt="">', fields: ['photo'], overrides: {} });
-  const routes = { '/': 'index.html', '/work/': 'work/index.html', '/work/one/': 'work/one/index.html', '/blog/': 'blog/index.html', '/about/': 'about/index.html' };
-  const pages = { 'work/one/index.html': { fields: { photo: 'images/a.jpg', root: '/images/a.jpg?v=2' } }, 'about/index.html': { fields: { photo: 'images/a.jpg' } } };
-  const move = [{ from: 'images/a.jpg', to: 'images/b.jpg' }];
-  // Listed from the root: the card on index.html shows images/a.jpg, so the field moves to what the page rewriter writes there.
-  const root = writePageBuilderDocument({ version: 1, pages, collections: { home: listing('index.html') } } as never);
-  const moved = readPageBuilderDocument(planDocumentMediaBatch({}, root, new Map(), move, routes)!);
-  assert.deepEqual(moved.pages['work/one/index.html'].fields, { photo: '/images/b.jpg', root: '/images/b.jpg?v=2' });
-  // Listed by nothing: resolved on its own page (about/images/a.jpg is not the moved image).
-  assert.deepEqual(moved.pages['about/index.html'].fields, { photo: 'images/a.jpg' });
-  // Listed from the root and from /blog/: the same value means two different images, so the rename is refused.
-  const both = writePageBuilderDocument({ version: 1, pages, collections: { home: listing('index.html'), blog: listing('blog/index.html') } } as never);
-  assert.throws(() => planDocumentMediaBatch({}, both, new Map(), move, routes), /^Error: The page field “photo” of work\/one\/index\.html \(images\/a\.jpg\) points at different images on blog\/index\.html and index\.html, which list it, so the image was not renamed\./);
 });
 
 test('unrelated operations skip a broken JSON recipe or target without changing its page or recipe',()=>{
@@ -210,7 +207,7 @@ test('healthy JSON listings still bake while a distinct broken recipe and its ca
  for(const extra of [
   {moves:[{from:'work/a/index.html',to:'elsewhere/a/index.html'}]},
   {deletes:['work/a/index.html']},
-  {edits:new Map([[SIDE,writePageBuilderDocument({...doc,pages:{'work/a/index.html':{fields:{category:'Changed'}}}},s[SIDE])]])},
+  {edits:new Map([[SIDE,writePageBuilderDocument({...doc,pages:{'work/a/index.html':{date:'2027-01-01'}}},s[SIDE])]])},
   {moves:[{from:'index.html',to:'moved-list.html'}]},
  ])assert.ok('error'in plan(s,extra),'source URL, deletion, metadata and listing moves refuse');
  const malformed=structuredClone(doc);malformed.collections.work.template='<a>{unknown}</a>';

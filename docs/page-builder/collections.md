@@ -1,8 +1,14 @@
-# Collections and page fields
+# Collections
 
-**Storage migration in progress (2026-10-04).** The implementation described below
+**Current status (P1.4, 2026-10-06).** Page settings › Fields and its custom-field
+migration action are removed. Collections remain until P1.5, reading HTML metadata
+and collection recipe card overrides. Sidecar `pages[*].fields` is ignored on read
+and stripped on the next write; `collections`, `reusableSections`, page `sections`
+and `pageParts` remain. Legacy HTML `field:` tags remain untouched.
+
+**Legacy inline collection contract (2026-10-04).** The implementation described below
 uses the legacy inline format. Lex's current requirement supersedes that format:
-collection recipes and editor-only page/section fields belong in deletable
+collection recipes, card overrides and editor-only section data belong in deletable
 `.editor` JSON. Published HTML contains finished content, without collection
 bindings, authoring attributes or recipe templates. Migration must preserve
 ordinary source, existing native Web Component behavior, atomic Save and Undo.
@@ -92,9 +98,10 @@ attribute and template remain alongside ordinary baked cards.
 Page fields come from the page itself: title without the configured site suffix,
 falling back to the first heading; description metadata; `og:image`; date metadata
 or the first time element's `datetime`; the page URL; and custom metadata named
-`field:category`, `field:price`, and so on. The page-fields form changes metadata,
-then includes dependent listing edits in the same plan. Changing an address stays
-in the Pages flow. Custom field names use lowercase letters, digits, underscores
+`field:category`, `field:price`, and so on. Edit these values in HTML through the
+Source editor; General, Search and Social remain available in Page settings.
+Collection recipe overrides supply card-specific values without sidecar page
+fields. Changing an address stays in the Pages flow. Custom field names use lowercase letters, digits, underscores
 and hyphens, starting with a letter; built-in names are reserved.
 
 All page types share the canonical fields `title`, `description`, `image`, `date`
@@ -124,7 +131,7 @@ and unchanged template body bytes, including CRLF line endings. Whitespace outsi
 the template but inside the collection is replaced by the bake; changed template
 text follows textarea line-ending normalization.
 
-The panel distinguishes Page fields from Collection template scope. Make this grid
+Collection controls edit the collection template scope. Make this grid
 a collection starts with the selected grid's first item as its editable design.
 Source checkboxes, sorting, exact filter and limit controls update a plain-HTML
 preview and visible result count before Apply. Sources are discovered from canonical parent and ancestor folders of eligible
@@ -153,27 +160,22 @@ Those labels survive Save and reopening; older recipes retain their existing lab
 The native-starter browser proof runs directly with
 `STATIC_SECTIONS_FIXTURE=native ASE_NATIVE_SAVE_FIXTURE=<native-static-preview> ASE_TEST_PORT=<free-port> npm run test:browser -- tests/native-save/native-static-grid-collection-host.spec.ts`.
 
-A grid of two or more same-tag custom-element cards without `data-each` offers
-"Choose pages for this grid" (`src/page-builder/native-grid-collection.ts`). Opening it
-or changing folders writes nothing; Apply converts the grid, the linked pages' fields
-and the baked output as one native operation and one Undo step. Each card must link
-to a distinct page of this site, and every part must be a named slot with plain text.
-Title and body parts use `{title}` / `{description}` when they match the page; otherwise
-the card text is stored as a custom page field `<id>-<slot>` on that page, with a
-`data-if="!<id>-<slot>"` fallback to the built-in. The id is persisted as
-`data-collection-id` on the grid. SEO title and description are never rewritten.
-Conversion is refused, with a readable reason and no writes, for rich or image parts,
-mixed card shapes, external or duplicate links, folders that would drop a current
-card, or cards in a custom order that page order would change. The grid also persists
-its custom field names in native `data-fields`, an ASCII-whitespace-separated list. This
-keeps those exact names valid when the last page supplying a value moves or is
-deleted. Declarations apply only to that grid; undeclared or misspelled names still
-fail validation. The list is additive: unused declarations remain until the author
-edits the attribute. Existing collections without a list are not changed automatically.
-Sort and filter controls show friendly names such as “Card note”
-while retaining the stored field name. Native planning and actual-starter browser
-tests cover the schema and labels; the last-supplying-page deletion is covered at
-the native-operation planning layer.
+For current JSON-backed custom-element grid conversion,
+`planManualConversion` in `src/page-builder/native-grid-collection.ts` stores
+card-specific text as recipe `overrides`, with declared field names in the recipe.
+It keeps the linked page's HTML metadata unchanged. Title and body parts use
+`{title}` / `{description}` when they match the page, and recipe-specific values
+with built-in fallbacks otherwise. Conversion refuses rich or image parts, mixed
+card shapes, external or duplicate links, folders that drop an existing card, and
+custom card order that page order would change.
+
+Older inline conversions used `data-collection-id` and `data-fields` on the grid
+and private HTML `field:<id>-<slot>` metadata on linked pages.
+`planLegacyCollectionImport` moves recognized private conversion metadata into
+recipe overrides and removes the legacy recipe attributes/template. It removes
+private metadata only when its ownership and exact native conversion format can
+be proved; arbitrary HTML `field:` tags remain untouched. This collection import
+is separate from the removed Page settings custom-field migration action.
 
 ## Host integration contract
 
@@ -194,7 +196,7 @@ space between URLs. Legacy single-folder serialization stays exactly `/work/`.
   folders; all must be loaded before planning succeeds;
 - `collections`: item records, retained template and generated output for previews.
 
-`planCollectionChange(before, after, routes, identity)` composes a page-field or grid
+`planCollectionChange(before, after, routes, identity)` composes a metadata edit or grid
 conversion with dependent bakes, producing nonoverlapping full-file edits checked
 against `before`. `applyCollectionEdits` applies range edits in descending order.
 The host must verify the revision and every expected source again immediately
@@ -207,7 +209,7 @@ Page add, rename, move, delete, metadata changes and template changes should bui
 an in-memory candidate source/route graph, call `planBake`, and combine the result
 with the originating operation before publishing any drafts. Any bake error must
 abort that complete operation. Automatic listings must not also receive a manual
-card. Bound output selection should navigate to the source page field, while card
+card. Bound output selection should navigate to the source page metadata, while card
 design editing targets the retained template. These hooks and selection routing
 belong to main/runtime integration and are pending; the leaf modules do not install
 them implicitly.
@@ -226,3 +228,6 @@ required after integration.
 Local validation uses `site-head.ts` and `html-entities.ts` from site slice commit
 `e3cfcd7`; those shared helpers are dependency copies and are not part of this leaf
 commit. Integrate that slice alongside collections.
+
+Existing sidecar `pages[path].date` remains a collection fallback when HTML supplies
+no date; P1.4 strips only `pages[*].fields`, not other supported page data.

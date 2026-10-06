@@ -2,7 +2,7 @@ import { applyCollectionEdits, bindCollectionTemplate, selectCollectionRecords, 
 import { mediaResolvePath, rewriteMediaReferences } from "./media-references";
 import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
-import { builtinFields, resolvePageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
+import { builtinCollectionFields, resolvePageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, collectionSpec, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
 import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 import { rebaseSectionLinks, rekeySidecarPages, sameJson } from "./sidecar-pages";
@@ -81,7 +81,7 @@ export function locatePageCollections(source: string, document: PageBuilderDocum
   const records = Object.fromEntries(Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath));
   if (!Object.keys(records).length) return {};
   const found = locateCollections(source, records);
-  if ("error" in found) throw new Error(`The collections on ${pagePath} can no longer be found exactly (${found.error}). Undo the change that moved them, or open Page settings › Fields and forget the recipe there; its cards stay as they are.`);
+  if ("error" in found) throw new Error(`The collections on ${pagePath} can no longer be found exactly (${found.error}). Undo the change that moved them, or open Page settings and forget the recipe there; its cards stay as they are.`);
   return Object.fromEntries(Object.entries(found.collections).map(([id, located]) => [id, { located, start: located.element.tag.end, end: located.element.close!.start, text: source.slice(located.element.tag.end, located.element.close!.start) }]));
 }
 
@@ -91,7 +91,7 @@ export function documentDrift(sources: Readonly<Record<string, string>>, documen
   for (const pagePath of new Set(Object.values(document.collections).map((collection) => collection.pagePath))) {
     const ids = Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath).map(([id]) => id);
     const source = sources[pagePath];
-    if (source === undefined) { for (const id of ids) drift.push({ id, kind: "missing", reason: `${pagePath} is not loaded or no longer exists. If it was moved or deleted, open Page settings › Fields and forget the recipe of “${id}”; its cards are not affected.` }); continue; }
+    if (source === undefined) { for (const id of ids) drift.push({ id, kind: "missing", reason: `${pagePath} is not loaded or no longer exists. If it was moved or deleted, open Page settings and forget the recipe of “${id}”; its cards are not affected.` }); continue; }
     let located: ReturnType<typeof locatePageCollections>;
     try { located = locatePageCollections(source, document, pagePath); }
     catch (error) { for (const id of ids) drift.push({ id, kind: "missing", reason: (error as Error).message }); continue; }
@@ -199,7 +199,7 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
         if (all.length > MAX_COLLECTION_ITEMS * 4) throw new Error("Too many pages for one collection.");
         const known = [...new Set([...collection.fields, ...all.flatMap((record) => Object.keys(record.fields))])];
         // An empty list still validates its template instead of silently accepting a typo.
-        bindCollectionTemplate(collection.template, Object.fromEntries([...builtinFields, ...known].map((field) => [field, ""])), known);
+        bindCollectionTemplate(collection.template, Object.fromEntries([...builtinCollectionFields, ...known].map((field) => [field, ""])), known);
         const records = sortedRecords(all, collection, collection.fields);
         const newline = source.includes("\r\n") ? "\r\n" : "\n";
         const output = records.map((record) => withoutConditions(bindCollectionTemplate(collection.template, record.fields, known))).join(newline);
@@ -268,21 +268,6 @@ export function planDocumentMediaBatch(sources: Readonly<Record<string, string |
     // matcher the page HTML uses, resolved against the collection's page; {bindings} are not image paths.
     for (const { from, to } of moves) collection.template = rewriteMediaReferences(collection.pagePath, collection.template, from, to);
     for (const fields of Object.values(collection.overrides)) for (const [name, value] of Object.entries(fields)) fields[name] = follow(value, collection.pagePath);
-  }
-  // A page's own field is written as-is into the cards of every collection that may list that page, so it is
-  // resolved on each of those pages. It changes only when they all agree; otherwise the rename is refused.
-  const routeOf = new Map(Object.entries(routes).map(([route, file]) => [file, route]));
-  for (const [file, page] of Object.entries(next.pages)) {
-    if (!page.fields) continue;
-    const route = routeOf.get(file);
-    const consumers = [...new Set(Object.values(document.collections).filter((collection) => route !== undefined && collection.pagePath !== file &&
-      collection.folders.some((folder) => route.startsWith(folder) && route !== folder)).map((collection) => collection.pagePath))].sort();
-    for (const [name, value] of Object.entries(page.fields)) {
-      const results = new Set((consumers.length ? consumers : [file]).map((consumer) => follow(value, consumer)));
-      if (results.size > 1)
-        throw new Error(`The page field “${name}” of ${file} (${value}) points at different images on ${consumers.join(" and ")}, which list it, so the image was not renamed. Make the field a path from the site root first.`);
-      page.fields[name] = [...results][0];
-    }
   }
   const text = writePageBuilderDocument(next, sidecar);
   return text === sidecar ? undefined : text;

@@ -9,7 +9,7 @@ const intro = DEFAULT_STATIC_SECTIONS.find((s) => s.id === "intro")!;
 const contact = DEFAULT_STATIC_SECTIONS.find((s) => s.id === "contact")!;
 const collection = { pagePath: "blog.html", target: { path: [0, 0], tag: "div", authoredId: "grid", openingTagFingerprint: '<div id="grid">' }, folders: ["/posts/"], sort: "", filter: "", limit: 3, template: "<p></p>", fields: [], overrides: {} };
 const doc = JSON.stringify({
-  version: 1, pages: { "index.html": { fields: { tagline: "Hi" } } }, collections: { blog: collection }, future: { kept: true },
+  version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, collections: { blog: collection }, future: { kept: true },
   reusableSections: { version: 1, extra: [1], records: { intro: { ...intro, note: "keep" }, contact: { ...contact } } },
 }, null, 2);
 const edited = `<section class="section-intro wide"><h2>Lex's "new" title</h2>\n<p>Line two <img src="a.png" alt="A &quot;cat&quot;"> <a href="/about">About</a></p></section>`;

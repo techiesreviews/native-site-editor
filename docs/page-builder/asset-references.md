@@ -13,7 +13,7 @@ everything that uses it in the same operation and Undo step
 - when pages move too, their link changes are planned first and the file
   references are rewritten on top of those texts, at each file's new path;
 - the editor's page data (`.editor/page-builder.json`): literal paths in card
-  templates, per-card overrides and page fields, through
+  templates and per-card overrides, through
   `planDocumentMediaBatch`, which also records rewritten JSON cards as the
   editor's output again; the cards are then rebuilt from the JSON by the
   collection operation.

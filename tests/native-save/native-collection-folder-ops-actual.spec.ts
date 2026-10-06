@@ -40,7 +40,7 @@ async function seeded(page: Page, baseURL: string | undefined) {
   await seedCollection(page, baseURL, ["/work/", "/services/"], ["services/one/index.html"]);
   // Unrelated keys the editor must carry through untouched.
   const document = JSON.parse(await file(page, baseURL, SIDECAR));
-  document.pages = { ...document.pages, "about/index.html": { fields: { mood: "calm" }, keep: { unknown: true } } };
+  document.pages = { ...document.pages, "about/index.html": { sections: { mood: "calm" }, keep: { unknown: true } } };
   document.futureKey = { nested: [1, "two"] };
   const sidecar = JSON.stringify(document, null, 2) + "\n";
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: sidecar } });
@@ -83,7 +83,7 @@ test("F2 renaming a listed folder moves its recipe and cards; one Undo restores 
   const expected = JSON.parse(before.sidecar.replaceAll("/services/one/", "/studio/one/"));
   expected.collections[id].folders = ["/work/", "/studio/"];
   expect(now).toEqual(expected);
-  expect(now.pages["about/index.html"]).toEqual({ fields: { mood: "calm" }, keep: { unknown: true } });
+  expect(now.pages["about/index.html"]).toEqual({ sections: { mood: "calm" }, keep: { unknown: true } });
   expect(now.futureKey).toEqual({ nested: [1, "two"] });
 
   // The generated card links to the moved page and keeps its title; public HTML stays plain.

@@ -170,18 +170,15 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     // The canvas width.
     report.canvas = await audit(page, ".canvas-width");
 
-    // Page settings: General, and Fields (the collections panel's page fields).
+    // Page settings: General.
     await showPages(page);
     await openPageSettingsFromPages(page);
     const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
     await expect(settings).toBeVisible();
     report.pageSettings = await audit(page, ".site-settings");
     await page.screenshot({ path: `${shots}/fields-page-settings-${name}.png` });
-    await settings.getByRole("tab", { name: "Fields", exact: true }).click();
-    await page.waitForTimeout(300);
-    report.pageFields = await audit(page, ".site-settings");
-    await page.screenshot({ path: `${shots}/fields-page-fields-${name}.png` });
-    await settings.getByRole("button", { name: "Cancel" }).click();
+    await expect(settings.getByRole("tab", { name: "Fields", exact: true })).toHaveCount(0);
+    await settings.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
 
     // Pages: a page row renamed in place.
     await showPages(page);

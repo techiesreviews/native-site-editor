@@ -74,7 +74,7 @@ async function seeded(page: Page, baseURL: string | undefined, extraPages: Recor
   if (shares.includes(SECTION)) expect(document.pages[PAGE].sections).toBeTruthy();
   if (shares.some(item => item !== SECTION)) expect(document.pages[PAGE].pageParts).toBeTruthy();
   document.pages[PAGE].keep = { opaque: [1, "two"] };
-  document.pages = { ...document.pages, "index.html": { fields: { mood: "calm" }, foreign: { untouched: true } }, ...extraPages };
+  document.pages = { ...document.pages, "index.html": { sections: { mood: "calm" }, foreign: { untouched: true } }, ...extraPages };
   document.futureKey = { nested: true };
   const sidecar = JSON.stringify(document, null, 2) + "\n";
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: JSON_PATH, content: sidecar } })).status()).toBe(204);
@@ -170,7 +170,7 @@ test("renaming a shared page's folder carries its whole metadata entry; deleting
 });
 
 test("a folder rename onto a page key that only has leftover metadata is refused, writing nothing", async ({ page, baseURL }) => {
-  const leftover = { fields: { note: "An old page" }, orphan: { kept: true } };
+  const leftover = { sections: { note: "An old page" }, orphan: { kept: true } };
   const before = await seeded(page, baseURL, { "studio/index.html": leftover });
   expect(before.files["studio/index.html" as never]).toBeUndefined();
 

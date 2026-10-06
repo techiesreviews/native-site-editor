@@ -7,8 +7,12 @@ those drafts; Undo restores all files affected by one action.
 
 ## Page settings
 
+General, Search and Social remain available. Collection recovery controls move to General. Page settings › Fields and its
+custom-field migration action were removed in P1.4; edit date and custom metadata
+in the Source editor. Collections still read HTML metadata and recipe overrides.
+
 Title and description write ordinary head metadata. Social title and description
-follow their page fields while their respective checkboxes are selected. Uncheck
+follow the page title and description while their respective checkboxes are selected. Uncheck
 a field to maintain a separate sharing value. The page source decides: a
 missing tag, or one equal to the page's own value, is linked (a missing one
 says "Not set, uses page title/description"); a different value, including
@@ -135,3 +139,6 @@ metadata batch through two Undo and two Redo steps with exact source assertions.
 It also checks page creation plus navigation across the original page anchor,
 and metadata history after leaving and reopening a page.
 `tests/native-structural-history.test.ts` checks the draft-only structural planner.
+
+Existing sidecar `pages[path].date` remains a collection fallback when HTML supplies
+no date; P1.4 strips only `pages[*].fields`, not other supported page data.

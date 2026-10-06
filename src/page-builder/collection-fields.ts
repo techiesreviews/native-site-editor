@@ -1,12 +1,11 @@
 import { type StartTag } from "../../shared/html-source";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
-import { escapeText, headTags, upsertHeadTag, withAttribute } from "./site-head";
 
 export interface CollectionIdentity { name: string }
 export type PageFields = Record<string, string>;
-export const fieldName = /^[a-z][a-z0-9_-]*$/;
-export const builtinFields = ["title", "description", "image", "date", "url"] as const;
+export const collectionFieldName = /^[a-z][a-z0-9_-]*$/;
+export const builtinCollectionFields = ["title", "description", "image", "date", "url"] as const;
 
 /** Exact parsed attribute boundaries; a name inside another value is never an attribute. */
 function pageAttribute(source: string, tag: StartTag, name: string): { value: string } | undefined {
@@ -29,7 +28,7 @@ export function readPageFields(source: string, url: string, identity: Collection
     if (name === "description") fields.description = value;
     if (name === "og:image") fields.image = value;
     if (name === "date") fields.date = value;
-    if (name.startsWith("field:") && fieldName.test(name.slice(6)) && !builtinFields.includes(name.slice(6) as typeof builtinFields[number])) fields[name.slice(6)] = value;
+    if (name.startsWith("field:") && collectionFieldName.test(name.slice(6)) && !builtinCollectionFields.includes(name.slice(6) as typeof builtinCollectionFields[number])) fields[name.slice(6)] = value;
   }
   if (identity.name) for (const separator of [" | ", " · ", " — ", " - "]) {
     const suffix = separator + identity.name;
@@ -50,45 +49,18 @@ function inside(el: { parent?: import("./component-model").SourceElement }, name
   return false;
 }
 
-/** Updates metadata in place. URL is owned by page navigation, never a metadata field. */
-export function withPageField(source: string, field: string, value: string, identity: CollectionIdentity): string {
-  if (!fieldName.test(field) || field === "url") throw new Error("Choose a valid editable page field.");
-  if (field === "title") return upsertHeadTag(source, "title", value && identity.name ? `${value} | ${identity.name}` : value);
-  if (field === "description") return upsertHeadTag(source, "description", value);
-  if (field === "image") return upsertHeadTag(source, "og:image", value);
-  const { tags, end } = headTags(source);
-  const name = field === "date" ? "date" : `field:${field}`;
-  const matches = tags.filter((tag) => tag.name === "meta" && decodeHtmlEntities(pageAttribute(source, tag, "name")?.value ?? "", true) === name);
-  if (matches.length) {
-    for (const tag of matches.reverse()) source = withAttribute(source, tag, "content", value);
-    return source;
-  }
-  const newline = source.includes("\r\n") ? "\r\n" : "\n";
-  const escaped = escapeText(value).replace(/"/g, "&quot;");
-  return source.slice(0, end) + `  <meta name="${name}" content="${escaped}">${newline}` + source.slice(end);
-}
-
-/** The custom-field entry point must never reinterpret a reserved built-in name. */
-export function withCustomPageField(source: string, field: string, value: string, identity: CollectionIdentity): string {
-  if (builtinFields.includes(field as typeof builtinFields[number])) throw new Error(`${field} is a built-in field. Edit its own control above.`);
-  return withPageField(source, field, value, identity);
-}
 export function ownPageField(fields: PageFields, name: string): string {
   return Object.hasOwn(fields, name) ? fields[name] : "";
 }
 
 /** One page's record in the editor's JSON, as far as collection fields read it. */
-export interface PageDataRecord { date?: unknown; fields?: unknown }
+export interface PageDataRecord { [key: string]: unknown; date?: unknown }
 /**
  * A page's collection fields: its own HTML fields, an authored JSON date only
- * where the page has none, then the JSON custom fields, which are
- * authoritative. Built-in names in JSON fields never override the page.
+ * where the page has none. Legacy JSON custom fields are ignored.
  */
 export function resolvePageFields(html: PageFields, page: PageDataRecord | undefined): PageFields {
   const fields: PageFields = { ...html };
   if (typeof page?.date === "string" && !fields.date) fields.date = page.date;
-  const custom = page?.fields;
-  if (custom && typeof custom === "object" && !Array.isArray(custom))
-    for (const [key, value] of Object.entries(custom)) if (typeof value === "string" && !builtinFields.includes(key as never)) fields[key] = value;
   return fields;
 }

@@ -74,10 +74,7 @@ export function assetUsers(sources: Readonly<Record<string, string | undefined>>
         if (path && gone.has(path)) use(path, EDITOR_PAGE_BUILDER_PATH);
       }
     }
-    for (const [file, page] of Object.entries(document.pages)) for (const value of Object.values(page.fields ?? {})) {
-      const path = mediaResolvePath(value, file);
-      if (path && gone.has(path)) use(path, EDITOR_PAGE_BUILDER_PATH);
-    }
+
   }
   return users;
 }

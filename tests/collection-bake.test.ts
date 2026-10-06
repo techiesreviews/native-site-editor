@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyCollectionEdits, bindCollectionTemplate, planBake, planCollectionChange } from "../src/page-builder/collection-bake.ts";
 import { collectionSpec, makeGridCollection } from "../src/page-builder/collection-model.ts";
-import { readPageFields, withCustomPageField, withPageField } from "../src/page-builder/collection-fields.ts";
+import { readPageFields } from "../src/page-builder/collection-fields.ts";
+import { withPageField } from "../src/page-builder/site-head.ts";
 const identity = { name: "Studio" };
 const page = (title: string, extras = "", body = "") => `<!doctype html><html><head><title>${title} | Studio</title>${extras}</head><body>${body}</body></html>`;
 const listing = `<main><p data-if="outside">Keep outside</p><div class="cards" data-each="/work/" data-sort="-date" data-limit="2"><template><article><a href="{url}">{title}</a><img src="{image}" data-if="image"><p>{description}</p></article></template><b>Old baked card</b></div></main>`;
@@ -20,14 +21,6 @@ test("fields use page metadata, named/numeric entities, site suffix and time fal
   const fields = readPageFields(page("Caf&eacute; &#x26; kiln", `<meta name="description" content="A &quot;quote&quot;"><meta name="field:price" content="30">`, `<h1>Other</h1><time datetime="2026-10-03">Today</time>`), "/work/kiln/", identity);
   assert.deepEqual(fields, { title: "Café & kiln", description: 'A "quote"', image: "", date: "2026-10-03", url: "/work/kiln/", price: "30" });
   assert.equal(readPageFields(`<html><head></head><body><h1>Hello <em>world</em></h1></body></html>`, "/", identity).title, "Hello world");
-});
-test("fields writer preserves surrounding source, quotes and CRLF", () => {
-  const source = page("First", `<meta name='date' content='2020'>`).replaceAll("><", ">\r\n<");
-  const changed = withPageField(source, "date", "x' onload='bad", identity);
-  assert.ok(changed.includes("content='x&#39; onload=&#39;bad'"));
-  assert.ok(changed.includes("\r\n"));
-  assert.equal(withPageField(source, "title", "New", identity).includes("<title>New | Studio</title>"), true);
-  assert.throws(() => withPageField(source, "url", "/bad/", identity));
 });
 test("bakes strict descendants, stable newest sort and limit, excludes folder index and unrelated folder", () => {
   const plan = good(planBake(sources, routes, identity));
@@ -65,7 +58,7 @@ test("missing sources fail rather than silently omit a record; invalid settings 
   for (const input of [{ folder: "/work" }, { folder: "/../" }, { folder: "/%2e/" }, { folder: "/_private/" }, { folder: "/work/", limit: "501" }, { folder: "/work/", limit: "0" }, { folder: "/work/", filter: "category" }, { folder: "/work/", sort: "title desc" }]) assert.throws(() => collectionSpec(input));
 });
 test("page field changes include dependent listings and capture original sources", () => {
-  const after = { ...sources, "work/second/index.html": withPageField(sources["work/second/index.html"], "title", "Changed", identity) };
+  const after = { ...sources, "work/second/index.html": withPageField(sources["work/second/index.html"], "title", "Changed") };
   const plan = good(planCollectionChange(sources, after, routes, identity));
   assert.deepEqual(Object.keys(plan.edits).sort(), ["index.html", "work/second/index.html"]);
   assert.equal(plan.expectedSources["work/second/index.html"], sources["work/second/index.html"]);
@@ -127,7 +120,7 @@ test("object data bindings validate URL semantics", () => {
 });
 test("missing constructor fields bind empty and work in conditions, sorting and filtering", () => {
   assert.equal(bindCollectionTemplate(`<p>{constructor}</p><div data-if="constructor">Yes</div>`, {}, ["constructor"]), "<p></p>");
-  const after = { ...sources, "work/first/index.html": withCustomPageField(sources["work/first/index.html"], "constructor", "Clay", identity), "index.html": sources["index.html"].replace('data-sort="-date"', 'data-sort="constructor"').replace(/<template>[\s\S]*?<\/template>/, `<template><p>{constructor}</p></template>`) };
+  const after = { ...sources, "work/first/index.html": sources["work/first/index.html"].replace("</head>", '<meta name="field:constructor" content="Clay"></head>'), "index.html": sources["index.html"].replace('data-sort="-date"', 'data-sort="constructor"').replace(/<template>[\s\S]*?<\/template>/, `<template><p>{constructor}</p></template>`) };
   assert.ok(!("error" in planBake(after, routes, identity)));
   after["index.html"] = after["index.html"].replace('data-sort="constructor"', 'data-filter="constructor=Clay"');
   assert.equal(good(planBake(after, routes, identity)).collections[0].records.length, 1);
@@ -137,9 +130,6 @@ test("malformed authoring template closing tags reject full plans including empt
     const source = sources["index.html"].replace('</template>', '</template extra>').replace('data-each="/work/"', `data-each="${folder}"`);
     assert.ok("error" in planBake({ ...sources, "index.html": source }, routes, identity));
   }
-});
-test("custom field creation rejects every reserved builtin", () => {
-  for (const field of ["title", "description", "image", "date", "url"]) assert.throws(() => withCustomPageField(sources["index.html"], field, "Oops", identity), /built-in/);
 });
 test("date fallback finds the first time carrying datetime", () => {
   assert.equal(readPageFields(page("Time", "", `<time>Today</time><time datetime="2026-10-03">Dated</time>`), "/", identity).date, "2026-10-03");

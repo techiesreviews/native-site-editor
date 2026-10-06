@@ -56,7 +56,7 @@ async function grid(page: Page) {
   await page.locator(".collections-panel__advanced > summary").click();
   await page.getByLabel("Card template HTML").fill(`<article><a href="{url}">{title}</a><img src="{image}" data-if="image"></article>`);
 }
-const panel = (page: Page) => page.getByRole("region", { name: "Collections and page fields" });
+const panel = (page: Page) => page.getByRole("region", { name: "Collections" });
 test.beforeEach(async ({ page, baseURL }) => { await mount(page, baseURL); });
 test("grid preview shows source, stable sort, count and plain HTML, then sends one guarded plan", async ({ page }) => {
   await grid(page);
@@ -80,21 +80,6 @@ test("grid preview shows source, stable sort, count and plain HTML, then sends o
   expect(state.sources["index.html"]).toContain('<div class="cards"><article><a href="/work/two/">Two</a><img src="/two.jpg"></article></div>');
   for (const recipe of ["data-each", "<template", "data-native-src", "data-collection-id"]) expect(state.sources["index.html"]).not.toContain(recipe);
 });
-test("page field edits include dependent listing drafts in the same plan", async ({ page }) => {
-  await grid(page); await page.getByRole("button", { name: "Make collection", exact: true }).click();
-  await page.evaluate(() => { const h = (window as any).collectionTest; h.state.page = "work/two/index.html"; h.panel.update(); });
-  await page.getByLabel("Title", { exact: true }).fill("New project");
-  await page.getByRole("button", { name: "Apply page fields" }).click();
-  const before = await page.evaluate(() => (window as any).collectionTest.state.applied[0].plan.edits[".editor/page-builder.json"]);
-  const state = await page.evaluate(() => (window as any).collectionTest.state);
-  // One plan: the page, its dependent listing, and the listing's recorded output fingerprint in the JSON.
-  expect(Object.keys(state.applied[1].plan.edits).sort()).toEqual([".editor/page-builder.json", "index.html", "work/two/index.html"]);
-  const [was] = Object.values(JSON.parse(before).collections) as any[], [now] = Object.values(JSON.parse(state.sources[".editor/page-builder.json"]).collections) as any[];
-  expect({ ...now, outputFingerprint: undefined }).toEqual({ ...was, outputFingerprint: undefined });
-  expect(now.outputFingerprint).not.toBe(was.outputFingerprint);
-  expect(state.sources["index.html"]).toContain(">New project</a>");
-  expect(state.sources["work/two/index.html"]).toContain("<title>New project | Studio</title>");
-});
 test("collection controls reject malformed bindings and unsafe URLs without host writes", async ({ page }) => {
   await grid(page);
   await page.getByLabel("Card template HTML").fill(`<a href="{unknown}">{title}</a>`);
@@ -114,14 +99,6 @@ for (const change of ["source", "scope", "routes"] as const) test(`open grid ref
   }, change);
   await page.getByRole("button", { name: "Make collection", exact: true }).click();
   await expect(panel(page)).toContainText("The page or repository changed. Reopen the collection panel before applying.");
-  expect(await page.evaluate(() => (window as any).collectionTest.state.applied.length)).toBe(0);
-});
-
-test("new custom field refuses reserved title without applying", async ({ page }) => {
-  await page.getByLabel("New custom field name").fill("title");
-  await page.getByLabel("New custom field value").fill("Oops");
-  await page.getByRole("button", { name: "Apply page fields" }).click();
-  await expect(panel(page)).toContainText("title is a built-in field. Edit its own control above.");
   expect(await page.evaluate(() => (window as any).collectionTest.state.applied.length)).toBe(0);
 });
 
@@ -217,23 +194,19 @@ test("an empty legacy source with template attributes refuses the JSON move and 
   expect(state.sources[".editor/page-builder.json"]).toBeUndefined();
 });
 
-test("custom fields kept in the editor's JSON are offered to Sort and Filter, and the JSON value wins as in the bake", async ({ page }) => {
+test("collection controls use HTML metadata and ignore legacy JSON page fields", async ({ page }) => {
   await page.evaluate(() => {
     const h = (window as any).collectionTest;
-    h.state.sources["work/one/index.html"] = h.state.sources["work/one/index.html"].replace("</head>", '<meta name="field:mood" content="html">');
+    h.state.sources["work/one/index.html"] = h.state.sources["work/one/index.html"].replace("</head>", '<meta name="field:mood" content="html"></head>');
     h.state.sources[".editor/page-builder.json"] = JSON.stringify({ version: 1, pages: { "work/one/index.html": { fields: { mood: "json", price: "10" } }, "work/two/index.html": { fields: { price: "5" } } }, collections: {} }, null, 2) + "\n";
     h.derive();
   });
   await grid(page);
   const sort = page.getByRole("combobox", { name: "Sort by", exact: true });
-  await expect(sort.locator("option", { hasText: "price" })).toHaveCount(1);
-  await sort.selectOption("price");
-  await expect(panel(page).locator("pre")).toContainText('href="/work/two/">Two</a>');
-  const preview = await panel(page).locator("pre").textContent();
-  expect(preview!.indexOf("/work/two/")).toBeLessThan(preview!.indexOf("/work/one/"));
+  await expect(sort.locator('option[value="price"]')).toHaveCount(0);
   const filter = page.getByRole("combobox", { name: "Filter by", exact: true });
   await filter.selectOption("mood");
-  await page.getByLabel("Matches exactly").fill("json");
+  await page.getByLabel("Matches exactly").fill("html");
   await expect(panel(page)).toContainText("1 matching page");
   await expect(panel(page).locator("pre")).toContainText('href="/work/one/"');
 });
