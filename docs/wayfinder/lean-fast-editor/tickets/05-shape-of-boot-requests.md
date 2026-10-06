@@ -2,7 +2,7 @@
 title: Choose the shape of the boot requests
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-measure-cold-start-baseline, 04-research-session-and-github-reads]
 ---
 

@@ -30,6 +30,11 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Measure today's cold start](tickets/01-measure-cold-start-baseline.md): `tests/perf/cold-start.ts`; local throttled cold paint 1.7 s with 1.4 MB fetched first, 70% of it Monaco + code-editor; warm still 1.2 s from revalidation; signed-in remote numbers pending Lex's sign-in
+- [Decide what "usable" means before Monaco loads](tickets/03-what-usable-means-before-monaco.md): select, edit bar, inline text and pages tree must work; drafts/undo/Save work too via a Monaco-free draft store; Monaco loads on idle after first paint
+- [Decide what remains after the removals](tickets/07-what-is-left-after-removals.md): sidecar keeps `pages.sections` only and strips the rest; helpers to a neutral renamed module; generated rows and asset hooks go; style panel first, then helpers, Fields, collections, docs
+- [Decide which leftovers are deleted](tickets/11-which-leftovers-go.md): all of them go
+- [Decide whether the code panes keep JS IntelliSense](tickets/12-keep-js-intellisense.md): keep it; ts.worker stays
 - [Research faster session and GitHub reads in the Worker](tickets/04-research-session-and-github-reads.md): parallel installation listing, repository list out of /api/session, GraphQL file batches, keep the DO session minus blockConcurrencyWhile, no webhooks; cross-isolate cache only if still slow
 - [Research the toolchain pins](tickets/10-research-toolchain-pins.md): Node 24 everywhere, keep Miniflare alpha pinned in lockstep with Wrangler, keep tweetnacl+blakejs, align esbuild with Wrangler, drop the undici override, keep dompurify
 - [Research bundle splitting and asset caching](tickets/06-research-bundle-split-and-asset-caching.md): defer the Monaco prefetch until after first preview, immutable cache on /assets/*, load secondary panels on demand after the removals, trim Monaco contributions last, reload once on a failed chunk load
@@ -39,7 +44,7 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 - **Handoff plan:** how the decisions turn into build slices, in what order, and how each slice is checked against the budget. This is the last ticket, and it graduates once the others are mostly closed.
 - **The preview runtime** (`native-preview-runtime.js`, 140 KB) and the preview iframe's own start: whether they belong in the boot budget.
 - **Worker per-request overhead** beyond the session read, once the boot request shape is settled.
-- **What `code-editor.ts` becomes** after drafts and undo leave it. This depends on the "usable before Monaco" decision.
+- **What `code-editor.ts` becomes** after drafts and undo leave it (draft store decided in ticket 03; the module boundary is part of the main.ts split).
 - **Agent/MCP impact:** the scouts found no MCP tools tied to the style panel or collections. Confirm this once the removal boundaries are fixed.
 
 ## Out of scope

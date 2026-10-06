@@ -2,7 +2,7 @@
 title: Set the cold-start budget
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-measure-cold-start-baseline]
 ---
 

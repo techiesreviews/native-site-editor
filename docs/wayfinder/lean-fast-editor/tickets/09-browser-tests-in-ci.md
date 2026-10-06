@@ -2,7 +2,7 @@
 title: Decide which browser tests run in CI and how the configs are consolidated
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [07-what-is-left-after-removals]
 ---
 
