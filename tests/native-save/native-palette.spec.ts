@@ -98,19 +98,23 @@ test("actions and the selected section's controls run from the palette, keys wor
   const frame = page.frameLocator(".native-preview-frame");
   // Hide and show the code, and the page structure.
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("hide code");
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toHaveClass(/code-collapsed/);
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("> show code");
   await expect(groups(page)).toHaveText(["Actions"]);
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).not.toHaveClass(/code-collapsed/);
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("hide struc");
   await page.keyboard.press("Enter");
   await expect(page.locator(".workspace")).toHaveClass(/workspace--sidebar-collapsed/);
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("show struc");
   await page.keyboard.press("Enter");
   await expect(page.locator(".workspace")).not.toHaveClass(/workspace--sidebar-collapsed/);
@@ -133,8 +137,11 @@ test("actions and the selected section's controls run from the palette, keys wor
   await expect(active(page)).toHaveAttribute("aria-label", "Duplicate, Section, Ctrl D");
   await page.keyboard.press("Enter");
   await expect(frame.locator("section.filler")).toHaveCount(2);
-  // Undo from the palette.
+  // Undo from the palette. Focus is back in the preview, whose Ctrl+K reaches
+  // the editor by message: wait for the search before typing, or the keys land
+  // in the preview and Enter runs the first suggestion (Move up).
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("undo");
   await page.keyboard.press("Enter");
   await expect(frame.locator("section.filler")).toHaveCount(1);
@@ -168,6 +175,7 @@ test("actions and the selected section's controls run from the palette, keys wor
   await expect(kind).toHaveText("Heading");
   await page.locator("#explorer-toggle").focus();
   await page.keyboard.press("ControlOrMeta+K");
+  await expect(search(page)).toBeFocused();
   await page.keyboard.type("parent");
   await page.keyboard.press("Enter");
   await expect(kind).toHaveText("Section");
