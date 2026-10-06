@@ -990,8 +990,25 @@ function env(): Env {
               delete: async (key) => { await storage.delete([key]); return true; },
             }, ipHash, Date.now()));
           }
+          if (url.pathname === "/repository-cache") {
+            if (request.method === "DELETE") {
+              await storage.delete(["repositoryCache"]);
+              await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });
+              return new Response(null, { status: 204 });
+            }
+            const { token, generation, value } = await request.json() as { token: string; generation: number; value: unknown };
+            if (!slot || slot.value.kind !== "user" || slot.value.token !== token || slot.value.expiresAt <= Date.now())
+              return new Response(null, { status: 401 });
+            if (generation === (await storage.get<number>("repositoryCacheGeneration") ?? 0)) {
+              if (value) await storage.put({ repositoryCache: value });
+              else await storage.delete(["repositoryCache"]);
+            }
+            return new Response(null, { status: 204 });
+          }
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
+            await storage.delete(["repositoryCache"]);
+            await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });
             sessions.set(id, { value, git: slot?.git ?? (value.kind === "user" ? cloneGit(initialGit) : undefined) });
             return new Response(null, { status: 204 });
           }
@@ -1004,7 +1021,7 @@ function env(): Env {
             return new Response(null, { status: 404 });
           if (url.pathname === "/consume") sessions.delete(id);
           if (slot.value.kind === "agent-hub") return Response.json(await hubView(storage, slot.value as unknown as AgentHub, url));
-          return Response.json(slot.value);
+          return Response.json(slot.value.kind === "user" ? { ...slot.value, repositoryCache: await storage.get("repositoryCache"), repositoryCacheGeneration: await storage.get<number>("repositoryCacheGeneration") ?? 0 } : slot.value);
         },
       }),
     },
@@ -1165,6 +1182,12 @@ function workerMiddleware(): Connect.NextHandleFunction {
         }
         const options = JSON.parse(bodyBuffer.toString() || "{}");
         if (options.reset) sessionOnboarding.delete(key);
+        // Fixture setup replaces the account state. Do not retain a listing of its previous state.
+        if (id && (options.reset || "repositories" in options || "org" in options || "installed" in options)) {
+          const storage = storageOf(id);
+          await storage.delete(["repositoryCache"]);
+          await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });
+        }
         const next = onboardingOf(key);
         if (typeof options.installOauth === "boolean") next.installOauth = options.installOauth;
         if (typeof options.failTree === "boolean") next.failTree = options.failTree;

@@ -43,7 +43,7 @@ async function openGetStarted(page: Page, baseURL: string | undefined) {
 
 // Opens a repository the account has by name, through its workspace link.
 async function openRepository(page: Page, baseURL: string | undefined, name: string) {
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   const repo = repos.find((candidate) => candidate.name === name);
   expect(repo, `${name} is listed`).toBeTruthy();
   await page.goto(`${baseURL}/#repo=${repo!.id}&branch=main`);
@@ -312,7 +312,7 @@ test("a repository made on GitHub's page gets the chosen starting point when it 
   // The user makes it empty on GitHub and gives the editor access; it opens with the starter, unasked.
   await control(page, baseURL, { add: [{ name: "later-site", kind: "empty" }] });
   // Opened once, without a reload in between: the choice is taken the first time the repository opens.
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "later-site")!.id}&branch=main`);
   await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
   const panel = await listChanges(page);
@@ -389,7 +389,7 @@ test("a remembered starting point is dropped, not applied, when the repository h
   await page.getByRole("button", { name: "Create repository" }).click();
   await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
   await control(page, baseURL, { add: [{ name: "notes", kind: "no-site" }] });
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "notes")!.id}&branch=main`);
   await expect(page.getByText("No home page")).toBeVisible({ timeout: 30_000 });
   // Nothing was drafted unasked, and the choice is gone.

@@ -37,12 +37,25 @@ const installationConcurrency = 6;
 // implementation, so tests and fakes with their own fetcher never share state.
 // Callers opt in with `maxAge`; the default rechecks membership every request.
 // Kept per fetch implementation, under any per-request wrapper (worker/timing.ts).
+export interface RepositoryCache {
+  fetchedAt: number;
+  repositories: Repository[];
+  installations: OwnerInstallation[];
+  pages: Record<string, { etag?: string; data: any }>;
+}
+export interface RepositoryCacheStore {
+  key?: string;
+  value?: RepositoryCache;
+  save(value: RepositoryCache | undefined): Promise<void>;
+}
+
 interface RepositoryListing {
   fetchedAt: number;
   repos: Promise<Repository[]>;
 }
 const listings = new WeakMap<typeof fetch, Map<string, RepositoryListing>>();
 const maxListings = 500;
+const listingRequests = new WeakMap<typeof fetch, Map<string, Promise<RepositoryCache>>>();
 
 export async function boundedJson(
   response: Response,
@@ -138,6 +151,7 @@ export class GitHub {
   constructor(
     private token: string,
     private fetcher: typeof fetch = fetch,
+    private repositoryStore?: RepositoryCacheStore,
   ) {
     this.objects = new ObjectCache(fetcher);
   }
@@ -150,7 +164,7 @@ export class GitHub {
     return this.request<T>(path, method, body);
   }
 
-  private async send(path: string, method: string, body?: unknown, fresh = false): Promise<Response> {
+  private async send(path: string, method: string, body?: unknown, fresh = false, conditional?: string): Promise<Response> {
     // Native Workers fetch rejects a GitHub instance as its `this` receiver.
     const fetcher = this.fetcher;
     return fetcher(`${apiRoot}${path}`, {
@@ -159,6 +173,7 @@ export class GitHub {
       ...(fresh ? { cache: "no-store" as const } : {}),
       body: body === undefined ? undefined : JSON.stringify(body),
       headers: {
+        ...(conditional ? { "If-None-Match": conditional } : {}),
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.token}`,
         Accept: "application/vnd.github+json",
@@ -197,8 +212,8 @@ export class GitHub {
     return { status: response.status, ok: response.ok, data };
   }
 
-  private async request<T>(path: string, method: string, body?: unknown, limit?: number, fresh = false): Promise<T> {
-    const response = await this.send(path, method, body, fresh);
+  private async request<T>(path: string, method: string, body?: unknown, limit?: number, fresh = false, received?: Response): Promise<T> {
+    const response = received ?? await this.send(path, method, body, fresh);
     if (!response.ok) {
       if (response.status === 401)
         throw new HttpError(401, "Your GitHub session expired. Connect again.");
@@ -238,14 +253,38 @@ export class GitHub {
   async pages<T>(path: string, key?: string): Promise<T[]> {
     const result: T[] = [];
     for (let page = 1; page <= maxPages; page++) {
-      const data = await this.get<any>(
-        `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`,
-      );
+      const pagePath = `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
+      const listingPage = path === "/user/installations" || /^\/user\/installations\/\d+\/repositories$/.test(path);
+      const cached = listingPage ? this.repositoryStore?.value?.pages[pagePath] : undefined;
+      let data: any;
+      if (listingPage && this.repositoryStore) {
+        const response = await this.send(pagePath, "GET", undefined, false, cached?.etag);
+        if (response.status === 304 && cached) data = cached.data;
+        else if (!response.ok) {
+          // Reuse the normal GitHub status handling without trusting stale membership.
+          data = await this.request<any>(pagePath, "GET", undefined, undefined, false, response);
+        } else data = await boundedJson(response);
+        // Persist only fields used by repository membership and onboarding.
+        if (path === "/user/installations" && Array.isArray(data.installations))
+          data = { installations: data.installations.map((installation: any) => ({ id: installation.id, account: installation.account && { login: installation.account.login, type: installation.account.type } })) };
+        if (path !== "/user/installations" && Array.isArray(data.repositories))
+          data = { repositories: data.repositories.map((repo: Repository) => ({ id: repo.id, name: repo.name, full_name: repo.full_name, private: repo.private, default_branch: repo.default_branch, owner: { login: repo.owner.login, type: repo.owner.type } })) };
+        this.repositoryStore.value ??= { fetchedAt: 0, repositories: [], installations: [], pages: {} };
+        this.repositoryStore.value.pages[pagePath] = { etag: response.status === 304 ? response.headers.get("etag") ?? cached?.etag : response.headers.get("etag") ?? undefined, data };
+      } else data = await this.get<any>(pagePath);
       const rows: T[] = key ? data[key] : data;
       if (!Array.isArray(rows))
         throw new HttpError(502, "GitHub returned an unexpected list.");
       result.push(...rows);
-      if (rows.length < 100) return result;
+      if (rows.length < 100) {
+        if (listingPage && this.repositoryStore?.value) {
+          const prefix = `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=`;
+          for (const stored of Object.keys(this.repositoryStore.value.pages))
+            if (stored.startsWith(prefix) && Number(stored.slice(prefix.length)) > page)
+              delete this.repositoryStore.value.pages[stored];
+        }
+        return result;
+      }
     }
     throw new HttpError(
       413,
@@ -255,6 +294,44 @@ export class GitHub {
 
   /** With maxAge 0, callers may share a request-local installation lookup for onboarding. */
   async repositories(login: string, maxAge = 0, installations?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
+    const persisted = this.repositoryStore?.value;
+    if (persisted && maxAge > 0 && Date.now() >= persisted.fetchedAt && Date.now() - persisted.fetchedAt < maxAge)
+      return persisted.repositories;
+    // Session-backed clients never reuse another isolate's token cache.
+    if (this.repositoryStore) {
+      const fetcher = baseFetch(this.fetcher);
+      let pending = listingRequests.get(fetcher);
+      if (!pending) listingRequests.set(fetcher, pending = new Map());
+      const key = `${login.toLowerCase()}\n${this.token}\n${this.repositoryStore.key ?? ""}`;
+      const existing = maxAge > 0 ? pending.get(key) : undefined;
+      if (existing) {
+        const value = await existing;
+        this.repositoryStore.value = value;
+        return value.repositories;
+      }
+      const refresh = (async () => {
+        const fetchedAt = Date.now();
+        const previousPages = this.repositoryStore!.value?.pages ?? {};
+        this.repositoryStore!.value = { fetchedAt: 0, repositories: [], installations: [], pages: { ...previousPages } };
+        const owners = await (installations ?? this.ownerInstallations(login));
+        const repositories = await this.listRepositories(login, Promise.resolve(owners));
+        const pages = this.repositoryStore!.value?.pages ?? {};
+        for (const path of Object.keys(pages)) {
+          const installation = /^\/user\/installations\/(\d+)\/repositories/.exec(path);
+          if (installation && !owners.some((owner) => owner.id === Number(installation[1]))) delete pages[path];
+        }
+        const value = { fetchedAt, repositories, installations: owners, pages };
+        await this.repositoryStore!.save(value);
+        this.repositoryStore!.value = value;
+        return value;
+      })();
+      if (maxAge > 0) pending.set(key, refresh);
+      try {
+        return (await refresh).repositories;
+      } finally {
+        if (pending.get(key) === refresh) pending.delete(key);
+      }
+    }
     const fetcher = this.fetcher;
     let byToken = listings.get(baseFetch(fetcher));
     if (!byToken) listings.set(baseFetch(fetcher), (byToken = new Map()));
@@ -275,6 +352,11 @@ export class GitHub {
       if (byToken!.get(key)?.repos === repos) byToken!.delete(key);
     });
     return repos;
+  }
+
+  repositoryOnboarding(): "install" | "create" | "none" {
+    const cache = this.repositoryStore?.value;
+    return cache?.repositories.length ? "none" : cache?.installations.length ? "create" : "install";
   }
 
   /**
@@ -354,6 +436,10 @@ export class GitHub {
       throw error;
     }
     this.forgetRepositories(login);
+    if (this.repositoryStore) {
+      await this.repositoryStore.save(undefined);
+      this.repositoryStore.value = undefined;
+    }
     return {
       id: created.id,
       name: created.name,
