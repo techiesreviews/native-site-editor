@@ -1183,7 +1183,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
         const options = JSON.parse(bodyBuffer.toString() || "{}");
         if (options.reset) sessionOnboarding.delete(key);
         // Fixture setup replaces the account state. Do not retain a listing of its previous state.
-        if (id && (options.reset || "repositories" in options || "org" in options || "installed" in options)) {
+        if (id && (options.reset || "repositories" in options || "org" in options || "installed" in options || "add" in options)) {
           const storage = storageOf(id);
           await storage.delete(["repositoryCache"]);
           await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });

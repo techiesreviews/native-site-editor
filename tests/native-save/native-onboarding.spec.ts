@@ -109,6 +109,38 @@ test("a valid session skips the sign-in screen: the editor opens with no button"
   expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before")), "a flag, never a name or token").toBe("1");
 });
 
+test("Reload recovers an initial repository loading failure with an empty list", async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none" });
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const session = await response.json();
+    delete session.repositories;
+    await route.fulfill({ response, json: session });
+  });
+  let failedReads = 0;
+  let reloadReads = 0;
+  await page.route("**/api/repositories**", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("refresh") === "1") {
+      reloadReads++;
+      await route.fulfill({ json: [], headers: { "X-Repository-Onboarding": "create" } });
+    } else {
+      failedReads++;
+      await route.fulfill({ status: 403, json: { error: "Initial repository loading failed." } });
+    }
+  });
+  await page.goto(`${baseURL}/`);
+  await expect(page.locator("#notice")).toContainText("Initial repository loading failed.");
+  await expect(page.locator("#content")).toContainText("Repositories could not be loaded. Use Reload to try again.");
+  expect(failedReads).toBeGreaterThan(0);
+
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Create your site", exact: true })).toBeVisible();
+  await expect(page.locator("#notice")).toBeHidden();
+  await expect(page.locator("#content")).not.toContainText("Repositories could not be loaded.");
+  expect(reloadReads).toBe(1);
+});
+
 test("a browser that signed in before continues to GitHub by itself, once", async ({ page, baseURL }) => {
   await signedOutSession(page);
   let logins = 0;

@@ -8553,6 +8553,10 @@ async function refreshRepositoryList() {
     errorMessage(error);
     return;
   }
+  if (!repositoryListLoaded) {
+    await loadRepositories(next);
+    return;
+  }
   repositoryListLoaded = true;
   if (
     next.length === repositories.length &&

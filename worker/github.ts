@@ -55,7 +55,7 @@ interface RepositoryListing {
 }
 const listings = new WeakMap<typeof fetch, Map<string, RepositoryListing>>();
 const maxListings = 500;
-const listingRequests = new WeakMap<typeof fetch, Map<string, Promise<RepositoryCache>>>();
+const listingRequests = new WeakMap<typeof fetch, Map<string, { fetchedAt: number; value: Promise<RepositoryCache> }>>();
 
 export async function boundedJson(
   response: Response,
@@ -304,13 +304,19 @@ export class GitHub {
       if (!pending) listingRequests.set(fetcher, pending = new Map());
       const key = `${login.toLowerCase()}\n${this.token}\n${this.repositoryStore.key ?? ""}`;
       const existing = maxAge > 0 ? pending.get(key) : undefined;
-      if (existing) {
-        const value = await existing;
+      const isFresh = (fetchedAt: number) => Date.now() >= fetchedAt && Date.now() - fetchedAt < maxAge;
+      const checkFreshness = (fetchedAt: number) => {
+        if (maxAge > 0 && !isFresh(fetchedAt))
+          throw new HttpError(503, "GitHub repository access check expired. Try again.");
+      };
+      if (existing && isFresh(existing.fetchedAt)) {
+        const value = await existing.value;
+        checkFreshness(value.fetchedAt);
         this.repositoryStore.value = value;
         return value.repositories;
       }
+      const fetchedAt = Date.now();
       const refresh = (async () => {
-        const fetchedAt = Date.now();
         const previousPages = this.repositoryStore!.value?.pages ?? {};
         this.repositoryStore!.value = { fetchedAt: 0, repositories: [], installations: [], pages: { ...previousPages } };
         const owners = await (installations ?? this.ownerInstallations(login));
@@ -321,15 +327,19 @@ export class GitHub {
           if (installation && !owners.some((owner) => owner.id === Number(installation[1]))) delete pages[path];
         }
         const value = { fetchedAt, repositories, installations: owners, pages };
+        checkFreshness(fetchedAt);
         await this.repositoryStore!.save(value);
+        checkFreshness(fetchedAt);
         this.repositoryStore!.value = value;
         return value;
       })();
-      if (maxAge > 0) pending.set(key, refresh);
+      if (maxAge > 0) pending.set(key, { fetchedAt, value: refresh });
       try {
-        return (await refresh).repositories;
+        const value = await refresh;
+        checkFreshness(value.fetchedAt);
+        return value.repositories;
       } finally {
-        if (pending.get(key) === refresh) pending.delete(key);
+        if (pending.get(key)?.value === refresh) pending.delete(key);
       }
     }
     const fetcher = this.fetcher;
