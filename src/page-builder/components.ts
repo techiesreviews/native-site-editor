@@ -115,7 +115,7 @@ export interface ComponentDeps {
   /** Enable only when the host wires Structure componentSlots. */
   structureFields?: boolean;
   /** Shows the component being edited in the canvas bar, or nothing (`undefined`). */
-  canvasComponent: (parts: { lead: Element[]; end: Element[] } | undefined) => void;
+  canvasComponent: (parts: { tag: string; lead: Element[]; end: Element[] } | undefined) => void;
   /** The code pane's title row, tinted while a template is open in it. */
   codeTitle: HTMLElement;
   /** The page file the preview shows (for Done, back from a template). */
@@ -178,7 +178,6 @@ export function createComponentTools(deps: ComponentDeps) {
   if (!deps.structureFields) deps.panelHost.append(panel);
   const destroyResize = !deps.structureFields ? mountComponentPanelResize(deps.panelHost, panel) : undefined;
   // The canvas bar while a template is open: the component, Used on, Done.
-  const editing = node("span", "canvas-component__name");
   const usedOnButton = node("button", "canvas-component__used");
   usedOnButton.type = "button";
   usedOnButton.setAttribute("aria-haspopup", "menu");
@@ -479,14 +478,13 @@ export function createComponentTools(deps: ComponentDeps) {
     if (key === barKey) return;
     barKey = key;
     barTag = tag;
-    editing.replaceChildren(node("span", "", "Editing"), " ", node("code", "canvas-component__tag", `<${tag}>`));
     const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
     const where = [found.pages.length ? count(found.pages.length, "page") : "", found.components.length ? count(found.components.length, "component") : ""].filter(Boolean);
     usedOnLabel.textContent = where.length ? `Used on ${where.join(", ")}` : "Not used yet";
     usedOnButton.disabled = !where.length;
     if (!where.length) usedOnDropdown.close();
     else if (usedOn.matches(":popover-open")) renderUsedOn(tag);
-    deps.canvasComponent({ lead: [componentIcon(14), editing, usedOnButton], end: [doneButton] });
+    deps.canvasComponent({ tag, lead: [usedOnButton], end: [doneButton] });
   }
 
   /** Back from a template to the page the preview shows, the instance worked on selected. */

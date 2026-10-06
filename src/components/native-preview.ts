@@ -997,7 +997,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       post();
     },
     /** The component whose template is open, shown in the canvas bar (canvas-bar.ts). */
-    setCanvasComponent(parts: { lead: Element[]; end: Element[] } | undefined) {
+    setCanvasComponent(parts: { tag: string; lead: Element[]; end: Element[] } | undefined) {
       canvas.setComponent(parts);
     },
     /** Show the pane and adopt a site. Idempotent for the same site. */

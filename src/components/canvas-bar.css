@@ -17,7 +17,8 @@
 }
 
 /* While a component's template is open: the bar wears the component accent,
-   with the component and Used on after the crumbs and Done (a check) at its end. */
+   the crumbs up to the instance, then the component, Used on and Done (a
+   check) in one run; the device tools keep the far end. */
 .canvas-bar--component {
   border-bottom-color: color-mix(in oklch, var(--component) 35%, transparent);
   background: var(--component-surface);
@@ -41,28 +42,30 @@
 .canvas-component-end[hidden] {
   display: none;
 }
+.canvas-bar--component .canvas-crumbs {
+  flex: 0 1 auto;
+}
+.canvas-bar--component .canvas-tools {
+  margin-left: auto;
+}
 .canvas-component {
   flex-shrink: 1;
-  padding-left: 10px;
-  border-left: 1px solid color-mix(in oklch, var(--component) 30%, transparent);
 }
-.canvas-component > .icon {
-  flex: none;
-  margin: 0;
-}
-.canvas-component__name {
+/* The edited instance's crumb: the component mark, "Editing" and its tag. */
+.canvas-crumb--editing {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
-  min-width: 0;
-  overflow: hidden;
+  color: var(--component-text);
+  font-family: inherit;
   font-weight: 500;
-  white-space: nowrap;
 }
-.canvas-component__tag {
-  overflow: hidden;
+.canvas-crumb--editing > .icon {
+  flex: none;
+  margin: 0 1px 0 0;
+}
+.canvas-crumb__tag {
   font: 600 var(--type-small) / 1 var(--font-mono);
-  text-overflow: ellipsis;
 }
 .canvas-component__used {
   display: inline-flex;

@@ -259,7 +259,7 @@ test("Edit component from its root opens the template, says what an edit changes
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   const banner = page.locator(".canvas-bar--component");
   await expect(banner).toBeVisible();
-  await expect(banner.locator(".canvas-component__name")).toHaveText("Editing <project-card>");
+  await expect(banner.locator(".canvas-crumb--editing")).toHaveText("Editing<project-card>");
   await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeVisible();
   await expect(page.locator(".code-pane__title--component")).toBeVisible();
   // The template root is selected, and every instance is outlined.

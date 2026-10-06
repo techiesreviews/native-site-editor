@@ -16,6 +16,7 @@ import desktop from "@phosphor-icons/core/regular/desktop.svg?raw";
 import tablet from "@phosphor-icons/core/regular/device-tablet.svg?raw";
 import mobile from "@phosphor-icons/core/regular/device-mobile.svg?raw";
 import { node } from "../ui/dom";
+import { componentIcon } from "../page-builder/component-icon";
 import {
   CANVAS_DEVICES,
   CANVAS_MIN_WIDTH,
@@ -89,13 +90,13 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   widthInput.title = "Frame width: type a width and press Enter";
   widthField.append(widthInput, node("span", "canvas-width__unit", "px"));
   tools.append(devices, widthField);
-  // After the crumbs: the component being edited (its name and Used on);
-  // the way back closes the bar.
+  // While a template is open its instance's crumb reads "Editing <tag>"; Used
+  // on and the way back (Done) follow the path.
   const lead = node("div", "canvas-component");
   lead.hidden = true;
   const end = node("div", "canvas-component-end");
   end.hidden = true;
-  bar.append(crumbsNav, lead, tools, end);
+  bar.append(crumbsNav, lead, end, tools);
 
   // The frame sits on a stage that takes the chosen width, with a handle on each side.
   frameHost.classList.add("canvas-host");
@@ -226,12 +227,19 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
 
   // The breadcrumb: the page's <body>, then the selection's ancestors, then the selection.
   let renderedCrumbs: { label: string; kind: string }[] | undefined;
+  let lastCrumbs: CanvasCrumb[] = [];
+  let componentTag: string | undefined;
   let hintedCrumb: number | undefined;
   const hintCrumb = (index: number | undefined) => {
     hintedCrumb = index;
     handlers.onCrumbHover(index);
   };
-  function setCrumbs(crumbs: CanvasCrumb[]) {
+  function setCrumbs(all: CanvasCrumb[]) {
+    lastCrumbs = all;
+    const crumbs = all;
+    // Editing a template: the innermost crumb of that component is the edited instance.
+    let edited = -1;
+    if (componentTag !== undefined) crumbs.forEach((crumb, index) => { if (crumb.kind === "component" && crumb.label === componentTag) edited = index; });
     // Refreshes of the same selection keep pointer/focus ownership intact.
     if (renderedCrumbs?.length === crumbs.length && crumbs.every((crumb, index) =>
       crumb.label === renderedCrumbs![index].label && crumb.kind === renderedCrumbs![index].kind)) {
@@ -266,6 +274,11 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
       crumb.addEventListener("pointerleave", () => hintCrumb(undefined));
       crumb.addEventListener("focus", () => hintCrumb(item.index));
       crumb.addEventListener("blur", () => hintCrumb(undefined));
+      if (item.index === edited && edited >= 0) {
+        crumb.classList.add("canvas-crumb--editing");
+        crumb.replaceChildren(componentIcon(12), node("span", "", "Editing"), node("code", "canvas-crumb__tag", `<${item.label}>`));
+        crumb.setAttribute("aria-label", `Editing ${item.label}: select this instance`);
+      }
       li.append(crumb);
       return li;
     }));
@@ -282,8 +295,13 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   setCrumbs([]);
 
   /** The component whose template is open: its parts in the bar, or none (`undefined`). */
-  function setComponent(parts: { lead: Element[]; end: Element[] } | undefined) {
+  function setComponent(parts: { tag: string; lead: Element[]; end: Element[] } | undefined) {
     bar.classList.toggle("canvas-bar--component", Boolean(parts));
+    if (componentTag !== parts?.tag) {
+      componentTag = parts?.tag;
+      renderedCrumbs = undefined;
+      setCrumbs(lastCrumbs);
+    }
     lead.replaceChildren(...(parts?.lead ?? []));
     end.replaceChildren(...(parts?.end ?? []));
     lead.hidden = !parts;

@@ -182,8 +182,8 @@ test("the breadcrumb follows a selection into components within components", asy
   await bar.getByRole("button", { name: "Edit Card note component", exact: true }).click();
   await frame.getByText("Shared across cards").first().click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
-  await expect(crumbs(page)).toHaveText(["body", "main.page", "section.cards", "project-card", "article.project-card", "card-note", "p.card-note"]);
-  await expect(page.locator(".canvas-crumb--component")).toHaveText(["project-card", "card-note"]);
+  await expect(crumbs(page)).toHaveText(["body", "main.page", "section.cards", "project-card", "article.project-card", "Editing<card-note>", "p.card-note"]);
+  await expect(page.locator(".canvas-crumb--component")).toHaveText(["project-card", "Editing<card-note>"]);
   await crumbs(page).filter({ hasText: /^project-card$/ }).click();
   await expect(current(page)).toHaveText("project-card");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
