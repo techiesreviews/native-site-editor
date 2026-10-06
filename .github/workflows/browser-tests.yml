@@ -49,6 +49,7 @@ jobs:
         with:
           name: test-results-${{ matrix.shard }}
           path: .scratch/*/results/
+          include-hidden-files: true
           retention-days: 14
 
   report:
