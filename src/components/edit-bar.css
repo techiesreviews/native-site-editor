@@ -94,13 +94,7 @@
 }
 .edit-bar__label > .edit-bar__grip.edit-bar__component-name {
   cursor: grab;
-  padding: 4px 2px;
-}
-/* A component's name keeps room after it for the pencil, so the pencil
-   never covers the name's end. */
-.edit-bar__label > .edit-bar__component-name,
-.edit-bar__label > .edit-bar__grip.edit-bar__component-name {
-  padding-right: 26px;
+  padding: 4px 6px 4px 2px;
 }
 .edit-bar__label .edit-bar__kind > svg {
   display: inline-block;
@@ -533,12 +527,15 @@
 .edit-bar__component-edit {
   position: absolute;
   inset: 0 0 0 auto;
-  width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 4px;
+  /* Over the name's end, like the Page structure rows' actions: a 20px fade
+     into the hovered name's colour, then the pencil on a solid ground. */
+  padding: 0 4px 0 20px;
+  border-radius: inherit;
   color: var(--component-text);
+  background: linear-gradient(to right, transparent, color-mix(in oklch, var(--component-text) 10%, var(--component-surface)) 20px);
   opacity: 0;
   transform: translateX(40%);
   pointer-events: none;
