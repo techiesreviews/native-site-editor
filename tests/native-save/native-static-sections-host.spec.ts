@@ -1,6 +1,7 @@
 import { seedCollection } from "./collection-fixture";
 import { seedSavedSections } from "./static-sections";
-import { locateCollectionTarget } from "../../src/page-builder/page-builder-document";
+import "../../src/page-builder/page-builder-document";
+import { locateSectionTarget } from "../../src/page-builder/source-target";
 import { requireStaticFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -179,7 +180,7 @@ actual("a saved custom section previews and inserts its own HTML with the live s
   };
   expect(link).toEqual(expectedLink);
   expect(documentAfter.pages["about/index.html"]).toEqual({ sections: { "intro-1": expectedLink } });
-  const located = locateCollectionTarget(about!, link.target);
+  const located = locateSectionTarget(about!, link.target);
   expect(located).not.toHaveProperty("error");
   if (!("error" in located)) expect(about!.slice(located.element.start, located.element.end)).toBe(record.html);
   const withoutLink = structuredClone(documentAfter);

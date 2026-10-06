@@ -150,14 +150,14 @@ test("Structure marks cards a JSON collection made as generated, with no fields,
 });
 
 test("with two JSON grids from the same pages, only the broken one is listed, rows are told apart, and Forget removes exactly its own recipe", async ({ page, baseURL }) => {
-  const { makeCollectionTarget } = await import("../../src/page-builder/page-builder-document");
+  await import("../../src/page-builder/page-builder-document"); const { makeSectionTarget } = await import("../../src/page-builder/source-target");
   const { home, sidecar } = await saved(page, baseURL);
   // A second grid of the same cards from the same pages, with its own recipe and an unknown key.
   const open = home.indexOf('<div class="cards">'), close = home.indexOf("</div>", home.lastIndexOf("</card-project>")) + 6;
   const twin = home.slice(open, close).replace('<div class="cards">', '<div class="cards more">');
   const both = home.slice(0, close) + "\n      " + twin + home.slice(close);
   const document = JSON.parse(sidecar), [first] = Object.keys(document.collections);
-  document.collections.second = { ...document.collections[first], target: makeCollectionTarget(both, both.indexOf('<div class="cards more">')), keep: { unknown: true } };
+  document.collections.second = { ...document.collections[first], target: makeSectionTarget(both, both.indexOf('<div class="cards more">')), keep: { unknown: true } };
   const seeded = JSON.stringify(document, null, 2) + "\n";
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: both } });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: seeded } });

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { deriveNativeRoutes } from '../shared/native-routes';
 import { planSidecarRecipe, planSidecarRemoval } from '../src/page-builder/collection-origins';
 import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation } from '../src/page-builder/native-collection-host';
-import { EDITOR_PAGE_BUILDER_PATH as SIDE, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument } from '../src/page-builder/page-builder-document';
+import { EDITOR_PAGE_BUILDER_PATH as SIDE, readPageBuilderDocument, writePageBuilderDocument } from '../src/page-builder/page-builder-document';
+import { makeSectionTarget } from '../src/page-builder/source-target';
 
 const home = (cards = '') => `<html><body><div id="cards">${cards}</div></body></html>`;
 const page = (title: string, description: string) => `<html><head><title>${title}</title><meta name="description" content="${description}"></head><body>Own content</body></html>`;
@@ -11,7 +12,7 @@ const graph = (sources: Record<string, string>) => ({ sources, routes: deriveNat
 function fixture() {
   const raw = { 'index.html': home(), 'work/a/index.html': page('Alpha', 'First description'), [SIDE]: writePageBuilderDocument({
     version: 1, pages: {}, collections: { work: {
-      pagePath: 'index.html', target: makeCollectionTarget(home(), home().indexOf('<div')),
+      pagePath: 'index.html', target: makeSectionTarget(home(), home().indexOf('<div')),
       folders: ['/work/'], sort: 'title', filter: '', limit: 10,
       template: '<a href="{url}">{title}: {description} ({tone})</a>', fields: ['tone'],
       overrides: { 'work/a/index.html': { tone: 'warm' } }, privateNote: { keep: true },

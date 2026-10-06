@@ -1,7 +1,7 @@
 import { expandStyleImports } from "../../shared/css-imports";
 import { nativePageStylesheets } from "../../shared/native-project";
 import { nativePageRoute } from "../../shared/native-routes";
-import { attribute } from "./collection-model";
+import { attribute } from "./source-target";
 import { descendants, parseSource, type SourceElement } from "./component-model";
 import { planNativeSectionLink, readNativeSectionLinks } from "./native-section-links";
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";

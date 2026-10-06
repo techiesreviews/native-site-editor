@@ -1,7 +1,8 @@
 import { startTags, VOID_ELEMENTS } from "../../shared/html-source";
 import { descendants, parseSource, type SourceNode } from "./component-model";
 import { builtinFields, fieldName, ownPageField, resolvePageFields, type CollectionIdentity, type PageDataRecord, type PageFields } from "./collection-fields";
-import { attribute, collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord, type SourceCollection } from "./collection-model";
+import { collectionRecords, knownCollectionField, readCollections, validCollectionRoute, type CollectionRecord, type SourceCollection } from "./collection-model";
+import { attribute } from "./source-target";
 import { decodeHtmlEntities } from "./html-entities";
 import { escapeText } from "./site-head";
 

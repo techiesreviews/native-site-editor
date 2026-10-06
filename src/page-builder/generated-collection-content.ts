@@ -1,9 +1,10 @@
 import { startTagAttribute } from "../../shared/html-source";
+import { makeSectionTarget } from "./source-target";
 import { readCollections, type SourceCollection } from "./collection-model";
 import type { CollectionPreview } from "./collection-bake";
 import type { SourceElement } from "./component-model";
 import { locatePageCollections, readSidecar } from "./document-collections";
-import { locateCollections, makeCollectionTarget, writePageBuilderDocument } from "./page-builder-document";
+import { locateCollections, writePageBuilderDocument } from "./page-builder-document";
 
 /**
  * Cards a collection generates live after its template, inside the listing
@@ -166,7 +167,7 @@ export function planDocumentTargetEdit(source: string, path: string, sidecar: st
   try {
     for (const id of changed) {
       const element = before[id].located.element;
-      const target = makeCollectionTarget(candidate, element.start + shift(element.start));
+      const target = makeSectionTarget(candidate, element.start + shift(element.start));
       if (target.tag !== element.name || JSON.stringify(target.path) !== JSON.stringify(before[id].located.target.path)) return { error: refusal(path) };
       updated.collections[id] = { ...updated.collections[id], target };
     }

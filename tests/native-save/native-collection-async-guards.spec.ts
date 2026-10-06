@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { makeCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../../src/page-builder/page-builder-document";
+import { writePageBuilderDocument, type PageBuilderDocument } from "../../src/page-builder/page-builder-document";
+import { makeSectionTarget } from "../../src/page-builder/source-target";
 import { storedDraft, storedDrafts } from "./drafts";
 
 // Collections retain their declared fields, labels and cards when the last page
@@ -42,7 +43,7 @@ const labels = { JSON: ["Series", "Year of release"], inline: ["Series name", "R
 function recipe(overrides: Record<string, Record<string, string>>, output: string): PageBuilderDocument {
   const home = homeWith(output);
   return { version: 1, pages: {}, collections: { [ID]: {
-    pagePath: "index.html", target: makeCollectionTarget(home, home.indexOf('<section class="collection-grid"')),
+    pagePath: "index.html", target: makeSectionTarget(home, home.indexOf('<section class="collection-grid"')),
     folders: ["/work/"], sort: "-release-year", filter: "", limit: 6, template: cardTemplate,
     fields: ["series-name", "release-year"], fieldLabels: { "series-name": labels.JSON[0], "release-year": labels.JSON[1] },
     overrides, outputFingerprint: output,

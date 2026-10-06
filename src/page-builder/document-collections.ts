@@ -4,9 +4,9 @@ import { mediaUrl } from "./media-markup";
 import { descendants, parseSource, startTagAttributes } from "./component-model";
 import { builtinFields, resolvePageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 import { collectionRecords, collectionSpec, MAX_COLLECTION_ITEMS, type CollectionRecord } from "./collection-model";
-import { readNativeSectionLinks } from "./native-section-links";
-import { readPagePartLinks } from "./native-page-parts";
-import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, readPageBuilderDocument, type LocatedCollectionTarget, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
+import { rebaseSectionLinks, rekeySidecarPages, sameJson } from "./sidecar-pages";
+import type { LocatedSectionTarget } from "./source-target";
 
 /**
  * Collections whose recipes live only in `.editor/page-builder.json`. The page
@@ -77,7 +77,7 @@ export function readSidecar(text: string | undefined): PageBuilderDocument {
  * Every collection of one page, located together: same, nested or stale
  * targets refuse the whole page instead of guessing which cards are whose.
  */
-export function locatePageCollections(source: string, document: PageBuilderDocument, pagePath: string): Record<string, { located: LocatedCollectionTarget; start: number; end: number; text: string }> {
+export function locatePageCollections(source: string, document: PageBuilderDocument, pagePath: string): Record<string, { located: LocatedSectionTarget; start: number; end: number; text: string }> {
   const records = Object.fromEntries(Object.entries(document.collections).filter(([, collection]) => collection.pagePath === pagePath));
   if (!Object.keys(records).length) return {};
   const found = locateCollections(source, records);
@@ -168,22 +168,10 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
     const deletes = new Set(input.deletes ?? []);
     const relocate = input.relocateFolder ?? ((folder: string) => folder);
     const document: PageBuilderDocument = structuredClone(after);
-    /**
-     * Page metadata follows moved pages and leaves with deleted ones. This is
-     * the single writer of that metadata for file moves and deletes (whole
-     * entries: fields, sections, page parts and unknown data alike). It never
-     * merges: a move whose destination already has its own metadata (left over
-     * from a file that no longer exists) refuses before anything changes.
-     * Creates, including duplicates, start without metadata or links.
-     */
-    const rekey = <T>(map: Record<string, T>) => {
-      for (const [from, to] of moves) if (Object.hasOwn(map, from) && Object.hasOwn(map, to) && !moves.has(to))
-        throw new Error(`${to} already has page data in ${EDITOR_PAGE_BUILDER_PATH}, left from an earlier page there, so moving ${from} onto it would replace that data. Move the page somewhere else, or remove the leftover entry for ${to} in Code first.`);
-      for (const [from, to] of moves) if (Object.hasOwn(map, from)) { map[to] = map[from]; delete map[from]; }
-      for (const path of deletes) delete map[path];
-    };
-    rekey(document.pages);
-    if (input.rewriteLinks) rebaseSharedLinks(input, document, beforeText, afterText, moves, deletes, input.rewriteLinks);
+    // Page entries follow moved pages and leave with deleted ones (src/page-builder/sidecar-pages.ts).
+    rekeySidecarPages(document.pages, moves, deletes);
+    if (input.rewriteLinks) rebaseSectionLinks(document, beforeText, afterText,
+      { before: input.before.sources, after: input.candidate.sources, moves, deletes, rewriteLinks: input.rewriteLinks });
     const pageEdits = new Map<string, { start: number; end: number; text: string; id: string }[]>();
     const previews: DocumentCollectionPreview[] = [];
     // Page paths and folders are updated first so each page's collections are located together.
@@ -196,7 +184,7 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
       if (skippedIds.has(id)) continue;
       try {
         collection.folders = collection.folders.map(relocate);
-        rekey(collection.overrides);
+        rekeySidecarPages(collection.overrides, moves, deletes);
         const source = input.candidate.sources[collection.pagePath];
         if (source === undefined) throw new Error(`Load ${collection.pagePath} before baking its collection.`);
         const inner = (located.get(collection.pagePath) ?? located.set(collection.pagePath, locatePageCollections(source, document, collection.pagePath)).get(collection.pagePath)!)[id];
@@ -240,52 +228,6 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The collections could not be baked." };
   }
-}
-
-/**
- * Native section and page part links whose copy the origin's URL rewrite changed. Only a copy
- * that was pristine before (its exact bytes were its basis) and is now exactly the rewritten
- * basis is rebased; a customised copy, any other change to it, or a link the origin itself
- * changed (its kind, record, target or basis) stays as it is. Malformed recognised links, before
- * or in the candidate JSON, refuse the whole plan.
- */
-function rebaseSharedLinks(input: DocumentBakeInput, document: PageBuilderDocument, beforeText: string | undefined, afterText: string | undefined,
-  moves: ReadonlyMap<string, string>, deletes: ReadonlySet<string>, rewrite: (html: string) => string) {
-  type Link = { kind: string; recordId: string; basis: string; target: Parameters<typeof locateCollectionTarget>[1] };
-  const kinds: [string, Record<string, Record<string, Link>>, Record<string, Record<string, Link>>][] = [
-    ["sections", readNativeSectionLinks(beforeText), readNativeSectionLinks(afterText)],
-    ["pageParts", readPagePartLinks(beforeText), readPagePartLinks(afterText)],
-  ];
-  for (const [field, links, afterLinks] of kinds) for (const [from, entries] of Object.entries(links)) {
-    if (deletes.has(from)) continue;
-    const page = moves.get(from) ?? from;
-    const old = input.before.sources[from], now = input.candidate.sources[page];
-    if (old === undefined || now === undefined) continue;
-    for (const [key, link] of Object.entries(entries)) {
-      // Still the same recognised link in the candidate JSON (keyed as before the move).
-      const same = Object.hasOwn(afterLinks, from) && Object.hasOwn(afterLinks[from], key) ? afterLinks[from][key] : undefined;
-      if (!same || same.kind !== link.kind || same.recordId !== link.recordId || same.basis !== link.basis || !sameJson(same.target, link.target)) continue;
-      const was = locateCollectionTarget(old, link.target);
-      if ("error" in was || old.slice(was.element.start, was.element.end) !== link.basis) continue;
-      const basis = rewrite(link.basis);
-      if (basis === link.basis) continue;
-      const group = document.pages[page]?.[field];
-      const entry = group && typeof group === "object" && !Array.isArray(group) ? group[key] : undefined;
-      if (!entry || typeof entry !== "object" || Array.isArray(entry) || entry.basis !== link.basis) continue;
-      const is = locateCollectionTarget(now, link.target);
-      if ("error" in is || now.slice(is.element.start, is.element.end) !== basis) continue;
-      entry.basis = basis;
-    }
-  }
-}
-
-/** Structural equality of JSON values; object key order does not matter. */
-function sameJson(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, index) => sameJson(item, b[index]));
-  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
-  const left = Object.keys(a), right = Object.keys(b);
-  return left.length === right.length && left.every((key) => Object.hasOwn(b, key) && sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }
 
 /**

@@ -1,9 +1,9 @@
 import { nativePageRoute } from "../../shared/native-routes";
+import { attribute, locateSectionTarget, makeSectionTarget, type SectionTarget } from "./source-target";
 import { descendants, parseSource, type SourceElement } from "./component-model";
-import { attribute } from "./collection-model";
 import {
-  EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
-  type CollectionTarget, type JsonValue, type PageBuilderDocument,
+  EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument,
+  type JsonValue, type PageBuilderDocument,
 } from "./page-builder-document";
 import type { StaticSectionOperation, StaticSectionRecord } from "./static-sections";
 
@@ -16,7 +16,7 @@ import type { StaticSectionOperation, StaticSectionRecord } from "./static-secti
  * A link holds:
  * - `recordId`: the saved section record (`reusableSections.records[id]`);
  * - `target`: the unique locator of the copy (authored id, else tag and exact opening tag),
- *   from `makeCollectionTarget`; it never falls back to a path or a class;
+ *   from `makeSectionTarget`; it never falls back to a path or a class;
  * - `basis`: the record's literal HTML the copy was made from. A copy whose current outer HTML
  *   equals its basis is unchanged; any other copy is customised and is never rewritten.
  *
@@ -35,7 +35,7 @@ import type { StaticSectionOperation, StaticSectionRecord } from "./static-secti
  * - an update never replaces or wraps an element that a collection in the editor JSON targets.
  */
 export const NATIVE_SECTION_KIND = "native-section";
-export interface NativeSectionLink { kind: typeof NATIVE_SECTION_KIND; recordId: string; target: CollectionTarget; basis: string; [key: string]: JsonValue | CollectionTarget }
+export interface NativeSectionLink { kind: typeof NATIVE_SECTION_KIND; recordId: string; target: SectionTarget; basis: string; [key: string]: JsonValue | SectionTarget }
 /** Links by page path, then by link key. */
 export type NativeSectionLinks = Record<string, Record<string, NativeSectionLink>>;
 
@@ -141,7 +141,7 @@ function resolveAll(links: NativeSectionLinks, sources: Readonly<Record<string, 
 function resolvePage(page: string, source: string, entries: Record<string, NativeSectionLink>): ResolvedNativeSectionLink[] {
   const found: ResolvedNativeSectionLink[] = [];
   for (const [key, link] of Object.entries(entries)) {
-    const located = locateCollectionTarget(source, link.target);
+    const located = locateSectionTarget(source, link.target);
     if ("error" in located) fail(`Section link ${key} on ${page}: ${located.error} Relink it.`);
     checkOrdinary(located.element);
     const { start, end } = located.element;
@@ -188,8 +188,8 @@ function addLink(input: { documentText: string | undefined; pagePath: string; pa
   // The page's other links must still resolve, and none may already be this section.
   const others = resolvePage(input.pagePath, input.pageSource, existing[input.pagePath] ?? {});
   if (others.some((other) => other.start === input.element.start)) fail("This section is already linked.");
-  const target = makeCollectionTarget(input.pageSource, input.element);
-  const located = locateCollectionTarget(input.pageSource, target);
+  const target = makeSectionTarget(input.pageSource, input.element);
+  const located = locateSectionTarget(input.pageSource, target);
   if ("error" in located || located.element.start !== input.element.start) fail("This section cannot be told apart from another on the page; give it an id to link it.");
   const page = (document.pages[input.pagePath] ??= {});
   const sections = (page.sections ??= {});
@@ -322,8 +322,8 @@ export function planNativeSectionCopiesUpdate(input: {
         if (isUpdated) delta += html.length - (entry.end - entry.start);
         const element = findElement(after, start, end);
         if (!element) fail(`Section link ${entry.key} on ${page} could not be found after the update.`);
-        const target = makeCollectionTarget(after, element);
-        const located = locateCollectionTarget(after, target);
+        const target = makeSectionTarget(after, element);
+        const located = locateSectionTarget(after, target);
         if ("error" in located || located.element.start !== start) fail(`After the update, section link ${entry.key} on ${page} would be ambiguous. Give the sections ids.`);
         const old = sections[entry.key] as unknown as NativeSectionLink;
         sections[entry.key] = { ...old, target, ...(isUpdated ? { basis: html } : {}) } as unknown as JsonValue;

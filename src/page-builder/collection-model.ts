@@ -3,6 +3,7 @@ import { startTagAttribute, VOID_ELEMENTS } from "../../shared/html-source";
 import { descendants, parseSource, type SourceElement } from "./component-model";
 import { escapeText } from "./site-head";
 import { decodeHtmlEntities } from "./html-entities";
+import { attribute } from "./source-target";
 import { fieldName, ownPageField, readPageFields, type CollectionIdentity, type PageFields } from "./collection-fields";
 
 export interface CollectionSpec {
@@ -20,10 +21,6 @@ export interface SourceCollection {
   fields: string[];
 }
 export const MAX_COLLECTION_ITEMS = 500;
-export function attribute(source: string, el: SourceElement, name: string): string | undefined {
-  const found = startTagAttribute(source, el.tag, name);
-  return found ? decodeHtmlEntities(found.value, true) : undefined;
-}
 /** Explicit custom fields remain known when the last page supplying them leaves. */
 export function declaredCollectionFields(source: string, element: SourceElement): string[] {
   const value = attribute(source, element, "data-fields");

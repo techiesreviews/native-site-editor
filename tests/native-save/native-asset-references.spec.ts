@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { makeCollectionTarget } from "../../src/page-builder/page-builder-document";
+import "../../src/page-builder/page-builder-document";
+import { makeSectionTarget } from "../../src/page-builder/source-target";
 import { storedDraft, storedDrafts } from "./drafts";
 
 // Renaming or deleting a site file in the Files tab: every page, stylesheet
@@ -13,7 +14,7 @@ const card = '<article><a href="/work/lifecycle/">Lifecycle</a><img src="/images
 const external = '<img src="https://example.com/images/studio-desk.svg" alt="">';
 const home = `<!doctype html><html><head><title>Collection proof</title></head><body><main><div id="proof-cards">${card}</div><p>${external}</p></main></body></html>`;
 const source = '<!doctype html><html><head><title>Lifecycle</title><meta name="description" content="Original description"><meta property="og:image" content="/images/studio-desk.svg"></head><body><main><h1>Lifecycle</h1></main></body></html>';
-const recipe = JSON.stringify({ version: 1, pages: { [item]: { fields: { keep: "yes" } } }, futureKey: { keep: true }, collections: { proof: { pagePath: "index.html", target: makeCollectionTarget(home, home.indexOf("<div")), folders: ["/work/"], sort: "title", filter: "", limit: 500, template: '<article><a href="{url}">{title}</a><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + "\n";
+const recipe = JSON.stringify({ version: 1, pages: { [item]: { fields: { keep: "yes" } } }, futureKey: { keep: true }, collections: { proof: { pagePath: "index.html", target: makeSectionTarget(home, home.indexOf("<div")), folders: ["/work/"], sort: "title", filter: "", limit: 500, template: '<article><a href="{url}">{title}</a><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + "\n";
 const mounted = (page: Page, path: string) => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 
 async function seed(page: Page, baseURL: string | undefined) {
@@ -74,7 +75,7 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   const folderCard = card.replace("/images/studio-desk.svg", photo);
   const folderHome = `<!doctype html><html><head><title>Collection proof</title><meta property="og:image" content="${photo}"></head><body><main><div id="proof-cards">${folderCard}</div>${extra}</main></body></html>`;
   const folderRecipe = JSON.parse(recipe);
-  folderRecipe.collections.proof.target = makeCollectionTarget(folderHome, folderHome.indexOf("<div"));
+  folderRecipe.collections.proof.target = makeSectionTarget(folderHome, folderHome.indexOf("<div"));
   folderRecipe.collections.proof.outputFingerprint = folderCard;
   await page.goto(baseURL!);
   for (const [path, content] of [["index.html", folderHome], [item, itemSource], [side, JSON.stringify(folderRecipe, null, 2) + "\n"], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])

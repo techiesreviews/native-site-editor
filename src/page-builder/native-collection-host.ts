@@ -1,11 +1,13 @@
 import { deriveNativeRoutes, nativePageRoute } from '../../shared/native-routes';
-import { groupRouteChanges, rewriteRouteLinks, type FileMove } from '../native-page-moves';
+import type { FileMove } from '../native-page-moves';
 import { attributeEdit, descendants, parseSource } from './component-model';
 import { applyCollectionEdits, planBake, type BrokenListing, type CollectionPreview } from './collection-bake';
-import { attribute, collectionFolders, collectionRecords, readCollections, validCollectionRoute } from './collection-model';
+import { collectionFolders, collectionRecords, readCollections, validCollectionRoute } from './collection-model';
+import { attribute } from './source-target';
 import { resolvePageFields, type CollectionIdentity } from './collection-fields';
 import { bakePageData, planDocumentBake, readSidecar, type DocumentCollectionPreview } from './document-collections';
 import { EDITOR_PAGE_BUILDER_PATH } from './page-builder-document';
+import { routeLinkRewrite } from './sidecar-pages';
 
 /** Structurally compatible with the host's atomic NativeOperation. */
 export interface NativeCollectionOrigin {
@@ -203,6 +205,24 @@ function listingInputs(sources: Readonly<Record<string, string>>, routes: Readon
   return JSON.stringify(records.map(record => [record.path, record.url, resolvePageFields(record.fields, Object.hasOwn(pages, record.path) ? pages[record.path] : undefined)]));
 }
 
+/**
+ * Whether the graph, before or after the origin, has any collection: a recipe
+ * in the editor's JSON or a `data-each` listing in an HTML file. An unread or
+ * unreadable JSON, and any origin with collection intent, count as having one
+ * (the guarded planner then names the problem).
+ */
+export function graphHasCollections(snapshot: Pick<NativeCollectionSnapshot, 'files' | 'sources'>, origin: NativeCollectionOrigin): boolean {
+  if (origin.refreshCollections || origin.refreshCollection !== undefined || origin.acceptGeneratedDrift?.length || origin.acceptCollections?.length || origin.driftBasis) return true;
+  if (snapshot.files.includes(EDITOR_PAGE_BUILDER_PATH) && own(snapshot.sources, EDITOR_PAGE_BUILDER_PATH) === undefined) return true;
+  const texts: [string, string][] = [...Object.entries(snapshot.sources), ...(origin.edits ?? []), ...(origin.creates ?? []).map((file): [string, string] => [file.path, file.content])];
+  for (const [path, text] of texts) {
+    if (path === EDITOR_PAGE_BUILDER_PATH) {
+      try { if (Object.keys(readSidecar(text).collections).length) return true; } catch { return true; }
+    } else if (/\.html?$/i.test(path) && /data-each/i.test(text)) return true;
+  }
+  return false;
+}
+
 /** The status line's words for listings an operation left as they are. */
 export function skippedListingsMessage(skipped: readonly BrokenListing[]): string {
   if (!skipped.length) return '';
@@ -358,12 +378,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       }
     }
     // The URL changes of moved pages, as the Files move rewrites links: shared copies' bases follow.
-    const afterRouteOf = new Map(Object.entries(afterRoutes).map(([url, path]) => [path, url]));
-    const urlPairs = Object.entries(routes).flatMap(([url, path]): [string, string][] => {
-      const next = movedFiles.has(path) ? afterRouteOf.get(movedFiles.get(path)!) : undefined;
-      return next && next !== url ? [[url, next]] : [];
-    });
-    const urlChanges = urlPairs.length ? groupRouteChanges(Object.keys(routes), urlPairs) : [];
+    const rewriteLinks = routeLinkRewrite(routes, afterRoutes, movedFiles);
     // Sidecar collections: recipes only in JSON, finished cards only in HTML.
     const document = planDocumentBake({
       identity: candidateIdentity, beforeIdentity: origin.driftBasis?.identity ?? identity, skipBroken: true,
@@ -374,7 +389,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
       deletes,
       relocateFolder: relocatedFolder,
       accept: origin.acceptCollections,
-      ...(urlChanges.length ? { rewriteLinks: (html: string) => urlChanges.reduce((text, change) => rewriteRouteLinks(text, change.from, change.to, change.subtree).text, html) } : {}),
+      ...(rewriteLinks ? { rewriteLinks } : {}),
     });
     if ('error' in document) return { error: document.error };
     skipped.push(...document.skipped);
