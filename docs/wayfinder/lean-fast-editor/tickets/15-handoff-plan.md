@@ -25,6 +25,7 @@ Decided with Lex.
 4. Page settings › Fields.
 5. Collections, generated rows, asset hooks; sidecar strips `collections` and `pages[*].fields`.
 6. Docs.
+7. Fix the 14 browser specs that already failed on `dev` before phase 1 (full run after P1.1 + P1.2, 2026-10-06: 707 passed, 15 failed, 110 skipped; 14 reproduce on the pre-phase-1 base, 1 was a flake that passes 3/3 alone). They cover asset-reference refusal wording (1), the Page settings entry in create/history specs (4), the saved-section catalogue in Add specs (4), file/page URL menus (3), routing (1) and component CSS load count (1). Several touch Page Fields and collections, so this lands after steps 4–5, before phase 3 puts browser tests in CI.
 
 **Phase 2: quick performance wins**
 1. Immutable `/assets/*` cache header; reload-once on failed chunk loads.
