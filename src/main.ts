@@ -71,6 +71,8 @@ import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size
 import { createCommitHistory } from "./components/commit-history";
 import { gridOfItem } from "./page-builder/card-source";
 import { createCards, type Cards } from "./page-builder/cards";
+import { cardListing } from "./page-builder/card-listings";
+import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
@@ -96,7 +98,7 @@ import { planSelectedStaticSectionSave } from "./page-builder/native-section-sav
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
-import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { graphHasCollections, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { planBake } from "./page-builder/collection-bake";
@@ -3360,7 +3362,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
   // Captured before any await: a newer edit, branch or repository is refused, never overwritten.
   const scope = setupScope(), epoch = generation;
   const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH), sidecarKnown = sidecar !== undefined || !nativeFiles().includes(EDITOR_PAGE_BUILDER_PATH);
-  const listed = editorModule?.isMounted(path) ? await nativePageIsListed(path) : true;
+  const listed = await nativePageIsListed(path);
   if (scope !== setupScope() || epoch !== generation || nativeEffectiveSource(path) !== source)
     return "The page changed meanwhile. Try again.";
   if (editorModule?.isMounted(path) && !listed) {
@@ -3374,7 +3376,8 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
     element("status").textContent = done;
     return undefined;
   }
-  return applyNativeCollectionOperation({
+  // Collections layer (goes with collections): only a listed page needs its listings baked with it.
+  return (listed ? applyNativeCollectionOperation : applyNativeOperation)({
     expectedSources: new Map<string, string | undefined>([[path, source], ...(sidecarKnown ? [[EDITOR_PAGE_BUILDER_PATH, sidecar] as const] : [])]),
     edits: new Map([[path, next]]),
     done,
@@ -5405,6 +5408,8 @@ function mountCards() {
       afterFileChanges();
     },
     operation: applyNativeCollectionOperation,
+    // Collections layer (goes with collections).
+    listing: (path, source, first) => cardListing(path, source, first, nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH), nativePathExists(EDITOR_PAGE_BUILDER_PATH)),
     pageLabel: nativePageLabelOf,
     announce,
   });
@@ -5795,6 +5800,8 @@ interface NativeOperation {
    * is still at `after`).
    */
   companionOf?: { path: string; before: number; after: number; source: string; onRefused?: (direction: "undo" | "redo") => void };
+  /** The editor's JSON already follows this operation's moves and deletes (a collection plan did it). */
+  sidecarPlanned?: true;
 }
 
 // The whole current file graph for collection planning: every existing path
@@ -5813,8 +5820,10 @@ function nativeCollectionSnapshot(scope = draftScope()): NativeCollectionSnapsho
 }
 
 /**
- * Plans an operation against the whole graph so dependent collection listings
- * are baked from the result, then applies everything as one NativeOperation:
+ * Collections layer (goes with collections). An operation that may change a
+ * collection listing (it touches HTML, the site config or the editor's JSON on
+ * a site with collections) is planned against the whole graph so dependent
+ * listings are baked from the result, then applied as one NativeOperation:
  * one draft write and one Undo. The plan's graph, identity, revision and every
  * input source are checked again right before the synchronous write.
  */
@@ -5833,10 +5842,8 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
   // is applied as it was, without reading or baking other pages.
   const listingInput = origin.refreshCollections === true || Boolean(origin.folders?.length) || Boolean(origin.acceptGeneratedDrift?.length) || Boolean(origin.acceptCollections?.length)
     || touched.some((path) => path === NATIVE_CONFIG_PATH || path === EDITOR_PAGE_BUILDER_PATH || /\.html?$/i.test(path));
-  if (!listingInput) {
-    const { refreshCollections: _refresh, folders: _none, acceptGeneratedDrift: _drift, acceptCollections: _accept, ...plain } = origin;
-    return applyNativeOperation(plain);
-  }
+  const { refreshCollections: _refresh, refreshCollection: _recipe, folders: _none, acceptGeneratedDrift: _drift, acceptCollections: _accept, driftBasis: _basis, ...plain } = origin;
+  if (!listingInput) return applyNativeOperation(plain);
   // The editor's JSON drives every stored listing: pin its bytes (or absence) as
   // they are now, before any await, so a newer JSON is refused, never re-planned.
   if (!expectedSources.has(EDITOR_PAGE_BUILDER_PATH)) {
@@ -5856,6 +5863,8 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
     if (extraCurrent && !extraCurrent()) return "The repository or source changed meanwhile. Review the latest files and try again.";
     snapshot = nativeCollectionSnapshot();
   }
+  // A site without collections, before and after, has no listing to bake: the plain operation does it all.
+  if (!graphHasCollections(snapshot, origin)) return applyNativeOperation({ ...plain, expectedSources: origin.expectedSources, ...(extraCurrent ? { current: extraCurrent } : {}) });
   // The site name may change in this very operation: read it from the result,
   // with the home page found among the files as they are after it.
   const movedFrom = new Map((origin.moves ?? []).map((move) => [move.to, move.from]));
@@ -5873,7 +5882,7 @@ async function applyNativeCollectionOperation(origin: NativeCollectionOrigin & {
   const current = () => nativeCollectionPlanIsCurrent(plan, nativeCollectionSnapshot()) && (extraCurrent?.() ?? true);
   if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
   // Listings that cannot be baked and that this change does not touch stay as they are; the status says so.
-  return applyNativeOperation({ ...plan.operation, done: plan.operation.done + skippedListingsMessage(plan.skipped), current });
+  return applyNativeOperation({ ...plan.operation, done: plan.operation.done + skippedListingsMessage(plan.skipped), current, sidecarPlanned: true });
 }
 
 /**
@@ -5968,12 +5977,80 @@ async function branchText(path: string): Promise<{ sha: string; text: string } |
 }
 
 /**
+ * The editor's JSON (`.editor/page-builder.json`) follows an operation that
+ * moves or deletes pages, in that same operation (one draft write, one Undo):
+ * page entries are re-keyed or dropped and shared copies' link bases follow a
+ * URL change (src/page-builder/sidecar-pages.ts). The JSON is pinned as read
+ * (or as absent). Resolves to the operation to apply, or an error.
+ */
+async function withSidecarPages(op: NativeOperation): Promise<NativeOperation | string> {
+  const SIDE = EDITOR_PAGE_BUILDER_PATH;
+  const moves = op.moves ?? [], deletes = op.deletes ?? [];
+  // Entries are keyed by page; only a page moved or deleted can need them changed.
+  if (![...moves.map((move) => move.from), ...deletes].some((path) => nativePageRoute(path) !== undefined)) return op;
+  // The file itself moving or going takes its entries with it.
+  if (deletes.includes(SIDE) || moves.some((move) => move.from === SIDE || move.to === SIDE)) return op;
+  const changed = "The repository or source changed meanwhile. Review the latest files and try again.";
+  // Every touched path is pinned as the caller computed from it, before any await.
+  const expectedSources = new Map(op.expectedSources ?? []);
+  for (const path of [...moves.flatMap((move) => [move.from, move.to]), ...deletes, ...(op.creates ?? []).map((file) => file.path), ...(op.edits?.keys() ?? [])])
+    if (!expectedSources.has(path)) expectedSources.set(path, nativeEffectiveSource(path));
+  const created = op.creates?.find((file) => file.path === SIDE);
+  const exists = nativeFiles().includes(SIDE);
+  if (!created && !exists && !op.edits?.has(SIDE)) {
+    if (!expectedSources.has(SIDE)) expectedSources.set(SIDE, undefined);
+    return { ...op, expectedSources };
+  }
+  // The JSON, and the pages whose links may be rebased, are read before they are changed.
+  const scope = setupScope(), epoch = generation;
+  const unloaded = () => exists && nativeEffectiveSource(SIDE) === undefined ||
+    moves.some((move) => nativePageRoute(move.from) !== undefined && nativeEffectiveSource(move.from) === undefined);
+  if (unloaded()) {
+    const error = await ensureNativeTextIndex();
+    if (error) return error;
+    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
+    if ([...expectedSources].some(([path, source]) => source !== undefined && nativeEffectiveSource(path) !== source)) return changed;
+    if (unloaded()) return `${SIDE} could not be read, so nothing was changed.`;
+  }
+  const beforeText = exists ? nativeEffectiveSource(SIDE) : undefined;
+  if (expectedSources.has(SIDE) && expectedSources.get(SIDE) !== beforeText) return changed;
+  expectedSources.set(SIDE, beforeText);
+  const afterText = op.edits?.get(SIDE) ?? created?.content ?? beforeText;
+  const files = nativeFiles();
+  const afterFiles = new Set(files);
+  for (const move of moves) { afterFiles.delete(move.from); afterFiles.add(move.to); }
+  for (const path of deletes) afterFiles.delete(path);
+  for (const file of op.creates ?? []) afterFiles.add(file.path);
+  const moved = new Map(moves.map((move) => [move.to, move.from]));
+  const before: Record<string, string | undefined> = {}, after: Record<string, string | undefined> = {};
+  for (const path of files) before[path] = nativeEffectiveSource(path);
+  for (const path of afterFiles)
+    after[path] = op.edits?.get(path) ?? op.creates?.find((file) => file.path === path)?.content ?? nativeEffectiveSource(moved.get(path) ?? path);
+  const moveMap = new Map(moves.map((move) => [move.from, move.to]));
+  let text: string | undefined;
+  try {
+    text = planSidecarPages(beforeText, afterText, { before, after, moves: moveMap, deletes,
+      rewriteLinks: routeLinkRewrite(deriveNativeRoutes(files), deriveNativeRoutes([...afterFiles]), moveMap) });
+  } catch (error) {
+    return error instanceof Error ? error.message : "The editor's page data could not follow this change.";
+  }
+  if (text === undefined) return { ...op, expectedSources };
+  if (created) return { ...op, expectedSources, creates: op.creates!.map((file) => file.path === SIDE ? { ...file, content: text } : file) };
+  return { ...op, expectedSources, edits: new Map([...(op.edits ?? []), [SIDE, text]]) };
+}
+
+/**
  * Moves, deletes, creates and edits files as one operation: drafts written, routes found again,
  * the trees drawn, the file that was open open where it went. Undo in the
  * open file's editor right after puts every draft back as it was. Resolves
  * to an error message, or nothing.
  */
 async function applyNativeOperation(op: NativeOperation): Promise<string | undefined> {
+  if (!op.sidecarPlanned) {
+    const planned = await withSidecarPages(op);
+    if (typeof planned === "string") return planned;
+    op = planned;
+  }
   const scope = draftScope();
   if (!scope || !currentRepo) return "Open a repository first.";
   const store = draftStore();

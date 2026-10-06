@@ -19,7 +19,7 @@ typed kind and don't change what Add offers.
   - `reusablePageParts: { version: 1, records: { <id>: { id, label, rootTag, rootClass, htmlPath, stylesheetPath } } }`.
     `rootTag` is `header` or `footer`; `htmlPath` is always the master path; there is no `html`.
   - `pages[path].pageParts[key]: { kind: "native-page-part", recordId, target, basis }`: a link from
-    one copy to its record. `target` is `makeCollectionTarget`'s locator (authored id, else tag and
+    one copy to its record. `target` is `makeSectionTarget`'s locator (authored id, else tag and
     exact opening tag); `basis` the literal bytes the copy was linked or last updated from.
   - Unknown keys in records, links, containers, pages and the top level are kept, and so are
     entries of other kinds, collections and section links.

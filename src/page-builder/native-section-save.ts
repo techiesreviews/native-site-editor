@@ -1,6 +1,6 @@
 import { nativePageRoute } from "../../shared/native-routes";
 import { parseSource, type SourceElement } from "./component-model";
-import { attribute } from "./collection-model";
+import { attribute } from "./source-target";
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";
 import { moveLinkedCopyBasis, sectionCore } from "./native-section-links";
 import { checkSavedSectionHtml, planStaticSectionSave, readSectionCatalog, type StaticSectionEntry, type StaticSectionMasterEntry, type StaticSectionOperation, type StaticSectionRecord } from "./static-sections";

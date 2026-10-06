@@ -1,7 +1,8 @@
 import { openPageSettingsFromPages } from "./settings-entry";
 import { createHash } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { makeCollectionTarget } from '../../src/page-builder/page-builder-document';
+import '../../src/page-builder/page-builder-document';
+import { makeSectionTarget } from '../../src/page-builder/source-target';
 import { storedDraft, storedDrafts } from './drafts';
 import { publishButton, showPublish } from './publish';
 
@@ -12,7 +13,7 @@ const item = 'work/lifecycle/index.html';
 const card = '<article><a href="/work/lifecycle/">Lifecycle</a><p>Original description</p><img src="/images/studio-desk.svg" alt="Lifecycle"></article>';
 const home = `<!doctype html><html><head><title>Collection proof</title></head><body><main><div id="proof-cards">${card}</div></main></body></html>`;
 const source = '<!doctype html><html><head><title>Lifecycle</title><meta name="description" content="Original description"><meta property="og:image" content="/images/studio-desk.svg"></head><body><main><h1>Lifecycle</h1></main></body></html>';
-const recipe = JSON.stringify({ version: 1, pages: { [item]: { fields: { keep: 'yes' } } }, futureKey: { keep: true }, collections: { proof: { pagePath: 'index.html', target: makeCollectionTarget(home, home.indexOf('<div')), folders: ['/work/'], sort: 'title', filter: '', limit: 500, template: '<article><a href="{url}">{title}</a><p>{description}</p><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + '\n';
+const recipe = JSON.stringify({ version: 1, pages: { [item]: { fields: { keep: 'yes' } } }, futureKey: { keep: true }, collections: { proof: { pagePath: 'index.html', target: makeSectionTarget(home, home.indexOf('<div')), folders: ['/work/'], sort: 'title', filter: '', limit: 500, template: '<article><a href="{url}">{title}</a><p>{description}</p><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + '\n';
 const changed = source.replace('<title>Lifecycle</title>', '<title>Code title</title>').replace('Original description', 'Code description');
 const mounted = (page: Page, path: string) => page.evaluate(async path => (await import('/src/components/code-editor.ts')).getMountedSource(path), path);
 const frame = (page: Page) => page.frameLocator('.native-preview-frame');
@@ -236,7 +237,7 @@ for (const mode of ['paste', 'typing', 'configured-name'] as const) test(mode ==
   const oldHome = home.replace('</head>', '<meta property="og:site_name" content="Old"></head>');
   const oldItem = source.replace('<title>Lifecycle</title>', '<title>Lifecycle | Old</title>');
   const document = JSON.parse(recipe);
-  document.collections.proof.target = makeCollectionTarget(oldHome, oldHome.indexOf('<div'));
+  document.collections.proof.target = makeSectionTarget(oldHome, oldHome.indexOf('<div'));
   const oldRecipe = JSON.stringify(document, null, 2) + '\n';
   for (const [path, content] of [['index.html', oldHome], [item, oldItem], [side, oldRecipe], ['.editor/config.json', mode === 'configured-name' ? '{"site":{"name":"Old"}}\n' : '{}\n']])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
@@ -295,7 +296,7 @@ for (const mode of ['selected', 'identity'] as const) test(`a broken inline list
   const oldItem = source.replace('<title>Lifecycle</title>', '<title>Lifecycle | Old</title>');
   const inline = '<html><head><title>Broken</title></head><body><div data-each="/work/"><template><a>{nope}</a></template><p>Keep exact</p></div></body></html>';
   const document = JSON.parse(recipe);
-  document.collections.proof.target = makeCollectionTarget(oldHome, oldHome.indexOf('<div'));
+  document.collections.proof.target = makeSectionTarget(oldHome, oldHome.indexOf('<div'));
   const oldRecipe = JSON.stringify(document, null, 2) + '\n';
   for (const [path, content] of [['index.html', oldHome], [item, oldItem], [side, oldRecipe], ['broken.html', inline], ['.editor/config.json', '{}\n']])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);

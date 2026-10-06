@@ -1,8 +1,9 @@
 import type { CollectionIdentity } from "./collection-fields";
+import { makeSectionTarget, locateSectionTarget } from "./source-target";
 import { readCollections } from "./collection-model";
 import { applyCollectionEdits } from "./collection-bake";
 import { locatePageCollections, readSidecar } from "./document-collections";
-import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, makeCollectionTarget, planLegacyCollectionImport, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, planLegacyCollectionImport, writePageBuilderDocument, type PageBuilderCollection, type PageBuilderDocument } from "./page-builder-document";
 
 /**
  * Builds the one operation that stores a grid's recipe in the editor's page
@@ -63,7 +64,7 @@ export function planSidecarRecipe(site: SidecarSite, path: string, start: number
   const cleaned = texts.get(path) ?? source;
   // Imported recipes keep their element; the cleaned page holds it by its exact opening tag (or id).
   const target = existing?.collection.target ?? (() => {
-    const located = locateCollectionTarget(cleaned, makeCollectionTarget(source, start));
+    const located = locateSectionTarget(cleaned, makeSectionTarget(source, start));
     if ("error" in located) throw new Error(`This grid could not be found exactly in ${path}, so nothing was changed. ${located.error}`);
     return located.target;
   })();

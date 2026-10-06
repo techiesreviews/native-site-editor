@@ -2,14 +2,15 @@ import { button, node } from "../ui/dom";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { planCollectionChange, planBake, type BakePlan, type BakeResult } from "../page-builder/collection-bake";
 import { readPageFields, withCustomPageField, withPageField, type CollectionIdentity } from "../page-builder/collection-fields";
-import { attribute, collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { collectionSpec, readCollections, validCollectionRoute } from "../page-builder/collection-model";
+import { attribute, locateSectionTarget } from "../page-builder/source-target";
 import { isManualCardGrid, manualGridFolders, newCollectionToken, planManualConversion, readManualGrid } from "../page-builder/native-grid-collection";
 import { isStaticCardGrid, planStaticCardConversion, readStaticCardGrid } from "../page-builder/native-static-grid-collection";
 import { planSidecarRecipe, sidecarCollectionAt, type SidecarOrigin } from "../page-builder/collection-origins";
 import { planNativeCollectionOperation } from "../page-builder/native-collection-host";
 import { bakePageData, locatePageCollections, readSidecar, type DocumentCollectionPreview } from "../page-builder/document-collections";
 import { readEditorFieldMetas } from "../page-builder/native-page-fields";
-import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
+import { EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument, type PageBuilderDocument } from "../page-builder/page-builder-document";
 import "./collections-panel.css";
 
 export interface CollectionsDeps {
@@ -325,7 +326,7 @@ export function mountCollectionsPanel(host: HTMLElement, deps: CollectionsDeps, 
           // Each recipe is located on its own: only the ones that fail are listed, never their healthy neighbours.
           const found = new Map<string, { start: number; end: number }>();
           for (const id of ids) {
-            const located = locateCollectionTarget(source, document.collections[id].target);
+            const located = locateSectionTarget(source, document.collections[id].target);
             if ("error" in located) broken.set(id, { reason: "Its grid was changed in Code, so the editor cannot tell which element it is.", detail: located.error });
             else found.set(id, { start: located.element.start, end: located.element.end });
           }

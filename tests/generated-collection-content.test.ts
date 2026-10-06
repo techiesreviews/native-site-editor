@@ -54,10 +54,10 @@ test('manual cards keep cards and unknown attributes, drop only the recipe',()=>
 // A JSON collection on a grid with no id: found by its exact opening tag.
 {
  const { planDocumentTargetEdit } = await import('../src/page-builder/generated-collection-content');
- const { makeCollectionTarget, writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document');
+ const { writePageBuilderDocument, readPageBuilderDocument } = await import('../src/page-builder/page-builder-document'); const { makeSectionTarget } = await import('../src/page-builder/source-target');
  const home = page('Home', '<main><div class="cards"><a>One</a></div><p>Other</p></main>');
  const grid = home.indexOf('<div class="cards">');
- const recipe = { pagePath: 'index.html', target: makeCollectionTarget(home, grid), folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<a>{title}</a>', fields: [], overrides: {}, outputFingerprint: '<a>One</a>' };
+ const recipe = { pagePath: 'index.html', target: makeSectionTarget(home, grid), folders: ['/work/'], sort: '', filter: '', limit: 10, template: '<a>{title}</a>', fields: [], overrides: {}, outputFingerprint: '<a>One</a>' };
  const sidecar = writePageBuilderDocument({ version: 1, pages: { 'index.html': { fields: { mood: 'calm' } } }, collections: { work: recipe, other: { ...recipe, pagePath: 'about/index.html' } } } as never);
  const classAt = home.indexOf('cards"') + 5;
  test('a class added to a JSON grid moves its stored target with the edit, keeping everything else', () => {
@@ -86,7 +86,7 @@ test('manual cards keep cards and unknown attributes, drop only the recipe',()=>
  });
  test('a class edit that would make the grid identical to another element refuses', () => {
   const twin = page('Home', '<main><div class="cards"><a>One</a></div><div class="wide"></div></main>');
-  const twinSidecar = writePageBuilderDocument({ version: 1, pages: {}, collections: { work: { ...recipe, target: makeCollectionTarget(twin, twin.indexOf('<div class="cards">')) } } } as never);
+  const twinSidecar = writePageBuilderDocument({ version: 1, pages: {}, collections: { work: { ...recipe, target: makeSectionTarget(twin, twin.indexOf('<div class="cards">')) } } } as never);
   const at = twin.indexOf('"cards"') + 1;
   const result = planDocumentTargetEdit(twin, 'index.html', twinSidecar, [{ start: at, end: at + 5, text: 'wide' }]);
   assert.ok('error' in result);

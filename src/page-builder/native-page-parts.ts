@@ -1,14 +1,14 @@
 import { expandStyleImports } from "../../shared/css-imports";
+import { attribute, locateSectionTarget, makeSectionTarget, type SectionTarget } from "./source-target";
 import { nativePageStylesheets } from "../../shared/native-project";
 import { nativePageRoute } from "../../shared/native-routes";
-import { attribute } from "./collection-model";
 import { descendants, parseSource, startTagAttributes, type SourceElement, type SourceNode } from "./component-model";
 import { readNativeSectionLinks, type NativeSectionLinks } from "./native-section-links";
 import { nativeMarkupInsertEdit } from "./native-operations";
 import { scanMediaUrlTokens } from "./media-references";
 import {
-  EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, readPageBuilderDocument, writePageBuilderDocument,
-  type CollectionTarget, type JsonValue, type PageBuilderDocument,
+  EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument,
+  type JsonValue, type PageBuilderDocument,
 } from "./page-builder-document";
 import { readSectionCatalog, type StaticSectionOperation } from "./static-sections";
 
@@ -47,7 +47,7 @@ export interface PagePartRecord {
   stylesheetPath: string;
   [key: string]: JsonValue;
 }
-export interface PagePartLink { kind: typeof PAGE_PART_KIND; recordId: string; target: CollectionTarget; basis: string; [key: string]: JsonValue | CollectionTarget }
+export interface PagePartLink { kind: typeof PAGE_PART_KIND; recordId: string; target: SectionTarget; basis: string; [key: string]: JsonValue | SectionTarget }
 export interface ResolvedPagePartLink {
   page: string;
   key: string;
@@ -269,7 +269,7 @@ function sectionLinksOnce(documentText: string | undefined): () => NativeSection
 function otherOwnedRanges(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string): { start: number; end: number; what: string }[] {
   const out: { start: number; end: number; what: string }[] = [];
   for (const [key, link] of Object.entries(sectionLinks()[page] ?? {})) {
-    const located = locateCollectionTarget(source, link.target);
+    const located = locateSectionTarget(source, link.target);
     if ("error" in located) fail(`Section link ${key} on ${page} can't be found; fix it first.`);
     out.push({ start: located.element.start, end: located.element.end, what: `section link ${key}` });
   }
@@ -287,7 +287,7 @@ function resolvePage(document: PageBuilderDocument, sectionLinks: () => NativeSe
   const found: ResolvedPagePartLink[] = [];
   const owned = otherOwnedRanges(document, sectionLinks, page, source);
   for (const [key, link] of Object.entries(entries)) {
-    const located = locateCollectionTarget(source, link.target);
+    const located = locateSectionTarget(source, link.target);
     if ("error" in located) fail(`Page part link ${key} on ${page}: ${located.error} Relink it.`);
     if (located.element.name !== link.target.tag || !located.element.close) fail(`Page part link ${key} on ${page} no longer points at a complete ${link.target.tag}.`);
     checkAncestors(located.element);
@@ -331,8 +331,8 @@ function writeJson(document: PageBuilderDocument, documentText: string | undefin
     : { edits: new Map([[EDITOR_PAGE_BUILDER_PATH, text]]), creates: [] };
 }
 function addLink(document: PageBuilderDocument, page: string, source: string, element: SourceElement, recordId: string, basis: string, key: string | undefined): string {
-  const target = makeCollectionTarget(source, element);
-  const located = locateCollectionTarget(source, target);
+  const target = makeSectionTarget(source, element);
+  const located = locateSectionTarget(source, target);
   if ("error" in located || located.element.start !== element.start) fail(`This ${element.name} can't be told apart from another on ${page}; give it an id to link it.`);
   const metadata = (document.pages[page] ??= {});
   if (metadata.pageParts !== undefined && !plain(metadata.pageParts)) fail(`pageParts on ${page} must be an object.`);
@@ -549,8 +549,8 @@ export function planUpdatePagePartCopies(input: { documentText: string; files: r
         if (replace.includes(entry)) {
           const element = [...descendants(parseSource(text))].find((item) => item.start === start && item.end === start + html.length);
           if (!element) fail(`The updated ${record.rootTag} on ${page} could not be found again.`);
-          const target = makeCollectionTarget(text, element);
-          const located = locateCollectionTarget(text, target);
+          const target = makeSectionTarget(text, element);
+          const located = locateSectionTarget(text, target);
           if ("error" in located || located.element.start !== start) fail(`The updated ${record.rootTag} on ${page} can't be told apart from another; give it an id.`);
           parts[entry.key] = { ...parts[entry.key], target: target as unknown as JsonValue, basis: html };
           delta += html.length - (entry.end - entry.start);

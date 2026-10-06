@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyCollectionEdits } from "../src/page-builder/collection-bake.ts";
-import { EDITOR_PAGE_BUILDER_PATH, locateCollectionTarget, locateCollections, makeCollectionTarget, planLegacyCollectionImport, readPageBuilderDocument, writePageBuilderDocument } from "../src/page-builder/page-builder-document.ts";
+import { EDITOR_PAGE_BUILDER_PATH, locateCollections, planLegacyCollectionImport, readPageBuilderDocument, writePageBuilderDocument } from "../src/page-builder/page-builder-document.ts";
+import { locateSectionTarget, makeSectionTarget } from "../src/page-builder/source-target.ts";
 
 interface LegacyFixture { original: Record<string, string>; sources: Record<string, string>; routes: Record<string, string> }
 // Frozen real legacy output from planManualConversion, token gabc12, captured once.
@@ -76,27 +77,27 @@ test("malformed versions, unsafe objects and paths refuse", () => {
 
 test("locators rebind unique signatures, refuse identical siblings and changed kinds", () => {
   const source = '<html><body><div class="cards"></div></body></html>';
-  const target = makeCollectionTarget(source, source.indexOf('<div'));
-  const moved = locateCollectionTarget(source.replace('<body>', '<body><p>Before</p>'), target);
+  const target = makeSectionTarget(source, source.indexOf('<div'));
+  const moved = locateSectionTarget(source.replace('<body>', '<body><p>Before</p>'), target);
   assert.ok(!("error" in moved) && moved.rebound);
   assert.deepEqual(!("error" in moved) && moved.target.path, [0, 0, 1]);
-  assert.ok("error" in locateCollectionTarget(source.replace('</body>', '<div class="cards"></div></body>'), target));
-  assert.ok("error" in locateCollectionTarget(source.replace(/div/g, 'section'), target));
+  assert.ok("error" in locateSectionTarget(source.replace('</body>', '<div class="cards"></div></body>'), target));
+  assert.ok("error" in locateSectionTarget(source.replace(/div/g, 'section'), target));
   const named = '<section id="grid" class="cards"></section>';
-  const namedTarget = makeCollectionTarget(named, 0);
-  assert.ok(!("error" in locateCollectionTarget(named.replace('cards', 'new'), namedTarget)));
-  assert.ok("error" in locateCollectionTarget(named + named, namedTarget));
-  assert.ok("error" in locateCollectionTarget(named.replace(/section/g, 'article'), namedTarget));
-  assert.ok("error" in locateCollectionTarget('<section id="different"></section>', namedTarget));
+  const namedTarget = makeSectionTarget(named, 0);
+  assert.ok(!("error" in locateSectionTarget(named.replace('cards', 'new'), namedTarget)));
+  assert.ok("error" in locateSectionTarget(named + named, namedTarget));
+  assert.ok("error" in locateSectionTarget(named.replace(/section/g, 'article'), namedTarget));
+  assert.ok("error" in locateSectionTarget('<section id="different"></section>', namedTarget));
 });
 
 test("fingerprints normalize only a proven recipe, then match clean source", () => {
   const source = '<div id="grid" data-each="/work/" data-sort="title" class="cards" data-other="&gt;"><template><p>{title}</p></template><p>Native</p></div>';
-  const target = makeCollectionTarget(source, 0);
+  const target = makeSectionTarget(source, 0);
   assert.equal(target.openingTagFingerprint, '<div id="grid" class="cards" data-other="&gt;">');
   const ordinary = '<div data-sort="title" class="cards"></div>';
-  assert.equal(makeCollectionTarget(ordinary, 0).openingTagFingerprint, '<div data-sort="title" class="cards">');
-  assert.throws(() => makeCollectionTarget('<div data-each="/work/"></div>', 0), /template/);
+  assert.equal(makeSectionTarget(ordinary, 0).openingTagFingerprint, '<div data-sort="title" class="cards">');
+  assert.throws(() => makeSectionTarget('<div data-each="/work/"></div>', 0), /template/);
 });
 
 test("multiple recipes remove only recipe bytes, keeping cards, SEO and ordinary templates", () => {
@@ -111,7 +112,7 @@ test("multiple recipes remove only recipe bytes, keeping cards, SEO and ordinary
   assert.equal(result.expectedSources[EDITOR_PAGE_BUILDER_PATH], undefined);
   assert.ok(Object.hasOwn(result.expectedSources, EDITOR_PAGE_BUILDER_PATH));
   assert.equal(Object.keys(result.document.collections).length, 2);
-  for (const record of Object.values(result.document.collections)) assert.ok(!("error" in locateCollectionTarget(clean, record.target)));
+  for (const record of Object.values(result.document.collections)) assert.ok(!("error" in locateSectionTarget(clean, record.target)));
   assert.equal(Object.values(result.document.collections)[0].template, '<p data-if="title">{title}</p>');
   assert.ok(!clean.includes('{title}'));
   assert.equal(imported({ "index.html": clean }).edits[EDITOR_PAGE_BUILDER_PATH], undefined);
@@ -225,8 +226,8 @@ test("resolver identity refuses an idless duplicate even when its stored path di
 test("whole-page resolution refuses actual nested targets after rebinding and permits stale sibling paths", () => {
   const nested = '<section id="outer"><div id="inner"></div></section>';
   const base = Object.values(imported({ 'index.html': '<div id="grid" data-each="/work/"><template><p>{title}</p></template></div>' }).document.collections)[0];
-  const outer = { ...structuredClone(base), target: makeCollectionTarget(nested, 0) };
-  const inner = { ...structuredClone(base), target: makeCollectionTarget(nested, nested.indexOf('<div')) };
+  const outer = { ...structuredClone(base), target: makeSectionTarget(nested, 0) };
+  const inner = { ...structuredClone(base), target: makeSectionTarget(nested, nested.indexOf('<div')) };
   outer.target.path = [8]; inner.target.path = [3];
   assert.deepEqual(locateCollections(nested, { outer, inner }), { error: 'Collection targets outer and inner overlap.' });
   const siblings = '<section id="outer"></section><div id="inner"></div>';
@@ -292,7 +293,7 @@ test("head metadata removal shifts target offsets while preserving exact generat
   const result = imported(sources, routes);
   const cleaned = output(sources['index.html'], result, 'index.html');
   const record = result.document.collections.gabc12;
-  const location = locateCollectionTarget(cleaned, record.target);
+  const location = locateSectionTarget(cleaned, record.target);
   assert.ok(!('error' in location));
   if (!('error' in location)) assert.equal(location.element.start, cleaned.indexOf('<div class="cards">'));
   assert.ok(cleaned.includes('<title>Home · Site</title></head>'));
@@ -303,7 +304,7 @@ test("native metadata paths, custom field strings, empty ids and inert templates
   const document = imported({ 'index.html': '<div id="" class="cards" data-each="/work/"><template><p>{title}</p></template></div>' }).document;
   const record = Object.values(document.collections)[0];
   assert.equal(record.target.authoredId, undefined);
-  assert.ok(!('error' in locateCollectionTarget('<div id="" class="cards"></div>', record.target)));
+  assert.ok(!('error' in locateSectionTarget('<div id="" class="cards"></div>', record.target)));
   const text = writePageBuilderDocument(document);
   for (const path of ['.git/config', '.editor/page-builder.json', 'components/card/card.html', 'notes.txt']) {
     const copy = readPageBuilderDocument(text); Object.values(copy.collections)[0].pagePath = path;
@@ -316,9 +317,9 @@ test("native metadata paths, custom field strings, empty ids and inert templates
     assert.throws(() => readPageBuilderDocument(JSON.stringify(malformed)), { message: 'Page fields must use custom field names and string values.' });
   }
   assert.throws(() => readPageBuilderDocument('{"version":"1","pages":{},"collections":{}}'), { message: 'Unsupported page builder document version.' });
-  assert.throws(() => makeCollectionTarget('<template><div id="inside"></div></template>', 10), { message: 'Collection target must be a complete authored element.' });
-  const target = makeCollectionTarget('<div id="inside"></div>', 0);
-  assert.deepEqual(locateCollectionTarget('<template><div id="inside"></div></template>', target), { error: 'Collection target is missing or ambiguous.' });
+  assert.throws(() => makeSectionTarget('<template><div id="inside"></div></template>', 10), { message: 'Collection target must be a complete authored element.' });
+  const target = makeSectionTarget('<div id="inside"></div>', 0);
+  assert.deepEqual(locateSectionTarget('<template><div id="inside"></div></template>', target), { error: 'Collection target is missing or ambiguous.' });
 });
 
 test("an existing outer collection and new nested recipe refuse after actual binding", () => {

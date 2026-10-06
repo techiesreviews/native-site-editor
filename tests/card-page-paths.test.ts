@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFolderChoices, cardFolderCovered, cardPageFolders, cardRecipeFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
-import { EDITOR_PAGE_BUILDER_PATH, makeCollectionTarget } from "../src/page-builder/page-builder-document.ts";
+import { cardFolderChoices, cardFolderCovered, cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
+import { cardRecipeFolders } from "../src/page-builder/card-listings.ts";
+import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document.ts";
+import { makeSectionTarget } from "../src/page-builder/source-target.ts";
 
 // The new page a card grid's "Add card" makes: which folder it goes in, a
 // new folder there, and what a generated listing's source folders allow
@@ -87,7 +89,7 @@ test("after a page from another folder joins a grid, its default folder stays ex
 const page = `<html><body><main><h2>Work</h2><div class="grid"><article><a href="/work/a/">A</a></article><article><a href="/work/b/">B</a></article></div></main></body></html>`;
 const first = { start: page.indexOf("<article>"), end: page.indexOf("</article>") + 10 };
 const record = (folders: string[]) => ({
-  pagePath: "index.html", target: makeCollectionTarget(page, page.indexOf('<div class="grid"')), folders, sort: "", filter: "", limit: 500,
+  pagePath: "index.html", target: makeSectionTarget(page, page.indexOf('<div class="grid"')), folders, sort: "", filter: "", limit: 500,
   template: `<article><a href="{url}">{title}</a></article>`, fields: [], overrides: {}, extra: { kept: true },
 });
 const sidecar = (folders: string[]) => JSON.stringify({ version: 1, pages: {}, collections: { work: record(folders) } }, null, 2);

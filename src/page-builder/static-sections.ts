@@ -3,7 +3,7 @@ import { splitSelectorList } from "../../shared/cascade";
 import { resolveImportPath, parseCssImports } from "../../shared/css-imports";
 import { nativePageRoute } from "../../shared/native-routes";
 import { descendants, parseSource, startTagAttributes, type SourceElement } from "./component-model";
-import { attribute } from "./collection-model";
+import { attribute } from "./source-target";
 import { scanCss, validateCssSource, type CssBlock } from "./css-write";
 import { nativeMarkupInsertEdit } from "./native-operations";
 import { headTags } from "./site-head";
