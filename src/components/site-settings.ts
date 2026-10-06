@@ -10,8 +10,6 @@ export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
   applyPage: (path: string, fields: Partial<Record<HeadField, string>>) => Promise<string | undefined>;
-  /** Mounts collection recipe recovery controls; returns their cleanup. */
-  collections?: (host: HTMLElement) => () => void;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
@@ -309,12 +307,6 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         initialTitleLink = applied.titleLink; initialDescriptionLink = applied.descriptionLink;
         applied = undefined;
       });
-      if (handlers.collections) {
-        const recovery = node("div");
-        generalPanel.append(recovery);
-        const destroy = handlers.collections(recovery);
-        dialog.root.addEventListener("close", destroy, { once: true });
-      }
       dialog.show();
     },
     site(options: { values: SiteSettingsValues; pages: SitePageChoice[]; images: string[]; has404: boolean }) {

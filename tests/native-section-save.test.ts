@@ -7,9 +7,8 @@ import { readStaticSectionRecords } from "../src/page-builder/static-sections.ts
 
 const intro = DEFAULT_STATIC_SECTIONS.find((s) => s.id === "intro")!;
 const contact = DEFAULT_STATIC_SECTIONS.find((s) => s.id === "contact")!;
-const collection = { pagePath: "blog.html", target: { path: [0, 0], tag: "div", authoredId: "grid", openingTagFingerprint: '<div id="grid">' }, folders: ["/posts/"], sort: "", filter: "", limit: 3, template: "<p></p>", fields: [], overrides: {} };
 const doc = JSON.stringify({
-  version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, collections: { blog: collection }, future: { kept: true },
+  version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, future: { kept: true },
   reusableSections: { version: 1, extra: [1], records: { intro: { ...intro, note: "keep" }, contact: { ...contact } } },
 }, null, 2);
 const edited = `<section class="section-intro wide"><h2>Lex's "new" title</h2>\n<p>Line two <img src="a.png" alt="A &quot;cat&quot;"> <a href="/about">About</a></p></section>`;
@@ -43,8 +42,6 @@ test("saves the exact edited section HTML into the matching record only, as a JS
   assert.deepEqual(records.contact, { ...contact });
   const before = readPageBuilderDocument(doc), after = readPageBuilderDocument(text);
   assert.deepEqual(after.pages, before.pages);
-  assert.deepEqual(after.collections, before.collections);
-  assert.deepEqual(after.collections.blog, collection);
   assert.deepEqual(after.future, { kept: true });
   assert.deepEqual((after.reusableSections as { extra: unknown }).extra, [1]);
 });
@@ -117,7 +114,7 @@ test("refuses unloaded, absent or malformed editor JSON and wrong pages", () => 
   bad(input({ documentText: undefined, files: ["index.html"] }), /no saved section to update/);
   bad(input({ documentText: "{ nope" }), /./);
   bad(input({ documentText: JSON.stringify({ version: 1 }) }), /Pages must be/);
-  bad(input({ documentText: JSON.stringify({ version: 1, pages: {}, collections: {} }) }), /does not match a saved section/);
+  bad(input({ documentText: JSON.stringify({ version: 1, pages: {} }) }), /does not match a saved section/);
   bad(input({ pagePath: "notes.txt" }), /native HTML page/);
   bad(input({ files: ["other.html", EDITOR_PAGE_BUILDER_PATH] }), /file graph/);
 });

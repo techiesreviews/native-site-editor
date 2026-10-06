@@ -64,13 +64,13 @@ test('inside and partial island paths refuse insertion/move and leave source/his
   expect(result.insertions).toEqual([false,false,false,false,false,false]);expect(result.moves).toEqual([false,false,false]);expect(result.source).toBe(source);
   expect(await page.evaluate(()=>(window as any).elementCompat.history('undo'))).toBe(false);
 });
-test('inline custom/foreign islands and list collection templates preserve real browser parent boundaries',async({page})=>{
-  const inline='<p id="inline-islands"><x-label><span>Inline</span></x-label><svg><path/></svg><math><mi>x</mi></math><template><div>Separate content</div></template></p><ul id="collection-list"><template data-each="/notes/"><li>{title}</li></template><li>Existing</li></ul>';
+test('inline custom/foreign islands and inert list templates preserve real browser parent boundaries',async({page})=>{
+  const inline='<p id="inline-islands"><x-label><span>Inline</span></x-label><svg><path/></svg><math><mi>x</mi></math><template><div>Separate content</div></template></p><ul id="template-list"><template><li>Example</li></template><li>Existing</li></ul>';
   await page.evaluate(inline=>{const h=(window as any).elementCompat;const before=h.state.source;const after=before.replace('  <section class="hero"',inline+'  <section class="hero"');h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:after});},inline);
   const frame=page.frameLocator('.native-preview-frame');
   await expect(frame.locator('#inline-islands')).toBeVisible();
   expect(await frame.locator('#inline-islands').evaluate(el=>({parent:el.parentElement?.tagName,children:[...el.children].map(child=>child.localName),templateChildren:el.querySelector('template')?.children.length}))).toEqual({parent:'MAIN',children:['x-label','svg','math','template'],templateChildren:0});
-  expect(await frame.locator('#collection-list').evaluate(el=>[...el.children].map(child=>child.localName))).toEqual(['template','li']);
+  expect(await frame.locator('#template-list').evaluate(el=>[...el.children].map(child=>child.localName))).toEqual(['template','li']);
   expect(await page.evaluate(()=>(window as any).elementCompat.insert([1,5],0,'<p id="inline-proof">Outside remains editable</p>'))).toBe(true);
   await expect(frame.locator('#inline-proof')).toBeVisible();
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain(inline);

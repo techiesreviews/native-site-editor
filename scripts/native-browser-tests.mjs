@@ -5,8 +5,7 @@ import { createRequire } from "node:module";
 import { fixtureKind } from "../tests/native-save/fixture-contract.ts";
 
 const actualOnly = new Set([
-  "native-card-paths-json.spec.ts", "native-card-paths-starter.spec.ts",
-  "native-editor-json-lifecycle.spec.ts",
+  "native-card-paths-starter.spec.ts",
   "native-static-section-save-host.spec.ts",
   "native-social-preview.spec.ts",
   "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",

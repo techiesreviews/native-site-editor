@@ -11,7 +11,7 @@ function input(extra: Partial<StaticSectionInsertInput> = {}): StaticSectionInse
 }
 function good(value: StaticSectionInsertInput) { const before = structuredClone(value); const r = planDefaultStaticSectionInsert(value); if ("error" in r) assert.fail(r.error); assert.deepEqual(value, before); return r; }
 function bad(value: StaticSectionInsertInput, reason: string) { const before = structuredClone(value); assert.deepEqual(planDefaultStaticSectionInsert(value), { error: reason }); assert.deepEqual(value, before); }
-const existing = JSON.stringify({ version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, collections: {}, future: { kept: true }, reusableSections: { version: 1, future: [1], records: { other: { id: "other", label: "Other", rootClass: "other-box", stylesheetPath: css, html: '<section class="other-box"></section>', css: ".other-box { margin: 0; }" } } } });
+const existing = JSON.stringify({ version: 1, pages: { "index.html": { sections: { tagline: "Hi" } } }, future: { kept: true }, reusableSections: { version: 1, future: [1], records: { other: { id: "other", label: "Other", rootClass: "other-box", stylesheetPath: css, html: '<section class="other-box"></section>', css: ".other-box { margin: 0; }" } } } });
 
 test("every default is plain, valid and insertable", () => {
   assert.deepEqual((listDefaultSectionChoices(undefined) as { id: string }[]).map((c) => c.id), ["static-section:intro", "static-section:features", "static-section:split", "static-section:contact"]);
@@ -60,7 +60,7 @@ test("existing JSON is edited in place, pinned to original bytes, keeping everyt
 
 test("a saved record with the default id wins and JSON is untouched", () => {
   const custom = { ...DEFAULT_STATIC_SECTIONS[0], html: '<section class="section-intro"><h2>My own</h2></section>' };
-  const text = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: custom } } });
+  const text = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { intro: custom } } });
   const plan = good(input({ documentText: text, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }));
   assert.ok(plan.operation.edits.get("index.html")!.includes(custom.html));
   assert.equal(plan.operation.edits.has(EDITOR_PAGE_BUILDER_PATH), false);
@@ -69,10 +69,10 @@ test("a saved record with the default id wins and JSON is untouched", () => {
 });
 
 test("refusals: bad version, unloaded JSON, rootClass and stylesheet conflicts, unsafe snapshots", () => {
-  bad(input({ documentText: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } }), files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Unsupported reusable sections version.");
+  bad(input({ documentText: JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 3, records: {} } }), files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Unsupported reusable sections version.");
   bad(input({ files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), `Load ${EDITOR_PAGE_BUILDER_PATH} before saving a section.`);
   bad(input({ files: undefined }), `A complete file graph must prove ${EDITOR_PAGE_BUILDER_PATH} is absent.`);
-  const clash = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { mine: { id: "mine", label: "Mine", rootClass: "section-intro", stylesheetPath: css, html: '<section class="section-intro"></section>', css: ".section-intro { margin: 0; }" } } } });
+  const clash = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { mine: { id: "mine", label: "Mine", rootClass: "section-intro", stylesheetPath: css, html: '<section class="section-intro"></section>', css: ".section-intro { margin: 0; }" } } } });
   bad(input({ documentText: clash, files: ["index.html", EDITOR_PAGE_BUILDER_PATH] }), "Another static section already uses this rootClass.");
   bad(input({ cssPolicy: "reuse-current" as const, stylesheetSources: { [css]: ".section-intro { color: red; }" }, files: ["index.html", css] }), "Existing stylesheet rules conflict with this section's rootClass; no CSS was overwritten.");
   bad(input({ cssPolicy: "reuse-current" as const, stylesheetSources: {} }), `Load ${css} or explicitly prove it is absent.`);
@@ -82,7 +82,7 @@ test("refusals: bad version, unloaded JSON, rootClass and stylesheet conflicts, 
 
 test("saved record is authoritative for list, preview and insert; stale plain ids never fall back", () => {
   const custom = { ...DEFAULT_STATIC_SECTIONS[0], label: "My intro", html: '<section class="section-intro"><h2>Custom heading</h2></section>', css: ".section-intro { color: teal; }" };
-  const text = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: custom } } });
+  const text = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { intro: custom } } });
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH];
   const union = [...listSectionChoices(text), ...(listDefaultSectionChoices(text) as { id: string; rootClass: string }[])];
   assert.equal(union.filter((c) => c.rootClass === "section-intro").length, 1);
@@ -97,7 +97,7 @@ test("saved record is authoritative for list, preview and insert; stale plain id
 });
 
 test("invalid JSON or version never falls back to default list or preview", () => {
-  for (const text of ["{", JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } })]) {
+  for (const text of ["{", JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 3, records: {} } })]) {
     assert.ok("error" in (listDefaultSectionChoices(text) as object));
     assert.ok("error" in previewDefaultStaticSection(text, "static-section:intro"));
   }
@@ -136,7 +136,7 @@ test("after editing public CSS, re-adding a saved section reuses the live styles
 });
 
 test("reuse keeps intentionally empty CSS, seeds once when proven absent, and refuses unloaded or unproven sheets", () => {
-  const json = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: { ...DEFAULT_STATIC_SECTIONS[0] } } } });
+  const json = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { intro: { ...DEFAULT_STATIC_SECTIONS[0] } } } });
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
   const empty = good(input({ documentText: json, files, stylesheetSources: { [css]: "" } }));
   assert.equal(empty.operation.edits.has(css), false); assert.equal(empty.operation.expectedSources.get(css), "");
@@ -160,7 +160,7 @@ test("reuse keeps intentionally empty CSS, seeds once when proven absent, and re
 
 test("preview and insert agree under the same explicit policy", () => {
   const custom = { ...DEFAULT_STATIC_SECTIONS[0], id: "mine", label: "Mine", rootClass: "mine-box", html: '<section class="mine-box"><h2>Mine</h2></section>', css: ".mine-box { color: teal; }" };
-  const json = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { mine: custom } } });
+  const json = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { mine: custom } } });
   const files = ["index.html", EDITOR_PAGE_BUILDER_PATH, css];
   for (const live of ["", ".mine-box { color: red; }"]) {
     const sources = { [css]: live };

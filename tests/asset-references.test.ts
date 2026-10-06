@@ -44,13 +44,11 @@ test("moved files keep relative paths only when they still point at the same fil
   assert.throws(() => planAssetReferenceRewrites({ "work/a/index.html": '<img src="../../images/c.svg">' }, [{ from: "work/a/index.html", to: "work/a/deep/index.html" }, ...move]), /relative path/);
 });
 
-test("a file in use by pages, stylesheets or the JSON recipe cannot be deleted", () => {
-  const sidecar = JSON.stringify({ version: 1, pages: { "work/one/index.html": { fields: { photo: "/images/p.svg" } } }, collections: { c: { pagePath: "index.html", target: { path: [0], tag: "div", openingTagFingerprint: "<div>" }, folders: ["/work/"], sort: "", filter: "", limit: 6, template: '<img src="/images/t.svg">', fields: ["pic"], overrides: { "work/one/index.html": { pic: "/images/o.svg" } } } } });
-  const sources = { "index.html": '<img src="/images/a.svg">', "styles/site.css": "a{background:url(/images/s.svg)}", ".editor/page-builder.json": sidecar };
+test("a file in use by pages or stylesheets cannot be deleted", () => {
+  const sources = { "index.html": '<img src="/images/a.svg">', "styles/site.css": "a{background:url(/images/s.svg)}" };
   const users = assetUsers(sources, ["images/a.svg", "images/s.svg", "images/t.svg", "images/o.svg", "images/p.svg", "images/free.svg"]);
   assert.deepEqual(Object.fromEntries(users), {
     "images/a.svg": ["index.html"], "images/s.svg": ["styles/site.css"],
-    "images/t.svg": [".editor/page-builder.json"], "images/o.svg": [".editor/page-builder.json"],
   });
   assert.equal(users.has("images/p.svg"), false);
   assert.match(assetInUseProblem(users)!, /images\/a\.svg is used by index\.html;.*nothing was deleted\.$/);

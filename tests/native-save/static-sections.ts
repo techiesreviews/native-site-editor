@@ -6,7 +6,7 @@ export async function seedSavedSections(page: Page, baseURL: string | undefined,
   await page.goto(baseURL!);
   const jsonPath = ".editor/page-builder.json";
   const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(jsonPath)}`);
-  const document = response.ok() ? JSON.parse(await response.text()) : { version: 1, pages: {}, collections: {} };
+  const document = response.ok() ? JSON.parse(await response.text()) : { version: 1, pages: {} };
   const catalogue = document.reusableSections ??= { version: 1, records: {} };
   const added = DEFAULT_STATIC_SECTIONS.filter(record => ids.includes(record.id) && !Object.hasOwn(catalogue.records, record.id));
   for (const record of added) catalogue.records[record.id] = structuredClone(record);

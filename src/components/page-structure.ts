@@ -74,9 +74,7 @@ export interface PageStructureHandlers {
    * whether it is a component instance (its row wears the component mark,
    * and the rows inside it the accent's rail).
    */
-  /** `generated`: a card a collection makes from page data; it is shown, not edited, here.
-   * `ownershipUnknown`: whether a collection makes it cannot be checked yet; it is held, not called generated. */
-  label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean; generated?: boolean; ownershipUnknown?: boolean };
+  label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
   /** A row was chosen: select this element in the preview. */
   onSelect: (path: string, node: number[]) => void;
   /**
@@ -680,14 +678,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.style.setProperty("--depth", String(level - 1));
     const toggle = node("span", "page-structure__toggle");
     toggle.setAttribute("aria-hidden", "true");
-    const { kind, text, component, generated, ownershipUnknown } = handlers.label(item);
-    if (generated) {
-      el.classList.add("page-structure__row--generated");
-      el.title = "Made from page data. Edit the page it comes from, or the collection.";
-    } else if (ownershipUnknown) {
-      el.title = "Collection ownership could not be checked; edits are temporarily unavailable.";
-      el.setAttribute("aria-description", el.title);
-    }
+    const { kind, text, component } = handlers.label(item);
     const slotModel = structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
     // A slot opened before its element existed (Show, or a defaulted slot's
     // first edit) settles on its first actual assigned root.
@@ -699,7 +690,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     const editing = !!slotContext && editable(slotContext.slot) && openSlot?.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name && openSlot.anchor === id;
     const attributes = !!slotModel && openAttributes === id;
-    const offeredShared = paintFresh !== false && !generated && !ownershipUnknown && !slotModel && !slotContext && !component && structure?.path
+    const offeredShared = paintFresh !== false && !slotModel && !slotContext && !component && structure?.path
       && ["section", "header", "footer"].includes(item.tag) ? handlers.nativeSharedRoot?.(structure.path, item) : undefined;
     const shared = offeredShared?.state === "available" && offeredShared.context.kind !== item.tag ? undefined : offeredShared;
     if (openShared?.node === id && openShared.path === structure?.path
