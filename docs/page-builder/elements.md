@@ -49,7 +49,7 @@ Direct opaque-island moves and all partial-island edits are refused. An ordinary
 HTML wrapper containing islands may move to a valid HTML destination as one guarded
 range; the complete bytes of each nested island stay unchanged, including its
 internal whitespace and line endings. Shared component content should be edited in
-its actual template through the component editor. Existing collection/component
+its actual template through the component editor. Existing component
 operations retain their own contracts.
 
 URL attributes use the complete HTML5 attribute decoder before validation. URL-list

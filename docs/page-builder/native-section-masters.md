@@ -71,7 +71,7 @@ Update saved section saves into the master when there is one.
 - Every plan pins the exact bytes it read (pages, JSON, master) and the complete file graph
   where it creates or relies on files. The host applies it atomically as one Undo.
 - Customised copies are never rewritten. Missing, ambiguous or overlapping links refuse the
-  whole update; collections on changed pages must stay exactly where they were.
+  whole update.
 - CSS is not written by Update or Save; the public stylesheet stays the authority.
 
 ## Known limits

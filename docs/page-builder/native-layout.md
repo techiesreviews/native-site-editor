@@ -10,8 +10,8 @@ this leaf does not change Add, main, preview, editor models or drafts.
 Grid and Columns produce portable HTML with a shared class and plain CSS, with
 no inline layout or editor attributes. Grid uses responsive grid tracks;
 Columns uses wrapping flex with zero-specificity `:where(.class > div)` child rules. New rules are
-unlayered and use no `!important`; the Style writer can locate and edit the
-class rule; ordinary unlayered child classes override the flex default.
+unlayered and use no `!important`. Edit the class rule in the Source editor.
+Ordinary unlayered child classes override the flex default.
 Unlayered defaults still outrank layered declarations, regardless of specificity;
 this leaf does not promise layered overrides. Existing CSS bytes,
 comments, layers and line endings stay before the appended rules.
@@ -45,7 +45,7 @@ relevant page/template/CSS sources, not only the selected page.
 
 Pure regressions cover source/class collision, escaped class names, stylesheet
 link resolution, new CSS vacancy proof, opaque targets, malformed HTML/CSS,
-layer/CRLF preservation and native Style editing of generated rules. Browser
+layer/CRLF preservation and generated CSS rules. Edit those rules in the Source editor. Browser
 layout, Add integration and compound Undo remain host integration checks.
 
 Relative links assume the native route's trailing-slash folder URL. The focused

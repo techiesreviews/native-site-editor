@@ -1,6 +1,6 @@
 # Native Site Editor
 
-A visual editor for plain HTML and CSS websites that live in a GitHub repository. Click anything on your page to edit its text, links, images and styles, or work in the code beside it; every change is a normal commit to your repository. Agents like Claude Code and Codex can edit the same site through MCP.
+A visual editor for plain HTML and CSS websites that live in a GitHub repository. Click anything on your page to edit its text, links and images. Edit HTML and CSS in the Source editor beside it; every change is a normal commit to your repository. Agents like Claude Code and Codex can edit the same site through MCP.
 
 Your site stays yours: the repository **is** the website. Pages are `.html` files at their own addresses, components are native custom elements, and there is no build step, so any static host serves the repository as it is (GitHub Pages, Cloudflare, Netlify, Vercel, an FTP server). Stop using the editor whenever you like; nothing in your site depends on it.
 

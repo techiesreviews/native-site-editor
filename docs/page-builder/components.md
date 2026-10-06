@@ -20,8 +20,9 @@ everything that is a component, in both schemes:
 
 - **Canvas.** The selection box (and the hover box) on an instance is drawn in
   the component violet instead of the brand blue. An element inside an
-  instance — what the page slots in, or the template's own — shows that
-  instance's outline dashed around it. While a component's template is open,
+  instance shows that instance's outline dashed around it. In page mode,
+  hovering a template interior points to its instance. Explicit Edit exposes
+  the template elements. While a component's template is open,
   every instance of it on the page has that dashed outline, since an edit
   there changes them all. (Runtime: the `Components` block after
   `updateBoxes` in `public/native-preview-runtime.js`; the theme message
@@ -30,18 +31,17 @@ everything that is a component, in both schemes:
   the tooltip. An element inside an instance starts with a chip
   `◇ Project card ›` that selects the instance (for an element of a template,
   the instance on the page it renders in, opening the page).
-- **Page structure.** An instance keeps its component mark. Expanding it lists each template slot name once; direct assigned elements are folded into their slot row rather than duplicated as ordinary rows. Unknown assignments remain ordinary page rows with their real DOM paths.
+- **Page structure.** An instance keeps its component mark. Assigned elements remain native rows with purple slot badges. Empty slots have restoration rows. Unknown assignments remain ordinary page rows with their real DOM paths.
 
 ## Instance fields in Structure
 
-The host retires the separate properties panel only when it enables `structureFields` alongside the Structure adapter; otherwise the existing panel remains available. A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
+A component's Structure row contains its page-instance controls; its root Edit and Disconnect actions appear on hover or keyboard focus. Ordinary selection stays on the page instance. Explicit Edit opens the shared template.
 
 In the normal page view, layout wrappers inside an instance's page-owned slot
 content select their nearest editable content ancestor or the outer instance.
 Text, links, buttons, images and card items remain selectable. Explicit template
 Edit unlocks its layout containers; ordinary containers outside components keep
-their normal selection behavior. This rule governs committed selection; runtime
-hover outlines are unchanged.
+their normal selection behavior. Page-mode template hover also points to the instance.
 
 After a guarded Structure visibility change commits its source, the host sends
 the pending preview update during the same click handler instead of waiting for
@@ -59,15 +59,14 @@ Fields capture the exact instance source, template, scope, mounted model/session
 ## Edit component
 
 The complete component-root name button in the edit bar (or *Edit* on its Structure root row) opens its template and selects the template root in the code pane. While any component's template is open, the canvas bar over the preview wears the
-component accent and starts with **◇ Editing `<project-card>`** (it shows even
+component accent and starts with an instance breadcrumb, **Editing `<project-card>`** (it shows even
 with the code pane collapsed; the code pane's title is tinted too). Beside it,
 *Used on 1 page* opens a list (resting the mouse on it for a moment, a click,
 Enter, Space or ↓; Esc closes) that says what an edit changes (*Changes apply
 to 3 instances on 1 page*), then the pages using it (title, address and
 count, nested uses included) and the components whose templates use it; a
 page opens with its first instance selected, a component opens its template.
-The check at the bar's end (*Done editing component*; it widens to show
-*Done* on hover) goes back to the page the preview shows, with the instance
+The **✓ Done** button at the bar's end (*Done editing component*) goes back to the page the preview shows, with the instance
 worked on selected.
 
 ## Detach (Unlink)

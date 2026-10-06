@@ -19,8 +19,9 @@ page click, so every edit that follows is still one readable source edit.
 - **Hover labels.** The hovered element gets a small label at its top-left corner: its
   tag and first class (`section.hero`), else its id, else its tag; a component instance
   shows its tag. Components and what their templates render wear the component accent
-  (`--component`), since editing them changes every instance; the page's own elements
-  (slotted ones included) wear the selection colour.
+  (`--component`). In page mode, hovering inside a component template points to its
+  instance. Explicit component editing exposes the template elements. The page's own
+  elements (slotted ones included) wear the selection colour.
 - **Breadcrumb.** The bar's left side shows the selection's ancestors, from the page's
   `body` to the selection (`body › main.page › section.hero › h1`), through component
   instances and their templates (`project-card › article.project-card › card-note ›
@@ -31,7 +32,7 @@ page click, so every edit that follows is still one readable source edit.
   Esc still drops the typing and the next one climbs.
 - **Code → canvas.** In a page's or component's HTML, moving the cursor by a click or a
   key selects the element it is in (innermost, from its start tag up to its end tag): the
-  edit bar, structure and styles follow, the canvas scrolls only when the element is out
+  edit bar, Structure and matching CSS in the Source editor follow, the canvas scrolls only when the element is out
   of sight, and the cursor stays where it is. Typing, undo, selecting a range of text
   and the editor's own reveals do not select, a click on the canvas wins over a cursor
   move still waiting, and a position is dropped when the file changed after it. Hovering a line in the code outlines the element that line belongs to
