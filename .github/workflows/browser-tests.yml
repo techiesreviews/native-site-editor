@@ -1,0 +1,76 @@
+# The full browser suite (every project in playwright.config.ts, default
+# fixture), nightly and on "Run workflow", in 4 shards. Each shard uploads a
+# blob report; the last job merges them into one HTML report, uploaded as the
+# artifact "playwright-report". Every push runs only the @smoke slice
+# (deploy-preview.yml).
+name: Browser tests (full suite)
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.repository == 'techiesreviews/native-site-editor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium-headless-shell
+      - name: Browser tests, shard ${{ matrix.shard }} of 4
+        run: npx playwright test --shard=${{ matrix.shard }}/4 --reporter=list,blob
+      - name: Upload the shard's blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 3
+      - name: Upload the shard's failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.shard }}
+          path: .scratch/*/results/
+          retention-days: 14
+
+  report:
+    if: ${{ !cancelled() && github.repository == 'techiesreviews/native-site-editor' }}
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+      - name: Merge the shards into one HTML report
+        run: npx playwright merge-reports --reporter=html ./all-blob-reports
+      - uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

@@ -39,7 +39,11 @@ npm run check                   # types
 npm test                        # unit and API tests
 npm run test:browser            # Playwright, against a fake GitHub
 npm run test:browser-preview
+npm run test:browser:smoke      # the @smoke slice CI runs on every push
+npm run test:budget             # cold-start bytes before the first preview paint
 ```
+
+`playwright.config.ts` holds every browser suite as a project (`--project=native-save`, `native-preview`, …); tags pick slices (`--grep @smoke`), and `npm run test:browser:default|actual|native-static` runs the save suite against each starter fixture by its `@actual` and `@native-static` tags.
 
 The browser app is in `src/`, the Worker (sign-in, GitHub API, MCP, publishing) in `worker/`, code shared by both in `shared/`. [Setup](docs/setup.md) covers the development GitHub App, [project notes](docs/NATIVE-PROJECT.md) the architecture and decisions, [CONTEXT.md](CONTEXT.md) the vocabulary, and [docs/adr](docs/adr) the recorded trade-offs.
 
