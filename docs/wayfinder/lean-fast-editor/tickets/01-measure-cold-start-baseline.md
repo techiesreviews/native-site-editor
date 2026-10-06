@@ -35,7 +35,7 @@ Baseline, median of 5 (ms from navigation start):
 4. Cold Worker isolate: can't be forced without a deploy; curl shows 180–250 ms outliers against a 30–55 ms warm median. Measure right after a preview deploy.
 5. Still missing: signed-in numbers on preview-editor.techies.tools (needs Lex's one-time sign-in). Local numbers are for comparing runs, not user-facing truth.
 
-Per ticket 11, `tests/perf/edit-component-latency.ts` goes; `cold-start.ts` is the yardstick that stays.
+Per ticket 11, the old edit-latency perf tool goes; `cold-start.ts` is the yardstick that stays.
 
 ## Remote signed-in baseline (2026-10-06, added after close)
 
@@ -58,7 +58,7 @@ The starter (`techiesreviews/native-site-editor-starter`, repository 1384109830)
 On the starter the shell itself is the cost: Monaco (683 KB) and `code-editor` (304 KB) are again two thirds of the bytes before paint, and a warm load still takes 1.7 s with 29 KB moved (revalidation and serial boot reads).
 
 New findings the local profile hid:
-1. **Images dominate.** `/api/raw` returns each image blob base64-encoded in JSON (`worker/app.ts:958`) with no caching, so the ~4.5 MB of starter images (+33% for base64) is fetched again on every load, warm included. Blobs are addressed by SHA, so they can be cached as immutable.
-2. **"Usable" is 17–20 s**, far behind paint (2.7–4 s). Locally the two were equal. Cause unknown; see ticket 16.
+1. **Images dominate.** `/api/raw` returns each image blob base64-encoded in JSON (`worker/app.ts:958`) with no caching, so the ~4.5 MB of the site's images (+33% for base64) is fetched again on every load, warm included. Blobs are addressed by SHA, so they can be cached as immutable.
+2. **"Usable" is 17–20 s**, far behind paint (2.7–4 s). Locally the two were equal. Cause: a full preview redraw per arriving image (ticket 16).
 3. **Warm is barely faster than cold** (2.7 s vs 4.0 s paint): almost nothing on the data path is cached by the browser.
 

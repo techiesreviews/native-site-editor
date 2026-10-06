@@ -2,7 +2,7 @@
 // the GitHub Actions workflow runs for that commit (the starter's deploy
 // workflow runs on every push to main). Shared by the Worker endpoint
 // (`/api/change-status`, worker/change-status.ts) and the browser
-// (src/components/change-status.ts).
+// (src/components/site-actions.ts).
 //
 // - `none`: the repository has no workflows, or every run for the commit was
 //   cancelled or skipped; the editor shows "Saved" and stops asking.

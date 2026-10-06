@@ -164,7 +164,7 @@ const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
 // `ASE_NATIVE_SAVE_DIST=1` serves the production build in `dist/` (run
 // `npm run build:ui` first) instead of the Vite dev server, with the headers of
-// `public/_headers`, to measure the editor as it ships (tests/perf/). Any other
+// `public/_headers`, to measure the editor as it ships (tests/perf/cold-start.ts). Any other
 // value names the build's folder (to compare two builds side by side).
 const distDir = process.env.ASE_NATIVE_SAVE_DIST === "1" ? "dist" : process.env.ASE_NATIVE_SAVE_DIST;
 const distMode = Boolean(distDir);

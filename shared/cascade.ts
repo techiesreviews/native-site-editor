@@ -1,9 +1,10 @@
 // The CSS cascade for one element, as plain data: which declaration wins each
 // property and which ones lose. The preview runtime reads the rules that match
-// the selected element from the CSSOM (public/native-preview-runtime.js) and
-// the editor resolves them here, so the style panel lists rules the way the
-// browser applies them whatever the site's CSS structure: layers or none, one
-// file or many, `@import`, conditions, nesting, shadow DOM, `!important`.
+// the selected element from the CSSOM (public/native-preview-runtime.js).
+// This module supports code pane rule chips, static section selectors and
+// slotted CSS. Matched rules are resolved following the browser's cascade
+// across layers, multiple files, `@import`, conditions, nesting, shadow DOM
+// and `!important`.
 //
 // Sorting follows CSS Cascading 5 for author styles: importance, context
 // (shadow trees), element-attached styles (`style=""`), layers, specificity,

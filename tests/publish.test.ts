@@ -17,7 +17,7 @@ const baseSha = "a".repeat(40),
   head = "b".repeat(40),
   tree = "c".repeat(40),
   next = "d".repeat(40);
-const files = [{ path: "src/index.astro", baseSha, content: "<h1>New</h1>" }];
+const files = [{ path: "about/index.html", baseSha, content: "<h1>New</h1>" }];
 function fixture(
   options: {
     conflict?: boolean;
@@ -75,7 +75,7 @@ function fixture(
         tree: [
           ...(options.rootEntries?.[commitOf(named)] ?? []),
           ...(folder ? [{ path: ".github", type: "tree", sha: folder, mode: "040000" }] : []),
-          { path: "src", type: "tree", sha: "e".repeat(40), mode: "040000" },
+          { path: "about", type: "tree", sha: "e".repeat(40), mode: "040000" },
           { path: "agent.txt", type: "blob", sha: "f".repeat(40), mode: "100644" },
         ],
         truncated: false,
@@ -86,7 +86,7 @@ function fixture(
         ? []
         : [
             {
-              path: "index.astro",
+              path: "index.html",
               sha: options.existing ?? (options.conflict ? next : baseSha),
               type: "blob",
               mode: options.mode ?? "100644",
@@ -339,8 +339,8 @@ test("Git blob digest preserves Unicode and exact whitespace", async () => {
 });
 test("invalid paths, duplicate files and large content are rejected; workflow files need the user's confirmation", () => {
   for (const path of [
-    "../index.astro",
-    "src//a",
+    "../index.html",
+    "about//a",
     "/a",
     "a/./b",
     "a\\b",
@@ -372,7 +372,7 @@ test("a new file uses a null baseline and never replaces an existing remote file
   const { github, calls } = fixture({ deleted: true });
   const result = await publish(github, repo, {
     branch: "main",
-    files: [{ path: "src/index.astro", baseSha: null, content: "new file" }],
+    files: [{ path: "about/index.html", baseSha: null, content: "new file" }],
   });
   assert.equal(result.commit, next);
   assert.equal(
@@ -386,7 +386,7 @@ test("a new file uses a null baseline and never replaces an existing remote file
       publish(collision.github, repo, {
         branch: "main",
         files: [
-          { path: "src/index.astro", baseSha: null, content: "new file" },
+          { path: "about/index.html", baseSha: null, content: "new file" },
         ],
       }),
     (error: HttpError) => error.status === 409,
@@ -399,8 +399,8 @@ test("a deletion and a rename go into one commit: sha null for the removed paths
   const result = await publish(github, repo, {
     branch: "main",
     files: [
-      { path: "src/index.astro", baseSha, content: "", delete: true },
-      { path: "src/home.astro", baseSha: null, content: "", sha: moved, movedFrom: "src/index.astro" },
+      { path: "about/index.html", baseSha, content: "", delete: true },
+      { path: "about/home.html", baseSha: null, content: "", sha: moved, movedFrom: "about/index.html" },
     ],
   });
   const writes = calls.filter((call) => call.method !== "GET");
@@ -408,30 +408,30 @@ test("a deletion and a rename go into one commit: sha null for the removed paths
   assert.deepEqual(writes[0].body, {
     base_tree: tree,
     tree: [
-      { path: "src/index.astro", mode: "100644", type: "blob", sha: null },
-      { path: "src/home.astro", mode: "100644", type: "blob", sha: moved },
+      { path: "about/index.html", mode: "100644", type: "blob", sha: null },
+      { path: "about/home.html", mode: "100644", type: "blob", sha: moved },
     ],
   });
-  assert.equal(writes[1].body.message, "Rename src/index.astro to src/home.astro with Native Site Editor");
-  assert.deepEqual(result.deleted, ["src/index.astro"]);
-  assert.deepEqual(result.files, [{ path: "src/home.astro", sha: moved }]);
+  assert.equal(writes[1].body.message, "Rename about/index.html to about/home.html with Native Site Editor");
+  assert.deepEqual(result.deleted, ["about/index.html"]);
+  assert.deepEqual(result.files, [{ path: "about/home.html", sha: moved }]);
 });
 
 test("deleting a file that changed on GitHub since its base conflicts; one already gone is no change", async () => {
   const changed = fixture({ conflict: true });
   await assert.rejects(
-    () => publish(changed.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha, content: "", delete: true }] }),
-    (error: HttpError) => error.status === 409 && error.conflicts?.[0] === "src/index.astro",
+    () => publish(changed.github, repo, { branch: "main", files: [{ path: "about/index.html", baseSha, content: "", delete: true }] }),
+    (error: HttpError) => error.status === 409 && error.conflicts?.[0] === "about/index.html",
   );
   assert.equal(changed.calls.filter((call) => call.method !== "GET").length, 0);
   const gone = fixture({ deleted: true });
-  const result = await publish(gone.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha, content: "", delete: true }] });
+  const result = await publish(gone.github, repo, { branch: "main", files: [{ path: "about/index.html", baseSha, content: "", delete: true }] });
   assert.equal(result.unchanged, true);
-  assert.deepEqual(result.deleted, ["src/index.astro"]);
+  assert.deepEqual(result.deleted, ["about/index.html"]);
   // A rename whose target appeared on GitHub meanwhile conflicts.
   const taken = fixture();
   await assert.rejects(
-    () => publish(taken.github, repo, { branch: "main", files: [{ path: "src/index.astro", baseSha: null, content: "", sha: "9".repeat(40) }] }),
+    () => publish(taken.github, repo, { branch: "main", files: [{ path: "about/index.html", baseSha: null, content: "", sha: "9".repeat(40) }] }),
     (error: HttpError) => error.status === 409,
   );
 });
@@ -502,10 +502,10 @@ test("a gzipped JSON request is unpacked, and the limit holds for what it unpack
   );
 });
 test("a commit touching hundreds of folders reads the tree once, so it stays within the Worker's subrequests", async () => {
-  const folders = Array.from({ length: 300 }, (_, index) => `src/pages/p${index}`);
+  const folders = Array.from({ length: 300 }, (_, index) => `notes/archive/p${index}`);
   const listing = [
-    { path: "src", type: "tree", sha: "e".repeat(40), mode: "040000" },
-    { path: "src/pages", type: "tree", sha: "e".repeat(40), mode: "040000" },
+    { path: "notes", type: "tree", sha: "e".repeat(40), mode: "040000" },
+    { path: "notes/archive", type: "tree", sha: "e".repeat(40), mode: "040000" },
     { path: "agent.txt", type: "blob", sha: "f".repeat(40), mode: "100644" },
     ...folders.flatMap((folder) => [
       { path: folder, type: "tree", sha: "e".repeat(40), mode: "040000" },
@@ -528,7 +528,7 @@ test("a commit touching hundreds of folders reads the tree once, so it stays wit
     branch: "main",
     files: [
       ...folders.map((folder) => ({ path: `${folder}/index.html`, baseSha, content: `<h1>${folder}</h1>` })),
-      { path: "src/pages/new/index.html", baseSha: null, content: "<h1>New</h1>" },
+      { path: "notes/archive/new/index.html", baseSha: null, content: "<h1>New</h1>" },
     ],
   });
   assert.equal(calls.filter((call) => call.method === "GET" && call.path.includes("/git/trees/")).length, 1);

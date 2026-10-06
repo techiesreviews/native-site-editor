@@ -16,7 +16,8 @@ const reply = (data: unknown, status = 200) => Response.json(data, { status });
 
 test("repository discovery paginates and excludes unselected repositories and other personal accounts", async () => {
   const calls: string[] = [];
-  const github = new GitHub("secret", async (input) => {
+  const github = new GitHub("secret", async (input, init) => {
+    assert.equal(new Headers(init?.headers).get("User-Agent"), "native-site-editor");
     const url = new URL(String(input));
     calls.push(url.pathname + url.search);
     if (url.pathname === "/user/installations")
