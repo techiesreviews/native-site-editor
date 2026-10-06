@@ -1859,15 +1859,10 @@
     return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
   }
 
-  // Conditional parts of a template (the site's own loader,
-  // `components/components.js`, applies the same rules on the live site). A
-  // slot has content when the page
-  // assigned it something real (an element or non-blank text) or, for the
-  // automatic rule, when the template gave it a fallback. An element is
-  // hidden when its `data-if="name other"` slots are not all assigned, or
-  // automatically when it holds slots, none of them has content, and it has
-  // no text of its own: a second button whose slot the page left empty, and
-  // the wrapper around two such buttons, simply do not show.
+  // In a section component, empty slots hide with their fallbacks when the
+  // page fills the instance.
+  // A bare instance shows fallbacks. Wrappers with no slot output or own
+  // text hide too, without changing source paths.
   // Content the page gave the slot; its fallback does not count (flattened
   // alone, a slot with nothing assigned reports its fallback nodes).
   function slotAssigned(slot) {
@@ -1954,19 +1949,10 @@
       return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
     });
   }
-  // `data-if` on a slot: an optional slot, shown (fallback and all) only when
-  // the page fills the named slots; a bare `data-if` names the slot itself.
-  // Every slot of a section component is optional without it, since each new
-  // instance gets its own copy of every fallback, unless the instance fills
-  // nothing at all (a bare tag, or the component shown by itself).
   function slotConditionUnmet(slot) {
-    var condition = slot.getAttribute("data-if");
     var root = slot.getRootNode();
-    if (condition === null) {
-      if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
-      condition = "";
-    }
-    return (condition.trim() || slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
+    if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
+    return (slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
       var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
       return !named || !slotAssigned(named);
     });
@@ -1984,8 +1970,6 @@
     });
   }
   function applyEmptyRules(root) {
-    var slotsByName = {};
-    root.querySelectorAll("slot").forEach(function (slot) { slotsByName[slot.getAttribute("name") || ""] = slot; });
     root.querySelectorAll("*").forEach(function (el) {
       if (el.localName === "style") return;
       if (el.localName === "slot") {
@@ -1993,17 +1977,8 @@
         else el.removeAttribute("data-native-empty");
         return;
       }
-      var empty = false;
-      var condition = el.getAttribute("data-if");
-      if (condition !== null) {
-        empty = condition.trim().split(/\s+/).some(function (name) {
-          var slot = slotsByName[name];
-          return !slot || !slotAssigned(slot);
-        });
-      } else {
-        var slots = el.querySelectorAll("slot");
-        empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !ownText(el);
-      }
+      var slots = el.querySelectorAll("slot");
+      var empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !ownText(el);
       if (empty) el.setAttribute("data-native-empty", "");
       else el.removeAttribute("data-native-empty");
     });

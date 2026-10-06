@@ -97,10 +97,10 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30000 });
   const cases = [
-    { name: "link", template: '<h2><slot name="title"></slot></h2><p data-if="link"><slot name="link"></slot></p>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
-    { name: "image", template: '<figure data-if="image"><slot name="image"></slot></figure><h2><slot name="title">T</slot></h2>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
+    { name: "link", template: '<h2><slot name="title"></slot></h2><p><slot name="link"></slot></p>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
+    { name: "image", template: '<figure><slot name="image"></slot></figure><h2><slot name="title">T</slot></h2>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
     { name: "cta", template: '<slot name="cta"><a href="/x" class="b">Go &amp; see</a></slot>', page: '<test-card><span slot="title">One line</span></test-card>' },
-    { name: "note", template: '<slot name="note" data-if><p>One</p> <em>two</em></slot>', page: '<test-card></test-card>' },
+    { name: "note", template: '<slot name="note"><p>One</p> <em>two</em></slot>', page: '<test-card></test-card>' },
     { name: "", template: '<h2><slot name="title"></slot></h2><slot></slot>', page: '<test-card>\n  <span slot="title">Kept</span>\n</test-card>' },
   ];
   const results = await page.evaluate(async (cases) => {

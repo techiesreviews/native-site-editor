@@ -419,7 +419,7 @@ test("an optional slot's fallback hides once the page removes what filled it", a
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
     await call("write_file", {
       path: "components/page-banner/page-banner.html",
-      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <div class="actions" data-key="banner-actions">\n    <slot name="primary" data-if><a href="/about/" data-key="banner-primary">Get in touch</a></slot>\n    <slot name="secondary" data-if><a href="/" data-key="banner-secondary">See our work</a></slot>\n  </div>\n</section>\n',
+      content: '<section data-key="page-banner">\n  <slot name="title"><h2 data-key="banner-title">A new banner</h2></slot>\n  <div class="actions" data-key="banner-actions">\n    <slot name="primary"><a href="/about/" data-key="banner-primary">Get in touch</a></slot>\n    <slot name="secondary"><a href="/" data-key="banner-secondary">See our work</a></slot>\n  </div>\n</section>\n',
     });
     await expect.poll(async () => (await call("get_site")).components.find((item: { tag: string }) => item.tag === "page-banner")?.section, { timeout: 15_000 }).toBe(true);
     const home = await call("get_page", { page: "/", source: false });

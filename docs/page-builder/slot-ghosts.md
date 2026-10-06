@@ -1,6 +1,6 @@
 # Native slot reports
 
-The Empty slots canvas rail has been removed. `mountSlotGhosts` remains a compatibility no-op: it creates no layer, listeners, geometry observers or actions. Authored slots, their assignments, fallback content and `data-if` conditions remain native source. Instance fields are moving to Structure; host integration remains pending.
+The Empty slots canvas rail has been removed. `mountSlotGhosts` remains a compatibility no-op: it creates no layer, listeners, geometry observers or actions. Authored slots, their assignments, fallback content remain native source. Instance fields are moving to Structure; host integration remains pending.
 
 Runtime `slot-ghosts` messages still carry `SlotGhostReport | null`. Their host and entry rectangles are iframe viewport CSS pixels, measured from real elements. Hidden outlets differ from visible zero-sized outlets. Repeated names keep zero-based occurrence numbers; browser assignment goes to the first outlet of each name. Reports carry the exact page instance path/node and tag-to-template mapping. The schema validator still rejects wrong context/page/template mappings, invalid indexes, counts and rectangles. Structure reads source and does not depend on these geometry reports.
 

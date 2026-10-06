@@ -9,8 +9,6 @@
 // slot's fallback content, or nothing at all for an optional part, by the
 // rules the site's loader (`hideEmpty` in the starter's components.js) and
 // the editor's preview runtime (`applyEmptyRules`) share:
-//   - `data-if="a b"` on a slot or an element shows it only when the page
-//     fills every named slot (a bare `data-if` on a slot names itself);
 //   - in a section component the page fills at all, every slot it does not
 //     fill is hidden with its fallback;
 //   - an element holding slots, with no text of its own, whose slots all show
@@ -404,24 +402,13 @@ function shownSlots(template: string, filled: ReadonlySet<string>, hostHasConten
   }
   const nameOf = (slot: SourceElement) => (attribute(template, slot, "name") ?? "").trim();
   const assigned = (name: string) => slots.has(name) && filled.has(name);
-  const names = (condition: string) => condition.trim().split(/\s+/).filter(Boolean);
-  const unmet = (slot: SourceElement) => {
-    let condition = attribute(template, slot, "data-if");
-    if (condition === undefined) {
-      if (!section || !hostHasContent) return false;
-      condition = "";
-    }
-    const list = names(condition);
-    return (list.length ? list : [nameOf(slot)]).some((name) => !assigned(name));
-  };
+  const unmet = (slot: SourceElement) => section && hostHasContent && !assigned(nameOf(slot));
   const hasFallback = (slot: SourceElement) => meaningful(template, slot.children).length > 0;
   const showsSomething = (slot: SourceElement) => assigned(nameOf(slot)) || (!unmet(slot) && hasFallback(slot));
   const ownText = (el: SourceElement): boolean => el.children.some((node) =>
     node.type === "text" ? !blank(template, node) : node.name !== "slot" && ownText(node));
   const hidden = (el: SourceElement) => {
     if (el.name === "slot") return unmet(el);
-    const condition = attribute(template, el, "data-if");
-    if (condition !== undefined) return names(condition).some((name) => !assigned(name));
     const inner = [...descendants(el.children)].filter((node) => node.name === "slot");
     return inner.length > 0 && !inner.some(showsSomething) && !ownText(el);
   };
@@ -801,8 +788,8 @@ const BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "section
  * What the instance shows, written out as plain markup for its place in the
  * page (Figma's detach): the template with each slot replaced by what the
  * page gives it (a bare `<span slot>` reduced to its text) or by its
- * fallback, parts the template hides on this instance left out, and
- * `data-if` dropped. The instance tag's attributes go onto the template's
+ * fallback, parts the template hides on this instance left out.
+ * The instance tag's attributes go onto the template's
  * one top-level element (its classes added to the element's). Components
  * the template uses stay components. Lines are indented for the place of
  * the instance.
@@ -864,10 +851,6 @@ export function detachMarkup(source: string, template: string, instance: Instanc
     }
     let open = template.slice(node.tag.start, node.tag.end);
     const local = () => elements(parseSource(open))[0].tag;
-    if (attribute(template, node, "data-if") !== undefined) {
-      const condition = startTagAttribute(open, local(), "data-if")!;
-      open = open.slice(0, condition.start) + open.slice(condition.end);
-    }
     if (forward) open = withSlot(open, forward);
     if (node === root) {
       for (const item of hostAttributes) {

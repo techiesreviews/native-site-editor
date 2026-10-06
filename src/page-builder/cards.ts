@@ -192,14 +192,13 @@ export function createCards(deps: CardsDeps) {
     const element = itemElement(source, item.range);
     const tag = grid.kind.split(".")[0];
     const component = tag.includes("-") ? template(tag) : undefined;
-    const slots = component ? slotFallbacks(component) : { fallbacks: {}, optional: new Set<string>() };
+    const slots = component ? slotFallbacks(component) : { fallbacks: {} };
     const copy = element && itemCopy(source, element, {
       noun: grid.noun,
       title: page?.title,
       href: item.route ? page?.route ?? "" : undefined,
       isLinked: (href) => linkRoute(href, context(route)) === item.route,
       fallbacks: slots.fallbacks,
-      optional: slots.optional,
     });
     return copy === undefined ? { text: source.slice(item.range.start, item.range.end), reset: false } : { text: copy, reset: true };
   }

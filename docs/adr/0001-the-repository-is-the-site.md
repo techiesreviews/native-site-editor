@@ -75,7 +75,7 @@ A component is a custom element whose template is `components/<tag>/<tag>.html` 
 - the document's own stylesheets (every `<link rel="stylesheet">` in the page head, in order), then the component's stylesheet, the order the preview adopts them in;
 - the component's CSS with each selector's `::slotted()` twin added (the same rules as `shared/slotted-css.ts`), so component CSS is written without `::slotted()`: `h1 { … }` styles both the template's fallback and the page's `<h1 slot="title">`;
 - the template;
-- optional slots: a slot the page does not fill is hidden with its fallback, unless the instance fills no slot at all; `data-if="a b"` shows an element only when the page fills every named slot; a wrapper whose slots are all hidden is hidden too (the rules the preview runtime applies today);
+- optional slots: a slot the page does not fill is hidden with its fallback, unless the instance fills no slot at all; a wrapper whose slots are all hidden is hidden too (the rules the preview runtime applies today);
 - `aria-current="page"` on links in the shadow root that point at the current page.
 
 While components load, `site.css` hides undefined components under `@media (scripting: enabled)`, so there is no flash of unstyled content and nothing is hidden when JS is off.

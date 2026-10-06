@@ -82,7 +82,7 @@ A component is a custom element: a template `components/<tag>/<tag>.html` (shado
 
 It also:
 
-- hides optional parts: in a section component (template is one `<section>`) that the page fills at all, a slot the page does not fill is hidden with its fallback, while a bare tag shows every fallback. `data-if="a b"` on an element shows it only when the page fills every named slot. An element that holds slots, has no text of its own and whose slots all show nothing is hidden too (an empty button row, `card-project`'s link paragraph). It recomputes on `slotchange`;
+- hides optional parts: in a section component (template is one `<section>`) that the page fills at all, a slot the page does not fill is hidden with its fallback, while a bare tag shows every fallback. An element that holds slots, has no text of its own and whose slots all show nothing is hidden too (an empty button row, `card-project`'s link paragraph). It recomputes on `slotchange`;
 - sets `aria-current="page"` on links in the shadow root that point at the current page (the header's nav styles it); links with a `#` are left out, so the nav's Work link (`/#work`) is not marked;
 - scrolls again to the target of a link like `/#work` once the page's components have loaded (the browser's own scroll happens before they grow), unless the reader has scrolled.
 

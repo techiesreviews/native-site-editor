@@ -141,8 +141,6 @@ function markCurrentPage(root) {
 // - In a section component that the page fills at all, a slot the page does
 //   not fill is hidden with its fallback. A bare tag (nothing filled) shows
 //   every fallback.
-// - `data-if="a b"` on a slot or an element shows it only when the page fills
-//   every named slot (a bare `data-if` on a slot names the slot itself).
 // - An element that holds slots, has no text of its own and whose slots all
 //   show nothing is hidden too: a wrapper round two unfilled buttons goes.
 function hideEmpty(root, section) {
@@ -151,14 +149,7 @@ function hideEmpty(root, section) {
 
   // The page filled the slot (its fallback does not count).
   const filled = (slot) => Boolean(slot) && slot.assignedNodes().length > 0 && slot.assignedNodes({ flatten: true }).some(isContent);
-  const unmet = (slot) => {
-    let condition = slot.getAttribute("data-if");
-    if (condition === null) {
-      if (!section || ![...root.host.childNodes].some(isContent)) return false;
-      condition = "";
-    }
-    return (condition.trim() || slot.name).split(/\s+/).some((name) => !filled(slots.get(name)));
-  };
+  const unmet = (slot) => section && [...root.host.childNodes].some(isContent) && !filled(slots.get(slot.name));
   const showsSomething = (slot) => filled(slot) || (!unmet(slot) && [...slot.childNodes].some(isContent));
   const ownText = (el) =>
     [...el.childNodes].some((node) =>
@@ -168,7 +159,6 @@ function hideEmpty(root, section) {
     if (el.localName === "style" || el.localName === "link") continue;
     let empty;
     if (el.localName === "slot") empty = unmet(el);
-    else if (el.hasAttribute("data-if")) empty = el.getAttribute("data-if").trim().split(/\s+/).some((name) => !filled(slots.get(name)));
     else {
       const inner = el.querySelectorAll("slot");
       empty = inner.length > 0 && ![...inner].some(showsSomething) && !ownText(el);
