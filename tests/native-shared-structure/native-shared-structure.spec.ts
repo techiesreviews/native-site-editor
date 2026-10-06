@@ -20,9 +20,12 @@ test.beforeEach(async ({ page }) => { await page.goto(`http://127.0.0.1:${port}`
 const row = (page: any, node: string) => page.locator(`[role=treeitem][data-node="${node}"]`);
 const events = (page: any) => page.evaluate(() => (window as any).events);
 
-test("ordinary roots offer sharing; children and managed cards stay ordinary instance rows", async ({ page }) => {
-  expect(await page.getByRole("button", { name: "Save shared", exact: true }).count()).toBe(3);
-  await expect(row(page, "1.1").getByRole("button")).toHaveCount(0);
+test("all eligible roots offer sharing; main and children stay ordinary instance rows", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "Save shared", exact: true })).toHaveCount(4);
+  for (const node of ["0", "1.0", "1.1", "2"]) {
+    await expect(row(page, node).getByRole("button", { name: "Save shared", exact: true })).toHaveCount(1);
+  }
+  await expect(row(page, "1").getByRole("button", { name: "Save shared", exact: true })).toHaveCount(0);
   await expect(row(page, "1.0.0").getByRole("button")).toHaveCount(0);
   await row(page, "0").click();
   expect((await events(page)).at(-1)).toEqual({ type: "select", path: "index.html", node: [0] });
@@ -30,6 +33,23 @@ test("ordinary roots offer sharing; children and managed cards stay ordinary ins
   await row(page, "1.0").locator(".page-structure__toggle").click();
   await row(page, "1.0.0").click();
   expect((await events(page)).at(-1)).toEqual({ type: "select", path: "index.html", node: [1, 0, 0] });
+  const section = row(page, "1.1");
+  await section.hover();
+  await section.getByRole("button", { name: "Save shared", exact: true }).click();
+  const form = page.getByRole("form", { name: "Share section", exact: true });
+  await expect(form).toBeVisible();
+  await expect(form.getByRole("textbox", { name: "Name", exact: true })).toBeFocused();
+  await expect(form.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Shared section");
+  await expect(form.getByLabel("Master source path")).toHaveText(".editor/sections/shared-section.html");
+  await form.getByRole("textbox", { name: "Name", exact: true }).fill("More section");
+  await form.getByRole("textbox", { name: "ID", exact: true }).fill("more-section");
+  await form.getByRole("button", { name: "Save shared", exact: true }).click();
+  expect((await events(page)).at(-1)).toEqual({ type: "submit", key: "1:1.1", metadata: {
+    label: "More section", id: "more-section", rootClass: "site-section", stylesheetPath: "styles/site.css",
+  } });
+  await page.evaluate(() => (window as any).finish(0, { success: true }));
+  await expect(form).toHaveCount(0);
+  expect((await events(page)).at(-1)).toEqual({ type: "close", key: "1:1.1", reason: "saved" });
   await page.evaluate(() => (window as any).disable());
   await expect(page.getByRole("button", { name: "Save shared", exact: true })).toHaveCount(0);
 });

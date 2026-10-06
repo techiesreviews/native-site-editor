@@ -10,7 +10,7 @@ const items = [
   { tag: "header", node: [0], text: "Navigation", slot: "", children: [] },
   { tag: "main", node: [1], text: "", slot: "", children: [
     { tag: "section", node: [1, 0], text: "Hero copy stays truncated naturally", slot: "", children: [child] },
-    { tag: "section", node: [1, 1], text: "Managed", slot: "", children: [] },
+    { tag: "section", node: [1, 1], text: "More section copy", slot: "", children: [] },
   ] },
   { tag: "footer", node: [2], text: "Footer", slot: "", children: [] },
 ];
