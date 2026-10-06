@@ -1,7 +1,7 @@
+import { seedCollection } from "./collection-fixture";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
-import { publishButton } from "./publish";
 
 requireActualFixture();
 
@@ -59,16 +59,10 @@ test("with an unreadable sidecar, plain rows read as unchecked, not generated, a
   expect(await mounted(page)).toBe(before);
 });
 
-async function convert(page: Page) {
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  const inspector = page.getByRole("region", { name: "Collection settings", exact: true });
-  await inspector.getByRole("checkbox", { name: "/services/", exact: true }).check();
-  await inspector.getByRole("button", { name: "Apply", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
+async function convert(page: Page, baseURL: string | undefined) {
+  await seedCollection(page, baseURL, ["/work/", "/services/"], ["services/one/index.html"]);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
 }
 
 // Generated cards are flagged, carry no component tools and no slot rows;
@@ -87,17 +81,14 @@ async function expectKnownCards(page: Page) {
 
 test("with a readable sidecar, cards a collection made are still flagged generated and plain rows carry no hint", async ({ page, baseURL }) => {
   await load(page, baseURL, [["services/one/index.html", servicesPage]]);
-  await convert(page);
+  await convert(page, baseURL);
   await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
   await expectKnownCards(page);
 });
 
 test("while the sidecar is still loading rows read as unchecked; once it arrives cards are flagged and plain instances get their tools back", async ({ page, baseURL }) => {
   await load(page, baseURL, [["services/one/index.html", servicesPage]]);
-  await convert(page);
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
+  await convert(page, baseURL);
   // The sidecar's blob on the branch (fetched through /api/files?shas=):
   // hold its real request until released.
   const snapshot = await (await page.request.get(`${baseURL}/api/snapshot?${new URLSearchParams({ repo: "native-demo-user/native-demo", branch: "main" })}`)).json();

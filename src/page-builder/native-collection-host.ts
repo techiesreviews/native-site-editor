@@ -130,16 +130,16 @@ function assertGeneratedCardsCurrent(sources: Readonly<Record<string, string>>, 
   const edited = [...new Set(blocked.filter(item => item.kind === 'edited').map(item => item.path))];
   const moved = [...new Set(blocked.filter(item => item.kind === 'edited' && item.pageData).map(item => item.path))];
   if (moved.length) throw Error(movedPageDataMessage(moved));
-  if (edited.length) throw Error(`The cards in ${edited.join(", ")} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`);
+  if (edited.length) throw Error(`The cards in ${edited.join(", ")} were edited by hand and no longer match the page data, so this change would replace them. Review the cards and collection recipe in the Source editor before retrying.`);
   const unbuilt = [...new Set(blocked.map(item => item.path))];
-  if (unbuilt.length) throw Error(`The cards in ${unbuilt.join(", ")} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
+  if (unbuilt.length) throw Error(`The cards in ${unbuilt.join(", ")} have not been built from page data yet. Build the cards in the Source editor before retrying.`);
   // Listings that cannot be baked as they are: checked again after the bake.
   return all.filter(item => item.kind === 'unchecked' && !isAccepted(item));
 }
 
 /** Cards built from page HTML whose values now come from the editor's data. */
 export function movedPageDataMessage(paths: readonly string[]): string {
-  return `The cards in ${paths.join(", ")} still show page values from before they moved to the editor's data, and some of those values differ now. Select the collection and choose “Rebuild cards from page data” to show the editor's values, or “Use manual cards” to keep the cards as they are.`;
+  return `The cards in ${paths.join(", ")} still show page values from before they moved to the editor's data, and some of those values differ now. Review the cards and collection recipe in the Source editor to choose which values to keep.`;
 }
 export interface GeneratedDrift {
   path: string;
@@ -345,7 +345,7 @@ export function planNativeCollectionOperation(input: NativeCollectionSnapshot & 
     for (const path of new Set(unchecked.map(item => item.path))) {
       const target = moves.find(move => move.from === path)?.to ?? path;
       if ((baked.edits[target] ?? []).length)
-        throw Error(`The cards in ${path} could not be checked against page data before this change, and it would replace them. Select the collection and choose “Use manual cards” to keep them, or fix the collection in Code first.`);
+        throw Error(`The cards in ${path} could not be checked against page data before this change, and it would replace them. Review the cards and fix the collection recipe in the Source editor before retrying.`);
     }
     // Accepting replacement is scoped: the sidecar and each accepted listing page must be pinned at their current bytes.
     if (origin.acceptCollections?.length) {

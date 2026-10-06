@@ -160,8 +160,8 @@ export function planDocumentBake(input: DocumentBakeInput): DocumentBakePlan | {
       if (accept.has(item.id)) continue;
       const page = before.collections[item.id].pagePath;
       const error = new Error(item.kind === "edited"
-        ? `The cards in ${page} were edited by hand and no longer match the page data, so this change would replace them. Select the collection and choose “Use manual cards” to keep them, or “Rebuild cards from page data” to replace them.`
-        : `The cards in ${page} have not been built from page data yet. Select the collection and choose “Build cards from page data” first.`);
+        ? `The cards in ${page} were edited by hand and no longer match the page data, so this change would replace them. Review the cards and collection recipe in the Source editor before retrying.`
+        : `The cards in ${page} have not been built from page data yet. Build the cards in the Source editor before retrying.`);
       if (!leaveBroken(item.id, error)) throw error;
     }
     const moves = input.moves ?? new Map<string, string>();

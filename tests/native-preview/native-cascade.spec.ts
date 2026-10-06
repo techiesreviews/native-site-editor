@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-// The style panel against sites whose CSS differs in structure, one fixture
+// The Source editor rule chips against sites whose CSS differs in structure, one fixture
 // repository each (fixtures/cascade/<name>, served by tests/native-save/server.ts
 // as `cascade-<name>`, ids from 510 in folder order). For every property
 // checked, the rule the panel shows winning must hold the declaration whose
@@ -58,7 +58,7 @@ function chips(page: Page): Promise<Chip[]> {
 const declared = (chip: Chip, property: string) =>
   new RegExp(`^✓ ${property}: (.*?)( !important)?$`, "m").exec(chip.title)?.[1];
 
-// The panel's winner for `property`: selector, file, origin tags and the
+// The rule chip's winner for `property`: selector, file, origin tags and the
 // declared value, which must be what the browser computes for the element.
 async function expectWinner(page: Page, target: Locator, property: string, expected: { selector: string; path: string; origin?: string | RegExp; value?: string }) {
   await expect.poll(async () => {
@@ -116,7 +116,7 @@ test("no layers: specificity and order across files, conditions, nesting and the
 
   // The style attribute beats the rules of its tree.
   const plain = frame.locator(".plain");
-  await plain.click();
+  await plain.click({ position: { x: 5, y: 5 } });
   await expectWinner(page, plain, "color", { selector: "style=\"…\"", path: indexPath, origin: "", value: "rgb(5, 5, 5)" });
   await expectOverridden(page, ".plain", "styles/base.css");
 });

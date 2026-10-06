@@ -74,7 +74,7 @@ async function ordinaryMain(page: Page) {
   });
 }
 
-test("in a 340px canvas between Structure and Style, groups wrap whole and keep keyboard order", async ({ page, baseURL }) => {
+test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 900, height: 1000 });
   await page.goto(`${baseURL}/${nativeHash}`);
   const frame = page.frameLocator(".native-preview-frame");
@@ -82,7 +82,9 @@ test("in a 340px canvas between Structure and Style, groups wrap whole and keep 
   await ordinaryMain(page);
   await expect(frame.locator("#moving")).toBeVisible();
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
-  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
+  const width = page.getByRole("textbox", { name: "Frame width in pixels" });
+  await width.fill("340");
+  await width.press("Enter");
   const canvas = (await page.locator(".native-preview-frame").boundingBox())!;
   expect(canvas.width).toBeLessThan(400);
   const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });

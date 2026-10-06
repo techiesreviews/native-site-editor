@@ -1,6 +1,5 @@
 /** Shared with the canvas device switcher. Widths are CSS pixels. */
 export type Breakpoint = "all" | "tablet" | "mobile";
-export const breakpointWidths: Record<Breakpoint, number | undefined> = { all: undefined, tablet: 768, mobile: 390 };
 let current: Breakpoint = "all";
 const listeners = new Set<(value: Breakpoint) => void>();
 export function getCurrentBreakpoint(): Breakpoint { return current; }

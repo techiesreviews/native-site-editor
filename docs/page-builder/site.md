@@ -84,8 +84,7 @@ navigation source changed must fail and require reopening it.
 
 The Edit bar does not generate effect classes or stylesheets. Existing authored
 CSS, including `styles/effects.css`, remains part of the native site. Use the
-Style panel's Effects controls to edit shadow, transform and transition in the
-selected class rule.
+Source editor to edit shadow, transform and transition in the relevant CSS rule.
 
 ## Compound text history
 

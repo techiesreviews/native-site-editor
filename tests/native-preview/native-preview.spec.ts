@@ -229,7 +229,7 @@ test("a stylesheet a shared sheet imports applies in its layer and lists its rul
   const layers = await (await frameWindow(page)).evaluate(() =>
     document.adoptedStyleSheets.flatMap((sheet) => Array.from(sheet.cssRules))
       .filter((rule) => rule instanceof CSSLayerBlockRule).map((rule) => (rule as CSSLayerBlockRule).name));
-  expect(layers).toEqual(["sections"]);
+  expect(layers.filter(layer => layer !== "native-preview-viewport")).toEqual(["sections"]);
 
   // Selecting the section lists the imported rule with the imported file's path and range.
   await filler.click({ position: { x: 12, y: 2 } });

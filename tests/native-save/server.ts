@@ -19,7 +19,7 @@
 //
 // Outside demo mode, every folder under `fixtures/cascade/` is one more small
 // native repository (`cascade-<folder>`, ids from 510 in folder order), each a
-// site with its own CSS structure for the style panel's cascade tests, and
+// site with its own CSS structure for the Source editor rule chips's cascade tests, and
 // `fixtures/native-routing` is `native-routing` (id 530), a site with pages
 // in folders, a single-file page and a partial that is not a page, and
 // `fixtures/native-conventions` is `native-conventions` (id 531), a site

@@ -1,7 +1,7 @@
+import { seedCollection } from "./collection-fixture";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
-import { publishButton } from "./publish";
 
 requireActualFixture();
 
@@ -21,7 +21,6 @@ test.afterEach(() => expect(pageErrors).toEqual([]));
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const mounted = (page: Page, path = "index.html") => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
-const inspector = (page: Page) => page.getByRole("region", { name: "Collection settings", exact: true });
 const file = async (page: Page, baseURL: string | undefined, path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 const popover = (page: Page) => page.getByRole("dialog", { name: "New card with its own page" });
 const title = (page: Page) => popover(page).getByRole("textbox", { name: "Page title" });
@@ -42,17 +41,7 @@ async function load(page: Page, baseURL: string | undefined) {
 async function savedJsonCollection(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
   await load(page, baseURL);
-  await cards(page).first().click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  await expect(inspector(page).getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
-  await inspector(page).getByRole("button", { name: "Apply", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
+  await seedCollection(page, baseURL);
   const sidecar = await file(page, baseURL, SIDECAR);
   expect(sidecar).toContain('"/work/"');
   expect(await file(page, baseURL, "index.html")).not.toMatch(/data-each|<template/);

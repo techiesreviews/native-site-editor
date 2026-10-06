@@ -80,11 +80,7 @@ import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { mediaExistingAlt, mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
-import { createStylePanel, type StylePanelContext } from "./components/style-panel";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
-import { locateClassRule, locateWriteRule, writeCssProperties, scanCss } from "./page-builder/css-write";
-import { nativeImageAsset, singleBackgroundAsset } from "./page-builder/style-image-source";
-import { breakpointWidths } from "./page-builder/breakpoints";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
@@ -100,17 +96,13 @@ import { planSelectedStaticSectionSave } from "./page-builder/native-section-sav
 import { DEFAULT_SECTION_CHOICE_PREFIX, DEFAULT_STATIC_SECTIONS, planDefaultStaticSectionInsert, previewDefaultStaticSection } from "./page-builder/static-section-defaults";
 import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
-import { captureNativeCollectionSnapshotProof, generatedDrift, movedPageDataMessage, nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
+import { nativeCollectionPlanIsCurrent, planNativeCollectionOperation, skippedListingsMessage, type NativeCollectionOrigin, type NativeCollectionSnapshot } from "./page-builder/native-collection-host";
 import { mountCollectionsPanel, type CollectionsPanel } from "./components/collections-panel";
-import { mountSelectedCollection, type SelectedCollection } from "./components/selected-collection";
-import { isManualCardGrid } from "./page-builder/native-grid-collection";
-import { isStaticCardGrid } from "./page-builder/native-static-grid-collection";
 import { descendants, parseSource } from "./page-builder/component-model";
-import { applyCollectionEdits, planBake } from "./page-builder/collection-bake";
-import { bakePageData, documentDrift, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
+import { planBake } from "./page-builder/collection-bake";
+import { bakePageData, planDocumentMediaBatch, readSidecar } from "./page-builder/document-collections";
 import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "./page-builder/asset-references";
-import { sidecarCollectionAt } from "./page-builder/collection-origins";
-import { documentEditTouches, documentRegions, editTouchesGenerated, planDocumentTargetEdit, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, manualCardsSource, type GeneratedRegion } from "./page-builder/generated-collection-content";
+import { documentEditTouches, documentRegions, editTouchesGenerated, planDocumentTargetEdit, generatedCardRecord, generatedRegionAt, generatedRegions, GENERATED_EDIT_REFUSED, type GeneratedRegion } from "./page-builder/generated-collection-content";
 import { readCollections, validCollectionRoute } from "./page-builder/collection-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { loadNativeAssetRequests } from "./native-assets";
@@ -161,7 +153,6 @@ function loadEditorModule() {
     },
   ));
 }
-let stylePanel: ReturnType<typeof createStylePanel> | undefined;
 let disposeEditor: (() => void) | undefined;
 // The live primary keeps its journal even when a completed operation releases its alias.
 let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
@@ -507,108 +498,6 @@ function mountWorkspace() {
     },
     announce: (text) => { element("status").textContent = text; },
   });
-  stylePanel?.dispose();
-  const staleStyle = () => status("The style target or source changed. Select it again and make a fresh edit.");
-  const styleContextMatches = (expected: StylePanelContext | undefined, current: StylePanelContext | undefined) =>
-    !!expected && !!current && expected.modelProof?.isCurrent() !== false && expected.key === current.key &&
-    expected.target?.path === current.target?.path && expected.target?.selector === current.target?.selector && expected.target?.start === current.target?.start &&
-    Object.keys(expected.files).length === Object.keys(current.files).length &&
-    Object.entries(expected.files).every(([path, source]) => current.files[path] === source);
-  stylePanel = createStylePanel({
-    context: nativeStylePanelContext,
-    selectionPanel: mountNativeSelectedCollection,
-    write: async (properties, breakpoint, state, expected) => {
-      const context = nativeStylePanelContext(), epoch = generation;
-      const target = context?.target, source = target && context?.files[target.path];
-      if (versionView || !target || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); throw new Error("The style target or source changed. Select it again and retry."); }
-      const scope = draftScope(), requester = currentPath;
-      if (!scope || !editorModule || !requester) throw new Error("The style editor is unavailable. Retry after opening the source.");
-      const originProof = editorModule.captureFileModelState(scope, requester);
-      const targetProof = editorModule.captureFileModelState(scope, target.path);
-      const targetMounted = editorModule.isMounted(target.path);
-      const current = () => generation === epoch && !versionView && currentPath === requester && originProof.isCurrent() && styleContextMatches(context, nativeStylePanelContext());
-      if (!(await openSecondary(target.path, () => current() && targetProof.isCurrent()))) throw new Error("The CSS source could not be opened. Retry the style change.");
-      if (!current() || targetMounted && !targetProof.isCurrent() || editorModule.getMountedSource(target.path) !== source) { staleStyle(); throw new Error("The style target or source changed. Select it again and retry."); }
-      const next = writeCssProperties(source, { selector: target.selector, baseStart: target.start, breakpoint: breakpointWidths[breakpoint], state, expectedSource: source }, properties);
-      const edit = minimalTextEdit(source, next);
-      if (edit) {
-        if (!applyNativeChange(target.path, source, [edit], undefined, "Style updated")) throw new Error("The CSS change was not applied. Retry the style change.");
-        editorModule?.revealRange(target.path, edit.start, edit.start + edit.text.length);
-      }
-    },
-    variable: async (variable, value, expected) => {
-      const context = nativeStylePanelContext(), epoch = generation, source = context?.files[variable.path];
-      if (versionView || source === undefined || !styleContextMatches(expected, context)) { staleStyle(); return; }
-      if (!(await openSecondary(variable.path))) return;
-      if (generation !== epoch || versionView || !styleContextMatches(context, nativeStylePanelContext())) { staleStyle(); return; }
-      const next = writeCssProperties(source, { selector: variable.selector, baseStart: variable.ruleStart, expectedSource: source }, { [variable.name]: value });
-      const edit = minimalTextEdit(source, next);
-      if (edit) applyNativeChange(variable.path, source, [edit], undefined, "Global style updated");
-    },
-    selectClass: (name, expected) => {
-      const context = nativeStylePanelContext();
-      if (!context || !styleContextMatches(expected, context) || !context.classes?.includes(name)) { staleStyle(); return; }
-      nativeStyleClass = { selectionKey: context.selectionKey!, name };
-      stylePanel?.update();
-    },
-    addClass: async (name, expected) => {
-      if (!name || /[\t\n\f\r \x00-\x1f]/.test(name)) throw new Error("Enter one class name without spaces.");
-      const selected = lastNativeSelection, context = nativeStylePanelContext();
-      if (!selected?.node || versionView || currentPath !== selected.path || !styleContextMatches(expected, context)) { staleStyle(); return; }
-      const source = nativeEditableSource(selected.path);
-      if (source === undefined) { staleStyle(); return; }
-      const range = locateNativeElementRange(source, selected.node);
-      if (!range) return;
-      const classes = context?.classes ?? [];
-      if (classes.includes(name)) return;
-      const attribute = startTagAttribute(source, range.tag, "class");
-      let edit;
-      if (!attribute) edit = setAttributeEdit(source, range.tag, "class", name);
-      else {
-        const quote = source[attribute.valueStart - 1];
-        const quoted = quote === "'" || quote === '"';
-        const escaped = name.replace(/&/g, "&amp;").replace(quoted && quote === "'" ? /'/g : /"/g, quoted && quote === "'" ? "&#39;" : "&quot;");
-        const raw = source.slice(attribute.valueStart, attribute.valueEnd);
-        if (quoted) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: (raw ? " " : "") + escaped };
-        else if (!raw) edit = { start: attribute.valueEnd, end: attribute.valueEnd, text: `${source.slice(attribute.start, attribute.valueStart).includes("=") ? "" : "="}"${escaped}"` };
-        else edit = { start: attribute.valueStart, end: attribute.valueEnd, text: `"${raw.replace(/"/g, "&quot;")} ${escaped}"` };
-      }
-      if (applyNativeChange(selected.path, source, [edit], selected.node, "Class added")) {
-        nativeStyleClass = { selectionKey: context!.selectionKey!, name };
-        stylePanel?.update();
-      }
-    },
-    focalAsset: async expected => {
-      const context = nativeStylePanelContext(), selected = lastNativeSelection, scope = draftScope();
-      if (!scope || !selected || !styleContextMatches(expected, context)) return;
-      const epoch = generation, scopeKey = setupScope(), path = nativeStyleImageSource(selected, expected.files);
-      if (!path) return;
-      const proof = editorModule?.captureFileModelState(scope, selected.path);
-      const assetBefore = nativeAssets.get(path.path);
-      const current = () => generation === epoch && setupScope() === scopeKey && !versionView && proof?.isCurrent() &&
-        expected.modelProof?.isCurrent() !== false && nativeStylePanelContext()?.key === expected.key &&
-        Object.keys(nativeSources()).length === Object.keys(expected.files).length && Object.entries(expected.files).every(([file, source]) => nativeSources()[file] === source);
-      if (!current()) return;
-      await loadNativeAssets({ "index.html": `<img src="/${escapeText(path.path).replace(/"/g, "&quot;")}">` }, () => {});
-      if (!current()) return;
-      const dataURL = nativeAssets.get(path.path);
-      if (!dataURL) return;
-      if (assetBefore !== dataURL || nativeStylePanelContext()?.assetRevision !== expected.assetRevision) { stylePanel?.update(); return; }
-      return { mode: path.mode, asset: { dataURL, hostTrusted: true } };
-    },
-    showCode: async expected => {
-      const context = nativeStylePanelContext();
-      if (!styleContextMatches(expected, context) || !context?.target || !context.workspace) { staleStyle(); return; }
-      const target = context.target, source = context.files[target.path];
-      if (source === undefined) { staleStyle(); return; }
-      const rule = locateWriteRule(source, { selector: target.selector, baseStart: target.start });
-      if (!rule || target.start === undefined) { staleStyle(); return; }
-      if (!(await context.workspace.openDefinition(target.path, rule.start, rule.open, context.workspace.revision))) staleStyle();
-    },
-    history: (direction) => editorModule?.runVisualHistory(direction, currentPath),
-    error: (message) => errorMessage(new Error(message)),
-  }, element("main"));
-  element("main").append(stylePanel.root);
   componentTools?.destroy();
   componentTools = mountComponentTools();
   mountPalette();
@@ -1232,10 +1121,9 @@ function syncLinkedStyles(path: string, content: string) {
   }
   const previous = linkedStyleSourceByPath.get(path);
   linkedStyleSourceByPath.set(path, content);
-  if (previous !== content) stylePanel?.update();
   if (previous !== content && linkedStyle && (path === linkedStyle.page || path === secondaryPath)) void refreshLinkedStyleRules();
 }
-// A rule in the style panel: its range in its file and how the cascade treats it.
+// A rule in the Source editor rule chips: its range in its file and how the cascade treats it.
 interface LinkedRule extends StyleRule {
   rule: NativeSelectedRule;
   status: RuleStatus;
@@ -1593,185 +1481,6 @@ function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
   editorModule?.markElement(selection.path, tag, reveal);
 }
 
-let nativeStyleClass: { selectionKey: string; name: string } | undefined;
-
-// The Style panel reads the same source and matched rules as the CSS pane.
-function nativeStylePanelContext(): StylePanelContext | undefined {
-  if (!nativeSite) return undefined;
-  const selection = lastNativeSelection, sources = nativeSources();
-  const master = nativeOpenMaster();
-  const source = selection ? nativeEditableSource(selection.path) : undefined;
-  const tag = selection?.node && source !== undefined ? locateNativeElement(source, selection.node) : undefined;
-  const classes = tag && source !== undefined ? [...new Set(decodeHtmlEntities(startTagAttribute(source, tag, "class")?.value ?? "", true).split(/[\t\n\f\r ]+/).filter(Boolean))] : [];
-  const selectionKey = selection ? `${generation}:${setupScope()}:${selection.path}:${selection.node?.join(".")}:${master?.session ?? ""}` : `${generation}:${setupScope()}`;
-  const className = nativeStyleClass?.selectionKey === selectionKey && classes.includes(nativeStyleClass.name) ? nativeStyleClass.name : classes[0];
-  const fallback = nativePageStyles().find((path) => /\.css$/.test(path) && sources[path] !== undefined)
-    ?? Object.keys(sources).find((path) => /\.css$/.test(path) && !path.startsWith("components/")) ?? "styles/site.css";
-  const target = className ? locateClassRule(sources, selection?.selectors ?? [], className, fallback) : undefined;
-  const focalPath = selection ? nativeStyleImageSource(selection, sources)?.path : undefined;
-  const scope = draftScope();
-  const proofs = scope && editorModule ? [...new Set([selection?.path, target?.path].filter((path): path is string => !!path && editorModule!.isMounted(path)))].map(path => editorModule!.captureFileModelState(scope, path)) : [];
-  return {
-    key: `${selectionKey}:${JSON.stringify(classes)}:${className ?? ""}`, selectionKey,
-    tag: selection?.tag ?? "", className, classes,
-    target, matchedRules: selection?.selectors ?? [], modelProof: { isCurrent: () => proofs.every(proof => proof.isCurrent()) && (!master || nativeOpenMaster()?.session === master.session && nativeEditableSource(master.masterPath) === source) },
-    assetRevision: focalPath ? String(nativeAssetVersions.get(focalPath) ?? 0) : "0", files: sources, workspace: nativeCssWorkspace(), computed: selection?.cascade?.computed ?? {}, readOnly: !!versionView,
-  };
-}
-
-/** Collection controls edit the selected page instance, never a shared component template. */
-function nativeSelectedCollection(): SelectedCollection | undefined {
-  const selection = lastNativeSelection;
-  if (versionView || !selection?.node || selection.path !== currentPath || !nativeRouteForPath(selection.path) ||
-    nativeEditableTemplatePath() || !editorModule?.isMounted(selection.path)) return undefined;
-  const route = nativeRouteForPath(selection.path);
-  if (!route || !validCollectionRoute(route, selection.path)) return undefined;
-  const source = nativeEffectiveSource(selection.path);
-  if (source === undefined) return undefined;
-  // A collection whose recipe is in the editor's page data file.
-  let owned: { host: number }[] = [];
-  try { owned = nativeDocumentRegions(selection.path, source); } catch { owned = []; }
-  for (let depth = selection.node.length; owned.length && depth > 0; depth--) {
-    const range = locateNativeElementRange(source, selection.node.slice(0, depth));
-    if (range && owned.some((region) => region.host === range.tag.start)) return { path: selection.path, start: range.tag.start,
-      key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
-  }
-  // Clicking a card also exposes its containing collection, alongside the card's own styles.
-  for (let depth = selection.node.length; depth > 0; depth--) {
-    const range = locateNativeElementRange(source, selection.node.slice(0, depth));
-    if (range && startTagAttribute(source, range.tag, "data-each")) return { path: selection.path, start: range.tag.start,
-      key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
-  }
-  // A hand-written grid of cards offers to choose its pages; nothing changes until Apply.
-  // Not while the editor's JSON is loading: the grid may already be one of its collections.
-  if (nativeDocumentLoading()) return undefined;
-  const elements = [...descendants(parseSource(source))];
-  for (let depth = selection.node.length; depth > 0; depth--) {
-    const range = locateNativeElementRange(source, selection.node.slice(0, depth));
-    const element = range && elements.find((item) => item.start === range.tag.start);
-    if (element && (isManualCardGrid(source, element) || isStaticCardGrid(source, element))) return { path: selection.path, start: element.start,
-      key: `${generation}:${setupScope()}:${selection.path}:${selection.node.join(".")}` };
-  }
-  return undefined;
-}
-let selectedCollectionView: { update(): void } | undefined;
-function nativeStoredCollection(target: { path: string; start: number }) {
-  try {
-    const sources: Record<string, string> = {};
-    const page = nativeEffectiveSource(target.path), sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-    if (page === undefined || sidecar === undefined) return undefined;
-    sources[target.path] = page; sources[EDITOR_PAGE_BUILDER_PATH] = sidecar;
-    return sidecarCollectionAt(sources, target.path, target.start);
-  } catch { return undefined; }
-}
-function mountNativeSelectedCollection(host: HTMLElement) {
-  const sources = () => Object.fromEntries(nativeFiles().filter(path => /\.html?$/i.test(path) || path === NATIVE_CONFIG_PATH || path === EDITOR_PAGE_BUILDER_PATH)
-    .flatMap(path => { const source = nativeEffectiveSource(path); return source === undefined ? [] : [[path, source]]; }));
-  const routes = () => deriveNativeRoutes(nativeFiles().sort());
-  const identity = () => ({ name: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(routes()["/"]) ?? "").name });
-  const revision = () => `${setupScope()}\n${generation}\n${nativeSelectedCollection()?.key ?? ""}`;
-  return selectedCollectionView = mountSelectedCollection(host, {
-    target: nativeSelectedCollection, sources,
-    routes, identity,
-    // Every path, read or not: an unread editor JSON shows as not ready, never as absent.
-    files: () => nativeFiles(),
-    revision, page: () => nativeSelectedCollection()?.path,
-    async prepare(target) {
-      const before = sources(), expectedRevision = revision();
-      const error = await ensureNativeTextIndex();
-      if (error) throw new Error(error);
-      if (revision() !== expectedRevision || nativeSelectedCollection()?.key !== target.key ||
-        Object.entries(before).some(([path, source]) => nativeEffectiveSource(path) !== source))
-        throw new Error("The selection or source changed while loading pages. Open the collection again.");
-    },
-    async apply(plan, expectedRevision, label) {
-      const target = nativeSelectedCollection(), saved = nativeCollectionSnapshot();
-      if (!target || revision() !== expectedRevision) throw new Error("The selection changed. Reopen the collection before applying.");
-      const snapshotCurrent = captureNativeCollectionSnapshotProof(saved);
-      const scope = draftScope(), editor = editorModule;
-      if (!scope || !editor) throw new Error("Open a page before changing this collection.");
-      const modelProofs = Object.keys(saved.sources).map(path => editor.captureFileModelState(scope, path, true));
-      const current = () => revision() === expectedRevision && nativeSelectedCollection()?.key === target.key &&
-        snapshotCurrent(nativeCollectionSnapshot()) && modelProofs.every(proof => proof.isCurrent());
-      if ("creates" in plan) {
-        // A JSON recipe change: the host plans it again from the current graph,
-        // bakes the cards, and applies HTML and JSON as one undo step.
-        const error = await applyNativeCollectionOperation({ ...plan, current, done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
-        if (error) throw new Error(error);
-        return true;
-      }
-      // Applying settings rebuilds cards; hand-edited ones are only replaced by the explicit rebuild.
-      const drift = generatedDrift(saved.sources, saved.routes, saved.identity, saved.files).filter((item) => Object.hasOwn(plan.edits, item.path));
-      const named = (kind: string) => [...new Set(drift.filter((item) => item.kind === kind).map((item) => item.path))].join(", ");
-      const moved = [...new Set(drift.filter((item) => item.kind === "edited" && item.pageData).map((item) => item.path))];
-      if (moved.length) throw new Error(movedPageDataMessage(moved));
-      if (named("edited")) throw new Error(`The cards in ${named("edited")} were edited by hand. Choose “Use manual cards” to keep them, or “Rebuild cards from page data” first.`);
-      if (named("unbuilt")) throw new Error(`The cards in ${named("unbuilt")} have not been built yet. Choose “Build cards from page data” first.`);
-      if (named("unchecked")) throw new Error(`The cards in ${named("unchecked")} cannot be checked against page data. Choose “Use manual cards” to keep them first.`);
-      const edits = new Map(Object.entries(plan.edits).map(([path, edits]) => [path, applyCollectionEdits(plan.expectedSources[path], edits)]));
-      const error = await applyNativeOperation({ edits, expectedSources: new Map(Object.entries(plan.expectedSources)), current,
-        done: `${label} as a draft. Save to GitHub to keep it.`, undone: "Undid collection settings." });
-      if (error) throw new Error(error);
-      return true;
-    },
-    openPage: (path) => { void restoreFile(path, generation); }, announce,
-    generated: {
-      state(target) {
-        const source = nativeEffectiveSource(target.path);
-        if (source === undefined) return undefined;
-        const stored = nativeStoredCollection(target);
-        if (stored) {
-          const snapshot = nativeCollectionSnapshot();
-          if (snapshot.files.includes(EDITOR_PAGE_BUILDER_PATH) && snapshot.sources[EDITOR_PAGE_BUILDER_PATH] === undefined) {
-            void ensureNativeTextIndex().then(() => selectedCollectionView?.update());
-            return "checking";
-          }
-          const drift = documentDrift(snapshot.sources, readSidecar(snapshot.sources[EDITOR_PAGE_BUILDER_PATH])).find((item) => item.id === stored.id);
-          return !drift ? "clean" : drift.kind === "missing" ? "unchecked" : drift.kind;
-        }
-        if (!generatedRegions(source).some((region) => region.host === target.start)) return undefined;
-        const snapshot = nativeCollectionSnapshot();
-        // Not judged until every page is loaded: never a false "clean".
-        if (Object.values(snapshot.routes).some((path) => snapshot.sources[path] === undefined)
-          || (snapshot.files.includes(EDITOR_PAGE_BUILDER_PATH) && snapshot.sources[EDITOR_PAGE_BUILDER_PATH] === undefined)) {
-          void ensureNativeTextIndex().then(() => selectedCollectionView?.update());
-          return "checking";
-        }
-        return generatedDrift(snapshot.sources, snapshot.routes, snapshot.identity, snapshot.files).find((item) => item.path === target.path && item.start === target.start)?.kind ?? "clean";
-      },
-      async keepManual(target) {
-        const source = nativeEffectiveSource(target.path);
-        if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
-        const stored = nativeStoredCollection(target);
-        if (stored) {
-          // Dropping only this JSON recipe keeps the cards exactly as they are; nothing else is imported or baked.
-          const sidecar = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-          if (sidecar === undefined) return DOCUMENT_LOADING;
-          return forgetNativeCollection(stored.id, sidecar);
-        }
-        let next: string;
-        try { next = manualCardsSource(source, target.start); } catch (error) { return (error as Error).message; }
-        if (await ensureNativeTextIndex()) return "The pages could not be loaded to check these cards. Try again.";
-        if (nativeEffectiveSource(target.path) !== source || nativeSelectedCollection()?.key !== target.key) return "The source or selection changed. Select the collection again.";
-        const state = this.state(target);
-        if (state === "checking") return "The pages could not be loaded to check these cards. Try again.";
-        return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), edits: new Map([[target.path, next]]),
-          ...(state && state !== "clean" ? { acceptGeneratedDrift: [{ path: target.path, start: target.start }] } : {}),
-          done: "Kept the cards as hand-written HTML. Save to GitHub to keep it.", undone: "Undid keeping the cards as hand-written HTML." });
-      },
-      async rebuild(target) {
-        const source = nativeEffectiveSource(target.path);
-        if (source === undefined || nativeSelectedCollection()?.key !== target.key) return "The selection changed. Select the collection again.";
-        const stored = nativeStoredCollection(target);
-        if (stored) return applyNativeCollectionOperation({ expectedSources: new Map<string, string | undefined>([[target.path, source], [EDITOR_PAGE_BUILDER_PATH, nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH)]]),
-          acceptCollections: [stored.id], done: "Built the cards from page data. Save to GitHub to keep it.", undone: "Undid building the cards." });
-        return applyNativeCollectionOperation({ expectedSources: new Map([[target.path, source]]), acceptGeneratedDrift: [{ path: target.path, start: target.start }],
-          done: "Built the cards from page data. Save to GitHub to keep it.", undone: "Undid building the cards." });
-      },
-    },
-  });
-}
-
 /**
  * Removes one collection's recipe from the editor's JSON as its own undo step,
  * leaving the page's cards, all other recipes and all page data exactly as
@@ -1789,38 +1498,12 @@ async function forgetNativeCollection(id: string, sidecar: string): Promise<stri
     done: `Forgot the recipe of collection “${id}”; its cards stay as they are. Save to GitHub to keep it.`, undone: "Undid forgetting the collection recipe." });
 }
 
-/** Resolve an authored asset; computed URLs alone do not identify repository provenance. */
-function nativeStyleImageSource(selection: NativePreviewSelection, sources: Record<string, string>): { path: string; mode: "object-position" | "background-position" } | undefined {
-  const master = nativeOpenMaster();
-  const source = master?.masterPath === selection.path ? master.masterSource : sources[selection.path];
-  const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
-  if (selection.tag.toLowerCase() === "img" && tag) {
-    const raw = startTagAttribute(source, tag, "src")?.value;
-    const page = master?.masterPath === selection.path ? master.pagePath : nativePageRoute(selection.path) ? selection.path : "index.html";
-    const path = raw && nativeImageAsset(page, decodeHtmlEntities(raw, true));
-    return path ? { path, mode: "object-position" } : undefined;
-  }
-  const result = resolveSelectedRules(selection.selectors, selection.cascade);
-  const winner = result.winners["background-image"];
-  if (!winner) return;
-  const rule = selection.selectors[winner.rule];
-  if (rule.kind === "inline" || !/\.css$/i.test(rule.path)) return;
-  const located = findStyleRulesInSources(sources, [rule])[0];
-  const block = located && scanCss(sources[rule.path] ?? "").find(block => block.start === located.start);
-  if (!block) return;
-  // The native parser keeps earlier !important declarations over later normal ones.
-  const style = document.createElement("div").style;
-  style.cssText = block.declarations.map(item => `${item.property}:${item.value};`).join("");
-  const path = singleBackgroundAsset(style.getPropertyValue("background-image"), rule.path);
-  return path ? { path, mode: "background-position" } : undefined;
-}
-
-/** A fresh source snapshot shared by code intelligence and Style variable controls. */
+/** A fresh source snapshot for CSS code intelligence. */
 function nativeCssWorkspace(): CssWorkspace | undefined {
   const scope = draftScope(), requester = currentPath;
   if (!nativeSite || !scope || !requester || versionView || !editorModule?.isMounted(requester)) return;
   const epoch = generation, scopeKey = setupScope(), sources = nativeSources();
-  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, lastNativeSelection?.path, lastNativeSelection?.node, nativeStyleClass, sources]);
+  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, lastNativeSelection?.path, lastNativeSelection?.node, sources]);
   const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
   return {
     revision, sources, orderedPaths,
@@ -2575,14 +2258,18 @@ function renderGeneratedCardBar(selection: NativePreviewSelection, source: strin
   const controls: EditBarControl[] = [];
   if (record) controls.push({ kind: "button", label: "Edit page data", title: `This card shows the page ${record.url}. Open that page to change what the card says.`,
     onPress: () => { void restoreFile(record.path, generation); } });
-  controls.push({ kind: "button", label: "Edit collection", title: "Change the collection to change every card it makes.", onPress: selectCollection });
+  controls.push({ kind: "button", label: "Show collection source", title: "Review this grid's HTML in the Source editor.", onPress: () => {
+    selectCollection();
+    if (element("main").classList.contains("code-collapsed")) codeResize?.toggle();
+    editorModule?.revealRange(path, region.host, region.end);
+  } });
   const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
   const model: EditBarModel = {
     origin: { path, source, revision: `${setupScope()}:${generation}`, node: selection.node?.slice() }, kind, controls,
     // A shared component's own root keeps its explicit Edit (the shared template); its parts do not.
     ...(componentTools?.identity(selection).component ? { component: componentTools.identity(selection).component } : {}),
     context: { label: record ? `From ${record.url}` : "Made from page data",
-      title: "This card is made from page data. Changes made here would be replaced, so edit the page or the collection instead.", onSelect: selectCollection },
+      title: "This card is made from page data. Changes made here would be replaced, so edit the page data or review the collection in the Source editor.", onSelect: selectCollection },
   };
   nativeEditBarModel = model;
   preview.showEditBar(model, selection.rect, nativeTextSelection);
@@ -3145,7 +2832,6 @@ function refuseNativeSelection(selection: NativePreviewSelection, message: strin
   lastNativeSelection = undefined;
   if (currentPath) editorModule?.markElement(currentPath, undefined, false);
   nativePreview?.clearSelection();
-  stylePanel?.update();
   pageStructure?.select(undefined);
   componentTools?.show(undefined);
   if (selection.reason !== "refresh") announce(message);
@@ -3211,7 +2897,6 @@ async function selectNativeSource(selection: NativePreviewSelection) {
   if (selection.path !== lastNativeSelection?.path || selection.node?.join(".") !== lastNativeSelection?.node?.join(".")) nativeSelectionEpoch++;
   lastNativeSelection = selection.path ? selection : undefined;
   for (const waiter of [...nativeSelectionWaiters]) waiter(selection);
-  stylePanel?.update();
   // Agents see the selection (get_selection).
   if (reveal) updateAgentContext();
   pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
@@ -4117,19 +3802,7 @@ async function loadNativeStyleFiles() {
 // per path as data URLs so the sandboxed frame can show them; a path that is
 // not in the branch (or not an image or font) is remembered as missing and
 // left as written.
-const nativeAssetVersions = new Map<string, number>();
-const nativeAssets = new class extends Map<string, string> {
-  override set(path: string, value: string) {
-    if (this.get(path) !== value) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1);
-    return super.set(path, value);
-  }
-  override delete(path: string) {
-    const deleted = super.delete(path);
-    if (deleted) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1);
-    return deleted;
-  }
-  override clear() { for (const path of this.keys()) nativeAssetVersions.set(path, (nativeAssetVersions.get(path) ?? 0) + 1); super.clear(); }
-}();
+const nativeAssets = new Map<string, string>();
 const nativeMissingAssets = new Set<string>();
 const nativeAssetRequests = new Map<string, number>();
 let nativeAssetRequestId = 0;

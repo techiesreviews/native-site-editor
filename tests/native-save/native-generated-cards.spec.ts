@@ -45,14 +45,6 @@ async function open(page: Page, baseURL: string | undefined, seed: [string, stri
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", file, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
-async function openCollection(page: Page) {
-  await frame(page).locator("section[data-key=\"work-list\"]").click({ position: { x: 2, y: 2 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  return details;
-}
 
 test("a generated card offers its page and the collection, and refuses direct writes", async ({ page, baseURL }) => {
   const seed = bakedSeed();
@@ -62,11 +54,19 @@ test("a generated card offers its page and the collection, and refuses direct wr
   await frame(page).locator("section[data-key=\"work-list\"] h3", { hasText: "One" }).click();
   await expect(bar(page)).toContainText("From /work/one/");
   for (const name of ["Heading level", "Text size"]) await expect(bar(page).getByLabel(name, { exact: true })).toHaveCount(0);
-  await expect(bar(page).getByRole("button", { name: "Edit collection", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Show collection source", exact: true })).toBeVisible();
   // Inline typing into the generated heading is refused; nothing is written.
   await frame(page).locator("section[data-key=\"work-list\"] h3", { hasText: "One" }).dblclick();
   await page.keyboard.type("XX");
   await page.keyboard.press("Escape");
+  expect(await mounted(page, "index.html")).toBe(before);
+  expect(await storedDrafts(page)).toEqual([]);
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).press("Home");
+  await expect(page.locator("#content .monaco-editor")).toBeHidden();
+  await frame(page).locator("section[data-key=\"work-list\"] h3", { hasText: "One" }).click();
+  await bar(page).getByRole("button", { name: "Show collection source", exact: true }).click();
+  await expect(page.locator("#main")).not.toHaveClass(/code-collapsed/);
+  await expect(page.locator("#content .monaco-editor")).toBeVisible();
   expect(await mounted(page, "index.html")).toBe(before);
   expect(await storedDrafts(page)).toEqual([]);
   await frame(page).locator("section[data-key=\"work-list\"] h3", { hasText: "One" }).click();
@@ -92,7 +92,7 @@ test("ordinary elements outside the cards still edit normally, in one Undo", asy
   await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
 });
 
-test("Structure, keyboard moves and Add class leave generated cards untouched; CSS rule edits still persist", async ({ page, baseURL }) => {
+test("Structure and keyboard moves leave generated cards untouched", async ({ page, baseURL }) => {
   const seed = bakedSeed(`<article class="lead"><h3>{title}</h3></article>`);
   await open(page, baseURL, seed);
   const before = await mounted(page, "index.html");
@@ -102,19 +102,7 @@ test("Structure, keyboard moves and Add class leave generated cards untouched; C
   await expect(row).toHaveAttribute("title", /Made from page data/);
   // Alt+Down would move the card in the HTML: nothing moves.
   await page.keyboard.press("Alt+ArrowDown");
-  // Add class would write the card's HTML: refused.
-  const style = page.getByRole("complementary", { name: "Style panel" });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  await style.getByRole("textbox", { name: "Class name" }).fill("mine");
-  await style.getByRole("button", { name: "Add class", exact: true }).click();
-  await expect(page.locator("#status")).toContainText("made from page data");
   expect(await mounted(page, "index.html")).toBe(before);
-  expect(await storedDraft(page, "index.html")).toBeUndefined();
-  // An existing class rule is persistent CSS: editing it is allowed.
-  await style.getByRole("textbox", { name: "Padding top", exact: true }).fill("24");
-  await style.getByRole("textbox", { name: "Padding top", exact: true }).press("Enter");
-  await expect.poll(async () => (await storedDraft(page, "styles/site.css"))?.content ?? "").toMatch(/\.lead \{[^}]*padding-top: 24px;/s);
   expect(await storedDraft(page, "index.html")).toBeUndefined();
 });
 
@@ -125,92 +113,6 @@ test("a shared component that is a whole card keeps its explicit Edit, opening t
   await bar(page).getByRole("button", { name: /^Edit/ }).filter({ hasNotText: "page data" }).filter({ hasNotText: "collection" }).first().click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
   expect(await storedDrafts(page)).toEqual([]);
-});
-
-test("a hand edit made after the collection opened makes its Apply refuse, keeping the edit exactly", async ({ page, baseURL }) => {
-  const seed = bakedSeed();
-  await open(page, baseURL, seed);
-  const details = await openCollection(page);
-  await expect(details.getByRole("button", { name: "Use manual cards", exact: true })).toBeVisible();
-  await expect(details).not.toContainText("edited by hand");
-  const order = page.getByRole("region", { name: "Collection settings", exact: true }).getByRole("combobox", { name: "Order", exact: true });
-  await expect(order).toBeVisible();
-  // Code changes a generated card while the settings are open.
-  const at = seed[2][1].indexOf("<h3>One</h3>") + 4;
-  await page.evaluate(async (at) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at + 3, text: "Mine", expected: "One" }), at);
-  const drifted = seed[2][1].slice(0, at) + "Mine" + seed[2][1].slice(at + 3);
-  await expect.poll(() => mounted(page, "index.html")).toBe(drifted);
-  await order.selectOption("ascending");
-  const settings = page.getByRole("region", { name: "Collection settings", exact: true });
-  const save = settings.getByRole("button", { name: "Save collection", exact: true });
-  // The preview names why, and Save cannot write over the hand edit.
-  await expect(settings).toContainText("The cards in index.html were edited by hand and no longer match the page data, so this change would replace them.");
-  await expect(save).toBeDisabled();
-  expect(await mounted(page, "index.html")).toBe(drifted);
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(drifted);
-  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
-  // Undoing the hand edit in Code repairs the cards; the same settings then apply.
-  await page.evaluate(async (at) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at + 4, text: "One", expected: "Mine" }), at);
-  await expect.poll(() => mounted(page, "index.html")).toBe(seed[2][1]);
-  // The open form refuses the changed page; reopening reads the repaired cards.
-  await expect(settings).toContainText("reopen before applying");
-  await expect(save).toBeDisabled();
-  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
-  await openCollection(page);
-  await order.selectOption("ascending");
-  await expect(settings).not.toContainText("edited by hand");
-  await expect(save).toBeEnabled();
-  await save.click();
-  await expect.poll(async () => (await storedDraft(page, ".editor/page-builder.json"))?.content).toContain('"sort": "date"');
-  const rebuilt = (await storedDraft(page, "index.html"))!.content;
-  expect(rebuilt.indexOf("<h3>One</h3>")).toBeLessThan(rebuilt.indexOf("<h3>Two</h3>"));
-  expect(rebuilt).not.toContain("data-each");
-});
-
-test("hand-edited cards block later page changes until explicitly rebuilt, in one Undo", async ({ page, baseURL }) => {
-  const seed = bakedSeed();
-  const drifted = seed[2][1].replace("<h3>One</h3>", "<h3>One, my own words</h3>");
-  await open(page, baseURL, [seed[0], seed[1], ["index.html", drifted]], "work/one/index.html");
-  // A title change on the source page would rebake Home: refused, nothing written.
-  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await openPageSettingsFromPages(page);
-  const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
-  await settings.getByLabel("Title", { exact: true }).fill("One renamed");
-  await settings.getByRole("button", { name: "Apply page settings" }).click();
-  await expect(page.getByText(/index\.html were edited by hand/).first()).toBeVisible();
-  expect(await storedDrafts(page)).toEqual([]);
-  await settings.getByRole("button", { name: /Cancel|Close/ }).first().click().catch(() => page.keyboard.press("Escape"));
-
-  await open(page, baseURL, [], "index.html");
-  expect(await mounted(page, "index.html")).toBe(drifted);
-  const details = await openCollection(page);
-  await expect(details).toContainText("edited by hand");
-  await details.getByRole("button", { name: "Rebuild cards from page data", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(seed[2][1]);
-  await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
-  expect(await mounted(page, "index.html")).toBe(drifted);
-});
-
-test("Use manual cards keeps the edited cards and host attributes, drops only the recipe, in one Undo", async ({ page, baseURL }) => {
-  const seed = bakedSeed();
-  const drifted = seed[2][1].replace("<h3>One</h3>", "<h3>One, my own words</h3>");
-  await open(page, baseURL, [seed[0], seed[1], ["index.html", drifted]]);
-  const details = await openCollection(page);
-  await details.getByRole("button", { name: "Use manual cards", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain('<section class="cards" data-key="work-list" aria-label="Work">');
-  const manual = (await storedDraft(page, "index.html"))!.content;
-  expect(manual).toContain("<h3>One, my own words</h3>");
-  expect(manual).not.toMatch(/<template>|data-each|data-sort/);
-  expect(manual).toBe(drifted.replace(/ data-each="\/work\/" data-sort="-date"/, "").replace(/<template>.*?<\/template>/, ""));
-  // The kept cards are ordinary HTML again.
-  await frame(page).locator("section[data-key=\"work-list\"] h3", { hasText: "my own words" }).click();
-  await expect(bar(page)).not.toContainText("Made from page data");
-  await expect(bar(page).getByLabel("Heading level", { exact: true })).toBeVisible();
-  await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
-  expect(await mounted(page, "index.html")).toBe(drifted);
 });
 
 test("a clean listing still rebakes on a page title change in one Undo", async ({ page, baseURL }) => {
@@ -246,10 +148,6 @@ test("renaming a listed page from the Pages tab rebuilds its card in the same st
   await page.locator(".code-editor__redo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(renamed);
   await open(page, baseURL, [], "index.html");
-  const details = await openCollection(page);
-  await expect(details.getByRole("button", { name: "Use manual cards", exact: true })).toBeVisible();
-  await expect(details).not.toContainText("edited by hand");
-  await expect(details).not.toContainText("Checking");
 });
 
 test("a title typed in Code rebuilds every listing that shows the page, shared-component cards included, with the edit's Undo", async ({ page, baseURL }) => {
@@ -294,17 +192,20 @@ test("Structure hides only the collection recipe and offers no fields on a gener
   expect(await mounted(page, "index.html")).toBe(before);
 });
 
-test("a refused recovery keeps its reason on screen", async ({ page, baseURL }) => {
-  const seed = bakedSeed(cardTemplate, true);
-  const home = seed[2][1].replace("<h3>One</h3>", "<h3>One, mine</h3>");
-  const about = seed[3][1].replace("<h3>Two</h3>", "<h3>Two, mine</h3>");
-  await open(page, baseURL, [seed[0], seed[1], ["index.html", home], ["about/index.html", about]]);
-  const details = await openCollection(page);
-  await details.getByRole("button", { name: "Rebuild cards from page data", exact: true }).click();
-  // The other hand-edited listing blocks the operation; the reason stays visible.
-  await expect(details.locator(".selected-collection__note")).toContainText("about/index.html were edited by hand");
-  await page.waitForTimeout(500);
-  await expect(details.locator(".selected-collection__note")).toContainText("about/index.html were edited by hand");
+test("hand-edited cards refuse a page title change without writing drafts", async ({ page, baseURL }) => {
+  const seed = bakedSeed();
+  const drifted = seed[2][1].replace("<h3>One</h3>", "<h3>One, my own words</h3>");
+  await open(page, baseURL, [seed[0], seed[1], ["index.html", drifted]], "work/one/index.html");
+  // A title change on the source page would rebake Home: refused, nothing written.
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await openPageSettingsFromPages(page);
+  const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
+  await settings.getByLabel("Title", { exact: true }).fill("One renamed");
+  await settings.getByRole("button", { name: "Apply page settings" }).click();
+  await expect(page.getByText(/index\.html were edited by hand/).first()).toContainText("Source editor");
   expect(await storedDrafts(page)).toEqual([]);
-  expect(await mounted(page, "index.html")).toBe(home);
+  await settings.getByRole("button", { name: /Cancel|Close/ }).first().click().catch(() => page.keyboard.press("Escape"));
+
+  expect(await mounted(page, "work/one/index.html")).toBe(seed[0][1]);
 });

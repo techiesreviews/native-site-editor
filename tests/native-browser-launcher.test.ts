@@ -11,7 +11,7 @@ function launch(args: string[], env: Record<string, string> = {}) {
 const nativeHosts = [
   "native-master-after-done-proof.spec.ts", "native-master-assets-host.spec.ts", "native-master-code-collapse.spec.ts",
   "native-master-controls.spec.ts", "native-master-host.spec.ts", "native-master-page-part-controls.spec.ts", "native-master-visual-host.spec.ts",
-  "native-shared-authoring-host.spec.ts", "native-static-grid-collection-host.spec.ts",
+  "native-shared-authoring-host.spec.ts",
   // Supported future native-only hosts count once their spec lands.
   ...["native-shared-link-host.spec.ts", "native-shared-files-lifecycle.spec.ts"].filter(name => existsSync(`tests/native-save/${name}`)),
 ];
@@ -21,7 +21,7 @@ test("native-static selects every native-only host plus the dual sections host",
   assert.equal(status, 0);
   assert.match(out, /^Fixture: native-static /);
   assert.deepEqual(files, [...nativeHosts, "native-static-sections-host.spec.ts", "native-static-starter-create.spec.ts"].sort());
-  for (const spec of ["native-shared-authoring-host.spec.ts", "native-static-grid-collection-host.spec.ts", "native-master-visual-host.spec.ts", ...nativeHosts.filter(name => name.startsWith("native-shared-") && !name.includes("authoring"))]) {
+  for (const spec of ["native-shared-authoring-host.spec.ts", "native-master-visual-host.spec.ts", ...nativeHosts.filter(name => name.startsWith("native-shared-") && !name.includes("authoring"))]) {
     const one = launch(["native-static", "--check", "--spec", spec]);
     assert.equal(one.status, 0, one.err);
     assert.deepEqual(one.files, [spec]);
@@ -33,14 +33,14 @@ test("default excludes native-only hosts and actual-only specs but keeps univers
   const { status, files, out } = launch(["default", "--check"]);
   assert.equal(status, 0);
   assert.match(out, /^Fixture: default /);
-  for (const spec of [...nativeHosts, "native-static-starter-create.spec.ts", "native-static-sections-host.spec.ts", "native-editor-json.spec.ts"]) assert.ok(!files.includes(spec), spec);
+  for (const spec of [...nativeHosts, "native-static-starter-create.spec.ts", "native-static-sections-host.spec.ts", "native-editor-json-lifecycle.spec.ts"]) assert.ok(!files.includes(spec), spec);
   assert.ok(files.includes("native-master-preview-locator.spec.ts"));
 });
 
 test("actual selection is unchanged", () => {
   const { status, files } = launch(["actual", "--check"]);
   assert.equal(status, 0);
-  assert.ok(files.includes("native-static-sections-host.spec.ts") && files.includes("native-editor-json.spec.ts"));
+  assert.ok(files.includes("native-static-sections-host.spec.ts") && files.includes("native-editor-json-lifecycle.spec.ts"));
   for (const spec of nativeHosts) assert.ok(!files.includes(spec), spec);
 });
 

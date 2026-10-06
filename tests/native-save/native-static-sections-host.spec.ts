@@ -1,3 +1,4 @@
+import { seedCollection } from "./collection-fixture";
 import { seedSavedSections } from "./static-sections";
 import { locateCollectionTarget } from "../../src/page-builder/page-builder-document";
 import { requireStaticFixture } from "./fixture-contract";
@@ -374,16 +375,10 @@ actual("adding a section beside a stored collection leaves its recipe and cards 
   await page.goto(baseURL!);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "services/one/index.html", content: `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>` } });
   await load(page, baseURL);
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  const inspector = page.getByRole("region", { name: "Collection settings", exact: true });
-  await inspector.getByRole("checkbox", { name: "/services/", exact: true }).check();
-  await inspector.getByRole("button", { name: "Apply", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  const collections = JSON.parse((await storedDraft(page, SIDECAR))!.content).collections;
+  await seedCollection(page, baseURL, ["/work/", "/services/"], ["services/one/index.html"]);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const collections = JSON.parse(await (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(SIDECAR)}`)).text()).collections;
   const cards = await frame(page).locator("card-project").count();
   await openAdd(page);
   await add(page, /^Contact HTML$/);

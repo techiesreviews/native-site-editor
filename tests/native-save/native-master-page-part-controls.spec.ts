@@ -1,11 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
-import { showStylePanel } from "./style-panel-controls";
 
-// Shared Header and Footer masters (.editor/page-parts/<id>.html) with the real edit bar and Style panel:
-// Save shared on the About page, Structure's Edit opens the master, and image, text and style controls
-// write only the master or the site's CSS until Update copies. Runs on the native static starter:
+// Shared Header and Footer masters (.editor/page-parts/<id>.html) with the real edit bar:
+// Save shared on the About page, Structure's Edit opens the master, and image and text controls
+// write only the master until Update copies. Runs on the native static starter:
 // STATIC_SECTIONS_FIXTURE=native ASE_NATIVE_SAVE_FIXTURE=<.scratch/native-static-preview>.
 const pageErrors = new WeakMap<Page, string[]>();
 test.beforeEach(async ({ page }) => {
@@ -23,7 +22,6 @@ const CSS = ["styles/tokens.css", "styles/elements.css", "styles/layout.css", "s
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const structure = (page: Page) => page.getByRole("complementary", { name: "Page structure" });
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
-const style = (page: Page) => page.getByRole("complementary", { name: "Style panel" });
 const row = (page: Page, name: RegExp) => structure(page).getByRole("treeitem", { name }).first();
 const snapshot = async (page: Page, baseURL: string | undefined, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async path => [path, await effectiveSource(page, baseURL, path)] as const)));
 const codeCollapsed = (page: Page) => page.locator("main").evaluate(main => main.classList.contains("code-collapsed"));
@@ -55,7 +53,7 @@ async function replaceCode(page: Page, text: string) {
   await page.keyboard.press("ControlOrMeta+V");
 }
 
-test("a shared header master's image: chooser, Alt and focal write only the master or CSS; Update then one Undo keeps the master edits", async ({ page, baseURL }) => {
+test("a shared header master's image: chooser and Alt write only the master; Update then one Undo keeps the master edits", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   const asset = await (await page.request.get(`${baseURL}/__demo/file?path=images%2Fstudio-desk.svg`)).text();
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/part-image.svg", content: asset } })).status()).toBe(204);
@@ -95,31 +93,6 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   const alted = chosen.replace('alt="Studio desk"', 'alt="Desk in the studio"');
   await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(alted);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
-  // Image focus in Style: an object-position in the site's CSS, its own Undo and Redo in the master.
-  await photo.click();
-  await showStylePanel(page);
-  await style(page).getByRole("searchbox", { name: "Search styles" }).fill("image focus");
-  const focal = style(page).getByRole("region", { name: "Image focus" });
-  await expect(focal).toBeVisible();
-  await expect.poll(() => focal.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  await unchanged([PAGE, JSON_PATH, ...CSS]);
-  await focal.getByRole("group").focus();
-  await page.keyboard.press("Shift+ArrowRight");
-  const focused = async () => (await Promise.all(CSS.map(path => effectiveSource(page, baseURL, path)))).filter((text, i) => text !== before[CSS[i]]);
-  await expect.poll(async () => (await focused()).length).toBe(1);
-  const [focalCss] = await focused();
-  expect(focalCss).toMatch(/\.header-photo[^{]*\{[^}]*object-position: 60% 50%/);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
-  await unchanged([PAGE, JSON_PATH]);
-  await banner.getByRole("button", { name: "Done" }).focus();
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(async () => (await focused()).length).toBe(0);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
-  await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(async () => (await focused())[0]).toBe(focalCss);
-  await expect(page.locator("#primary-title")).toHaveText(MASTER);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
-  await unchanged([PAGE, JSON_PATH]);
   // Update copies writes the page's header from the master; one Undo reverts only that.
   await banner.getByRole("button", { name: "Update copies" }).click();
   await expect.poll(async () => (await effectiveSource(page, baseURL, PAGE)) ?? "").toContain('alt="Desk in the studio"');
@@ -128,7 +101,6 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => effectiveSource(page, baseURL, PAGE)).toBe(before[PAGE]);
   expect(await effectiveSource(page, baseURL, MASTER)).toBe(alted);
-  expect((await focused())[0]).toBe(focalCss);
   // Done returns to the page with Code as it was, writing nothing.
   const atDone = await snapshot(page, baseURL, [PAGE, JSON_PATH, ...CSS, MASTER]);
   await banner.getByRole("button", { name: "Done" }).click();
@@ -138,7 +110,7 @@ test("a shared header master's image: chooser, Alt and focal write only the mast
   expect(await codeCollapsed(page)).toBe(codeBefore);
 });
 
-test("a shared footer master's text: canvas typing, Bold and Style size and colour target the master and CSS; Update when pristine, one Undo", async ({ page, baseURL }) => {
+test("a shared footer master's text: canvas typing and Bold target the master; Update when pristine, one Undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const codeBefore = await codeCollapsed(page);
   const banner = await shareAndEdit(page, /^Footer/, "footer", "site-foot", "Site footer", "Shared footer master");
@@ -168,31 +140,11 @@ test("a shared footer master's text: canvas typing, Bold and Style size and colo
   const sized = bold.replace("<p><strong>Larkspur", '<p class="text-l"><strong>Larkspur');
   await expect.poll(() => effectiveSource(page, baseURL, MASTER)).toBe(sized);
   await unchanged([PAGE, JSON_PATH, ...CSS]);
-  // Style on the footer root (the bar's master crumb): explicit font size and text colour write one stylesheet.
   await line.click();
   await bar(page).getByRole("button", { name: /In the Site footer master/ }).click();
   await expect(bar(page).locator(".edit-bar__label")).toHaveText("Site footer");
-  await showStylePanel(page);
-  const search = style(page).getByRole("searchbox", { name: "Search styles" });
-  await search.fill("font size");
-  const size = style(page).getByRole("textbox", { name: "Font size", exact: true });
-  await size.fill("19px");
-  await size.press("Enter");
-  const changed = async () => (await snapshot(page, baseURL, CSS));
-  await expect.poll(async () => Object.values(await changed()).some(text => text?.includes("font-size: 19px"))).toBe(true);
-  await search.fill("text colour");
-  const colour = style(page).getByRole("textbox", { name: "Text colour", exact: true });
-  await colour.fill("purple");
-  await colour.press("Enter");
-  await expect.poll(async () => Object.values(await changed()).some(text => text?.includes("color: purple"))).toBe(true);
-  const styled = await changed();
-  const touched = CSS.filter(path => styled[path] !== before[path]);
-  expect(touched).toHaveLength(1);
-  expect(styled[touched[0]]).toMatch(/font-size: 19px;[\s\S]*color: purple|color: purple;[\s\S]*font-size: 19px/);
-  expect(styled[touched[0]]).toMatch(/\.site-footer\s*\{/);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(sized);
-  await unchanged([PAGE, JSON_PATH]);
-  await expect(page.locator("#primary-title")).toHaveText(MASTER);
+  for (const name of ["Move up", "Move down", "Duplicate", "Remove"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
   // Done goes back with Code as it was and writes nothing; Edit again, then Update copies the pristine page copy.
   const atDone = await snapshot(page, baseURL, [PAGE, JSON_PATH, ...CSS, MASTER]);
   await banner.getByRole("button", { name: "Done" }).click();

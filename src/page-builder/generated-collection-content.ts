@@ -178,5 +178,5 @@ export function planDocumentTargetEdit(source: string, path: string, sidecar: st
 }
 function refusal(path: string, found?: { error: string } | object) {
   const reason = found && "error" in found ? ` (${(found as { error: string }).error})` : "";
-  return `This change would leave a collection on ${path} without one exact grid to fill${reason}, so nothing was changed. Give the grid a unique id first, or keep its cards with “Use manual cards”.`;
+  return `This change would leave a collection on ${path} without one exact grid to fill${reason}, so nothing was changed. Give the grid a unique id in the Source editor, or remove its collection recipe to keep the cards as authored HTML.`;
 }

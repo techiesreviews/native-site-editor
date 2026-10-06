@@ -12,7 +12,7 @@
  * after this file.
  */
 .inline-field:not([hidden]),
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):not([hidden]),
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):not([hidden]),
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):not([hidden]),
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):not([hidden]) {
   border-color: transparent;
@@ -22,14 +22,14 @@
   transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 .inline-field:hover:not(:disabled, [readonly], :focus),
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):hover:not(:disabled, [readonly], :focus),
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):hover:not(:disabled, [readonly], :focus),
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):hover:not(:disabled, [readonly], :focus),
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):hover:not(:disabled, [readonly], :focus) {
   background-color: var(--hover);
   box-shadow: inset 0 -1px 0 var(--control-line);
 }
 .inline-field:focus:not([readonly]),
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus:not([readonly]),
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus:not([readonly]),
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):focus:not([readonly]),
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):focus:not([readonly]) {
   outline: none;
@@ -37,27 +37,27 @@
   box-shadow: inset 0 -2px 0 var(--primary);
 }
 .inline-field:focus-visible,
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus-visible,
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus-visible,
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):focus-visible,
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):focus-visible {
   outline: none;
 }
 .inline-field[aria-invalid="true"],
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea)[aria-invalid="true"],
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea)[aria-invalid="true"],
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"])[aria-invalid="true"],
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input)[aria-invalid="true"] {
   border-color: transparent;
   box-shadow: inset 0 -2px 0 var(--danger);
 }
 .inline-field:disabled,
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):disabled,
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):disabled,
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):disabled,
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):disabled {
   box-shadow: none;
 }
 @media (forced-colors: active) {
 .inline-field:focus,
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus,
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):focus,
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):focus,
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):focus {
   outline: 2px solid CanvasText;
@@ -65,7 +65,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
 .inline-field:not([hidden]),
-:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .style-panel__body, .style-panel__variable, .site-settings__field, .component-field, .component-attribute, .selected-collection, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):not([hidden]),
+:root :is(.page-structure__field, .page-structure__slot-field, .page-structure__attribute-add, .site-settings__field, .component-field, .component-attribute, .url-change, .edit-bar__field-label, .canvas-width) :is(input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]), textarea):not([hidden]),
 :root :is(.collections-panel__field) input:is(:not([type]), [type="text"], [type="url"], [type="email"], [type="tel"], [type="number"]):not([hidden]),
 :root :is(input.pages-edit__title, input.pages-edit__slug, input.pages-rename, input.edit-bar__field-input, input.canvas-width__input):not([hidden]) {
   transition: none;

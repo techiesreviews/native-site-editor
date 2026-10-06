@@ -1,10 +1,10 @@
+import { seedCollection } from "./collection-fixture";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { deriveNativeRoutes } from "../../shared/native-routes";
 import { applyCollectionEdits, planBake } from "../../src/page-builder/collection-bake";
 import { storedDraft, storedDrafts } from "./drafts";
-import { publishButton } from "./publish";
 
 // A page Title write (the Pages tab's Rename) awaits the listed-page check
 // before it writes. A source edit landing in that await must be refused, never
@@ -136,24 +136,13 @@ test("an unlisted page's Rename refuses a source edit made during the listed che
 test("a page listed through the editor's JSON: Rename refuses a source edit made during the listed check; retry is one Undo", async ({ page, baseURL }) => {
   const file = async (path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
   await seed(page, baseURL, "index.html");
-  // Move the listing's recipe into the JSON through the collection settings, then Save it, so the baseline has no drafts.
-  await page.frameLocator(".native-preview-frame").locator('section[data-key="work-list"]').click({ position: { x: 2, y: 2 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  const settings = page.getByRole("region", { name: "Collection settings", exact: true });
-  await settings.getByRole("combobox", { name: "Order", exact: true }).selectOption("ascending");
-  await settings.getByRole("button", { name: "Save collection", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
-  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  await seedCollection(page, baseURL, ["/work/"], ["work/one/index.html", "work/two/index.html"]);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
   const home = await file("index.html"), sidecar = await file(SIDECAR);
   expect(home).not.toMatch(/data-each|<template/);
   expect(home).toContain("<h3>One</h3>");
-  expect(Object.values(JSON.parse(sidecar).collections)).toEqual([expect.objectContaining({ pagePath: "index.html", folders: ["/work/"], sort: "date" })]);
+  expect(Object.values(JSON.parse(sidecar).collections)).toEqual([expect.objectContaining({ pagePath: "index.html", folders: ["/work/"], sort: "-date" })]);
 
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(PAGE)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", PAGE, { timeout: 30_000 });

@@ -155,27 +155,6 @@ const ancestors = (rule: CssBlock) => {
   return out;
 };
 const isRule = (block: CssBlock) => !block.selector.startsWith("@") && !ancestors(block).some((p) => /keyframes\b/.test(p.selector));
-export const cssClassSelector = (name: string) => "." + Array.from(name).map((c, i) => {
-  if ((i === 0 && /\d/.test(c)) || (i === 1 && name[0] === "-" && /\d/.test(c))) return `\\${c.codePointAt(0)!.toString(16)} `;
-  return /[\w-]/.test(c) || c.codePointAt(0)! >= 128 ? c : `\\${c}`;
-}).join("");
-
-export interface CssTarget { path: string; selector: string; start?: number }
-/** Prefer the most specific matched simple class rule, then its source order. */
-export function locateClassRule(files: Readonly<Record<string, string>>, matches: readonly { path: string; selector: string; ruleIndex?: number; conditions?: string[]; state?: string[] }[], className: string, fallbackPath: string): CssTarget {
-  const selector = cssClassSelector(className);
-  const candidates = matches.filter((m) => /\.css$/i.test(m.path) && !m.state?.length && !m.conditions?.some((c) => /^@?media\b/i.test(c)) &&
-    (normalized(m.selector) === selector || /^\.[\w-]+[\t\n\f\r ]+$/.test(normalized(m.selector).slice(0, -selector.length)) && normalized(m.selector).endsWith(selector)));
-  candidates.sort((a, b) => b.selector.split(/[\t\n\f\r ]+/).length - a.selector.split(/[\t\n\f\r ]+/).length || matches.indexOf(b) - matches.indexOf(a));
-  for (const match of candidates) {
-    const rules = scanCss(files[match.path] ?? "").filter(isRule);
-    const rule = match.ruleIndex === undefined ? lastWhere(rules, (r) => normalized(r.selector) === normalized(match.selector)) : rules[match.ruleIndex];
-    if (rule && normalized(rule.selector) === normalized(match.selector) && !ancestors(rule).some((p) => /^@media\b/.test(p.selector)))
-      return { path: match.path, selector: rule.selector, start: rule.start };
-  }
-  return { path: fallbackPath, selector };
-}
-
 export interface CssWriteOptions { expectedSource?: string; selector: string; baseStart?: number; breakpoint?: number; state?: "" | ":hover" | ":focus-visible" }
 const mediaWidth = (block: CssBlock) => /^@media\s+(?:screen\s+and\s+)?\(\s*max-width\s*:\s*(\d+)px\s*\)\s*$/i.exec(block.selector)?.[1];
 export function locateWriteRule(source: string, options: CssWriteOptions): CssBlock | undefined {
@@ -275,33 +254,4 @@ export function writeCssProperties(source: string, options: CssWriteOptions, pro
   const lineStart = source.lastIndexOf("\n", container.close - 1) + 1;
   const at = !source.slice(lineStart, container.close).trim() ? lineStart : container.close;
   return source.slice(0, at) + newline + text + (at === container.close ? containerIndent : "") + source.slice(at);
-}
-
-export interface SiteVariable { path: string; name: string; value: string; ruleStart: number; selector: string }
-export function siteVariables(files: Readonly<Record<string, string>>): SiteVariable[] {
-  return Object.entries(files).filter(([path]) => /\.css$/i.test(path)).flatMap(([path, source]) => scanCss(source)
-    .filter((rule) => rule.selector.split(",").some((s) => s.trim() === ":root") && !ancestors(rule).some((p) => /^@media\b/.test(p.selector)))
-    .flatMap((rule) => rule.declarations.filter((d) => d.property.startsWith("--")).map((d) => ({ path, name: d.property, value: d.value, ruleStart: rule.start, selector: rule.selector }))));
-}
-
-/** Resolve site variables for swatches; never borrow the editor's own tokens. */
-export function resolveVariableValue(value: string, variables: readonly SiteVariable[]): string {
-  return variableResolver(variables)(value);
-}
-
-/**
- * `resolveVariableValue` for one snapshot of `variables`, indexed once (a later duplicate
- * name wins): call it for every value of that snapshot. Holds nothing beyond it.
- */
-export function variableResolver(variables: readonly SiteVariable[]): (value: string) => string {
-  const values = new Map(variables.map((v) => [v.name, v.value]));
-  return (value) => resolveWith(value, values);
-}
-function resolveWith(value: string, values: ReadonlyMap<string, string>): string {
-  for (let depth = 0; depth < 12; depth++) {
-    const next = value.replace(/var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*))?\)/g, (original, name: string, fallback: string | undefined) => values.get(name) ?? fallback?.trim() ?? original);
-    if (next === value) break;
-    value = next;
-  }
-  return value;
 }

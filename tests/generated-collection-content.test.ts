@@ -81,7 +81,7 @@ test('manual cards keep cards and unknown attributes, drop only the recipe',()=>
   for (const edit of [{ start: end, end, text: copy }, { start: end, end, text: '<div class="cards"></div>' }, { start: grid, end, text: '' }]) {
    const result = planDocumentTargetEdit(home, 'index.html', sidecar, [edit]);
    assert.ok('error' in result);
-   assert.match(result.error, /^This change would leave a collection on index\.html without one exact grid to fill \(Collection target is missing or ambiguous\.\), so nothing was changed\. Give the grid a unique id first/);
+   assert.match(result.error, /^This change would leave a collection on index\.html without one exact grid to fill \(Collection target is missing or ambiguous\.\), so nothing was changed\. Give the grid a unique id in the Source editor/);
   }
  });
  test('a class edit that would make the grid identical to another element refuses', () => {

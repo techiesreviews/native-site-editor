@@ -26,7 +26,7 @@ page click, so every edit that follows is still one readable source edit.
   instances and their templates (`project-card › article.project-card › card-note ›
   p.card-note`). Hovering or focusing a crumb outlines its element with a dashed box;
   clicking selects it, exactly as clicking it on the canvas would; `body` clears the
-  selection (the style panel then shows the body's rules). Esc and Ctrl/⌘+↑ in the
+  selection (the Source editor then shows the body's rules). Esc and Ctrl/⌘+↑ in the
   canvas select the parent, and past the top, nothing. While typing into text, the first
   Esc still drops the typing and the next one climbs.
 - **Code → canvas.** In a page's or component's HTML, moving the cursor by a click or a

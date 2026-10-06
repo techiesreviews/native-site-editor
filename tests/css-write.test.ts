@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cssClassSelector, locateClassRule, locateWriteRule, scanCss, siteVariables, resolveVariableValue, variableResolver, writeCssProperties } from "../src/page-builder/css-write";
+import { locateWriteRule, scanCss, writeCssProperties } from "../src/page-builder/css-write";
 import { getCurrentBreakpoint, setCurrentBreakpoint, subscribeBreakpoint } from "../src/page-builder/breakpoints";
 const write = (css: string, values: Record<string, string | null>, extra = {}) => writeCssProperties(css, { selector: ".card", ...extra }, values);
 
@@ -92,30 +92,9 @@ test("hover and focus-visible writes are isolated from the base", () => {
     assert.equal(locateWriteRule(css, { selector: ".card" })?.declarations[0].value, "red");
   }
 });
-test("prefers most specific matched parent class rule", () => {
-  const files = { "site.css": ".card { color: red; }\n.parent .card { color: blue; }\n#x .card { color: green; }" };
-  assert.equal(locateClassRule(files, [ { path: "site.css", selector: ".card", ruleIndex: 0 }, { path: "site.css", selector: ".parent .card", ruleIndex: 1 }, { path: "site.css", selector: "#x .card", ruleIndex: 2 } ], "card", "site.css").selector, ".parent .card");
-});
-test("source rule indexes include nested layers but exclude keyframes", () => {
-  const files = { "site.css": "@keyframes enter { from { opacity: 0; } } @layer elements { .card { color: red; } }" };
-  assert.equal(locateClassRule(files, [{ path: "site.css", selector: ".card", ruleIndex: 0 }], "card", "site.css").start, files["site.css"].indexOf(".card"));
-});
 test("explicit base source location distinguishes duplicate class rules", () => {
   const css = ".card { color: red; }\n.card { color: blue; }";
   assert.equal(write(css, { color: "green" }, { baseStart: 0 }), css.replace("color: red", "color: green"));
-});
-test("falls back to a first-class rule, never an inline style or tag rule", () => {
-  assert.deepEqual(locateClassRule({ "site.css": "p { color: red; }" }, [{ path: "index.html", selector: "style" }, { path: "site.css", selector: "p" }], "lead", "site.css"), { path: "site.css", selector: ".lead" });
-});
-test("CSS selector escaping handles numeric and punctuated classes", () => {
-  assert.equal(cssClassSelector("2xl:card"), ".\\32 xl\\:card");
-});
-test("variables retain case, path, source rule and raw values", () => {
-  const variables = siteVariables({ "tokens.css": "@layer tokens { :root { --space-m: 1rem; --Ink: #123; } } @media (max-width: 390px) { :root { --space-m: 2rem; } }", "index.html": "<p>hello</p>" });
-  assert.equal(variables.length, 2);
-  assert.equal(variables[1].name, "--Ink");
-  const next = writeCssProperties("@layer tokens { :root { --Ink: #123; } }", { selector: ":root", baseStart: 16 }, { "--Ink": "#456" });
-  assert.match(next, /--Ink: #456;/);
 });
 test("rejects injected rules and invalid properties; permits semicolons in strings", () => {
   assert.throws(() => write(".card {}", { color: "red; } body { color: red" }));
@@ -127,43 +106,6 @@ test("breakpoint subscribers receive changes once and can unsubscribe", () => {
   const unsubscribe = subscribeBreakpoint((bp) => seen.push(bp));
   setCurrentBreakpoint("tablet"); setCurrentBreakpoint("tablet"); unsubscribe(); setCurrentBreakpoint("mobile");
   assert.deepEqual(seen, ["tablet"]); assert.equal(getCurrentBreakpoint(), "mobile"); setCurrentBreakpoint("all");
-});
-
-test("site color aliases resolve from site variables rather than editor tokens", () => {
-  const variables = siteVariables({ "site.css": ":root { --surface: #abc; --card: var(--surface); --space-s: 4px; --space-m: var(--space-s); }" });
-  assert.equal(resolveVariableValue("var(--card)", variables), "#abc");
-  assert.equal(resolveVariableValue("var(--space-m)", variables), "4px");
-  assert.equal(resolveVariableValue("var(--missing, red)", variables), "red");
-});
-test("one resolver per variable snapshot resolves explicit outcomes, and only from that snapshot", () => {
-  const chain = Array.from({ length: 14 }, (_, i) => `--c${i}: ${i === 13 ? "#0f0" : `var(--c${i + 1})`};`).join(" ");
-  const variables = siteVariables({ "a.css": `:root { --ink: #111; --a: var(--b); --b: var(--a); --pad: calc(var(--gap, 2px) * 2); ${chain} }`, "b.css": ":root { --ink: #222; }" });
-  const resolve = variableResolver(variables);
-  const expected: Array<[string, string]> = [
-    ["var(--ink)", "#222"], // a later duplicate wins
-    ["var(--missing)", "var(--missing)"], // missing without fallback stays as written
-    ["var(--missing, red)", "red"],
-    ["var(--a)", "var(--a)"], // a two-step cycle stops at depth 12 on its starting name
-    ["var(--b)", "var(--b)"],
-    ["var(--pad)", "calc(2px * 2)"], // a fallback inside calc resolves
-    ["var(--c2)", "#0f0"], // eleven steps reach the end of the chain
-    ["var(--c1)", "var(--c13)"], // depth 12 cuts longer chains
-    ["var(--c0)", "var(--c12)"],
-    ["1px var(--ink) solid", "1px #222 solid"],
-    ["plain", "plain"],
-  ];
-  for (const [value, result] of expected) {
-    assert.equal(resolve(value), result, value);
-    assert.equal(resolveVariableValue(value, variables), result, value);
-  }
-  // Nothing carries over to another snapshot.
-  assert.equal(variableResolver([])("var(--ink)"), "var(--ink)");
-  assert.equal(variableResolver(siteVariables({ "c.css": ":root { --ink: #333; }" }))("var(--ink)"), "#333");
-});
-test("variable selector lists are edited in their original rule", () => {
-  const source = ":root, :host { --ink: #123; }";
-  const variable = siteVariables({ "tokens.css": source })[0];
-  assert.equal(writeCssProperties(source, { selector: variable.selector, baseStart: variable.ruleStart }, { "--ink": "#456" }), ":root, :host { --ink: #456; }");
 });
 
 test("malformed CSS fails closed for reads and writes", () => {

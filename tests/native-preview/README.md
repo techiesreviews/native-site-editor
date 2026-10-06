@@ -47,7 +47,7 @@ The runtime is `public/native-preview-runtime.js`; the host side is
 
 - `tests/native-preview/native-preview.spec.ts` drives the real app end to end
   over `fixtures/native-starter`.
-- `tests/native-preview/native-cascade.spec.ts` checks the style panel's
+- `tests/native-preview/native-cascade.spec.ts` checks the Source editor rule chips'
   cascade against the small sites under `fixtures/cascade/` (no layers, layers
   up front, layers by first use, `@import` with `layer()`, shadow DOM, the
   starter's footer link), each served as its own repository.
