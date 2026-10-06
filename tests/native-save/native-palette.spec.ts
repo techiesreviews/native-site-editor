@@ -340,6 +340,8 @@ test("searching again after a source edit cannot bless old edit bar closures", a
   await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
   await page.keyboard.press("ControlOrMeta+K");
   await expect(search(page)).toBeFocused();
+  // This exercises commands captured before the edit, after the loading field hands over.
+  await expect(search(page)).toHaveAttribute("aria-expanded", "true");
   await search(page).fill("duplicate");
   const changed = await page.evaluate(async () => {
     const modulePath = "/src/components/monaco.ts";

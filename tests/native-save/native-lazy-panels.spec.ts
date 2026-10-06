@@ -57,3 +57,69 @@ test("first OAuth storage event keeps the short retries while its grant arrives"
   await expect(page.locator(".agent-menu__action")).toContainText("Disconnect MCP", { timeout: 10_000 });
   expect(calls).toBeGreaterThanOrEqual(3);
 });
+
+for (const mode of ["transfer", "cancel", "run"] as const) {
+  const cancel = mode === "cancel";
+  test(`cold Go to captures typing from Monaco${cancel ? " and Escape cancels opening" : mode === "run" ? " and Enter runs after loading" : " and transfers the query"}`, async ({ page, baseURL }) => {
+    let release!: () => void;
+    const downloading = new Promise<void>((resolve) => { release = resolve; });
+    let requested = false;
+    let completed = false;
+    await page.route(/\/(?:src\/components\/command-palette\.ts|assets\/command-palette-[^/]+\.js)(?:\?|$)/, async (route) => {
+      requested = true;
+      await downloading;
+      await route.continue();
+      completed = true;
+    });
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+    const editor = page.locator("#content [role='textbox']").first();
+    await expect(editor).toBeAttached({ timeout: 30_000 });
+    const source = async () => {
+      await editor.focus();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.press("ControlOrMeta+C");
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      await page.keyboard.press("ArrowRight");
+      return text;
+    };
+    const before = await source();
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const search = palette.getByRole("combobox", { name: "Search commands" });
+    try {
+      await page.keyboard.press("ControlOrMeta+P");
+      await page.keyboard.type("site.css");
+      await expect(search).toBeFocused();
+      await expect.poll(() => requested).toBe(true);
+      await expect(search).toHaveValue("site.css");
+      if (cancel) {
+        await page.keyboard.press("Escape");
+        await expect(palette).toBeHidden();
+        await expect(editor).toBeFocused();
+      }
+      if (mode === "run") await page.keyboard.press("Enter");
+      release();
+      await expect.poll(() => completed).toBe(true);
+      // The sheet is constructed with the palette, so its presence proves loading finished.
+      await expect(page.locator("dialog.shortcut-sheet")).toBeAttached();
+      if (cancel) await expect(palette).toBeHidden();
+      else if (mode === "run") {
+        await expect(palette).toBeHidden();
+        await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+        await page.keyboard.press("ControlOrMeta+P");
+        await palette.getByRole("combobox").fill("index.html");
+        await page.keyboard.press("Enter");
+        await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+      } else {
+        await expect(search).toHaveValue("site.css");
+        await expect(search).toBeFocused();
+        await expect(palette.getByRole("option", { name: /^site\.css, styles/ })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(editor).toBeFocused();
+      }
+      expect(await source()).toBe(before);
+    } finally {
+      release();
+    }
+  });
+}

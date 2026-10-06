@@ -478,8 +478,20 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
   let palette: CommandPalette | undefined;
   let disposed = false;
   let loading: Promise<void> | undefined;
+  type PendingOpening = { root: HTMLDialogElement; input: HTMLInputElement; scope: "all" | "go"; opener: Element | null; runWhenReady?: boolean };
+  let pending: PendingOpening | undefined;
+  const cancelPending = () => {
+    const opening = pending;
+    if (!opening) return;
+    pending = undefined;
+    opening.root.close();
+    opening.root.remove();
+    if (!otherModalOpen() && opening.opener instanceof HTMLElement && opening.opener.isConnected)
+      opening.opener.focus({ preventScroll: true });
+  };
   const showShortcuts = () => void loadPanels().then(() => {
     if (disposed || otherModalOpen()) return;
+    cancelPending();
     palette?.close();
     sheet?.open();
   });
@@ -517,11 +529,65 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     sheet = createShortcutSheet(shortcutSheet);
     host.append(palette.root, sheet.root);
 
-  }).catch((error) => { loading = undefined; void handleChunkLoadFailure(error); deps.onError(error); });
-  const openPalette = (scope: "all" | "go", toggle = false) => void loadPanels().then(() => {
+  }).catch((error) => { loading = undefined; cancelPending(); void handleChunkLoadFailure(error); deps.onError(error); });
+  const openPalette = (scope: "all" | "go", toggle = false) => {
     if (disposed || otherModalOpen()) return;
-    if (toggle) palette?.toggle(scope); else palette?.open(scope);
-  });
+    if (palette) {
+      if (toggle) palette.toggle(scope); else palette.open(scope);
+      return;
+    }
+    if (pending) {
+      if (toggle && pending.scope === scope) { cancelPending(); return; }
+      if (pending.scope !== scope) pending.runWhenReady = false;
+      pending.scope = scope;
+      pending.input.placeholder = scope === "go" ? "Go to a page, file or component…" : "Search pages, files, components and actions…";
+      pending.input.focus();
+      return;
+    }
+    // Capture typing immediately, before the optional panel chunks arrive.
+    const root = document.createElement("dialog");
+    root.setAttribute("aria-label", "Command palette");
+    root.style.cssText = "position:fixed;inset:12vh 0 auto;width:min(640px,calc(100vw - 32px));box-sizing:border-box;padding:16px;border:1px solid var(--line);border-radius:var(--radius-dialog);background:var(--surface);color:var(--text)";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-label", "Search commands");
+    input.setAttribute("aria-expanded", "false");
+    input.placeholder = scope === "go" ? "Go to a page, file or component…" : "Search pages, files, components and actions…";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.style.cssText = "box-sizing:border-box;width:100%;padding:8px;background:var(--surface);color:var(--text);border:1px solid var(--line);font:inherit";
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    status.textContent = "Loading commands…";
+    root.append(input, status);
+    const opening: PendingOpening = { root, input, scope, opener: document.activeElement };
+    pending = opening;
+    root.addEventListener("cancel", (event) => { event.preventDefault(); cancelPending(); });
+    input.addEventListener("input", () => { opening.runWhenReady = false; });
+    root.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        opening.runWhenReady = true;
+      }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancelPending(); }
+    });
+    root.addEventListener("pointerdown", (event) => { if (event.target === root) cancelPending(); });
+    sheet?.close();
+    host.append(root);
+    root.showModal();
+    input.focus();
+    void loadPanels().then(() => {
+      if (pending !== opening) return;
+      const query = input.value;
+      const blocked = disposed || otherModalOpen();
+      cancelPending();
+      if (!blocked) {
+        palette?.open(opening.scope, query);
+        if (opening.runWhenReady) void palette?.runActive();
+      }
+    });
+  };
 
   const removers = [
     ...actionCommands(deps).map(registerCommand),
@@ -543,7 +609,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     ...listShortcuts(),
   ];
 
-  const otherModalOpen = () => [...document.querySelectorAll("dialog[open]")].some((dialog) => dialog !== palette?.root && dialog !== sheet?.root && dialog.matches(":modal"));
+  const otherModalOpen = () => [...document.querySelectorAll("dialog[open]")].some((dialog) => dialog !== palette?.root && dialog !== sheet?.root && dialog !== pending?.root && dialog.matches(":modal"));
   // A selection key (⌘D, Delete, Shift+Enter) runs its edit bar control.
   const runBar = (label: string) => {
     const command = selectionCommands(deps).find((item) => item.title === label);
@@ -583,7 +649,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       openPalette("go", true);
       return;
     }
-    if (palette?.isOpen() || sheet?.isOpen()) return;
+    if (pending || palette?.isOpen() || sheet?.isOpen()) return;
     if (event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey && !isTypingTarget(target) && !otherModalOpen()) {
       event.preventDefault();
       showShortcuts();
@@ -620,6 +686,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("message", onMessage);
       disposed = true;
+      cancelPending();
       palette?.root.remove();
       sheet?.root.remove();
     },
