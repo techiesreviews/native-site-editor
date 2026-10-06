@@ -1,3 +1,4 @@
+import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
 import type { SelectionRect } from "./edit-bar";
@@ -164,6 +165,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   // request whose card opens once its pin shows (after Show).
   let cardKey = "";
   const drafts = new Map<string, string>();
+  const releaseReloadGuard = guardChunkReload(() => [...drafts.values()].some((answer) => answer.length > 0));
   const problems = new Map<string, string>();
   let pending: string | undefined;
   // The pending request whose element was asked to scroll into view.
@@ -728,6 +730,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       locate();
     },
     destroy() {
+      releaseReloadGuard();
       clearTimeout(opening);
       clearTimeout(closing);
       resize.disconnect();

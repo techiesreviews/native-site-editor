@@ -1,3 +1,4 @@
+import { staticAssetHeaders } from "./production-headers";
 // Native Site Editor save test / demo server.
 //
 // Unlike the warm-preview server, this needs NO Astro build. It serves the real
@@ -1362,11 +1363,12 @@ function demoBannerPlugin(): Plugin {
 
 // The production headers (`public/_headers`, as Cloudflare applies them to dist).
 function productionHeaders(): Connect.NextHandleFunction {
-  const headers = readFileSync(resolve(projectRoot, "public/_headers"), "utf8").split("\n")
-    .map((line) => line.trim().match(/^([A-Za-z-]+):\s*(.+)$/)).filter((match) => match !== null)
-    .map((match) => [match[1], match[2]] as const);
-  return (_req, res, next) => {
-    for (const [name, value] of headers) res.setHeader(name, value);
+  const source = readFileSync(resolve(projectRoot, "public/_headers"), "utf8");
+  return (req, res, next) => {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (!/^\/(?:api|auth)(?:\/|$)|^\/mcp(?:\/|$)|^\/\.well-known(?:\/|$)/.test(pathname)) {
+      for (const [name, value] of staticAssetHeaders(source, pathname)) res.setHeader(name, value);
+    }
     next();
   };
 }

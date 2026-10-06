@@ -1,3 +1,4 @@
+import { handleChunkLoadFailure } from "../chunk-recovery";
 import { button, link, node } from "../ui/dom";
 import { icon } from "../icons";
 import {
@@ -520,7 +521,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
       void import("./confetti").then((module) => {
         if (destroyed || state.step !== "open" || !mark.isConnected) return;
         confetti = module.burst(mark);
-      });
+      }).catch((error) => { void handleChunkLoadFailure(error); });
     }
   }
 

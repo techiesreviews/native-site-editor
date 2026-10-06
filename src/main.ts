@@ -1,3 +1,4 @@
+import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
 import "./utilities.css";
 import "./style.css";
 import "./theme.css";
@@ -132,6 +133,18 @@ let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
 let siteActions: ReturnType<typeof mountSiteActions> | undefined;
 let sidebarResize: SidebarResize | undefined;
 let editorModule: typeof import("./components/code-editor") | undefined;
+installChunkRecovery({
+  storage: () => window.sessionStorage,
+  // A loaded source editor may have debounced model edits or memory-only history.
+  unsafe: () => Boolean(editorModule) || hasEditableRecoveryState(document),
+  flush: () => draftStore().flush(),
+  persistenceError: () => Boolean(draftStore().error),
+  reload: () => window.location.reload(),
+  notice: (message) => {
+    const notice = document.getElementById("notice");
+    if (notice) { notice.textContent = message; notice.hidden = false; }
+  },
+});
 let editorLoading:
   | Promise<typeof import("./components/code-editor")>
   | undefined;
@@ -139,6 +152,7 @@ function loadEditorModule() {
   return (editorLoading ??= import("./components/code-editor").catch(
     (error) => {
       editorLoading = undefined;
+      void handleChunkLoadFailure(error);
       throw error;
     },
   ));
