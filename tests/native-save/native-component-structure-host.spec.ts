@@ -75,7 +75,7 @@ test("explicit Edit permits the outer template while nested clicks stay in that 
   expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), path)).toBe(true);
   await expect.poll(() => source(page, path)).toBe(before);
   await expect(frame(page).locator("project-card").first().locator("article")).not.toHaveClass(/reviewed/);
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(frame(page).locator("project-card").first().locator("article")).not.toHaveClass(/reviewed/);
 });
@@ -118,7 +118,7 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), path)).toBe(true);
   await expect.poll(() => source(page, path)).toBe(before);
   await expect(body).toHaveText("No description yet.");
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   const templateDraft = await storedDraft(page, path);
   await body.dblclick({ position: { x: 5, y: 5 } }); await body.press("x");

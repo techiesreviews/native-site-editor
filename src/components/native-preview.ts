@@ -996,9 +996,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       cancelAnimationFrame(rafHandle);
       post();
     },
-    /** Puts a strip above the frame (the page builder's banner over a component's template). */
-    addStrip(strip: HTMLElement) {
-      pane.insertBefore(strip, frameHost);
+    /** The component whose template is open, shown in the canvas bar (canvas-bar.ts). */
+    setCanvasComponent(parts: { lead: Element[]; end: Element[] } | undefined) {
+      canvas.setComponent(parts);
     },
     /** Show the pane and adopt a site. Idempotent for the same site. */
     activate(next: NativeSite) {

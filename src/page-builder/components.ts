@@ -7,8 +7,8 @@
 // - Properties: guarded instance slots and attributes live in Structure when
 //   the host enables that adapter; the legacy panel remains until then.
 // - Edit component: the template opens in the code pane at the matching
-//   part, with a banner saying how many instances an edit there changes
-//   and where they are (Used on).
+//   part; the canvas bar says which component is edited, where it is used
+//   (Used on, a list of the pages) and holds the way back (Done).
 // - Make component and Detach: an element becomes a component, an instance
 //   becomes plain markup again, each shown before it is done.
 //
@@ -19,7 +19,8 @@
 import { nativeElementUrlProblem } from "./native-elements";
 import { startTags } from "../../shared/html-source";
 import { mountComponentPanelResize } from "./component-panel-resize";
-import { readSlotConditions, planSlotCondition } from "./component-conditions";
+import { mountDropdown } from "../components/dropdown";
+import { icon } from "../icons";
 import { button, node } from "../ui/dom";
 import { nativePageBody, type NativeSite } from "../../shared/native-project";
 import type { NativePreviewSelection } from "../components/native-preview";
@@ -113,8 +114,8 @@ export interface ComponentDeps {
   panelHost: HTMLElement;
   /** Enable only when the host wires Structure componentSlots. */
   structureFields?: boolean;
-  /** Puts the banner over a component's template above the preview's frame. */
-  addStrip: (strip: HTMLElement) => void;
+  /** Shows the component being edited in the canvas bar, or nothing (`undefined`). */
+  canvasComponent: (parts: { lead: Element[]; end: Element[] } | undefined) => void;
   /** The code pane's title row, tinted while a template is open in it. */
   codeTitle: HTMLElement;
   /** The page file the preview shows (for Done, back from a template). */
@@ -176,17 +177,25 @@ export function createComponentTools(deps: ComponentDeps) {
   panel.hidden = true;
   if (!deps.structureFields) deps.panelHost.append(panel);
   const destroyResize = !deps.structureFields ? mountComponentPanelResize(deps.panelHost, panel) : undefined;
-  const banner = node("div", "component-banner");
-  banner.setAttribute("role", "status");
-  banner.hidden = true;
-  deps.addStrip(banner);
+  // The canvas bar while a template is open: the component, Used on, Done.
+  const editing = node("span", "canvas-component__name");
+  const usedOnButton = node("button", "canvas-component__used");
+  usedOnButton.type = "button";
+  usedOnButton.setAttribute("aria-haspopup", "menu");
+  const usedOnLabel = node("span", "canvas-component__used-label");
+  usedOnButton.append(usedOnLabel, icon("caret-down", 12));
   const usedOn = node("div", "component-menu");
-  usedOn.popover = "auto";
+  usedOn.id = "component-used-on";
   usedOn.setAttribute("role", "menu");
   usedOn.setAttribute("aria-label", "Used on");
   document.body.append(usedOn);
-  let usedOnButton: HTMLButtonElement | undefined;
-  usedOn.addEventListener("toggle", () => usedOnButton?.setAttribute("aria-expanded", String(usedOn.matches(":popover-open"))));
+  const usedOnDropdown = mountDropdown({ trigger: usedOnButton, panel: usedOn, anchor: "--component-used-on", hoverDelay: 150 });
+  const doneButton = node("button", "canvas-component__done");
+  doneButton.type = "button";
+  doneButton.setAttribute("aria-label", "Done editing component");
+  doneButton.title = "Done";
+  doneButton.append(icon("check", 16), node("span", "canvas-component__done-label", "Done"));
+  doneButton.addEventListener("click", () => void backToPage());
 
   const site = () => deps.site();
   const isComponent = (tag: string) => Boolean(site() && Object.hasOwn(site()!.components, tag));
@@ -200,7 +209,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const { start, end } = nativePageBody(html);
     return html.slice(start, end);
   };
-  // Counting reads every page and template; the banner asks again after each
+  // Counting reads every page and template; the canvas bar asks again after each
   // change in the editor (several while a file opens), mostly over the same sources.
   let counted: { site: NonNullable<ReturnType<typeof site>>; tag: string; sources: Record<string, string>; found: ReturnType<typeof componentUsage> } | undefined;
   const sameSources = (a: Record<string, string>, b: Record<string, string>) => {
@@ -444,123 +453,35 @@ export function createComponentTools(deps: ComponentDeps) {
     if (deps.currentPath() === template.path) deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
   }
 
-  // ---- The banner over a component's template. ----
+  // ---- The canvas bar over a component's template. ----
 
-  // Over the preview while a component's template is open (whether the code
-  // pane shows or not): what an edit changes, where, and the way back.
-  let bannerKey = "";
-  function renderBanner() {
+  // While a component's template is open (whether the code pane shows or
+  // not): which component, where it is used, and the way back.
+  let barKey = "";
+  let barTag = "";
+  function renderBar() {
     if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
     const tag = tagOfFile(deps.currentPath());
     deps.codeTitle.classList.toggle("code-pane__title--component", Boolean(tag));
     if (!tag || !site()) {
-      bannerKey = "";
-      banner.hidden = true;
-      banner.replaceChildren();
-      if (usedOn.matches(":popover-open")) usedOn.hidePopover();
+      if (barKey) deps.canvasComponent(undefined);
+      barKey = barTag = "";
+      usedOnDropdown.close();
       return;
     }
     const found = usage(tag);
-    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length + found.components.length}`;
-    if (key === bannerKey) return;
-    bannerKey = key;
-    const text = node("span", "component-banner__text");
-    text.append(
-      node("strong", "", "Editing component"), " ",
-      node("code", "component-banner__tag", `<${tag}>`),
-      ` · changes apply to ${usageSummary(found)}`,
-    );
-    const used = button("Used on", () => toggleUsedOn(tag, used), "component-banner__used");
-    used.append(mark("more", 12));
-    used.setAttribute("aria-haspopup", "menu");
-    used.setAttribute("aria-expanded", "false");
-    used.disabled = !found.pages.length && !found.components.length;
-    usedOnButton = used;
-    const done = button("Done", () => void backToPage(), "component-banner__done");
-    done.title = "Back to the page, with this instance selected";
-    const conditions = button("Visibility conditions", () => openConditions(tag, conditions), "component-banner__used");
-    banner.replaceChildren(componentIcon(14), text, used, conditions, node("span", "component-banner__space"), done);
-    banner.hidden = false;
-  }
-
-  // A template-only dialog: no file switch, so the native transaction stays
-  // mounted and its undo stack remains visible in the integrated code pane.
-  const conditionsDialog = node("dialog", "create-dialog component-conditions");
-  conditionsDialog.setAttribute("aria-label", "Template visibility conditions");
-  document.body.append(conditionsDialog);
-  function openConditions(tag: string, anchor: HTMLButtonElement) {
-    const template = templateOf(tag);
-    if (!template || !editable(template.path)) return;
-    const revision = deps.revision();
-    const mapping = JSON.stringify(site()?.components);
-    const selection = JSON.stringify(deps.selection());
-    const previewPage = deps.previewPage();
-    const editor = deps.editor();
-    const current = () => deps.revision() === revision && JSON.stringify(site()?.components) === mapping
-      && deps.sources()[template.path] === template.source && editable(template.path)
-      && deps.editor() === editor && JSON.stringify(deps.selection()) === selection && deps.previewPage() === previewPage;
-    let model: ReturnType<typeof readSlotConditions>;
-    try { model = readSlotConditions(template.source); }
-    catch (error) { deps.error(error); return; }
-    const heading = node("h2", "create-dialog__title", "Template visibility conditions");
-    const scope = node("p", "create-dialog__result", `Changes to ${template.path} affect all instances of <${tag}>. Every required slot must have content provided by the page; fallback content does not count.`);
-    const select = node("select", "component-conditions__target");
-    select.setAttribute("aria-label", "Source target");
-    for (const target of model.targets) {
-      const option = document.createElement("option");
-      option.textContent = target.label;
-      select.append(option);
-    }
-    const fields = node("fieldset", "component-conditions__fields");
-    const summary = node("p", "create-dialog__result");
-    const error = node("p", "create-dialog__result is-error");
-    error.setAttribute("role", "alert");
-    let inputs: { name: string; input: HTMLInputElement }[] = [];
-    const target = () => model.targets[select.selectedIndex];
-    const populate = () => {
-      const at = target();
-      inputs = [];
-      fields.replaceChildren(node("legend", "", "Require all selected slots"));
-      if (!at) return;
-      summary.textContent = at.problem ? `Current condition: ${at.problem}` : at.present ? `Current condition: ${at.names.length ? at.names.map((name) => slotLabel(name)).join(" AND ") : "Always visible (no requirements)"}` : "Current condition: no explicit condition";
-      error.textContent = at.problem ?? model.authoringProblem ?? "";
-      for (const name of model.slotNames) {
-        const label = node("label", "component-conditions__choice");
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.checked = at.names.includes(name);
-        input.disabled = !name && !(at.element.name === "slot" && at.label === "Slot: Content");
-        label.append(input, slotLabel(name));
-        fields.append(label);
-        inputs.push({ name, input });
-      }
-    };
-    select.addEventListener("change", populate);
-    const close = () => { conditionsDialog.close(); anchor.isConnected && anchor.focus(); };
-    const save = (remove: boolean) => {
-      error.textContent = "";
-      if (!current()) { error.textContent = "Template, repository, editor or selection changed. Your choices are kept. Close and reopen to review the current source."; return; }
-      try {
-        const at = target();
-        if (!at) throw new Error("No template condition target is available.");
-        if (!remove && (at.problem || model.authoringProblem)) throw new Error(at.problem || model.authoringProblem);
-        const names = inputs.filter(({ input }) => input.checked).map(({ name }) => name);
-        if (!remove && at.element.name !== "slot" && !names.length)
-          throw new Error("Empty wrapper conditions require a runtime fix. Choose required slots or explicitly remove the condition.");
-        const plan = planSlotCondition(template.source, at.node, remove ? undefined : names);
-        if (!current()) throw new Error("Template context changed. Your choices are kept.");
-        if (plan.text !== plan.expected) editor!.replaceActiveRanges([{ path: template.path, start: plan.start, end: plan.end, text: plan.text, expected: plan.expected }]);
-        deps.announce(remove ? "Template condition removed for all instances." : "Template condition saved for all instances.");
-        close();
-      } catch (problem) { error.textContent = problem instanceof Error ? problem.message : String(problem); }
-    };
-    const actions = node("div", "create-dialog__actions");
-    actions.append(button("Cancel", close, "button"), button("Remove condition", () => save(true), "button"), button("Save condition", () => save(false), "button button--primary"));
-    conditionsDialog.replaceChildren(heading, scope, select, summary, fields, error, actions);
-    populate();
-    conditionsDialog.oncancel = (event) => { event.preventDefault(); close(); };
-    conditionsDialog.showModal();
-    select.focus();
+    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}`;
+    if (key === barKey) return;
+    barKey = key;
+    barTag = tag;
+    editing.replaceChildren(node("span", "", "Editing"), " ", node("code", "canvas-component__tag", `<${tag}>`));
+    const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+    const where = [found.pages.length ? count(found.pages.length, "page") : "", found.components.length ? count(found.components.length, "component") : ""].filter(Boolean);
+    usedOnLabel.textContent = where.length ? `Used on ${where.join(", ")}` : "Not used yet";
+    usedOnButton.disabled = !where.length;
+    if (!where.length) usedOnDropdown.close();
+    else if (usedOn.matches(":popover-open")) renderUsedOn(tag);
+    deps.canvasComponent({ lead: [componentIcon(14), editing, usedOnButton], end: [doneButton] });
   }
 
   /** Back from a template to the page the preview shows, the instance worked on selected. */
@@ -572,20 +493,20 @@ export function createComponentTools(deps: ComponentDeps) {
     if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: host.node });
   }
 
-  function toggleUsedOn(tag: string, anchor: HTMLButtonElement) {
-    if (usedOn.matches(":popover-open")) { usedOn.hidePopover(); return; }
+  /** Used on: what an edit changes, then the pages (and components) showing `tag`. */
+  function renderUsedOn(tag: string) {
     const found = usage(tag);
-    const items: HTMLElement[] = [];
+    const items: HTMLElement[] = [node("p", "component-menu__summary", `Changes apply to ${usageSummary(found)}`)];
     if (found.pages.length) items.push(node("p", "component-menu__heading", "Pages"));
     for (const page of found.pages) {
-      const item = button("", () => { usedOn.hidePopover(); void openUse(page.file, tag); }, "component-menu__item");
+      const item = button("", () => { usedOnDropdown.close(); void openUse(page.file, tag); }, "component-menu__item");
       item.setAttribute("role", "menuitem");
       item.append(node("span", "component-menu__name", deps.pageLabel(page.file)), node("span", "component-menu__meta", `${page.route} · ${page.count}×`));
       items.push(item);
     }
     if (found.components.length) items.push(node("p", "component-menu__heading", "Components"));
     for (const entry of found.components) {
-      const item = button("", () => { usedOn.hidePopover(); void editComponent(entry.tag); }, "component-menu__item");
+      const item = button("", () => { usedOnDropdown.close(); void editComponent(entry.tag); }, "component-menu__item");
       item.setAttribute("role", "menuitem");
       const name = node("span", "component-menu__name");
       name.append(componentIcon(12), componentLabel(entry.tag));
@@ -593,13 +514,10 @@ export function createComponentTools(deps: ComponentDeps) {
       items.push(item);
     }
     usedOn.replaceChildren(...items);
-    usedOn.showPopover();
-    const box = anchor.getBoundingClientRect();
-    usedOn.style.left = `${Math.max(8, Math.min(box.left, innerWidth - usedOn.offsetWidth - 8))}px`;
-    const below = box.bottom + 4;
-    usedOn.style.top = `${below + usedOn.offsetHeight <= innerHeight - 8 ? below : Math.max(8, box.top - 4 - usedOn.offsetHeight)}px`;
-    usedOn.querySelector<HTMLElement>("[role='menuitem']")?.focus();
   }
+  usedOn.addEventListener("beforetoggle", (event) => {
+    if ((event as ToggleEvent).newState === "open" && barTag) renderUsedOn(barTag);
+  });
   usedOn.addEventListener("keydown", (event) => {
     const items = [...usedOn.querySelectorAll<HTMLElement>("[role='menuitem']")];
     const at = items.indexOf(document.activeElement as HTMLElement);
@@ -608,7 +526,6 @@ export function createComponentTools(deps: ComponentDeps) {
     else if (event.key === "ArrowUp") next = (at - 1 + items.length) % items.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = items.length - 1;
-    else if (event.key === "Escape") { usedOn.hidePopover(); usedOnButton?.focus(); event.preventDefault(); return; }
     if (next === undefined) return;
     event.preventDefault();
     items[next]?.focus();
@@ -1437,19 +1354,19 @@ export function createComponentTools(deps: ComponentDeps) {
     controls,
     /** The selection changed or the page re-rendered: the panel follows. */
     show,
-    /** The open file or the sources changed: the banner follows. */
+    /** The open file or the sources changed: the canvas bar follows. */
     refresh() {
-      renderBanner();
+      renderBar();
     },
     editComponent,
     fillInstanceSlot,
     destroy() {
       destroyResize?.();
       panel.remove();
-      banner.remove();
+      if (barKey) deps.canvasComponent(undefined);
+      usedOnDropdown.destroy();
       usedOn.remove();
       dialog.remove();
-      conditionsDialog.remove();
     },
   };
 }

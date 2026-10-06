@@ -6,7 +6,7 @@ import { publishButton } from "./publish";
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
 // Structure controls that edit an instance's slots and attributes as page
-// source, Edit component with its banner and Used on, Detach and Make
+// source, Edit component with its canvas bar and Used on, Detach and Make
 // component. The fixture's index page has three <project-card>s (title and
 // body filled; an optional link slot and an unnamed slot with no fallback).
 const indexPath = "index.html";
@@ -257,18 +257,32 @@ test("Edit component from its root opens the template, says what an edit changes
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
-  const banner = page.locator(".component-banner");
+  const banner = page.locator(".canvas-bar--component");
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText("Editing component <project-card> · changes apply to 3 instances on 1 page");
+  await expect(banner.locator(".canvas-component__name")).toHaveText("Editing <project-card>");
+  await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeVisible();
   await expect(page.locator(".code-pane__title--component")).toBeVisible();
   // The template root is selected, and every instance is outlined.
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
   await expect(frame(page).locator("[data-native-selection-box='instance']:visible")).toHaveCount(3);
   await expect(status(page)).toHaveText("Editing the Project card component: changes apply to 3 instances on 1 page.");
-  // Used on lists the pages, and opens one with the first instance selected.
-  await banner.getByRole("button", { name: "Used on" }).click();
+  // Used on opens on hover, says what an edit changes and lists the pages.
+  await banner.getByRole("button", { name: "Used on 1 page" }).hover();
   const menu = page.getByRole("menu", { name: "Used on" });
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText("Changes apply to 3 instances on 1 page");
   await expect(menu.getByRole("menuitem")).toHaveText(["Home/ · 3×"]);
+  // The keyboard opens it too, and Escape closes it.
+  await page.mouse.move(0, 0);
+  await expect(menu).toBeHidden();
+  await banner.getByRole("button", { name: "Used on 1 page" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeFocused();
+  // Choosing a page opens it with the first instance selected.
+  await banner.getByRole("button", { name: "Used on 1 page" }).click();
   await menu.getByRole("menuitem").first().click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(banner).toBeHidden();
@@ -280,7 +294,11 @@ test("Edit component from its root opens the template, says what an edit changes
   await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
-  await banner.getByRole("button", { name: "Done" }).click();
+  const done = banner.getByRole("button", { name: "Done editing component", exact: true });
+  await expect(done).toHaveAttribute("title", "Done");
+  await done.hover();
+  await expect(done.locator(".canvas-component__done-label")).toHaveCSS("opacity", "1");
+  await done.click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(row(page, "Project card Fast edits")).toHaveAttribute("aria-selected", "true");
 });
@@ -292,8 +310,8 @@ test("Used on opens the page instance that shows a nested component", async ({ p
   const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<!-- <project-card> --><script>"<project-card>"</script><textarea><project-card></textarea><card-note></card-note><card-list></card-list>\n  <section class="prose" data-key="prose">`);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, cardPath);
-  const banner = page.locator(".component-banner");
-  await banner.getByRole("button", { name: "Used on" }).click();
+  const banner = page.locator(".canvas-bar--component");
+  await banner.getByRole("button", { name: /^Used on / }).click();
   const menu = page.getByRole("menu", { name: "Used on" });
   await expect(menu.getByRole("menuitem", { name: "About/ · 1×" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "About/ · 1×" }).click();

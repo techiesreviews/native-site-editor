@@ -8,11 +8,14 @@ export function mountDropdown(options: {
   closeOnAction?: boolean;
   /** A click runs this, with the panel held open, instead of toggling the panel. */
   onClick?: () => void;
+  /** A mouse resting on the trigger this long (ms) opens it; passing over shows nothing. */
+  hoverDelay?: number;
 }) {
   const { trigger, panel } = options;
   const controller = new AbortController();
   const { signal } = controller;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hovering: ReturnType<typeof setTimeout> | undefined;
   let pinned = false;
   panel.classList.add("dropdown-panel");
   panel.popover = "auto";
@@ -22,7 +25,7 @@ export function mountDropdown(options: {
   trigger.setAttribute("aria-expanded", "false");
   const isOpen = () => panel.matches(":popover-open");
   const contains = (target: Node | null) => trigger.contains(target) || panel.contains(target);
-  const cancelClose = () => clearTimeout(timer);
+  const cancelClose = () => { clearTimeout(timer); clearTimeout(hovering); };
   /** `force` opens it for a disabled trigger too (a status to show, nothing to do). */
   function open(force = false) {
     if (trigger.disabled && !force) return;
@@ -51,7 +54,10 @@ export function mountDropdown(options: {
     else { open(); pinned = true; }
   }, { signal });
   trigger.addEventListener("pointerenter", event => {
-    if (event.pointerType === "mouse") open();
+    if (event.pointerType !== "mouse") return;
+    if (!options.hoverDelay || isOpen()) { open(); return; }
+    cancelClose();
+    hovering = setTimeout(() => open(), options.hoverDelay);
   }, { signal });
   trigger.addEventListener("pointerleave", scheduleClose, { signal });
   panel.addEventListener("pointerenter", cancelClose, { signal });

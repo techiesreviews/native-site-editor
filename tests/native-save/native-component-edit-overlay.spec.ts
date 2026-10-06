@@ -28,7 +28,7 @@ test('root name reveals a sliding icon with fixed bounds; keyboard and reduced m
  await expect(button).toBeFocused();await expect(overlay).toHaveCSS('opacity','1');await expect(overlay).toHaveCSS('transition-duration','0s');
  await page.emulateMedia({reducedMotion:'reduce'});await expect(overlay).toHaveCSS('transform','none');await expect(overlay).toHaveCSS('transition-duration','0s');
  await page.keyboard.press('Enter');await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
- await page.locator('.component-banner').getByRole('button',{name:'Done',exact:true}).click();await expect(page.locator('#current-page')).toHaveAttribute('data-path','index.html');
+ await page.locator('.canvas-bar--component').getByRole('button',{name:'Done editing component',exact:true}).click();await expect(page.locator('#current-page')).toHaveAttribute('data-path','index.html');
 });
 test('light DOM and template children have no component edit affordance while the instance caret stays usable',async({page})=>{
  await root(page);

@@ -613,7 +613,7 @@ function mountComponentTools() {
       });
     },
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
-    addStrip: (strip) => nativePreview?.addStrip(strip),
+    canvasComponent: (parts) => nativePreview?.setCanvasComponent(parts),
     codeTitle: element("primary-title").parentElement!,
     previewPage: () => {
       const route = nativePreview?.route();
