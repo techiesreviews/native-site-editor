@@ -298,6 +298,8 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(menu.getByRole("menuitem")).toHaveText(["Page settings…", "Navigation…", "Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
   await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Navigation…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add subpage" })).toBeFocused();
   await page.keyboard.press("Enter");
   await title.pressSequentially("My first video");
@@ -317,6 +319,8 @@ test("a page, a subpage under it and another are made in place as folders of the
   // Another subpage, from the keyboard.
   await page.keyboard.press("Shift+F10");
   await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Navigation…", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add subpage", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
