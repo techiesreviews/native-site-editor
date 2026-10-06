@@ -38,7 +38,7 @@ const site = [
 
 test("a repository is a native site when it has index.html at its root", () => {
   assert.equal(isNativeProject(["README.md", "index.html"]), true);
-  assert.equal(isNativeProject(["src/pages/index.html", "about/index.html", ".astro-editor/native.json"]), false);
+  assert.equal(isNativeProject(["about/index.html", "notes/index.html", ".editor/config.json"]), false);
   assert.equal(isNativeProject([]), false);
 });
 

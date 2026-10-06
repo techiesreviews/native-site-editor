@@ -35,4 +35,4 @@ Baseline, median of 5 (ms from navigation start):
 4. Cold Worker isolate: can't be forced without a deploy; curl shows 180–250 ms outliers against a 30–55 ms warm median. Measure right after a preview deploy.
 5. Still missing: signed-in numbers on preview-editor.techies.tools (needs Lex's one-time sign-in). Local numbers are for comparing runs, not user-facing truth.
 
-Per ticket 11, `tests/perf/edit-component-latency.ts` goes; `cold-start.ts` is the yardstick that stays.
+Per ticket 11, the old edit-latency perf tool goes; `cold-start.ts` is the yardstick that stays.

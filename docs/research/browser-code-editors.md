@@ -56,4 +56,4 @@ Decision pending: evaluate A for daily editing, B for embedding beside a future 
 
 ## Selected direction
 
-The user selected Monaco editing plus Monaco diff review. These are now the default source workspace, implemented in `src/components/code-editor.ts` with shared model/undo state and scoped CSS. CodeMirror and the sample/switcher UI were removed from the application. The prior comparison is archived at `docs/archive/code-editor-prototypes.tar.gz`. The root workspace is not a Git repository, so the archive substitutes for a throwaway branch. Draft editing does not yet write GitHub commits. Project-aware Astro intelligence is the next requested addition.
+The user selected Monaco editing plus Monaco diff review. These are now the default source workspace, implemented in `src/components/code-editor.ts` with shared model/undo state and scoped CSS. CodeMirror and the sample/switcher UI were removed from the application. Draft editing does not yet write GitHub commits. Project-aware Astro intelligence is the next requested addition.

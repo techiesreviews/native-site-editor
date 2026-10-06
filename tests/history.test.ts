@@ -31,7 +31,7 @@ test("history and restore HTTP endpoints enforce session and same-origin writes"
   const origin = "https://editor.example";
   const historyResponse = await handle(
     new Request(
-      `${origin}/api/history?repo=lex/starter&branch=main&path=src/index.astro`,
+      `${origin}/api/history?repo=lex/starter&branch=main&path=about/index.html`,
     ),
     emptyEnv,
     async () => {
@@ -48,7 +48,7 @@ test("history and restore HTTP endpoints enforce session and same-origin writes"
       },
       body: JSON.stringify({
         branch: "main",
-        path: "src/index.astro",
+        path: "about/index.html",
         target,
         expectedHead: head,
       }),
@@ -81,7 +81,7 @@ test("history freezes pagination at the first page head and maps commit metadata
 
   const result = await history(github, repo, {
     branch: "feature/history",
-    path: "src/index.astro",
+    path: "about/index.html",
     page: "1",
   });
 
@@ -97,7 +97,7 @@ test("history freezes pagination at the first page head and maps commit metadata
   });
   assert.ok(calls[0].endsWith("/branches/feature%2Fhistory"));
   assert.ok(calls[1].includes(`sha=${head}`));
-  assert.ok(calls[1].includes("path=src%2Findex.astro"));
+  assert.ok(calls[1].includes("path=about%2Findex.html"));
   assert.ok(calls[1].includes("per_page=20&page=1"));
 });
 
@@ -110,7 +110,7 @@ test("history continuation uses its frozen head and bounds pagination", async ()
   });
   const result = await history(github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     head,
     page: "2",
   });
@@ -125,7 +125,7 @@ test("history continuation uses its frozen head and bounds pagination", async ()
       () =>
         history(github, repo, {
           branch: "main",
-          path: "src/index.astro",
+          path: "about/index.html",
           page,
         }),
       (error: HttpError) => error.status === 400,
@@ -151,13 +151,13 @@ test("history pages continue without skipping a commit", async () => {
   });
   const first = await history(github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     head,
     page: "1",
   });
   const second = await history(github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     head,
     page: "2",
   });
@@ -199,7 +199,7 @@ function restoreFixture(
       return Response.json({
         tree: [
           {
-            path: "src",
+            path: "about",
             type: "tree",
             mode: "040000",
             sha: treeSha === headTree ? "1".repeat(40) : "2".repeat(40),
@@ -219,7 +219,7 @@ function restoreFixture(
           ? []
           : [
               {
-                path: "index.astro",
+                path: "index.html",
                 type: "blob",
                 mode: "100644",
                 sha: fileSha,
@@ -235,7 +235,7 @@ test("restore creates a single-file commit and fast-forwards the current head", 
   const { github, calls } = restoreFixture();
   const result = await restore(github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     target,
     expectedHead: head,
   });
@@ -243,7 +243,7 @@ test("restore creates a single-file commit and fast-forwards the current head", 
     (call) => call.method === "POST" && call.path.endsWith("/git/commits"),
   )!;
   assert.deepEqual(commit.body, {
-    message: `Restore src/index.astro from ${target.slice(0, 7)} with Native Site Editor`,
+    message: `Restore about/index.html from ${target.slice(0, 7)} with Native Site Editor`,
     tree: created,
     parents: [head],
   });
@@ -255,7 +255,7 @@ test("restore creates a single-file commit and fast-forwards the current head", 
       base_tree: headTree,
       tree: [
         {
-          path: "src/index.astro",
+          path: "about/index.html",
           mode: "100644",
           type: "blob",
           sha: "7".repeat(40),
@@ -278,7 +278,7 @@ test("restore rejects stale heads, non-ancestors, and workflow paths before writ
     () =>
       restore(stale.github, repo, {
         branch: "main",
-        path: "src/index.astro",
+        path: "about/index.html",
         target,
         expectedHead: head,
       }),
@@ -289,7 +289,7 @@ test("restore rejects stale heads, non-ancestors, and workflow paths before writ
     () =>
       restore(unrelated.github, repo, {
         branch: "main",
-        path: "src/index.astro",
+        path: "about/index.html",
         target,
         expectedHead: head,
       }),
@@ -317,7 +317,7 @@ test("restoring the current head is idempotent", async () => {
   const { github, calls } = restoreFixture();
   const result = await restore(github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     target: head,
     expectedHead: head,
   });
@@ -335,7 +335,7 @@ test("restore rejects an absent historical file and treats matching blobs as unc
     () =>
       restore(missing.github, repo, {
         branch: "main",
-        path: "src/index.astro",
+        path: "about/index.html",
         target,
         expectedHead: head,
       }),
@@ -344,7 +344,7 @@ test("restore rejects an absent historical file and treats matching blobs as unc
   const same = restoreFixture({ sameBlob: true });
   const result = await restore(same.github, repo, {
     branch: "main",
-    path: "src/index.astro",
+    path: "about/index.html",
     target,
     expectedHead: head,
   });
@@ -361,7 +361,7 @@ test("restore surfaces a concurrent ref race without forcing", async () => {
     () =>
       restore(raced.github, repo, {
         branch: "main",
-        path: "src/index.astro",
+        path: "about/index.html",
         target,
         expectedHead: head,
       }),
@@ -379,16 +379,16 @@ test("a file's text at a commit is read through that commit's tree", async () =>
     const path = new URL(String(input)).pathname;
     if (path.endsWith(`/git/commits/${target}`)) return Response.json({ tree: { sha: targetTree } });
     if (path.endsWith(`/git/trees/${targetTree}`))
-      return Response.json({ tree: [{ path: "src", type: "tree", mode: "040000", sha: "2".repeat(40) }], truncated: false });
+      return Response.json({ tree: [{ path: "about", type: "tree", mode: "040000", sha: "2".repeat(40) }], truncated: false });
     if (path.endsWith(`/git/trees/${"2".repeat(40)}`))
-      return Response.json({ tree: [{ path: "index.astro", type: "blob", mode: "100644", sha: blob }], truncated: false });
+      return Response.json({ tree: [{ path: "index.html", type: "blob", mode: "100644", sha: blob }], truncated: false });
     if (path.endsWith(`/git/blobs/${blob}`))
       return Response.json({ sha: blob, size: 5, encoding: "base64", content: btoa("<h1/>") });
     return Response.json({ message: "Not Found" }, { status: 404 });
   });
-  assert.deepEqual(await fileAtRevision(github, repo, { commit: target, path: "src/index.astro" }), { sha: blob, content: "<h1/>" });
-  await assert.rejects(fileAtRevision(github, repo, { commit: target, path: "src/missing.astro" }), (error: unknown) => error instanceof HttpError && error.status === 404);
-  await assert.rejects(fileAtRevision(github, repo, { commit: "nope", path: "src/index.astro" }), (error: unknown) => error instanceof HttpError && error.status === 400);
+  assert.deepEqual(await fileAtRevision(github, repo, { commit: target, path: "about/index.html" }), { sha: blob, content: "<h1/>" });
+  await assert.rejects(fileAtRevision(github, repo, { commit: target, path: "about/missing.html" }), (error: unknown) => error instanceof HttpError && error.status === 404);
+  await assert.rejects(fileAtRevision(github, repo, { commit: "nope", path: "about/index.html" }), (error: unknown) => error instanceof HttpError && error.status === 400);
 });
 
 test("without a path, history lists every commit on the branch", async () => {

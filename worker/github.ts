@@ -159,7 +159,7 @@ export class GitHub {
         Authorization: `Bearer ${this.token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "astro-site-editor",
+        "User-Agent": "native-site-editor",
       },
     }).catch((error) => {
       // The path only; the token is in the headers and never logged.
