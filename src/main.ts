@@ -165,7 +165,10 @@ function wantEditor() {
 function notePreviewPainted() {
   if (previewPainted || editorGateOpen) return;
   previewPainted = true;
-  requestAnimationFrame(() => void (async () => {
+  // The runtime reports the structure just before the frame presents it:
+  // two frames and a beat later the page is on screen.
+  requestAnimationFrame(() => requestAnimationFrame(() => void (async () => {
+    await new Promise((done) => setTimeout(done, 100));
     // The page's remaining reads (styles, images, the site's text index) go first, for at most 3 s.
     for (let waited = 0; apiReadsInFlight > 0 && waited < 3000 && !editorGateOpen; waited += 100)
       await new Promise((done) => setTimeout(done, 100));
@@ -173,7 +176,7 @@ function notePreviewPainted() {
     const load = () => void wantEditor().catch(() => {});
     if (typeof requestIdleCallback === "function") requestIdleCallback(load, { timeout: 1500 });
     else setTimeout(load, 200);
-  })());
+  })()));
 }
 // Resolves with the editor module: at once when the editor is wanted, else
 // (a native site's first code pane) once the preview has painted. A preview
@@ -2245,10 +2248,48 @@ function moveNativeSectionTo(target: { path: string; node?: number[]; tag: strin
 // step: only the changed stretch of text is replaced, so formatting around
 // it stays. A change that cannot be placed exactly (it crosses a tag) is
 // dropped and the preview shows the source again.
-async function applyNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
+// Text edits apply one at a time, in the order they were typed: while the
+// page's editor is still loading, a later commit (A→AB, then AB→ABC) waits
+// for the earlier one instead of racing it.
+let nativeTextEditQueue: Promise<void> = Promise.resolve();
+function applyNativeTextEdit(edit: NativeTextEdit) {
   // The edit lands in the page's editor: fetch it now if it is not here yet.
   void wantEditor().catch(() => {});
-  if (!nativePreview) return;
+  const run = prepareNativeTextEdit(edit);
+  if (!run) return Promise.resolve();
+  const next = nativeTextEditQueue.then(run, run);
+  nativeTextEditQueue = next.catch(() => {});
+  return next;
+}
+// The source edit for text typed in the preview: only the changed stretch,
+// placed inside the element's own content. Undefined when it cannot be placed.
+function nativeTextSourceEdit(source: string, node: NativeTextEdit["node"], before: string, after: string) {
+  const range = locateNativeElementRange(source, node);
+  // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let endBefore = before.length;
+  let endAfter = after.length;
+  while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
+    endBefore--;
+    endAfter--;
+  }
+  // A pure insertion takes one neighbouring character along, so the source
+  // range is never empty and lands beside that character.
+  if (endBefore === start) {
+    if (start > 0) start--;
+    else { endBefore++; endAfter++; }
+  }
+  const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
+  const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
+  if (!range || !span) return undefined;
+  // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
+  const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
+}
+function prepareNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
+  if (!nativePreview) return undefined;
   const openingEpoch = generation, openingScope = setupScope();
   // While a master is on show, only text typed in that very session's master is taken; it is
   // the open file, with the bytes the preview painted. Page text is read-only meanwhile.
@@ -2269,48 +2310,51 @@ async function applyNativeTextEdit({ path, node, before, after, masterSession }:
   if (!allowed() || masterAt && masterPainted !== masterAt.masterSource) {
     announce(masterAt || masterSession !== undefined ? "While the master is open, edit the master's section; choose Done to edit the page." : "Edit the page instance in Structure, or choose Edit for its shared template.");
     updateNativePreviewSources();
-    return;
+    return undefined;
   }
+  // A page's text committed before its editor arrived, whose page was then
+  // left (another page opened): once the editor is here, it goes into that
+  // page's draft as one operation rather than being lost. Same account,
+  // repository and branch only, never a master's.
+  const page = !masterAt && masterSession === undefined && Boolean(nativeSite && Object.values(nativeSite.routes).includes(path));
+  const draftLeftPage = async () => {
+    if (!page || versionView || openingEpoch !== generation || openingScope !== setupScope()) return;
+    // An operation's undo step lives in the open page's editor: wait for it.
+    await editorReady();
+    if (versionView || openingEpoch !== generation || openingScope !== setupScope()) return;
+    if (currentPath === path && editorModule?.isMounted(path)) return;
+    const source = nativeEffectiveSource(path);
+    const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
+    if (source === undefined || !edit) { errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time.")); return; }
+    const problem = await applyNativeOperation({
+      expectedSources: new Map([[path, source]]),
+      edits: new Map([[path, source.slice(0, edit.start) + edit.text + source.slice(edit.end)]]),
+      done: `Text changed on ${nativePageLabelOf(path)}.`,
+      undone: `Undid the text change on ${nativePageLabelOf(path)}.`,
+    });
+    if (problem) errorMessage(new Error(problem));
+  };
+  return async () => {
   // The click that selected the element may still be opening its file.
   for (let waited = 0; currentPath === path && !editorModule?.isMounted(path) && waited < 10_000 && allowed(); waited += 50)
     await new Promise((done) => setTimeout(done, 50));
-  if (!allowed()) return;
+  if (!allowed()) { await draftLeftPage(); return; }
   if (currentPath !== path || !editorModule?.isMounted(path)) {
     const epoch = generation;
     await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: allowed });
+    if (epoch === generation && !allowed()) { await draftLeftPage(); return; }
     if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path) || !allowed()) return;
   }
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview || !allowed()) return;
   const source = (masterAt ? nativeEffectiveSource(path) : nativeSources()[path]) ?? "";
-  const range = locateNativeElementRange(source, node);
-  // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
-  let start = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
-  let endBefore = before.length;
-  let endAfter = after.length;
-  while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
-    endBefore--;
-    endAfter--;
-  }
-  // A pure insertion takes one neighbouring character along, so the source
-  // range is never empty and lands beside that character.
-  if (endBefore === start) {
-    if (start > 0) start--;
-    else { endBefore++; endAfter++; }
-  }
-  const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
-  const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
-  if (!range || !span) {
+  const edit = nativeTextSourceEdit(source, node, before, after);
+  if (!edit) {
     preview.refresh();
     errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time."));
     return;
   }
-  // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
-  const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const edit = { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
   preview.selectAfterUpdate({ path, node });
   try {
     editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
@@ -2320,6 +2364,7 @@ async function applyNativeTextEdit({ path, node, before, after, masterSession }:
     preview.refresh();
     errorMessage(error);
   }
+  };
 }
 
 // Components that fit between page sections: those whose template is a
@@ -5507,6 +5552,9 @@ async function withSidecarPages(op: NativeOperation): Promise<NativeOperation | 
  * to an error message, or nothing.
  */
 async function applyNativeOperation(op: NativeOperation): Promise<string | undefined> {
+  // Its undo step is recorded in the open page's editor: an operation asked
+  // for before Monaco has arrived waits for it rather than being refused.
+  if (currentPath && !editorModule?.isMounted(currentPath)) await editorReady();
   const planned = await withSidecarPages(op);
   if (typeof planned === "string") return planned;
   op = planned;
@@ -6952,7 +7000,8 @@ async function openEntry(
       selection,
       options,
     );
-    if (!options.quietStatus) settleStatus(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
+    // A file opened while this one's editor loaded has the last word.
+    if (!options.quietStatus && selection === fileGeneration) settleStatus(`Viewing ${path} at ${snapshot?.commit.slice(0, 7)}.`);
   } catch (error) {
     if (epoch === generation && selection === fileGeneration) {
       content.replaceChildren(
@@ -7655,7 +7704,14 @@ async function loadSnapshot(
         branch,
         path: open,
       });
-    if (open) { recordNativeSourceIntent(open); await restoreFile(open, epoch); }
+    if (open) {
+      recordNativeSourceIntent(open);
+      const opening = restoreFile(open, epoch), selection = fileGeneration;
+      await opening;
+      // Its code pane waits for Monaco: a file opened meanwhile (a new page,
+      // a rename) has said what happened, and that stands.
+      if (selection !== fileGeneration) return;
+    }
     if (epoch !== generation) return;
     if (result.empty) {
       settleStatus(`${repo.name} is empty. Choose how to start your site.`);

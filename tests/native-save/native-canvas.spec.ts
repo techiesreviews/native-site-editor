@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { editorMounted } from "./drafts";
 
 // The canvas (page builder, canvas slice; docs/page-builder/canvas.md):
 // breakpoints and a draggable frame width, hover labels, the selection's
@@ -228,6 +229,7 @@ test("the removed spacing control never restores a legacy session overlay", asyn
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator(".hero h1")).toBeVisible();
   await expect(page.getByRole("button", { name: "Show margin and padding", exact: true })).toHaveCount(0);
+  await editorMounted(page);
   const source = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   await frame.locator(".hero h1").click();
   await frame.locator(".hero p").hover();

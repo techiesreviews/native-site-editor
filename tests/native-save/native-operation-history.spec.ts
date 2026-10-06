@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openPageSettingsFromPages } from "./settings-entry";
+import { editorMounted } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+const source = async (page: Page) => (await editorMounted(page), page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")));
 async function history(page: Page, direction: "undo" | "redo") {
   const accepted = await page.evaluate(async direction => (await import("/src/components/code-editor.ts")).runVisualHistory(direction, "index.html"), direction);
   expect(accepted, await page.locator("#status").textContent() ?? "history status").toBe(true);

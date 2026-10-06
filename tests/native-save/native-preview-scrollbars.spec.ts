@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { storedDrafts, editorMounted } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const source = (page: Page, path: string) => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+const source = async (page: Page, path: string) => (await editorMounted(page), page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path));
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
