@@ -1,6 +1,6 @@
 import { INSPECTION_LIMIT, type AgentCommand } from "../shared/agent";
 import type { AgentHub, HubGrant } from "./agent-context";
-import { validateContext } from "./agent-context";
+import type { EditorContext } from "../shared/types";
 import { HttpError } from "./github";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 
@@ -42,7 +42,8 @@ export function agentOperation(hub: AgentHub, action: any) {
   } else if (action.type === "context") {
     const tab = tabId(action.tabId);
     if (!tab) throw new HttpError(400, "Invalid editor tab.");
-    hub.context = validateContext(action.context);
+    // Checked by hubOperation (worker/agent-store.ts), which can load zod.
+    hub.context = action.context as EditorContext;
     hub.updatedAt = Date.now();
     hub.tabId = tab;
   } else if (action.type === "queue") {

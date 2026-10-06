@@ -8,7 +8,6 @@
 // request waits for agents again, returned once more to every connection.
 // A request belongs to the repository it was asked in: a connection sees
 // only the ones of the repository the tab shows.
-import { z } from "zod";
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_HTML_LIMIT,
@@ -19,7 +18,6 @@ import {
   type AgentRequest,
   type AgentRequestMessage,
 } from "../shared/agent";
-import { elementSchema } from "./agent-context";
 import { HttpError } from "./github";
 
 // Requests kept in all, answered and dismissed ones included; the oldest
@@ -28,43 +26,6 @@ const KEPT = 100;
 const RETURNED_TO = 20;
 export const requestIdPattern = /^req-[\w-]{1,64}$/;
 
-const askSchema = z.object({
-  repository: z.object({ id: z.number().int().positive(), fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/) }),
-  text: z.string().trim().min(1).max(REQUEST_TEXT_LIMIT),
-  element: elementSchema,
-});
-
-/** A request the tab sends, checked; the hub gives it its id and time. */
-export function validateAsk(value: unknown): AgentRequest {
-  const result = askSchema.safeParse(value);
-  if (!result.success)
-    throw new HttpError(400, `A request needs text (up to ${REQUEST_TEXT_LIMIT} characters) and the element it is about.`);
-  const { repository, text, element } = result.data;
-  const html = element.html && element.html.length > REQUEST_HTML_LIMIT ? element.html.slice(0, REQUEST_HTML_LIMIT) : element.html;
-  const createdAt = Date.now();
-  return {
-    id: `req-${crypto.randomUUID()}`,
-    text,
-    createdAt,
-    repoId: repository.id,
-    repository: repository.fullName,
-    state: "open",
-    element: { ...element, ...(html !== undefined ? { html } : {}), ...(html !== element.html ? { htmlClipped: true } : {}) },
-    thread: [{ from: "user", text, at: createdAt }],
-  };
-}
-
-const answerSchema = z.object({
-  id: z.string().regex(requestIdPattern),
-  text: z.string().trim().min(1).max(REQUEST_TEXT_LIMIT),
-});
-
-/** The user's answer to an agent, from a request's card, checked. */
-export function validateAnswer(value: unknown) {
-  const result = answerSchema.safeParse(value);
-  if (!result.success) throw new HttpError(400, `An answer needs the request and text (up to ${REQUEST_TEXT_LIMIT} characters).`);
-  return result.data;
-}
 
 // A message added to a request's thread, which keeps its first message (what
 // was asked) and the latest ones, within THREAD_LIMIT and THREAD_TEXT_LIMIT.

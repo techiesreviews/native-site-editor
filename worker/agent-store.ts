@@ -99,6 +99,8 @@ export async function hubOperation(storage: HubStorage, action: any, setAlarm: (
       command.contentHash = text.hash;
       command.content = "";
     }
+    // The context check needs zod, loaded on first use (worker/agent-schemas.ts).
+    if (type === "context") action = { ...action, context: (await import("./agent-schemas")).validateContext(action.context) };
     let result: object = agentOperation(hub, action);
     const context = hub.context;
     delete hub.context;
