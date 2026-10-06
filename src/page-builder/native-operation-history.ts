@@ -176,6 +176,10 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     if (records.has(path) && host.store.get(scope, path) !== records.get(path)) return false;
     if (!host.mounted(path) || !proof.isCurrent()) return false;
     proofs.set(path, proof); mounted.set(path, true);
+    // Lease the adopted model like the ones captured at prepare time, so
+    // leaving the page keeps it (clean) instead of disposing the proven model.
+    const lease = host.persistentModels ? host.retainModel?.(path) : undefined;
+    if (lease) leases.push(lease);
     return true;
   }
   return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases) dispose(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
