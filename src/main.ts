@@ -17,7 +17,7 @@ import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from 
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeShownFiles } from "./native-boot";
+import { nativeBootExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -3297,7 +3297,11 @@ function nativeSettingsController() {
     async open404() {
       if (stale() || sourcesChanged() || !nativeSite) return changed;
       if (nativeSite.routes["/404.html"]) { await restoreFile(nativeSite.routes["/404.html"], generation); return undefined; }
-      let source = nativePageTemplate(nativeEffectiveSource(nativeSite.routes["/"]), "Page not found");
+      // Made from the home page's document, so that is read first.
+      const unread = await nativeSiteReadForCreate();
+      if (unread) return unread;
+      if (stale() || sourcesChanged() || !nativeSite) return changed;
+      let source = nativePageTemplate(nativeHomeTemplate(), "Page not found");
       source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
       source = upsertHeadTag(source, "robots", "noindex");
       source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
@@ -4207,10 +4211,15 @@ function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnT
 function wantNativeTextIndex() {
   releaseNativeTextIndex?.();
 }
-// The text index as it is when it is done, not asking for it sooner.
-async function nativeTextIndexSettled() {
-  await nativeTextIndexing?.catch(() => false);
-}
+// The text index as a gate (src/native-boot.ts): waited for without being
+// asked for sooner, and only a complete read for the open repository,
+// branch and commit counts.
+const nativeTextIndexGate: SiteIndexGate = {
+  key: () => `${generation}\n${nativeTextIndexScopeKey()}`,
+  indexed: () => !nativeSite || nativeTextIndexed,
+  settled: () => (nativeTextIndexing ? nativeTextIndexing.catch(() => false) : Promise.resolve(nativeTextIndexed)),
+  ensure: () => ensureNativeTextIndex(),
+};
 
 // Work that waits for a native site's first paint (the runtime reporting the
 // page's structure), then for the browser to be idle. A preview that does
@@ -5221,7 +5230,9 @@ interface NativeNewPlan extends NativeNewTarget {
   content: string;
   note?: string;
 }
-function planNativeNew(request: NativeNewRequest): Checked<NativeNewPlan> {
+// Typing in the Pages tab checks the target only; creating (`create`) needs
+// the home page's document read (nativeSiteReadForCreate) and makes the page from it.
+function planNativeNew(request: NativeNewRequest, create = false): Checked<NativeNewPlan> {
   const site = nativeSite;
   if (!site || !draftScope()) return { ok: false, error: "Open a native site first." };
   const title = request.title.trim();
@@ -5232,7 +5243,27 @@ function planNativeNew(request: NativeNewRequest): Checked<NativeNewPlan> {
     exists: nativePathExists,
   });
   if (!target.ok) return target;
-  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(target.value.route)) } };
+  const template = nativeHomeTemplate();
+  if (!create) return { ok: true, value: { ...target.value, title, content: "" } };
+  if (template === undefined) return { ok: false, error: NATIVE_HOME_UNREAD };
+  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, nativeAddress(target.value.route)) } };
+}
+
+// The home page's document, which new pages copy (its stylesheets, scripts,
+// header and footer): undefined while it is not read yet, so no page is made
+// from nothing. Creating a page reads the whole site first (it is read after
+// the first paint, and a page opened by its address may not be home).
+const NATIVE_HOME_UNREAD = "The home page is not read yet. Try again in a moment.";
+function nativeHomeTemplate() {
+  return nativeSite ? nativeEffectiveSource(nativeSite.routes["/"]) : undefined;
+}
+// The whole site read for the repository open now: an error message, or nothing.
+async function nativeSiteReadForCreate() {
+  const epoch = generation, scope = setupScope();
+  const problem = await ensureNativeTextIndex();
+  if (problem) return problem;
+  if (epoch !== generation || scope !== setupScope() || !nativeSite) return "The repository changed meanwhile. Try again.";
+  return nativeHomeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
 }
 
 // The address of the page at `route` on the live site, from
@@ -5272,7 +5303,10 @@ function nativePageLabelOf(file: string) {
 // and the page opened (the explorer closes). Undo in the editor right after
 // takes it back, as Discard changes on the new file does.
 async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
-  const planned = planNativeNew(request);
+  // The page is made from the home page's document, so that is read first.
+  const unread = await nativeSiteReadForCreate();
+  if (unread) return unread;
+  const planned = planNativeNew(request, true);
   if (!planned.ok) return planned.error;
   const plan = planned.value;
   const epoch = generation, scope = setupScope();
@@ -5302,6 +5336,10 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
 // A URL with subpages and no page of its own gets its page, `index.html` in
 // its folder, made like a new page.
 async function createNativeFolderPage(route: string) {
+  if (!nativeSite || !draftScope()) return;
+  // Made from the home page's document, so that is read first.
+  const unread = await nativeSiteReadForCreate();
+  if (unread) { errorMessage(new Error(unread)); return; }
   const site = nativeSite;
   if (!site || !draftScope()) return;
   const file = nativeRouteFile(route);
@@ -5310,7 +5348,7 @@ async function createNativeFolderPage(route: string) {
   if (scope && draftStore().get(scope, file)?.deleted) { undoFileChanges({ restore: [file] }); return; }
   if (site.routes[route] || nativePathExists(file)) { errorMessage(new Error(`The URL ${route} has a page already.`)); return; }
   const title = routeHeading(route);
-  const content = nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(route));
+  const content = nativePageTemplate(nativeHomeTemplate(), title, nativeAddress(route));
   const error = await commitNativePage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
   if (error) errorMessage(new Error(error));
 }
@@ -5340,6 +5378,8 @@ function mountCards() {
     editor: () => editorModule,
     preview: () => nativePreview,
     ensureOpen: async (path) => {
+      // A card's page copies a sibling page or the home page: the site is read first.
+      if (await nativeSiteReadForCreate()) return false;
       if (currentPath === path && editorModule?.isMounted(path)) return true;
       const epoch = generation;
       await restoreFile(path, epoch, { linkDefaultStyle: false });
@@ -7513,9 +7553,12 @@ function updateAgentContext() {
 function agentRepository() {
   return currentRepo && snapshot && info.user ? { id: currentRepo.id, fullName: currentRepo.full_name } : undefined;
 }
-async function agentContext(): Promise<SharedContext | undefined> {
-  // Agents see the whole site: its pages are read after the first paint.
-  if (nativeSite && !nativeTextIndexed) await nativeTextIndexSettled();
+// Agents see the whole site (its pages are read after the first paint):
+// the context waits for the complete index of the repository open then.
+function agentContext(): Promise<SharedContext | undefined> {
+  return withSiteIndexed(nativeTextIndexGate, buildAgentSiteContext);
+}
+async function buildAgentSiteContext(): Promise<SharedContext | undefined> {
   const scope = draftScope();
   if (!currentRepo || !snapshot || !scope) return undefined;
   const site = nativeSite;

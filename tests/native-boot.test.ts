@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { nativeBootExtras, nativeShownFiles, usedComponentTags } from "../src/native-boot.ts";
+import { nativeBootExtras, nativeShownFiles, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 
 const site: NativeSite = {
@@ -64,4 +64,64 @@ test("every component template and its stylesheet come with the page when they a
   // Too large together, or a size not known: nothing extra.
   assert.deepEqual(nativeBootExtras(site, paths, size, 50), []);
   assert.deepEqual(nativeBootExtras({ ...site, components: { ...site.components, "new-thing": "components/new-thing/new-thing.html" } }, paths, size), []);
+});
+
+// A text index the test drives: `key` is the open repository, `done` whether it read the whole site.
+function fakeGate(state: { key: string; done: boolean }, settle: () => Promise<boolean>, ensure: () => Promise<string | undefined> = async () => undefined): SiteIndexGate & { ensured: number } {
+  const gate = {
+    ensured: 0,
+    key: () => state.key,
+    indexed: () => state.done,
+    settled: settle,
+    ensure: () => { gate.ensured++; return ensure(); },
+  };
+  return gate;
+}
+
+test("the agent context is built only from a complete index", async () => {
+  const state = { key: "repo-a", done: false };
+  const built: string[] = [];
+  const gate = fakeGate(state, async () => { state.done = true; return true; });
+  assert.equal(await withSiteIndexed(gate, async () => { built.push(state.key); return state.done; }), true);
+  assert.deepEqual(built, ["repo-a"]);
+  assert.equal(gate.ensured, 0);
+});
+
+test("an index that failed is read again once, and a second failure is refused, never built", async () => {
+  const state = { key: "repo-a", done: false };
+  let builds = 0;
+  const retried = fakeGate(state, async () => false, async () => { state.done = true; return undefined; });
+  await withSiteIndexed(retried, async () => { builds++; });
+  assert.equal(retried.ensured, 1);
+  assert.equal(builds, 1);
+  state.done = false;
+  const failing = fakeGate(state, async () => false, async () => "The site's links could not be fully read.");
+  await assert.rejects(withSiteIndexed(failing, async () => { builds++; }), /could not be fully read/);
+  assert.equal(builds, 1);
+});
+
+test("a repository switched while the index is awaited waits for the new one's index", async () => {
+  const state = { key: "repo-a", done: false };
+  const built: string[] = [];
+  let settles = 0;
+  const gate = fakeGate(state, async () => {
+    settles++;
+    // The first wait ends with another repository open, its index not read yet.
+    if (settles === 1) { state.key = "repo-b"; return true; }
+    state.done = true;
+    return true;
+  });
+  await withSiteIndexed(gate, async () => { built.push(`${state.key}:${state.done}`); });
+  assert.deepEqual(built, ["repo-b:true"]);
+  assert.equal(settles, 2);
+});
+
+test("a context built while the repository changed is built again, and given up after repeated changes", async () => {
+  const state = { key: "repo-a", done: true };
+  let builds = 0;
+  const gate = fakeGate(state, async () => true);
+  const value = await withSiteIndexed(gate, async () => { builds++; if (builds === 1) state.key = "repo-b"; return state.key; });
+  assert.equal(value, "repo-b");
+  assert.equal(builds, 2);
+  await assert.rejects(withSiteIndexed(gate, async () => { state.key += "!"; }), /changed meanwhile/);
 });

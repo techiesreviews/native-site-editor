@@ -100,3 +100,40 @@ export function nativeBootExtras(
   }
   return [...out];
 }
+
+/** The site's text index as something that waits for it (main.ts). */
+export interface SiteIndexGate {
+  /** Names the repository, branch, commit and site load: it changes when any of them does. */
+  key(): string;
+  /** Whether the whole site is read for the current key (or there is no site to read). */
+  indexed(): boolean;
+  /** Waits for the read under way: whether it read the whole site. */
+  settled(): Promise<boolean>;
+  /** Reads the site now (again, after a failure): an error message, or nothing. */
+  ensure(): Promise<string | undefined>;
+}
+
+/**
+ * `build` run once the whole site is read, for the repository and branch
+ * still open when it is done: a change meanwhile (another repository, a new
+ * commit) waits again for that one's index; a read that failed is tried once
+ * more and then refused. Never builds from a partly read site.
+ */
+export async function withSiteIndexed<T>(gate: SiteIndexGate, build: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const key = gate.key();
+    if (!gate.indexed()) {
+      const done = await gate.settled();
+      if (gate.key() !== key) continue;
+      if (!done || !gate.indexed()) {
+        const problem = await gate.ensure();
+        if (gate.key() !== key) continue;
+        if (problem) throw new Error(problem);
+        if (!gate.indexed()) throw new Error("The site's pages could not all be read. Refresh the repository and try again.");
+      }
+    }
+    const value = await build();
+    if (gate.key() === key) return value;
+  }
+  throw new Error("The repository changed meanwhile. Try again.");
+}

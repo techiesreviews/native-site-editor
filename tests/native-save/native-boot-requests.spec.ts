@@ -59,6 +59,40 @@ test('pages other than the open one are not read before the first paint', async 
   await expect.poll(() => reads.some((read) => read.shas.includes(about)), { timeout: 15_000 }).toBe(true);
 });
 
+test('a page made before the text index has read the home page still copies its document', async ({ page, baseURL }) => {
+  // The site's text index (which reads the home page when another page was
+  // opened by its address) is held until the page is asked for.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let home = '';
+  let heldReads = 0;
+  await page.route(/\/api\/files?\?/, async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
+    if (home && asked.includes(home)) { heldReads++; await held; }
+    await route.continue();
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
+  await expect(preview(page).locator('h1[data-key="about-title"]')).toHaveText('About this project');
+  home = (await blobShas(page))['index.html'];
+  const explorer = page.locator('#explorer');
+  if (!(await explorer.isVisible())) await page.locator('#explorer-toggle').click();
+  await explorer.getByRole('tab', { name: 'Pages' }).click();
+  await explorer.getByRole('button', { name: '+ New page' }).click();
+  await explorer.getByRole('textbox', { name: 'New page title' }).fill('Fresh');
+  await page.keyboard.press('Enter');
+  // Creating waits for the home page; nothing is made from an empty document meanwhile.
+  await expect.poll(() => heldReads).toBeGreaterThan(0);
+  await expect(page.locator('#status')).not.toHaveText(/Created the page Fresh/);
+  release();
+  await expect(page.locator('#status')).toHaveText('Created the page Fresh at /fresh/.');
+  const draft = await page.evaluate(async () => (await import('/src/components/code-editor.ts')).getMountedSource('fresh/index.html'));
+  expect(draft).toContain('<link rel="stylesheet" href="/styles/site.css">');
+  expect(draft).toContain('<script type="module" src="/components/components.js"></script>');
+  expect(draft).toContain('<site-header data-key="header"></site-header>');
+  expect(draft).toContain('<site-footer data-key="footer"></site-footer>');
+});
+
 test('a page deep-linked by its address paints without the home page being read', async ({ page, baseURL }) => {
   const { paints, reads } = await watchReads(page);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
