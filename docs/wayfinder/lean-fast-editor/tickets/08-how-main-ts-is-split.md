@@ -2,7 +2,7 @@
 title: Decide how main.ts is split
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-what-usable-means-before-monaco, 07-what-is-left-after-removals]
 ---
 
