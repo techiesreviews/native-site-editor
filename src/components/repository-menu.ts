@@ -19,6 +19,8 @@ type Account = NonNullable<SessionInfo["accounts"]>[number];
 export function createRepositoryMenu(options: {
   installUrl: string | null;
   accounts: Account[];
+  /** Fetch the repository list only when the menu is opened. */
+  onOpen?: () => void;
   onReload: () => void;
   /** GitHub may have changed which repositories the editor can reach. */
   onAccessChanged: () => void;
@@ -155,6 +157,9 @@ export function createRepositoryMenu(options: {
     trigger,
     panel,
     anchor: "--repository-menu",
+  });
+  panel.addEventListener("beforetoggle", (event) => {
+    if ((event as ToggleEvent).newState === "open") options.onOpen?.();
   });
   panel.addEventListener("click", (event) => {
     if ((event.target as Element).closest(".repository-menu__action")) {

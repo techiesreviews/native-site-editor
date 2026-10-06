@@ -43,7 +43,7 @@ async function openGetStarted(page: Page, baseURL: string | undefined) {
 
 // Opens a repository the account has by name, through its workspace link.
 async function openRepository(page: Page, baseURL: string | undefined, name: string) {
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   const repo = repos.find((candidate) => candidate.name === name);
   expect(repo, `${name} is listed`).toBeTruthy();
   await page.goto(`${baseURL}/#repo=${repo!.id}&branch=main`);
@@ -107,6 +107,45 @@ test("a valid session skips the sign-in screen: the editor opens with no button"
   await expect(page.locator(".repository-menu__trigger")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before")), "a flag, never a name or token").toBe("1");
+});
+
+for (const retry of ["menu", "Reload"] as const) test(`${retry} recovers an initial repository loading failure with an empty list`, async ({ page, baseURL }) => {
+  await control(page, baseURL, { repositories: "none" });
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const session = await response.json();
+    delete session.repositories;
+    await route.fulfill({ response, json: session });
+  });
+  let failedReads = 0;
+  let retryReads = 0;
+  let reloadReads = 0;
+  let retrySucceeds = false;
+  await page.route("**/api/repositories**", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("refresh") === "1") {
+      reloadReads++;
+      await route.fulfill({ json: [], headers: { "X-Repository-Onboarding": "create" } });
+    } else if (retrySucceeds) {
+      retryReads++;
+      await route.fulfill({ json: [], headers: { "X-Repository-Onboarding": "create" } });
+    } else {
+      failedReads++;
+      await route.fulfill({ status: 403, json: { error: "Initial repository loading failed." } });
+    }
+  });
+  await page.goto(`${baseURL}/`);
+  await expect(page.locator("#notice")).toContainText("Initial repository loading failed.");
+  await expect(page.locator("#content")).toContainText("Repositories could not be loaded. Use Reload to try again.");
+  expect(failedReads).toBeGreaterThan(0);
+
+  retrySucceeds = retry === "menu";
+  await page.locator(".repository-menu__trigger").click();
+  if (retry === "Reload") await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Create your site", exact: true })).toBeVisible();
+  await expect(page.locator("#notice")).toBeHidden();
+  await expect(page.locator("#content")).not.toContainText("Repositories could not be loaded.");
+  expect(retryReads).toBe(retry === "menu" ? 1 : 0);
+  expect(reloadReads).toBe(retry === "Reload" ? 1 : 0);
 });
 
 test("a browser that signed in before continues to GitHub by itself, once", async ({ page, baseURL }) => {
@@ -312,7 +351,7 @@ test("a repository made on GitHub's page gets the chosen starting point when it 
   // The user makes it empty on GitHub and gives the editor access; it opens with the starter, unasked.
   await control(page, baseURL, { add: [{ name: "later-site", kind: "empty" }] });
   // Opened once, without a reload in between: the choice is taken the first time the repository opens.
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "later-site")!.id}&branch=main`);
   await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
   const panel = await listChanges(page);
@@ -389,7 +428,7 @@ test("a remembered starting point is dropped, not applied, when the repository h
   await page.getByRole("button", { name: "Create repository" }).click();
   await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
   await control(page, baseURL, { add: [{ name: "notes", kind: "no-site" }] });
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "notes")!.id}&branch=main`);
   await expect(page.getByText("No home page")).toBeVisible({ timeout: 30_000 });
   // Nothing was drafted unasked, and the choice is gone.

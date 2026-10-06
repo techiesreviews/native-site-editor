@@ -1,3 +1,4 @@
+import { repositoryCacheRequest } from "./session-cache-fake";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";
@@ -13,6 +14,8 @@ function environment() {
       idFromName: (name) => name,
       get: (id) => ({
         fetch: async (request) => {
+          const cacheResponse = await repositoryCacheRequest(request, records, id);
+          if (cacheResponse) return cacheResponse;
           if (request.method === "PUT") {
             records.set(id, (await request.json()) as StoredSession);
             return new Response(null, { status: 204 });
@@ -267,4 +270,24 @@ test("publish requires same-origin JSON, POST, a valid session and selected repo
     assert.equal(calls, scenario.cookie === id && scenario.origin === origin && scenario.method === "POST" ? 1 : 0);
     assert.equal(response.headers.get("cache-control"), "no-store");
   }
+});
+
+test("repository cache persistence failure keeps a successful GitHub listing signed in", async () => {
+  const { env, records } = environment();
+  const id = "a".repeat(64);
+  records.set(id, { kind: "user", token: "token", login: "lex", avatar_url: "", expiresAt: Date.now() + 60000 });
+  const get = env.SESSIONS.get;
+  env.SESSIONS.get = (key) => ({ fetch: async (request) => new URL(request.url).pathname === "/repository-cache"
+    ? new Response(null, { status: 500 }) : get(key).fetch(request) });
+  const fetcher: typeof fetch = async (input) => Response.json(String(input).includes("/repositories")
+    ? { repositories: [{ id: 1, name: "site", full_name: "lex/site", private: true, default_branch: "main", owner: { login: "lex", type: "User" } }] }
+    : { installations: [{ id: 1, account: { login: "lex", type: "User" } }] });
+  const response = await handle(request("/api/repositories", `__Host-ase_session=${id}`), env, fetcher);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).length, 1);
+  assert.equal(response.headers.has("set-cookie"), false);
+  assert.equal(records.get(id)?.kind, "user");
+  const switched = await handle(new Request(`${origin}/api/accounts/switch`, { method: "POST", headers: { Cookie: `__Host-ase_session=${id}`, Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ login: "lex" }) }), env, fetcher);
+  assert.equal(switched.status, 502);
+  assert.equal(switched.headers.has("set-cookie"), false);
 });

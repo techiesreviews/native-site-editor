@@ -334,11 +334,13 @@ test("the recovery banner belongs to its repository: switching away removes it, 
   await page.getByRole("button", { name: "Open the editor" }).click();
   const banner = page.locator("#finish-starter");
   await expect(banner).toBeVisible({ timeout: 30_000 });
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   const half = repos.find((repo) => repo.name === "half-site")!;
 
   // Another repository: the banner is gone, and nothing is drafted into it.
   await page.goto(`${baseURL}/#repo=501&branch=main`);
+  await expect(page.locator(".repository-menu__name")).toHaveText("native-demo");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await expect(banner).toHaveCount(0);
   // Back: it is offered again, and it works.

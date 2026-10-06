@@ -353,7 +353,8 @@ function mountWorkspace() {
     accounts:
       info.accounts ??
       (info.user ? [{ ...info.user, current: true }] : []),
-    onReload: () => void loadRepositories(),
+    onOpen: () => void ensureRepositoryList(),
+    onReload: () => void refreshRepositoryList(),
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
     onSignOut: disconnect,
@@ -4188,6 +4189,10 @@ function openExplorer() {
 }
 
 let repositories: Repository[] = [];
+let repositoryListLoaded = false;
+let repositoryWorkspaceState: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
+let repositoryListRequest: Promise<void> | undefined;
+let repositoryOnboarding: "install" | "create" | undefined;
 // Unset until start() has read the session.
 let info: SessionInfo;
 let currentRepo: Repository | undefined;
@@ -4351,6 +4356,10 @@ function renderLogin(
   siteActions?.destroy();
   siteActions = undefined;
   repositories = [];
+  repositoryListLoaded = false;
+  repositoryWorkspaceState = "uninitialized";
+  repositoryListRequest = undefined;
+  repositoryOnboarding = undefined;
   currentRepo = undefined;
   snapshot = undefined;
   repositoryIndex.clear();
@@ -7983,8 +7992,8 @@ async function openWizard() {
   const { createSetupWizard } = await loadWizard();
   if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const memory = readWizard(localStorage);
-  // The session says what is left to do (and a reload keeps it); asked again only when it did not.
-  const connection = connectionFromOnboarding(info.onboarding) ?? (await wizardConnection());
+  // The repository endpoint says what is left to do; check installation access when its hint is unavailable.
+  const connection = connectionFromOnboarding(repositoryOnboarding) ?? (await wizardConnection());
   if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const step = openingStep(memory, connection);
   const kept = writeWizard(localStorage, { step });
@@ -8185,7 +8194,7 @@ function wizardRepository(repository: Repository, committed: boolean, partial = 
 /** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
 async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
   const owner = (choice.owner ?? info.user?.login ?? "").toLowerCase();
-  const list = await api<Repository[]>("repositories");
+  const list = await fetchRepositoryList(true);
   const repository = list.find((candidate) => candidate.owner.login.toLowerCase() === owner && candidate.name.toLowerCase() === choice.name.toLowerCase());
   if (!repository) return undefined;
   wizardCreated = repository;
@@ -8252,7 +8261,7 @@ async function finishWizard(repo: WizardRepo) {
   startSetupChecklist(repo.id);
   history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
   // GitHub may not list a repository it has just made yet: the one made here is added.
-  const listed = await api<Repository[]>("repositories").catch(() => repositories);
+  const listed = await fetchRepositoryList(true).catch(() => repositories);
   await loadRepositories(wizardCreated && !listed.some((known) => known.id === wizardCreated!.id) ? [...listed, wizardCreated] : listed);
 }
 
@@ -8296,7 +8305,7 @@ document.addEventListener("visibilitychange", () => void checkNewRepositories())
 async function checkNewRepositories() {
   if (!waitingForRepositories || document.visibilityState !== "visible" || !content.querySelector(".get-started")) return;
   try {
-    const next = await api<Repository[]>("repositories");
+    const next = await fetchRepositoryList(true);
     if (next.length && waitingForRepositories && content.querySelector(".get-started")) await loadRepositories(next);
   } catch {
     // Listed again on the next visit.
@@ -8362,6 +8371,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
 }
 
 async function loadRepositories(prefetched?: Repository[]) {
+  repositoryWorkspaceState = "loading";
   removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
@@ -8385,12 +8395,14 @@ async function loadRepositories(prefetched?: Repository[]) {
   clearError();
   status("Loading selected repositories…");
   try {
-    const result = prefetched ?? (await api<Repository[]>("repositories"));
+    const result = prefetched ?? (await fetchRepositoryList(openNewRepository));
     if (epoch !== generation) return;
     repositories = result;
+    repositoryListLoaded = true;
+    repositoryWorkspaceState = "ready";
     repositoryMenu?.setRepositories(repositories);
     // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
-    const knownBefore = openNewRepository ? knownRepositories() ?? (info.repositories ?? []).map((repo) => repo.id) : undefined;
+    const knownBefore = openNewRepository ? knownRepositories() ?? [] : undefined;
     openNewRepository = false;
     rememberRepositories(result);
     if (!repositories.length) {
@@ -8463,6 +8475,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     status("Connected to GitHub. Choose a project to start.");
   } catch (error) {
     if (epoch === generation) {
+      repositoryWorkspaceState = "failed";
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
       ]);
@@ -8492,16 +8505,72 @@ function repositoryOptions() {
   ]);
 }
 
+/** Read the array endpoint and its onboarding hint without expanding the session. */
+async function fetchRepositoryList(refresh = false): Promise<Repository[]> {
+  apiReadsInFlight++;
+  let response: Response, data: Repository[] & { error?: string };
+  try {
+    response = await fetchWithReadRetry(`/api/repositories${refresh ? "?refresh=1" : ""}`, { credentials: "same-origin", cache: "no-store" });
+    data = await response.json();
+  } finally {
+    apiReadsInFlight--;
+  }
+  if (!response.ok) throw new ApiError(response.status, data.error || "Could not load GitHub data.");
+  const hint = response.headers.get("X-Repository-Onboarding");
+  repositoryOnboarding = hint === "install" || hint === "create" ? hint : undefined;
+  return data as Repository[];
+}
+
+function repositoryWorkspaceNeedsRecovery() {
+  return repositoryWorkspaceState === "failed" || repositoryWorkspaceState === "uninitialized";
+}
+
+async function recoverRepositoryWorkspace(next: Repository[]) {
+  if (!repositoryWorkspaceNeedsRecovery()) return false;
+  await loadRepositories(next);
+  return true;
+}
+
+/** Opening the menu needs the full list; opening a remembered repository does not. */
+async function ensureRepositoryList() {
+  if (repositoryListLoaded && !repositoryWorkspaceNeedsRecovery()) return;
+  if (repositoryListRequest) return repositoryListRequest;
+  const menu = repositoryMenu;
+  const login = info.user?.login;
+  repositoryListRequest = (async () => {
+    try {
+      const next = await fetchRepositoryList();
+      if (menu !== repositoryMenu || login !== info.user?.login) return;
+      if (await recoverRepositoryWorkspace(next)) return;
+      repositories = next;
+      repositoryListLoaded = true;
+      rememberRepositories(next);
+      repositoryOptions();
+      repositorySelect.disabled = !next.length;
+      if (currentRepo) repositorySelect.value = String(currentRepo.id);
+      menu?.setRepositories(next);
+    } catch (error) {
+      if (menu === repositoryMenu) menu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
+      errorMessage(error);
+    } finally {
+      if (menu === repositoryMenu) repositoryListRequest = undefined;
+    }
+  })();
+  return repositoryListRequest;
+}
+
 // After a visit to GitHub's repository access page: list the repositories
 // again, keeping the open one open unless it is no longer available.
 async function refreshRepositoryList() {
   let next: Repository[];
   try {
-    next = await api<Repository[]>("repositories");
+    next = await fetchRepositoryList(true);
   } catch (error) {
     errorMessage(error);
     return;
   }
+  if (await recoverRepositoryWorkspace(next)) return;
+  repositoryListLoaded = true;
   if (
     next.length === repositories.length &&
     next.every((repo, index) => repo.id === repositories[index].id)

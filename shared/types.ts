@@ -65,13 +65,10 @@ export interface SessionInfo {
   ownerSetupUrl?: string | null;
   /** Setup needs no private link (OWNER_GITHUB is set): open it directly. */
   ownerSetupOpen?: boolean;
-  /**
-   * Selected repositories, included for signed-in users so the workspace can
-   * open without a second round trip. Null when the listing failed; the
-   * browser then requests `/api/repositories` itself.
-   */
+  /** @deprecated Legacy field from older servers; fetch `/api/repositories` instead. */
   repositories?: Repository[] | null;
   /**
+   * @deprecated Read `X-Repository-Onboarding` from `/api/repositories`.
    * For a signed-in account with no repository to open: what is left to do.
    * "install": the App is not installed on the account (the Setup wizard opens
    * on Connect GitHub); "create": it is, and the first site is next (the wizard
