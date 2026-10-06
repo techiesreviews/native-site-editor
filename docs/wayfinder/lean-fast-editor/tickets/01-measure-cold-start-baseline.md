@@ -48,6 +48,15 @@ preview-editor.techies.tools, Lex's real site `techiesreviews/techies-reviews` (
 
 Top bytes before first paint (cold): `/api/raw` 4566 KB, Monaco `editor.api` 683 KB, `/api/files` 548 KB, `index.js` 332 KB, `code-editor` 304 KB.
 
+The starter (`techiesreviews/native-site-editor-starter`, repository 1384109830), same conditions:
+
+| Load | session | paint | usable | Monaco | bytes before paint | requests before paint | bytes total |
+|---|---|---|---|---|---|---|---|
+| cold | 974 | 2835 | 2889 | 2648 | 1470 KB | 25 | 1545 KB |
+| warm | 773 | 1703 | 1754 | 1589 | 29 KB | 26 | 32 KB |
+
+On the starter the shell itself is the cost: Monaco (683 KB) and `code-editor` (304 KB) are again two thirds of the bytes before paint, and a warm load still takes 1.7 s with 29 KB moved (revalidation and serial boot reads).
+
 New findings the local profile hid:
 1. **Images dominate.** `/api/raw` returns each image blob base64-encoded in JSON (`worker/app.ts:958`) with no caching, so the ~4.5 MB of starter images (+33% for base64) is fetched again on every load, warm included. Blobs are addressed by SHA, so they can be cached as immutable.
 2. **"Usable" is 17–20 s**, far behind paint (2.7–4 s). Locally the two were equal. Cause unknown; see ticket 16.
