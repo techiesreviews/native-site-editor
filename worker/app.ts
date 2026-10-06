@@ -9,11 +9,10 @@ import {
   operateHub,
   revokeGrant,
   storeDraftTexts,
-  validateContext,
   type AgentGrant,
   type AgentHub,
 } from "./agent-context";
-import { requestIdPattern, requestSummary, validateAnswer, validateAsk } from "./agent-requests";
+import { requestIdPattern, requestSummary } from "./agent-requests";
 import {
   handleOAuth,
   isOAuthPath,
@@ -495,12 +494,12 @@ async function route(
     // wait_for_requests (worker/agent-requests.ts).
     if (path === "/api/agent/ask" && request.method === "POST") {
       const data = await requestJson(request, 64 * 1024);
-      return json(requestSummary(await operateHub(env, sessionId, { type: "ask", request: validateAsk(data) })));
+      return json(requestSummary(await operateHub(env, sessionId, { type: "ask", request: (await import("./agent-schemas")).validateAsk(data) })));
     }
     // The user's answer to an agent's reply, from the request's card.
     if (path === "/api/agent/answer" && request.method === "POST") {
       const data = await requestJson(request, 16 * 1024);
-      return json(requestSummary(await operateHub(env, sessionId, { type: "answer", ...validateAnswer(data) })));
+      return json(requestSummary(await operateHub(env, sessionId, { type: "answer", ...(await import("./agent-schemas")).validateAnswer(data) })));
     }
     if (path === "/api/agent/dismiss" && request.method === "POST") {
       const data = await requestJson(request, 4096);
@@ -530,7 +529,7 @@ async function route(
     if (path === "/api/agent/context" && request.method === "POST") {
       // Draft texts go apart (below), so this is paths and hashes.
       const data = await requestJson(request, 1800 * 1024);
-      const context = validateContext(data?.context);
+      const context = (await import("./agent-schemas")).validateContext(data?.context);
       return json(
         await operateHub(env, sessionId, { type: "context", tabId: data?.tabId, context }),
       );
