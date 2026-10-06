@@ -25,7 +25,8 @@
     "test:browser:shared-structure": "playwright test --project=native-shared-structure",
     "test:browser:page-part-preview": "playwright test --project=native-page-part-preview",
     "test:browser:all": "playwright test",
-    "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\""
+    "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
+    "test:budget": "tsx tests/perf/byte-budget.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",
