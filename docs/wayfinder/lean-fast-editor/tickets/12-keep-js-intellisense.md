@@ -2,7 +2,7 @@
 title: Decide whether the code panes keep JavaScript IntelliSense
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 

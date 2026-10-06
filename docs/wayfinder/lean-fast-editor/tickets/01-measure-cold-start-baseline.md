@@ -2,7 +2,7 @@
 title: Measure today's cold start
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (measure subagent)
 blocked_by: []
 ---
 

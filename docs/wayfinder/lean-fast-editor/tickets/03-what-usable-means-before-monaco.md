@@ -2,7 +2,7 @@
 title: Decide what "usable" means before Monaco loads
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 

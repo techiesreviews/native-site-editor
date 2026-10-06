@@ -2,7 +2,7 @@
 title: Decide what remains after the style panel, collections and Page Fields are removed
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 

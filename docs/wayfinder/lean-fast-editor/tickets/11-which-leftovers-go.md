@@ -2,7 +2,7 @@
 title: Decide which leftovers are deleted
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 
