@@ -566,7 +566,7 @@ test("editable component names keep their drag pixels and disable nested actions
   const caret = chip.locator(".edit-bar__context-caret");
   await expect(direct).toHaveText("Project card");
   await expect(direct).toHaveCSS("cursor", "grab");
-  await expect(direct).toHaveCSS("padding", "4px 2px");
+  await expect(direct).toHaveCSS("padding", "4px 6px 4px 2px");
   await caret.click();
   await expect(output).toHaveText("select ");
   await direct.click();
