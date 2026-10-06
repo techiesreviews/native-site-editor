@@ -1,20 +1,10 @@
-import "./code-editor.css";
-import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath, type CssWorkspace } from "../page-builder/css-intelligence";
+import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath } from "../page-builder/css-intelligence";
 import { monaco } from "./monaco";
-import {
-  draftStore,
-  draftKey,
-  type DraftScope,
-  type SavedDraft,
-} from "../drafts";
-import { createPublishMenu } from "./publish-menu";
-import { textHash, type AgentCommand } from "../../shared/agent";
-import type { EditorContext } from "../../shared/types";
-import type { PublishResult } from "../../shared/types";
-import { listChanges, type FileChange } from "../file-changes";
-import { button, node } from "../ui/dom";
-import { icon } from "../icons";
+import type { DraftScope } from "../drafts";
+import type { TypingSession } from "../draft-store";
+import { node } from "../ui/dom";
 import { CODE_POINTER_EVENT, type CodePointer } from "../page-builder/canvas-model";
+import { languageFor, mountSourceEditor, onReset, paneOf, useView, type PaneHost, type PaneRender, type PaneViewFactory, type SourceFile } from "./source-editor";
 
 // Code to canvas (page builder): an HTML editor reports where its cursor
 // goes by a click or a key and which line the pointer is over, so the
@@ -69,729 +59,6 @@ function linkToCanvas(editor: monaco.editor.ICodeEditor, path: string, model: mo
   });
 }
 
-export interface SourceFile {
-  key: string;
-  /** Current, scope-bound CSS sources. The host opens a real editor for definitions. */
-  cssWorkspace?: () => CssWorkspace | undefined;
-  path: string;
-  source: string;
-  readOnly?: boolean;
-  onSessionExpired?: () => void;
-  scope?: DraftScope;
-  baseSha?: string | null;
-  onPublished?: (result: PublishResult, submitted: SavedDraft[]) => void;
-  /** Native save UI relabels the publish menu to "Save to GitHub" wording. */
-  saveLabels?: boolean;
-  onDiscardNew?: () => void;
-  onContextChange?: (
-    file: EditorContext["file"],
-    changes?: { start: number; end: number; text: string }[],
-  ) => void;
-  onHistory?: () => void;
-  /** Groups visual Undo/Redo across the primary file and its secondary style editors. */
-  historyScope?: string;
-  /** Opens an unmounted file before routed visual history changes its model. */
-  ensureHistoryTarget?: (path: string) => Promise<boolean>;
-  /**
-   * Discard changes in the toolbar: every draft of the branch goes (the
-   * caller asks first). Without it, the button discards this file's draft.
-   */
-  onDiscardAll?: () => void;
-  /** The branch's head as the tab last saw it, sent with a save. */
-  publishHead?: () => string | undefined;
-  /** A save was refused for files GitHub changed or deleted meanwhile. */
-  onRefused?: () => void;
-  /** Restores a deletion or moves a renamed file back, from the Save panel. */
-  onDiscardChange?: (change: FileChange) => void;
-  /** Whether a draft is an edit of a file GitHub deleted since it began (this file's too). */
-  deletedUpstream?: (path: string) => boolean;
-  /** Settles such a draft: Discard draft, or Keep as new file (`keep`). */
-  onSettleDeleted?: (path: string, keep: boolean) => void;
-  /**
-   * A typing group in Code has settled: no typing for `TYPING_SETTLE_MS`, or the
-   * editor is closing. The group is closed as one Undo stop first, so `before`
-   * (the model's state when the group's first keystroke arrived) and `after` are
-   * both stops of the model's own history. Undo, Redo and routed edits are not typing.
-   */
-  onTypingSettled?: (group: { before: TypingState; after: TypingState }) => void;
-}
-/** A model state: Monaco's alternative version id (stable across Undo/Redo) and its text. */
-export interface TypingState { version: number; source: string }
-/** A pause in typing this long closes the typing group. */
-export const TYPING_SETTLE_MS = 700;
-
-interface Draft {
-  historySession?: string;
-  original: string;
-  model: monaco.editor.ITextModel;
-  view: monaco.editor.ICodeEditorViewState | null;
-  path: string;
-  scope?: DraftScope;
-  baseSha?: string | null;
-  persisted?: boolean;
-}
-const drafts = new Map<string, Draft>();
-let serial = 0;
-// Several editors can be mounted at once (page and stylesheet side by side);
-// commands are routed by file path.
-type RangeApi = {
-  select(edit: Omit<RangeEdit, "text">): boolean;
-  replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
-  replaceMany(edits: RangeEdit[]): void;
-  closeGroup(): void;
-  reveal(start: number, end: number): void;
-  focus(): void;
-  highlight(ranges: HighlightRange[]): void;
-  markElement(tag: { start: number; end: number } | undefined, reveal: boolean): void;
-  review(on: boolean): void;
-  reviewing(): boolean;
-  compare(version: VersionCompare | undefined): void;
-};
-/** An earlier version of the file, shown beside the current one (History). */
-export type VersionCompare = { content: string; label: string };
-type MountedEditor = {
-  path: string;
-  apply(command: AgentCommand): Promise<void>;
-  discardNew(): boolean;
-  dispose(): void;
-  range: RangeApi;
-  model: monaco.editor.ITextModel;
-  session: string;
-  readOnly: boolean;
-  ensureHistoryTarget?: (path: string) => Promise<boolean>;
-  refresh(persist?: boolean): void;
-};
-type VisualHistoryEntry = {
-  model: monaco.editor.ITextModel;
-  path: string;
-  after: number;
-  undone?: number;
-  group?: boolean;
-  /** Existing native typing stops below a subsequently recorded compound action. */
-  typingSpan?: { before: TypingState; after: TypingState };
-  draft?: { scope: DraftScope; before?: SavedDraft; after?: SavedDraft; beforeSource: string; afterSource: string };
-  /** Changes to other files made with this edit: undone and redone with it. */
-  companions?: HistoryCompanion[];
-};
-/** A change outside the edited model (another file, as a draft) that belongs to an edit's undo step. */
-export interface HistoryCompanion {
-  undo(): void;
-  redo(): void;
-}
-const mounted = new Map<string, MountedEditor>();
-// More than one pane can temporarily own the same cached model/path.
-const liveMounted = new Set<MountedEditor>();
-function unregisterMounted(path: string, registration: MountedEditor) {
-  liveMounted.delete(registration);
-  if (mounted.get(path) !== registration) return;
-  const previous = [...liveMounted].reverse().find(editor => editor.path === path);
-  if (previous) mounted.set(path, previous);
-  else mounted.delete(path);
-}
-// The Save menus of the mounted editors, for a draft written outside them.
-const publishers = new Set<() => void>();
-/** A browser draft changed outside the editors: the Save menus list it again. */
-export function refreshDrafts() {
-  for (const refresh of publishers) refresh();
-}
-/** Returning false refuses the operation and retains its history entry. */
-export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
-// Legacy actions run once on Undo; actions with Redo move between both stacks.
-type HistoryAction = { path: string; action: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
-const disposeAction = (entry: HistoryAction) => { try { entry.dispose?.(); } catch { /* Cleanup must not interrupt journal disposal. */ } };
-const isAction = (entry: VisualHistoryEntry | HistoryAction | undefined): entry is HistoryAction => Boolean(entry && "action" in entry);
-const visualHistory = new Map<string, { undo: (VisualHistoryEntry | HistoryAction)[]; redo: (VisualHistoryEntry | HistoryAction)[] }>();
-const runningVisualHistory = new Set<string>();
-const refreshingVisualHistory = new Map<string, number>();
-/** Keep the shared journal unavailable while its accepted action remounts UI. */
-export function holdHistoryRefresh(path: string) {
-  const session = mounted.get(path)?.session;
-  if (!session) return () => {};
-  refreshingVisualHistory.set(session, (refreshingVisualHistory.get(session) ?? 0) + 1);
-  for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false);
-  let released = false;
-  return () => { if (released) return; released = true; const count = (refreshingVisualHistory.get(session) ?? 1) - 1; if (count) refreshingVisualHistory.set(session, count); else refreshingVisualHistory.delete(session); for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false); };
-}
-const routedModelChanges = new WeakSet<monaco.editor.ITextModel>();
-// Journal-owned source steps suppress persistence during a refresh hold.
-// Ordinary canvas writes are routed too, but must still reach the draft store.
-const journalModelChanges = new WeakSet<monaco.editor.ITextModel>();
-// A live compound receipt owns these exact Monaco steps across page mounts.
-const historyReceiptModels = new WeakMap<monaco.editor.ITextModel, number>();
-function retainHistoryModel(model: monaco.editor.ITextModel) {
-  historyReceiptModels.set(model, (historyReceiptModels.get(model) ?? 0) + 1);
-  let released = false;
-  return () => {
-    if (released) return; released = true;
-    const count = (historyReceiptModels.get(model) ?? 1) - 1;
-    if (count) historyReceiptModels.set(model, count); else historyReceiptModels.delete(model);
-    for (const [key, draft] of drafts) if (!count && draft.model === model && !model.isDisposed() &&
-        ![...liveMounted].some(editor => editor.model === model) && draft.baseSha !== null && model.getValue() === draft.original) {
-      model.dispose(); drafts.delete(key);
-    }
-  };
-}
-/** Lease the captured model identity, including clean inputs, until a receipt is disposed. */
-export function retainFileModel(scope: DraftScope, path: string) {
-  const model = drafts.get(draftKey(scope, path))?.model;
-  return model && !model.isDisposed() ? retainHistoryModel(model) : () => {};
-}
-// A companion of a single (ungrouped) edit runs whenever the model itself is undone to before
-// that edit or redone to after it, by the toolbar, the keyboard or Monaco's own stack once the
-// visual history has been cleared by typing, so the other file never drifts from the edit.
-type CompanionMark = { before: number; after: number; done: boolean; companion: HistoryCompanion };
-const companionMarks = new WeakMap<monaco.editor.ITextModel, CompanionMark[]>();
-function runCompanions(model: monaco.editor.ITextModel, undoing: boolean) {
-  const version = model.getAlternativeVersionId();
-  for (const mark of companionMarks.get(model) ?? []) {
-    if (undoing && mark.done && version === mark.before) {
-      mark.done = false;
-      mark.companion.undo();
-    } else if (!undoing && !mark.done && version === mark.after) {
-      mark.done = true;
-      mark.companion.redo();
-    }
-  }
-}
-/**
- * Ties `companion` (a change to other files, already made) to a span of the
- * model of `path`, from `before` to `after` (alternative version ids; `after`
- * is current): it is undone when the model is undone back to `before`, and
- * redone when it is redone to `after`, by the toolbar, the keyboard or Monaco's
- * own stack. Both must be Undo stops of the model (`onTypingSettled` gives such).
- */
-export function attachHistoryCompanion(scope: DraftScope, path: string, before: number, after: number, companion: HistoryCompanion) {
-  const model = drafts.get(draftKey(scope, path))?.model;
-  if (!model || model.isDisposed() || before === after || model.getAlternativeVersionId() !== after) return false;
-  const marks = companionMarks.get(model) ?? [];
-  marks.push({ before, after, done: true, companion });
-  companionMarks.set(model, marks.slice(-50));
-  return true;
-}
-/** The state of the model of `path` (mounted or kept as a draft), if there is one. */
-export function modelState(scope: DraftScope, path: string): TypingState | undefined {
-  const model = drafts.get(draftKey(scope, path))?.model;
-  return model && !model.isDisposed() ? { version: model.getAlternativeVersionId(), source: model.getValue() } : undefined;
-}
-/** The model of `path` (mounted or kept as a draft) is at exactly this state. */
-export function modelAtState(scope: DraftScope, path: string, version: number, source: string) {
-  const state = modelState(scope, path);
-  return state?.version === version && state.source === source;
-}
-// Versions on either side of an applied persistent receipt step. Such a step
-// belongs to a compound operation whose other files are drafts outside this
-// model. Typing in any file of the session clears the shared journal, but the
-// raw Monaco stack of the receipt model still holds that step; a raw fallback
-// must never cross it and revert one file while the others keep theirs.
-const receiptBoundaries = new WeakMap<monaco.editor.ITextModel, { before: number; after: number }[]>();
-function crossesReceipt(model: monaco.editor.ITextModel, direction: "undo" | "redo") {
-  const version = model.getAlternativeVersionId();
-  return (receiptBoundaries.get(model) ?? []).some((mark) => version === (direction === "undo" ? mark.after : mark.before));
-}
-const receiptRefusal = "This change touched several files together and its shared history was cleared, so Undo and Redo here would change only this file. Review the current drafts instead.";
-// Monaco stops its editor worker whenever no model is left, as happens for a
-// moment each time one file's editors close and the next file's open, and
-// starts a new one (its script fetched again) once the new editor needs it.
-// An empty model kept for the page's lifetime keeps the one worker.
-monaco.editor.createModel("", "plaintext", monaco.Uri.parse("inmemory://editor/keep-worker"));
-
-// The Undo/Redo keys that route through the shared journal (`guardHistoryKeys`
-// in mountCodeEditor), registered once for every editor: each editor's own
-// context keys say whether they route there, and its route runs them. Keys
-// registered per editor made Monaco rebuild its keybinding lookup in every
-// open editor at each mount and dispose, a good part of opening a file.
-const HISTORY_UNDO_KEY = "aseRoutesUndo", HISTORY_REDO_KEY = "aseRoutesRedo";
-const historyKeyRoutes = new WeakMap<monaco.editor.ICodeEditor, (direction: "undo" | "redo") => Promise<void>>();
-monaco.editor.addEditorAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY,
-  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ], run: (editor) => historyKeyRoutes.get(editor)?.("undo") });
-monaco.editor.addEditorAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY,
-  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY],
-  run: (editor) => historyKeyRoutes.get(editor)?.("redo") });
-const historyFor = (session: string) => {
-  let history = visualHistory.get(session);
-  if (!history) { history = { undo: [], redo: [] }; visualHistory.set(session, history); }
-  return history;
-};
-function sameHistoryDraft(a: SavedDraft | undefined, b: SavedDraft | undefined) {
-  if (!a || !b) return a === b;
-  const keys = Object.keys(a).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
-  return keys.length === Object.keys(b).filter(key => key !== "updatedAt").length && keys.every(key => a[key] === b[key]);
-}
-function recordVisualEdit(session: string, path: string, model: monaco.editor.ITextModel, group = false, companion?: HistoryCompanion, draft?: VisualHistoryEntry["draft"]) {
-  const history = historyFor(session);
-  const last = history.undo.at(-1);
-  if (group && !isAction(last) && last?.group && last.model === model && last.path === path) {
-    last.after = model.getAlternativeVersionId();
-    if (last.draft && draft) { last.draft.after = draft.after; last.draft.afterSource = draft.afterSource; }
-    else last.draft = undefined;
-    if (companion) (last.companions ??= []).push(companion);
-  } else history.undo.push({ model, path, after: model.getAlternativeVersionId(), group, companions: companion ? [companion] : undefined, draft });
-  for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
-  history.redo.length = 0;
-  for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
-}
-function closeVisualGroup(session: string, model: monaco.editor.ITextModel) {
-  const last = historyFor(session).undo.at(-1);
-  if (!isAction(last) && last?.model === model) last.group = false;
-}
-function invalidateVisualHistory(session: string) {
-  const history = visualHistory.get(session);
-  if (history) { for (const entry of [...history.undo, ...history.redo]) if (isAction(entry)) disposeAction(entry); history.undo.length = 0; history.redo.length = 0; }
-}
-function canRunVisualHistory(session: string, direction: "undo" | "redo", fallback: monaco.editor.ITextModel) {
-  if (runningVisualHistory.has(session) || refreshingVisualHistory.has(session)) return false;
-  const entry = historyFor(session)[direction];
-  const candidate = entry.at(-1);
-  if (isAction(candidate)) return true;
-  const expected = direction === "undo" ? candidate?.after : candidate?.undone;
-  return Boolean(candidate && !candidate.model.isDisposed() && candidate.model.getAlternativeVersionId() === expected) ||
-    (!crossesReceipt(fallback, direction) && (direction === "undo" ? fallback.canUndo() : fallback.canRedo()));
-}
-/**
- * Records `action` as the next undo step of the mounted file `path`'s history,
- * below any later edit: Undo runs it once the edits after it are undone. A
- * text change typed in the file clears it with the rest of the history.
- * Supply redo for a reversible action. False, throws and rejected promises keep
- * the entry in place. Callbacks own source/draft checks and any side-effect rollback.
- */
-export function recordHistoryAction(path: string, action: HistoryActionCallback, redo?: HistoryActionCallback, dispose?: () => void, precedingTyping?: { before: TypingState; after: TypingState }) {
-  const editor = mounted.get(path);
-  if (!editor) return false;
-  const history = historyFor(editor.session);
-  if (precedingTyping && precedingTyping.before.version !== precedingTyping.after.version)
-    history.undo.push({ path, model: editor.model, after: precedingTyping.after.version, typingSpan: precedingTyping });
-  history.undo.push({ path, action, redo, dispose });
-  for (const entry of history.redo) if (isAction(entry)) disposeAction(entry);
-  history.redo.length = 0;
-  for (const other of mounted.values()) if (other.session === editor.session) other.refresh();
-  return true;
-}
-export interface HistorySourceEdit { path: string; expectedSource: string; text: string }
-export interface HistorySourceReceipt {
-  dispose?(): void;
-  apply(): boolean;
-  undo(): boolean;
-  redo(): boolean;
-  isCurrent(): boolean;
-}
-/**
- * Prepares owned, isolated local text steps without recording another journal
- * entry. The host commits drafts synchronously, then records this receipt's
- * callbacks as its single history action. No model notification is masked
- * across an await, and every source/model/session/version is checked first.
- */
-export function prepareHistorySources(edits: HistorySourceEdit[], persistent = false): HistorySourceReceipt | undefined {
-  if (new Set(edits.map((edit) => edit.path)).size !== edits.length) return undefined;
-  const steps = edits.map((edit) => {
-    const editor = mounted.get(edit.path);
-    if (!editor || editor.readOnly || editor.model.isDisposed() || editor.model.getValue() !== edit.expectedSource) return undefined;
-    return { ...edit, editor, session: editor.session, model: editor.model, before: editor.model.getAlternativeVersionId(), after: undefined as number | undefined };
-  });
-  if (steps.some((step) => !step)) return undefined;
-  const owned = steps.filter((step): step is NonNullable<typeof step> => Boolean(step));
-  if (new Set(owned.map((step) => step.editor.session)).size > 1 || new Set(owned.map((step) => step.model)).size !== owned.length) return undefined;
-  let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
-  const leases = persistent ? owned.map(step => retainHistoryModel(step.model)) : [];
-  let released = false;
-  const release = () => { if (released) return; released = true; for (const dispose of leases) dispose(); };
-  const matchesStep = (step: typeof owned[number], after: boolean) =>
-    (persistent ? [...drafts.values()].some(draft => draft.model === step.model && draft.historySession === step.session) &&
-      (!mounted.has(step.path) || mounted.get(step.path)?.model === step.model && mounted.get(step.path)?.session === step.session && !mounted.get(step.path)?.readOnly)
-      : mounted.get(step.path) === step.editor && !step.editor.readOnly && step.editor.session === step.session) && !step.model.isDisposed() && step.model.getAlternativeVersionId() === (after ? step.after : step.before) &&
-    step.model.getValue() === (after ? step.text : step.expectedSource);
-  const matches = (after: boolean) => !released && owned.every((step) => matchesStep(step, after));
-  const move = (direction: "undo" | "redo", expectedState: "applied" | "undone") => {
-    if (state !== expectedState || !matches(direction === "undo")) return false;
-    const moved: typeof owned = [];
-    try {
-      for (const step of owned) {
-        if (!matchesStep(step, direction === "undo")) throw new Error("The source changed during its text history operation.");
-        if (step.text === step.expectedSource) continue;
-        routedModelChanges.add(step.model); journalModelChanges.add(step.model);
-        try {
-          const result = step.model[direction]();
-          // These are isolated text-model steps. A workspace-wide async undo
-          // is not an owned local step and cannot be committed by this receipt.
-          if (result) { void result.catch(() => {}); throw new Error("The text history step is asynchronous."); }
-        } finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
-        moved.push(step);
-        const after = direction === "redo";
-        if (step.model.getAlternativeVersionId() !== (after ? step.after : step.before) ||
-            step.model.getValue() !== (after ? step.text : step.expectedSource)) throw new Error("The owned text history step changed.");
-      }
-      state = direction === "undo" ? "undone" : "applied";
-      return true;
-    } catch {
-      // A synchronous local failure rolls back only the steps already moved.
-      for (const step of moved.reverse()) {
-        if (!matchesStep(step, direction === "redo")) { state = "failed"; continue; }
-        routedModelChanges.add(step.model); journalModelChanges.add(step.model);
-        try { const result = step.model[direction === "undo" ? "redo" : "undo"](); if (result) void result.catch(() => {}); }
-        catch { state = "failed"; }
-        finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
-      }
-      if (!matches(expectedState === "applied")) state = "failed";
-      return false;
-    }
-  };
-  return {
-    dispose: release,
-    isCurrent: () => !released && state !== "failed" && matches(state === "applied"),
-    apply() {
-      if (state !== "prepared" || !matches(false)) return false;
-      const applied: typeof owned = [];
-      try {
-        for (const step of owned) {
-          if (!matchesStep(step, false)) throw new Error("The source changed during its text history operation.");
-          if (step.text !== step.expectedSource) {
-            step.model.pushStackElement();
-            routedModelChanges.add(step.model); journalModelChanges.add(step.model);
-            try { step.model.pushEditOperations([], [{ range: step.model.getFullModelRange(), text: step.text }], () => null); }
-            finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
-            step.model.pushStackElement();
-          }
-          step.after = step.model.getAlternativeVersionId();
-          applied.push(step);
-          if (step.text !== step.expectedSource && persistent)
-            receiptBoundaries.set(step.model, [...(receiptBoundaries.get(step.model) ?? []), { before: step.before, after: step.after }]);
-        }
-        if (!matches(true)) throw new Error("The source changed while applying its text step.");
-        state = "applied";
-        return true;
-      } catch {
-        for (const step of applied.reverse()) if (step.text !== step.expectedSource && matchesStep(step, true)) {
-          routedModelChanges.add(step.model); journalModelChanges.add(step.model);
-          try { const result = step.model.undo(); if (result) void result.catch(() => {}); }
-          catch { state = "failed"; }
-          finally { routedModelChanges.delete(step.model); journalModelChanges.delete(step.model); }
-        }
-        state = matches(false) ? "prepared" : "failed";
-        return false;
-      }
-    },
-    undo: () => move("undo", "applied"),
-    redo: () => move("redo", "undone"),
-  };
-}
-/** Discards the mounted new file `path` as its Discard changes does, without asking. */
-export function discardNewFile(path: string) {
-  return mounted.get(path)?.discardNew() ?? false;
-}
-/**
- * Forgets the browser draft of `path`, which is not the mounted file: its
- * stored draft and any model kept for it.
- */
-export function dropDraft(scope: DraftScope, path: string) {
-  const key = draftKey(scope, path);
-  const kept = drafts.get(key);
-  if (kept && [...liveMounted].some((editor) => editor.model === kept.model)) return false;
-  draftStore().remove(scope, path);
-  if (kept) {
-    kept.model.dispose();
-    drafts.delete(key);
-  }
-  return true;
-}
-/**
- * Forgets the model kept for `path` (a draft not mounted), leaving its
- * stored draft as it is: the file was renamed, moved or deleted, and its
- * draft now lives elsewhere or is a deletion.
- */
-export function forgetDraftModel(scope: DraftScope, path: string) {
-  const key = draftKey(scope, path);
-  const kept = drafts.get(key);
-  if (!kept || [...liveMounted].some((editor) => editor.model === kept.model)) return false;
-  kept.model.dispose();
-  drafts.delete(key);
-  return true;
-}
-/** Read-only proof of mounted and cached models for one originating scope/path. */
-export function captureFileModelState(scope: DraftScope, path: string, persistent = false) {
-  const key = draftKey(scope, path), editor = mounted.get(path), cached = drafts.get(key);
-  const model = editor?.model ?? cached?.model;
-  const session = editor?.session ?? cached?.historySession;
-  const version = model?.getAlternativeVersionId(), source = model?.getValue();
-  return { isCurrent: () => drafts.get(key) === cached &&
-    (persistent && cached ? cached.historySession === session && (!mounted.has(path) || mounted.get(path)?.model === model && (!session || mounted.get(path)?.session === session))
-      : mounted.get(path) === editor && (!editor || editor.session === session)) && (!model || !model.isDisposed() &&
-      model.getAlternativeVersionId() === version && model.getValue() === source) };
-}
-/** Evicts only an unchanged, unmounted cached model and proves its absence. */
-export function evictDraftModel(scope: DraftScope, path: string, proof: { isCurrent(): boolean }) {
-  if (!proof.isCurrent() || mounted.has(path)) return undefined;
-  const key = draftKey(scope, path);
-  if (!drafts.has(key)) return proof;
-  forgetDraftModel(scope, path);
-  if (mounted.has(path) || drafts.has(key)) return undefined;
-  return captureFileModelState(scope, path);
-}
-/** The history journal must stay attached to its initiating mounted editor/session. */
-export function captureHistoryHost(path: string) {
-  const editor = mounted.get(path);
-  if (!editor || editor.readOnly) return undefined;
-  const model = editor.model, session = editor.session;
-  return { isCurrent: () => mounted.get(path) === editor && editor.model === model &&
-    editor.session === session && !editor.readOnly && !model.isDisposed() };
-}
-export function getMountedSource(path: string) {
-  return mounted.get(path)?.model.getValue();
-}
-export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?: string) {
-  const fallback = fallbackPath ? mounted.get(fallbackPath) : undefined;
-  if (fallback?.readOnly) return false;
-  const session = fallback?.session ?? [...mounted.values()].at(-1)?.session;
-  if (!session) return false;
-  if (runningVisualHistory.has(session) || refreshingVisualHistory.has(session)) return false;
-  runningVisualHistory.add(session);
-  try {
-    const history = historyFor(session);
-    const source = direction === "undo" ? history.undo : history.redo;
-    const target = direction === "undo" ? history.redo : history.undo;
-    const last = source.at(-1);
-    if (isAction(last)) {
-      const owner = fallback ?? mounted.get(last.path) ?? [...mounted.values()].find((editor) => editor.session === session);
-      if (!owner || owner.readOnly || owner.session !== session) return false;
-      const ownerPath = [...mounted].find(([, editor]) => editor === owner)?.[0];
-      const action = direction === "undo" ? last.action : last.redo;
-      if (!action) return false;
-      const accepted = await action();
-      // The callback may await network work or change workspace. It owns its
-      // side effects; only this exact, still-mounted journal may receive history.
-      if (accepted === false || visualHistory.get(session) !== history || source.at(-1) !== last ||
-          !ownerPath || mounted.get(ownerPath) !== owner || owner.session !== session || owner.model.isDisposed()) return false;
-      source.pop();
-      if (last.redo) target.push(last);
-      else { disposeAction(last); for (const entry of history.redo) if (isAction(entry)) disposeAction(entry); history.redo.length = 0; }
-      return true;
-    }
-    const entry = last;
-    if (entry && mounted.get(entry.path)?.model !== entry.model && fallback?.ensureHistoryTarget)
-      await fallback.ensureHistoryTarget(entry.path);
-    // Loading a displaced stylesheet is asynchronous. A newer action or a
-    // workspace switch owns the history now; never pop its journal entry.
-    if ((fallbackPath && mounted.get(fallbackPath) !== fallback) || source.at(-1) !== entry) return false;
-    const targetEditor = entry ? mounted.get(entry.path) : undefined;
-    const expected = direction === "undo" ? entry?.after : entry?.undone;
-    if (entry && targetEditor?.model === entry.model && targetEditor.session === session && !targetEditor.readOnly &&
-        !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === expected) {
-      if (entry.typingSpan) {
-        const span = entry.typingSpan;
-        const initial = direction === "undo" ? span.after : span.before;
-        const final = direction === "undo" ? span.before : span.after;
-        if (entry.model.getValue() !== initial.source || entry.model.getAlternativeVersionId() !== initial.version) return false;
-        let steps = 0, owned = initial;
-        routedModelChanges.add(entry.model);
-        try {
-          while (entry.model.getAlternativeVersionId() !== final.version && steps < 1000) {
-            if (mounted.get(entry.path) !== targetEditor || source.at(-1) !== entry || entry.model.isDisposed() ||
-                entry.model.getAlternativeVersionId() !== owned.version || entry.model.getValue() !== owned.source ||
-                crossesReceipt(entry.model, direction) || !(direction === "undo" ? entry.model.canUndo() : entry.model.canRedo())) break;
-            const operation = entry.model[direction]();
-            steps++;
-            owned = { version: entry.model.getAlternativeVersionId(), source: entry.model.getValue() };
-            if (operation) { try { await operation; } catch { break; } }
-          }
-          if (entry.model.getAlternativeVersionId() !== final.version || entry.model.getValue() !== final.source ||
-              mounted.get(entry.path) !== targetEditor || source.at(-1) !== entry) {
-            // Roll back only our synchronous local steps, never a newer model edit.
-            while (steps > 0 && mounted.get(entry.path) === targetEditor && source.at(-1) === entry && !entry.model.isDisposed() && entry.model.getAlternativeVersionId() === owned.version && entry.model.getValue() === owned.source) {
-              const operation = entry.model[direction === "undo" ? "redo" : "undo"]();
-              steps--;
-              owned = { version: entry.model.getAlternativeVersionId(), source: entry.model.getValue() };
-              if (operation) { try { await operation; } catch { break; } }
-            }
-            return false;
-          }
-        } finally { routedModelChanges.delete(entry.model); }
-        source.pop();
-        if (direction === "undo") entry.undone = final.version; else entry.after = final.version;
-        target.push(entry);
-        targetEditor.refresh();
-        return true;
-      }
-      const draft = entry.draft;
-      const expectedDraft = direction === "undo" ? draft?.after : draft?.before;
-      const restoredDraft = direction === "undo" ? draft?.before : draft?.after;
-      const expectedSource = direction === "undo" ? draft?.afterSource : draft?.beforeSource;
-      const restoredSource = direction === "undo" ? draft?.beforeSource : draft?.afterSource;
-      const store = draftStore();
-      if (draft && (store.get(draft.scope, entry.path) !== expectedDraft || entry.model.getValue() !== expectedSource)) return false;
-      routedModelChanges.add(entry.model);
-      let written: SavedDraft | undefined;
-      let version: number;
-      try {
-        const operation = entry.model[direction]();
-        // Capture the synchronous model writer before an awaited continuation.
-        written = draft ? store.get(draft.scope, entry.path) : undefined;
-        version = entry.model.getAlternativeVersionId();
-        await operation;
-      } finally { routedModelChanges.delete(entry.model); }
-      if (visualHistory.get(session) !== history || source.at(-1) !== entry || mounted.get(entry.path) !== targetEditor ||
-          entry.model.isDisposed() || entry.model.getAlternativeVersionId() !== version!) return false;
-      if (draft) {
-        if (entry.model.getValue() !== restoredSource || store.get(draft.scope, entry.path) !== written || !sameHistoryDraft(restoredDraft, written)) return false;
-        if (!(restoredDraft ? store.save(restoredDraft) : store.remove(draft.scope, entry.path))) return false;
-        if (store.get(draft.scope, entry.path) !== restoredDraft) return false;
-      }
-      source.pop();
-      if (direction === "undo") entry.undone = entry.model.getAlternativeVersionId();
-      else entry.after = entry.model.getAlternativeVersionId();
-      const companions = entry.companions ?? [];
-      for (const companion of direction === "undo" ? [...companions].reverse() : companions) companion[direction]();
-      target.push(entry);
-      for (const editor of mounted.values()) if (editor.session === session) editor.refresh();
-      return true;
-    }
-    invalidateVisualHistory(session);
-    if (entry) return false;
-    if (!fallback || fallback.readOnly || fallback.model.isDisposed() || !(direction === "undo" ? fallback.model.canUndo() : fallback.model.canRedo())) return false;
-    if (crossesReceipt(fallback.model, direction)) return false;
-    if (direction === "undo") fallback.model.pushStackElement();
-    routedModelChanges.add(fallback.model);
-    try { await fallback.model[direction](); }
-    finally { routedModelChanges.delete(fallback.model); }
-    fallback.refresh();
-    return true;
-  } finally {
-    runningVisualHistory.delete(session);
-    // The model notification already persisted the owned source step. A
-    // control refresh must not replace a foreign record that rejected it.
-    for (const editor of mounted.values()) if (editor.session === session) editor.refresh(false);
-  }
-}
-const editorFor = (path: string) => {
-  const editor = mounted.get(path);
-  if (!editor) throw new Error("The active file changed or is read only.");
-  return editor;
-};
-export async function applyAgentDraft(command: AgentCommand) {
-  return editorFor(command.path).apply(command);
-}
-// Visual-edit proof (ticket 06): replace one verified byte range of a mounted file.
-export interface RangeEdit {
-  path: string;
-  start: number;
-  end: number;
-  expected: string;
-  text: string;
-}
-export function selectActiveRange(edit: Omit<RangeEdit, "text">) {
-  return editorFor(edit.path).range.select(edit);
-}
-// Inline edits stream keystrokes; `group` keeps them in one undo step until
-// `closeActiveEditGroup` is called.
-// A `companion` (another file changed with it) is undone and redone with the edit.
-export function replaceActiveRange(edit: RangeEdit, group = false, companion?: HistoryCompanion) {
-  editorFor(edit.path).range.replace(edit, group, companion);
-}
-export function replaceActiveRanges(edits: RangeEdit[]) {
-  if (!edits.length) return;
-  const path = edits[0].path;
-  if (edits.some((edit) => edit.path !== path))
-    throw new Error("A source change cannot span multiple files.");
-  editorFor(path).range.replaceMany(edits);
-}
-export function closeActiveEditGroup(path: string) {
-  mounted.get(path)?.range.closeGroup();
-}
-// Scrolls a mounted file to a byte range (e.g. a CSS rule) and selects it.
-export function revealRange(path: string, start: number, end: number) {
-  mounted.get(path)?.range.reveal(start, end);
-}
-// Puts the caret in a mounted file's code, so typing goes there at once.
-export function focusEditor(path: string) {
-  mounted.get(path)?.range.focus();
-}
-// A CSS rule styling the selected element: dimmed when the cascade overrides
-// all of it, with the declarations it overrides (`struck`) crossed out.
-export interface HighlightRange {
-  start: number;
-  end: number;
-  overridden?: boolean;
-  struck?: { start: number; end: number }[];
-}
-// Marks byte ranges (the CSS rules styling the selected element) in a mounted file.
-export function highlightRanges(path: string, ranges: HighlightRange[]) {
-  mounted.get(path)?.range.highlight(ranges);
-}
-// Marks the start tag of the element selected in the preview. With `reveal`
-// the caret moves just past the tag, where its content starts, and the tag
-// scrolls into view; without it only the mark follows edits.
-export function markElement(path: string, tag: { start: number; end: number } | undefined, reveal: boolean) {
-  mounted.get(path)?.range.markElement(tag, reveal);
-}
-export function isMounted(path: string) {
-  return mounted.has(path);
-}
-// Shows the diff against the GitHub baseline for a mounted file.
-export function setReviewMode(path: string, on: boolean) {
-  mounted.get(path)?.range.review(on);
-}
-// Shows an earlier version of a mounted file beside the current one, both
-// read only; `undefined` goes back to editing.
-export function compareVersion(path: string, version: VersionCompare | undefined) {
-  mounted.get(path)?.range.compare(version);
-}
-export function isReviewing(path: string) {
-  return mounted.get(path)?.range.reviewing() ?? false;
-}
-// Files whose browser draft differs from GitHub, for the changes window.
-export function changedFiles() {
-  return [...drafts.values()]
-    .filter((d) => d.baseSha === null || d.model.getValue() !== d.original)
-    .map((d) => ({ path: d.path, created: d.baseSha === null, scopeKey: d.scope ? `${d.scope.repoId}:${d.scope.branch}` : "" }));
-}
-/** Forgets every Undo and Redo step: the drafts they changed are gone (Discard changes). */
-export function clearHistory() {
-  for (const session of visualHistory.keys()) invalidateVisualHistory(session);
-  visualHistory.clear();
-  for (const editor of mounted.values()) editor.refresh();
-}
-export function clearDrafts() {
-  for (const owner of [...liveMounted]) owner.dispose();
-  for (const draft of drafts.values()) draft.model.dispose();
-  drafts.clear();
-  for (const session of visualHistory.keys()) invalidateVisualHistory(session);
-  visualHistory.clear();
-  draftStore().release();
-}
-/** Changed Monaco models may still be waiting for their persistence debounce. */
-export function hasUnpersistedEdits() {
-  return [...drafts.values()].some(
-    (d) => (d.baseSha === null || d.model.getValue() !== d.original) && !d.persisted,
-  );
-}
-window.addEventListener("beforeunload", (event) => {
-  if (hasUnpersistedEdits()) {
-    event.preventDefault();
-    event.returnValue = "";
-  }
-});
-
-function languageFor(path: string) {
-  const extension = path.split(".").pop()?.toLowerCase() ?? "";
-  return (
-    (
-      {
-        ts: "typescript",
-        tsx: "typescript",
-        js: "javascript",
-        jsx: "javascript",
-        mjs: "javascript",
-        cjs: "javascript",
-        css: "css",
-        scss: "scss",
-        json: "json",
-        html: "html",
-        md: "markdown",
-        mdx: "markdown",
-        yaml: "yaml",
-        yml: "yaml",
-      } as Record<string, string>
-    )[extension] ?? "plaintext"
-  );
-}
-
 // Start lines (0-based) of the multi-line <head>, <section> and component
 // elements, collapsed when a page first opens in the code editor.
 export function defaultFoldLines(source: string) {
@@ -816,144 +83,384 @@ export function defaultFoldLines(source: string) {
   return lines.sort((a, b) => a - b);
 }
 
-export function mountCodeEditor(
-  host: HTMLElement,
-  file: SourceFile,
-  toolbarHost?: HTMLElement | null,
-) {
-  const session = file.historyScope ?? file.key;
-  const store = draftStore();
-  const saved =
-    file.scope && !file.readOnly ? store.get(file.scope, file.path) : undefined;
-  let draft = drafts.get(file.key);
-  if (!draft) {
-    draft = {
-      original: saved?.original ?? file.source,
-      model: monaco.editor.createModel(
-        saved?.content ?? file.source,
-        languageFor(file.path),
-        monaco.Uri.parse(`inmemory://editor/${++serial}/${file.path}`),
-      ),
-      view: null,
-      path: file.path,
-      scope: file.scope,
-      baseSha: saved ? saved.baseSha : file.baseSha,
-    };
-    drafts.set(file.key, draft);
+// The Monaco view of the source editor (src/components/source-editor.ts):
+// importing this module brings Monaco and shows the code of every mounted
+// file. The text, drafts and Undo/Redo live in the draft store; a model is
+// created from the store's text on demand and owns only typing undo inside
+// a code pane (the seam described in src/draft-store.ts). A closed pane's
+// model is kept while the history holds its typing steps, so Undo keeps
+// stepping through them stop by stop.
+export * from "./source-editor";
+
+/** A pause in typing this long closes the typing group as one Undo step. */
+export const TYPING_SETTLE_MS = 700;
+
+// Monaco stops its editor worker whenever no model is left, as happens for a
+// moment each time one file's editors close and the next file's open, and
+// starts a new one (its script fetched again) once the new editor needs it.
+// An empty model kept for the page's lifetime keeps the one worker.
+monaco.editor.createModel("", "plaintext", monaco.Uri.parse("inmemory://editor/keep-worker"));
+
+// Undo and Redo in a code pane run the shared journal (typing steps keep
+// Monaco's own stops there), registered once for every editor: each editor's
+// own context keys say whether they route there, and its route runs them.
+// Keys registered per editor made Monaco rebuild its keybinding lookup in
+// every open editor at each mount and dispose, a good part of opening a file.
+const HISTORY_UNDO_KEY = "aseRoutesUndo", HISTORY_REDO_KEY = "aseRoutesRedo";
+const historyKeyRoutes = new WeakMap<monaco.editor.ICodeEditor, (direction: "undo" | "redo") => Promise<void>>();
+monaco.editor.addEditorAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY,
+  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ], run: (editor) => historyKeyRoutes.get(editor)?.("undo") });
+monaco.editor.addEditorAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY,
+  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY],
+  run: (editor) => historyKeyRoutes.get(editor)?.("redo") });
+
+/**
+ * A file's Monaco model, shared by its panes and kept after they close while
+ * the history holds its typing steps. Versions given to the store are
+ * Monaco's alternative version ids, except that a state the store comes
+ * back to (a visual edit undone) keeps the id it first had (`aliases`), so a
+ * typing step's stops still line up after edits applied outside Monaco's
+ * own undo stack.
+ */
+interface SharedModel {
+  key: string;
+  scope: DraftScope;
+  path: string;
+  stored: boolean;
+  model: monaco.editor.ITextModel;
+  views: number;
+  typing?: TypingSession;
+  history?: string;
+  aliases: Map<number, number>;
+  byRevision: Map<number, number>;
+  applying: boolean;
+  stepping: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+  viewState: monaco.editor.ICodeEditorViewState | null;
+  settle(): void;
+  dispose(): void;
+}
+const models = new Map<string, SharedModel>();
+let serial = 0;
+onReset(() => { for (const shared of [...models.values()]) shared.dispose(); });
+
+function sharedModel(host: PaneHost): SharedModel {
+  let shared = models.get(host.key);
+  if (shared && (shared.model.isDisposed() || shared.stored !== host.stored)) { shared.dispose(); shared = undefined; }
+  if (!shared) shared = createSharedModel(host);
+  else if (shared.model.getValue() !== host.text()) {
+    // Out of step (it should not be): the store's text wins, outside Monaco's undo.
+    shared.applying = true;
+    try { shared.model.applyEdits([{ range: shared.model.getFullModelRange(), text: host.text() }]); }
+    finally { shared.applying = false; }
   }
-  const current = draft;
-  current.historySession = session;
-  // A successful publish whose response was lost is recognized on reopening.
-  if (
-    file.baseSha !== null &&
-    (current.model.getValue() === file.source ||
-      current.original === file.source)
-  ) {
-    current.original = file.source;
-    current.baseSha = file.baseSha;
+  // Typing goes into the pane's history; a pane mounted in another one starts a new session.
+  const kept = shared;
+  if (host.stored && !host.readOnly && kept.history !== host.session()) {
+    kept.typing?.dispose();
+    kept.typing = undefined;
+    kept.history = undefined;
+    try {
+      kept.typing = host.store.beginTyping(host.scope, host.path, host.session(), { version: reported(kept), native: {
+        undo: (expected) => stepNative(kept, "undo", expected),
+        redo: (expected) => stepNative(kept, "redo", expected),
+      } });
+      kept.history = host.session();
+    } catch { /* Not in the store (dropped meanwhile): nothing to type into. */ }
   }
-  let conflict = file.baseSha !== undefined && current.baseSha !== file.baseSha;
-  let reviewingLatest = false;
+  return kept;
+}
+const reported = (shared: SharedModel) => {
+  const version = shared.model.getAlternativeVersionId();
+  return shared.aliases.get(version) ?? version;
+};
+// One Monaco undo stop of a committed typing step, asked for by the store.
+function stepNative(shared: SharedModel, direction: "undo" | "redo", expected: number) {
+  const model = shared.model;
+  if (model.isDisposed() || reported(shared) !== expected || !(direction === "undo" ? model.canUndo() : model.canRedo())) return undefined;
+  shared.stepping = true;
+  try {
+    const result = model[direction]();
+    if (result) void result.catch(() => {});
+  } finally { shared.stepping = false; }
+  return { text: model.getValue(), version: reported(shared) };
+}
+function createSharedModel(host: PaneHost): SharedModel {
+  const store = host.store;
+  const model = monaco.editor.createModel(host.text(), languageFor(host.path), monaco.Uri.parse(`inmemory://editor/${++serial}/${host.path}`));
+  const shared: SharedModel = {
+    key: host.key, scope: host.scope, path: host.path, stored: host.stored, model, views: 0,
+    aliases: new Map(), byRevision: new Map(), applying: false, stepping: false, viewState: null,
+    settle() {
+      clearTimeout(shared.timer);
+      shared.timer = undefined;
+      if (model.isDisposed() || !shared.typing) return;
+      // The settle point is an Undo stop: Undo comes back to exactly here.
+      model.pushStackElement();
+      shared.typing.commit();
+    },
+    dispose() {
+      clearTimeout(shared.timer);
+      shared.typing?.dispose();
+      shared.typing = undefined;
+      content.dispose();
+      unsubscribe();
+      if (!model.isDisposed()) model.dispose();
+      if (models.get(shared.key) === shared) models.delete(shared.key);
+    },
+  };
+  // Typing (and Monaco's own undo of uncommitted typing) goes to the store at once.
+  const content = model.onDidChangeContent(() => {
+    if (shared.applying || shared.stepping || !shared.typing) return;
+    shared.typing.input(model.getValue(), reported(shared));
+    clearTimeout(shared.timer);
+    shared.timer = setTimeout(() => shared.settle(), TYPING_SETTLE_MS);
+  });
+  // Every other change (a visual edit, Undo/Redo, an operation, Discard)
+  // comes from the store, outside Monaco's undo stack.
+  const unsubscribe = store.subscribe((event) => {
+    if (model.isDisposed()) return;
+    if (event.type === "history") {
+      if (!shared.views && (!shared.stored || !store.hasTyping(shared.scope, shared.path))) shared.dispose();
+      return;
+    }
+    if (event.key !== shared.key) return;
+    if (event.type === "file") {
+      if ((event.change === "dropped" || event.change === "forgotten") && !shared.views) shared.dispose();
+      return;
+    }
+    if (event.origin !== "typing" && model.getValue() !== event.text) {
+      shared.applying = true;
+      try {
+        if (event.changes) model.applyEdits(event.changes.map((change) => ({
+          range: monaco.Range.fromPositions(model.getPositionAt(change.start), model.getPositionAt(change.end)), text: change.text })));
+        if (model.getValue() !== event.text) model.applyEdits([{ range: model.getFullModelRange(), text: event.text }]);
+      } finally { shared.applying = false; }
+      const known = shared.byRevision.get(event.revision);
+      if (known !== undefined) shared.aliases.set(model.getAlternativeVersionId(), known);
+      shared.typing?.sync(reported(shared));
+    }
+    if (!shared.byRevision.has(event.revision)) shared.byRevision.set(event.revision, reported(shared));
+  });
+  models.set(host.key, shared);
+  return shared;
+}
+
+/** The Monaco view of a mounted file (see source-editor.ts `useView`). */
+export const monacoView: PaneViewFactory = (host) => {
+  const shared = sharedModel(host);
+  shared.views++;
+  const model = shared.model;
+  const store = host.store;
   let disposed = false;
   let view: monaco.editor.ICodeEditor | undefined;
-  function reportContext(changes?: { start: number; end: number; text: string }[]) {
-    if (disposed) return;
-    const selection = view?.getSelection();
-    file.onContextChange?.({
-      path: file.path,
-      baseSha: current.baseSha ?? null,
-      language: current.model.getLanguageId(),
-      readOnly: !!file.readOnly,
-      original: current.original,
-      content: current.model.getValue(),
-      selection: selection
-        ? {
-            startLine: selection.startLineNumber,
-            startColumn: selection.startColumn,
-            endLine: selection.endLineNumber,
-            endColumn: selection.endColumn,
-          }
-        : null,
-      diagnostics: monaco.editor
-        .getModelMarkers({ resource: current.model.uri })
-        .slice(0, 50)
-        .map((marker) => ({
-          severity: monaco.MarkerSeverity[marker.severity].toLowerCase(),
-          message: marker.message.slice(0, 2000),
-          line: marker.startLineNumber,
-          column: marker.startColumn,
-        })),
-    }, changes);
-  }
-  const apply = async (command: AgentCommand) => {
-    if (disposed || file.readOnly || file.path !== command.path)
-      throw new Error("The active file changed or is read only.");
-    const text = current.model.getValue();
-    if (text === command.content) return;
-    const hash = await textHash(text);
-    if (
-      disposed ||
-      hash !== command.expectedHash ||
-      current.model.getValue() !== text
-    )
-      throw new Error(
-        "The draft changed while the agent was working. Read it again and retry.",
-      );
-    current.model.pushStackElement();
-    current.model.pushEditOperations(
-      [],
-      [{ range: current.model.getFullModelRange(), text: command.content }],
-      () => null,
-    );
-    current.model.pushStackElement();
-  };
+  let destroyView = () => {};
   let marks: string[] = [];
   let elementMarks: string[] = [];
-  const rangeOf = (edit: Omit<RangeEdit, "text">) => {
-    if (disposed || file.readOnly || file.path !== edit.path)
-      throw new Error("The active file changed or is read only.");
-    const model = current.model;
-    if (model.getValue().slice(edit.start, edit.end) !== edit.expected)
-      throw new Error(
-        "The source at this location no longer matches the preview. Refresh, wait for the new build, then try again.",
-      );
-    return monaco.Range.fromPositions(
-      model.getPositionAt(edit.start),
-      model.getPositionAt(edit.end),
-    );
-  };
-  const range = {
-    select(edit: Omit<RangeEdit, "text">) {
-      const target = rangeOf(edit);
-      current.model.pushStackElement();
+  const cssProviders: monaco.IDisposable[] = [];
+  if (isCssPath(host.path) && host.cssWorkspace) {
+    const workspaceFor = (target: monaco.editor.ITextModel) => {
+      if (disposed || target.isDisposed() || target !== model || !host.isCurrent()) return;
+      const workspace = host.cssWorkspace?.();
+      // A host may update its source map in place while openDefinition awaits.
+      return workspace && { ...workspace, sources: { ...workspace.sources }, orderedPaths: [...workspace.orderedPaths] };
+    };
+    const range = (target: monaco.editor.ITextModel, start: number, end: number) =>
+      monaco.Range.fromPositions(target.getPositionAt(start), target.getPositionAt(end));
+    const language = model.getLanguageId();
+    cssProviders.push(monaco.languages.registerCompletionItemProvider(language, {
+      triggerCharacters: ["-"],
+      provideCompletionItems(target, position) {
+        const workspace = workspaceFor(target);
+        const token = workspace && cssVariableCompletion(target.getValue(), target.getOffsetAt(position), host.path);
+        if (!workspace || !token) return { suggestions: [] };
+        const declarations = cssVariableDeclarations(workspace);
+        const names = [...new Set(declarations.map(item => item.name))].filter(name => name.startsWith(token.prefix));
+        return { suggestions: names.map(name => ({
+          label: name, kind: monaco.languages.CompletionItemKind.Variable,
+          insertText: token.wrap ? `var(${name})` : name,
+          range: range(target, token.start, token.end),
+          detail: declarations.filter(item => item.name === name).map(item => `${item.path}: ${item.value}`).join("; "),
+        })) };
+      },
+    }));
+    cssProviders.push(monaco.languages.registerHoverProvider(language, {
+      provideHover(target, position) {
+        const workspace = workspaceFor(target);
+        const token = workspace && cssVariableReference(target.getValue(), target.getOffsetAt(position), host.path);
+        if (!workspace || !token) return;
+        const declarations = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
+        if (!declarations.length) return;
+        return { range: range(target, token.start, token.end), contents: declarations.map(item => ({
+          value: `**${item.path.replace(/[\\`*_{}[\]()<>]/g, "\\$&")}**\n\n`,
+        })).flatMap((heading, index) => [heading, { value: "```css\n" + declarations[index].name + ": " + declarations[index].value.replace(/`/g, "\\`") + "\n```" }]) };
+      },
+    }));
+    cssProviders.push(monaco.languages.registerDefinitionProvider(language, {
+      async provideDefinition(target, position, cancellation) {
+        const workspace = workspaceFor(target);
+        const token = workspace && cssVariableReference(target.getValue(), target.getOffsetAt(position), host.path);
+        if (!workspace || !token || cancellation?.isCancellationRequested) return;
+        const version = target.getVersionId();
+        const definitions = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
+        const locations: monaco.languages.Location[] = [];
+        const targets: { path: string; registration: object; model: monaco.editor.ITextModel; version: number; source: string }[] = [];
+        const requesterCurrent = () => {
+          const fresh = workspaceFor(target);
+          return !cancellation?.isCancellationRequested && !!fresh && fresh.revision === workspace.revision && target.getVersionId() === version &&
+            Object.keys(workspace.sources).every(path => fresh.sources[path] === workspace.sources[path]) &&
+            Object.keys(fresh.sources).length === Object.keys(workspace.sources).length;
+        };
+        const paneModel = (path: string) => {
+          const pane = paneOf(path);
+          const found = pane && models.get(pane.key)?.model;
+          return pane && found && !found.isDisposed() ? { pane, model: found } : undefined;
+        };
+        for (const definition of definitions) {
+          let found = paneModel(definition.path);
+          if (!found || found.model.getValue() !== workspace.sources[definition.path]) {
+            try {
+              if (!await workspace.openDefinition(definition.path, definition.start, definition.end, workspace.revision)) return;
+            } catch { return; }
+            found = paneModel(definition.path);
+          }
+          if (!requesterCurrent()) return;
+          if (!found || found.pane.session !== host.session() || found.model.getValue() !== workspace.sources[definition.path]) return;
+          targets.push({ path: definition.path, registration: found.pane.registration, model: found.model, version: found.model.getVersionId(), source: workspace.sources[definition.path] });
+          locations.push({ uri: found.model.uri, range: range(found.model, definition.start, definition.end) });
+        }
+        // A later host await may replace or edit a target already accumulated.
+        if (!requesterCurrent() || targets.some(item => paneOf(item.path)?.registration !== item.registration ||
+          paneModel(item.path)?.model !== item.model || paneOf(item.path)?.session !== host.session() || item.model.isDisposed() ||
+          item.model.getVersionId() !== item.version || item.model.getValue() !== item.source)) return;
+        return locations;
+      },
+    }));
+  }
+  // Undo and Redo keys in the pane run the shared journal: typing first
+  // closes as one step (its Monaco stops kept), so the two never interleave.
+  function routeHistory(direction: "undo" | "redo") {
+    shared.settle();
+    return host.runHistory(direction).then(() => {});
+  }
+  function guardHistoryKeys(editor: monaco.editor.IStandaloneCodeEditor) {
+    const routes = !host.readOnly;
+    editor.createContextKey(HISTORY_UNDO_KEY, routes);
+    editor.createContextKey(HISTORY_REDO_KEY, routes);
+    historyKeyRoutes.set(editor, routeHistory);
+    // The editor's command palette lists them too; their keys are the shared actions'.
+    const actions = [
+      editor.addAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY, run: () => routeHistory("undo") }),
+      editor.addAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY, run: () => routeHistory("redo") }),
+    ];
+    return () => {
+      for (const action of actions) action.dispose();
+      if (historyKeyRoutes.get(editor) === routeHistory) historyKeyRoutes.delete(editor);
+    };
+  }
+  const reportSoon = () => queueMicrotask(() => { if (!disposed) host.reportContext(); });
+  function render(next: PaneRender) {
+    destroyView();
+    host.body.replaceChildren();
+    const canvas = node("div", "code-editor__canvas");
+    host.body.append(canvas);
+    const options: monaco.editor.IStandaloneEditorConstructionOptions = {
+      automaticLayout: true,
+      theme: "astro-editor",
+      overviewRulerBorder: false,
+      renderLineHighlight: "none",
+      scrollbar: { useShadows: false },
+      fontSize: 14,
+      padding: { top: 16 },
+      scrollBeyondLastLine: false,
+      readOnly: host.readOnly,
+      ariaLabel: host.readOnly ? "Symbolic link target" : "File source",
+      minimap: { enabled: false },
+    };
+    if (next.mode === "edit") {
+      const editor = monaco.editor.create(canvas, { ...options, model });
+      view = editor;
+      const unguard = guardHistoryKeys(editor);
+      editor.onDidChangeCursorSelection(reportSoon);
+      if (model.getLanguageId() === "html") linkToCanvas(editor, host.path, model);
+      if (shared.viewState) editor.restoreViewState(shared.viewState);
+      else if (model.getLanguageId() === "html") {
+        const lines = defaultFoldLines(model.getValue());
+        if (lines.length)
+          void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });
+      }
+      destroyView = () => {
+        unguard();
+        shared.viewState = editor.saveViewState();
+        editor.dispose();
+        view = undefined;
+      };
+    } else if (next.mode === "version" && next.version) {
+      const labels = node("div", "code-editor__diff-labels");
+      labels.append(node("span", "", `${next.version.label} · read only`), node("span", "", "Current version · read only"));
+      host.body.prepend(labels);
+      const original = monaco.editor.createModel(next.version.content, model.getLanguageId());
+      const editor = monaco.editor.createDiffEditor(canvas, { ...options, readOnly: true, renderSideBySide: true, originalEditable: false });
+      editor.setModel({ original, modified: model });
+      view = editor.getModifiedEditor();
+      // Opens on the first difference.
+      const shown = editor.onDidUpdateDiff(() => {
+        const first = editor.getLineChanges()?.[0];
+        if (!first) return;
+        shown.dispose();
+        editor.getModifiedEditor().revealLineInCenter(Math.max(1, first.modifiedStartLineNumber || first.modifiedEndLineNumber));
+      });
+      destroyView = () => {
+        shown.dispose();
+        editor.setModel(null);
+        editor.dispose();
+        original.dispose();
+        view = undefined;
+      };
+    } else {
+      const labels = node("div", "code-editor__diff-labels");
+      labels.append(node("span", "", next.originalLabel), node("span", "", "Your draft"));
+      host.body.prepend(labels);
+      const original = monaco.editor.createModel(next.original, model.getLanguageId());
+      const editor = monaco.editor.createDiffEditor(canvas, { ...options, minimap: { enabled: false }, renderSideBySide: true, originalEditable: false });
+      editor.setModel({ original, modified: model });
+      const modified = editor.getModifiedEditor();
+      view = modified;
+      const unguard = guardHistoryKeys(modified as monaco.editor.IStandaloneCodeEditor);
+      modified.onDidChangeCursorSelection(reportSoon);
+      destroyView = () => {
+        unguard();
+        editor.setModel(null);
+        editor.dispose();
+        original.dispose();
+        view = undefined;
+      };
+    }
+  }
+  const markers = monaco.editor.onDidChangeMarkers((uris) => {
+    if (uris.some((uri) => uri.toString() === model.uri.toString())) host.reportContext();
+  });
+  const at = (start: number, end: number) => monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+  return {
+    render,
+    select(start, end) {
+      const target = at(start, end);
+      model.pushStackElement();
       view?.setSelection(target);
       view?.revealRangeInCenter(target);
-      return true;
     },
-    closeGroup() {
-      current.model.pushStackElement();
-      closeVisualGroup(session, current.model);
+    selectEdited(start, end) {
+      view?.setSelection(at(start, end));
     },
-    review(on: boolean) {
-      if ((mode === "review") !== on) render(on ? "review" : "edit");
-    },
-    compare(next: VersionCompare | undefined) {
-      version = next;
-      if (next || mode === "version") render(next ? "version" : "edit");
-    },
-    reviewing: () => mode === "review",
-    reveal(start: number, end: number) {
-      const model = current.model;
-      const target = monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+    reveal(start, end) {
+      const target = at(start, end);
       view?.setSelection(monaco.Range.fromPositions(target.getStartPosition(), target.getStartPosition()));
       view?.revealRangeNearTop(target);
     },
     focus() {
       view?.focus();
     },
-    highlight(ranges: HighlightRange[]) {
-      const model = current.model;
-      const at = (start: number, end: number) => monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+    highlight(ranges) {
       marks = model.deltaDecorations(
         marks,
         ranges.flatMap((range) => [
@@ -972,9 +479,8 @@ export function mountCodeEditor(
         ]),
       );
     },
-    markElement(tag: { start: number; end: number } | undefined, reveal: boolean) {
-      const model = current.model;
-      const target = tag && monaco.Range.fromPositions(model.getPositionAt(tag.start), model.getPositionAt(tag.end));
+    markElement(tag, reveal) {
+      const target = tag && at(tag.start, tag.end);
       elementMarks = model.deltaDecorations(
         elementMarks,
         target
@@ -992,595 +498,43 @@ export function mountCodeEditor(
       view?.setSelection(monaco.Range.fromPositions(target.getEndPosition(), target.getEndPosition()));
       view?.revealRangeInCenterIfOutsideViewport(target);
     },
-    replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion) {
-      const target = rangeOf(edit);
-      const beforeDraft = file.scope ? store.get(file.scope, file.path) : undefined;
-      const beforeSource = current.model.getValue();
-      if (edit.text === edit.expected) return;
-      if (!group) current.model.pushStackElement();
-      const before = current.model.getAlternativeVersionId();
-      routedModelChanges.add(current.model);
-      try { current.model.pushEditOperations([], [{ range: target, text: edit.text }], () => null); }
-      finally { routedModelChanges.delete(current.model); }
-      if (!group) current.model.pushStackElement();
-      // An ungrouped edit's companion follows the model's own undo and redo (`runCompanions`).
-      const marked = companion && !group;
-      if (marked) {
-        const marks = companionMarks.get(current.model) ?? [];
-        marks.push({ before, after: current.model.getAlternativeVersionId(), done: true, companion });
-        companionMarks.set(current.model, marks.slice(-50));
-      }
-      recordVisualEdit(session, file.path, current.model, group, marked ? undefined : companion,
-        file.scope ? { scope: file.scope, before: beforeDraft, after: store.get(file.scope, file.path), beforeSource, afterSource: current.model.getValue() } : undefined);
-      view?.setSelection(
-        monaco.Range.fromPositions(
-          current.model.getPositionAt(edit.start),
-          current.model.getPositionAt(edit.start + edit.text.length),
-        ),
-      );
+    selection() {
+      const selection = view?.getSelection();
+      return selection
+        ? { startLine: selection.startLineNumber, startColumn: selection.startColumn, endLine: selection.endLineNumber, endColumn: selection.endColumn }
+        : null;
     },
-    replaceMany(edits: RangeEdit[]) {
-      const verified = edits.map((edit) => ({ edit, range: rangeOf(edit) }));
-      const changes = verified.filter(({ edit }) => edit.text !== edit.expected);
-      if (!changes.length) return;
-      const beforeDraft = file.scope ? store.get(file.scope, file.path) : undefined;
-      const beforeSource = current.model.getValue();
-      current.model.pushStackElement();
-      routedModelChanges.add(current.model);
-      try {
-        current.model.pushEditOperations(
-          [],
-          changes.map(({ edit, range }) => ({ range, text: edit.text })),
-          () => null,
-        );
-      } finally { routedModelChanges.delete(current.model); }
-      current.model.pushStackElement();
-      recordVisualEdit(session, file.path, current.model, false, undefined,
-        file.scope ? { scope: file.scope, before: beforeDraft, after: store.get(file.scope, file.path), beforeSource, afterSource: current.model.getValue() } : undefined);
+    diagnostics() {
+      return monaco.editor
+        .getModelMarkers({ resource: model.uri })
+        .slice(0, 50)
+        .map((marker) => ({
+          severity: monaco.MarkerSeverity[marker.severity].toLowerCase(),
+          message: marker.message.slice(0, 2000),
+          line: marker.startLineNumber,
+          column: marker.startColumn,
+        }));
+    },
+    dispose() {
+      if (disposed) return;
+      // Closing the file settles its typing now, while the model is still this file's.
+      shared.settle();
+      disposed = true;
+      destroyView();
+      if (!model.isDisposed() && (marks.length || elementMarks.length)) model.deltaDecorations([...marks, ...elementMarks], []);
+      markers.dispose();
+      for (const provider of cssProviders) provider.dispose();
+      shared.views--;
+      // Kept while the history can still step through its typing stop by stop.
+      if (!shared.views && (!shared.stored || !store.get(shared.scope, shared.path) || !store.hasTyping(shared.scope, shared.path))) shared.dispose();
     },
   };
-  const registration: MountedEditor = {
-    path: file.path, apply, range, discardNew: () => discardNew(), dispose: disposeMountedEditor, model: current.model, session, readOnly: !!file.readOnly,
-    ensureHistoryTarget: file.ensureHistoryTarget,
-    refresh: (persist = true) => update(undefined, persist),
-  };
-  mounted.set(file.path, registration);
-  liveMounted.add(registration);
-  const cssProviders: monaco.IDisposable[] = [];
-  if (isCssPath(file.path) && file.cssWorkspace) {
-    const workspaceFor = (model: monaco.editor.ITextModel) => {
-      if (disposed || model.isDisposed() || model !== current.model || mounted.get(file.path) !== registration) return;
-      const workspace = file.cssWorkspace?.();
-      // A host may update its source map in place while openDefinition awaits.
-      return workspace && { ...workspace, sources: { ...workspace.sources }, orderedPaths: [...workspace.orderedPaths] };
-    };
-    const range = (model: monaco.editor.ITextModel, start: number, end: number) =>
-      monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
-    const language = current.model.getLanguageId();
-    cssProviders.push(monaco.languages.registerCompletionItemProvider(language, {
-      triggerCharacters: ["-"],
-      provideCompletionItems(model, position) {
-        const workspace = workspaceFor(model);
-        const token = workspace && cssVariableCompletion(model.getValue(), model.getOffsetAt(position), file.path);
-        if (!workspace || !token) return { suggestions: [] };
-        const declarations = cssVariableDeclarations(workspace);
-        const names = [...new Set(declarations.map(item => item.name))].filter(name => name.startsWith(token.prefix));
-        return { suggestions: names.map(name => ({
-          label: name, kind: monaco.languages.CompletionItemKind.Variable,
-          insertText: token.wrap ? `var(${name})` : name,
-          range: range(model, token.start, token.end),
-          detail: declarations.filter(item => item.name === name).map(item => `${item.path}: ${item.value}`).join("; "),
-        })) };
-      },
-    }));
-    cssProviders.push(monaco.languages.registerHoverProvider(language, {
-      provideHover(model, position) {
-        const workspace = workspaceFor(model);
-        const token = workspace && cssVariableReference(model.getValue(), model.getOffsetAt(position), file.path);
-        if (!workspace || !token) return;
-        const declarations = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
-        if (!declarations.length) return;
-        return { range: range(model, token.start, token.end), contents: declarations.map(item => ({
-          value: `**${item.path.replace(/[\\`*_{}[\]()<>]/g, "\\$&")}**\n\n`,
-        })).flatMap((heading, index) => [heading, { value: "```css\n" + declarations[index].name + ": " + declarations[index].value.replace(/`/g, "\\`") + "\n```" }]) };
-      },
-    }));
-    cssProviders.push(monaco.languages.registerDefinitionProvider(language, {
-      async provideDefinition(model, position, cancellation) {
-        const workspace = workspaceFor(model);
-        const token = workspace && cssVariableReference(model.getValue(), model.getOffsetAt(position), file.path);
-        if (!workspace || !token || cancellation?.isCancellationRequested) return;
-        const version = model.getVersionId();
-        const definitions = cssVariableDeclarations(workspace).filter(item => item.name === token.name);
-        const locations: monaco.languages.Location[] = [];
-        const targets: { path: string; mounted: MountedEditor; model: monaco.editor.ITextModel; version: number; source: string }[] = [];
-        const requesterCurrent = () => {
-          const fresh = workspaceFor(model);
-          return !cancellation?.isCancellationRequested && !!fresh && fresh.revision === workspace.revision && model.getVersionId() === version &&
-            Object.keys(workspace.sources).every(path => fresh.sources[path] === workspace.sources[path]) &&
-            Object.keys(fresh.sources).length === Object.keys(workspace.sources).length;
-        };
-        for (const definition of definitions) {
-          let target = mounted.get(definition.path);
-          if (!target || target.model.getValue() !== workspace.sources[definition.path]) {
-            try {
-              if (!await workspace.openDefinition(definition.path, definition.start, definition.end, workspace.revision)) return;
-            } catch { return; }
-            target = mounted.get(definition.path);
-          }
-          if (!requesterCurrent()) return;
-          if (!target || target.session !== session || target.model.isDisposed() || target.model.getValue() !== workspace.sources[definition.path]) return;
-          targets.push({ path: definition.path, mounted: target, model: target.model, version: target.model.getVersionId(), source: workspace.sources[definition.path] });
-          locations.push({ uri: target.model.uri, range: range(target.model, definition.start, definition.end) });
-        }
-        // A later host await may replace or edit a target already accumulated.
-        if (!requesterCurrent() || targets.some(target => mounted.get(target.path) !== target.mounted ||
-          target.mounted.model !== target.model || target.mounted.session !== session || target.model.isDisposed() ||
-          target.model.getVersionId() !== target.version || target.model.getValue() !== target.source)) return;
-        return locations;
-      },
-    }));
-  }
+};
 
-  let mode: "edit" | "review" | "version" = "edit";
-  let version: VersionCompare | undefined;
-  let destroyView = () => {};
-  const root = node("section", "code-editor");
-  root.setAttribute("aria-label", "Source editor");
-  const toolbar = node("div", "code-editor__toolbar");
-  const undo = button("", () => void runVisualHistory("undo", file.path), "icon-button code-editor__undo");
-  undo.append(icon("undo"));
-  undo.setAttribute("aria-label", "Undo");
-  undo.title = "Undo";
-  const redo = button("", () => void runVisualHistory("redo", file.path), "icon-button code-editor__redo");
-  redo.append(icon("redo"));
-  redo.setAttribute("aria-label", "Redo");
-  redo.title = "Redo";
-  for (const control of [undo, redo])
-    control.addEventListener("mousedown", (event) => event.preventDefault());
-  const historyShortcut = (event: KeyboardEvent) => {
-    const target = event.target;
-    if (file.readOnly || toolbarHost === null || !(target instanceof Element) ||
-        target.closest("input, textarea, select, [contenteditable=true], .monaco-editor, .preview-edit-bar, dialog, [role=dialog], .publish-menu, .preview-link")) return;
-    const modifier = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    const direction = modifier && key === "z" ? (event.shiftKey ? "redo" : "undo")
-      : event.ctrlKey && !event.shiftKey && key === "y" ? "redo" : undefined;
-    if (!direction) return;
-    event.preventDefault();
-    void runVisualHistory(direction, file.path);
-  };
-  document.addEventListener("keydown", historyShortcut);
-  // Review mode shows a diff against the GitHub baseline; the button toggles it.
-  const review = button(
-    "",
-    () => (file.onHistory ? file.onHistory() : render(mode === "review" ? "edit" : "review")),
-    "icon-button code-editor__history",
-  );
-  review.append(icon("clock-counter-clockwise"));
-  review.setAttribute("aria-label", file.onHistory ? "History" : "Changes");
-  review.title = file.onHistory ? "Commit history for this file" : "Changes on this branch";
-  review.id = "history-button";
-  if (file.onHistory) {
-    review.setAttribute("aria-controls", "changes");
-    review.setAttribute("aria-haspopup", "dialog");
-    review.setAttribute("aria-expanded", "false");
-  }
-  const discardNew = () => {
-    if (current.baseSha !== null || !file.scope || disposed) return false;
-    const owners = [...liveMounted].filter(editor => editor.model === current.model);
-    store.remove(file.scope, file.path);
-    if (drafts.get(file.key) === current) drafts.delete(file.key);
-    file.onDiscardNew?.();
-    for (const owner of owners) owner.dispose();
-    if (![...liveMounted].some(editor => editor.model === current.model) && !current.model.isDisposed()) current.model.dispose();
-    return true;
-  };
-  const discard = button(
-    "Discard changes",
-    () => {
-      if (file.onDiscardAll) {
-        file.onDiscardAll();
-        return;
-      }
-      if (!confirm(current.baseSha === null ? "Discard this new file?" : "Discard this file’s draft changes? You can undo this in the editor.")) return;
-      if (discardNew()) return;
-      if (conflict) {
-        current.original = file.source;
-        current.baseSha = file.baseSha;
-        conflict = false;
-        reviewingLatest = false;
-      }
-      current.model.pushStackElement();
-      current.model.pushEditOperations(
-        [],
-        [{ range: current.model.getFullModelRange(), text: current.original }],
-        () => null,
-      );
-      current.model.pushStackElement();
-    },
-    "text-button",
-  );
-  if (file.onDiscardAll) discard.title = "Discard every unsaved change on this branch";
-  // With Discard all, the button waits for any draft of the branch, not only this file's.
-  const refreshDiscard = (changed: boolean) => {
-    discard.disabled = !!file.readOnly || (file.onDiscardAll && file.scope ? listChanges(store.list(file.scope)).length === 0 : !changed);
-  };
-  const publisher =
-    file.scope && !file.readOnly
-      ? createPublishMenu({
-          scope: file.scope,
-          currentPath: file.path,
-          saveLabels: file.saveLabels,
-          onDiscardChange: file.onDiscardChange,
-          deletedUpstream: file.deletedUpstream,
-          onSettleDeleted: file.onSettleDeleted,
-          head: file.publishHead,
-          onRefused: file.onRefused,
-          onExpired: () => file.onSessionExpired?.(),
-          onPublished: (result, submitted) => {
-            reconcilePublished(result, submitted);
-            file.onPublished?.(result, submitted);
-            if (!disposed) {
-              conflict = false;
-              update();
-              render(mode);
-            }
-          },
-        })
-      : undefined;
-  toolbar.append(undo, redo, review, discard);
-  // A draft written outside this editor: the Save menu and Discard changes follow.
-  const refreshOutside = () => {
-    publisher?.refresh();
-    refreshDiscard(current.baseSha === null || current.model.getValue() !== current.original);
-  };
-  if (publisher) {
-    toolbar.append(publisher.root);
-    publishers.add(refreshOutside);
-  }
-  const notice = node("div", "code-editor__notice");
-  notice.setAttribute("role", "status");
-  const conflictBar = node("div", "code-editor__conflict");
-  conflictBar.setAttribute("role", "status");
-  const reviewLatest = button(
-    "Review latest GitHub version",
-    () => {
-      reviewingLatest = true;
-      render("review");
-      acceptLatest.hidden = false;
-    },
-    "text-button",
-  );
-  const acceptLatest = button(
-    "Keep my draft over this version",
-    () => {
-      current.original = file.source;
-      current.baseSha = file.baseSha;
-      conflict = false;
-      reviewingLatest = false;
-      update();
-      render(mode);
-    },
-    "text-button",
-  );
-  acceptLatest.hidden = true;
-  // GitHub deleted the file: nothing to review, only to settle.
-  const deletedUpstream = current.baseSha !== null && Boolean(file.deletedUpstream?.(file.path));
-  if (deletedUpstream)
-    conflictBar.append(
-      node("span", "", "GitHub deleted this file since this draft started."),
-      button("Discard draft", () => file.onSettleDeleted?.(file.path, false), "text-button"),
-      button("Keep as new file", () => file.onSettleDeleted?.(file.path, true), "text-button"),
-    );
-  else
-    conflictBar.append(
-      node("span", "", "GitHub changed since this draft started."),
-      reviewLatest,
-      acceptLatest,
-    );
-  const body = node("div", "code-editor__body");
-  // toolbarHost: element → toolbar lives there; null → secondary pane without toolbar.
-  if (toolbarHost) {
-    toolbar.classList.add("code-editor__toolbar--hosted");
-    toolbarHost.replaceChildren(toolbar);
-    root.append(notice, conflictBar, body);
-  } else if (toolbarHost === null) root.append(notice, conflictBar, body);
-  else root.append(toolbar, notice, conflictBar, body);
-  host.replaceChildren(root);
-  const workspace = host.closest(".workspace");
-  workspace?.classList.add("workspace--code");
-  function update(changes?: { start: number; end: number; text: string }[], persist = true) {
-    // Back to GitHub's version as it is now: no change, whatever blob the
-    // draft began from (a stale one, or none for a path GitHub has since).
-    if (!file.readOnly && typeof file.baseSha === "string" && current.baseSha !== file.baseSha && current.model.getValue() === file.source) {
-      current.original = file.source;
-      current.baseSha = file.baseSha;
-      conflict = false;
-      reviewingLatest = false;
-    }
-    const changed =
-      current.baseSha === null || current.model.getValue() !== current.original;
-    if (persist && file.scope && current.baseSha !== undefined && !file.readOnly &&
-        (!refreshingVisualHistory.has(session) || !!changes && !journalModelChanges.has(current.model))) {
-      // A renamed file keeps where it came from (src/file-changes.ts).
-      const stored = current.baseSha === null ? store.get(file.scope, file.path) : undefined;
-      const moved = stored && !stored.deleted
-        ? { ...(stored.movedFrom ? { movedFrom: stored.movedFrom } : {}), ...(stored.sourceSha ? { sourceSha: stored.sourceSha } : {}), ...(stored.mode ? { mode: stored.mode } : {}) }
-        : {};
-      const draft: SavedDraft = {
-        ...moved,
-        ...file.scope,
-        version: 1,
-        path: file.path,
-        baseSha: current.baseSha,
-        original: current.original,
-        content: current.model.getValue(),
-        updatedAt: Date.now(),
-      };
-      const existing = store.get(file.scope, file.path);
-      const fields = Object.keys(draft).filter(key => key !== "updatedAt") as (keyof SavedDraft)[];
-      const unchanged = existing && fields.length === Object.keys(existing).filter(key => key !== "updatedAt").length && fields.every(key => existing[key] === draft[key]);
-      // Refreshing controls is not a source edit. Preserve the exact persisted
-      // record so compound history can distinguish its writes from other edits.
-      // Failed persistence still retries, and a return to baseline still prunes.
-      current.persisted = current.persisted === true && unchanged && !store.error && (draft.baseSha === null || draft.content !== draft.original) ? true : store.save(unchanged && existing ? existing : draft);
-    }
-    conflictBar.hidden = !conflict && !deletedUpstream;
-    publisher?.refresh();
-    if (changes) historyRefused = false;
-    const message = file.readOnly ? "Read only" : store.error ?? (historyRefused ? receiptRefusal : undefined);
-    notice.hidden = !message;
-    notice.textContent = message ?? "";
-    refreshDiscard(changed);
-    undo.disabled = !!file.readOnly || !canRunVisualHistory(session, "undo", current.model);
-    redo.disabled = !!file.readOnly || !canRunVisualHistory(session, "redo", current.model);
-    undo.title = undo.disabled && !file.readOnly && crossesReceipt(current.model, "undo") ? `Undo: ${receiptRefusal}` : "Undo";
-    redo.title = redo.disabled && !file.readOnly && crossesReceipt(current.model, "redo") ? `Redo: ${receiptRefusal}` : "Redo";
-    syncHistoryKeys();
-    reportContext(changes);
-  }
-  // Monaco's own Undo/Redo keys act on this model's raw stack only. While the
-  // shared journal holds an entry (as the toolbar buttons would run), or the
-  // raw step would cross a compound operation's receipt, the keys route
-  // through the journal instead, which runs the whole step or refuses it.
-  // Typing clears the journal, so Monaco keeps its keys for ordinary typing.
-  let historyRefused = false;
-  let historyKeys: { undo: monaco.editor.IContextKey<boolean>; redo: monaco.editor.IContextKey<boolean> } | undefined;
-  const routesHistory = (direction: "undo" | "redo") => !file.readOnly && !current.model.isDisposed() &&
-    (Boolean(historyFor(session)[direction].at(-1)) || crossesReceipt(current.model, direction));
-  function syncHistoryKeys() {
-    historyKeys?.undo.set(routesHistory("undo"));
-    historyKeys?.redo.set(routesHistory("redo"));
-  }
-  async function routeHistoryKey(direction: "undo" | "redo") {
-    if (!routesHistory(direction)) return;
-    // Any journal entry (an operation or a range edit such as a style change)
-    // runs through the journal, which refuses or clears itself when stale.
-    const done = Boolean(historyFor(session)[direction].at(-1)) && await runVisualHistory(direction, file.path);
-    if (!done && crossesReceipt(current.model, direction)) { historyRefused = true; update(undefined, false); }
-  }
-  function guardHistoryKeys(editor: monaco.editor.IStandaloneCodeEditor) {
-    historyKeys = { undo: editor.createContextKey(HISTORY_UNDO_KEY, false), redo: editor.createContextKey(HISTORY_REDO_KEY, false) };
-    historyKeyRoutes.set(editor, routeHistoryKey);
-    // The editor's command palette lists them too; their keys are the shared actions'.
-    const actions = [
-      editor.addAction({ id: "ase.history.undo", label: "Undo", precondition: HISTORY_UNDO_KEY, run: () => routeHistoryKey("undo") }),
-      editor.addAction({ id: "ase.history.redo", label: "Redo", precondition: HISTORY_REDO_KEY, run: () => routeHistoryKey("redo") }),
-    ];
-    syncHistoryKeys();
-    return () => {
-      for (const action of actions) action.dispose();
-      if (historyKeyRoutes.get(editor) === routeHistoryKey) historyKeyRoutes.delete(editor);
-      historyKeys = undefined;
-    };
-  }
-  function render(next: typeof mode) {
-    destroyView();
-    mode = next;
-    review.setAttribute("aria-pressed", String(mode !== "edit"));
-    body.replaceChildren();
-    const canvas = node("div", "code-editor__canvas");
-    body.append(canvas);
-    const options: monaco.editor.IStandaloneEditorConstructionOptions = {
-      automaticLayout: true,
-      theme: "astro-editor",
-      overviewRulerBorder: false,
-      renderLineHighlight: "none",
-      scrollbar: { useShadows: false },
-      fontSize: 14,
-      padding: { top: 16 },
-      scrollBeyondLastLine: false,
-      readOnly: file.readOnly,
-      ariaLabel: file.readOnly ? "Symbolic link target" : "File source",
-      minimap: { enabled: false },
-    };
-    if (mode === "edit") {
-      const editor = monaco.editor.create(canvas, {
-        ...options,
-        model: current.model,
-      });
-      view = editor;
-      const unguard = guardHistoryKeys(editor);
-      editor.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
-      if (current.model.getLanguageId() === "html") linkToCanvas(editor, file.path, current.model);
-      if (current.view) editor.restoreViewState(current.view);
-      else if (current.model.getLanguageId() === "html") {
-        const lines = defaultFoldLines(current.model.getValue());
-        if (lines.length)
-          void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });
-      }
-      destroyView = () => {
-        unguard();
-        current.view = editor.saveViewState();
-        editor.dispose();
-      };
-    } else if (mode === "version" && version) {
-      const labels = node("div", "code-editor__diff-labels");
-      labels.append(node("span", "", `${version.label} · read only`), node("span", "", "Current version · read only"));
-      body.prepend(labels);
-      const original = monaco.editor.createModel(version.content, current.model.getLanguageId());
-      const editor = monaco.editor.createDiffEditor(canvas, {
-        ...options,
-        readOnly: true,
-        renderSideBySide: true,
-        originalEditable: false,
-      });
-      editor.setModel({ original, modified: current.model });
-      view = editor.getModifiedEditor();
-      // Opens on the first difference.
-      const shown = editor.onDidUpdateDiff(() => {
-        const first = editor.getLineChanges()?.[0];
-        if (!first) return;
-        shown.dispose();
-        editor.getModifiedEditor().revealLineInCenter(Math.max(1, first.modifiedStartLineNumber || first.modifiedEndLineNumber));
-      });
-      destroyView = () => {
-        shown.dispose();
-        editor.setModel(null);
-        editor.dispose();
-        original.dispose();
-      };
-    } else {
-      const labels = node("div", "code-editor__diff-labels");
-      labels.append(
-        node(
-          "span",
-          "",
-          current.baseSha === null ? "New file" : "GitHub snapshot · read only",
-        ),
-        node("span", "", "Your draft"),
-      );
-      body.prepend(labels);
-      const original = monaco.editor.createModel(
-        reviewingLatest ? file.source : current.original,
-        current.model.getLanguageId(),
-      );
-      const editor = monaco.editor.createDiffEditor(canvas, {
-        ...options,
-        minimap: { enabled: false },
-        renderSideBySide: true,
-        originalEditable: false,
-      });
-      editor.setModel({ original, modified: current.model });
-      view = editor.getModifiedEditor();
-      const unguard = guardHistoryKeys(view as monaco.editor.IStandaloneCodeEditor);
-      view.onDidChangeCursorSelection(() => queueMicrotask(reportContext));
-      destroyView = () => {
-        unguard();
-        editor.setModel(null);
-        editor.dispose();
-        original.dispose();
-      };
-    }
-  }
-  const markers = monaco.editor.onDidChangeMarkers((uris) => {
-    if (uris.some((uri) => uri.toString() === current.model.uri.toString()))
-      reportContext();
-  });
-  // Typing groups for `onTypingSettled`: the state before a group's first keystroke,
-  // kept current through every change that is not typing.
-  const typingState = (): TypingState => ({ version: current.model.getAlternativeVersionId(), source: current.model.getValue() });
-  let quiet = file.onTypingSettled ? typingState() : undefined;
-  let typing: { before: TypingState; timer: ReturnType<typeof setTimeout> } | undefined;
-  function settleTyping() {
-    const group = typing;
-    typing = undefined;
-    if (!group) return;
-    clearTimeout(group.timer);
-    if (current.model.isDisposed()) return;
-    // The settle point is an Undo stop: Undo comes back to exactly `after`, then `before`.
-    current.model.pushStackElement();
-    quiet = typingState();
-    file.onTypingSettled?.({ before: group.before, after: quiet });
-  }
-  const subscription = current.model.onDidChangeContent((event) => {
-    if (!routedModelChanges.has(current.model)) invalidateVisualHistory(session);
-    if (event.isUndoing || event.isRedoing) runCompanions(current.model, event.isUndoing);
-    if (quiet) {
-      if (!file.readOnly && !routedModelChanges.has(current.model) && !event.isUndoing && !event.isRedoing) {
-        typing ??= { before: quiet, timer: setTimeout(() => {}) };
-        clearTimeout(typing.timer);
-        typing.timer = setTimeout(settleTyping, TYPING_SETTLE_MS);
-      } else if (!typing) quiet = typingState();
-    }
-    update(event.changes.map((change) => ({
-      start: change.rangeOffset,
-      end: change.rangeOffset + change.rangeLength,
-      text: change.text,
-    })));
-    for (const editor of mounted.values()) if (editor !== registration && editor.session === session) editor.refresh();
-  });
-  update();
-  render("edit");
-  reportContext();
-  function disposeMountedEditor() {
-    if (disposed) return;
-    // Closing the file settles its typing group now, while the model is still this file's.
-    settleTyping();
-    disposed = true;
-    unregisterMounted(file.path, registration);
-    if (marks.length || elementMarks.length) current.model.deltaDecorations([...marks, ...elementMarks], []);
-    markers.dispose();
-    for (const provider of cssProviders) provider.dispose();
-    file.onContextChange?.(null);
-    publisher?.destroy();
-    publishers.delete(refreshOutside);
-    subscription.dispose();
-    document.removeEventListener("keydown", historyShortcut);
-    destroyView();
-    root.remove();
-    toolbar.remove();
-    workspace?.classList.remove("workspace--code");
-    if (
-      current.baseSha !== null &&
-      current.model.getValue() === current.original && !historyReceiptModels.has(current.model) &&
-      ![...liveMounted].some(editor => editor.model === current.model)
-    ) {
-      current.model.dispose();
-      if (drafts.get(file.key) === current) drafts.delete(file.key);
-    }
-  }
-  return disposeMountedEditor;
+/** Mounts `file` with its code shown in Monaco at once. */
+export function mountCodeEditor(host: HTMLElement, file: SourceFile, toolbarHost?: HTMLElement | null) {
+  useView(monacoView);
+  return mountSourceEditor(host, file, toolbarHost);
 }
-
-function reconcilePublished(result: PublishResult, submitted: SavedDraft[]) {
-  const store = draftStore();
-  const removed = new Set(result.deleted ?? []);
-  for (const sent of submitted) {
-    const latest = store.get(sent, sent.path);
-    // A deletion saved: the path is gone from GitHub, and so is its draft.
-    if (sent.deleted) {
-      if (removed.has(sent.path) && latest?.deleted) store.remove(sent, sent.path);
-      continue;
-    }
-    const sha = result.files.find((file) => file.path === sent.path)?.sha;
-    if (!sha) continue;
-    const key = draftKey(sent, sent.path);
-    const open = drafts.get(key);
-    // Saved, a renamed or copied file is a file like any other.
-    const { movedFrom: _from, sourceSha: _source, opaque, mode: _mode, ...plain } = sent;
-    // Edits typed during publishing remain a new draft on top of the committed content.
-    if (open) {
-      open.original = sent.content;
-      open.baseSha = sha;
-      open.persisted = store.save({
-        ...plain,
-        baseSha: sha,
-        original: sent.content,
-        content: open.model.getValue(),
-        updatedAt: Date.now(),
-      });
-    } else if (opaque) {
-      if (latest?.opaque) store.remove(sent, sent.path);
-    } else if (latest) {
-      const { movedFrom: _f, sourceSha: _s, opaque: _o, mode: _m, ...rest } = latest;
-      store.save({
-        ...rest,
-        baseSha: sha,
-        original: sent.content,
-        updatedAt: Date.now(),
-      });
-    }
-  }
-}
+// Monaco is here: the panes already mounted show their code.
+useView(monacoView);

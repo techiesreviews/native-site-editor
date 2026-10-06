@@ -443,3 +443,65 @@ test("review fix: a typing step keeps Monaco's undo stops, in order with visual 
   assert.equal(store.text(scope, "a.html"), "x");
   assert.equal(nativeCalls, 5);
 });
+
+test("wiring: a host write keeps the steps below it and its undo restores the exact revision", async () => {
+  const { store, events } = setup();
+  store.open(scope, "a.html", { text: "a0", baseSha: sha("a") });
+  store.edit({ scope, path: "a.html", history: "h", label: "Visual", text: "a1" });
+  const visual = store.get(scope, "a.html")!.revision;
+  const moved = store.write(scope, "a.html", "a2")!;
+  assert.equal(moved.before, visual);
+  assert.equal(store.text(scope, "a.html"), "a2");
+  const last = events.at(-1);
+  assert.equal(last?.type === "text" ? last.origin : undefined, "receipt");
+  // The host puts its text back at the revision it had: the visual step undoes again.
+  store.write(scope, "a.html", "a1", moved.before);
+  assert.equal(store.get(scope, "a.html")!.revision, visual);
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(store.text(scope, "a.html"), "a0");
+});
+
+test("wiring: Undo and Redo put back the very records a step left, and adopt takes a host's record for the same text", async () => {
+  const persistence = records();
+  const { store } = setup(persistence);
+  persistence.map.set("new.html", { ...scope, version: 1, path: "new.html", baseSha: null, original: "", content: "<p>Created</p>", updatedAt: 1 });
+  const created = persistence.map.get("new.html")!;
+  store.open(scope, "new.html", { text: "", baseSha: null });
+  store.edit({ scope, path: "new.html", history: "h", text: "<p>Created and edited</p>" });
+  const edited = persistence.map.get("new.html")!;
+  assert.notEqual(edited, created);
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(persistence.map.get("new.html"), created);
+  assert.equal((await store.redo("h")).ok, true);
+  assert.equal(persistence.map.get("new.html"), edited);
+  // A host writes the record for this text with a flag: the store takes it as its own.
+  const flagged = { ...edited, movedFrom: "old.html" };
+  persistence.map.set("new.html", flagged);
+  assert.equal(store.adopt(scope, "new.html"), true);
+  assert.equal(store.get(scope, "new.html")!.flags?.movedFrom, "old.html");
+  assert.equal((await store.undo("h")).ok, true);
+  // Another text is another writer's: not adopted, and Redo over the file refuses.
+  persistence.map.set("new.html", { ...flagged, content: "foreign" });
+  assert.equal(store.adopt(scope, "new.html"), false);
+  assert.equal((await store.redo("h")).ok, false);
+});
+
+test("wiring: hasTyping follows a live pane's typing steps; retry writes a failed draft again", () => {
+  const persistence = records();
+  const { store } = setup(persistence);
+  store.open(scope, "a.html", { text: "x", baseSha: sha("a") });
+  const typing = store.beginTyping(scope, "a.html", "h", { version: 1 });
+  typing.input("xy", 2);
+  typing.commit();
+  assert.equal(store.hasTyping(scope, "a.html"), true);
+  assert.equal(store.hasHistory(), true);
+  typing.dispose();
+  assert.equal(store.hasTyping(scope, "a.html"), false);
+  persistence.fail = true;
+  store.edit({ scope, path: "a.html", text: "xyz" });
+  assert.equal(store.unpersisted(), true);
+  persistence.fail = false;
+  store.retry();
+  assert.equal(store.unpersisted(), false);
+  assert.equal(persistence.map.get("a.html")?.content, "xyz");
+});
