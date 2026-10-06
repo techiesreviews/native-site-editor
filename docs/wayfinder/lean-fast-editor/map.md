@@ -39,6 +39,7 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 - [Choose the shape of the boot requests](tickets/05-shape-of-boot-requests.md): no /api/boot, parallel separate calls; drafts load in parallel, findDeletedUpstream after paint, parallel @import levels, image/font wait capped ~300 ms
 - [Decide which browser tests run in CI](tickets/09-browser-tests-in-ci.md): @smoke + byte budget per push, full suite nightly in 4 shards; one config with projects; tags replace hand lists
 - [Decide how main.ts is split](tickets/08-how-main-ts-is-split.md): feature controllers along the section banners, shared state in @preact/signals-core, boot controller lazy-loads the rest; after removals, one module per PR, lazy features first
+- [Research Worker per-request overhead](tickets/13-research-worker-per-request-overhead.md): cache App config per isolate, repo listing in the session DO (now planned), lazy-load MCP (halves cold start), waitUntil for blob cache, Server-Timing first
 - Preview runtime (open item, decided with Lex): `native-preview-runtime.js` and the iframe start count inside the boot budget, no separate target
 - [Research faster session and GitHub reads in the Worker](tickets/04-research-session-and-github-reads.md): parallel installation listing, repository list out of /api/session, GraphQL file batches, keep the DO session minus blockConcurrencyWhile, no webhooks; cross-isolate cache only if still slow
 - [Research the toolchain pins](tickets/10-research-toolchain-pins.md): Node 24 everywhere, keep Miniflare alpha pinned in lockstep with Wrangler, keep tweetnacl+blakejs, align esbuild with Wrangler, drop the undici override, keep dompurify
@@ -47,7 +48,6 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 ## Not yet specified
 
 - **Handoff plan:** now [ticket 15](tickets/15-handoff-plan.md).
-- **Worker per-request overhead:** now [ticket 13](tickets/13-research-worker-per-request-overhead.md).
 - **What `code-editor.ts` becomes** after drafts and undo leave it (draft store decided in ticket 03; the module boundary is part of the main.ts split).
 - **Agent/MCP impact:** now [ticket 14](tickets/14-confirm-agent-impact-of-removals.md).
 
