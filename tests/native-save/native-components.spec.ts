@@ -93,7 +93,7 @@ async function uploadImage(page: Page) {
   await (await chooser).setFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
 }
 
-test("an instance wears the component accent in the bar, the page structure and the canvas", async ({ page }) => {
+test("an instance wears the component accent in the bar, the page structure and the canvas", { tag: "@smoke" }, async ({ page }) => {
   await selectFirstCard(page);
   // The structure row: the component mark, the name unchanged.
   await expect(row(page, "Project card Reusable cards")).toHaveClass(/page-structure__row--component/);
@@ -245,7 +245,7 @@ test("Structure edits an instance's slots and attributes as page source", async 
   expect(await editorText(page)).toContain(`<project-card title="Cards" data-key="card-1" data-variant="wide">`);
 });
 
-test("Edit component from its root opens the template, says what an edit changes, and goes back", async ({ page }) => {
+test("Edit component from its root opens the template, says what an edit changes, and goes back", { tag: "@smoke" }, async ({ page }) => {
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
   await expect(tree(page).locator("[data-slot=title][aria-selected=true]")).toHaveCount(1);

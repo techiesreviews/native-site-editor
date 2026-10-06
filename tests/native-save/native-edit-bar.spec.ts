@@ -28,7 +28,7 @@ async function editorText(page: Page, host: string) {
 
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 
-test("the bar anchors to the selected heading and changes its level in source and preview", async ({ page }) => {
+test("the bar anchors to the selected heading and changes its level in source and preview", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const heading = frame.locator(".hero h1");
   await expect(heading).toBeVisible({ timeout: 30_000 });
@@ -64,7 +64,7 @@ test("the bar anchors to the selected heading and changes its level in source an
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toHaveValue("h1");
 });
 
-test("text size, Bold and Italic edit the element's source and reflect its state", async ({ page }) => {
+test("text size, Bold and Italic edit the element's source and reflect its state", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const lead = frame.locator(".hero p.lead");
   await expect(lead).toBeVisible({ timeout: 30_000 });

@@ -41,7 +41,7 @@ async function editorText(page: Page) {
   return text;
 }
 
-test("the Add panel shows live thumbnails without HTML previews, and a click adds after the selected section", async ({ page }) => {
+test("the Add panel shows live thumbnails without HTML previews, and a click adds after the selected section", { tag: "@smoke" }, async ({ page }) => {
   await expect(page.locator(".topbar").getByRole("button", { name: "Add", exact: true })).toHaveCount(0);
   await expect(addButton(page)).toHaveAttribute("aria-expanded", "false");
   await addButton(page).click();
@@ -173,7 +173,7 @@ test("while History shows an earlier version nothing can be added, until Back to
   await expect(frame(page).locator("section.filler + feature-block")).toHaveCount(1);
 });
 
-test("a plus between sections opens the panel for its gap, and it closes after adding", async ({ page }) => {
+test("a plus between sections opens the panel for its gap, and it closes after adding", { tag: "@smoke" }, async ({ page }) => {
   await frame(page).locator("section.hero").hover();
   const plus = page.getByRole("button", { name: "Add a section before “A native browser preview”", exact: true });
   await plus.click();

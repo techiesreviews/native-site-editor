@@ -77,7 +77,7 @@ async function showChanges(page: Page, path: string) {
   return dialog;
 }
 
-test("the Save panel lists counts only; the button opens a side-by-side comparison dialog that closes back to the panel", async ({ page }) => {
+test("the Save panel lists counts only; the button opens a side-by-side comparison dialog that closes back to the panel", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   // Two separate edits, far apart, so the unchanged run between them collapses.
@@ -137,7 +137,7 @@ test("the Save panel lists counts only; the button opens a side-by-side comparis
   await expect(panel).toBeVisible();
 });
 
-test("edits patch the preview and the native Save UI commits to GitHub", async ({ page }) => {
+test("edits patch the preview and the native Save UI commits to GitHub", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
@@ -356,7 +356,7 @@ test("switching files during a slow save still adopts the saved native baseline"
   await expect(saveTrigger(page)).toBeDisabled();
 });
 
-test("unsaved local drafts recover after reload", async ({ page }) => {
+test("unsaved local drafts recover after reload", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Recovered local draft"));
   await expect(frame.getByRole("heading", { name: "Recovered local draft" })).toBeVisible();
@@ -367,7 +367,7 @@ test("unsaved local drafts recover after reload", async ({ page }) => {
   await expect(saveTrigger(page)).toBeEnabled();
 });
 
-test("Undo and Redo keep native preview and save state in sync", async ({ page }) => {
+test("Undo and Redo keep native preview and save state in sync", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Undo Redo heading"));
   await expect(frame.getByRole("heading", { name: "Undo Redo heading" })).toBeVisible();

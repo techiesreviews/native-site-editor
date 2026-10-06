@@ -47,7 +47,7 @@ async function homeDraft(page: Page) {
   return (await storedDraft(page, "index.html"))?.content ?? "";
 }
 
-test("hovering an item of a list shows Add after the last one; it adds a copy with placeholder text, one undo step", async ({ page, baseURL }) => {
+test("hovering an item of a list shows Add after the last one; it adds a copy with placeholder text, one undo step", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await frame(page).locator("ul.services li").nth(1).hover();
   await expect(addCard(page)).toBeVisible();
@@ -70,7 +70,7 @@ test("hovering an item of a list shows Add after the last one; it adds a copy wi
   await expect(frame(page).locator("ul.services li")).toHaveCount(3);
 });
 
-test("a card grid listing pages makes a new page and its card together, selected, with Open page; undo takes both back", async ({ page, baseURL }) => {
+test("a card grid listing pages makes a new page and its card together, selected, with Open page; undo takes both back", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await frame(page).locator("card-project").first().hover();
   await expect(addCard(page)).toHaveAccessibleName("Add a card with its own page to Recent work");

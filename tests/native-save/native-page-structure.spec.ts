@@ -24,7 +24,7 @@ const unfold = (page: Page, name: string) => row(page, name).locator(".page-stru
 const select = (page: Page, selector: string) =>
   page.frameLocator(".native-preview-frame").locator(selector).evaluate((el) => (el as HTMLElement).click());
 
-test("the sidebar lists the page's elements and marks the one selected in the preview", async ({ page }) => {
+test("the sidebar lists the page's elements and marks the one selected in the preview", { tag: "@smoke" }, async ({ page }) => {
   // Top level: the header component, main, the footer component.
   const top = tree(page).locator("[role='treeitem'][aria-level='1']");
   await expect(top.locator(":scope > .page-structure__label")).toHaveText(["Site header", "Main", "Site footer"]);
@@ -65,7 +65,7 @@ test("the sidebar lists the page's elements and marks the one selected in the pr
   await expect(row(page, "Heading A native browser preview")).toHaveAttribute("aria-selected", "false");
 });
 
-test("a row selects its element in the preview, brings it into view and opens its controls", async ({ page }) => {
+test("a row selects its element in the preview, brings it into view and opens its controls", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
   const filler = frame.locator("section.filler");

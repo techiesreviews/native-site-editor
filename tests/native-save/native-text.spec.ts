@@ -26,7 +26,7 @@ async function editorText(page: Page, host: string) {
   return text;
 }
 
-test("clicking a heading puts the caret in it, and typed text lands in the source", async ({ page }) => {
+test("clicking a heading puts the caret in it, and typed text lands in the source", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const heading = frame.locator(".hero h1");
   await heading.click();
@@ -50,7 +50,7 @@ test("clicking a heading puts the caret in it, and typed text lands in the sourc
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("a small edit keeps the formatting around it, Escape drops typing, a click elsewhere commits", async ({ page }) => {
+test("a small edit keeps the formatting around it, Escape drops typing, a click elsewhere commits", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const lead = frame.locator(".hero p.lead");
   await lead.click();
