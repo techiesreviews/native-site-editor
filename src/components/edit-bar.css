@@ -96,13 +96,16 @@
   cursor: grab;
   padding: 4px 2px;
 }
+/* A component's name keeps room after it for the pencil, so the pencil
+   never covers the name's end. */
+.edit-bar__label > .edit-bar__component-name,
+.edit-bar__label > .edit-bar__grip.edit-bar__component-name {
+  padding-right: 26px;
+}
 .edit-bar__label .edit-bar__kind > svg {
   display: inline-block;
-  margin-right: 3px;
+  margin-right: 6px;
   vertical-align: -2px;
-}
-.edit-bar__label .edit-bar__component-edit {
-  background: linear-gradient(to right, transparent, var(--component-surface) 35%);
 }
 .edit-bar__controls {
   display: flex;
@@ -530,13 +533,12 @@
 .edit-bar__component-edit {
   position: absolute;
   inset: 0 0 0 auto;
-  width: 32px;
+  width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 6px;
+  padding-right: 4px;
   color: var(--component-text);
-  background: linear-gradient(to right, transparent, var(--component-surface) 35%);
   opacity: 0;
   transform: translateX(40%);
   pointer-events: none;

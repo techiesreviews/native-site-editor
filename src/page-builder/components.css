@@ -15,7 +15,7 @@
   color: var(--component-text);
 }
 .edit-bar .edit-bar__kind--component .icon {
-  margin: 0;
+  margin: 0 6px 0 0;
 }
 .edit-bar .edit-bar__context {
   display: inline-flex;
