@@ -26,3 +26,5 @@ Decided with Lex.
 3. The "generated" row state in page structure and the collection hooks in asset references go.
 4. Collection-only and style-panel-only docs are deleted; `panel-collapse.md`, `cards.md`, `completion-checklist.md`, the page-builder README and `NATIVE-PROJECT.md` are edited to drop references.
 5. Order, with Add card working at every step: (1) style panel, (2) extract helpers and decouple Add card from collection code, (3) Page settings › Fields, (4) collections incl. generated rows, asset hooks and the sidecar strip, (5) docs.
+
+**Correction (ticket 14):** point 1 means strip `collections` and `pages[*].fields` and keep everything else (`reusableSections`, `pages[path].sections`, `pages[path].pageParts`). Step 2 of the order also moves the page re-key and link-rebase logic out of `applyNativeCollectionOperation` into the neutral module. The image focal point and grid editor go with the style panel in step 1.
