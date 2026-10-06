@@ -229,7 +229,7 @@ test("changing the URL of a page with subpages in the Pages tab moves its folder
   expect(await branchFile(page, routingRepo, redirectsPath)).toContain("/work/ /projects/ 301\n");
 });
 
-test("Move to… from the keyboard puts a page under another; the confirmation says the new URL and offers the redirect", async ({ page, baseURL }) => {
+test("Move to… from the keyboard puts a page under another; the confirmation says the new URL and offers the redirect", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
   await expandRow(page, "Work");
@@ -281,7 +281,7 @@ test("Move to… from the keyboard puts a page under another; the confirmation s
   expect((await draft(page, redirectsPath)).content).toBe("/work/notes.html /notes.html 301\n");
 });
 
-test("dragging a page onto another makes it a subpage; onto the line between rows it moves to that level", async ({ page, baseURL }) => {
+test("dragging a page onto another makes it a subpage; onto the line between rows it moves to that level", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
   await expandRow(page, "Work");

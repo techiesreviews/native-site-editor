@@ -371,7 +371,7 @@ test("components are deleted and renamed like any folder, saved in one commit; t
   expect(await branchFile(page, starterRepo, "components/site-button/site-button.html")).toBeUndefined();
 });
 
-test("the Pages tab renames a title in place, duplicates a page, and deletes a page with its subpages", async ({ page, baseURL }) => {
+test("the Pages tab renames a title in place, duplicates a page, and deletes a page with its subpages", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
   await expandRow(page, "Work");

@@ -45,7 +45,7 @@ async function openPopover(page: Page) {
 
 for (const scheme of ["light", "dark"] as const) for (const narrow of [false, true]) {
   const name = `${scheme}${narrow ? "-narrow" : ""}`;
-  test(`starter popover, folders and new folder (${name})`, async ({ page, baseURL }) => {
+  test(`starter popover, folders and new folder (${name})`, { tag: "@actual" }, async ({ page, baseURL }) => {
     await page.emulateMedia({ colorScheme: scheme });
     if (narrow) await page.setViewportSize({ width: 820, height: 800 });
     await open(page, baseURL);
@@ -64,7 +64,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
   });
 }
 
-test("starter: a page in a new folder and its card, then one Undo restores the home page exactly", async ({ page, baseURL }) => {
+test("starter: a page in a new folder and its card, then one Undo restores the home page exactly", { tag: "@actual" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openPopover(page);
   await page.keyboard.type("Oak");
@@ -123,7 +123,7 @@ async function showPages(page: Page) {
 
 for (const scheme of ["light", "dark"] as const) for (const narrow of [false, true]) {
   const name = `${scheme}${narrow ? "-narrow" : ""}`;
-  test(`starter panels' text fields read inline (${name})`, async ({ page, baseURL }) => {
+  test(`starter panels' text fields read inline (${name})`, { tag: "@actual" }, async ({ page, baseURL }) => {
     await page.emulateMedia({ colorScheme: scheme });
     if (narrow) await page.setViewportSize({ width: 900, height: 900 });
     await open(page, baseURL);

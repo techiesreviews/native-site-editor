@@ -104,7 +104,7 @@ const attributeNames = (site: Page) => site.evaluate(() => {
   return [...names].sort();
 });
 
-test("Structure fills, hides and edits optional slots, and only authored bytes are drafted, published and served", async ({ page, baseURL, browser }) => {
+test("Structure fills, hides and edits optional slots, and only authored bytes are drafted, published and served", { tag: "@actual" }, async ({ page, baseURL, browser }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(CARD)}`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   // Empty wrappers follow the slots the page fills, including an image figure.

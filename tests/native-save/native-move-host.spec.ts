@@ -71,7 +71,7 @@ test("a section moves past its sibling from canvas Alt+Down, the bar and Structu
   await undo(page); await expect.poll(() => source(page)).toBe(before);
 });
 
-test("consecutive section moves are one Undo step each and return the exact source", async ({ page }) => {
+test("consecutive section moves are one Undo step each and return the exact source", { tag: "@smoke" }, async ({ page }) => {
   const before = await source(page), moved = swapped(before);
   await selectSection(page, 0);
   await bar(page).getByRole("button", { name: "Move down", exact: true }).click();

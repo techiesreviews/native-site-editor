@@ -204,7 +204,7 @@ test("the Files tab makes plain files and folders only: no Page, and a folder am
   await expect(explorer(page).getByRole("button", { name: "New page", exact: true })).toHaveCount(0);
 });
 
-test("a native site opens the explorer on Pages: the site by URL, each page with its subpages", async ({ page, baseURL }) => {
+test("a native site opens the explorer on Pages: the site by URL, each page with its subpages", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await page.locator("#explorer-toggle").click();
   const pagesTab = explorer(page).getByRole("tab", { name: "Pages" });
@@ -249,7 +249,7 @@ test("a native site opens the explorer on Pages: the site by URL, each page with
   await expect(frame(page).locator("h1")).toHaveText("Work");
 });
 
-test("a page, a subpage under it and another are made in place as folders of their own, route at once, and save with their titles", async ({ page, baseURL }) => {
+test("a page, a subpage under it and another are made in place as folders of their own, route at once, and save with their titles", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 530);
   await openPages(page);
 
@@ -346,7 +346,7 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(item(page, "Videos").locator(".file-new")).toHaveCount(0);
 });
 
-test("undo or discard of a new page takes it back; undoing a subpage leaves its parent as it was", async ({ page, baseURL }) => {
+test("undo or discard of a new page takes it back; undoing a subpage leaves its parent as it was", { tag: "@smoke" }, async ({ page, baseURL }) => {
   page.on("dialog", (dialog) => void dialog.accept());
   await open(page, baseURL, 530);
   const create = async (text: string) => {

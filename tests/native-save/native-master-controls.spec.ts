@@ -44,7 +44,7 @@ async function selectMasterHeading(page: Page) {
   await expect(bar(page).locator(".edit-bar__label")).toContainText("Heading");
 }
 
-test("a master's heading gets its bar (Intro › Heading, level, B, I) and changes only the master, one Undo", async ({ page, baseURL }) => {
+test("a master's heading gets its bar (Intro › Heading, level, B, I) and changes only the master, one Undo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await load(page, baseURL);

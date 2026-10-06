@@ -4,7 +4,7 @@ import { requireActualFixture } from "./fixture-contract";
 
 requireActualFixture();
 
-test("a fresh Add panel offers authored components without unsaved defaults or static instructions", async ({ page, baseURL }) => {
+test("a fresh Add panel offers authored components without unsaved defaults or static instructions", { tag: "@actual" }, async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();

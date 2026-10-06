@@ -59,7 +59,7 @@ async function selectShadowPart(page: Page, selector: string) {
   await part.click({ position: { x: bounds!.width - 2, y: 2 } });
 }
 
-test("selecting a page element opens its source and matching CSS rule", async ({ page }) => {
+test("selecting a page element opens its source and matching CSS rule", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 

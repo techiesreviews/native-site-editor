@@ -59,7 +59,7 @@ function result(value: unknown): any {
   return JSON.parse(text);
 }
 
-test("an agent edits a page, adds and removes a section, creates a page and sets its details while the editor is open", async ({ page, baseURL }) => {
+test("an agent edits a page, adds and removes a section, creates a page and sets its details while the editor is open", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   const call = async (name: string, args: Record<string, unknown> = {}) => {
@@ -210,7 +210,7 @@ test("an agent measures elements as the preview renders them: box, computed styl
   }
 });
 
-test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agent used", async ({ page, baseURL }) => {
+test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agent used", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   try {

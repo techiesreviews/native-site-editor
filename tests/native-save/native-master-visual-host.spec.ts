@@ -38,7 +38,7 @@ async function editIntro(page: Page) {
   await expect(banner(page)).toBeVisible();
 }
 
-test("the master shows in its page; typing in the preview or in Code changes only the master; Done shows the page's own copy", async ({ page, baseURL }) => {
+test("the master shows in its page; typing in the preview or in Code changes only the master; Done shows the page's own copy", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await load(page, baseURL);
@@ -113,7 +113,7 @@ test("the master shows in its page; typing in the preview or in Code changes onl
   expect(errors).toEqual([]);
 });
 
-test("an invalid master falls back to the page's own copy and Done still works; after Done typing edits the page, not the master", async ({ page, baseURL }) => {
+test("an invalid master falls back to the page's own copy and Done still works; after Done typing edits the page, not the master", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page);
   await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");
@@ -138,7 +138,7 @@ test("an invalid master falls back to the page's own copy and Done still works; 
   expect(await effectiveSource(page, baseURL, MASTER)).toBe("broken");
 });
 
-test("while a master is open a Structure row's Alt+Up changes nothing and the master stays; after Done it moves the section, one Undo", async ({ page, baseURL }) => {
+test("while a master is open a Structure row's Alt+Up changes nothing and the master stays; after Done it moves the section, one Undo", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await load(page, baseURL);
   await addIntro(page);
   await expect.poll(async () => JSON.parse((await effectiveSource(page, baseURL, JSON_PATH)) ?? "{}").pages?.["index.html"]?.sections?.["intro-1"]?.recordId).toBe("intro");

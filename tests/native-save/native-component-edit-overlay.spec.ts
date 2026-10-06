@@ -134,7 +134,7 @@ test('the revealed pencil shows a pointer and a hover tint, and clicking it edit
 });
 // Edit component lands in the template's code with the caret there: typing
 // edits it at once, with no click into the code first.
-test('Edit component puts the caret in the template code, so typing edits it at once',async({page})=>{
+test('Edit component puts the caret in the template code, so typing edits it at once', { tag: "@smoke" },async({page})=>{
  await root(page);await edit(page).click();
  await expect(page.locator('#current-page')).toHaveAttribute('data-path','components/project-card/project-card.html');
  await expect.poll(()=>page.evaluate(()=>Boolean(document.activeElement?.closest('#content .monaco-editor')))).toBe(true);

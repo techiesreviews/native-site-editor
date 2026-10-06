@@ -18,7 +18,7 @@ composition does not write a page, inject public markers, or require public Java
 Save/Link and Update copies remain controller/model operations behind the host's
 atomic transaction and bounded history.
 
-Verification: `npx playwright test -c playwright.native-page-part-preview.config.ts`
+Verification: `npx playwright test --project=native-page-part-preview`
 runs real standalone header/footer bridge tests and existing section bridge tests.
 The standalone harness proves preview selection, typing, Code refresh/selection,
 outside typing locks, stale-message refusal, Done restoration, root/path scope,

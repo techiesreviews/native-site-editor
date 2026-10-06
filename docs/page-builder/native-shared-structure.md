@@ -28,7 +28,7 @@ source authority, available metadata choices, or scope changes. No local cache
 establishes source authority. Existing component slot handlers remain separate;
 without native sharing handlers the existing Structure behavior is preserved.
 
-Verification: `npx playwright test -c playwright.native-shared-structure.config.ts`
+Verification: `npx playwright test --project=native-shared-structure`
 uses the actual Structure component, native form and editor CSS in a standalone
 280px sidebar. It covers root actions, instance selection, child refusal,
 inline disclosure, unchanged updates, focus restoration, context cancellation,

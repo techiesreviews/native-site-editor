@@ -41,7 +41,7 @@ async function share(page: Page, rowName: RegExp, kind: string, id: string, labe
   return form;
 }
 
-test("Save shared on a section and a header writes the private master and JSON as one Undo, then persists through Save", async ({ page, baseURL }) => {
+test("Save shared on a section and a header writes the private master and JSON as one Undo, then persists through Save", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await snapshot(page, baseURL, [PAGE, ...CSS, JSON_PATH]);
   expect(before[JSON_PATH]).toBeUndefined();
@@ -100,7 +100,7 @@ async function addSaved(page: Page, name: RegExp) {
   await add.getByRole("button", { name: "Close" }).click();
 }
 
-test("Structure Edit opens the actual section master; Update copies only unchanged copies, one Undo; Done never writes", async ({ page, baseURL }) => {
+test("Structure Edit opens the actual section master; Update copies only unchanged copies, one Undo; Done never writes", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await (await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero")).getByRole("button", { name: "Save shared" }).click();
   await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
@@ -153,7 +153,7 @@ test("Structure Edit opens the actual section master; Update copies only unchang
   await expect(row(page, /About hero/)).toHaveAttribute("aria-selected", "true");
 });
 
-test("a shared header opens as its own master: its image loads on the nested page; Update and Undo write the page header", async ({ page, baseURL }) => {
+test("a shared header opens as its own master: its image loads on the nested page; Update and Undo write the page header", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   const asset = await (await page.request.get(`${baseURL}/__demo/file?path=images%2Fstudio-desk.svg`)).text();
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/part-image.svg", content: asset } })).status()).toBe(204);
@@ -198,7 +198,7 @@ test("a shared header opens as its own master: its image loads on the nested pag
   expect(await effectiveSource(page, baseURL, MASTER)).toBe(atDone[MASTER]);
 });
 
-test("Cancel during the write, a same-bytes model replacement, and a planner error all refuse; typed fields stay", async ({ page, baseURL }) => {
+test("Cancel during the write, a same-bytes model replacement, and a planner error all refuse; typed fields stay", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await snapshot(page, baseURL, [PAGE, ...CSS, JSON_PATH]);
   // A planner error keeps the form and what was typed.
@@ -239,7 +239,7 @@ test("Cancel during the write, a same-bytes model replacement, and a planner err
   for (const path of [PAGE, ...CSS]) expect(await effectiveSource(page, baseURL, path)).toBe(before[path]);
 });
 
-test("after a section master is left by navigation and its page changes, a linked header's Edit owns the banner, Done and Update", async ({ page, baseURL }) => {
+test("after a section master is left by navigation and its page changes, a linked header's Edit owns the banner, Done and Update", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await (await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero")).getByRole("button", { name: "Save shared" }).click();
   await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
@@ -272,7 +272,7 @@ test("after a section master is left by navigation and its page changes, a linke
 });
 
 test.describe("guards", () => {
-  test("a same-bytes replacement of a stylesheet in the chosen chain refuses Save shared", async ({ page, baseURL }) => {
+  test("a same-bytes replacement of a stylesheet in the chosen chain refuses Save shared", { tag: "@native-static" }, async ({ page, baseURL }) => {
     await open(page, baseURL);
     const json = await effectiveSource(page, baseURL, JSON_PATH);
     await frame(page).locator("section.hero h1").click();
@@ -292,7 +292,7 @@ test.describe("guards", () => {
   });
 });
 
-test("a root with no unique class of its own offers no Save shared form", async ({ page, baseURL }) => {
+test("a root with no unique class of its own offers no Save shared form", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const source = (await effectiveSource(page, baseURL, PAGE))!;
   await replaceCode(page, source.replace('<section class="contact flow" id="contact">', '<section id="contact">'));
@@ -301,7 +301,7 @@ test("a root with no unique class of its own offers no Save shared form", async 
   await expect(row(page, /^Section Get in touch/).getByRole("button", { name: "Save shared" })).toHaveCount(0);
 });
 
-test("with a section session kept from earlier, a header Edit reveals hidden Code for itself and its Done folds it back", async ({ page, baseURL }) => {
+test("with a section session kept from earlier, a header Edit reveals hidden Code for itself and its Done folds it back", { tag: "@native-static" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   await (await share(page, /^Section About Larkspur/, "section", "about-hero", "About hero")).getByRole("button", { name: "Save shared" }).click();
   await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();

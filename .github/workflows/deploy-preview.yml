@@ -28,6 +28,26 @@ jobs:
       - run: npx playwright install chromium-headless-shell
       - run: npm run check
       - run: npm test
+      # Cold-start bytes before the first preview paint, against 350 KB
+      # (docs/wayfinder/lean-fast-editor/tickets/02-set-cold-start-budget.md).
+      # TODO(lean-fast-editor phases 2 and 4): it measures about 1358 KB today
+      # (Monaco loads before the preview paints), so it only reports; drop
+      # --report-only once deferring Monaco and the boot-path work bring it under.
+      - name: Byte budget
+        run: npm run test:budget -- --report-only
+      # The @smoke browser slice (about 30 tests) over the fake GitHub server.
+      - name: Smoke browser tests
+        run: npm run test:browser:smoke -- --reporter=list,html
+      - name: Upload the smoke report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report
+          path: |
+            playwright-report/
+            .scratch/*/results/
+          include-hidden-files: true
+          retention-days: 14
       - name: Deploy
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then

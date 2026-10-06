@@ -47,7 +47,7 @@ async function labelAbove(page: Page) {
 
 for (const colorScheme of ["light", "dark"] as const) {
   for (const width of [1440, 760]) {
-    test(`section-hero root and its title: labels above controls, moves only on the section (${colorScheme}, ${width})`, async ({ page }) => {
+    test(`section-hero root and its title: labels above controls, moves only on the section (${colorScheme}, ${width})`, { tag: "@actual" }, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
       await page.setViewportSize({ width, height: 900 });
       const name = `${colorScheme}-${width}`;
@@ -86,7 +86,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 // With the code pane hidden, the hero's label and
 // panel still fit the canvas, and the root label is screenshotted against
 // the sticky header.
-test("section-hero with the code pane hidden", async ({ page }) => {
+test("section-hero with the code pane hidden", { tag: "@actual" }, async ({ page }) => {
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
   await frame(page).locator("section-hero h1:visible").first().click();
   await expect(bar(page)).toBeVisible();
@@ -102,7 +102,7 @@ test("section-hero with the code pane hidden", async ({ page }) => {
 
 // The sticky header itself selected is not its own obstacle: its bar may
 // stand at the frame's top, still inside the frame.
-test("the selected sticky header is not kept clear of itself", async ({ page }) => {
+test("the selected sticky header is not kept clear of itself", { tag: "@actual" }, async ({ page }) => {
   await frame(page).locator("site-header").first().click({ position: { x: 5, y: 5 } });
   await expect(bar(page)).toBeVisible();
   const area = (await page.locator(".native-preview-frame").boundingBox())!;
@@ -114,7 +114,7 @@ test("the selected sticky header is not kept clear of itself", async ({ page }) 
 // Alt+Up pressed in the page moves the selected whole section, and one Undo
 // restores the source exactly; a paragraph inside it does not move. Narrow,
 // code hidden, under the sticky header.
-test("Alt+arrows in the page move a whole section only, one exact undo", async ({ page }) => {
+test("Alt+arrows in the page move a whole section only, one exact undo", { tag: "@actual" }, async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
   const before = await source();

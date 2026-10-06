@@ -26,7 +26,7 @@ const OUT = process.env.STATIC_SECTIONS_OUT ?? ".scratch/native-static-add-host/
 // STATIC_SECTIONS_FIXTURE=native runs the last group against the native static starter instead.
 const native = process.env.STATIC_SECTIONS_FIXTURE === "native";
 const actual = (name: string, body: (args: { page: Page; baseURL: string | undefined }) => Promise<void>) =>
-  test(name, async ({ page, baseURL }) => { test.skip(native, "Runs on the actual starter."); await body({ page, baseURL }); });
+  test(name, { tag: ["@actual", "@native-static"] }, async ({ page, baseURL }) => { test.skip(native, "Runs on the actual starter."); await body({ page, baseURL }); });
 
 // The page's own flow section, byte for byte: its heading and cards stay together.
 const flowOf = (html: string | undefined) => { const start = html!.indexOf('<section class="flow"'); return html!.slice(start, html!.indexOf("</section>", start)); };
@@ -425,7 +425,7 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["na
 
 test.describe("native static starter", () => {
   test.skip(!native, "Needs ASE_NATIVE_SAVE_FIXTURE pointing at the native static starter.");
-  test("all four saved sections reuse the imported sections stylesheet; the whole page then works with scripts off", async ({ page, baseURL }) => {
+  test("all four saved sections reuse the imported sections stylesheet; the whole page then works with scripts off", { tag: ["@actual", "@native-static"] }, async ({ page, baseURL }) => {
     await load(page, baseURL);
     const before = await mounted(page);
     const sectionsCss = await file(page, baseURL, CSS);

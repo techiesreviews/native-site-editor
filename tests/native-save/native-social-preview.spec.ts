@@ -8,7 +8,7 @@ requireActualFixture();
 // loading anything from another site: an absolute URL at the site's own canonical
 // address is read from the repository; any other absolute URL is not previewed.
 // Runs on a copy of the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
-test("the share card previews the site's own absolute image from the repository and never loads another site's", async ({ page, baseURL }) => {
+test("the share card previews the site's own absolute image from the repository and never loads another site's", { tag: "@actual" }, async ({ page, baseURL }) => {
   const errors: string[] = [], external: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });

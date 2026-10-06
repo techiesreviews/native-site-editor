@@ -71,7 +71,7 @@ async function openFile(page: Page, path: string, contains: string) {
   await expect(page.locator("#content .view-lines")).toContainText(contains, { timeout: 20_000 });
 }
 
-test("renders native pages, components and shared chrome without a build", async ({ page }) => {
+test("renders native pages, components and shared chrome without a build", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await expect(frame.getByText("Reusable cards")).toBeVisible();
@@ -83,7 +83,7 @@ test("renders native pages, components and shared chrome without a build", async
   expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toContain("/native-preview-runtime.js");
 });
 
-test("HTML and CSS edits patch the live preview in place, same window, scroll kept", async ({ page }) => {
+test("HTML and CSS edits patch the live preview in place, same window, scroll kept", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
@@ -185,7 +185,7 @@ test("nested shared-component template edits reach every instance", async ({ pag
   await expect(frame.locator(".card-note.edited-note")).toHaveCount(3);
 });
 
-test("Undo and Redo drive the preview, and saved drafts survive reload", async ({ page }) => {
+test("Undo and Redo drive the preview, and saved drafts survive reload", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Draft heading"));
@@ -203,7 +203,7 @@ test("Undo and Redo drive the preview, and saved drafts survive reload", async (
   await expect(frame.getByRole("heading", { name: "Draft heading" })).toBeVisible({ timeout: 30_000 });
 });
 
-test("preview route links switch pages while preserving the frame", async ({ page }) => {
+test("preview route links switch pages while preserving the frame", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   await frame.getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });

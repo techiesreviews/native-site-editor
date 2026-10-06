@@ -1,7 +1,7 @@
 import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test } from "@playwright/test";
 
-test("Add offers page sections without a separate HTML element catalogue", async ({ page, baseURL }) => {
+test("Add offers page sections without a separate HTML element catalogue", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator(".hero h1")).toBeVisible();
