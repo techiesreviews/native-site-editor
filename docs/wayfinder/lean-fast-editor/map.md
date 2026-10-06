@@ -38,17 +38,18 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 - [Set the cold-start budget](tickets/02-set-cold-start-budget.md): throttled local ≤350 KB before paint, cold paint ≤1.0 s, warm ≤0.4 s; bytes gated in CI, timings by hand per slice; remote target after sign-in run
 - [Choose the shape of the boot requests](tickets/05-shape-of-boot-requests.md): no /api/boot, parallel separate calls; drafts load in parallel, findDeletedUpstream after paint, parallel @import levels, image/font wait capped ~300 ms
 - [Decide which browser tests run in CI](tickets/09-browser-tests-in-ci.md): @smoke + byte budget per push, full suite nightly in 4 shards; one config with projects; tags replace hand lists
+- [Decide how main.ts is split](tickets/08-how-main-ts-is-split.md): feature controllers along the section banners, shared state in @preact/signals-core, boot controller lazy-loads the rest; after removals, one module per PR, lazy features first
+- Preview runtime (open item, decided with Lex): `native-preview-runtime.js` and the iframe start count inside the boot budget, no separate target
 - [Research faster session and GitHub reads in the Worker](tickets/04-research-session-and-github-reads.md): parallel installation listing, repository list out of /api/session, GraphQL file batches, keep the DO session minus blockConcurrencyWhile, no webhooks; cross-isolate cache only if still slow
 - [Research the toolchain pins](tickets/10-research-toolchain-pins.md): Node 24 everywhere, keep Miniflare alpha pinned in lockstep with Wrangler, keep tweetnacl+blakejs, align esbuild with Wrangler, drop the undici override, keep dompurify
 - [Research bundle splitting and asset caching](tickets/06-research-bundle-split-and-asset-caching.md): defer the Monaco prefetch until after first preview, immutable cache on /assets/*, load secondary panels on demand after the removals, trim Monaco contributions last, reload once on a failed chunk load
 
 ## Not yet specified
 
-- **Handoff plan:** how the decisions turn into build slices, in what order, and how each slice is checked against the budget. This is the last ticket, and it graduates once the others are mostly closed.
-- **The preview runtime** (`native-preview-runtime.js`, 140 KB) and the preview iframe's own start: whether they belong in the boot budget.
-- **Worker per-request overhead** beyond the session read, once the boot request shape is settled.
+- **Handoff plan:** now [ticket 15](tickets/15-handoff-plan.md).
+- **Worker per-request overhead:** now [ticket 13](tickets/13-research-worker-per-request-overhead.md).
 - **What `code-editor.ts` becomes** after drafts and undo leave it (draft store decided in ticket 03; the module boundary is part of the main.ts split).
-- **Agent/MCP impact:** the scouts found no MCP tools tied to the style panel or collections. Confirm this once the removal boundaries are fixed.
+- **Agent/MCP impact:** now [ticket 14](tickets/14-confirm-agent-impact-of-removals.md).
 
 ## Out of scope
 
