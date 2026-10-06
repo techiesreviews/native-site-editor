@@ -13,7 +13,7 @@
 // (`isMounted`, `replaceActiveRange`, `runVisualHistory`, the model proofs):
 // a "model" is now the file's entry in the store, and its version the
 // entry's revision.
-import "./code-editor.css";
+import "./source-editor.css";
 import type { CssWorkspace } from "../page-builder/css-intelligence";
 import { draftStore, draftKey, type DraftScope, type SavedDraft } from "../drafts";
 import { createDraftStore, RECEIPT_REFUSAL, type DraftEvent, type DraftTextStore, type HistoryCompanion } from "../draft-store";
