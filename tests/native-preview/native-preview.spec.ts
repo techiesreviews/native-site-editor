@@ -147,6 +147,39 @@ test("sections without data-key keep their nodes when moved, inserted around or 
   expect(await stamps()).toEqual(["B", "A", "new", "New"]);
 });
 
+test("sections whose images arrived after the draw keep their nodes and the selection when reordered", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  // studio-desk.svg is on no page yet: it is read after these sections are drawn and swapped in place.
+  const section = (name: string) => `  <section class="probe"><h2>${name}</h2><img src="/images/studio-desk.svg" alt=""></section>\n`;
+  const win = await frameWindow(page);
+  // The image waits until A is selected, so nothing draws the page between its arrival and the move.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/blob?*", async (route) => { await held; await route.continue(); });
+  await pasteSource(page, "<site-header", `<main>\n${section("A")}${section("B")}</main>\n`);
+  await expect(frame.locator("section.probe")).toHaveCount(2);
+  await win.evaluate(() => document.querySelectorAll("section.probe").forEach((el) => {
+    (el as HTMLElement & { stamp?: string }).stamp = el.querySelector("h2")?.textContent ?? "";
+  }));
+  const tree = page.locator('[role=tree][aria-label="Page structure"]');
+  const rowA = tree.getByRole("treeitem").filter({ hasText: /^Section A/ }).first();
+  await rowA.click();
+  await expect(tree.locator('[aria-selected="true"]').first()).toContainText("Section A");
+  expect(await frame.locator("section.probe img").first().getAttribute("src")).toBe("/images/studio-desk.svg");
+  release();
+  await expect(frame.locator("section.probe img").first()).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/, { timeout: 15_000 });
+  await expect(frame.locator("section.probe img").last()).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+  // One move, the first render since the images were swapped in.
+  await tree.getByRole("treeitem").filter({ hasText: /^Section A/ }).first().focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(frame.locator("section.probe h2")).toHaveText(["B", "A"]);
+  // A is the same node, now second, and still the one selected.
+  expect(await win.evaluate(() =>
+    [...document.querySelectorAll("section.probe")].map((el) => (el as HTMLElement & { stamp?: string }).stamp ?? "new"))).toEqual(["B", "A"]);
+  await expect(tree.locator('[aria-selected="true"]').first()).toContainText("Section A");
+});
+
 test("editing while the preview is on About does not snap it back Home", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
@@ -261,4 +294,52 @@ test("a stylesheet a shared sheet imports applies in its layer and lists its rul
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   expect(await filler.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("9px");
   await expect(page.locator(".native-preview-error")).toBeHidden();
+});
+
+test("repository images arrive after the page is drawn, from /api/blob, shown in place without drawing the page again", async ({ page }) => {
+  // Each image answer waits, so it surely lands after the first paint.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const blobs: { cache: string; type: string }[] = [];
+  const raws: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/raw") raws.push(request.url()); });
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname === "/api/blob")
+      blobs.push({ cache: response.headers()["cache-control"] ?? "", type: response.headers()["content-type"] ?? "" });
+  });
+  await page.route("**/api/blob?*", async (route) => { await held; await route.continue(); });
+  // Counts the host's messages to the preview frame.
+  await page.addInitScript(() => {
+    if (window.top === window) return;
+    const seen: string[] = [];
+    (window as unknown as { seen: string[] }).seen = seen;
+    window.addEventListener("message", (event) => {
+      const type = (event.data as { type?: string } | null)?.type;
+      if (type === "update" || type === "assets") seen.push(type);
+    }, true);
+  });
+  await page.reload();
+  const frame = await frameWindow(page);
+  const hero = frame.locator("img.hero-image");
+  const structureRow = page.locator('[role=tree][aria-label="Page structure"] [role=treeitem]').first();
+  await expect(hero).toBeAttached({ timeout: 30_000 });
+  // Drawn and usable while the image is still on its way.
+  await expect(structureRow).toBeVisible({ timeout: 30_000 });
+  expect(await hero.getAttribute("src")).toBe("/images/placeholder.svg");
+  const seen = () => frame.evaluate(() => [...(window as unknown as { seen: string[] }).seen]);
+  await expect.poll(seen).toContain("update");
+  const before = (await seen()).filter((type) => type === "update").length;
+  release();
+  await expect(hero).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/, { timeout: 15_000 });
+  await expect.poll(() => hero.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const after = await seen();
+  expect(after).toContain("assets");
+  expect(after.filter((type) => type === "update").length, "the image did not draw the page again").toBe(before);
+  await expect(structureRow).toBeVisible();
+  expect(blobs.length).toBeGreaterThan(0);
+  for (const blob of blobs) {
+    expect(blob.cache).toBe("private, max-age=31536000, immutable");
+    expect(blob.type).toBe("image/svg+xml");
+  }
+  expect(raws).toEqual([]);
 });

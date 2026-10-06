@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadNativeAssetRequests } from "../src/native-assets.ts";
+import { dataUrlOf, loadNativeAssetRequests } from "../src/native-assets.ts";
 import { RepositoryIndex, readFileTexts } from "../src/repository-loading.ts";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types.ts";
 
@@ -153,30 +153,54 @@ test("directory cache stores relative entries so the same tree sha can appear un
   assert.equal((await index.find(api, repo, root, "two/index.html"))?.path, "two/index.html");
 });
 
-test("native asset loading runs four at a time and reports each loaded image progressively", async () => {
+test("native asset loading runs four at a time and hands the preview batches, not one change per image", async () => {
   let inFlight = 0, peak = 0;
-  const progress: string[] = [];
+  const progress: number[] = [];
   const loaded: string[] = [];
   await loadNativeAssetRequests({
     requests: Array.from({ length: 9 }, (_, index) => ({ path: `${index}.png`, type: "image/png" })),
     live: () => true,
-    load: async (path) => {
+    batchMs: 1000,
+    load: async (request) => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
       inFlight--;
-      return btoa(path);
+      return `data:${request.type};base64,${btoa(request.path)}`;
     },
-    onLoaded: (path, dataUrl) => {
+    onLoaded: (path, url) => {
       loaded.push(path);
-      assert.match(dataUrl, /^data:image\/png;base64,/);
+      assert.match(url, /^data:image\/png;base64,/);
     },
     onMissing: () => assert.fail("all assets load"),
-    onProgress: () => progress.push("tick"),
+    onProgress: () => progress.push(loaded.length),
   });
   assert.equal(peak, 4);
   assert.equal(loaded.length, 9);
-  assert.equal(progress.length, 9);
+  assert.deepEqual(progress, [9], "one batch once the last is in");
+});
+
+test("native asset loading reports progress while slow assets are still arriving", async () => {
+  const progress: number[] = [];
+  const loaded: string[] = [];
+  await loadNativeAssetRequests({
+    requests: [{ path: "a.png", type: "image/png" }, { path: "b.png", type: "image/png" }],
+    concurrency: 1,
+    live: () => true,
+    batchMs: 5,
+    load: async (request) => {
+      await new Promise((resolve) => setTimeout(resolve, request.path === "b.png" ? 60 : 1));
+      return "data:,";
+    },
+    onLoaded: (path) => loaded.push(path),
+    onMissing: () => assert.fail("all assets load"),
+    onProgress: () => progress.push(loaded.length),
+  });
+  assert.deepEqual(progress, [1, 2]);
+});
+
+test("native asset bytes become a data URL of the asset's type", async () => {
+  assert.equal(await dataUrlOf(new Blob([new Uint8Array([104, 105])]), "image/png"), "data:image/png;base64,aGk=");
 });
 
 test("native asset loading drops stale completions", async () => {
@@ -185,8 +209,8 @@ test("native asset loading drops stale completions", async () => {
   await loadNativeAssetRequests({
     requests: [{ path: "a.png", type: "image/png" }, { path: "b.png", type: "image/png" }],
     live: () => live,
-    load: async (path) => {
-      if (path === "a.png") live = false;
+    load: async (request) => {
+      if (request.path === "a.png") live = false;
       return "x";
     },
     onLoaded: (path) => loaded.push(path),

@@ -100,7 +100,8 @@ import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "./page-builder/asset-references";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
-import { loadNativeAssetRequests } from "./native-assets";
+import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
+import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
@@ -412,6 +413,8 @@ function mountWorkspace() {
   // A selection inside a component's template gets Select card once the runtime says which card.
   let selectedGrid = "";
   nativePreview = createNativePreview(element("main"), {
+    // The images of a page shown by following a link are read when it shows.
+    onRouteShown: (route) => { if (nativeSite) void loadNativeAssets(nativeRouteShownSources(route)); },
     cards: {
       describe: (grid) => cards?.describe(grid),
       plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: "Open a native site first." },
@@ -3363,6 +3366,13 @@ function updateNativePreviewSources() {
   void loadNativeStyleFiles();
 }
 
+// Images and fonts that arrived after the page was drawn: the preview shows
+// them in place, without drawing the page again.
+function updateNativePreviewAssets() {
+  if (!nativeSite || !nativePreview) return;
+  nativePreview.setAssets(Object.fromEntries(nativeAssets));
+}
+
 // Reads the stylesheets the pages link and the files those `@import` that
 // are not loaded yet, following imports of imports, into the base sources.
 // True when any loaded.
@@ -3416,20 +3426,19 @@ async function loadNativeStyleFiles() {
   if (loaded && live()) updateNativePreviewSources();
 }
 
-// Images and fonts the pages, components and stylesheets refer to, read once
-// per path as data URLs so the sandboxed frame can show them; a path that is
-// not in the branch (or not an image or font) is remembered as missing and
-// left as written.
+// Images and fonts the page on show, its components and stylesheets refer
+// to, read once per path as data URLs so the sandboxed frame can show them
+// (it has an opaque origin: neither the session cookie nor the editor's blob:
+// URLs reach it). The bytes come from `/api/blob` by SHA, which the browser
+// caches for good, so a reload reads them from its cache. They are read after
+// the page is drawn and shown in place as they arrive (fonts get a short
+// head start, NATIVE_FONT_WAIT_MS); a path that is not in the branch (or not
+// an image or font) is remembered as missing and left as written.
 const nativeAssets = new Map<string, string>();
 const nativeMissingAssets = new Set<string>();
 const nativeAssetRequests = new Map<string, number>();
 let nativeAssetRequestId = 0;
-const ASSET_TYPES: Record<string, string> = {
-  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-  webp: "image/webp", avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
-  woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf",
-};
-const assetType = (path: string) => ASSET_TYPES[path.split(".").pop()?.toLowerCase() ?? ""];
+const NATIVE_FONT_WAIT_MS = 300;
 // The repository images and fonts `sources` name: `<img src>` in pages
 // (resolved against the page's path) and components (against the root, as a
 // root path), and `url()`s in stylesheets (against the stylesheet's path).
@@ -3458,42 +3467,58 @@ function nativePageShownSources(site: NativeSite, file: string) {
   const shown = new Set([file, ...Object.values(site.components), ...nativeComponentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path]).imported]);
   return Object.fromEntries(Object.entries(sources).filter(([path]) => shown.has(path)));
 }
-// Reads the assets `sources` name that are not read yet; `onProgress` runs
-// as each arrives.
-function nativeAssetSources() {
-  const sources = nativeSite ? nativeSources() : {};
+// The sources of the page at `route` (the home page's for a component shown
+// alone), with an open master's copy, so its images are found.
+function nativeRouteShownSources(route: string | undefined) {
+  if (!nativeSite) return {};
+  const site = nativeSite;
+  const file = (route && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
+  const sources = nativePageShownSources(site, file);
   const master = nativeOpenMaster();
   // Asset discovery only: the master is shown in this page, never at its private file URL.
   // Keep the page's own assets too; no preview or published source is changed.
   if (master) sources[master.pagePath] = (sources[master.pagePath] ?? "") + master.masterSource;
   return sources;
 }
-async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewSources) {
+// The page the preview last drew; nothing before its first draw, so no
+// image is read before the page is on screen (onRouteShown reads them then).
+function nativeAssetSources() {
+  const drawn = nativePreview?.shownRoute();
+  return drawn === undefined ? {} : nativeRouteShownSources(drawn);
+}
+// A blob's bytes from `/api/blob`, which the browser keeps in its cache (a blob never changes).
+async function readBlob(repo: string, sha: string, path?: string): Promise<Blob> {
+  const response = await fetchWithReadRetry(blobUrl(repo, sha, path), { credentials: "same-origin" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({})) as { error?: string };
+    throw new ApiError(response.status, data.error || "Could not load the file.");
+  }
+  return response.blob();
+}
+// Reads the assets `sources` name that are not read yet (only those `only`
+// keeps); `onProgress` runs as they arrive, in batches.
+async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewAssets, only: (path: string) => boolean = () => true) {
   if (!currentRepo || !snapshot) return;
   const repo = currentRepo.full_name;
   const request = nativeSourcesRequest;
   const epoch = generation;
   const wanted = [...referencedAssets(sources)].filter((path) =>
-    !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
+    only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
   if (!wanted.length) return;
   const assetRequest = ++nativeAssetRequestId;
   wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
   const scope = draftScope();
   const live = () => epoch === generation && request === nativeSourcesRequest;
-  const load = async (path: string) => {
+  const load = async ({ path, type }: { path: string; type: string }) => {
     // A drafted image: an upload's bytes from this browser, a moved or
     // copied one's blob; a deleted one is missing.
     const draft = scope ? draftStore().get(scope, path) : undefined;
     if (draft) nativeDraftAssets.add(path);
-    if (draft?.upload && scope) {
-      const url = await uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
-      return url?.replace(/^data:[^;]+;base64,/, "");
-    }
+    if (draft?.upload && scope) return uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
     const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
     if (!live() || !entry) return undefined;
     try {
-      const blob = await api<{ content: string }>("raw", { repo, sha: entry.sha });
-      return blob.content;
+      return await dataUrlOf(await readBlob(repo, entry.sha, path), type);
     } catch {
       return undefined;
     }
@@ -3617,8 +3642,9 @@ async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
       }
       const entry = draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path); assertLive();
       if (!entry) throw new Error(`${path} is unavailable.`);
-      const raw = await api<{ content: string }>("raw", { repo: repo.full_name, sha: entry.sha }); assertLive();
-      return new Blob([Uint8Array.from(atob(raw.content), (char) => char.charCodeAt(0))], { type: uploadImageType(path) });
+      const blob = await readBlob(repo.full_name, entry.sha, path); assertLive();
+      const type = uploadImageType(path);
+      return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     assetVersion: path => {
       const record = draftStore().get(scope, path);
@@ -3797,7 +3823,7 @@ async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
       return (await findEntry(path))?.sha;
     },
     readTexts: (shas) => readFiles(repo.full_name, shas),
-    readBase64: async (sha) => (await api<{ content: string }>("raw", { repo: repo.full_name, sha })).content,
+    readBytes: async (sha) => new Uint8Array(await (await readBlob(repo.full_name, sha)).arrayBuffer()),
   };
 }
 
@@ -3900,12 +3926,12 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
       // Reported by the preview as a missing stylesheet.
     }
     if (!live()) return true;
-    // The images and fonts the page shows render with it too, so it does
-    // not show with empty image boxes and fallback fonts first; one still
-    // loading after a moment renders when it arrives.
+    // The page's fonts get a short head start so its text does not show in a
+    // fallback font first; images never hold the page back: they are read
+    // after it is drawn and shown in place (see nativeAssets).
     await Promise.race([
-      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewSources(); }).catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 4000)),
+      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewAssets(); }, (path) => isFontType(assetType(path))).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, NATIVE_FONT_WAIT_MS)),
     ]);
     if (!live()) return true;
   } catch (error) {
@@ -3930,7 +3956,6 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     masterEdit: nativeMasterEdit(),
   });
   updateAgentContext();
-  void loadNativeAssets();
   startNativeTextIndex(repo, site, scope, epoch, request);
   return true;
 }
@@ -7977,8 +8002,7 @@ async function wizardPreview(repo: WizardRepo): Promise<string | undefined> {
     }
     const images = new Map<string, string>();
     for (const path of [...wanted].slice(0, 12)) {
-      const blob = await api<{ content: string }>("raw", { repo: repo.fullName, sha: byPath.get(path)! });
-      images.set(path, `data:${assetType(path)};base64,${blob.content}`);
+      images.set(path, await dataUrlOf(await readBlob(repo.fullName, byPath.get(path)!, path), assetType(path)!));
     }
     const css = expanded.sheets
       .map((sheet) => rewriteCssUrls(sheet.source, (url) => {
