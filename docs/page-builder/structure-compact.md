@@ -1,7 +1,9 @@
 # Compact Structure slots
 
 The Structure tree shows every authored element of a page as a native row, in
-source order. Children assigned to a component slot, simple or rich, stay real
+source order. Each element kind has a Phosphor Regular icon. The kind name remains
+available to screen readers. Component rows keep their separate diamond marker.
+Children assigned to a component slot, simple or rich, stay real
 rows: the slot is a purple badge on the row, never a grouping, and unknown slot
 names stay ordinary rows.
 

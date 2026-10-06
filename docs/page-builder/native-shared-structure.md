@@ -3,7 +3,7 @@
 The optional `PageStructureHandlers.nativeSharedRoot(path, item)` hook supplies
 host-proven actions for a whole ordinary native section, header, or footer.
 Return undefined for read-only, unloaded, ambiguous, or otherwise held roots.
-Structure also omits these actions on generated cards, unknown ownership, stale
+Structure also omits these actions on unknown ownership, stale
 painted pages, legacy component/slot rows, and elements with other root tags.
 
 Return `{ state: "linked", label, recordId, edit, disconnect }` for an explicitly
@@ -30,7 +30,7 @@ without native sharing handlers the existing Structure behavior is preserved.
 
 Verification: `npx playwright test -c playwright.native-shared-structure.config.ts`
 uses the actual Structure component, native form and editor CSS in a standalone
-280px sidebar. It covers root actions, instance selection, generated/child refusal,
+280px sidebar. It covers root actions, instance selection, child refusal,
 inline disclosure, unchanged updates, focus restoration, context cancellation,
 stale paint and old pending results. Screenshots live in
 `.scratch/native-shared-structure/linked-row.png` and `inline-authoring.png`.

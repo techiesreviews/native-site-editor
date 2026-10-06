@@ -46,17 +46,15 @@ or editor runtime in the site.
 ### Static cards and section authoring
 
 Cards are ordinary HTML in static grids. Add card copies a card and can create a
-linked page in the same undo step. There is no collection recipe, generated-card
-ownership, or collection refresh.
+linked page in the same undo step.
 
 The deletable `.editor/page-builder.json` sidecar keeps reusable sections,
 `pages[path].sections`, `pages[path].pageParts` and unknown metadata. The next
-write strips `collections` and `pages[*].fields` without changing the version.
+write removes retired recipe and custom-field metadata without changing the version.
 Deleting `.editor` leaves the website's HTML and CSS intact.
 
 Styling, image positioning and grid layout are edited in the Source editor.
-Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty section slots and wrappers hide automatically; explicit visibility
-conditions were removed in P1.6.
+Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty section slots and wrappers hide automatically.
 
 ### Wave 2 slices
 
@@ -77,5 +75,5 @@ conditions were removed in P1.6.
   ("+ Add image", "+ Add text") where they would appear; click an image to replace it,
   drop a file on it, remove an optional part with its ×, type into text in place.
 
-Page settings › Fields was removed in P1.4; collections were removed in P1.5.
-Other sidecar metadata, including `pages[path].date`, remains preserved.
+Page settings provides General, Search and Social. Other sidecar metadata,
+including `pages[path].date`, remains preserved.

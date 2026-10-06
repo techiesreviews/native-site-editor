@@ -3,7 +3,7 @@
 A static grid of cards can link to subpages. Adding to it writes one card into
 the page's HTML and, when asked, one new page file beside its siblings. Both are
 drafts like any other edit, readable in the code pane as they happen. Cards are
-ordinary editable markup; there are no collection recipes or generated cards.
+ordinary editable markup.
 
 ## What the user can do
 

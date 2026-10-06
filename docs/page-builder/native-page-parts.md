@@ -22,7 +22,7 @@ typed kind and don't change what Add offers.
     one copy to its record. `target` is `makeSectionTarget`'s locator (authored id, else tag and
     exact opening tag); `basis` the literal bytes the copy was linked or last updated from.
   - Unknown keys in records, links, containers, pages and the top level are kept, and so are
-    entries of other kinds, collections and section links.
+    entries of other kinds and section links.
 
 ## API
 
@@ -60,7 +60,7 @@ JSON. CSS is never written.
   URLs and malformed-percent relative paths are refused even when no media file can be resolved.
 - A master with a comment outside its root is refused by Link as well as Update.
 - A part inside a component, template, foreign markup or another header/footer is refused. Links
-  may not overlap each other, a section link or a collection; a missing or ambiguous link refuses
+  may not overlap each other or a section link; a missing or ambiguous link refuses
   the whole update. Ids, master paths (any case) and root classes (across parts and saved
   sections) can't collide; nothing is overwritten.
 
