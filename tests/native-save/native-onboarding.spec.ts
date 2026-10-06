@@ -109,7 +109,7 @@ test("a valid session skips the sign-in screen: the editor opens with no button"
   expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before")), "a flag, never a name or token").toBe("1");
 });
 
-test("Reload recovers an initial repository loading failure with an empty list", async ({ page, baseURL }) => {
+for (const retry of ["menu", "Reload"] as const) test(`${retry} recovers an initial repository loading failure with an empty list`, async ({ page, baseURL }) => {
   await control(page, baseURL, { repositories: "none" });
   await page.route("**/api/session", async (route) => {
     const response = await route.fetch();
@@ -118,10 +118,15 @@ test("Reload recovers an initial repository loading failure with an empty list",
     await route.fulfill({ response, json: session });
   });
   let failedReads = 0;
+  let retryReads = 0;
   let reloadReads = 0;
+  let retrySucceeds = false;
   await page.route("**/api/repositories**", async (route) => {
     if (new URL(route.request().url()).searchParams.get("refresh") === "1") {
       reloadReads++;
+      await route.fulfill({ json: [], headers: { "X-Repository-Onboarding": "create" } });
+    } else if (retrySucceeds) {
+      retryReads++;
       await route.fulfill({ json: [], headers: { "X-Repository-Onboarding": "create" } });
     } else {
       failedReads++;
@@ -133,12 +138,14 @@ test("Reload recovers an initial repository loading failure with an empty list",
   await expect(page.locator("#content")).toContainText("Repositories could not be loaded. Use Reload to try again.");
   expect(failedReads).toBeGreaterThan(0);
 
+  retrySucceeds = retry === "menu";
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
+  if (retry === "Reload") await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site", exact: true })).toBeVisible();
   await expect(page.locator("#notice")).toBeHidden();
   await expect(page.locator("#content")).not.toContainText("Repositories could not be loaded.");
-  expect(reloadReads).toBe(1);
+  expect(retryReads).toBe(retry === "menu" ? 1 : 0);
+  expect(reloadReads).toBe(retry === "Reload" ? 1 : 0);
 });
 
 test("a browser that signed in before continues to GitHub by itself, once", async ({ page, baseURL }) => {

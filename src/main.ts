@@ -4190,6 +4190,7 @@ function openExplorer() {
 
 let repositories: Repository[] = [];
 let repositoryListLoaded = false;
+let repositoryWorkspaceState: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
 let repositoryListRequest: Promise<void> | undefined;
 let repositoryOnboarding: "install" | "create" | undefined;
 // Unset until start() has read the session.
@@ -4356,6 +4357,7 @@ function renderLogin(
   siteActions = undefined;
   repositories = [];
   repositoryListLoaded = false;
+  repositoryWorkspaceState = "uninitialized";
   repositoryListRequest = undefined;
   repositoryOnboarding = undefined;
   currentRepo = undefined;
@@ -8369,6 +8371,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
 }
 
 async function loadRepositories(prefetched?: Repository[]) {
+  repositoryWorkspaceState = "loading";
   removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
@@ -8396,6 +8399,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     if (epoch !== generation) return;
     repositories = result;
     repositoryListLoaded = true;
+    repositoryWorkspaceState = "ready";
     repositoryMenu?.setRepositories(repositories);
     // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
     const knownBefore = openNewRepository ? knownRepositories() ?? [] : undefined;
@@ -8471,6 +8475,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     status("Connected to GitHub. Choose a project to start.");
   } catch (error) {
     if (epoch === generation) {
+      repositoryWorkspaceState = "failed";
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
       ]);
@@ -8516,9 +8521,19 @@ async function fetchRepositoryList(refresh = false): Promise<Repository[]> {
   return data as Repository[];
 }
 
+function repositoryWorkspaceNeedsRecovery() {
+  return repositoryWorkspaceState === "failed" || repositoryWorkspaceState === "uninitialized";
+}
+
+async function recoverRepositoryWorkspace(next: Repository[]) {
+  if (!repositoryWorkspaceNeedsRecovery()) return false;
+  await loadRepositories(next);
+  return true;
+}
+
 /** Opening the menu needs the full list; opening a remembered repository does not. */
 async function ensureRepositoryList() {
-  if (repositoryListLoaded) return;
+  if (repositoryListLoaded && !repositoryWorkspaceNeedsRecovery()) return;
   if (repositoryListRequest) return repositoryListRequest;
   const menu = repositoryMenu;
   const login = info.user?.login;
@@ -8526,6 +8541,7 @@ async function ensureRepositoryList() {
     try {
       const next = await fetchRepositoryList();
       if (menu !== repositoryMenu || login !== info.user?.login) return;
+      if (await recoverRepositoryWorkspace(next)) return;
       repositories = next;
       repositoryListLoaded = true;
       rememberRepositories(next);
@@ -8553,10 +8569,7 @@ async function refreshRepositoryList() {
     errorMessage(error);
     return;
   }
-  if (!repositoryListLoaded) {
-    await loadRepositories(next);
-    return;
-  }
+  if (await recoverRepositoryWorkspace(next)) return;
   repositoryListLoaded = true;
   if (
     next.length === repositories.length &&
