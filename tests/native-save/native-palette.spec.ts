@@ -324,6 +324,8 @@ test("a source edit while the palette is open rejects a stale Duplicate", async 
   await search(page).fill("duplicate");
   await expect(active(page)).toHaveAttribute("data-command", "selection.duplicate");
   const changed = await page.evaluate(async () => {
+    // The code pane's Monaco view (models mirror the draft store) comes with code-editor.ts.
+    await import("/src/components/code-editor.ts");
     const modulePath = "/src/components/monaco.ts";
     const { monaco } = await import(modulePath);
     const model = monaco.editor.getModels().find((model: { getValue(): string }) => model.getValue().includes('class="filler"'));
@@ -394,6 +396,8 @@ test("searching again after a source edit cannot bless old edit bar closures", a
   await expect(search(page)).toHaveAttribute("aria-expanded", "true");
   await search(page).fill("duplicate");
   const changed = await page.evaluate(async () => {
+    // The code pane's Monaco view (models mirror the draft store) comes with code-editor.ts.
+    await import("/src/components/code-editor.ts");
     const modulePath = "/src/components/monaco.ts";
     const { monaco } = await import(modulePath);
     const model = monaco.editor.getModels().find((model: { getValue(): string }) => model.getValue().includes('class="filler"'));

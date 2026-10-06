@@ -137,10 +137,14 @@ interface SharedModel {
   stepping: boolean;
   timer?: ReturnType<typeof setTimeout>;
   viewState: monaco.editor.ICodeEditorViewState | null;
+  /** When a diff editor over this model last closed (its worker diff may still be on its way). */
+  diffClosed: number;
   settle(): void;
   dispose(): void;
 }
 const models = new Map<string, SharedModel>();
+/** How long a closed diff's models stay for a worker diff still on its way. */
+const DIFF_SETTLE_MS = 3000;
 let serial = 0;
 onReset(() => { for (const shared of [...models.values()]) shared.dispose(); });
 
@@ -190,7 +194,7 @@ function createSharedModel(host: PaneHost): SharedModel {
   const model = monaco.editor.createModel(host.text(), languageFor(host.path), monaco.Uri.parse(`inmemory://editor/${++serial}/${host.path}`));
   const shared: SharedModel = {
     key: host.key, scope: host.scope, path: host.path, stored: host.stored, model, views: 0,
-    aliases: new Map(), byRevision: new Map(), applying: false, stepping: false, viewState: null,
+    aliases: new Map(), byRevision: new Map(), applying: false, stepping: false, viewState: null, diffClosed: 0,
     settle() {
       clearTimeout(shared.timer);
       shared.timer = undefined;
@@ -205,7 +209,12 @@ function createSharedModel(host: PaneHost): SharedModel {
       shared.typing = undefined;
       content.dispose();
       unsubscribe();
-      if (!model.isDisposed()) model.dispose();
+      // A diff closed a moment ago may still be computed in the worker, which
+      // fails on a model disposed under it: such a model goes a little later.
+      if (!model.isDisposed()) {
+        if (Date.now() - shared.diffClosed < DIFF_SETTLE_MS) setTimeout(() => model.dispose(), DIFF_SETTLE_MS);
+        else model.dispose();
+      }
       if (models.get(shared.key) === shared) models.delete(shared.key);
     },
   };
@@ -414,7 +423,8 @@ export const monacoView: PaneViewFactory = (host) => {
         shown.dispose();
         editor.setModel(null);
         editor.dispose();
-        original.dispose();
+        shared.diffClosed = Date.now();
+        setTimeout(() => original.dispose(), DIFF_SETTLE_MS);
         view = undefined;
       };
     } else {
@@ -432,7 +442,8 @@ export const monacoView: PaneViewFactory = (host) => {
         unguard();
         editor.setModel(null);
         editor.dispose();
-        original.dispose();
+        shared.diffClosed = Date.now();
+        setTimeout(() => original.dispose(), DIFF_SETTLE_MS);
         view = undefined;
       };
     }

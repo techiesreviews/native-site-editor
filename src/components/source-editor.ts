@@ -625,7 +625,8 @@ export function mountSourceEditor(
   };
   // Marks asked for before Monaco came, shown once it is here (while the text is as it was).
   let pendingHighlight: { ranges: HighlightRange[]; revision: number } | undefined;
-  let pendingElement: { tag: { start: number; end: number } | undefined; revision: number } | undefined;
+  let pendingReveal: { start: number; end: number; revision: number } | undefined;
+  let pendingElement: { tag: { start: number; end: number } | undefined; revision: number; reveal: boolean } | undefined;
   const range: RangeApi = {
     select(edit) {
       verify(edit);
@@ -644,6 +645,7 @@ export function mountSourceEditor(
     },
     reviewing: () => mode === "review",
     reveal(start, end) {
+      pendingReveal = view ? undefined : { start, end, revision: docRevision(current) };
       view?.reveal(start, end);
     },
     focus() {
@@ -655,7 +657,7 @@ export function mountSourceEditor(
       view?.highlight(ranges);
     },
     markElement(tag, reveal) {
-      pendingElement = view ? undefined : { tag, revision: docRevision(current) };
+      pendingElement = view ? undefined : { tag, revision: docRevision(current), reveal: reveal || Boolean(pendingElement?.reveal && pendingElement.tag?.start === tag?.start && pendingElement.tag?.end === tag?.end) };
       view?.markElement(tag, reveal);
     },
     replace(edit, group, companion) {
@@ -895,8 +897,9 @@ export function mountSourceEditor(
     view = viewFactory(paneHost);
     render(mode);
     if (pendingHighlight?.revision === docRevision(current)) view.highlight(pendingHighlight.ranges);
-    if (pendingElement?.revision === docRevision(current)) view.markElement(pendingElement.tag, false);
-    pendingHighlight = pendingElement = undefined;
+    if (pendingElement?.revision === docRevision(current)) view.markElement(pendingElement.tag, pendingElement.reveal);
+    if (pendingReveal?.revision === docRevision(current)) view.reveal(pendingReveal.start, pendingReveal.end);
+    pendingHighlight = pendingElement = pendingReveal = undefined;
     reportContext();
   }
   const registration: MountedEditor = {
