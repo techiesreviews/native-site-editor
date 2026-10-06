@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GitHub, HttpError } from "../worker/github.ts";
 import type { Repository } from "../shared/types.ts";
+import { MAX_BATCH_FILES } from "../shared/types.ts";
 
 const sha = "a".repeat(40);
 const repo: Repository = {
@@ -249,6 +250,115 @@ test("batched file reads run concurrently and validate every revision", async ()
     () => github.files(repo, Array.from({ length: 65 }, (_, index) => index.toString(16).padStart(40, "0"))),
     (error: HttpError) => error.status === 400,
   );
+});
+
+test("file batches use one GraphQL query and share exact UTF-8 blobs with other readers", async () => {
+  const shas = Array.from({ length: MAX_BATCH_FILES }, (_, index) => (index + 1).toString(16).padStart(40, "0"));
+  const text = "\uFEFFhéllo 🌍";
+  const bytes = new TextEncoder().encode(text);
+  const queries: number[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    assert.equal(new URL(String(input)).pathname, "/graphql", "no REST requests for complete texts");
+    const { query } = JSON.parse(String(init?.body));
+    const fields = [...query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)];
+    queries.push(fields.length);
+    return reply({ data: { repository: Object.fromEntries(fields.map(([, alias]) => [alias, {
+      text, byteSize: bytes.length, isBinary: false, isTruncated: false,
+    }])) } });
+  };
+  const github = new GitHub("secret", fetcher);
+  assert.deepEqual(await github.files(repo, [...shas, shas[0]]), Object.fromEntries(shas.map((sha) => [sha, text])));
+  assert.deepEqual(queries, [MAX_BATCH_FILES]);
+  const other = new GitHub("another-token", fetcher);
+  const raw = await other.raw(repo, shas[0]);
+  assert.equal(raw.size, bytes.length);
+  assert.deepEqual(Uint8Array.from(atob(raw.content), (char) => char.charCodeAt(0)), bytes);
+  assert.equal(await other.file(repo, shas[0]), text);
+  await other.files(repo, shas);
+  assert.deepEqual(queries, [MAX_BATCH_FILES], "cached blobs are not prefetched again");
+  await assert.rejects(() => github.files(repo, [...shas, "f".repeat(40)]), (error: HttpError) => error.status === 400);
+  assert.deepEqual(queries, [MAX_BATCH_FILES], "oversized batches are rejected before fetching");
+});
+
+test("file batches fall back for incomplete GraphQL blobs and retain REST text errors", async () => {
+  const cases = [
+    { graphql: null, rest: { content: btoa("rest"), encoding: "base64", size: 4 }, text: "rest" },
+    { graphql: { text: "cut", isTruncated: true, byteSize: 3 }, rest: { content: btoa("rest"), encoding: "base64", size: 4 }, text: "rest" },
+    { graphql: { text: "wrong", byteSize: 99 }, rest: { content: btoa("rest"), encoding: "base64", size: 4 }, text: "rest" },
+    { graphql: { text: null, isBinary: true, byteSize: 2 }, rest: { content: btoa("\0x"), encoding: "base64", size: 2 }, error: "Binary file. Text preview is unavailable.", status: 415 },
+    { graphql: { text: "too large", byteSize: 1024 * 1024 + 1 }, rest: { content: "", encoding: "base64", size: 1024 * 1024 + 1 }, error: "Text files open up to 1 MB.", status: 413 },
+    { graphql: { text: "�", byteSize: 1 }, rest: { content: btoa(String.fromCharCode(255)), encoding: "base64", size: 1 }, error: "This file is not UTF-8 text.", status: 415 },
+    { graphql: { text: null }, rest: { content: "", encoding: "utf-8", size: 0 }, error: "This file cannot be displayed as text.", status: 415 },
+  ];
+  for (const item of cases) {
+    const paths: string[] = [];
+    const github = new GitHub("secret", async (input) => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      return path === "/graphql" ? reply({ data: { repository: { f0: item.graphql } } }) : reply(item.rest);
+    });
+    if (item.error)
+      await assert.rejects(() => github.files(repo, [sha]), (error: HttpError) => error.status === item.status && error.message === item.error);
+    else assert.deepEqual(await github.files(repo, [sha]), { [sha]: item.text });
+    assert.deepEqual(paths, ["/graphql", `/repos/lex/starter/git/blobs/${sha}`]);
+  }
+});
+
+test("prefetch marks REST-cached blobs as texts for whole-site export", async () => {
+  const shas = Array.from({ length: 20 }, (_, index) => (index + 1).toString(16).padStart(40, "0"));
+  const queries: number[] = [];
+  const github = new GitHub("secret", async (input, init) => {
+    if (new URL(String(input)).pathname !== "/graphql")
+      return reply({ content: btoa("rest"), encoding: "base64", size: 4 });
+    const { query } = JSON.parse(String(init?.body));
+    const fields = [...query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)];
+    queries.push(fields.length);
+    return reply({ data: { repository: Object.fromEntries(fields.map(([, alias]) => [alias, {
+      text: "rest", byteSize: 4, isBinary: false, isTruncated: false,
+    }])) } });
+  });
+  for (const sha of shas) {
+    assert.equal(await github.file(repo, sha), "rest");
+    assert.equal(github.hasText(repo, sha), false, "REST blobs alone do not count as prefetched texts");
+  }
+  await github.prefetchTexts(repo, shas);
+  assert.deepEqual(queries, [20], "REST-cached blobs still receive the text prefetch export requires");
+  assert.ok(shas.every((sha) => github.hasText(repo, sha)), "all blobs are prefetched, beyond export's 16 single-read allowance");
+});
+
+test("whole-site text prefetch does not consume duplicate blob cache entries", async () => {
+  const shas = Array.from({ length: 1100 }, (_, index) => (index + 1).toString(16).padStart(40, "0"));
+  const queries: number[] = [];
+  const github = new GitHub("secret", async (input, init) => {
+    assert.equal(new URL(String(input)).pathname, "/graphql");
+    const { query } = JSON.parse(String(init?.body));
+    const fields = [...query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)];
+    queries.push(fields.length);
+    return reply({ data: { repository: Object.fromEntries(fields.map(([, alias]) => [alias, {
+      text: "x", byteSize: 1, isBinary: false, isTruncated: false,
+    }])) } });
+  });
+  await github.prefetchTexts(repo, shas);
+  assert.deepEqual(queries, Array(11).fill(100));
+  assert.ok(shas.every((sha) => github.hasText(repo, sha)), "each export text uses only one of the cache's 2000 entries");
+});
+
+test("unavailable GraphQL uses REST, while authentication and limits stop file batches", async () => {
+  for (const status of [403, 404, 500]) {
+    const github = new GitHub("secret", async (input) => new URL(String(input)).pathname === "/graphql"
+      ? reply({}, status)
+      : reply({ content: btoa("rest"), encoding: "base64", size: 4 }));
+    assert.deepEqual(await github.files(repo, [sha]), { [sha]: "rest" });
+  }
+  for (const response of [reply({}, 401), reply({}, 429), reply({ errors: [{ type: "RATE_LIMITED" }] })]) {
+    let calls = 0;
+    const github = new GitHub("secret", async () => { calls++; return response; });
+    await assert.rejects(() => github.files(repo, [sha]), (error: HttpError) => [401, 429].includes(error.status));
+    assert.equal(calls, 1, "REST does not bypass authentication or throttling");
+  }
+  const unavailable = new GitHub("secret", async (input) => new URL(String(input)).pathname === "/graphql"
+    ? reply({ data: { repository: null } }) : reply({}, 404));
+  await assert.rejects(() => unavailable.files(repo, [sha]), (error: HttpError) => error.status === 404);
 });
 
 test("truncated directories are never presented as complete", async () => {

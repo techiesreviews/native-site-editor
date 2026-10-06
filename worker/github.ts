@@ -87,6 +87,7 @@ export async function boundedJson(
 
 /** A blob's text read by `prefetchTexts`, kept in memory only. */
 const textKey = (repo: Repository, sha: string) => `${repo.id}/text/${sha}`;
+const blobKey = (repo: Repository, sha: string) => `${repo.id}/blob/${sha}`;
 
 interface GitBlob {
   size: number;
@@ -482,7 +483,7 @@ export class GitHub {
 
   /** A blob as GitHub returns it; blobs never change, so each is read from GitHub once. */
   private blob(repo: Repository, sha: string, limit: number): Promise<GitBlob> {
-    return this.objects.through(`${repo.id}/blob/${sha}`, async () => {
+    return this.objects.through(blobKey(repo, sha), async () => {
       const data = await this.get<GitBlob>(`${this.base(repo)}/git/blobs/${sha}`, limit);
       return { size: data.size, encoding: data.encoding, content: data.content };
     });
@@ -497,10 +498,12 @@ export class GitHub {
    * Reads the text of many blobs in a few GraphQL queries (100 blobs each)
    * instead of one REST request per blob, so a whole-site read stays within
    * GitHub's limits and the Worker's subrequests. The texts are kept in this
-   * isolate's memory for `file()`; a blob GraphQL does not give whole, as the
-   * UTF-8 text of its exact bytes, is left for `file()` to read as usual.
+   * isolate's memory for `file()`; `cacheBlobs` also fills the shared blob
+   * cache for editor file batches. A blob GraphQL
+   * does not give whole, as the UTF-8 text of its exact bytes, is left for
+   * `file()` to read as usual.
    */
-  async prefetchTexts(repo: Repository, shas: string[]): Promise<void> {
+  async prefetchTexts(repo: Repository, shas: string[], cacheBlobs = false): Promise<void> {
     const wanted = [...new Set(shas)].filter(
       (sha) => /^[a-f0-9]{40}$/.test(sha) && !this.hasText(repo, sha),
     );
@@ -525,9 +528,10 @@ export class GitHub {
       if (result.errors?.some((error) => error.type === "RATE_LIMITED")) throw limitedError();
       const found = result.data?.repository;
       if (!found) return;
-      chunk.forEach((sha, index) => {
+      await Promise.all(chunk.map(async (sha, index) => {
         const blob = found[`f${index}`];
         const text = blob?.text;
+        const bytes = typeof text === "string" ? encoder.encode(text) : undefined;
         if (
           typeof text !== "string" ||
           blob!.isBinary ||
@@ -536,11 +540,20 @@ export class GitHub {
           blob!.byteSize > maxFileBytes ||
           text.includes("\0") ||
           text.includes("\uFFFD") ||
-          encoder.encode(text).length !== blob!.byteSize
+          bytes!.length !== blob!.byteSize
         )
           return;
         this.objects.hold(textKey(repo, sha), text);
-      });
+        if (!cacheBlobs) return;
+        let binary = "";
+        for (let offset = 0; offset < bytes!.length; offset += 8192)
+          binary += String.fromCharCode(...bytes!.subarray(offset, offset + 8192));
+        await this.objects.put(blobKey(repo, sha), JSON.stringify({
+          size: blob!.byteSize,
+          encoding: "base64",
+          content: btoa(binary),
+        } satisfies GitBlob));
+      }));
     }
   }
 
@@ -553,6 +566,15 @@ export class GitHub {
     for (const sha of unique)
       if (!/^[a-f0-9]{40}$/.test(sha))
         throw new HttpError(400, "Invalid file revision.");
+    const candidates = unique.filter((sha) => !this.hasText(repo, sha));
+    const cached = await Promise.all(candidates.map((sha) => this.objects.get(blobKey(repo, sha))));
+    try {
+      await this.prefetchTexts(repo, candidates.filter((_, index) => cached[index] === undefined), true);
+    } catch (error) {
+      // Unsupported or unavailable GraphQL reads use the existing REST path.
+      // Authentication, rate limits and subrequest limits must still stop here.
+      if (!(error instanceof HttpError) || [401, 429, 503].includes(error.status)) throw error;
+    }
     const result: Record<string, string> = {};
     let next = 0;
     await Promise.all(
