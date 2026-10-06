@@ -36,6 +36,7 @@ Decided with Lex.
 5. Worker: lazy-load MCP, cache App config per isolate, `waitUntil` for blob cache, `Server-Timing` (ticket 13).
 
 **Phase 3: tests in CI** (ticket 09)
+0. Phase 1 closed 2026-10-06 with the full native save suite at 642 passed, 85 skipped, 1 failed: `native-palette.spec.ts:97` ("actions and the selected section's controls run from the palette…"), a flake that expects one element and sometimes sees two under a full run, and passes alone 3/3. Make it deterministic before it can gate CI.
 1. One `playwright.config.ts` with projects; tags replace the hand lists.
 2. `@smoke` slice and byte budget (ticket 02) on every push; nightly full suite in 4 shards.
 
