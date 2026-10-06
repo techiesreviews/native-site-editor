@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { editorMounted } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
@@ -6,6 +7,7 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact:
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await editorMounted(page);
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const before = editor.getMountedSource("index.html")!;

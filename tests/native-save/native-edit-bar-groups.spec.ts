@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { editorMounted } from "./drafts";
 
 // The edit bar reads as groups (name, style, content, arrange: moves, Move to,
 // duplicate, delete, add) split by thin
@@ -79,6 +80,7 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
   await page.goto(`${baseURL}/${nativeHash}`);
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await editorMounted(page);
   await ordinaryMain(page);
   await expect(frame.locator("#moving")).toBeVisible();
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
@@ -156,6 +158,7 @@ test("a child has no Move down or Move to; its section's Move down still works a
   const undo = async () => expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
   await page.goto(`${baseURL}/${nativeHash}`);
   await expect(frame.locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await editorMounted(page);
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const before = editor.getMountedSource("index.html")!;

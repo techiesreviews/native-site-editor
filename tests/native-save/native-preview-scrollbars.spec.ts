@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { storedDrafts } from "./drafts";
+import { storedDrafts, editorMounted } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page, path: string) => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
+  await editorMounted(page);
 }
 
 test("preview scrollbar chrome belongs to the viewport, with native inner scrollers", async ({ page, baseURL }) => {
@@ -79,6 +80,7 @@ test("an inline scrollbar colour on the page reaches its nested scroller", async
   await page.reload();
   const inner = frame(page).locator(".probe-scroll");
   await expect(inner).toBeVisible();
+  await editorMounted(page);
   expect(await frame(page).locator("html").evaluate(scrollbar)).toEqual({ width: "auto", color: "auto" });
   expect(await inner.evaluate(scrollbar)).toEqual({ width: "auto", color: "rgb(7, 8, 9) rgba(0, 0, 0, 0)" });
   expect(await source(page, "index.html")).toBe(markup);

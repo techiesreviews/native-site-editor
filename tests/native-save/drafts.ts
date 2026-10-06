@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 // The drafts this browser keeps (IndexedDB `native-site-editor-drafts`,
 // src/drafts.ts), once the page has written what it had pending: a
@@ -44,4 +44,11 @@ export async function effectiveSource(page: Page, baseURL: string | undefined, p
   if (draft) return draft.deleted ? undefined : draft.content;
   const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
   return response.ok() ? response.text() : undefined;
+}
+
+// Monaco loads once the preview has painted and the browser is idle
+// (lean-fast-editor ticket 03), so a test that drives the mounted editor
+// directly waits for the open file's pane first.
+export async function editorMounted(page: Page, path = "index.html") {
+  await expect.poll(() => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).isMounted(path), path), { timeout: 20_000 }).toBe(true);
 }

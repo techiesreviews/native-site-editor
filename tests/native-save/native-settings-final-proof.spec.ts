@@ -1,11 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { storedDrafts, storedDraft } from './drafts';
+import { storedDrafts, storedDraft, editorMounted } from './drafts';
 import { fixtureKind } from './fixture-contract';
 
 async function open(page: Page, baseURL: string | undefined, branch = 'main') {
   await page.goto(`${baseURL}/#repo=501&branch=${branch}&file=index.html`);
   await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'index.html');
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+  await editorMounted(page);
 }
 const errors: string[] = [];
 test.beforeEach(({ page }) => { expect(fixtureKind()).toBe('default'); errors.length = 0; page.on('pageerror', error => errors.push(error.message)); });
@@ -67,6 +68,7 @@ for (const tab of ['Pages', 'Files'] as const) {
       await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
       await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'about/index.html');
       await expect.poll(() => captured).toBe(true);
+      await editorMounted(page, 'about/index.html');
       await page.locator('#explorer-toggle').click();
       await page.getByRole('tab', { name: tab, exact: true }).click();
       const row = tab === 'Pages' ? page.locator('#explorer').getByRole('treeitem', { name: /^About/, exact: false })

@@ -4365,7 +4365,9 @@ function mountSetupChecklist() {
       if (choice) choice.focus();
       else announce("This repository has a home page already.");
     },
-    save: () => {
+    save: async () => {
+      // The Save menu sits in the code editor's toolbar: it comes with the editor.
+      if (!document.querySelector(".publish-menu > button")) await editorReady();
       const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
       if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
       trigger.focus();
