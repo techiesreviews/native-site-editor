@@ -5,6 +5,9 @@
 // subtle canvas), and the frame's live width, which can be typed. In a
 // framed width, a handle on each side drags its width (both edges move,
 // so the frame stays centred). The width lasts for the browser session.
+// While a component's template is open, the bar wears the component accent
+// and holds what the page builder gives it (setComponent): who is edited
+// and where it is used at its start, the way back at its end.
 // Nothing here touches the site's files.
 
 import { setCurrentBreakpoint, subscribeBreakpoint } from "../page-builder/breakpoints";
@@ -86,7 +89,12 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   widthInput.title = "Frame width: type a width and press Enter";
   widthField.append(widthInput, node("span", "canvas-width__unit", "px"));
   tools.append(devices, widthField);
-  bar.append(crumbsNav, tools);
+  // The component being edited (its name and Used on), then the way back.
+  const lead = node("div", "canvas-component");
+  lead.hidden = true;
+  const end = node("div", "canvas-component-end");
+  end.hidden = true;
+  bar.append(lead, crumbsNav, tools, end);
 
   // The frame sits on a stage that takes the chosen width, with a handle on each side.
   frameHost.classList.add("canvas-host");
@@ -272,9 +280,19 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   setWidth(width, false);
   setCrumbs([]);
 
+  /** The component whose template is open: its parts in the bar, or none (`undefined`). */
+  function setComponent(parts: { lead: Element[]; end: Element[] } | undefined) {
+    bar.classList.toggle("canvas-bar--component", Boolean(parts));
+    lead.replaceChildren(...(parts?.lead ?? []));
+    end.replaceChildren(...(parts?.end ?? []));
+    lead.hidden = !parts;
+    end.hidden = !parts;
+  }
+
   return {
     bar,
     setCrumbs,
+    setComponent,
     destroy() {
       observer.disconnect();
       unsubscribeBreakpoint();

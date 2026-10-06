@@ -16,6 +16,127 @@
   display: none;
 }
 
+/* While a component's template is open: the bar wears the component accent,
+   with the component and Used on at its start and Done (a check) at its end. */
+.canvas-bar--component {
+  border-bottom-color: color-mix(in oklch, var(--component) 35%, transparent);
+  background: var(--component-surface);
+}
+.canvas-bar--component .canvas-devices {
+  background: color-mix(in oklch, var(--component) 12%, transparent);
+}
+.canvas-bar--component :is(.canvas-device, .canvas-crumb):hover {
+  background: color-mix(in oklch, var(--component) 14%, transparent);
+}
+.canvas-component,
+.canvas-component-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--component-text);
+}
+.canvas-component[hidden],
+.canvas-component-end[hidden] {
+  display: none;
+}
+.canvas-component {
+  flex-shrink: 1;
+  padding-right: 10px;
+  border-right: 1px solid color-mix(in oklch, var(--component) 30%, transparent);
+}
+.canvas-component > .icon {
+  flex: none;
+  margin: 0;
+}
+.canvas-component__name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.canvas-component__tag {
+  overflow: hidden;
+  font: 600 var(--type-small) / 1 var(--font-mono);
+  text-overflow: ellipsis;
+}
+.canvas-component__used {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--size-icon);
+  padding: 0 6px 0 8px;
+  border: 1px solid color-mix(in oklch, var(--component) 40%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--component-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.canvas-component__used:hover,
+.canvas-component__used[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--component) 14%, transparent);
+}
+.canvas-component__used:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.canvas-component__used:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.canvas-component__used .icon {
+  margin: 0;
+  transition: transform 120ms ease-out;
+}
+.canvas-component__used[aria-expanded="true"] .icon {
+  transform: rotate(180deg);
+}
+.canvas-component__done {
+  display: inline-flex;
+  align-items: center;
+  height: var(--size-icon);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--component);
+  color: var(--surface);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.canvas-component__done .icon {
+  flex: none;
+  margin: 0;
+}
+.canvas-component__done-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 160ms ease-out, margin 160ms ease-out, opacity 120ms ease-out;
+}
+.canvas-component__done:is(:hover, :focus-visible) {
+  background: color-mix(in oklch, var(--component) 86%, var(--text));
+}
+.canvas-component__done:is(:hover, :focus-visible) .canvas-component__done-label {
+  max-width: 48px;
+  margin: 0 2px 0 5px;
+  opacity: 1;
+}
+.canvas-component__done:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Breadcrumb: body › main › section.hero › h1, the selection last. */
 .canvas-crumbs {
   flex: 1;
@@ -261,7 +382,11 @@
   .canvas-stage,
   .canvas-device,
   .canvas-handle__grip,
-  .canvas-size {
+  .canvas-size,
+  .canvas-component__used,
+  .canvas-component__used .icon,
+  .canvas-component__done,
+  .canvas-component__done-label {
     transition: none;
   }
 }

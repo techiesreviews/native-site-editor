@@ -8,7 +8,7 @@ the site's files, shown in the code pane as it happens and undone with Undo.
 
 Code: `src/page-builder/component-model.ts` (pure, DOM-free: slots, slot
 states, edits, usage, detach, make), `src/page-builder/components.ts` (the
-edit bar's part, Structure instance fields, the banner, the dialogs),
+edit bar's part, Structure instance fields, the canvas bar, the dialogs),
 `src/page-builder/components.css`, `src/page-builder/component-icon.ts`.
 Wiring is a few lines in `src/main.ts` (`mountComponentTools`, and calls in
 `renderNativeEditBar`, `selectNativeSource`, `setCurrentPage`, `mountSource`).
@@ -58,14 +58,17 @@ Fields capture the exact instance source, template, scope, mounted model/session
 
 ## Edit component
 
-The complete component-root name button in the edit bar (or *Edit* on its Structure root row) opens its template and selects the template root in the code pane. A violet strip over the preview
-says **Editing component `<project-card>` · changes apply to 3 instances on 1
-page** while any component's template is open (it shows even with the code
-pane collapsed; the code pane's title is tinted too). *Used on* lists the pages
-using it (with counts, nested uses included) and the components whose
-templates use it; a page opens with its first instance selected, a component
-opens its template. *Done* goes back to the page the preview shows, with the
-instance worked on selected.
+The complete component-root name button in the edit bar (or *Edit* on its Structure root row) opens its template and selects the template root in the code pane. While any component's template is open, the canvas bar over the preview wears the
+component accent and starts with **◇ Editing `<project-card>`** (it shows even
+with the code pane collapsed; the code pane's title is tinted too). Beside it,
+*Used on 1 page* opens a list (resting the mouse on it for a moment, a click,
+Enter, Space or ↓; Esc closes) that says what an edit changes (*Changes apply
+to 3 instances on 1 page*), then the pages using it (title, address and
+count, nested uses included) and the components whose templates use it; a
+page opens with its first instance selected, a component opens its template.
+The check at the bar's end (*Done editing component*; it widens to show
+*Done* on hover) goes back to the page the preview shows, with the instance
+worked on selected.
 
 ## Detach (Unlink)
 
@@ -167,7 +170,7 @@ The seam browser test runs the production component controller with mocked compo
 - `tests/native-save/native-components.spec.ts` (browser): the accent in the
   bar, structure and canvas and the chip back to the instance; the instance fields’
   text, link, optional, reset and attribute edits as source with undo; Edit
-  component with the banner, Used on and Done; Detach; Make component with
+  component with the canvas bar, Used on and Done; Detach; Make component with
   undo and redo of its files; an image slot and a `data-if` slot on a
   component added to About.
 
