@@ -24,8 +24,9 @@ Decided with Lex.
 3. ★ Move page re-key and link-rebase logic plus `attribute()`/section targets into the neutral module; decouple Add card; callers switch to `applyNativeOperation`.
 4. Page settings › Fields.
 5. Collections, generated rows, asset hooks; sidecar strips `collections` and `pages[*].fields`.
-6. Docs.
-7. Fix the 14 browser specs that already failed on `dev` before phase 1 (full run after P1.1 + P1.2, 2026-10-06: 707 passed, 15 failed, 110 skipped; 14 reproduce on the pre-phase-1 base, 1 was a flake that passes 3/3 alone). They cover asset-reference refusal wording (1), the Page settings entry in create/history specs (4), the saved-section catalogue in Add specs (4), file/page URL menus (3), routing (1) and component CSS load count (1). Several touch Page Fields and collections, so this lands after steps 4–5, before phase 3 puts browser tests in CI.
+6. Remove template visibility conditions (Lex, 2026-10-06): the Visibility conditions dialog (`src/page-builder/component-conditions.ts`, its wiring in `components.ts`, tests, `docs/page-builder/component-conditions.md`) and `data-if` itself. The runtime already hides unfilled slots and empty wrappers on its own, and no starter component uses `data-if`. In the editor: the `data-if` branches in `public/native-preview-runtime.js`, `card-grid.ts` (optional slots left out of a new card), the `component-model.ts` notes and the `worker/site-conventions.ts` sentence. After step 5, because collections also read `data-if`. The starter (`~/Projects/native-site-editor-starter`: `components/components.js`, `AGENTS.md`) changes in the same pass as a separate commit there.
+7. Docs.
+8. Fix the 14 browser specs that already failed on `dev` before phase 1 (full run after P1.1 + P1.2, 2026-10-06: 707 passed, 15 failed, 110 skipped; 14 reproduce on the pre-phase-1 base, 1 was a flake that passes 3/3 alone). They cover asset-reference refusal wording (1), the Page settings entry in create/history specs (4), the saved-section catalogue in Add specs (4), file/page URL menus (3), routing (1) and component CSS load count (1). Several touch Page Fields and collections, so this lands after steps 4–5, before phase 3 puts browser tests in CI.
 
 **Phase 2: quick performance wins**
 1. Immutable `/assets/*` cache header; reload-once on failed chunk loads.
