@@ -36,3 +36,20 @@ Baseline, median of 5 (ms from navigation start):
 5. Still missing: signed-in numbers on preview-editor.techies.tools (needs Lex's one-time sign-in). Local numbers are for comparing runs, not user-facing truth.
 
 Per ticket 11, `tests/perf/edit-component-latency.ts` goes; `cold-start.ts` is the yardstick that stays.
+
+## Remote signed-in baseline (2026-10-06, added after close)
+
+preview-editor.techies.tools, starter repository 1389746318, real network from Lex's machine (no throttling), median of 5:
+
+| Load | session | paint | usable | Monaco | bytes before paint | requests before paint | bytes total |
+|---|---|---|---|---|---|---|---|
+| cold | 1125 | 3956 | 18327 | 3351 | 6591 KB | 72 | 15190 KB |
+| warm | 807 | 2716 | 17077 | 2035 | 5148 KB | 73 | 13683 KB |
+
+Top bytes before first paint (cold): `/api/raw` 4566 KB, Monaco `editor.api` 683 KB, `/api/files` 548 KB, `index.js` 332 KB, `code-editor` 304 KB.
+
+New findings the local profile hid:
+1. **Images dominate.** `/api/raw` returns each image blob base64-encoded in JSON (`worker/app.ts:958`) with no caching, so the ~4.5 MB of starter images (+33% for base64) is fetched again on every load, warm included. Blobs are addressed by SHA, so they can be cached as immutable.
+2. **"Usable" is 17–20 s**, far behind paint (2.7–4 s). Locally the two were equal. Cause unknown; see ticket 16.
+3. **Warm is barely faster than cold** (2.7 s vs 4.0 s paint): almost nothing on the data path is cached by the browser.
+
