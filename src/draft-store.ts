@@ -41,24 +41,32 @@
 // its model on demand from `get(...).text`, and owns only typing undo inside
 // that pane. The pane's adapter:
 //
-// 1. `beginTyping(scope, path, history)` when the pane mounts. Each content
-//    change Monaco makes from typing goes to `session.input(model.getValue())`:
-//    the store's text (and so the preview and the persisted draft) follows at
+// 1. `beginTyping(scope, path, history, { version, native })` when the pane
+//    mounts, with the model's alternative version id. Each content change
+//    from typing goes to `session.input(model.getValue(), version)`: the
+//    store's text (and so the preview and the persisted draft) follows at
 //    once, without a history step.
 // 2. When typing settles (code-editor.ts's TYPING_SETTLE_MS) or the pane
-//    closes, `session.commit()` turns everything typed since the last commit
-//    into one history step; the adapter calls `model.pushStackElement()` and
-//    remembers the model's alternative version id as its floor.
-// 3. Ctrl+Z in the pane: while the model is above its floor (uncommitted
-//    typing), Monaco's own `model.undo()` undoes keystrokes and the adapter
-//    passes the resulting text to `input`. At the floor, the key runs
-//    `store.undo(history)` instead. The store itself commits pending typing
-//    first whenever its history moves, so the two never interleave.
+//    closes, `session.commit()` records one typing step; the adapter calls
+//    `model.pushStackElement()` and remembers the version as its floor.
+// 3. Ctrl+Z in the pane: above the floor (uncommitted typing), Monaco's own
+//    `model.undo()` runs and its result goes to `input` like typing. At the
+//    floor the key runs `store.undo(history)`. A typing step keeps Monaco's
+//    undo stops: while its pane is open the store routes its Undo and Redo
+//    back through `native.undo/redo(expected)`, one Monaco stop per press
+//    (the adapter runs `model.undo()` without reporting it to `input`), so
+//    the stops stay interleaved with visual steps in one journal order.
+//    After `dispose` (pane closed) the step undoes whole. The store commits
+//    pending typing before its history moves, so the two never interleave.
 // 4. The adapter subscribes; a `text` event for its file whose origin is not
-//    "typing" (a visual edit, Undo/Redo, a receipt, Discard, another tab) is
-//    applied to the model with `model.applyEdits(event.changes)` (outside
-//    Monaco's undo stack), then the floor moves to the new version.
+//    "typing" and whose text differs from the model (a visual edit, Undo/Redo,
+//    a receipt, Discard, another tab) is applied with
+//    `model.applyEdits(event.changes)` (outside Monaco's undo stack), then
+//    `session.sync(version)` and the floor move to the new version.
 // 5. `retain(scope, path)` while the pane is open, released on dispose.
+//
+// Events are delivered after a mutation and its journal move are complete,
+// so a listener that edits the store again builds on a settled history.
 //
 // Shared state for the main.ts split (ticket 08) will wrap `subscribe` in
 // @preact/signals-core signals; the store itself needs no reactive library.
@@ -136,13 +144,29 @@ export interface ReceiptFile {
 }
 export interface TypingSession {
   readonly key: string;
-  /** The pane's text after a keystroke (Monaco's own Undo inside the pane included). */
-  input(text: string): void;
+  /**
+   * The pane's text after a keystroke, or after Monaco's own Undo/Redo of
+   * typing not yet committed; `version` is the model's alternative version id.
+   */
+  input(text: string, version?: number): void;
+  /** The model's alternative version id after the pane applied a store change to it. */
+  sync(version: number): void;
   /** Closes what was typed since the last commit as one history step. */
   commit(label?: string): number | undefined;
-  /** Commits and ends the session. */
+  /** Commits and ends the session; its steps fall back to whole-text Undo. */
   dispose(): void;
 }
+/**
+ * The pane's own undo stack, so a committed typing step keeps Monaco's undo
+ * stops: the store asks for one native Undo or Redo at a time while the model
+ * is at `expected` (else returns undefined), and gets the resulting text and
+ * version. The pane must not report that change through `input`.
+ */
+export interface NativeTyping {
+  undo(expected: number): { text: string; version: number } | undefined;
+  redo(expected: number): { text: string; version: number } | undefined;
+}
+export interface TypingOptions { label?: string; version?: number; native?: NativeTyping }
 export interface DraftStoreOptions {
   persistence?: DraftPersistence;
   now?: () => number;
@@ -164,9 +188,16 @@ type Snapshot = (FileState & { revision: number }) | null;
 type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean; companions: HistoryCompanion[] };
 type ReceiptStep = { kind: "receipt"; id: number; label: string; files: { key: string; scope: DraftScope; path: string; before: Snapshot; after: Snapshot }[] };
 type ActionStep = { kind: "action"; id: number; label: string; undo: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
-type Step = EditStep | ReceiptStep | ActionStep;
+type TypingState = { text: string; revision: number; version?: number };
+/**
+ * Typing committed from a pane. `at` is where Undo/Redo has it, from `start`
+ * to `end`: one native stop at a time while its pane is open. The step is on
+ * the undo stack whenever `at` is not `start`.
+ */
+type TypingStep = { kind: "typing"; id: number; label: string; key: string; session: Typing; start: TypingState; end: TypingState; at: TypingState; companions: HistoryCompanion[] };
+type Step = EditStep | TypingStep | ReceiptStep | ActionStep;
 type Journal = { undo: Step[]; redo: Step[] };
-type Typing = { history: string; label: string; start?: { text: string; revision: number } };
+type Typing = { history: string; label: string; start?: TypingState; version?: number; native?: NativeTyping; ended?: boolean };
 
 /** Applies non-overlapping changes; returns the new text and the changes that undo them (in the new text's offsets). */
 export function applyChanges(text: string, changes: readonly TextChange[]) {
@@ -219,7 +250,17 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   const listeners = new Set<(event: DraftEvent) => void>();
   let revisions = 0, steps = 0;
 
-  const emit = (event: DraftEvent) => { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } };
+  const deliver = (event: DraftEvent) => { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } };
+  // Events wait until a mutation (and its journal move) is complete, so a
+  // listener that changes the store again sees, and builds on, a settled state.
+  let deferred = 0;
+  const queued: DraftEvent[] = [];
+  const emit = (event: DraftEvent) => { if (deferred) queued.push(event); else deliver(event); };
+  function batch<T>(fn: () => T): T {
+    deferred++;
+    try { return fn(); }
+    finally { if (--deferred === 0) while (queued.length && !deferred) deliver(queued.shift()!); }
+  }
   const emitHistory = (history: string) => emit({ type: "history", history });
   const textEvent = (entry: Entry, origin: TextOrigin, changes?: { start: number; end: number; text: string }[]) =>
     emit({ type: "text", key: entry.key, scope: entry.scope, path: entry.path, text: entry.text, revision: entry.revision, origin, changes });
@@ -230,7 +271,16 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   };
   const disposeStep = (step: Step) => { if (step.kind === "action") try { step.dispose?.(); } catch { /* Cleanup must not interrupt. */ } };
   const clearRedo = (found: Journal) => { for (const step of found.redo) disposeStep(step); found.redo.length = 0; };
-  const keysOf = (step: Step) => step.kind === "edit" ? [step.key] : step.kind === "receipt" ? step.files.map(file => file.key) : [];
+  const keysOf = (step: Step) => step.kind === "edit" || step.kind === "typing" ? [step.key] : step.kind === "receipt" ? step.files.map(file => file.key) : [];
+  /** A new step: a partly undone typing step below it ends where it is now (the pane's redo is gone). */
+  function pushStep(history: string, step: Step) {
+    const found = journal(history);
+    const top = found.undo.at(-1);
+    if (top?.kind === "typing" && top.at !== top.end) top.end = top.at;
+    found.undo.push(step);
+    clearRedo(found);
+    emitHistory(history);
+  }
   const view = (entry: Entry): DraftFile => ({
     key: entry.key, scope: entry.scope, path: entry.path, text: entry.text, base: entry.base, baseSha: entry.baseSha,
     flags: entry.flags, revision: entry.revision, changed: isChanged(entry), persisted: entry.persisted,
@@ -293,40 +343,40 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       entry.revision = start.revision;
       return undefined;
     }
-    const found = journal(session.history);
-    const step: EditStep = { kind: "edit", id: ++steps, label: label ?? session.label, key, changes: [diffRange(start.text, entry.text)],
-      inverse: [diffRange(entry.text, start.text)], before: start.revision, after: entry.revision, group: false, companions: [] };
-    found.undo.push(step);
-    clearRedo(found);
-    emitHistory(session.history);
+    const end: TypingState = { text: entry.text, revision: entry.revision, version: session.version };
+    const step: TypingStep = { kind: "typing", id: ++steps, label: label ?? session.label, key, session, start, end, at: end, companions: [] };
+    pushStep(session.history, step);
     return step.id;
   }
   const commitHistoryTyping = (history: string) => { for (const [key, session] of typing) if (session.history === history) commitTyping(key); };
 
-  function beginTyping(scope: DraftScope, path: string, history?: string, label = "Typing"): TypingSession {
+  function beginTyping(scope: DraftScope, path: string, history?: string, options: TypingOptions = {}): TypingSession {
     const key = draftKey(scope, path);
     if (!files.has(key)) throw new Error(`${path} is not open in the draft store.`);
     if (typing.has(key)) throw new Error(`${path} already has a typing session.`);
-    const session: Typing = { history: history ?? key, label };
+    const session: Typing = { history: history ?? key, label: options.label ?? "Typing", version: options.version, native: options.native };
     typing.set(key, session);
-    let ended = false;
     return {
       key,
-      input(text) {
+      input: (text, version) => batch(() => {
         const entry = files.get(key);
-        if (ended || !entry || entry.text === text) return;
+        if (session.ended || !entry) return;
+        if (entry.text === text) { if (version !== undefined) session.version = version; return; }
         const previous = entry.text;
-        session.start ??= { text: entry.text, revision: entry.revision };
+        session.start ??= { text: entry.text, revision: entry.revision, version: session.version };
+        if (version !== undefined) session.version = version;
         entry.text = text;
         entry.revision = ++revisions;
         persist(entry);
         textEvent(entry, "typing", [diffRange(previous, text)]);
-      },
-      commit: (commitLabel) => ended ? undefined : commitTyping(key, commitLabel),
+      }),
+      sync(version) { if (!session.ended) session.version = version; },
+      commit: (commitLabel) => session.ended ? undefined : batch(() => commitTyping(key, commitLabel)),
       dispose() {
-        if (ended) return;
-        commitTyping(key);
-        ended = true;
+        if (session.ended) return;
+        batch(() => commitTyping(key));
+        session.ended = true;
+        session.native = undefined;
         if (typing.get(key) === session) typing.delete(key);
       },
     };
@@ -386,13 +436,14 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       last.inverse = [diffRange(entry.text, start)];
       last.after = entry.revision;
       if (input.companion) last.companions.push(input.companion);
-    } else {
-      found.undo.push({ kind: "edit", id: ++steps, label: input.label ?? "Edit", key, changes: applied.changes, inverse: applied.inverse,
-        before, after: entry.revision, group: Boolean(input.group), companions: input.companion ? [input.companion] : [] });
+      clearRedo(found);
+      emitHistory(history);
+      return { ok: true, step: last.id };
     }
-    clearRedo(found);
-    emitHistory(history);
-    return { ok: true, step: found.undo.at(-1)!.id };
+    const step: EditStep = { kind: "edit", id: ++steps, label: input.label ?? "Edit", key, changes: applied.changes, inverse: applied.inverse,
+      before, after: entry.revision, group: Boolean(input.group), companions: input.companion ? [input.companion] : [] };
+    pushStep(history, step);
+    return { ok: true, step: step.id };
   }
   function closeGroup(history: string) {
     const last = journals.get(history)?.undo.at(-1);
@@ -404,16 +455,18 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
    */
   function attachCompanion(history: string, step: number, companion: HistoryCompanion) {
     const last = journals.get(history)?.undo.at(-1);
-    if (last?.kind !== "edit" || last.id !== step || files.get(last.key)?.revision !== last.after) return false;
+    if (last?.kind !== "edit" && last?.kind !== "typing" || last.id !== step) return false;
+    if (files.get(last.key)?.revision !== (last.kind === "edit" ? last.after : last.at === last.end ? last.end.revision : NaN)) return false;
     last.companions.push(companion);
     return true;
   }
 
   const snapshot = (entry: Entry | undefined): Snapshot => entry
     ? { text: entry.text, base: entry.base, baseSha: entry.baseSha, flags: entry.flags, revision: entry.revision } : null;
-  const atSnapshot = (key: string, expected: Snapshot) => {
+  const atSnapshot = ({ key, scope, path }: { key: string; scope: DraftScope; path: string }, expected: Snapshot) => {
     const entry = files.get(key);
-    if (!expected) return !entry;
+    // Absent means no entry and no persisted draft: another writer's draft there is not ours to overwrite.
+    if (!expected) return !entry && (!persistence || persistence.get(scope, path) === undefined);
     return Boolean(entry) && entry!.revision === expected.revision && entry!.text === expected.text && entry!.base === expected.base &&
       entry!.baseSha === expected.baseSha && sameFlags(entry!.flags, expected.flags) && ownsRecord(entry!);
   };
@@ -472,34 +525,29 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const error = setSnapshots(planned.map(file => ({ ...file, to: file.after })), "receipt");
     if (error) return { ok: false, error };
     if (!record) { for (const key of keys) invalidate(key); return { ok: true }; }
-    const found = journal(history);
     const step: ReceiptStep = { kind: "receipt", id: ++steps, label, files: planned };
-    found.undo.push(step);
-    clearRedo(found);
-    emitHistory(history);
+    pushStep(history, step);
     return { ok: true, step: step.id };
   }
 
   /** Records a host step (recordHistoryAction): Undo runs `undo` once the steps after it are undone. */
   function recordAction(history: string, action: { label?: string; undo: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void }) {
     commitHistoryTyping(history);
-    const found = journal(history);
     const step: ActionStep = { kind: "action", id: ++steps, label: action.label ?? "Change", undo: action.undo, redo: action.redo, dispose: action.dispose };
-    found.undo.push(step);
-    clearRedo(found);
-    emitHistory(history);
+    pushStep(history, step);
     return step.id;
   }
 
   function stepError(step: Step, direction: "undo" | "redo"): string | undefined {
     if (step.kind === "action") return direction === "redo" && !step.redo ? "This change cannot be redone." : undefined;
-    if (step.kind === "edit") {
+    if (step.kind === "edit" || step.kind === "typing") {
       const entry = files.get(step.key);
-      if (!entry || entry.revision !== (direction === "undo" ? step.after : step.before)) return `${entry?.path ?? "The file"} changed since this step.`;
+      const expected = step.kind === "typing" ? step.at.revision : direction === "undo" ? step.after : step.before;
+      if (!entry || entry.revision !== expected) return `${entry?.path ?? "The file"} changed since this step.`;
       if (!ownsRecord(entry)) return `The draft for ${entry.path} changed outside the editor.`;
       return undefined;
     }
-    const changed = step.files.find(file => !atSnapshot(file.key, direction === "undo" ? file.after : file.before));
+    const changed = step.files.find(file => !atSnapshot(file, direction === "undo" ? file.after : file.before));
     return changed ? `${RECEIPT_REFUSAL} (${changed.path})` : undefined;
   }
   const blocked = (history: string) => running.has(history) || holds.has(history);
@@ -507,61 +555,114 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (blocked(history)) return false;
     const found = journals.get(history);
     if (direction === "undo" && [...typing.values()].some(session => session.history === history && session.start)) return true;
-    const step = found?.[direction].at(-1);
+    const step = found && candidate(found, direction);
     return Boolean(step && !stepError(step, direction));
+  }
+  /** The step Undo or Redo moves next: Redo first finishes a partly undone typing step. */
+  function candidate(found: Journal, direction: "undo" | "redo") {
+    const top = found.undo.at(-1);
+    if (direction === "redo" && top?.kind === "typing" && top.at !== top.end) return top;
+    return found[direction].at(-1);
+  }
+  /** One native stop of a typing step (or all of it without its pane). */
+  function moveTyping(step: TypingStep, direction: "undo" | "redo"): string | undefined {
+    const entry = files.get(step.key)!;
+    const target = direction === "undo" ? step.start : step.end;
+    const native = step.session.ended ? undefined : step.session.native;
+    let next = target;
+    if (native && step.at.version !== undefined && target.version !== undefined) {
+      const result = native[direction](step.at.version);
+      if (!result) return `The code pane for ${entry.path} could not ${direction} this typing.`;
+      step.session.version = result.version;
+      if (result.version !== target.version || result.text !== target.text) next = { text: result.text, revision: ++revisions, version: result.version };
+    }
+    const previous = entry.text;
+    entry.text = next.text;
+    entry.revision = next.revision;
+    step.at = next;
+    persist(entry);
+    textEvent(entry, direction, [diffRange(previous, next.text)]);
+    return undefined;
   }
 
   async function run(history: string, direction: "undo" | "redo"): Promise<Result<{ label: string }>> {
     if (blocked(history)) return { ok: false, error: "Undo and Redo wait for the current change to finish." };
-    commitHistoryTyping(history);
+    batch(() => commitHistoryTyping(history));
     const found = journal(history);
-    const from = found[direction], to = direction === "undo" ? found.redo : found.undo;
-    const step = from.at(-1);
+    const step = candidate(found, direction);
     if (!step) return { ok: false, error: direction === "undo" ? "Nothing to undo." : "Nothing to redo." };
     const error = stepError(step, direction);
     if (error) {
       // A stale single-file step means the file changed outside history: the journal is cleared, as Monaco's was.
-      if (step.kind === "edit") { for (const old of [...found.undo, ...found.redo]) disposeStep(old); found.undo.length = 0; found.redo.length = 0; emitHistory(history); }
+      if (step.kind === "edit" || step.kind === "typing") { for (const old of [...found.undo, ...found.redo]) disposeStep(old); found.undo.length = 0; found.redo.length = 0; emitHistory(history); }
       return { ok: false, error };
     }
-    running.add(history);
-    try {
-      if (step.kind === "action") {
+    /** Moves exactly `step` between the stacks; false when it is no longer on top of `from`. */
+    const move = (from: Step[], to: Step[] | undefined) => {
+      if (journals.get(history) !== found || from.at(-1) !== step) return false;
+      from.pop();
+      to?.push(step);
+      return true;
+    };
+    if (step.kind === "action") {
+      running.add(history);
+      try {
         const callback = direction === "undo" ? step.undo : step.redo!;
         let accepted: void | boolean;
         try { accepted = await callback(); } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "The change could not be undone." }; }
         // The callback may await; only this exact journal, with the step still on top, moves.
         if (accepted === false) return { ok: false, error: "The change was refused." };
-        if (journals.get(history) !== found || from.at(-1) !== step) return { ok: false, error: "The history changed meanwhile." };
-        from.pop();
-        if (step.redo) to.push(step);
-        else { disposeStep(step); clearRedo(found); }
+        const from = direction === "undo" ? found.undo : found.redo;
+        if (!move(from, step.redo ? (direction === "undo" ? found.redo : found.undo) : undefined)) return { ok: false, error: "The history changed meanwhile." };
+        if (!step.redo) { disposeStep(step); clearRedo(found); }
         return { ok: true, label: step.label };
+      } finally {
+        running.delete(history);
+        emitHistory(history);
       }
-      if (step.kind === "edit") {
-        const entry = files.get(step.key)!;
-        const previous = { text: entry.text, revision: entry.revision };
-        const applied = applyChanges(entry.text, direction === "undo" ? step.inverse : step.changes);
-        entry.text = applied.text;
-        entry.revision = direction === "undo" ? step.before : step.after;
-        if (!persist(entry)) {
-          entry.text = previous.text; entry.revision = previous.revision; persist(entry);
-          return { ok: false, error: persistence?.error ?? `Could not update ${entry.path}.` };
-        }
-        textEvent(entry, direction, applied.changes);
-        const companions = direction === "undo" ? [...step.companions].reverse() : step.companions;
-        for (const companion of companions) companion[direction]();
-      } else {
-        const failed = setSnapshots(step.files.map(file => ({ ...file, to: direction === "undo" ? file.before : file.after })), direction);
-        if (failed) return { ok: false, error: failed };
-      }
-      from.pop();
-      to.push(step);
-      return { ok: true, label: step.label };
-    } finally {
-      running.delete(history);
-      emitHistory(history);
     }
+    // Text steps are synchronous: the journal moves before any event or companion runs.
+    return batch((): Result<{ label: string }> => {
+      running.add(history);
+      try {
+        if (step.kind === "typing") {
+          const onUndo = found.undo.at(-1) === step;
+          const failed = moveTyping(step, direction);
+          if (failed) return { ok: false, error: failed };
+          // On the undo stack whenever it is not back at its start.
+          if (onUndo && step.at === step.start) move(found.undo, found.redo);
+          else if (!onUndo) move(found.redo, found.undo);
+          if (direction === "undo" && step.at === step.start) for (const companion of [...step.companions].reverse()) companion.undo();
+          if (direction === "redo" && step.at === step.end) for (const companion of step.companions) companion.redo();
+          return { ok: true, label: step.label };
+        }
+        const from = direction === "undo" ? found.undo : found.redo, to = direction === "undo" ? found.redo : found.undo;
+        if (from.at(-1) !== step) return { ok: false, error: "The history changed meanwhile." };
+        if (step.kind === "edit") {
+          const entry = files.get(step.key)!;
+          const previous = { text: entry.text, revision: entry.revision };
+          const applied = applyChanges(entry.text, direction === "undo" ? step.inverse : step.changes);
+          entry.text = applied.text;
+          entry.revision = direction === "undo" ? step.before : step.after;
+          if (!persist(entry)) {
+            entry.text = previous.text; entry.revision = previous.revision; persist(entry);
+            return { ok: false, error: persistence?.error ?? `Could not update ${entry.path}.` };
+          }
+          move(from, to);
+          textEvent(entry, direction, applied.changes);
+          const companions = direction === "undo" ? [...step.companions].reverse() : step.companions;
+          for (const companion of companions) companion[direction]();
+        } else {
+          const failed = setSnapshots(step.files.map(file => ({ ...file, to: direction === "undo" ? file.before : file.after })), direction);
+          if (failed) return { ok: false, error: failed };
+          move(from, to);
+        }
+        return { ok: true, label: step.label };
+      } finally {
+        running.delete(history);
+        emitHistory(history);
+      }
+    });
   }
 
   /** Keeps `history` unavailable (holdHistoryRefresh) until the returned release runs. */
@@ -671,11 +772,11 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     open,
     get: (scope: DraftScope, path: string) => { const entry = files.get(draftKey(scope, path)); return entry && view(entry); },
     text: (scope: DraftScope, path: string) => files.get(draftKey(scope, path))?.text,
-    edit,
+    edit: (input: EditInput) => batch(() => edit(input)),
     closeGroup,
     attachCompanion,
-    applyReceipt,
-    recordAction,
+    applyReceipt: (history: string, label: string, changes: ReceiptFile[], record = true) => batch(() => applyReceipt(history, label, changes, record)),
+    recordAction: (history: string, action: Parameters<typeof recordAction>[1]) => batch(() => recordAction(history, action)),
     beginTyping,
     undo: (history: string) => run(history, "undo"),
     redo: (history: string) => run(history, "redo"),
@@ -685,12 +786,12 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     peek: (history: string, direction: "undo" | "redo") => journals.get(history)?.[direction].at(-1)?.label,
     hold,
     retain,
-    discard,
-    drop,
-    forget,
+    discard: (scope: DraftScope, path: string, history?: string) => batch(() => discard(scope, path, history)),
+    drop: (scope: DraftScope, path: string, force = false) => batch(() => drop(scope, path, force)),
+    forget: (scope: DraftScope, path: string) => batch(() => forget(scope, path)),
     markSaved,
     acceptBase,
-    reload,
+    reload: (scope: DraftScope, path: string) => batch(() => reload(scope, path)),
     /** Files whose draft differs from GitHub (changedFiles). */
     changed: () => [...files.values()].filter(isChanged).map(view),
     /** Changed files whose last write did not reach persistence (hasUnpersistedEdits). */

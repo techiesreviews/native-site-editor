@@ -357,3 +357,89 @@ test("subscribers can unsubscribe and a throwing listener does not break a step"
   assert.equal(seen, count);
   assert.equal(store.text(scope, "a.html"), "c");
 });
+
+test("review fix: Redo of a receipt refuses to overwrite a foreign draft written at a path it had removed", async () => {
+  const persistence = records();
+  const { store } = setup(persistence);
+  store.open(scope, "index.html", { text: "A", baseSha: sha("a") });
+  assert.ok(store.applyReceipt("page", "Add page", [
+    { scope, path: "index.html", after: { text: "A2", base: "A", baseSha: sha("a") } },
+    { scope, path: "new.html", expected: null, after: { text: "mine", base: "", baseSha: null } },
+  ]).ok);
+  assert.ok((await store.undo("page")).ok);
+  assert.equal(persistence.map.has("new.html"), false);
+  // Another tab persists a draft at the path the receipt's Undo left absent.
+  const theirs: SavedDraft = { ...scope, version: 1, path: "new.html", baseSha: null, original: "", content: "theirs", updatedAt: 9 };
+  persistence.map.set("new.html", theirs);
+  assert.equal(store.canRedo("page"), false);
+  const redo = await store.redo("page");
+  assert.equal(redo.ok, false);
+  assert.equal(persistence.map.get("new.html"), theirs);
+  assert.equal(store.text(scope, "index.html"), "A");
+});
+
+test("review fix: a receipt recorded by a listener during Undo keeps its history entry", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "a", baseSha: sha("a") });
+  store.open(scope, "b.css", { text: "b", baseSha: sha("b") });
+  store.edit({ scope, path: "a.html", history: "h", label: "Visual", text: "a1" });
+  let reacted = false;
+  store.subscribe(event => {
+    if (reacted || event.type !== "text" || event.origin !== "undo") return;
+    reacted = true;
+    // The journal has already moved when the event arrives.
+    assert.equal(store.peek("h", "redo"), "Visual");
+    assert.ok(store.applyReceipt("h", "Follow-up", [{ scope, path: "b.css", after: { text: "b2", base: "b", baseSha: sha("b") } }]).ok);
+  });
+  assert.ok((await store.undo("h")).ok);
+  assert.ok(reacted);
+  assert.equal(store.peek("h", "undo"), "Follow-up");
+  assert.ok((await store.undo("h")).ok);
+  assert.equal(store.text(scope, "b.css"), "b");
+  assert.equal(store.text(scope, "a.html"), "a");
+});
+
+test("review fix: a typing step keeps Monaco's undo stops, in order with visual steps", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "x", baseSha: sha("a") });
+  store.open(scope, "b.css", { text: "b", baseSha: sha("b") });
+  // A fake pane: Monaco's undo stops (alternative version ids) for what is typed below.
+  const stops = [{ text: "x", version: 1 }, { text: "xab", version: 3 }, { text: "xabcd", version: 5 }];
+  let at = 2, nativeCalls = 0;
+  const native = {
+    undo(expected: number) { nativeCalls++; if (stops[at].version !== expected || at === 0) return undefined; return stops[--at]; },
+    redo(expected: number) { nativeCalls++; if (stops[at].version !== expected || at === stops.length - 1) return undefined; return stops[++at]; },
+  };
+  const typing = store.beginTyping(scope, "a.html", "h", { version: 1, native });
+  typing.input("xa", 2); typing.input("xab", 3); typing.input("xabc", 4); typing.input("xabcd", 5);
+  typing.commit();
+  store.edit({ scope, path: "b.css", history: "h", label: "Style", text: "b1" });
+  const texts = () => [store.text(scope, "a.html"), store.text(scope, "b.css")];
+  await store.undo("h");
+  assert.deepEqual(texts(), ["xabcd", "b"]);
+  await store.undo("h");
+  assert.deepEqual(texts(), ["xab", "b"], "one Monaco stop per Undo");
+  assert.equal(store.peek("h", "undo"), "Typing");
+  await store.undo("h");
+  assert.deepEqual(texts(), ["x", "b"]);
+  assert.equal(store.canUndo("h"), false);
+  await store.redo("h");
+  assert.deepEqual(texts(), ["xab", "b"]);
+  await store.redo("h");
+  assert.deepEqual(texts(), ["xabcd", "b"]);
+  await store.redo("h");
+  assert.deepEqual(texts(), ["xabcd", "b1"]);
+  assert.equal(nativeCalls, 4);
+  // Partly undone, then new typing: the step ends where it was, the pane's redo is gone.
+  await store.undo("h"); await store.undo("h");
+  typing.input("xabZ", 6);
+  typing.commit();
+  assert.equal(store.canRedo("h"), false);
+  // With the pane closed, a typing step undoes whole.
+  typing.dispose();
+  await store.undo("h");
+  assert.equal(store.text(scope, "a.html"), "xab");
+  await store.undo("h");
+  assert.equal(store.text(scope, "a.html"), "x");
+  assert.equal(nativeCalls, 5);
+});
