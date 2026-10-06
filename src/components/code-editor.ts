@@ -755,14 +755,14 @@ export function clearDrafts() {
   visualHistory.clear();
   draftStore().release();
 }
+/** Changed Monaco models may still be waiting for their persistence debounce. */
+export function hasUnpersistedEdits() {
+  return [...drafts.values()].some(
+    (d) => (d.baseSha === null || d.model.getValue() !== d.original) && !d.persisted,
+  );
+}
 window.addEventListener("beforeunload", (event) => {
-  if (
-    [...drafts.values()].some(
-      (d) =>
-        (d.baseSha === null || d.model.getValue() !== d.original) &&
-        !d.persisted,
-    )
-  ) {
+  if (hasUnpersistedEdits()) {
     event.preventDefault();
     event.returnValue = "";
   }
