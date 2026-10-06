@@ -30,6 +30,10 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Research faster session and GitHub reads in the Worker](tickets/04-research-session-and-github-reads.md): parallel installation listing, repository list out of /api/session, GraphQL file batches, keep the DO session minus blockConcurrencyWhile, no webhooks; cross-isolate cache only if still slow
+- [Research the toolchain pins](tickets/10-research-toolchain-pins.md): Node 24 everywhere, keep Miniflare alpha pinned in lockstep with Wrangler, keep tweetnacl+blakejs, align esbuild with Wrangler, drop the undici override, keep dompurify
+- [Research bundle splitting and asset caching](tickets/06-research-bundle-split-and-asset-caching.md): defer the Monaco prefetch until after first preview, immutable cache on /assets/*, load secondary panels on demand after the removals, trim Monaco contributions last, reload once on a failed chunk load
+
 ## Not yet specified
 
 - **Handoff plan:** how the decisions turn into build slices, in what order, and how each slice is checked against the budget. This is the last ticket, and it graduates once the others are mostly closed.
