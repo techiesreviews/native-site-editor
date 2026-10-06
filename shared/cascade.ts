@@ -1,7 +1,7 @@
 // The CSS cascade for one element, as plain data: which declaration wins each
 // property and which ones lose. The preview runtime reads the rules that match
 // the selected element from the CSSOM (public/native-preview-runtime.js) and
-// the editor resolves them here, so the style panel lists rules the way the
+// the editor resolves them here, so the Source editor lists rules the way the
 // browser applies them whatever the site's CSS structure: layers or none, one
 // file or many, `@import`, conditions, nesting, shadow DOM, `!important`.
 //

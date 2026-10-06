@@ -167,25 +167,6 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await page.screenshot({ path: `${shots}/fields-attributes-${name}.png` });
     await page.keyboard.press("Escape");
 
-    // Style: the cards grid's own `.cards` rule (styles/layout.css), every section open, and a value's variable menu.
-    await frame(page).locator("card-project h3").first().click();
-    await page.getByRole("button", { name: "div.cards", exact: true }).click();
-    const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-    if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-    const style = page.getByRole("complementary", { name: "Style panel" });
-    await expect(style.getByText(".cards", { exact: true }).first()).toBeVisible();
-    await expect(style.getByText("styles/layout.css", { exact: true }).first()).toBeVisible();
-    await style.locator("details.style-panel__section").evaluateAll((sections) => sections.forEach((section) => { (section as HTMLDetailsElement).open = true; }));
-    await page.waitForTimeout(200);
-    report.style = await audit(page, "[aria-label='Style panel']");
-    await page.screenshot({ path: `${shots}/fields-style-${name}.png` });
-    const gap = style.getByRole("textbox", { name: /^(Gap|Margin top|Padding top)$/ }).first();
-    await gap.scrollIntoViewIfNeeded();
-    await gap.click({ button: "right" });
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `${shots}/fields-style-variables-${name}.png` });
-    await page.keyboard.press("Escape");
-
     // The canvas width.
     report.canvas = await audit(page, ".canvas-width");
 

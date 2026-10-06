@@ -1,7 +1,7 @@
+import { seedCollection } from "./collection-fixture";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
-import { publishButton } from "./publish";
 
 requireActualFixture();
 
@@ -14,7 +14,6 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
 const status = (page: Page) => page.locator("#status");
-const inspector = (page: Page) => page.getByRole("region", { name: "Collection settings", exact: true });
 const mounted = (page: Page, path = "index.html") => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 const file = async (page: Page, baseURL: string | undefined, path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 const servicesPage = `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>`;
@@ -38,17 +37,7 @@ async function seeded(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "services/one/index.html", content: servicesPage } });
   await load(page, baseURL);
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  await inspector(page).getByRole("checkbox", { name: "/services/", exact: true }).check();
-  await inspector(page).getByRole("button", { name: "Apply", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
+  await seedCollection(page, baseURL, ["/work/", "/services/"], ["services/one/index.html"]);
   // Unrelated keys the editor must carry through untouched.
   const document = JSON.parse(await file(page, baseURL, SIDECAR));
   document.pages = { ...document.pages, "about/index.html": { fields: { mood: "calm" }, keep: { unknown: true } } };

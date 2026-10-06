@@ -118,14 +118,10 @@ host wiring is not claimed. Mixed LF/CRLF preservation is checked by pure source
 operation tests; Monaco normalizes a newly mounted document to its chosen line
 ending before operations begin.
 
-Grid/columns presets currently declare layout properties in an inline `style`
-attribute. A normal class rule written by the Style panel cannot override those
-properties. A host adapter should either create a scoped class rule in the same
-source-and-stylesheet transaction as insertion, or explicitly remove the touched
-inline declarations while writing their replacement class rules. That migration
-must share one guarded Undo/Redo operation and must preserve unrelated inline
-properties. This leaf keeps the catalogue unchanged and does not claim to fix the
-Style host contract.
+Grid/columns presets declare layout properties in an inline `style` attribute.
+To change those properties, edit the inline declarations in the Source editor,
+or remove them when moving the layout into a class rule. Preserve unrelated
+inline properties.
 
 ## Native attribute field planner (host wiring pending)
 

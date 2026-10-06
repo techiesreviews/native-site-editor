@@ -47,10 +47,6 @@ test("clicking a nested shared fallback selects the real page instance with its 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(firstCard(page)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Project card");
-  const styleGrip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await styleGrip.getAttribute("aria-valuenow") === "0") { await styleGrip.focus(); await styleGrip.press("Enter"); }
-  await expect(page.locator(".style-panel__hint").filter({ hasText: "Add a class to style this element" })).toBeVisible();
-  await expect(page.locator(".style-panel__target")).not.toContainText("card-note");
   expect(await source(page)).toBe(before);
   expect(await storedDraft(page, "components/card-note/card-note.html")).toEqual(sharedBefore);
 });

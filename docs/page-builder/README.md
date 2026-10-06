@@ -73,22 +73,21 @@ feature; collection authoring expressions belong only in the editor's recipes.
 
 - Editor collection conditions are evaluated before writing finished HTML. No
   collection condition interpreter is required on the published website.
-- Visibility per breakpoint (hide on mobile) is CSS the style panel writes
+- Visibility per breakpoint (hide on mobile) is CSS edited in the Source editor
   (`@media … { .x { display: none } }`), never a script.
 
 Existing native Web Component behavior is a separate part of the site's code.
 Migration must preserve its functional attributes and user-authored markup;
 removing editor metadata is not permission to strip arbitrary `data-*` attributes.
 
+Styling, image positioning and grid layout are edited in the Source editor.
+The Style panel and its selected-collection inspector were removed in P1.2.
+
 ### Wave 2 slices
 
 - **collections**: loops as above, a fields panel for a page (CMS-like editing of its
   title, description, date, image and custom fields), and "Make this grid a collection"
   for a card grid.
-- **style**: a Webflow-like style panel (layout, spacing, size, type, background, border,
-  effects) that writes the selected element's class rule in the site CSS, per breakpoint
-  and state (`:hover`), with the site's own variables as presets. Plus global styles:
-  the site's colour, type and spacing variables.
 - **elements**: inserting inside sections: heading, text, image, button, list, columns
   or grid, video or embed, divider, and native forms (`<form action>` with fields).
   Insertion inside sections was removed on 2026-09-25 at Lex's request, so this slice

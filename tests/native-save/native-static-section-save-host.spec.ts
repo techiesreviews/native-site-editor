@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { publishButton } from "./publish";
-import { showStylePanel } from "./style-panel-controls";
 
 requireActualFixture();
 
@@ -333,19 +332,18 @@ test("Monaco Redo in the page editor refuses to redo only the page after the his
   }
 });
 
-test("Monaco Undo and Redo keys in the page editor follow a Style panel edit made after Add", async ({ page, baseURL }) => {
+test("Monaco Undo and Redo keys in the page editor follow a Source editor edit made after Add", async ({ page, baseURL }) => {
   const { before, added, drafts } = await addWithPane(page, baseURL);
   const strip = (list: Awaited<ReturnType<typeof storedDrafts>>) => list.map(({ updatedAt: _updatedAt, ...draft }) => draft);
   const added3 = strip(drafts);
-  // A real Style panel edit of the added section's rule, in the stylesheet pane.
+  // A real Source editor edit of the added section's rule, in the stylesheet pane.
   await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#secondary-title")).toHaveText(CSS);
-  await showStylePanel(page);
-  const style = page.getByRole("complementary", { name: "Style panel" });
-  await style.getByRole("searchbox", { name: "Search styles" }).fill("margin-top");
-  const field = style.getByRole("textbox", { name: "Margin top", exact: true });
-  await field.fill("17");
-  await field.press("Enter");
+  await page.evaluate(async path => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource(path)!;
+    editor.replaceActiveRange({ path, start: source.length, end: source.length, expected: "", text: "\n.section-intro { margin-top: 17px; }\n" });
+  }, CSS);
   await expect.poll(() => mounted(page, CSS)).toContain("margin-top: 17px");
   const styled = (await mounted(page, CSS))!;
   await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(styled);
@@ -438,8 +436,8 @@ test("a section picked while the editor JSON is still read gets Update when the 
 
 // Undo and Redo of an Add select what the step restores: Undo the element
 // selected for the Add (not the section that took the new one's place), Redo
-// the added section again, also with a Style edit undone and redone around it.
-test("Undo and Redo of an Add with a Style edit keep the selection on the restored elements", async ({ page, baseURL }) => {
+// the added section again, also with a Source editor edit undone and redone around it.
+test("Undo and Redo of an Add with a Source editor edit keep the selection on the restored elements", async ({ page, baseURL }) => {
   const { before, added } = await addWithPane(page, baseURL);
   const crumb = page.locator(".canvas-crumb[aria-current=true]");
   const selectedIs = (selector: string) => frame(page).locator("html").evaluate((_, selector) => {
@@ -450,12 +448,11 @@ test("Undo and Redo of an Add with a Style edit keep the selection on the restor
   }, selector);
   const intro = frame(page).locator("section.section-intro");
   await intro.click({ position: { x: 5, y: 5 } });
-  await showStylePanel(page);
-  const style = page.getByRole("complementary", { name: "Style panel" });
-  await style.getByRole("searchbox", { name: "Search styles" }).fill("margin-top");
-  const field = style.getByRole("textbox", { name: "Margin top", exact: true });
-  await field.fill("17");
-  await field.press("Enter");
+  await page.evaluate(async path => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource(path)!;
+    editor.replaceActiveRange({ path, start: source.length, end: source.length, expected: "", text: "\n.section-intro { margin-top: 17px; }\n" });
+  }, CSS);
   await expect.poll(() => mounted(page, CSS)).toContain("margin-top: 17px");
   const styled = (await mounted(page, CSS))!;
   await expect.poll(async () => (await storedDraft(page, CSS))?.content).toBe(styled);

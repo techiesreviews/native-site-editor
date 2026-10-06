@@ -3,75 +3,23 @@ import { expect, test, type Page } from "@playwright/test";
 import { makeCollectionTarget, writePageBuilderDocument, type PageBuilderDocument } from "../../src/page-builder/page-builder-document";
 import { storedDraft, storedDrafts } from "./drafts";
 
-// Collection settings keep friendly names for a declared filter and sort after the
-// last page that supplied the custom field is deleted. (A page moved to another
-// folder still supplies the names: the choices read every route.) A collection
-// kept in .editor/page-builder.json keeps its declared fields, their labels and
-// its cards when that page is deleted or moved out of its folder in the editor.
+// Collections retain their declared fields, labels and cards when the last page
+// supplying custom fields is deleted or moved through the editor.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const inspector = (page: Page) => page.getByRole("region", { name: "Collection settings", exact: true });
-const listing = `<section class="collection-grid" data-key="field-list" data-each="/work/" data-sort="-release-year" data-filter="series-name=Clay"><template><article><a href="{url}">{title}</a></article></template><article><a href="/work/one/">One</a></article></section>`;
 const page = (title: string, fields: string) =>
   `<html><head><title>${title}</title><meta name="date" content="2026-01-01">${fields}</head><body><main><h1>${title}</h1></main></body></html>`;
 
-/** `supplier` false: the only page with the custom fields was removed before the grid is opened. */
-async function seed(p: Page, baseURL: string | undefined, supplier: boolean) {
-  await p.goto(baseURL!);
-  // The fixture home, not the server copy: each case seeds from the same start.
-  const home = readFileSync("fixtures/native-starter/index.html", "utf8");
-  const files: [string, string][] = [
-    ["index.html", home.replace("</head>", `<style>.collection-grid { padding: 30px; display: grid; }</style></head>`).replace("</main>", `${listing}</main>`)],
-    ["work/one/index.html", page("One", "")],
-  ];
-  const two = page("Two", `<meta name="field:series-name" content="Clay"><meta name="field:release-year" content="2026">`);
-  if (supplier) files.push(["work/two/index.html", two]);
-  const edits: Record<string, unknown>[] = files.map(([path, content]) => ({ path, content }));
-  if (!supplier) edits.push({ path: "work/two/index.html", delete: true });
-  for (const data of edits) expect((await p.request.post(`${baseURL}/__demo/external-edit`, { data })).ok()).toBeTruthy();
-  await load(p, baseURL);
-  return settings(p);
-}
 async function load(p: Page, baseURL: string | undefined) {
   await p.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(p.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(p.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
-/** Selects the grid and opens its Collection settings. */
-async function settings(p: Page) {
-  await frame(p).locator('[data-key="field-list"]').click({ position: { x: 5, y: 5 } });
-  await p.getByRole("button", { name: "section.collection-grid", exact: true }).click();
-  const grip = p.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  if (await p.locator(".selected-collection").getAttribute("open") === null) await p.locator(".selected-collection > summary").click();
-  await expect(inspector(p).getByRole("checkbox", { name: "/work/", exact: true })).toBeChecked();
-  return inspector(p);
-}
-const selected = (select: ReturnType<Page["getByRole"]>) => select.evaluate((el: HTMLSelectElement) => [el.value, el.selectedOptions[0]?.textContent ?? ""]);
-
-test("a declared filter keeps its friendly label after the last page supplying the field is gone", async ({ page: p, baseURL }) => {
-  for (const supplier of [true, false]) {
-    const panel = await seed(p, baseURL, supplier);
-    const filter = panel.getByRole("combobox", { name: "Filter by", exact: true });
-    expect(await selected(filter)).toEqual(["series-name", "Series name"]);
-    await expect(panel.getByLabel("Matches exactly")).toHaveValue("Clay");
-  }
-});
-
-test("a declared sort keeps its friendly label after the last page supplying the field is gone", async ({ page: p, baseURL }) => {
-  for (const supplier of [true, false]) {
-    const panel = await seed(p, baseURL, supplier);
-    const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
-    expect(await selected(sort)).toEqual(["release-year", "Release year"]);
-    if (!supplier) await expect(sort.locator('option[value="release-year"]')).toHaveCount(1);
-    await expect(panel.getByRole("combobox", { name: "Order", exact: true })).toHaveValue("descending");
-  }
-});
 
 // The same guarantees when the last page supplying a collection's custom fields leaves through
 // the editor: deleted (Files or Pages tab) or moved out of /work/ (Move to… or Change URL…). The
 // fields are declared either in .editor/page-builder.json (with labels) or in the grid's own
-// `data-fields`. They stay declared, the remaining card still renders, the settings keep their
-// friendly labels, and one Undo/Redo takes it all back and forth exactly.
+// `data-fields`. They stay declared, the remaining card still renders, and one
+// Undo/Redo takes it all back and forth exactly.
 type Kind = "JSON" | "inline";
 const SIDECAR = ".editor/page-builder.json";
 const ID = "series-grid";
@@ -119,21 +67,11 @@ async function seedLeaving(p: Page, baseURL: string | undefined, kind: Kind) {
   expect(await mounted(p)).toBe(home);
   return home;
 }
-/** The grid's cards in the preview, and its settings: still valid, with the friendly labels. */
-async function expectCollection(p: Page, kind: Kind, titles: string[]) {
+/** The grid's cards in the preview, remain valid. */
+async function expectCollection(p: Page, _kind: Kind, titles: string[]) {
   await p.keyboard.press("Escape");
   await expect(frame(p).locator('[data-key="field-list"] > article > a')).toHaveText(titles);
-  const panel = await settings(p);
-  const sort = panel.getByRole("combobox", { name: "Sort by", exact: true });
-  const filter = panel.getByRole("combobox", { name: "Filter by", exact: true });
-  const [series, year] = labels[kind];
-  expect(await selected(sort)).toEqual(["release-year", year]);
-  await expect(panel.getByRole("combobox", { name: "Order", exact: true })).toHaveValue("descending");
-  for (const select of [sort, filter]) {
-    await expect(select.locator('option[value="series-name"]')).toHaveText([series]);
-    await expect(select.locator('option[value="release-year"]')).toHaveText([year]);
-  }
-  await expect(panel.locator(".collections-panel__form > p[role=status]")).toHaveText(`${titles.length} matching ${titles.length === 1 ? "page" : "pages"}. Apply updates the grid and its dependent listings as one undo step.`);
+
 }
 async function openTab(p: Page, name: "Files" | "Pages") {
   await p.keyboard.press("Escape");
@@ -219,7 +157,7 @@ for (const kind of ["JSON", "inline"] as const) for (const { how, moved, redirec
     expect(drafts.map((draft) => draft.path)).toEqual([...kind === "JSON" ? [SIDECAR] : [], ...redirect ? ["_redirects"] : [], "index.html", ...moved ? [moved] : [], "work/two/index.html"].sort((a, b) => a.localeCompare(b)));
     expect(drafts.find((draft) => draft.path === "work/two/index.html")?.deleted).toBe(true);
     if (moved) expect(drafts.find((draft) => draft.path === moved)).toMatchObject({ content: two(kind), movedFrom: "work/two/index.html" });
-    // Preview: One's card still renders, and the settings stay valid with their friendly labels.
+    // Preview: One's card still renders.
     await expectCollection(p, kind, ["One"]);
 
     // One Undo restores the page, the JSON and Two exactly: nothing is left to save.

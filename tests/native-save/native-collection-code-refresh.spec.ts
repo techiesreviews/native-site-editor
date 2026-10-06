@@ -31,14 +31,6 @@ async function seed(page: Page, baseURL: string | undefined, asset = 'studio-des
   await expect(frame(page).locator('#proof-cards a')).toHaveText('Lifecycle');
   expect(await storedDrafts(page)).toEqual([]);
 }
-async function saveUnchangedCollection(page: Page) {
-  await frame(page).locator('#proof-cards article').click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole('separator', { name: 'Resize Style panel', exact: true });
-  if (await grip.getAttribute('aria-valuenow') === '0') await grip.click();
-  const details = page.locator('.selected-collection');
-  if (await details.getAttribute('open') === null) await details.locator('> summary').click();
-  await page.getByRole('region', { name: 'Collection settings', exact: true }).getByRole('button', { name: 'Save collection', exact: true }).click();
-}
 /** Replaces the whole Code source with one paste: one typing group. */
 async function pasteSource(page: Page, text: string) {
   await expect(page.locator('#content .monaco-editor')).toBeVisible();
@@ -98,13 +90,11 @@ test('a title and description pasted in Code rebuild the cards once typing settl
   expect((await storedDraft(page, side))!.content).toBe(afterJson);
   expect((await storedDraft(page, item))!.content).toBe(changed);
 
-  // The preview shows the rebuilt cards; Save collection stays available and finds nothing more to change.
+  // The preview shows the rebuilt cards; reopening leaves the source unchanged.
   await open(page, baseURL);
   expect(await mounted(page, 'index.html')).toBe(afterHome);
   await expect(frame(page).locator('#proof-cards a')).toHaveText('Code title');
   await expect(frame(page).locator('#proof-cards p')).toHaveText('Code description');
-  await saveUnchangedCollection(page);
-  await expect(page.locator('#status')).toHaveText('Collection saved');
   expect((await storedDraft(page, 'index.html'))!.content).toBe(afterHome);
   expect((await storedDraft(page, side))!.content).toBe(afterJson);
 

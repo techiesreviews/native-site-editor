@@ -227,7 +227,7 @@ test('hand-edited generated cards refuse later operations instead of being rebak
  before.sources['index.html']=edited;
  for(const extra of [{edits:new Map([['work/a/index.html',page('Retitled')]])},{deletes:['work/a/index.html']},{creates:[{path:'work/z/index.html',content:page('Z')}]},{edits:new Map([['unrelated.html',page('Unrelated 2')]])}] as Partial<NativeCollectionOrigin>[]){
   const result=planNativeCollectionOperation({...before,origin:origin(extra)});
-  assert.ok('error'in result);assert.match(result.error,/index\.html/);assert.match(result.error,/Use manual cards/);assert.match(result.error,/Rebuild cards from page data/);
+  assert.ok('error'in result);assert.match(result.error,/index\.html/);assert.match(result.error,/Source editor/);assert.match(result.error,/collection recipe/);
  }
  assert.equal(before.sources['index.html'],edited);
 });
@@ -279,7 +279,7 @@ test('a listing whose cards were never built is named as not built, not hand edi
  const before=snapshot();
  before.sources['index.html']=page('Home',list().replace('<p>Old</p>',''));
  const result=planNativeCollectionOperation({...before,origin:origin({edits:new Map([['work/a/index.html',page('Renamed')]])})});
- assert.ok('error'in result);assert.match(result.error,/have not been built/);assert.match(result.error,/Build cards from page data/);
+ assert.ok('error'in result);assert.match(result.error,/have not been built/);assert.match(result.error,/Build the cards in the Source editor/);
  const start=before.sources['index.html'].indexOf('<div data-each');
  const built=good({expectedSources:new Map([['index.html',before.sources['index.html']]]),acceptGeneratedDrift:[{path:'index.html',start}]},before);
  assert.ok(built.operation.edits!.get('index.html')!.includes('>First</a>'));

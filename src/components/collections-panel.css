@@ -21,18 +21,6 @@
 .collections-panel__advanced summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .collections-panel__advanced[open] > :not(summary) { margin-top: .75rem; }
 
-.selected-collection { margin: 12px 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-.selected-collection > summary { padding: 8px 0; cursor: pointer; font-weight: 600; }
-.selected-collection > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.selected-collection .collections-panel { padding: 8px 0; gap: 12px; font-size: 12px; }
-.selected-collection h2 { font-size: 13px; }
-.selected-collection .collections-panel__scope { font-size: 12px; color: var(--muted); }
-.selected-collection .collections-panel__source { min-height: 32px; }
-.selected-collection input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; padding: 0; flex: 0 0 auto; accent-color: var(--link); }
-.selected-collection .collections-panel__sources { border-color: var(--line); border-radius: var(--radius); padding: 8px; gap: 0; }
-.selected-collection button.primary { background: var(--pressed); color: var(--on-pressed); padding: 6px 12px; }
-.selected-collection button.primary:disabled { opacity: .5; cursor: default; }
-@media (hover: none), (pointer: coarse) { .selected-collection .collections-panel__source { min-height: 44px; } }
 .collections-panel select { width: 100%; padding: .5rem; color: var(--text); background: var(--surface); font: inherit; box-sizing: border-box; }
 .collections-panel select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .collections-panel__kept { margin: 0; padding-left: 1.25rem; display: grid; gap: .25rem; }

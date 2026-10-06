@@ -1,8 +1,8 @@
+import { seedCollection } from "./collection-fixture";
 import { openPageSettingsFromPages } from "./settings-entry";
 import { requireActualFixture } from "./fixture-contract";
 import { expect, test, type Page } from "@playwright/test";
-import { storedDraft, storedDrafts } from "./drafts";
-import { publishButton } from "./publish";
+import { effectiveSource, storedDraft, storedDrafts } from "./drafts";
 
 requireActualFixture();
 
@@ -11,8 +11,6 @@ requireActualFixture();
 // actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
 const SIDECAR = ".editor/page-builder.json";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const mounted = (page: Page, path = "index.html") => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
-const inspector = (page: Page) => page.getByRole("region", { name: "Collection settings", exact: true });
 const file = async (page: Page, baseURL: string | undefined, path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
 const extra: [string, string][] = [["services/one/index.html", `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>`]];
 
@@ -22,70 +20,25 @@ async function load(page: Page, baseURL: string | undefined, path = "index.html"
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", path, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
-async function openCollection(page: Page) {
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  const grip = page.getByRole("separator", { name: "Resize Style panel", exact: true });
-  if (await grip.getAttribute("aria-valuenow") === "0") await grip.click();
-  const details = page.locator(".selected-collection");
-  if (await details.getAttribute("open") === null) await details.locator("> summary").click();
-  return details;
-}
-async function convert(page: Page, baseURL: string | undefined) {
+const json = async (page: Page) => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}");
+/** Seed the saved recipe and baked cards at the fake GitHub boundary. */
+async function saved(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
   for (const [path, content] of extra) await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
-  await load(page, baseURL);
-  const before = await mounted(page);
-  await openCollection(page);
-  // Selecting and opening writes nothing.
-  expect(await storedDrafts(page)).toEqual([]);
-  await inspector(page).getByRole("checkbox", { name: "/services/", exact: true }).check();
-  await inspector(page).getByRole("button", { name: "Apply", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content ?? "").toContain('"pagePath": "index.html"');
-  return before;
-}
-
-const json = async (page: Page) => JSON.parse((await storedDraft(page, SIDECAR))?.content ?? "{}");
-/** Converted and saved, so the branch holds the JSON and the plain cards; no drafts. */
-async function saved(page: Page, baseURL: string | undefined) {
-  await convert(page, baseURL);
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
+  await seedCollection(page, baseURL, ["/work/", "/services/"], extra.map(([path]) => path));
   await load(page, baseURL);
   expect(await storedDrafts(page)).toEqual([]);
   return { home: await file(page, baseURL, "index.html"), sidecar: await file(page, baseURL, SIDECAR) };
-}
-async function selectGrid(page: Page) {
-  await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  await page.getByRole("button", { name: "div.cards", exact: true }).click();
 }
 async function pagesTab(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
 }
 
-test("a class added to a JSON grid moves its target in the same Undo, and later page changes still rebuild its cards", async ({ page, baseURL }) => {
+test("a listed page's new title rebuilds its JSON collection cards in one Undo", async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const { home, sidecar } = await saved(page, baseURL);
-  await selectGrid(page);
-  await page.getByPlaceholder("e.g. hero-title").fill("wide");
-  await page.getByRole("button", { name: "Add class", exact: true }).click();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain('<div class="cards wide">');
-  const target = Object.values((await json(page)).collections as Record<string, { target: { openingTagFingerprint: string } }>)[0].target;
-  expect(target.openingTagFingerprint).toBe('<div class="cards wide">');
-  const after = { home: (await storedDraft(page, "index.html"))!.content, sidecar: (await storedDraft(page, SIDECAR))!.content };
-  // Only the target changed in the JSON; the page changed only in the grid's tag.
-  const was = JSON.parse(sidecar), now = JSON.parse(after.sidecar);
-  for (const record of [...Object.values(was.collections), ...Object.values(now.collections)] as { target?: unknown }[]) delete record.target;
-  expect(now).toEqual(was);
-  expect(after.home).toBe(home.replace('<div class="cards">', '<div class="cards wide">'));
-  // One Undo takes back the class and the target together; Redo writes both.
-  await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => storedDrafts(page)).toEqual([]);
-  await page.locator(".code-editor__redo").first().click();
-  await expect.poll(async () => (await storedDraft(page, SIDECAR))?.content).toBe(after.sidecar);
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(after.home);
+  const { home } = await saved(page, baseURL);
   // A listed page's new title still reaches its card, through the JSON collection, in one Undo.
   await load(page, baseURL, "services/one/index.html");
   await pagesTab(page);
@@ -94,10 +47,11 @@ test("a class added to a JSON grid moves its target in the same Undo, and later 
   await page.getByRole("textbox", { name: /^Title of / }).fill("Services renamed");
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? "").toContain("Services renamed");
-  expect((await storedDraft(page, "index.html"))!.content).toContain('<div class="cards wide">');
+  expect((await storedDraft(page, "index.html"))!.content).toContain('<div class="cards">');
   expect((await storedDraft(page, "services/one/index.html"))!.content).toContain("Services renamed");
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(after.home);
+  await expect.poll(() => storedDraft(page, "index.html")).toBeUndefined();
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   await expect.poll(() => storedDraft(page, "services/one/index.html")).toBeUndefined();
   expect(errors).toEqual([]);
 });

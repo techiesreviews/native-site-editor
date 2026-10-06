@@ -217,7 +217,7 @@ test("legacy cards whose JSON value differs from their HTML-built output show as
   // Any change that would rebake them refuses with the specific reason; nothing is rebuilt silently.
   const result = planNativeCollectionOperation({ sources, routes: deriveNativeRoutes(files), files: files.sort(), revision: "r", identity,
     origin: { edits: new Map([[fern, sources[fern].replace("</h1>", " Cafe</h1>")]]), done: "", undone: "" } });
-  assert.ok("error" in result && /moved to the editor's data/.test(result.error) && /Rebuild cards from page data/.test(result.error));
+  assert.ok("error" in result && /moved to the editor's data/.test(result.error) && /collection recipe/.test(result.error));
 });
 
 test("the legacy import learns field names from every listed page, not only the ones the limit keeps", () => {

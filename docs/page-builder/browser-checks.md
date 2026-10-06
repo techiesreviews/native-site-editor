@@ -14,7 +14,7 @@ Use `--check` to print the selected files without starting a server. Use `--list
 
 ```sh
 npm run test:browser:actual -- --check
-npm run test:browser:actual -- --list --spec native-editor-json.spec
+npm run test:browser:actual -- --list --spec native-editor-json-lifecycle.spec
 npm run test:browser:actual -- --spec native-fields-migration --grep 'Fields' --port 5296
 ```
 
@@ -37,7 +37,7 @@ This check remains unperformed. Use a disposable fixture with the reviewed appli
 
 1. Navigate Page structure using the screen reader and keyboard. Check that row names, hierarchy, selection and expansion state are understandable. Ordinary selection must not open an inline editor. Reach Edit followed by the visibility eye, and confirm that each action announces its name and current state.
 2. Open an inline edit explicitly. Check its field label, Save/Cancel controls and focus on entry and exit. Hide and show a slot; confirm the changed visibility is understandable without looking at the canvas.
-3. Open Style, change a value and switch its responsive target. Check control names, selected states, keyboard access and focus when closing the panel. Repeat at the narrow viewport used for visual review.
+3. Open a stylesheet in the Source editor and edit a CSS value. Check rule chip names, keyboard access and focus when hiding and restoring code. Repeat at a narrow viewport.
 4. In Fields, apply a valid change and exercise a refused operation using the disposable fixture. Check that success, validation and refusal messages are announced, and that focus and unsaved input remain usable. Open and cancel a deletion confirmation; check the dialog name and returned focus.
 5. Edit Code until a collection refresh settles, then use Undo and Redo through the typing and generated-card steps. Check that operation results and remaining edits are understandable from the accessible controls and status messages.
 

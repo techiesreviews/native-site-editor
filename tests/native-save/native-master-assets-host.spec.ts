@@ -2,7 +2,6 @@ import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { fixtureKind } from "./fixture-contract";
 import { effectiveSource } from "./drafts";
-import { showStylePanel } from "./style-panel-controls";
 
 test.beforeEach(async ({ page, baseURL }) => { await seedSavedSections(page, baseURL); });
 
@@ -51,37 +50,10 @@ async function seed(page: Page, baseURL: string | undefined) {
   return await effectiveSource(page, baseURL, PAGE);
 }
 
-test("a nested page's master image has a trusted focal preview and image/link/alt controls write only the master", async ({ page, baseURL }) => {
+test("a nested page's image/link/alt controls write only the master", async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
   const css = await effectiveSource(page, baseURL, "styles/site.css");
   await frame(page).locator(".master-image").click();
-  await showStylePanel(page);
-  const style = page.getByRole("complementary", { name: "Style panel" });
-  await style.getByRole("searchbox", { name: "Search styles" }).fill("image focus");
-  const focal = style.getByRole("region", { name: "Image focus" });
-  await expect(focal).toBeVisible();
-  await expect.poll(() => focal.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
-  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
-  expect(await effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
-  const focus = focal.getByRole("group");
-  await focus.focus();
-  await page.keyboard.press("Shift+ArrowRight");
-  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toContain("object-position: 60% 50%");
-  const focalCss = await effectiveSource(page, baseURL, "styles/site.css");
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
-  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
-  await banner(page).getByRole("button", { name: "Done" }).focus();
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
-  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
-  await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(focalCss);
-  expect(await effectiveSource(page, baseURL, MASTER)).toBe(markup);
-  expect(await effectiveSource(page, baseURL, PAGE)).toBe(originalPage);
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(() => effectiveSource(page, baseURL, "styles/site.css")).toBe(css);
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   const alt = page.getByRole("textbox", { name: "Alt text", exact: true });
   await expect(alt).toBeVisible();

@@ -83,22 +83,21 @@ for (const colorScheme of ["light", "dark"] as const) {
   }
 }
 
-// With the code pane hidden and the Style panel open, the hero's label and
+// With the code pane hidden, the hero's label and
 // panel still fit the canvas, and the root label is screenshotted against
 // the sticky header.
-test("section-hero with the code pane hidden and Style open", async ({ page }) => {
+test("section-hero with the code pane hidden", async ({ page }) => {
   await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
-  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
   await frame(page).locator("section-hero h1:visible").first().click();
   await expect(bar(page)).toBeVisible();
   await labelAbove(page);
-  if (shots) await page.screenshot({ path: `${shots}/actual-child-style-open.png` });
+  if (shots) await page.screenshot({ path: `${shots}/actual-child-code-hidden.png` });
   await bar(page).locator(".edit-bar__context").click();
   await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
   await labelAbove(page);
   await clearOfHeader(page);
-  if (shots) await page.screenshot({ path: `${shots}/actual-root-style-open.png` });
-  console.log(`console errors (style-open): ${consoleErrors.length}`);
+  if (shots) await page.screenshot({ path: `${shots}/actual-root-code-hidden.png` });
+  console.log(`console errors (code-hidden): ${consoleErrors.length}`);
 });
 
 // The sticky header itself selected is not its own obstacle: its bar may
@@ -114,10 +113,9 @@ test("the selected sticky header is not kept clear of itself", async ({ page }) 
 
 // Alt+Up pressed in the page moves the selected whole section, and one Undo
 // restores the source exactly; a paragraph inside it does not move. Narrow,
-// Style open, under the sticky header.
+// code hidden, under the sticky header.
 test("Alt+arrows in the page move a whole section only, one exact undo", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
-  await page.getByRole("separator", { name: "Resize Style panel", exact: true }).click();
   const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
   const before = await source();
   const order = () => frame(page).locator("main > *").evaluateAll((els) => els.map((el) => el.tagName));
@@ -138,7 +136,7 @@ test("Alt+arrows in the page move a whole section only, one exact undo", async (
   await child!.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); document.body.focus(); });
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(order).not.toEqual(start);
-  if (shots) await page.screenshot({ path: `${shots}/actual-section-moved-style-open.png` });
+  if (shots) await page.screenshot({ path: `${shots}/actual-section-moved-code-hidden.png` });
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(source).toBe(before);
   expect(await order()).toEqual(start);

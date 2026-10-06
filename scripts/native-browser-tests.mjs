@@ -6,15 +6,15 @@ import { fixtureKind } from "../tests/native-save/fixture-contract.ts";
 
 const actualOnly = new Set([
   "native-card-paths-json.spec.ts", "native-card-paths-starter.spec.ts",
-  "native-editor-json.spec.ts", "native-editor-json-lifecycle.spec.ts",
-  "native-manual-collection.spec.ts", "native-static-section-save-host.spec.ts",
+  "native-editor-json-lifecycle.spec.ts",
+  "native-static-section-save-host.spec.ts",
   "native-social-preview.spec.ts", "native-fields-migration.spec.ts",
   "native-static-sections-host.spec.ts", "native-structure-readiness.spec.ts",
 ]);
 // Native-only: these need the native static starter (or create it) and skip elsewhere.
 // Listed names that do not exist yet simply match nothing.
 const nativeOnly = new Set([
-  "native-static-starter-create.spec.ts", "native-static-grid-collection-host.spec.ts",
+  "native-static-starter-create.spec.ts",
   "native-master-host.spec.ts", "native-master-visual-host.spec.ts", "native-master-controls.spec.ts",
   "native-master-assets-host.spec.ts", "native-master-code-collapse.spec.ts", "native-master-after-done-proof.spec.ts",
   "native-master-page-part-controls.spec.ts",
