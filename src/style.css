@@ -140,7 +140,6 @@ select {
   min-height: 36px;
   margin: 0 -20px 8px;
   padding: 4px 12px 4px 20px;
-  border-bottom: 1px solid var(--control-line);
 }
 /* A section heading: the same in the sidebar, the explorer and the menus. */
 .eyebrow,

@@ -165,6 +165,15 @@
 .page-structure__row[aria-selected="true"] .page-structure__kind {
   color: var(--text);
 }
+.page-structure__kind--icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+.page-structure__kind--icon > .icon {
+  margin: 0;
+}
 .page-structure__text {
   overflow: hidden;
   white-space: nowrap;

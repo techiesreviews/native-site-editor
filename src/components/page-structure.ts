@@ -5,6 +5,7 @@ import { mark, componentIcon } from "../page-builder/component-icon";
 import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
 import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import { rowActions } from "./row-actions";
+import { elementIcon } from "./element-icons";
 import "./page-structure.css";
 import { createNativeSharedAuthoring, type NativeSharedAuthoringContext, type NativeSharedAuthoringActions } from "./native-shared-authoring";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
@@ -262,6 +263,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
   const slotRows = new Map<string, HTMLElement>();
   const rowElement = (id: string) => rows.get(id) ?? slotRows.get(id);
+  // An element's kind as its icon. A row with text to tell it apart shows the
+  // icon alone (the kind stays its tooltip and accessible name); a row without
+  // keeps the word beside the icon.
+  function kindMark(tag: string, kind: string, iconOnly: boolean) {
+    const result = node("span", "page-structure__kind page-structure__kind--icon");
+    result.title = kind;
+    result.append(elementIcon(tag, 14), node("span", iconOnly ? "sr-only" : "", kind));
+    return result;
+  }
   function iconAction(label: string, icon: Parameters<typeof mark>[0], action: () => void) {
     const result = button("", action, "page-structure__action");
     result.title = label; result.setAttribute("aria-label", label); result.append(mark(icon, 14)); return result;
@@ -545,9 +555,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.style.setProperty("--depth", String(level - 1));
     const kind = slot.kind === "image" ? "img" : slot.kind === "link" ? "a" : "text";
     const label = node("span", "page-structure__label");
-    label.append(node("span", "page-structure__toggle"), node("span", "page-structure__kind", kind));
-    label.firstElementChild!.setAttribute("aria-hidden", "true");
     const preview = slot.kind === "image" ? slot.value.alt ?? "" : slot.value.text;
+    label.append(node("span", "page-structure__toggle"), kindMark(kind, slot.kind === "image" ? "Image" : slot.kind === "link" ? "Link" : "Text", Boolean(preview)));
+    label.firstElementChild!.setAttribute("aria-hidden", "true");
     if (preview) label.append(" ", node("span", "page-structure__text", preview));
     const edit = () => requestSlotEdit({ model, slot });
     const badge = editable(slot) ? button(slot.label, edit, "page-structure__slot-badge") : node("span", "page-structure__slot-badge", slot.label);
@@ -697,8 +707,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const sharing = openShared?.node === id && openShared.path === structure?.path ? openShared : undefined;
     const hasChildren = item.children.length > 0 || !!slotModel || !!sharing;
     const label = node("span", "page-structure__label");
-    const kindName = node("span", "page-structure__kind", shared?.state === "linked" ? shared.label : kind);
-    if (component || shared?.state === "linked") {
+    const named = component || shared?.state === "linked";
+    const kindName = named ? node("span", "page-structure__kind", shared?.state === "linked" ? shared.label : kind) : kindMark(item.tag, kind, Boolean(text));
+    if (named) {
       if (component) el.classList.add("page-structure__row--component");
       kindName.prepend(componentIcon(12));
     }
