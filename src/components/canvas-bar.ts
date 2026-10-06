@@ -89,12 +89,13 @@ export function createCanvasBar(frameHost: HTMLElement, frame: HTMLIFrameElement
   widthInput.title = "Frame width: type a width and press Enter";
   widthField.append(widthInput, node("span", "canvas-width__unit", "px"));
   tools.append(devices, widthField);
-  // The component being edited (its name and Used on), then the way back.
+  // After the crumbs: the component being edited (its name and Used on);
+  // the way back closes the bar.
   const lead = node("div", "canvas-component");
   lead.hidden = true;
   const end = node("div", "canvas-component-end");
   end.hidden = true;
-  bar.append(lead, crumbsNav, tools, end);
+  bar.append(crumbsNav, lead, tools, end);
 
   // The frame sits on a stage that takes the chosen width, with a handle on each side.
   frameHost.classList.add("canvas-host");
