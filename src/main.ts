@@ -2371,7 +2371,8 @@ function prepareNativeTextEdit({ path, node, before, after, masterSession }: Nat
     // An operation's undo step lives in the open page's editor: wait for it.
     await editorReady();
     if (versionView || openingEpoch !== generation || openingScope !== setupScope()) return;
-    if (currentPath === path && editorModule?.isMounted(path)) return;
+    // Back on the page by the time its editor came: the edit goes in there.
+    if (currentPath === path && editorModule?.isMounted(path) && allowed()) { applyInEditor(); return; }
     const source = nativeEffectiveSource(path);
     const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
     if (source === undefined || !edit) { errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time.")); return; }
@@ -2394,6 +2395,9 @@ function prepareNativeTextEdit({ path, node, before, after, masterSession }: Nat
     if (epoch === generation && !allowed()) { await draftLeftPage(); return; }
     if (epoch !== generation || currentPath !== path || !editorModule?.isMounted(path) || !allowed()) return;
   }
+  applyInEditor();
+  };
+  function applyInEditor() {
   const editor = editorModule;
   const preview = nativePreview;
   if (!editor || !preview || !allowed()) return;
@@ -2413,7 +2417,7 @@ function prepareNativeTextEdit({ path, node, before, after, masterSession }: Nat
     preview.refresh();
     errorMessage(error);
   }
-  };
+  }
 }
 
 // Components that fit between page sections: those whose template is a
@@ -5660,8 +5664,13 @@ async function withSidecarPages(op: NativeOperation): Promise<NativeOperation | 
 async function applyNativeOperation(op: NativeOperation): Promise<string | undefined> {
   // Its undo step is recorded in the open page's editor: an operation asked
   // for before Monaco has arrived waits for it rather than being refused.
+  // Pinned before waiting: an operation asked for in one repository, branch
+  // or account never lands in another one opened meanwhile.
+  const askedEpoch = generation, askedScope = setupScope();
   if (currentPath && !editorModule?.isMounted(currentPath)) await editorReady();
   const planned = await withSidecarPages(op);
+  if (askedEpoch !== generation || askedScope !== setupScope())
+    return "The repository or source changed meanwhile. Review the latest files and try again.";
   if (typeof planned === "string") return planned;
   op = planned;
   const scope = draftScope();

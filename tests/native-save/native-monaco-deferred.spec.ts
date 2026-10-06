@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { storedDraft } from './drafts';
+import { editorMounted, storedDraft, storedDrafts } from './drafts';
 
 // Monaco waits for the preview (lean-fast-editor ticket 03): no request for
 // the code editor or Monaco goes out before the preview's first paint, and
@@ -74,6 +74,12 @@ test('two quick text edits made before Monaco arrives land in order', async ({ p
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('ABC');
 });
 
+const pages = async (page: Page, name: RegExp) => {
+  if (!(await page.locator('#explorer').isVisible())) await page.locator('#explorer-toggle').click();
+  await page.getByRole('tab', { name: 'Pages', exact: true }).click();
+  await page.locator('#explorer').getByRole('treeitem', { name }).first().click();
+};
+
 test('a text edit made before Monaco arrives survives switching pages', async ({ page, baseURL }) => {
   const release = await holdEditor(page);
   await page.goto(`${baseURL}/${hash}`);
@@ -93,4 +99,53 @@ test('a text edit made before Monaco arrives survives switching pages', async ({
   await pages(/^Home/);
   await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'index.html');
   await expect(heading).toHaveText('Kept while loading');
+});
+
+test('a text edit made before Monaco arrives survives Home, About and back Home before it loads', async ({ page, baseURL }) => {
+  const release = await holdEditor(page);
+  await page.goto(`${baseURL}/${hash}`);
+  const heading = page.frameLocator('.native-preview-frame').locator('.hero h1');
+  await expect(heading).toBeVisible();
+  await typeHeading(page, 'Kept on return');
+  await pages(page, /^About/);
+  await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'about/index.html');
+  // The edit has left its polling and is waiting for the editor to draft it.
+  await page.waitForTimeout(400);
+  await pages(page, /^Home/);
+  await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'index.html');
+  release();
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content, { timeout: 20_000 }).toContain('<h1 data-key="hero-title">Kept on return</h1>');
+  await expect(heading).toHaveText('Kept on return');
+});
+
+test('a file rename asked for before Monaco arrives never lands on the branch opened meanwhile', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/${hash}`);
+  await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+  const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'index.html', content: home.replace('A native browser preview', 'Feature branch preview') } });
+  const release = await holdEditor(page);
+  await page.reload();
+  await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('A native browser preview');
+  // Rename styles/sections.css in the Files tab; it waits for the editor.
+  const explorer = page.locator('#explorer');
+  if (!(await explorer.isVisible())) await page.locator('#explorer-toggle').click();
+  await explorer.getByRole('tab', { name: 'Files' }).click();
+  const folder = explorer.getByRole('button', { name: 'styles', exact: true }).first();
+  if ((await folder.getAttribute('aria-expanded')) === 'false') await folder.click();
+  await explorer.getByRole('button', { name: 'sections.css', exact: true }).focus();
+  await page.keyboard.press('F2');
+  const input = explorer.getByRole('textbox', { name: 'New name for styles/sections.css' });
+  await input.fill('renamed.css');
+  await page.keyboard.press('Enter');
+  // Switch to the feature branch before the editor arrives.
+  await page.locator('.repository-menu__trigger').click();
+  const row = page.locator('.repository-menu__repo[aria-current="true"]');
+  await row.hover();
+  await page.getByRole('menu', { name: 'Branches' }).getByRole('menuitemradio', { name: 'feature' }).click();
+  await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('Feature branch preview', { timeout: 30_000 });
+  release();
+  // The editor arrives and the waiting rename is answered, never applied here.
+  await editorMounted(page);
+  await page.waitForTimeout(1000);
+  expect((await storedDrafts(page)).filter((draft) => draft.branch === 'feature')).toEqual([]);
 });

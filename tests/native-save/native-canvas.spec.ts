@@ -12,6 +12,8 @@ test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/${nativeHash}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
+  // These tests compare the mounted source before and after: Monaco loads on idle after the paint.
+  await editorMounted(page);
 });
 
 const crumbs = (page: Page) => page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByRole("button");
