@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedSavedSections } from "./static-sections";
 
-// Add offers whole sections only: the native page sections (Intro, Features,
-// Split, Contact) and the section components. No single elements (Heading,
+// Add offers whole sections only: the site's saved page sections (Intro,
+// Features, Split, Contact; seeded on the branch, since Add no longer offers
+// unsaved defaults) and the section components. No single elements (Heading,
 // Text, Image, Grid) and no "Plain HTML sections" heading. A chosen section is
 // written into the page as ordinary HTML, as one undo step.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -58,6 +60,7 @@ function insertedSection(before: string, after: string, name: keyof typeof SECTI
 }
 
 test.beforeEach(async ({ page, baseURL }) => {
+  await seedSavedSections(page, baseURL);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });

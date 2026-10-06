@@ -83,7 +83,7 @@ test("a single-file page has no subpages; a folder page's subpage is a folder in
   await expect(explorer(page).getByRole("button", { name: "Add subpage to Notes" })).toHaveCount(0);
   await item(page, "Notes").focus();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("menu", { name: "Actions for Notes" }).getByRole("menuitem")).toHaveText(["Page settings…", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
+  await expect(page.getByRole("menu", { name: "Actions for Notes" }).getByRole("menuitem")).toHaveText(["Page settings…", "Navigation…", /^Rename/, "Change URL…", "Move to…", "Duplicate", /^Delete/]);
   await page.keyboard.press("Escape");
 
   await item(page, "Fern & Kettle").hover();
@@ -237,7 +237,7 @@ test("Move to… from the keyboard puts a page under another; the confirmation s
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: "Actions for Notes" });
   await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
-  for (let n = 0; n < 3; n++) await page.keyboard.press("ArrowDown");
+  for (let n = 0; n < 4; n++) await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Move to…" })).toBeFocused();
   await page.keyboard.press("Enter");
 

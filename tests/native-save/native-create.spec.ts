@@ -1,3 +1,4 @@
+import { openPageSettingsFromPages } from "./settings-entry";
 import { publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -71,7 +72,7 @@ async function expandRow(page: Page, name: string) {
 }
 async function expectPageTitle(page: Page, title: string) {
   await openPages(page);
-  await explorer(page).getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettingsFromPages(page);
   const panel = page.getByRole("dialog", { name: "Page settings", exact: true });
   await expect(panel.getByLabel("Title", { exact: true })).toHaveValue(title);
   await panel.locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
@@ -294,8 +295,10 @@ test("a page, a subpage under it and another are made in place as folders of the
   await item(page, "Videos").focus();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Page settings…", "Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Page settings…", "Navigation…", "Add subpage", /^Rename/, "Change URL…", "Move to…", "Duplicate", "Discard changes", /^Delete/]);
   await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Navigation…", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add subpage" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -316,6 +319,8 @@ test("a page, a subpage under it and another are made in place as folders of the
   // Another subpage, from the keyboard.
   await page.keyboard.press("Shift+F10");
   await expect(menu.getByRole("menuitem", { name: "Page settings…", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Navigation…", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add subpage", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");

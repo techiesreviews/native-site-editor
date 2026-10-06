@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPageSettingsFromPages } from "./settings-entry";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
 async function history(page: Page, direction: "undo" | "redo") {
@@ -15,7 +16,7 @@ test("metadata compound history survives page remounts and preserves the earlier
   const heading = await source(page);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("Guarded history title");
   await settings.getByRole("button", { name: "Apply page settings" }).click();
@@ -95,7 +96,7 @@ test("a synchronous source-save listener cannot replace owned draft metadata", a
   });
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Page settings", exact: true }).click();
+  await openPageSettingsFromPages(page);
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("Collision history title");
   await settings.getByRole("button", { name: "Apply page settings" }).click();

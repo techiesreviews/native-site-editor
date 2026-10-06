@@ -261,11 +261,14 @@ test("component CSS loads on demand, scopes to matching shadow root, and edits l
     const card = document.querySelector("project-card") as HTMLElement;
     const header = document.querySelector("site-header") as HTMLElement;
     const text = (sheet: CSSStyleSheet) => [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
-    const shared = document.adoptedStyleSheets;
+    // The document adopts the viewport's scrollbar sheet first (this site styles no scrollbars).
+    const [viewport, ...shared] = document.adoptedStyleSheets;
     const cardSheets = card.shadowRoot!.adoptedStyleSheets;
     const headerSheets = header.shadowRoot!.adoptedStyleSheets;
     return {
       documentSheets: shared.length,
+      viewportFirst: text(viewport).includes("native-preview-viewport"),
+      viewportOnlyInDocument: !cardSheets.includes(viewport) && !headerSheets.includes(viewport),
       cardSheets: cardSheets.length,
       headerSheets: headerSheets.length,
       sharedIsOneInstance: cardSheets[0] === shared[0] && headerSheets[0] === shared[0],
@@ -278,11 +281,14 @@ test("component CSS loads on demand, scopes to matching shadow root, and edits l
       headerStyleText: text(headerSheets[1]),
     };
   });
-  // The shared stylesheet is one constructed sheet adopted by the document and
+  // The viewport's scrollbar sheet comes first in the document only. After it,
+  // the shared stylesheet is one constructed sheet adopted by the document and
   // every shadow root, with no copies as <style> elements. Each component
   // adopts only its own sibling stylesheet after it (then the runtime's own
   // sheet, which the document adopts too): none leak into the host document,
   // and the card's rules never reach the header's shadow root.
+  expect(scope.viewportFirst).toBe(true);
+  expect(scope.viewportOnlyInDocument).toBe(true);
   expect(scope.documentSheets).toBe(2);
   expect(scope.cardSheets).toBe(3);
   expect(scope.headerSheets).toBe(3);

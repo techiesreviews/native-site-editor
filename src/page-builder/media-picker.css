@@ -128,6 +128,8 @@
 /* Browse actions belong to the filename row, away from image and metadata. */
 .media-library__name-line { min-width: 0; min-height: var(--size-icon); display: flex; align-items: center; overflow: hidden; }
 .media-library__name-line .media-library__name { flex: 1; }
+/* In the explorer's Images pane the cards sit on the explorer's own surface, so the fade ends on it. */
+.media-library--pane .media-library__name-line { --row-action-background: var(--panel-surface); --row-action-base: var(--panel-surface); }
 .media-library__card:has(input:checked) .media-library__name-line { --row-action-background: var(--current); }
 .media-library__name-line .media-library__usage { width: var(--size-icon); height: var(--size-icon); padding: 0; display: inline-grid; place-items: center; }
 .media-library__usage-count { color: var(--muted); font-size: var(--type-small); }

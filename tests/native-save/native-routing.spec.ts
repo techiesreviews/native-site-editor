@@ -44,12 +44,12 @@ test("pages are routed by their paths, and root and relative links follow to the
   // work/index.html is /work/.
   await follow(page, "Our work");
   await expect(heading(page)).toHaveText("Work");
-  await readSetting(page, "Title", "Work");
+  await readSetting(page, "Title", "Work", "work/index.html");
 
   // work/fern-and-kettle/index.html is /work/fern-and-kettle/, titled by its <title>.
   await follow(page, "Fern and Kettle");
   await expect(heading(page)).toHaveText("Fern and Kettle");
-  await readSetting(page, "Title", "Fern & Kettle");
+  await readSetting(page, "Title", "Fern & Kettle", "work/fern-and-kettle/index.html");
 
   // The link Address suggests the site's pages by title; a page under _parts/ is not one.
   await frame(page).getByRole("link", { name: "All work", exact: true }).click();
@@ -128,14 +128,22 @@ test("two files for one component show a warning above the page, which still ren
 });
 
 const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
-async function openSettings(page: Page) {
+async function openSettings(page: Page, path?: string) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.locator("#explorer").getByRole("tab", { name: "Pages", exact: true }).click();
-  await openPageSettingsFromPages(page);
+  // A subpage's row shows once its parent page's row is open.
+  if (path?.startsWith("work/fern-and-kettle/")) {
+    const work = page.locator('#explorer [role="treeitem"][data-key="page:work/index.html"]');
+    if (await work.getAttribute("aria-expanded") === "false") { await work.focus(); await page.keyboard.press("ArrowRight"); }
+    await expect(work).toHaveAttribute("aria-expanded", "true");
+  }
+  await openPageSettingsFromPages(page, path);
   await expect(settingsDialog(page)).toBeVisible();
 }
-async function readSetting(page: Page, label: string, value: string) {
-  await openSettings(page);
+// A Ctrl/⌘-followed link shows its page in the preview only; the open file stays,
+// so the shown page's settings are opened from its own row.
+async function readSetting(page: Page, label: string, value: string, path?: string) {
+  await openSettings(page, path);
   await expect(settingsDialog(page).getByLabel(label, { exact: true })).toHaveValue(value);
   await settingsDialog(page).locator(".site-settings__footer").getByRole("button", { name: "Cancel", exact: true }).click();
 }
