@@ -13,7 +13,7 @@ const record = (html: string): StaticSectionRecord => ({ id: "hero", label: "Her
 const page = (body: string) => `<!doctype html><html><head><title>T</title></head><body><main>${body}</main></body></html>`;
 const range = (source: string, html: string, from = 0) => { const start = source.indexOf(html, from); return { start, end: start + html.length }; };
 // An editor JSON with an unknown top-level key, an unknown page key and a foreign sections entry.
-const baseJson = JSON.stringify({ version: 1, pages: { "index.html": { title: "kept", sections: { foreign: { kind: "other", note: "keep me" } } } }, collections: {}, future: { x: 1 } }, null, 2) + "\n";
+const baseJson = JSON.stringify({ version: 1, pages: { "index.html": { title: "kept", sections: { foreign: { kind: "other", note: "keep me" } } } }, future: { x: 1 } }, null, 2) + "\n";
 
 function link(documentText: string | undefined, path: string, source: string, at: { start: number; end: number }, html = oldHtml, files?: string[]) {
   const plan = planNativeSectionLink({ documentText, files, pagePath: path, pageSource: source, range: at, record: record(html) });
@@ -71,7 +71,7 @@ test("two sections with the same opening tag cannot be linked or resolved; no pa
 
 test("overlapping or duplicate links and malformed recognised entries refuse", () => {
   const nested = page(`<section id="outer"><section id="inner"><p>x</p></section></section>`);
-  const json = (sections: object) => JSON.stringify({ version: 1, pages: { "index.html": { sections } }, collections: {} });
+  const json = (sections: object) => JSON.stringify({ version: 1, pages: { "index.html": { sections } } });
   const target = (id: string, opening: string) => ({ authoredId: id, path: [0], tag: "section", openingTagFingerprint: opening });
   const outer = { kind: "native-section", recordId: "hero", basis: oldHtml, target: target("outer", `<section id="outer">`) };
   const inner = { kind: "native-section", recordId: "hero", basis: oldHtml, target: target("inner", `<section id="inner">`) };
@@ -168,7 +168,7 @@ test("rename and delete touch only native links and keep foreign entries", () =>
 test("padded records link with their section as basis; an outside comment refuses Update", async () => {
   const { readStaticSectionRecords } = await import("../src/page-builder/static-sections");
   for (const html of [`\n${oldHtml}\n`, `  ${oldHtml}`, `${oldHtml}<!-- note -->`]) {
-    const catalogue = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { hero: record(html) } } });
+    const catalogue = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { hero: record(html) } } });
     const accepted = readStaticSectionRecords(catalogue).hero;
     assert.equal(accepted.html, html, "the catalogue accepts this record");
     const home = page(oldHtml);
@@ -203,45 +203,4 @@ test("register needs the page in the file graph; a copy later wrapped in a compo
     const wrapped = page(`<${wrapper}>${oldHtml}</${wrapper}>`);
     assert.ok("error" in resolveNativeSectionLinks({ documentText: text, sources: { "index.html": wrapped } }), wrapper);
   }
-});
-
-test("an update that would replace or contain a collection's element is refused before any write", () => {
-  const listed = `<section class="hero"><h2>Hello</h2><ul id="list" data-each="/work/" data-limit="3"><template><li></li></template></ul></section>`;
-  const home = page(listed);
-  const linked = link(baseJson, "index.html", home, range(home, listed), listed).text;
-  const json = JSON.parse(linked);
-  json.collections.work = {
-    pagePath: "index.html", target: { authoredId: "list", path: [1, 0, 0, 1], tag: "ul", openingTagFingerprint: `<ul id="list">` },
-    folders: ["/work/"], sort: "", filter: "", limit: 3, template: "<li></li>", fields: [], overrides: {},
-  };
-  const withCollection = JSON.stringify(json);
-  const plan = planNativeSectionCopiesUpdate({ documentText: withCollection, sources: { "index.html": home }, record: record(newHtml) });
-  assert.match((plan as { error: string }).error, /Collection work on index\.html is inside or around a copy/);
-  // The same page with the collection outside the copy updates normally.
-  const apart = page(`${oldHtml}<ul id="list" data-each="/work/" data-limit="3"><template><li></li></template></ul>`);
-  const apartLinked = JSON.parse(link(baseJson, "index.html", apart, range(apart, oldHtml)).text);
-  apartLinked.collections.work = { ...json.collections.work, target: { ...json.collections.work.target, path: [1, 0, 1] } };
-  const ok = planNativeSectionCopiesUpdate({ documentText: JSON.stringify(apartLinked), sources: { "index.html": apart }, record: record(newHtml) });
-  assert.ok(!("error" in ok), "error" in ok ? ok.error : "");
-  assert.ok(ok.operation);
-});
-
-// A collection outside the copy, without an id, is found by its opening tag. New record HTML
-// carrying the same opening tag would make it ambiguous after the update: refused before writing.
-test("an update that would make an outside collection ambiguous is refused", () => {
-  const list = `<ul class="list" data-each="/work/" data-limit="3"><template><li></li></template></ul>`;
-  const home = page(`${oldHtml}${list}`);
-  const linked = JSON.parse(link(baseJson, "index.html", home, range(home, oldHtml)).text);
-  linked.collections.work = {
-    pagePath: "index.html", target: { path: [1, 0, 1], tag: "ul", openingTagFingerprint: `<ul class="list">` },
-    folders: ["/work/"], sort: "", filter: "", limit: 3, template: "<li></li>", fields: [], overrides: {},
-  };
-  const documentText = JSON.stringify(linked);
-  const clashing = `<section class="hero"><h2>Hello</h2><ul class="list"><li>x</li></ul></section>`;
-  const plan = planNativeSectionCopiesUpdate({ documentText, sources: { "index.html": home }, record: record(clashing) });
-  assert.match((plan as { error: string }).error, /After the update, index\.html: .*ambiguous/);
-  // The same collection with record HTML that does not clash updates, and the collection stays put.
-  const fine = planNativeSectionCopiesUpdate({ documentText, sources: { "index.html": home }, record: record(newHtml) });
-  assert.ok(!("error" in fine), "error" in fine ? fine.error : "");
-  assert.equal(fine.operation!.edits.get("index.html"), page(`${newHtml}${list}`));
 });

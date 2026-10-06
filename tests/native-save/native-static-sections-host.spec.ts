@@ -1,4 +1,3 @@
-import { seedCollection } from "./collection-fixture";
 import { seedSavedSections } from "./static-sections";
 import "../../src/page-builder/page-builder-document";
 import { locateSectionTarget } from "../../src/page-builder/source-target";
@@ -153,7 +152,7 @@ actual("a saved custom section previews and inserts its own HTML with the live s
   const record = { id: "intro", label: "Intro", rootClass: "section-intro", stylesheetPath: CSS,
     html: '<section class="section-intro"><h2>Our custom intro</h2></section>', css: ".section-intro { color: teal; }" };
   const live = (await file(page, baseURL, CSS)) + ".section-intro { color: rgb(200, 0, 0); }\n";
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro: record } } }, null, 2) + "\n" } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { intro: record } } }, null, 2) + "\n" } });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: CSS, content: live } });
   const sidecarBefore = await file(page, baseURL, SIDECAR);
   await load(page, baseURL, "about/index.html");
@@ -208,7 +207,7 @@ actual("invalid editor JSON hides plain sections instead of falling back to defa
   await expect(panel(page).locator(".pb-add-panel__notice")).toContainText(`${SIDECAR} can't be read`);
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await storedDrafts(page)).toEqual([]);
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {}, collections: {} }, null, 2) + "\n" } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: SIDECAR, content: JSON.stringify({ version: 1, pages: {} }, null, 2) + "\n" } });
   await load(page, baseURL);
   await openAdd(page);
   await expect(panel(page).getByRole("option", { name: /^Intro HTML$/ })).toHaveCount(0);
@@ -372,20 +371,16 @@ for (const [label, scheme, width] of [["light", "light", 1440], ["dark", "dark",
   });
 }
 
-actual("adding a section beside a stored collection leaves its recipe and cards as they are", async ({ page, baseURL }) => {
+actual("adding a section beside a static card grid leaves its cards as they are", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "services/one/index.html", content: `<!doctype html><html><head><title>New services · Larkspur Studio</title><meta name="description" content="About services."></head><body><main><h1>New services</h1></main></body></html>` } });
   await load(page, baseURL);
-  await seedCollection(page, baseURL, ["/work/", "/services/"], ["services/one/index.html"]);
-  await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
-  const collections = JSON.parse(await (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(SIDECAR)}`)).text()).collections;
   const cards = await frame(page).locator("card-project").count();
   await openAdd(page);
   await add(page, /^Contact HTML$/);
   await expect(frame(page).locator("section.contact-section")).toHaveCount(1);
   const after = JSON.parse((await storedDraft(page, SIDECAR))!.content);
-  expect(after.collections).toEqual(collections);
   expect(after.reusableSections.records.contact.rootClass).toBe("contact-section");
   await expect(frame(page).locator("card-project")).toHaveCount(cards);
   await expect(page.locator("#notice")).not.toContainText("not added");

@@ -37,10 +37,10 @@ test("default excludes native-only hosts and actual-only specs but keeps univers
   assert.ok(files.includes("native-master-preview-locator.spec.ts"));
 });
 
-test("actual selection is unchanged", () => {
+test("actual selection keeps existing section specs", () => {
   const { status, files } = launch(["actual", "--check"]);
   assert.equal(status, 0);
-  assert.ok(files.includes("native-static-sections-host.spec.ts") && files.includes("native-editor-json-lifecycle.spec.ts"));
+  assert.ok(files.includes("native-static-sections-host.spec.ts"));
   for (const spec of nativeHosts) assert.ok(!files.includes(spec), spec);
 });
 

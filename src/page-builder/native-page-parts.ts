@@ -7,7 +7,7 @@ import { readNativeSectionLinks, type NativeSectionLinks } from "./native-sectio
 import { nativeMarkupInsertEdit } from "./native-operations";
 import { scanMediaUrlTokens } from "./media-references";
 import {
-  EDITOR_PAGE_BUILDER_PATH, locateCollections, readPageBuilderDocument, writePageBuilderDocument,
+  EDITOR_PAGE_BUILDER_PATH, readPageBuilderDocument, writePageBuilderDocument,
   type JsonValue, type PageBuilderDocument,
 } from "./page-builder-document";
 import { readSectionCatalog, type StaticSectionOperation } from "./static-sections";
@@ -27,7 +27,7 @@ import { readSectionCatalog, type StaticSectionOperation } from "./static-sectio
  *
  * Every page keeps its own complete copy: deleting `.editor/` leaves a working static site, and
  * nothing here adds a loader, a marker or an attribute to published HTML. Unknown keys anywhere
- * (records, links, pages, top level) and other editor data (collections, section links) are kept.
+ * (records, links, pages, top level) and other editor data (section links) are kept.
  *
  * Every function is pure. Plans return an operation whose `expectedSources` hold the exact bytes
  * (or `undefined`: absent) of every file they read, with the sorted `expectedFiles` graph; the host
@@ -265,19 +265,13 @@ function sectionLinksOnce(documentText: string | undefined): () => NativeSection
   let links: NativeSectionLinks | undefined;
   return () => links ??= readNativeSectionLinks(documentText);
 }
-/** Ranges another editor feature already owns on a page: section links and collections. */
+/** Ranges another editor feature already owns on a page: section links. */
 function otherOwnedRanges(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string): { start: number; end: number; what: string }[] {
   const out: { start: number; end: number; what: string }[] = [];
   for (const [key, link] of Object.entries(sectionLinks()[page] ?? {})) {
     const located = locateSectionTarget(source, link.target);
     if ("error" in located) fail(`Section link ${key} on ${page} can't be found; fix it first.`);
     out.push({ start: located.element.start, end: located.element.end, what: `section link ${key}` });
-  }
-  const collections = Object.fromEntries(Object.entries(document.collections).filter(([, record]) => record.pagePath === page));
-  if (Object.keys(collections).length) {
-    const located = locateCollections(source, collections);
-    if ("error" in located) fail(`A collection on ${page} can't be found: ${located.error}`);
-    for (const [id, item] of Object.entries(located.collections)) out.push({ start: item.element.start, end: item.element.end, what: `collection ${id}` });
   }
   return out;
 }
@@ -560,7 +554,7 @@ export function planUpdatePagePartCopies(input: { documentText: string; files: r
       edits.set(page, text);
     }
     edits.set(EDITOR_PAGE_BUILDER_PATH, writePageBuilderDocument(document, input.documentText));
-    // The result resolves: every page part link, section link and collection is found exactly once.
+    // The result resolves: every page part link, section link is found exactly once.
     const check = resolveOrFail(edits.get(EDITOR_PAGE_BUILDER_PATH)!, { ...input.sources, ...after });
     for (const entry of updated) {
       const found = check.find((item) => item.page === entry.page && item.key === entry.key);

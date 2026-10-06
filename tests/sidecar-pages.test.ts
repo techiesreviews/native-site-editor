@@ -32,13 +32,13 @@ const sidecarAfter = (text: string | undefined) => { assert.ok(text !== undefine
 /** Whole-page entries with shared sections, page parts and data the editor does not know. */
 function withPageEntries() {
   const meta = (tag: string) => ({ sections: { [`${tag}-hero`]: { kind: 'hero', copyOf: 'index.html' } }, pageParts: { header: { shared: 'site-header' } }, opaque: { nested: [tag, 1, true] } });
-  const doc = { version: 1, collections: {}, pages: { 'work/a/index.html': meta('a'), 'work/b/index.html': meta('b'), 'about/index.html': meta('about') },
+  const doc = { version: 1, pages: { 'work/a/index.html': meta('a'), 'work/b/index.html': meta('b'), 'about/index.html': meta('about') },
     catalog: { sharedSections: { 'site-header': { html: '<header></header>' } } } } as unknown as Doc;
   const raw: Record<string, string> = { 'index.html': page('Home'), 'work/a/index.html': page('Alpha'), 'work/b/index.html': page('Beta'), 'about/index.html': page('About'), [SIDE]: writePageBuilderDocument(doc) };
   return { raw, meta, doc: readPageBuilderDocument(raw[SIDE]) as Doc };
 }
 
-test('moving a page carries its whole entry and leaves other pages, catalog and collections alone', () => {
+test('moving a page carries its whole entry and leaves other pages, catalog alone', () => {
   const { raw, meta, doc } = withPageEntries();
   const after = sidecarAfter(change(raw, { moves: [{ from: 'work/a/index.html', to: 'work/z/index.html' }] }));
   assert.deepEqual(after.pages['work/z/index.html'], meta('a'));
@@ -46,7 +46,7 @@ test('moving a page carries its whole entry and leaves other pages, catalog and 
   assert.deepEqual(after.pages['work/b/index.html'], doc.pages['work/b/index.html']);
   assert.deepEqual(after.pages['about/index.html'], doc.pages['about/index.html']);
   assert.deepEqual(after.catalog, doc.catalog);
-  assert.deepEqual(after.collections, {});
+  assert.equal(Object.hasOwn(after, "collections"), false);
 });
 test('moving a folder carries the entry of every page inside it', () => {
   const { raw, meta, doc } = withPageEntries();
@@ -117,7 +117,7 @@ function sharedSite() {
   };
   const target = (path: string, needle: string) => makeSectionTarget(sources[path], sources[path].indexOf(needle));
   const part = (path: string) => ({ kind: 'native-page-part', recordId: 'site-head', target: target(path, '<header'), basis: head, unknown: { kept: [1] } });
-  const doc = { version: 1, collections: {},
+  const doc = { version: 1,
     reusablePageParts: { version: 1, records: { 'site-head': { id: 'site-head', label: 'Site header', htmlPath: '.editor/page-parts/site-head.html', rootTag: 'header', rootClass: 'site-header', stylesheetPath: 'styles/site.css' } } },
     pages: {
       'index.html': { pageParts: { 'site-head-1': part('index.html') } },

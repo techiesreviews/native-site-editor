@@ -5,8 +5,6 @@ import { planNativeSharedSection, type NativeSharedSectionInput } from "../src/p
 import { planNativeSectionCopiesUpdate, readNativeSectionLinks, resolveNativeSectionLinks, sectionCore } from "../src/page-builder/native-section-links";
 import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document";
 import { readSectionCatalog, readStaticSectionRecords, resolveStaticSection } from "../src/page-builder/static-sections";
-import { planStaticCardConversion } from "../src/page-builder/native-static-grid-collection";
-import { nativePageRoute } from "../shared/native-routes";
 
 // The real native starter (the published snapshot the editor serves, byte-identical to the
 // static preview), saved section by section as new shared sections.
@@ -78,7 +76,7 @@ for (const [id, label, rootClass] of [["hero", "Hero", "section-hero"], ["featur
   });
 }
 
-test("an existing JSON is edited once; unknown keys, pages, collections and records stay", () => {
+test("an existing JSON is edited once; unknown keys, pages and records stay", () => {
   const existing = JSON.stringify({
     version: 1, future: { kept: [1, 2] },
     pages: { "index.html": { title: "kept", sections: { other: { kind: "something-else", x: 1 } } }, "about/index.html": { y: true } },
@@ -91,7 +89,7 @@ test("an existing JSON is edited once; unknown keys, pages, collections and reco
   assert.equal(result.operation.expectedSources.get(EDITOR_PAGE_BUILDER_PATH), existing);
   const before = JSON.parse(existing), after = JSON.parse(jsonOf(result));
   assert.deepEqual(after.future, before.future);
-  assert.deepEqual(after.collections, before.collections);
+  assert.equal(Object.hasOwn(after, "collections"), false);
   assert.deepEqual(after.pages["about/index.html"], before.pages["about/index.html"]);
   assert.equal(after.pages["index.html"].title, "kept");
   assert.deepEqual(after.pages["index.html"].sections.other, before.pages["index.html"].sections.other);
@@ -215,20 +213,14 @@ test("a range that isn't an element says to select a section", () => {
   error(planNativeSharedSection(base({ range: { start: hero.start + 1, end: hero.end } })), /^Select a section on the page\.$/);
 });
 
-test("a real collection, unknown keys and other pages are kept; only the record and its link are added", () => {
+test("unknown keys and other pages are kept; only the record and its link are added", () => {
   const manifest = JSON.parse(readFileSync("public/native-static-starter/v6a9ca44/manifest.json", "utf8")) as { files: { path: string }[]; inline: { path: string; content: string }[] };
   const all: Record<string, string> = {};
   const graph: string[] = [];
   for (const { path } of manifest.files) { graph.push(path); if (!path.endsWith(".png")) all[path] = read(path); }
   for (const { path, content } of manifest.inline) { graph.push(path); all[path] = content; }
-  const routes: Record<string, string> = {};
-  for (const path of graph) { const url = nativePageRoute(path); if (url) routes[url] = path; }
-  const name = JSON.parse(all[".editor/config.json"]).site.name;
-  const converted = planStaticCardConversion({ sources: all, files: graph, routes, identity: { name }, path: "index.html", start: all["index.html"].indexOf(`<div class="cards">`), folders: ["/work/"], token: "grid1" });
-  assert.ok(!("error" in converted), "error" in converted ? converted.error : "");
-  const home = converted.texts.get("index.html")!;
-  const json = JSON.parse(converted.texts.get(EDITOR_PAGE_BUILDER_PATH)!);
-  assert.ok(Object.keys(json.collections).length > 0);
+  const home = all["index.html"];
+  const json = JSON.parse(JSON.stringify({ version: 1, pages: {} }));
   json.futureTop = { kept: [1, { deep: true }] };
   json.pages["about/index.html"] = { unknownField: "kept" };
   (json.pages["index.html"] ??= {}).unknownPageField = 7;

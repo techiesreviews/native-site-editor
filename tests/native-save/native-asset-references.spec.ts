@@ -1,25 +1,23 @@
 import { expect, test, type Page } from "@playwright/test";
-import "../../src/page-builder/page-builder-document";
-import { makeSectionTarget } from "../../src/page-builder/source-target";
 import { storedDraft, storedDrafts } from "./drafts";
 
-// Renaming or deleting a site file in the Files tab: every page, stylesheet
-// and JSON card recipe that uses it follows in the same operation and Undo
-// step, or the change is refused. External URLs never change.
+// Renaming or deleting a site file in the Files tab: every page and stylesheet
+// that uses it follows in the same operation and Undo step, or the change is
+// refused. External URLs never change.
 test.beforeEach(({ page }) => page.setDefaultTimeout(10_000));
 
 const side = ".editor/page-builder.json";
 const item = "work/lifecycle/index.html";
 const card = '<article><a href="/work/lifecycle/">Lifecycle</a><img src="/images/studio-desk.svg" alt="Lifecycle"></article>';
 const external = '<img src="https://example.com/images/studio-desk.svg" alt="">';
-const home = `<!doctype html><html><head><title>Collection proof</title></head><body><main><div id="proof-cards">${card}</div><p>${external}</p></main></body></html>`;
+const home = `<!doctype html><html><head><title>Card proof</title></head><body><main><div id="proof-cards">${card}</div><p>${external}</p></main></body></html>`;
 const source = '<!doctype html><html><head><title>Lifecycle</title><meta name="description" content="Original description"><meta property="og:image" content="/images/studio-desk.svg"></head><body><main><h1>Lifecycle</h1></main></body></html>';
-const recipe = JSON.stringify({ version: 1, pages: { [item]: { sections: { keep: "yes" } } }, futureKey: { keep: true }, collections: { proof: { pagePath: "index.html", target: makeSectionTarget(home, home.indexOf("<div")), folders: ["/work/"], sort: "title", filter: "", limit: 500, template: '<article><a href="{url}">{title}</a><img src="{image}" alt="{title}" data-if="image"></article>', fields: [], overrides: {}, outputFingerprint: card } } }, null, 2) + "\n";
+const sidecarText = JSON.stringify({ version: 1, pages: { [item]: { sections: { keep: "yes" } } }, futureKey: { keep: true } }, null, 2) + "\n";
 const mounted = (page: Page, path: string) => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 
 async function seed(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
-  for (const [path, content] of [["index.html", home], [item, source], [side, recipe]])
+  for (const [path, content] of [["index.html", home], [item, source], [side, sidecarText]])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
@@ -33,7 +31,7 @@ async function seed(page: Page, baseURL: string | undefined) {
   return explorer;
 }
 
-test("renaming a linked image updates the page, its meta tag, the cards and the JSON recipe as one Undo step", async ({ page, baseURL }) => {
+test("renaming a linked image updates the page, its meta tag and the cards as one Undo step", async ({ page, baseURL }) => {
   const explorer = await seed(page, baseURL);
   await explorer.getByRole("button", { name: "studio-desk.svg", exact: true }).focus();
   await page.keyboard.press("F2");
@@ -45,10 +43,7 @@ test("renaming a linked image updates the page, its meta tag, the cards and the 
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(renamedHome);
   // The external image with the same file name is not this site's file.
   expect(renamedHome).toContain(external);
-  const json = JSON.parse((await storedDraft(page, side))!.content);
-  expect(json.futureKey).toEqual({ keep: true });
-  expect(json.collections.proof.outputFingerprint).toBe(card.replace("studio-desk", "lifecycle"));
-  expect(json.collections.proof.template).toBe(JSON.parse(recipe).collections.proof.template);
+  expect(await storedDraft(page, side)).toBeUndefined();
   expect((await storedDraft(page, "images/lifecycle.svg"))).toBeTruthy();
   // One Undo puts every file back; Redo does it again.
   await page.locator(".code-editor__undo").first().click();
@@ -73,12 +68,10 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   const itemSource = source.replace("/images/studio-desk.svg", photo).replace("<h1>Lifecycle</h1>", '<h1>Lifecycle</h1><img src="photo.svg" alt="">');
   const extra = `<p><img srcset="${photo} 2x" src="${photo}" alt=""></p>`;
   const folderCard = card.replace("/images/studio-desk.svg", photo);
-  const folderHome = `<!doctype html><html><head><title>Collection proof</title><meta property="og:image" content="${photo}"></head><body><main><div id="proof-cards">${folderCard}</div>${extra}</main></body></html>`;
-  const folderRecipe = JSON.parse(recipe);
-  folderRecipe.collections.proof.target = makeSectionTarget(folderHome, folderHome.indexOf("<div"));
-  folderRecipe.collections.proof.outputFingerprint = folderCard;
+  const folderHome = `<!doctype html><html><head><title>Card proof</title><meta property="og:image" content="${photo}"></head><body><main><div id="proof-cards">${folderCard}</div>${extra}</main></body></html>`;
+  const folderSidecar = JSON.parse(sidecarText);
   await page.goto(baseURL!);
-  for (const [path, content] of [["index.html", folderHome], [item, itemSource], [side, JSON.stringify(folderRecipe, null, 2) + "\n"], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])
+  for (const [path, content] of [["index.html", folderHome], [item, itemSource], [side, JSON.stringify(folderSidecar, null, 2) + "\n"], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.frameLocator(".native-preview-frame").locator("#proof-cards a")).toHaveText("Lifecycle");
@@ -107,7 +100,6 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   const json = JSON.parse((await storedDraft(page, side))!.content);
   expect(json.futureKey).toEqual({ keep: true });
   expect(json.pages["work/renamed/index.html"]).toEqual({ sections: { keep: "yes" } });
-  expect(json.collections.proof.outputFingerprint).toBe(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);
   expect(await mounted(page, "index.html")).toBe(folderHome);
@@ -137,26 +129,4 @@ test("a reference added in another tab while the Delete dialog is open stops the
   await expect(page.locator("#explorer").getByRole("button", { name: "placeholder.svg", exact: true })).toBeVisible();
   expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
   expect((await storedDraft(page, "styles/site.css"))?.content).toBe(used);
-});
-
-test("with editor data that cannot be read, moving or deleting even an unused image is refused and says why", async ({ page, baseURL }) => {
-  await page.goto(baseURL!);
-  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: side, content: "{ not json" } })).status()).toBe(204);
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  await page.locator("#explorer-toggle").click();
-  const explorer = page.locator("#explorer");
-  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
-  const images = explorer.getByRole("button", { name: "images", exact: true });
-  if (await images.getAttribute("aria-expanded") === "false") await images.click();
-  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).focus();
-  await page.keyboard.press("F2");
-  await explorer.getByRole("textbox", { name: "New name for images/placeholder.svg" }).fill("other.svg");
-  await page.keyboard.press("Enter");
-  await expect(explorer).toContainText("The editor data (.editor/page-builder.json) is not valid, so it cannot be checked; nothing was moved.");
-  await page.keyboard.press("Escape");
-  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).click({ button: "right" });
-  await page.getByRole("menu", { name: "Actions for images/placeholder.svg" }).getByRole("menuitem", { name: "Delete" }).click();
-  await expect(page.locator("#status")).toHaveText("The editor data (.editor/page-builder.json) is not valid, so it cannot be checked; nothing was deleted. Fix it in Code first.");
-  expect(await storedDrafts(page)).toEqual([]);
 });

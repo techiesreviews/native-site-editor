@@ -10,7 +10,7 @@ const section: StaticSectionRecord = {
   future: { author: "Keep unknown record metadata" },
 };
 const page = '<!doctype html><html><head><title>Native site</title></head><body><main><!-- Existing --><p>Keep</p></main></body></html>';
-function document(record: StaticSectionRecord = section): string { return JSON.stringify({version:1,pages:{},collections:{},future:{kept:true},reusableSections:{version:1,records:{[record.id]:record},future:["unknown"]}}); }
+function document(record: StaticSectionRecord = section): string { return JSON.stringify({version:1,pages:{},future:{kept:true},reusableSections:{version:1,records:{[record.id]:record},future:["unknown"]}}); }
 function input(extra: Partial<StaticSectionInsertInput> = {}): StaticSectionInsertInput {
   return { documentText: document(), sectionId: "intro", pagePath: "index.html", pageSource: page, parent: [0], index: 1, stylesheetSources: { "styles/sections.css": undefined }, files: ["index.html", EDITOR_PAGE_BUILDER_PATH], ...extra };
 }
@@ -29,7 +29,7 @@ test("catalogue validates whole JSON, preserves unknown metadata and previews li
     const parsed=JSON.parse(text);parsed.reusableSections.version=version;
     assert.throws(()=>readStaticSectionRecords(JSON.stringify(parsed)),{message:"Unsupported reusable sections version."});
   }
-  assert.throws(()=>readStaticSectionRecords('{"version":2,"pages":{},"collections":{}}'),{message:"Unsupported page builder document version."});
+  assert.throws(()=>readStaticSectionRecords('{"version":2,"pages":{}}'),{message:"Unsupported page builder document version."});
   const mismatch=JSON.parse(text);mismatch.reusableSections.records.intro.id="other";
   assert.throws(()=>readStaticSectionRecords(JSON.stringify(mismatch)),{message:"Invalid static section identity, label, rootClass or stylesheet path."});
 });
@@ -194,7 +194,7 @@ test("every inline stylesheet import requires a supplied snapshot and participat
 });
 
 const other: StaticSectionRecord = { id: "outro", label: "Outro", rootClass: "outro-section", stylesheetPath: "styles/sections.css", html: '<section class="outro-section"><p>Bye</p></section>', css: '.outro-section { margin: 0; }' };
-const rich = JSON.stringify({version:1,pages:{"index.html":{sections:{tagline:"Hi"}}},collections:{},future:{kept:true},reusableSections:{version:1,records:{outro:other},future:["unknown"]}},null,2)+"\n";
+const rich = JSON.stringify({version:1,pages:{"index.html":{sections:{tagline:"Hi"}}},future:{kept:true},reusableSections:{version:1,records:{outro:other},future:["unknown"]}},null,2)+"\n";
 const saveFiles = ["index.html", EDITOR_PAGE_BUILDER_PATH];
 function saved(value: StaticSectionSaveInput) { const before = structuredClone(value); const result = planStaticSectionSave(value); if ("error" in result) assert.fail(result.error); assert.deepEqual(value, before); return result; }
 function saveFailure(value: StaticSectionSaveInput, reason: string) { const before = structuredClone(value); assert.deepEqual(planStaticSectionSave(value), { error: reason }); assert.deepEqual(value, before); }
@@ -214,13 +214,13 @@ test("save creates absent editor JSON only when the complete graph proves absenc
   saveFailure({ documentText: rich, files: ["index.html"], record: section }, "Loaded sources do not match the file graph.");
 });
 
-test("save edits only editor JSON and preserves pages, collections, future keys and other records", () => {
+test("save edits only editor JSON and preserves pages, future keys and other records", () => {
   const plan = saved({ documentText: rich, files: saveFiles, record: section });
   assert.equal(plan.operation.creates, undefined);
   assert.deepEqual([...plan.operation.edits.keys()], [EDITOR_PAGE_BUILDER_PATH]);
   assert.deepEqual([...plan.operation.expectedSources], [[EDITOR_PAGE_BUILDER_PATH, rich]]);
   const after = JSON.parse(plan.operation.edits.get(EDITOR_PAGE_BUILDER_PATH)!), before = JSON.parse(rich);
-  assert.deepEqual(after.pages, before.pages); assert.deepEqual(after.collections, before.collections); assert.deepEqual(after.future, before.future);
+  assert.deepEqual(after.pages, before.pages); assert.deepEqual(after.future, before.future);
   assert.deepEqual(after.reusableSections.future, ["unknown"]);
   assert.deepEqual(after.reusableSections.records, { outro: other, intro: section });
   assert.equal("open" in plan.operation, false);
@@ -245,18 +245,18 @@ test("existing id refuses by default; overwrite is opt-in and pinned to the expe
 test("save refuses rootClass and stylesheet class collisions with other records", () => {
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, rootClass: "outro-section", html: '<section class="outro-section"></section>', css: '.outro-section { color: red; }' } }, "Another static section already uses this rootClass.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section .outro-section { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
-  const outroUsesIntro = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x, .outro-section .intro-section { margin: 0; }'}}}});
+  const outroUsesIntro = JSON.stringify({version:1,pages:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x, .outro-section .intro-section { margin: 0; }'}}}});
   saveFailure({ documentText: outroUsesIntro, files: saveFiles, record: section }, "Section styles would collide with another static section's rootClass.");
-  const prefixOnly = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x { margin: 0; }'}}}});
+  const prefixOnly = JSON.stringify({version:1,pages:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section .intro-section-x { margin: 0; }'}}}});
   saved({ documentText: prefixOnly, files: saveFiles, record: section });
 });
 
 test("save refuses invalid JSON, versions, records, HTML and CSS without guessing or resetting", () => {
   saveFailure({ documentText: "{", files: saveFiles, record: section }, planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }).error!);
   assert.ok("error" in planStaticSectionSave({ documentText: "{", files: saveFiles, record: section }));
-  saveFailure({ documentText: JSON.stringify({version:2,pages:{},collections:{}}), files: saveFiles, record: section }, "Unsupported page builder document version.");
-  saveFailure({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:3,records:{}}}), files: saveFiles, record: section }, "Unsupported reusable sections version.");
-  saveFailure({ documentText: '{"version":1,"version":1,"pages":{},"collections":{}}', files: saveFiles, record: section }, "Duplicate JSON key: version.");
+  saveFailure({ documentText: JSON.stringify({version:2,pages:{}}), files: saveFiles, record: section }, "Unsupported page builder document version.");
+  saveFailure({ documentText: JSON.stringify({version:1,pages:{},reusableSections:{version:3,records:{}}}), files: saveFiles, record: section }, "Unsupported reusable sections version.");
+  saveFailure({ documentText: '{"version":1,"version":1,"pages":{}}', files: saveFiles, record: section }, "Duplicate JSON key: version.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, id: "Bad Id" } }, "Invalid static section identity, label, rootClass or stylesheet path.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, html: '<section class="intro-section"><script></script></section>' } }, "Static sections support ordinary HTML without scripts, embedded styles, custom tags, slots, templates or foreign markup.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: 'p { color: red; }' } }, "Every section style selector must be rooted in its literal rootClass without global leakage or nesting.");
@@ -265,18 +265,18 @@ test("save refuses invalid JSON, versions, records, HTML and CSS without guessin
 
 test("collision check reads selectors only: comments, content strings and url() never collide", () => {
   for (const css of ['.outro-section { margin: 0; } /* pairs with .intro-section */', '.outro-section::after { content: ".intro-section"; }', '.outro-section { background: url(a.intro-section); }']) {
-    const text = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css}}}});
+    const text = JSON.stringify({version:1,pages:{},reusableSections:{version:1,records:{outro:{...other,css}}}});
     saved({ documentText: text, files: saveFiles, record: section });
   }
   const png = { ...section, id: "pic", rootClass: "png", html: '<section class="png"></section>', css: '.png { color: red; }' };
-  saved({ documentText: JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section { background: url(a.png); }'}}}}), files: saveFiles, record: png });
+  saved({ documentText: JSON.stringify({version:1,pages:{},reusableSections:{version:1,records:{outro:{...other,css:'.outro-section { background: url(a.png); }'}}}}), files: saveFiles, record: png });
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section [class~="outro-section"] { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
   saveFailure({ documentText: rich, files: saveFiles, record: { ...section, css: '.intro-section .OUTRO-SECTION { color: red; }' } }, "Section styles would collide with another static section's rootClass.");
 });
 
 test("overwrite retains unknown record keys unless the new record sets them explicitly", () => {
   const stored = { ...section, future: { nested: { keep: [1, 2] } }, meta: "old" };
-  const text = JSON.stringify({version:1,pages:{},collections:{},reusableSections:{version:1,records:{intro:stored}}});
+  const text = JSON.stringify({version:1,pages:{},reusableSections:{version:1,records:{intro:stored}}});
   saveFailure({ documentText: text, files: saveFiles, record: { ...section, label: "New" }, overwrite: { expected: { ...stored, future: { nested: { keep: [1] } } } } }, "The saved static section changed since it was loaded.");
   const { future: _f, meta: _m, ...required } = stored;
   const plan = saved({ documentText: text, files: saveFiles, record: { ...required, label: "New", meta: "override" }, overwrite: { expected: stored } });

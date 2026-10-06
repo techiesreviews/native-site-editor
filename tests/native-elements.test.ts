@@ -205,8 +205,8 @@ test('foreign namespace integration is bounded and escaping or malformed islands
   for(const island of ['<svg><foreignObject><div>HTML</div></foreignObject></svg>', '<math><mtext><span>HTML</span></mtext></math>', '<math><annotation-xml encoding="text/html"><div>HTML</div></annotation-xml></math>']) assert.ok(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>'),island);
 });
 
-test('legal inline islands and collection templates do not reject unrelated ordinary targets', () => {
-  for(const island of ['<p><x-label><span>Inline</span></x-label></p>', '<p><svg><path/></svg></p>', '<p><template><div>Separate content</div></template>Text</p>', '<ul><template data-each="/notes/"><li>{title}</li></template><li>Existing</li></ul>']) {
+test('legal inline islands and inert templates do not reject unrelated ordinary targets', () => {
+  for(const island of ['<p><x-label><span>Inline</span></x-label></p>', '<p><svg><path/></svg></p>', '<p><template><div>Separate content</div></template>Text</p>', '<ul><template><li>Example</li></template><li>Existing</li></ul>']) {
     assert.ok(apply('<main>'+island+'<section></section></main>',[0,1],0,'<hr>'),island);
   }
   assert.equal(apply('<main><p><x-label><div>Repair</div></x-label></p><section></section></main>',[0,1],0,'<hr>'),undefined);

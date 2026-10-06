@@ -4,7 +4,7 @@ import { decodeHtmlEntities } from "./html-entities";
 
 /**
  * Finding one authored element of a page again after the page changed: the
- * target a shared section copy, a page part or a collection records in
+ * target recorded by a shared section copy or page part in
  * `.editor/page-builder.json`. A target is the element's authored `id` when it
  * has one, else its tag and exact opening tag; the element-child path is only
  * a record of where it was.
@@ -21,16 +21,7 @@ export function attribute(source: string, el: SourceElement, name: string): stri
   return found ? decodeHtmlEntities(found.value, true) : undefined;
 }
 
-/** The text a target's `openingTagFingerprint` records for an element. */
-export type OpeningTagFingerprint = (source: string, element: SourceElement) => string;
-const openingTag: OpeningTagFingerprint = (source, element) => source.slice(element.tag.start, element.tag.end);
-let fingerprint: OpeningTagFingerprint = openingTag;
-/**
- * Collections layer (goes with collections): a listing's own recipe attributes
- * are left out of its fingerprint, so changing them keeps every target on it.
- * Set once by `page-builder-document.ts`.
- */
-export function setOpeningTagFingerprint(next: OpeningTagFingerprint) { fingerprint = next; }
+const fingerprint = (source: string, element: SourceElement) => source.slice(element.tag.start, element.tag.end);
 
 // Unknown JSON keys are preserved except these globally reserved prototype names.
 const unsafeKeys = new Set(["__proto__", "prototype", "constructor"]);
@@ -50,9 +41,9 @@ export function assertJsonValue(value: unknown): void {
 }
 /** Throws unless `value` is a well-formed target. */
 export function assertSectionTarget(value: unknown): asserts value is SectionTarget {
-  object(value, "Collection target");
-  if (!Array.isArray(value.path) || !value.path.length || value.path.some((index) => !Number.isSafeInteger(index) || index < 0)) fail("Collection target needs an element-child path.");
-  if (typeof value.tag !== "string" || !/^[a-z][a-z0-9-]*$/.test(value.tag) || value.tag === "template") fail("Invalid collection target tag.");
+  object(value, "Section target");
+  if (!Array.isArray(value.path) || !value.path.length || value.path.some((index) => !Number.isSafeInteger(index) || index < 0)) fail("Section target needs an element-child path.");
+  if (typeof value.tag !== "string" || !/^[a-z][a-z0-9-]*$/.test(value.tag) || value.tag === "template") fail("Invalid section target tag.");
   if (value.authoredId !== undefined && (typeof value.authoredId !== "string" || !value.authoredId || /[\s\x00-\x1f]/.test(value.authoredId))) fail("Invalid authored target id.");
   if (typeof value.openingTagFingerprint !== "string") fail("Missing opening tag fingerprint.");
   const nodes = parseSource(value.openingTagFingerprint);
@@ -76,7 +67,7 @@ function candidates(source: string): { element: SourceElement; path: number[] }[
 export function makeSectionTarget(source: string, target: number | SourceElement): SectionTarget {
   const start = typeof target === "number" ? target : target.start;
   const found = candidates(source).find(({ element }) => element.start === start);
-  if (!found || !found.element.close) fail("Collection target must be a complete authored element.");
+  if (!found || !found.element.close) fail("Section target must be a complete authored element.");
   if (startTagAttributes(source, found.element.tag).filter((attr) => attr.name === "id").length > 1) fail("Duplicate authored target id attributes.");
   const authoredId = attribute(source, found.element, "id");
   return { ...(authoredId ? { authoredId } : {}), path: found.path, tag: found.element.name, openingTagFingerprint: fingerprint(source, found.element) };
@@ -88,9 +79,9 @@ export function locateSectionTarget(source: string, target: SectionTarget): Sect
     assertJsonValue(target); assertSectionTarget(target);
     const all = candidates(source);
     const matching = target.authoredId ? all.filter(({ element }) => attribute(source, element, "id") === target.authoredId) : all.filter(({ element }) => element.name === target.tag && fingerprint(source, element) === target.openingTagFingerprint);
-    if (matching.length !== 1) fail("Collection target is missing or ambiguous.");
+    if (matching.length !== 1) fail("Section target is missing or ambiguous.");
     const found = matching[0];
-    if (found.element.name !== target.tag || !found.element.close) fail("Collection target kind changed or is incomplete.");
+    if (found.element.name !== target.tag || !found.element.close) fail("Section target kind changed or is incomplete.");
     const current = makeSectionTarget(source, found.element);
     return { element: found.element, target: { ...target, ...current }, rebound: JSON.stringify(found.path) !== JSON.stringify(target.path) };
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }

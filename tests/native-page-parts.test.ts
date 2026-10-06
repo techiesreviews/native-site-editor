@@ -5,11 +5,9 @@ import {
   pagePartCore, planLinkPagePartCopies, planSavePagePart, planUnlinkPagePart, planUpdatePagePartCopies,
   readPagePartCatalog, readPagePartLinks, readPagePartMaster, resolvePagePartLinks, type PagePartPlan,
 } from "../src/page-builder/native-page-parts";
-import { planStaticCardConversion } from "../src/page-builder/native-static-grid-collection";
 import { planNativeSharedSection } from "../src/page-builder/native-shared-section";
 import { readNativeSectionLinks } from "../src/page-builder/native-section-links";
 import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document";
-import { nativePageRoute } from "../shared/native-routes";
 
 // The vendored native starter, all six routes, as the editor loads it.
 const STARTER = "public/native-static-starter/v6a9ca44";
@@ -48,14 +46,9 @@ const error = (value: unknown, pattern: RegExp) => {
 };
 const json = (site: Site) => site.sources[EDITOR_PAGE_BUILDER_PATH];
 
-/** Starter state with a real collection, a section link and unknown keys already in the JSON. */
+/** Starter state with a section link and unknown keys already in the JSON. */
 function prepared(): Site {
   const site = starter();
-  const routes: Record<string, string> = {};
-  for (const path of site.files) { const url = nativePageRoute(path); if (url) routes[url] = path; }
-  const name = JSON.parse(site.sources[".editor/config.json"]!).site.name;
-  const converted = ok(planStaticCardConversion({ sources: site.sources as Record<string, string>, files: site.files, routes, identity: { name }, path: "index.html", start: site.sources["index.html"]!.indexOf(`<div class="cards">`), folders: ["/work/"], token: "grid1" }));
-  for (const [path, text] of converted.texts) { if (!site.files.includes(path)) site.files.push(path); site.sources[path] = text; }
   const home = site.sources["index.html"]!;
   const hero = ok(planNativeSharedSection({ documentText: json(site), files: site.files, sources: site.sources, pagePath: "index.html", pageSource: home, range: rangeOf(home, `section class="section-hero"`), id: "hero", label: "Hero", rootClass: "section-hero", stylesheetPath: SHEET }));
   apply(site, { operation: hero.operation, expectedFiles: hero.expectedFiles });
@@ -144,10 +137,9 @@ test("header and footer: save, link on all six routes, edit the master and updat
   for (const path of site.files) if (path.endsWith(".css")) assert.equal(site.sources[path], original[path], path);
   for (const page of PAGES) assert.doesNotMatch(site.sources[page]!, /data-native|page-part|\.editor/);
 
-  // Unknown JSON, the real collection and the section link are kept.
+  // Unknown JSON, the section link are kept.
   const after = JSON.parse(json(site)!);
   assert.deepEqual(after.futureTop, before.futureTop);
-  assert.deepEqual(after.collections, before.collections);
   assert.deepEqual(after.reusableSections, before.reusableSections);
   assert.deepEqual(after.pages["index.html"].sections, before.pages["index.html"].sections);
   assert.equal(after.pages["about/index.html"].unknownField, "kept");

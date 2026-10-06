@@ -15,7 +15,7 @@ const items = [
   { tag: "footer", node: [2], text: "Footer", slot: "", children: [] },
 ];
 const sidebar = createPageStructure(document.getElementById("host")!, {
-  label: item => ({ kind: item.tag[0].toUpperCase() + item.tag.slice(1), text: item.text, generated: item.node.join(".") === "1.1" }),
+  label: item => ({ kind: item.tag[0].toUpperCase() + item.tag.slice(1), text: item.text }),
   onSelect: (path, node) => events.push({ type: "select", path, node }),
   pageSource: () => source,
   nativeFieldsRevision: () => String(version),

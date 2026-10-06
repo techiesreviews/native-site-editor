@@ -12,7 +12,7 @@ import { planSelectedStaticSectionSave } from "../src/page-builder/native-sectio
 // section's HTML; the editor JSON holds `htmlPath` and never the HTML; pages stay plain HTML.
 const intro: StaticSectionRecord = { id: "intro", label: "Intro", rootClass: "intro", stylesheetPath: "styles/sections.css", html: `<section class="intro"><h2>Hello</h2></section>`, css: ".intro { margin: 0; }\n", future: { kept: true } };
 const outro: StaticSectionRecord = { id: "outro", label: "Outro", rootClass: "outro", stylesheetPath: "styles/sections.css", html: `<section class="outro"><p>Bye</p></section>`, css: "" };
-const v1 = JSON.stringify({ version: 1, pages: { "index.html": { title: "kept" } }, collections: {}, future: { x: 1 }, reusableSections: { version: 1, records: { intro, outro }, extra: ["kept"] } }, null, 2) + "\n";
+const v1 = JSON.stringify({ version: 1, pages: { "index.html": { title: "kept" } }, future: { x: 1 }, reusableSections: { version: 1, records: { intro, outro }, extra: ["kept"] } }, null, 2) + "\n";
 const masterPath = sectionMasterPath("intro");
 const files = ["index.html", "about/index.html", EDITOR_PAGE_BUILDER_PATH, "styles/sections.css"];
 const page = (body: string) => `<!doctype html><html><head><title>T</title></head><body><main>${body}</main></body></html>`;
@@ -195,17 +195,17 @@ test("Save into a master moves only that record's link basis; another record's l
 
 // A version 2 catalogue stays usable when its last master is removed (all inline) or empty.
 test("a version 2 catalogue with no master left still reads, inserts and saves", () => {
-  const inline = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: { outro } } });
+  const inline = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 2, records: { outro } } });
   assert.deepEqual(readStaticSectionRecords(inline), { outro });
   const insert = planStaticSectionInsert({ documentText: inline, sectionId: "outro", pagePath: "index.html", pageSource: page("<p>Keep</p>"), parent: [0], index: 1, stylesheetSources: { "styles/sections.css": "" }, files, cssPolicy: "reuse-current" });
   assert.ok(!("error" in insert), "error" in insert ? insert.error : "");
   const saved = planStaticSectionSave({ documentText: inline, files, record: { ...outro, html: `<section class="outro"><p>Later</p></section>` }, overwrite: { expected: outro } });
   assert.ok(!("error" in saved), "error" in saved ? saved.error : "");
-  const empty = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: {} } });
+  const empty = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 2, records: {} } });
   assert.deepEqual(readStaticSectionRecords(empty), {});
   assert.ok(!("error" in planStaticSectionSave({ documentText: empty, files, record: outro })));
   // A future version still refuses.
-  assert.throws(() => readSectionCatalog(JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 3, records: {} } })), /Unsupported/);
+  assert.throws(() => readSectionCatalog(JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 3, records: {} } })), /Unsupported/);
 });
 
 test("Update of a master record needs its master pinned at its own path; Save into a master needs it in the graph", () => {

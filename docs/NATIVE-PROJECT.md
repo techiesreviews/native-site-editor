@@ -1,3 +1,10 @@
+<!-- P1.5: collections removal -->
+Collections and generated-card ownership were removed in P1.5 (2026-10-06).
+Static grids retain Add card and linked-page creation. The page-builder sidecar
+retains reusable sections, section links, page parts and unknown metadata; its
+next write strips `collections` and `pages[*].fields`. Historical release notes
+below may describe removed features.
+
 # Native Site Editor
 
 Reference deployment at `editor.techies.tools` (a Worker with a custom domain). Self-hosting: [setup](setup.md).

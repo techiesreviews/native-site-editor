@@ -1,10 +1,9 @@
 # Cards: grids of repeated items and their pages
 
-A grid of cards that link to subpages is a collection, like a Webflow CMS
-collection or a Framer CMS list, with no data file: **the grid's markup and
-the subpage files are the collection.** Adding to it writes one card into the
-page's HTML and, when asked, one new page file beside its siblings. Both are
-drafts like any other edit, readable in the code pane as they happen.
+A static grid of cards can link to subpages. Adding to it writes one card into
+the page's HTML and, when asked, one new page file beside its siblings. Both are
+drafts like any other edit, readable in the code pane as they happen. Cards are
+ordinary editable markup; there are no collection recipes or generated cards.
 
 ## What the user can do
 
@@ -26,7 +25,7 @@ drafts like any other edit, readable in the code pane as they happen.
   both: the card is an edit in the page's editor and the page's draft goes
   and comes back with it (a history companion, `replaceActiveRange(…, companion)`).
 - The URL prefix is an editable autocomplete input. It starts with the folder
-  inferred from this section's cards or its collection recipe, and keeps an
+  inferred from this section's cards, and keeps an
   intentionally cleared value while the title changes. Typing filters eligible
   prefixes; Arrow keys and Enter or a pointer choose a suggestion. There is no
   dropdown arrow. A canonical existing prefix is accepted, and a single new
@@ -70,7 +69,7 @@ its `aria-label` or `id`.
 **When a grid lists pages.** Each item's link is its first link to a page
 below the top level. When at least two items link to different pages right
 under one parent URL other than `/`, and no linked item points elsewhere,
-the grid is that parent's collection.
+the grid lists pages under that parent.
 
 **A new card** is a copy of the last item, as written (attributes,
 indentation, line breaks), put on its own lines after it:
@@ -138,7 +137,7 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
 
 ## Tested
 
-- `tests/card-grid.test.ts`: kinds, grids, nouns, collections, the element
+- `tests/card-grid.test.ts`: kinds, grids, nouns, linked-page grids, the element
   tree, text parts, card copies (fallbacks, placeholders, optional slots,
   title swap, links), insertion and indentation, page copies (shared vs reset,
   self links), a card link following a URL change.

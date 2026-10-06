@@ -27,3 +27,6 @@ Focused browser coverage checks zero height, the visible restore grip,
 click/drag/keyboard restoration, persisted height, hidden controls outside Tab
 navigation, no horizontal overflow, and unchanged source and drafts. Code-width
 and Page structure coverage also remain.
+
+Collections and its panel are removed in P1.5. Collapse controls apply to the
+Source editor and Page structure; there is no collection panel to restore.

@@ -56,8 +56,6 @@ export interface GridDescription {
   folders?: string[];
   /** Whether a new folder can be made for it. */
   newFolders?: boolean;
-  /** Why no page can be made from here now (its listing's settings are unread or unclear). */
-  blocked?: string;
 }
 
 /** A new page for a grid: its title, the folder it goes in, and a new folder to make there first. */
@@ -267,8 +265,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       const title = input.value.trim();
       prefixInput.style.width = `${Math.max(4, prefixInput.value.length + 1)}ch`;
       const parsed = request();
-      const blocked = handlers.describe(grid)?.blocked;
-      const planned = blocked ? { ok: false as const, error: blocked } : !parsed.ok ? parsed : title ? handlers.plan(grid, parsed.value) : undefined;
+      const planned = !parsed.ok ? parsed : title ? handlers.plan(grid, parsed.value) : undefined;
       slugText.textContent = planned?.ok ? planned.value.route.slice(prefixInput.value.length) : "…";
       const error = planned && !planned.ok ? planned.error : !title && showEmpty ? "Enter the page's title." : "";
       message.textContent = error;

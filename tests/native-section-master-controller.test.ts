@@ -9,7 +9,7 @@ import { createNativeSectionMasterController, type MasterSelection } from "../sr
 // source and the file graph still match (as the editor's atomic operation does), and counts
 // writes. They check the controller's decisions, not the browser.
 const intro = { id: "intro", label: "Intro", rootClass: "intro", stylesheetPath: "styles/sections.css", html: `<section class="intro"><h2>Hello</h2></section>`, css: "" };
-const json = JSON.stringify({ version: 1, pages: {}, collections: {}, future: { kept: true }, reusableSections: { version: 1, records: { intro } } }, null, 2) + "\n";
+const json = JSON.stringify({ version: 1, pages: {}, future: { kept: true }, reusableSections: { version: 1, records: { intro } } }, null, 2) + "\n";
 const page = (body: string) => `<!doctype html><html><head><title>T</title></head><body><main>${body}</main></body></html>`;
 const masterPath = sectionMasterPath("intro");
 
@@ -159,7 +159,7 @@ test("Update copies rewrites only unchanged copies, keeps customised ones, in on
 });
 
 test("an existing master opens from its loaded draft; a missing one refuses without writes", async () => {
-  const master = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 2, records: { intro: { ...intro, html: undefined, htmlPath: masterPath } } } });
+  const master = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 2, records: { intro: { ...intro, html: undefined, htmlPath: masterPath } } } });
   const home = page(intro.html);
   const ok = makeHost({ "index.html": home, [EDITOR_PAGE_BUILDER_PATH]: master, [masterPath]: `${intro.html}\n` });
   await ok.controller.edit(select(ok.state.files, "index.html", intro.html, ok.state));
@@ -176,7 +176,7 @@ test("an existing master opens from its loaded draft; a missing one refuses with
 // opened another page, or the repository changed while the operation applied.
 test("a stale Edit after selecting another section or page writes and opens nothing", async () => {
   const outro = { ...intro, id: "outro", label: "Outro", rootClass: "outro", html: `<section class="outro"><p>Bye</p></section>` };
-  const both = JSON.stringify({ version: 1, pages: {}, collections: {}, reusableSections: { version: 1, records: { intro, outro } } });
+  const both = JSON.stringify({ version: 1, pages: {}, reusableSections: { version: 1, records: { intro, outro } } });
   const home = page(intro.html + outro.html);
   const { state, controller } = makeHost({ "index.html": home, "about/index.html": home, [EDITOR_PAGE_BUILDER_PATH]: both });
   const stale = controller.identity(select(state.files, "index.html", intro.html, state))!;
@@ -263,7 +263,7 @@ test("Update copies awaits its operation and reports nothing changed when it is 
 const copyA = `<section class="intro" id="a"><h2>Hello</h2></section>`;
 const copyB = `<section class="intro" id="b"><h2>Hello</h2></section>`;
 const masterJson = (links: Record<string, unknown>) => JSON.stringify({
-  version: 1, pages: { "index.html": { sections: links } }, collections: {},
+  version: 1, pages: { "index.html": { sections: links } },
   reusableSections: { version: 2, records: { intro: { id: "intro", label: "Intro", rootClass: "intro", stylesheetPath: "styles/sections.css", css: "", htmlPath: masterPath } } },
 });
 const linkTo = (id: string, basis: string) => ({ kind: "native-section", recordId: "intro", basis, target: { authoredId: id, path: [1], tag: "section", openingTagFingerprint: `<section class="intro" id="${id}">` } });

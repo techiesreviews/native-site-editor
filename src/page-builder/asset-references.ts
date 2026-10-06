@@ -6,8 +6,6 @@
  * Pages are not handled here; their links follow Change URL.
  */
 import { mediaResolvePath, rewriteMediaReferences, scanMediaReferences } from "./media-references";
-import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder-document";
-import { readSidecar } from "./document-collections";
 
 const isPage = (path: string) => /\.html?$/i.test(path);
 const isText = (path: string) => /\.(?:html?|css)$/i.test(path);
@@ -51,8 +49,7 @@ export function planAssetReferenceRewrites(sources: Readonly<Record<string, stri
 }
 
 /**
- * The files that still use any of `paths` (pages, stylesheets, and the
- * editor's page data: card templates and stored values), leaving out files
+ * The files that still use any of `paths` (pages and stylesheets), leaving out files
  * among `paths` themselves. Empty when nothing uses them.
  */
 export function assetUsers(sources: Readonly<Record<string, string | undefined>>, paths: readonly string[]): Map<string, string[]> {
@@ -63,18 +60,6 @@ export function assetUsers(sources: Readonly<Record<string, string | undefined>>
   for (const [file, source] of Object.entries(sources)) {
     if (source === undefined || !isText(file) || paths.includes(file)) continue;
     for (const ref of scanMediaReferences(file, source)) if (gone.has(ref.path)) use(ref.path, file);
-  }
-  const sidecar = sources[EDITOR_PAGE_BUILDER_PATH];
-  if (sidecar !== undefined) {
-    const document = readSidecar(sidecar);
-    for (const collection of Object.values(document.collections)) {
-      for (const ref of scanMediaReferences(collection.pagePath, collection.template)) if (gone.has(ref.path)) use(ref.path, EDITOR_PAGE_BUILDER_PATH);
-      for (const fields of Object.values(collection.overrides)) for (const value of Object.values(fields)) {
-        const path = mediaResolvePath(value, collection.pagePath);
-        if (path && gone.has(path)) use(path, EDITOR_PAGE_BUILDER_PATH);
-      }
-    }
-
   }
   return users;
 }

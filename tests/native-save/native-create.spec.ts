@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // Creating files and folders in the explorer's Files tab (src/native-create.ts,
-// components/create-dialog.ts), and pages and collections in its Pages tab
+// components/create-dialog.ts), and pages and static card grids in its Pages tab
 // (src/native-pages.ts, components/pages-tree.ts). A new file is a browser
 // draft with no base blob; saving commits it through the real worker publish
 // path to the fake GitHub (server.ts). The routing tests use `native-routing`

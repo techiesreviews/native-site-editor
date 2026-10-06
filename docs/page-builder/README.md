@@ -43,50 +43,23 @@ Wave 1 (cards, Add panel, components, canvas, palette) makes the editor feel lik
 builder. Wave 2 covers what a site builder needs beyond that, still without a build step
 or editor runtime in the site.
 
-### Collections: editor recipes, ordinary website HTML
+### Static cards and section authoring
 
-Lex clarified the storage contract on 2026-10-04: editor-only section and
-collection information belongs in deletable `.editor` JSON. Collection recipes,
-bindings, filters and card overrides must not be embedded in published HTML. This supersedes the earlier `data-each` and inline `<template>` design.
-The existing implementation still uses that legacy format; migration is active
-work, not a completed feature.
+Cards are ordinary HTML in static grids. Add card copies a card and can create a
+linked page in the same undo step. There is no collection recipe, generated-card
+ownership, or collection refresh.
 
-The editor writes finished cards into the page as ordinary HTML. Published pages
-must require no collection renderer, framework compiler or editor build step.
-Deleting `.editor` must leave the rendered website working; it removes authoring
-recipes, not the website's content.
-
-- Collection sources can combine folders such as `/work/`, `/services/`,
-  `/portfolio/`, `/articles/` and `/videos/`.
-- Real page content and useful SEO remain in HTML. Collection card overrides,
-  bindings, sort/filter/limit settings and section bookkeeping belong in `.editor`.
-- Changes to recipes and affected website files must save and undo together.
-- Classes, links, image attributes and the site's native Web Component slot
-  attributes remain functional website source.
-
-`<template>` itself is a browser standard. It does not render its contents without
-JavaScript. Its native status does not make our binding expressions a browser
-feature; collection authoring expressions belong only in the editor's recipes.
-
-### Conditions
-
-- Editor collection conditions are evaluated before writing finished HTML. No
-  collection condition interpreter is required on the published website.
-- Visibility per breakpoint (hide on mobile) is CSS edited in the Source editor
-  (`@media … { .x { display: none } }`), never a script.
-
-Existing native Web Component behavior is a separate part of the site's code.
-Migration must preserve its functional attributes and user-authored markup;
-removing editor metadata is not permission to strip arbitrary `data-*` attributes.
+The deletable `.editor/page-builder.json` sidecar keeps reusable sections,
+`pages[path].sections`, `pages[path].pageParts` and unknown metadata. The next
+write strips `collections` and `pages[*].fields` without changing the version.
+Deleting `.editor` leaves the website's HTML and CSS intact.
 
 Styling, image positioning and grid layout are edited in the Source editor.
-The Style panel and its selected-collection inspector were removed in P1.2.
+Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Existing
+native component `data-if` support remains until the next removal slice.
 
 ### Wave 2 slices
 
-- **collections**: loops as above and "Make this grid a collection" for a card grid.
-  Page settings › Fields was removed in P1.4. Collections read HTML metadata and
-  recipe card overrides; collections remain until P1.5.
 - **elements**: inserting inside sections: heading, text, image, button, list, columns
   or grid, video or embed, divider, and native forms (`<form action>` with fields).
   Insertion inside sections was removed on 2026-09-25 at Lex's request, so this slice
@@ -104,5 +77,5 @@ The Style panel and its selected-collection inspector were removed in P1.2.
   ("+ Add image", "+ Add text") where they would appear; click an image to replace it,
   drop a file on it, remove an optional part with its ×, type into text in place.
 
-Existing sidecar `pages[path].date` remains a collection fallback when HTML supplies
-no date; P1.4 strips only `pages[*].fields`, not other supported page data.
+Page settings › Fields was removed in P1.4; collections were removed in P1.5.
+Other sidecar metadata, including `pages[path].date`, remains preserved.

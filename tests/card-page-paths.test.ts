@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFolderChoices, cardFolderCovered, cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
-import { cardRecipeFolders } from "../src/page-builder/card-listings.ts";
-import { EDITOR_PAGE_BUILDER_PATH } from "../src/page-builder/page-builder-document.ts";
-import { makeSectionTarget } from "../src/page-builder/source-target.ts";
+import { cardFolderChoices, cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
 
-// The new page a card grid's "Add card" makes: which folder it goes in, a
-// new folder there, and what a generated listing's source folders allow
-// (src/page-builder/cards.ts).
+// The new page a card grid's "Add card" makes: its existing folder or a
+// new folder there (src/page-builder/cards.ts).
 const routes = {
   "/": "index.html",
   "/work/": "work/index.html",
@@ -20,11 +16,11 @@ const routes = {
 const files = new Set(Object.values(routes));
 const exists = (path: string) => files.has(path) || [...files].some((file) => file.startsWith(`${path}/`));
 const folders = cardPageFolders(routes);
-const plan = (request: { title: string; parent: string; newFolder?: string }, recipe?: string[]) => planCardPage({ routes, exists, folders, recipe }, request);
+const plan = (request: { title: string; parent: string; newFolder?: string }) => planCardPage({ routes, exists, folders }, request);
 
 test("the site's folders are every folder a page is in, and those above it", () => {
   assert.deepEqual(folders, ["/", "/work/", "/work/a/", "/work/b/", "/work/studio/", "/work/studio/x/", "/works/", "/works/old/"]);
-  assert.deepEqual(cardFolderChoices(folders, "/work/", undefined).slice(0, 2), ["/work/", "/"]);
+  assert.deepEqual(cardFolderChoices(folders, "/work/").slice(0, 2), ["/work/", "/"]);
 });
 
 test("a page goes in the chosen existing folder or subfolder", () => {
@@ -39,8 +35,8 @@ test("a new folder makes its page inside it; the page's file makes the folder", 
 });
 
 test("invalid, hidden, reserved, unknown or taken paths are refused", () => {
-  const refused = (request: { title: string; parent: string; newFolder?: string }, recipe?: string[]) => {
-    const result = plan(request, recipe);
+  const refused = (request: { title: string; parent: string; newFolder?: string }) => {
+    const result = plan(request);
     assert.equal(result.ok, false, JSON.stringify(request));
     return result.ok ? "" : result.error;
   };
@@ -59,23 +55,6 @@ test("invalid, hidden, reserved, unknown or taken paths are refused", () => {
   assert.match(refused({ title: "!!", parent: "/work/" }), /no URL/);
 });
 
-test("a source folder no page could be in is never offered", () => {
-  assert.deepEqual(cardFolderChoices(["/"], undefined, ["/work/", "/bad", "/_x/", "/a/../"]), ["/work/"]);
-});
-
-test("a generated listing takes pages only in its source folders, on a slash boundary", () => {
-  assert.equal(cardFolderCovered(["/work/"], "/work/"), true);
-  assert.equal(cardFolderCovered(["/work/"], "/work/studio/"), true);
-  assert.equal(cardFolderCovered(["/work/"], "/works/"), false);
-  assert.equal(cardFolderCovered(["/work/"], "/"), false);
-  assert.deepEqual(cardFolderChoices(folders, "/work/", ["/work/"]), ["/work/", "/work/a/", "/work/b/", "/work/studio/", "/work/studio/x/"]);
-  assert.equal(plan({ title: "Oak", parent: "/work/studio/" }, ["/work/"]).ok, true);
-  assert.equal(plan({ title: "Oak", parent: "/work/", newFolder: "chairs" }, ["/work/"]).ok, true);
-  const outside = plan({ title: "Oak", parent: "/works/" }, ["/work/"]);
-  assert.deepEqual(outside, { ok: false, error: "This collection only includes /work/; update its source folders first." });
-  assert.equal(plan({ title: "Oak", parent: "/", newFolder: "work2" }, ["/work/"]).ok, false);
-});
-
 test("after a page from another folder joins a grid, its default folder stays explicit; a list of sections gets none", () => {
   assert.equal(mixedParent(routes, ["/work/a/", "/work/b/", "/works/old/"]), "/work/");
   // Each folder holding one card's page only: the last card's folder, explicitly.
@@ -86,42 +65,13 @@ test("after a page from another folder joins a grid, its default folder stays ex
   assert.equal(mixedParent(routes, ["/work/a/", "/work/a/", "/work/zz/"]), undefined);
 });
 
-const page = `<html><body><main><h2>Work</h2><div class="grid"><article><a href="/work/a/">A</a></article><article><a href="/work/b/">B</a></article></div></main></body></html>`;
-const first = { start: page.indexOf("<article>"), end: page.indexOf("</article>") + 10 };
-const record = (folders: string[]) => ({
-  pagePath: "index.html", target: makeSectionTarget(page, page.indexOf('<div class="grid"')), folders, sort: "", filter: "", limit: 500,
-  template: `<article><a href="{url}">{title}</a></article>`, fields: [], overrides: {}, extra: { kept: true },
-});
-const sidecar = (folders: string[]) => JSON.stringify({ version: 1, pages: {}, collections: { work: record(folders) } }, null, 2);
-
-test("a JSON recipe's folders come from the listing this grid is in", () => {
-  assert.deepEqual(cardRecipeFolders("index.html", page, first, sidecar(["/work/"]), true), { folders: ["/work/"] });
-  // Another page's record does not make this grid generated.
-  assert.deepEqual(cardRecipeFolders("other.html", page, first, sidecar(["/work/"]), true), {});
-  assert.deepEqual(cardRecipeFolders("index.html", page, first, undefined, false), {});
-});
-
-test("unloaded, unreadable or unlocatable recipes refuse instead of falling back to a hand-made grid", () => {
-  assert.match(cardRecipeFolders("index.html", page, first, undefined, true).error ?? "", /Checking/);
-  assert.match(cardRecipeFolders("index.html", page, first, "{ nope", true).error ?? "", new RegExp(EDITOR_PAGE_BUILDER_PATH.replace(/\./g, "\\.")));
-  const moved = page.replace('class="grid"', 'class="grid other"');
-  assert.match(cardRecipeFolders("index.html", moved, { start: moved.indexOf("<article>"), end: moved.indexOf("</article>") + 10 }, sidecar(["/work/"]), true).error ?? "", /could not be found/);
-});
-
-test("an inline legacy data-each recipe gives its folders", () => {
-  const legacy = `<main><div data-each="/work/ /press/"><template><article><a href="{url}">{title}</a></article></template><article><a href="/work/a/">A</a></article><article><a href="/work/b/">B</a></article></div></main>`;
-  const at = legacy.lastIndexOf("<article>");
-  assert.deepEqual(cardRecipeFolders("index.html", legacy, { start: at, end: legacy.indexOf("</article>", at) + 10 }, undefined, false), { folders: ["/work/", "/press/"] });
-});
-
-
 test("typed prefixes use existing folders or one new segment under the longest allowed parent", () => {
-  const allowed = cardFolderChoices(folders, "/work/", ["/work/"]);
+  const allowed = cardFolderChoices(folders, "/work/");
   assert.deepEqual(cardPrefixRequest("Oak", "/work/studio/", allowed, true), { ok: true, value: { title: "Oak", parent: "/work/studio/" } });
   const fresh = cardPrefixRequest("Oak", "/work/studio/chairs/", allowed, true);
   assert.deepEqual(fresh, { ok: true, value: { title: "Oak", parent: "/work/studio/", newFolder: "chairs" } });
-  assert.deepEqual(fresh.ok && plan(fresh.value, ["/work/"]), { ok: true, value: { route: "/work/studio/chairs/oak/", file: "work/studio/chairs/oak/index.html" } });
-  for (const prefix of ["", "/about/", "/work/chairs/tall/", "/work/../", "work/", "/work//", "/work/.git/"]) {
+  assert.deepEqual(fresh.ok && plan(fresh.value), { ok: true, value: { route: "/work/studio/chairs/oak/", file: "work/studio/chairs/oak/index.html" } });
+  for (const prefix of ["", "/work/chairs/tall/", "/work/../", "work/", "/work//", "/work/.git/"]) {
     assert.equal(cardPrefixRequest("Oak", prefix, allowed, true).ok, false, prefix);
   }
   assert.equal(cardPrefixRequest("Oak", "/work/chairs/", allowed, false).ok, false);
