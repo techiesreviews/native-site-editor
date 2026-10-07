@@ -280,6 +280,7 @@ test("a first commit that stops after index.html is finished from the editor, wi
   await page.getByRole("button", { name: "Open the editor" }).click();
 
   await page.getByRole("button", { name: "Finish adding the Starter site" }).click({ timeout: 30_000 });
+  await toFinishedStarter(page);
   await expect(page.locator("#finish-starter"), "no banner is left after Finish").toHaveCount(0);
   const panel = await (async () => { await showPublish(page); return page.locator("#publish-files"); })();
   await expect(panel).toContainText("styles/site.css");
@@ -347,6 +348,7 @@ test("the recovery banner belongs to its repository: switching away removes it, 
   await page.goto(`${baseURL}/#repo=${half.id}&branch=main`);
   await expect(banner).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Finish adding the Starter site" }).click();
+  await toFinishedStarter(page);
   await showPublish(page);
   await expect(page.locator("#publish-files")).toContainText("styles/site.css");
   // Finished: no banner is left, not even a fresh one from the reload, and it stays gone.
@@ -416,3 +418,8 @@ test("an editor with a private owner setup link keeps the locked sign-in, with n
   await expect(page.locator(".wizard")).toHaveCount(0);
   expect(handoffs).toEqual([]);
 });
+
+/** Finishing writes drafts and reloads the editor before announcing completion. */
+async function toFinishedStarter(page: Page) {
+  await expect(page.locator("#status")).toHaveText(/Added \d+ files as drafts\. Save to GitHub to keep them\./, { timeout: 30_000 });
+}
