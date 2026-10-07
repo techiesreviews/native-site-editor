@@ -113,6 +113,7 @@ import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
+import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
 import type {
@@ -158,18 +159,6 @@ installChunkRecovery({
     if (notice) { notice.textContent = message; notice.hidden = false; }
   },
 });
-let editorLoading:
-  | Promise<typeof import("./components/code-editor")>
-  | undefined;
-function loadEditorModule() {
-  return (editorLoading ??= import("./components/code-editor").catch(
-    (error) => {
-      editorLoading = undefined;
-      void handleChunkLoadFailure(error);
-      throw error;
-    },
-  ));
-}
 // Failed imports can be retried; chunk recovery owns the reload policy.
 function lazyModule<T>(load: () => Promise<T>) {
   let pending: Promise<T> | undefined;
@@ -191,51 +180,13 @@ const loadGetStarted = lazyModule(() => import("./components/get-started"));
 const loadStartSite = lazyModule(() => import("./components/start-site"));
 const loadSpotlight = lazyModule(() => import("./components/spotlight"));
 const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
-// Monaco (the code editor chunk, ~1 MB gzip) never competes with the reads
-// the preview needs: a native site's code panes show their code once the
-// preview has painted, the boot reads have settled and the browser is idle.
-// Edits, drafts, Undo/Redo and Save never wait for it (they work from the
-// draft store); reaching for the code (opening or clicking a code pane, the
-// Review diff) loads it at once. Importing the module attaches its view to
-// every mounted pane.
-let editorGateOpen = false;
-let openEditorGate: () => void = () => {};
-const editorGate = new Promise<void>((resolve) => {
-  openEditorGate = () => { editorGateOpen = true; resolve(); };
+// The code panes' Monaco load gate and resize handles (src/controllers/code-panes-controller.ts).
+const codePanes = createCodePanesController({
+  load: () => import("./components/code-editor"),
+  onChunkFailure: (error) => void handleChunkLoadFailure(error),
+  mountCodeResize,
+  mountCodeWidthResize,
 });
-let bootEditorDeferred = false;
-let previewPainted = false;
-let apiReadsInFlight = 0;
-function wantEditor() {
-  openEditorGate();
-  return loadEditorModule();
-}
-// The first preview paint (the runtime has rendered and reported the page's
-// structure): Monaco follows once the reads settle and the browser is idle.
-function notePreviewPainted() {
-  if (previewPainted || editorGateOpen) return;
-  previewPainted = true;
-  // The runtime reports the structure just before the frame presents it:
-  // two frames and a beat later the page is on screen.
-  requestAnimationFrame(() => requestAnimationFrame(() => void (async () => {
-    await new Promise((done) => setTimeout(done, 100));
-    // The page's remaining reads (styles, images, the site's text index) go first, for at most 3 s.
-    for (let waited = 0; apiReadsInFlight > 0 && waited < 3000 && !editorGateOpen; waited += 100)
-      await new Promise((done) => setTimeout(done, 100));
-    if (editorGateOpen) return;
-    const load = () => void wantEditor().catch(() => {});
-    if (typeof requestIdleCallback === "function") requestIdleCallback(load, { timeout: 1500 });
-    else setTimeout(load, 200);
-  })()));
-}
-// Resolves with Monaco's module: at once when the editor is wanted, else
-// (a native site's first code pane) once the preview has painted. A preview
-// that never paints (an error) does not hold the code back for long.
-function editorModuleWhenDue(defer: boolean) {
-  if (!defer || editorGateOpen) return wantEditor();
-  setTimeout(() => openEditorGate(), 8000);
-  return editorGate.then(loadEditorModule);
-}
 // Undo or Redo of a file no pane shows (a stylesheet whose pane closed) still redraws the preview.
 editorModule.onUnmountedText(({ scope, path }) => {
   const live = draftScope();
@@ -244,7 +195,7 @@ editorModule.onUnmountedText(({ scope, path }) => {
   if (nativeModeActive()) updateNativePreviewSources();
 });
 // A pane that needs the code now (Review, focusing the code) asks for Monaco.
-editorModule.setViewLoader(() => wantEditor().then((module) => module.monacoView));
+editorModule.setViewLoader(() => codePanes.want().then((module) => module.monacoView));
 let disposeEditor: (() => void) | undefined;
 // The live primary keeps its journal even when a completed operation releases its alias.
 let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
@@ -282,10 +233,7 @@ function openCodeEditor(
     content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again."));
     return Promise.resolve();
   }
-  // Only a native site's first code pane waits for the preview; any later
-  // open was asked for and loads the editor at once.
-  const defer = !editorGateOpen && !bootEditorDeferred && nativeModeActive();
-  bootEditorDeferred = true;
+  const defer = codePanes.deferPane(nativeModeActive());
   const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
   disposeEditor = editorModule.mountSourceEditor(
     content,
@@ -298,11 +246,11 @@ function openCodeEditor(
     ? { key: draftKey(file.scope, file.path), session: historyScope, proof: historyHost } : undefined;
   nativeHistoryMountCapture?.(file.path);
   if (!nativeHistoryMountCapture) for (const adopt of nativePaneMountAdopters) adopt(file.path);
-  void editorModuleWhenDue(defer).catch((error) => {
+  void codePanes.whenDue(defer).catch((error) => {
     if (request !== editorRequest) return;
     content.querySelector(".code-editor__body")?.replaceChildren(
       node("p", "empty-message", "The code editor could not load."),
-      button("Retry editor", () => void wantEditor().catch(errorMessage)),
+      button("Retry editor", () => void codePanes.want().catch(errorMessage)),
     );
     errorMessage(error);
   });
@@ -476,15 +424,7 @@ function mountWorkspace() {
       confirmDialog?.close();
     }
   });
-  codeResize = mountCodeResize(element("main"), element("code-split"));
-  // Reaching for the code before Monaco's idle load fetches it now.
-  for (const type of ["pointerdown", "focusin"])
-    element("code-split").addEventListener(type, () => void wantEditor().catch(() => {}), { once: true });
-  codeWidthResize = mountCodeWidthResize(
-    element("code-split"),
-    element("code-split").querySelector<HTMLElement>(".code-pane")!,
-    element("secondary-pane"),
-  );
+  codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
   cards = mountCards();
   // A selection inside a component's template gets Select card once the runtime says which card.
   let selectedGrid = "";
@@ -530,7 +470,7 @@ function mountWorkspace() {
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
       if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
-      notePreviewPainted();
+      codePanes.notePreviewPainted();
       noteNativePainted();
       const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
       const proof = scope && editorModule?.captureFileModelState(scope, path);
@@ -646,7 +586,7 @@ const paletteController = createCommandPaletteController({
     select: (path, node) => nativePreview?.selectNode({ path, node }),
     textSelected: () => Boolean(nativeTextSelection && !nativeTextSelection.caret && nativeTextSelection.text),
     history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
-    toggleCode: () => codeResize?.toggle(),
+    toggleCode: () => codePanes.heightResize()?.toggle(),
     codeHidden: () => element("main").classList.contains("code-collapsed"),
     toggleStructure: () => sidebarResize?.toggle(),
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
@@ -929,11 +869,11 @@ function renderMasterBanner() {
         const active = activeMaster();
         if (!active) { renderMasterBanner(); return; }
         void active.controller.done().then(() => {
-          const revealed = masterRevealedCode, now = codeResize?.state();
+          const revealed = masterRevealedCode, now = codePanes.heightResize()?.state();
           masterRevealedCode = undefined;
           // Only the session's own Done after an automatic reveal the person left as it was (a
           // session kept from earlier, with its master not open, does not hold Code open).
-          if (revealed && now && !active.controller.context() && !now.collapsed && now.height === revealed.height) codeResize?.toggle();
+          if (revealed && now && !active.controller.context() && !now.collapsed && now.height === revealed.height) codePanes.heightResize()?.toggle();
           renderMasterBanner();
           updateNativePreviewSources();
         });
@@ -999,6 +939,7 @@ function runMasterEdit(controller: { context(): { htmlPath: string } | undefined
     const own = controller.context();
     if (own && appStore.openFile.value === own.htmlPath) {
       // The master is usable only with Code showing: reveal it, and remember to fold it back.
+      const codeResize = codePanes.heightResize();
       if (collapsed && element("main").classList.contains("code-collapsed") && codeResize) {
         codeResize.toggle();
         masterRevealedCode = codeResize.state();
@@ -1295,7 +1236,7 @@ function closeSecondary() {
   secondaryHistoryScope = undefined;
   element("secondary-pane").hidden = true;
   element("main").classList.remove("has-secondary");
-  codeWidthResize?.apply();
+  codePanes.applyWidth();
 }
 // With the whole commit listed in the snapshot, any path resolves without a
 // request; otherwise directories are walked one `/api/tree` call at a time.
@@ -1339,7 +1280,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     disposeSecondary?.();
     element("secondary-pane").hidden = false;
     element("main").classList.add("has-secondary");
-    codeWidthResize?.apply();
+    codePanes.applyWidth();
     disposeSecondary = editorModule.mountSourceEditor(
       element("content-secondary"),
       { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
@@ -4275,8 +4216,6 @@ async function ensureNativeTextIndex() {
 }
 
 
-let codeResize: ReturnType<typeof mountCodeResize> | undefined;
-let codeWidthResize: ReturnType<typeof mountCodeWidthResize> | undefined;
 function updatePreview() {
   updateNativePreview();
 }
@@ -4392,13 +4331,10 @@ class ApiError extends Error {
   }
 }
 async function apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>> {
-  apiReadsInFlight++;
-  try {
+  return codePanes.trackRead(async () => {
     const response = await fetchWithReadRetry(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "same-origin", cache: "no-store" });
     return await readApiReceipt<T>(response, (status, message) => new ApiError(status, message));
-  } finally {
-    apiReadsInFlight--;
-  }
+  });
 }
 async function api<T>(path: string, params?: Record<string, string>): Promise<T> {
   return (await apiResponse<T>(path, params)).value;
