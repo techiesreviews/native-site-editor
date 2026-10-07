@@ -452,4 +452,14 @@ test("dropping a Files row inserts its plain path into editable source", async (
   const firstLine = page.locator(`${HOST} .view-line`).first();
   await file.dragTo(firstLine, { targetPosition: { x: 1, y: 8 } });
   await expect.poll(() => source(page)).toBe("index.htmlend");
+  await lines(page).click();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => source(page)).toBe("end");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(() => source(page)).toBe("index.htmlend");
+  // Reload reads the browser draft through the app, without publishing or
+  // inspecting Monaco/global stores: the dropped text must remain committed.
+  await page.reload();
+  await expect(lines(page)).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => source(page)).toBe("index.htmlend");
 });
