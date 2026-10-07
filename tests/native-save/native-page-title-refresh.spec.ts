@@ -142,6 +142,8 @@ for (const action of ["open page", "add subpage", "change URL"] as const) {
     if (action === "open page") {
       await pointerClick(page, item(page, "Fern and kettle").locator(".pages-label"));
       await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+      // Opening a page closes Pages & files; inspect its refreshed tree after reopening.
+      await page.locator("#explorer-toggle").click();
       await expect(item(page, "Fern & Kettle")).toBeVisible();
     } else {
       const button = explorer(page).getByRole("button", { name: action === "add subpage" ? "Add subpage to Fern and kettle" : "Change the URL of Fern and kettle, /work/fern-and-kettle/", exact: true });
@@ -164,5 +166,7 @@ test("pending titles preserve the pointer click that blurs an unchanged Rename",
   await expect(explorer(page).getByRole("textbox", { name: "Title of Notes", exact: true })).toBeFocused();
   await pointerClick(page, item(page, "Fern and kettle").locator(".pages-label"));
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+  // Opening a page closes Pages & files; inspect its refreshed tree after reopening.
+  await page.locator("#explorer-toggle").click();
   await expect(item(page, "Fern & Kettle")).toBeVisible();
 });
