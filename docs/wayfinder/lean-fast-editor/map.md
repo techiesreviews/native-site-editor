@@ -51,6 +51,33 @@ A decided plan, ready to hand off, for making the editor start fast (against a m
 
 ## Build status
 
+Phase 5 preparation continues from Claude's thread
+`7d475731-adb3-4c9c-9930-edfb1997bdad`. Shared app state, the first agent
+controller extraction and the recovered Monaco trim are prepared on separate
+review branches. A separate fix resolves the deferred title-refresh race found
+by the full browser suite. Claude reports have returned with open findings; these changes have not been
+merged into `dev` or deployed.
+Exact commits, validation evidence and Claude's review scope are in the
+[Phase 5 review handoff](build/p5-review-handoff.md).
+The remaining split is recorded in [the controller plan](build/p5-controller-plan.md).
+The [continuation review handoff](build/p5-second-batch-handoff.md) records the
+setup, History, palette, Pages and media controllers, guarded concurrent startup,
+the requested 4 px structure indentation, and their isolated regression fixes.
+Its corrected second integration candidate passes 691 full browser checks,
+focused structure, smoke and byte checks. Six read-only Claude review reports
+returned after the 13:00 Europe/Amsterdam start. All ten denied review calls were
+recovered and audited. History, slot-rail and page-move fixes are on a separate
+integration branch; title, startup and Monaco fixes are being checked before
+the next full suite and Claude review. The [review-fix handoff](build/p5-review-fixes-handoff.md)
+pins the new candidate and records its validation and follow-up review.
+The latest stack, `build/p5-title-touch-grace` at `9d6cb00`, bounds the touch/pen
+title wait with a 1 s fallback and passes the full native-save suite (708 passed,
+85 skipped, 0 failed), all 16 title checks and the 344 KB byte gate. Its narrow
+Claude review reports no defects. It is not merged, pushed or deployed. Startup
+timing targets (ticket 02) and the main-module split (ticket 08) remain open.
+
+The following note records the earlier P1.4 slice:
+
 [P1.4: Page settings › Fields](build/p1-4-page-fields.md) removes Fields first.
 Collections remain until P1.5; P1.4 strips only legacy `pages[*].fields` on the next
 sidecar write and preserves the other supported data, including collections.
