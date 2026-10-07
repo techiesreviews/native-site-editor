@@ -70,6 +70,11 @@ recovered and audited. History, slot-rail and page-move fixes are on a separate
 integration branch; title, startup and Monaco fixes are being checked before
 the next full suite and Claude review. The [review-fix handoff](build/p5-review-fixes-handoff.md)
 pins the new candidate and records its validation and follow-up review.
+The latest stack, `build/p5-title-touch-grace` at `9d6cb00`, bounds the touch/pen
+title wait with a 1 s fallback and passes the full native-save suite (708 passed,
+85 skipped, 0 failed), all 16 title checks and the 344 KB byte gate. Its narrow
+Claude review reports no defects. It is not merged, pushed or deployed. Startup
+timing targets (ticket 02) and the main-module split (ticket 08) remain open.
 
 The following note records the earlier P1.4 slice:
 

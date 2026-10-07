@@ -1,51 +1,82 @@
 # Phase 5 review fixes
 
-## Resume snapshot: 2026-10-07 14:33 Amsterdam
+## Current state: 2026-10-07 15:14 Amsterdam
 
-The user explicitly requested handover to Claude. Codex stops new work after
-saving this snapshot. The following two existing jobs remain running so Claude
-can collect their results; do not launch duplicate jobs or mutate their source.
-No active implementation worker remains; named Codex workers are idle.
+Claude continued from the 14:33 Codex snapshot. Nothing has been merged into
+`dev`, pushed or deployed. Review completion is not approval to merge or deploy.
 
-1. Full native-save suite on frozen `ce7ec53` in
-   `/home/ubulex/Projects/native-site-editor-p5-review-final` (787 cases).
-   At the snapshot it has reached case 172; no result is claimed. Its command
-   PID is `2157231`, wrapper parent `2156790`, fixture uses port **5216**.
-   Read `.scratch/p5-review/final-full-native-save.log` in that worktree for the
-   final summary. Verify current PID ownership before any process action.
-2. Narrow Claude Opus 5.5 / medium review of `ce7ec53..ce4008f`, CLI PID
-   `2168831`, wrapper `2168827`. Read the preparation workspace's
-   `.scratch/p5-review/claude-touch-followup/{status.json,result.md,stdout.json,stderr.log}`.
-   The wrapper verifies exit/errors/denials/exact model and records `verified`;
-   it is still running at this snapshot.
+**Latest complete code stack:** `build/p5-title-touch-grace`, immutable
+`9d6cb007c378a360f30dcca6bfa78fc6acb667a7`, worktree
+`/home/ubulex/Projects/native-site-editor-p5-title-touch-grace`. On top of
+`ce4008f` it adds:
 
-**Latest complete code stack:** `build/p5-title-touch-fix`, immutable
-`ce4008fe683e05e9ccb73095a0f9e6c4ae95e7f8`, in
-`/home/ubulex/Projects/native-site-editor-p5-title-touch-fix`. It adds only a
-mouse-only pointerup fallback to the previous final candidate, keeping touch/
-pen targets until click, plus delayed-input tests. Its type checks, 1,050 units,
-strict test TypeScript and production build pass. Its browser checks are pending.
-Tests simulate touch/pen ordering; they are not hardware touch proof.
+- `f56ea19` (test only): touch/pen releases without a click, and a touch
+  `pointercancel`.
+- `8c4d254` (`src/main.ts` only): a matching touch/pen `pointerup` schedules
+  `finishNativePageTitlePointer()` after `NATIVE_PAGE_TITLE_TAP_GRACE_MS`
+  (1000 ms), only if the same pointer object is still pending. Delayed tap/pen
+  clicks keep their target; a gesture without a click, or a click whose
+  `pointerId` differs in some engine, no longer leaves Pages titles stale until
+  the next interaction. Mouse, click, cancel, dragend, blur and drag-busy paths
+  are unchanged.
+- `9d6cb00` (test only): pins the lower bound (old titles still shown 500 ms
+  after release), shows another pointer's release schedules nothing within
+  1500 ms, and shows a new gesture inside the grace period outlives the previous
+  release's timer.
 
-**Next actions, in order:** collect both running jobs; assess the narrow review;
-after the full browser suite releases its server, run the touch tests serially:
+### Results of the two jobs left running at 14:33
 
-- Failing-before tree: `native-site-editor-p5-title-touch-red`, test-only
-  `56cc8a0e78346b3b55a303b532c5c50e91ca29a3`. Run the two delayed touch/pen cases.
-- Fixed tree: `native-site-editor-p5-title-touch-fix`, `ce4008f`. Run all twelve
-  `tests/native-save/native-page-title-refresh.spec.ts` cases, retaining every
-  assertion. Keep full-suite proof attributed to `ce7ec53`, and this added proof
-  to `ce4008f`; do not claim a full run on the later head.
-- Address genuine failures; update this handoff and the map with actual results.
-  Assess the independent review before landing. No merge, push or deploy has
-  happened. The wider Wayfinder timing and main-module split remain open.
+1. The full native-save run on `ce7ec53` did **not** complete. Its process tree
+   was gone by 14:37, most likely ended with the Codex session; the log stops at
+   case 225 of 787 with no summary (208 passed, 17 skipped, none failed). Its
+   orphaned fixture server on port 5216, verified as owned by the
+   `p5-review-final` worktree, was stopped. No full-suite result exists for
+   `ce7ec53`.
+2. The narrow Claude Opus 5.5 / medium review of `ce7ec53..ce4008f` completed:
+   exit zero, `is_error: false`, no errors or denials, exact `claude-opus-5-5`.
+   Its wrapper records `verified: false` only because one sentence precedes the
+   `REVIEW_STATUS: complete` line. No concrete defects. It recorded that touch/pen
+   releases without a click kept titles stale until the next interaction, and
+   that a click with a different `pointerId` would never release them. Both are
+   resolved by `8c4d254`.
 
-Use Node 24; the existing executable directory is
-`/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin`. Existing worktrees
-have dependency symlinks. Follow applicable AGENTS.md and lex-coding. Root
-preparation workspace is on `build/p5-review-handoff`; only the requested CSS
-changes and handoff documentation are integrated there. Preserve all worktrees,
-failure artifacts, original Claude dirty worktree and user configuration.
+### Validation, attributed to exact commits
+
+| Commit | Result | Log |
+| --- | --- | --- |
+| `56cc8a0` (failing-before, test only on `ce7ec53`) | Both delayed touch/pen cases fail: the original target is detached before the click (spec line 227). | `p5-title-touch-red/.scratch/p5-review/title-touch-red-browser.log` |
+| `ce4008f` | All **12** title-refresh browser cases pass. | `p5-title-touch-fix/.scratch/p5-review/title-touch-browser.log` |
+| `f56ea19` (failing-before) | The two new no-click cases fail; 13 pass. The cancel case passes before the fix as a guard. | `p5-title-touch-grace/.scratch/p5-review/title-grace-red-browser.log` |
+| `8c4d254` | Type checks, **1,050** units, `build:ui`, strict test TypeScript and **15/15** title cases pass. | `title-grace-*.log` |
+| `9d6cb00` | Strict test TypeScript, **16/16** title cases and the **full native-save suite: 708 passed, 85 skipped, 0 failed** (793, 29.1 min). Byte gate **344 KB** of 350 KB. Cold paint/usable 1.197 s / 1.206 s, warm 0.777 s. | `title-pins-*.log` |
+
+`9d6cb00` changes only tests relative to `8c4d254`, so the check, unit and build
+results carry to the same source. A first full run started at `8c4d254` was
+stopped after 56 cases because a test commit landed in its worktree mid-run; its
+log is kept as `title-grace-full-native-save-aborted-8c4d254.log` and is not
+evidence either way.
+
+Claude Opus 5.5 / medium reviewed `ce4008f..8c4d254` (records in the preparation
+workspace's `.scratch/p5-review/claude-touch-grace/`): verified, no concrete
+defects. Its validation gaps (an ignored-pointer assertion that tested nothing,
+the unpinned lower bound, and a stale timer) are covered by `9d6cb00`, which was
+not separately reviewed. Remaining notes: any non-mouse `pointerType`, including
+an empty one, takes the grace path; pen `pointercancel` and grace expiry while a
+menu, input or drag is busy are untested; all touch/pen evidence is synthetic
+Chromium event ordering, not hardware or other engines. The conditional lost-
+`dragend` case remains unverified and optional.
+
+The Page Structure indentation remains 4 px per level (`--structure-indent`) on
+this stack and in the preparation workspace.
+
+**Remaining work:** decide whether to land `build/p5-title-touch-grace` (it
+contains the whole review-fix stack) into `dev`; preview deploy and visual proof;
+ticket 02 startup timing targets (1.0 s cold / 0.4 s warm, still missed); and
+ticket 08's larger main-module split.
+
+Use Node 24 from `/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin`.
+Worktrees use dependency symlinks. Preserve all worktrees, failure artifacts, the
+original Claude dirty worktree and user configuration.
 
 Continuation of [the second batch](p5-second-batch-handoff.md), following the
 six Claude Opus 5.5 / medium reviews that started at 13:00 Amsterdam.
@@ -132,7 +163,7 @@ The final candidate is `build/p5-review-final` at immutable
 
 At this final head, type checks, **1,050 units**, production build and all
 **18 History/title browser checks** pass. The three-run byte gate passes at
-**344 KB**. The full native-save suite is running on port 5216. Logs live in this worktree's
+**344 KB**. Its full native-save run stopped unfinished at case 225 (see Current state). Logs live in this worktree's
 `.scratch/p5-review/final-*.log`. Browser suites use Chromium; pointer task ordering
 is not separately proved across other engines.
 
@@ -142,7 +173,7 @@ Exit zero, `is_error: false`, no JSON errors or permission denials, exact
 `claude-opus-5-5` model usage and `REVIEW_STATUS: complete` are verified. All three
 preceding low findings are resolved and no blocking defects are reported. A
 possible delayed touch/pen-click regression from the pointerup fallback is being
-fixed on `build/p5-title-touch-fix`, without changing the running suite's head.
+fixed on `build/p5-title-touch-fix` and bounded on `build/p5-title-touch-grace`.
 The conditional lost-dragend scenario remains unverified and optional.
 The final candidate remains separate from the original frozen candidates and
 has not been merged, pushed or deployed.
