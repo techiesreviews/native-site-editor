@@ -120,8 +120,12 @@
 /* Each row in a group carries its parent's rail: a rounded line through the
    middle of the parent's chevron (the group's --rail column), above the row's
    background but below its own chevron, and never taking the pointer. Only the
-   nearest parent's rail shows. Grey here; components.css colours a
-   component's parts. */
+   nearest parent's rail shows. Every chevron sits in a ring of its line's
+   colour, and a rail stops at a ring it meets. Grey here; components.css
+   colours components and their parts purple. */
+.page-structure {
+  --structure-line: color-mix(in oklch, var(--muted) 30%, transparent);
+}
 .page-structure__group > .page-structure__row {
   position: relative;
 }
@@ -134,9 +138,15 @@
   left: calc(12px + var(--rail, 0) * var(--structure-indent, 4px));
   width: 2px;
   border-radius: 1px;
-  background: var(--muted);
-  opacity: 0.3;
+  background: var(--structure-line);
   pointer-events: none;
+}
+.page-structure__group > .page-structure__row[aria-expanded]::before {
+  mask: linear-gradient(#000 calc(50% - 9px), transparent 0 calc(50% + 9px), #000 0);
+}
+.page-structure__row[aria-expanded] > .page-structure__toggle {
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--structure-ring, var(--structure-line));
 }
 .page-structure__row[aria-selected="true"] {
   background: var(--current);

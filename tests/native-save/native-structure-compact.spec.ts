@@ -343,10 +343,11 @@ test.describe('coarse pointer',()=>{test.use({hasTouch:true,isMobile:true,viewpo
 // actions must equal the row's own plain pixel, in each theme and row state.
 const INK='█'.repeat(60);
 // Screenshot pixels: in the gap between the first two actions, and at the row's
-// plain left padding. Both are read at the row's vertical centre.
+// plain left padding, left of the chevron's ring. Both are read at the row's
+// vertical centre.
 async function samplePixels(page:any,node:string){
  const row=page.locator(`[role=treeitem][data-node="${node}"]`);
- const geo=await row.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),[a,b]=[...el.querySelector('.row-action-overlay')!.children].map(c=>c.getBoundingClientRect());return{w:r.width,gap:a.right-r.x+(b.left-a.right)/2,plain:4};});
+ const geo=await row.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),[a,b]=[...el.querySelector('.row-action-overlay')!.children].map(c=>c.getBoundingClientRect());return{w:r.width,gap:a.right-r.x+(b.left-a.right)/2,plain:2};});
  const png=(await row.screenshot({animations:'disabled'})).toString('base64');
  return page.evaluate(async([png,geo]:any)=>{const img=new Image();img.src='data:image/png;base64,'+png;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const g=c.getContext('2d')!;g.drawImage(img,0,0);const sx=img.width/geo.w,sy=Math.round(img.height/2);
   const at=(x:number)=>[...g.getImageData(Math.round(x*sx),sy,1,1).data].slice(0,3);return{gap:at(geo.gap),plain:at(geo.plain)};},[png,geo]) as Promise<{gap:number[];plain:number[]}>;
