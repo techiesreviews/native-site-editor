@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { createCommandPaletteController, type CommandPalettePorts } from "../src/controllers/command-palette-controller.ts";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
+import type { EditBarModel } from "../src/components/edit-bar.ts";
 import type { EditorPaletteDeps, mountEditorPalette } from "../src/page-builder/palette.ts";
 function fixture() {
   const appStore = createAppStore(createDraftStore());
   let site: ReturnType<CommandPalettePorts["site"]> = { routes: { "/": "index.html", "/notes/": "notes/index.html", "/about/": "about/index.html" }, components: { "feature-section": "components/feature.html" } };
   let revision = "workspace-1", indexed = false, indexCalls = 0, disposed = 0, opened = 0, began = 0, started = 0;
   const sources = { "index.html": "<main><h1>Welcome home</h1></main>", "notes/index.html": "<main><h1>Notes heading</h1></main>", "about/index.html": "<main><h1>About the studio</h1></main>", "components/feature.html": "<section><h2>Feature</h2></section>" };
+  let model: EditBarModel | undefined;
   const deps: EditorPaletteDeps[] = [];
   const controller = createCommandPaletteController({
     appStore, host: () => ({} as HTMLElement), site: () => site,
@@ -18,13 +20,13 @@ function fixture() {
     index: async () => { indexCalls++; }, revision: () => revision, isMounted: path => path === "index.html",
     beginNewPage: () => { began++; }, startNewPage: () => { started++; },
     actions: { open: () => { opened++; }, isSectionTag: () => false, insert: async () => {},
-      editBar: () => undefined, select: () => {}, textSelected: () => false, history: () => {},
+      editBar: () => model, select: () => {}, textSelected: () => false, history: () => {},
       toggleCode: () => {}, codeHidden: () => false, toggleStructure: () => {}, structureHidden: () => false,
       newFile: () => {}, showPagesAndFiles: () => {}, announce: () => {}, onError: error => { throw error; },
     },
     mountPalette: ((_host: HTMLElement, value: EditorPaletteDeps) => { deps.push(value); return { dispose: () => { disposed++; } }; }) as typeof mountEditorPalette,
   });
-  return { controller, appStore, deps, sources, counters: () => ({ indexCalls, disposed, opened, began, started }), indexed: () => { indexed = true; }, noSite: () => { site = undefined; }, navigate: () => { revision = "workspace-2"; } };
+  return { captureModel: () => { model = { kind: "Heading", controls: [], origin: { path: "index.html", source: sources["index.html"], revision, node: [0] } }; return model; }, controller, appStore, deps, sources, counters: () => ({ indexCalls, disposed, opened, began, started }), indexed: () => { indexed = true; }, noSite: () => { site = undefined; }, navigate: () => { revision = "workspace-2"; } };
 }
 
 test("derives title/heading pages, section components and draft sources without eager indexing", async () => {
@@ -54,7 +56,7 @@ test("remount disposes keyboard registration and rejects actions and views from 
   f.controller.mount(); assert.equal(f.counters().disposed, 1);
   old.open("index.html"); assert.equal(f.counters().opened, 0); assert.deepEqual(old.pages(), []); assert.equal(old.currentPath(), undefined);
   f.deps[1].open("index.html"); assert.equal(f.counters().opened, 1);
-  assert.notEqual(old.revision?.(), f.deps[1].revision?.());
+  assert.equal(old.revision?.(), f.deps[1].revision?.());
   f.controller.dispose(); f.controller.dispose(); assert.equal(f.counters().disposed, 2); f.appStore.dispose();
 });
 
@@ -66,4 +68,25 @@ test("new page waits for explorer rendering and refuses a changed or disposed wo
   deps.newPage(); f.navigate(); t.mock.timers.tick(0); await Promise.resolve(); assert.equal(f.counters().started, 1);
   deps.newPage(); f.controller.dispose(); t.mock.timers.tick(0); await Promise.resolve(); assert.equal(f.counters().started, 1);
   deps.newPage(); assert.equal(f.counters().began, 3); f.appStore.dispose();
+});
+
+
+test("palette and captured edit-bar controls share the host workspace revision", () => {
+  const f = fixture();
+  f.appStore.openFile.value = "index.html";
+  f.appStore.selection.value = { path: "index.html", tag: "h1", node: [0] } as typeof f.appStore.selection.value;
+  const model = f.captureModel();
+  f.controller.mount();
+  const deps = f.deps[0];
+  assert.equal(deps.editBar(), model);
+  assert.equal(deps.currentPath(), model.origin?.path);
+  assert.equal(deps.source("index.html"), model.origin?.source);
+  assert.deepEqual(deps.selection()?.node, model.origin?.node);
+  // palette.ts requires exact equality before invoking a captured control.
+  assert.equal(deps.revision?.(), model.origin?.revision);
+  f.controller.mount();
+  assert.equal(deps.editBar(), undefined);
+  assert.equal(deps.selection(), undefined);
+  assert.equal(f.deps[1].revision?.(), model.origin?.revision);
+  f.controller.dispose(); f.appStore.dispose();
 });

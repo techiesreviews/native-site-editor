@@ -64,7 +64,7 @@ export function createCommandPaletteController(ports: CommandPalettePorts) {
         return Object.entries(site.components).map(([tag, file]) => ({ tag, file, label: componentLabel(tag), section: isSectionTemplate(sources[file] ?? "") }));
       },
       currentPath: () => live() ? ports.appStore.openFile.value : undefined,
-      revision: () => `${ports.revision()}:palette:${generation}`,
+      revision: ports.revision,
       source: path => live() ? ports.sources()[path] : undefined,
       selection: () => {
         const selection = live() && ports.appStore.selection.value;
