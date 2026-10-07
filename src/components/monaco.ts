@@ -23,7 +23,7 @@
 // re-export is omitted: the app never uses `monaco.lsp`.
 //
 // Dropped: anchor select, code lens (no provider), diff-editor breadcrumbs,
-// drop-into-editor, floating menu, gpu, inline completions and suggest-as-inline,
+// floating menu, gpu, inline completions and suggest-as-inline,
 // inline progress, in-place replace, insert final newline, inspect tokens,
 // iPad keyboard, linked editing (off by
 // default), long-lines helper, middle-click scroll, placeholder text,
@@ -49,6 +49,8 @@ import "monaco-editor/editor/contrib/contextmenu/browser/contextmenu.js";
 import "monaco-editor/editor/contrib/clipboard/browser/clipboard.js";
 // Paste as plain text through the paste controller clipboard.js already loads.
 import "monaco-editor/editor/contrib/dropOrPasteInto/browser/copyPasteContribution.js";
+// Editable panes keep Monaco's default-enabled plain-text and path drops.
+import "monaco-editor/editor/contrib/dropOrPasteInto/browser/dropIntoEditorContribution.js";
 
 // --- Navigation and editing keys ------------------------------------------------
 // Find / replace (Ctrl+F, Ctrl+H, F3), with the find widget's tab-order fix.
