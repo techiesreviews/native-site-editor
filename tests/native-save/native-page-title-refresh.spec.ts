@@ -170,3 +170,43 @@ test("pending titles preserve the pointer click that blurs an unchanged Rename",
   await page.locator("#explorer-toggle").click();
   await expect(item(page, "Fern & Kettle")).toBeVisible();
 });
+
+test("a primary pointer release without click flushes titles, but another pointer cannot release it", async ({ page, baseURL }) => {
+  const titles = await holdPageTitles(page);
+  await openRouting(page, baseURL);
+  await titles.requested;
+  await explorer(page).dispatchEvent("pointerdown", { pointerId: 71, button: 0, bubbles: true });
+  await titles.release();
+  await expect(item(page, "Fern and kettle")).toBeVisible();
+  await explorer(page).dispatchEvent("pointerup", { pointerId: 72, button: 0, bubbles: true });
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(item(page, "Fern and kettle")).toBeVisible();
+  // Scrollbar and cancelled gestures can release without a subsequent click.
+  await explorer(page).dispatchEvent("pointerup", { pointerId: 71, button: 0, bubbles: true });
+  await expect(item(page, "Fern & Kettle")).toBeVisible();
+});
+
+test("titles arriving during a native page drag preserve the source row and its drop", async ({ page, baseURL }) => {
+  const titles = await holdPageTitles(page);
+  await openRouting(page, baseURL);
+  const source = item(page, "Notes").locator(".pages-row");
+  const original = await source.elementHandle();
+  const box = (await source.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 55, box.y + box.height / 2, { steps: 5 });
+  await expect(source).toHaveClass(/is-dragging/);
+  await titles.requested;
+  await titles.release();
+  await expect(source).toHaveClass(/is-dragging/);
+  expect(await original!.evaluate(element => element.isConnected)).toBe(true);
+  await expect(item(page, "Fern and kettle")).toBeVisible();
+  const target = (await item(page, "Home").locator(".pages-row").boundingBox())!;
+  await page.mouse.move(target.x + 40, target.y + target.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const confirmation = page.getByRole("dialog", { name: "Move Notes to /notes.html?", exact: true });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Move", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("URL changed to /notes.html");
+  await expect(item(page, "Fern & Kettle")).toBeVisible();
+});
