@@ -20,11 +20,11 @@ Rolldown splits the editor API from the code pane:
 
 | Artifact | Baseline gzip bytes | Candidate gzip bytes |
 | --- | ---: | ---: |
-| code-editor + editor.api | 972,222 | 868,183 |
+| code-editor + editor.api | 972,222 | 868,182 |
 | ts.worker | 1,482,315 | 1,482,315 |
-| index | 268,287 | 268,277 |
+| index | 268,287 | 268,284 |
 
-The Monaco-related pair saves 104,039 bytes (101.60 KiB, 10.7%). JavaScript
+The Monaco-related pair saves 104,040 bytes (101.60 KiB, 10.7%). JavaScript
 IntelliSense remains worker-backed; the TypeScript worker is unchanged.
 
 ## Validation
