@@ -110,7 +110,7 @@ import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
-import { mountEditorPalette } from "./page-builder/palette";
+import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
 import type {
@@ -614,63 +614,42 @@ function mountWorkspace() {
   });
   componentTools?.destroy();
   componentTools = mountComponentTools();
-  mountPalette();
+  paletteController.mount();
 }
 
 // The command palette (⌘K, ⌘P) and the keyboard shortcuts sheet (?), with
 // the editor's commands calling what its own controls call
 // (src/page-builder/palette.ts, docs/page-builder/palette.md).
-let editorPalette: ReturnType<typeof mountEditorPalette> | undefined;
-function mountPalette() {
-  editorPalette?.dispose();
-  editorPalette = mountEditorPalette(app, {
-    pages: () => {
-      const site = nativeSite;
-      if (!site) return [];
-      const routes = Object.entries(site.routes);
-      const titles = Object.fromEntries(routes.map(([route]) => [route, nativeRouteInfo(route).title]));
-      return routes.map(([route, file]) => ({
-        file,
-        route,
-        label: nativePageLabel(file, { routes: site.routes, titles, heading: (path) => firstHeadingText(nativeEffectiveSource(path)) }) ?? route,
-      }));
-    },
-    files: () => (nativeSite ? nativeFiles() : []),
-    // Pages are searched by their titles and headings: the text index.
-    ready: () => (nativeSite && !nativeTextIndexed ? ensureNativeTextIndex() : undefined),
-    components: () => {
-      if (!nativeSite) return [];
-      const sources = nativeSources();
-      return Object.entries(nativeSite.components).map(([tag, file]) => ({ tag, file, label: componentLabel(tag), section: isSectionTemplate(sources[file] ?? "") }));
-    },
-    currentPath: () => appStore.openFile.value,
-    revision: () => `${setupScope()}:${generation}`,
+const paletteController = createCommandPaletteController({
+  appStore,
+  host: () => app,
+  site: () => nativeSite,
+  routeTitle: route => nativeRouteInfo(route).title,
+  files: nativeFiles,
+  sources: nativeSources,
+  effectiveSource: nativeEffectiveSource,
+  indexed: () => nativeTextIndexed,
+  index: ensureNativeTextIndex,
+  revision: () => `${setupScope()}:${generation}`,
+  isMounted: path => Boolean(editorModule?.isMounted(path)),
+  beginNewPage: () => { openExplorer(); selectExplorerTab("pages"); },
+  startNewPage: () => pagesTree?.startNew("/"),
+  actions: {
     open: (path) => {
       if (path === appStore.openFile.value && editorModule?.isMounted(path)) return;
       recordNativeSourceIntent(path);
       void restoreFile(path, generation);
     },
-    source: (path) => nativeSources()[path],
     isSectionTag: isNativeSectionTag,
     insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
-    selection: () => (appStore.selection.value && appStore.selection.value.path === appStore.openFile.value ? appStore.selection.value : undefined),
     editBar: () => (document.querySelector(".edit-bar[data-model]") ? nativeEditBarModel : undefined),
     select: (path, node) => nativePreview?.selectNode({ path, node }),
     textSelected: () => Boolean(nativeTextSelection && !nativeTextSelection.caret && nativeTextSelection.text),
     history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
-    editing: () => Boolean(appStore.openFile.value && editorModule?.isMounted(appStore.openFile.value)),
     toggleCode: () => codeResize?.toggle(),
     codeHidden: () => element("main").classList.contains("code-collapsed"),
     toggleStructure: () => sidebarResize?.toggle(),
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
-    newPage: async () => {
-      openExplorer();
-      selectExplorerTab("pages");
-      // Opening the popover queues a toggle that renders its pages tree.
-      // Start the title field after that render, so it keeps focus.
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      pagesTree?.startNew("/");
-    },
     newFile: () => {
       openExplorer();
       if (nativeSite) selectExplorerTab("files");
@@ -682,8 +661,8 @@ function mountPalette() {
     },
     announce,
     onError: errorMessage,
-  });
-}
+  },
+});
 
 // Components as first-class page builder objects (src/page-builder/components.ts).
 let componentTools: ComponentTools | undefined;
@@ -4484,8 +4463,7 @@ let cancelAutoSignIn: (() => void) | undefined;
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
-  editorPalette?.dispose();
-  editorPalette = undefined;
+  paletteController.dispose();
   agentController.destroy();
   setupController.dispose();
   setupEntry.remove();
