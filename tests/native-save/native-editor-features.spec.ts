@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Boundary guard for the trimmed Monaco build (src/components/monaco.ts). We keep
-// editor.main.js's complete contribution + service set and only drop unused
-// language grammars, so these tests drive the *real* editor to prove the features
-// the product relies on stay reachable — find, diff review, folding, diagnostics,
-// completions and theme switching — across representative languages.
+// Boundary guard for the trimmed Monaco build (src/components/monaco.ts), which
+// keeps only the contributions and grammars the code panes use. These tests
+// drive the *real* editor to prove the features the product relies on stay
+// reachable — find, diff review, folding, diagnostics, completions and theme
+// switching — across representative languages. native-monaco-features.spec.ts
+// checks each kept contribution through the UI, and also runs on the build.
 //
 // The most important guard is passive: a trimmed import that drops a service
 // singleton (e.g. ICodeLensCache, treeViewsDndService) throws
