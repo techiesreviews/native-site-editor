@@ -1,0 +1,65 @@
+# Pages controller preparation
+
+`src/controllers/pages-controller.ts` owns Pages Rename, Duplicate, Delete,
+URL planning/change, move choices, drop refusals, move confirmation and picker
+policy. It retains the original messages and plans from main's Pages region.
+It reads live site/source/draft/scope/generation/index state through ports;
+there is no new cached site or draft state. Main still owns file transactions,
+metadata writes, page commits, redirect I/O, UI dialogs and the page picker.
+This commit does not hook or change main and does not move its central
+multi-file transaction implementation.
+
+## Main adapter
+
+`createPagesController(ports)` returns `retitle`, `duplicate`, `remove`,
+`urlPlan`, `changeUrl`, `moveChoices`, `dropProblem`, `confirmMove`, `moveTo`,
+`linkSources`, `onBranchHere` and `deleteDraftStamp`. `PagesPorts` is the exact
+adapter contract. Supply getters for current state, rather than captured
+repository/source values. Supply current-scope drafts only.
+
+Replace the Pages use-case bodies between main's “The Pages tab's Rename,
+Duplicate and Delete” and “One undoable operation over several files” headers
+with calls to the controller, retaining the existing function signatures for
+callers. Keep `readNativeRedirects` on the host: it is shared with other file
+operations and guards repository-scoped reads. Keep `withMovedPageUrls` and
+`commitNativePage` as host write ports. Do not alter the page-title flush
+callback or main's central transaction region.
+
+Shared callers outside the region can keep thin bridges using pure exported
+helpers: `pageLinkSources(files, source)`,
+`pageOnBranchHere(path, baseFiles, drafts)`, and
+`pageDeleteDraftStamp(drafts, path, prefix)`. The controller methods delegate to
+these same helpers. Existing draft and source data remain authoritative.
+
+## Captured proof and behavior improvements
+
+The original delete and URL-change expected-source maps remain on host
+operations. The controller also passes `operation.current`, protecting the
+captured scope/generation/site/index and source proof while the host awaits.
+The adapter must forward it unchanged to `applyNativeOperation`.
+
+Move confirmation and picker previously resumed after index/dialog waits
+without consistently checking the initiating page. They now refuse navigation,
+site/routes/files/source drift or target draft changes. Initial proof excludes
+unknown sources so index hydration can succeed. After indexing succeeds, proof
+is recaptured for the dialog/picker phase, including newly hydrated sources.
+Confirmation also passes its opening source map into the subsequent URL change.
+Retitle refresh callbacks refuse a repository/site/generation change while
+metadata writing waits. These are explicit stale-action fixes, not just moves.
+
+## Validation
+
+Node 24: `npm run check`, full `npm test` (1017 passed, 0 failed),
+`npm run build:ui`, targeted TypeScript checking and `git diff --check` passed. Ten targeted controller tests cover normal movement,
+unchanged/occupied refusals, expected-source propagation, late navigation and
+source changes, index refusal, redirect-read drift, target draft mutation,
+duplicate/retitle behavior, and hydration followed by picker-time drift.
+Targeted TypeScript check:
+
+```sh
+npx tsc --ignoreConfig --noEmit --strict --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --allowImportingTsExtensions --skipLibCheck --types node,vite/client tests/pages-controller.test.ts
+```
+
+The controller is not included in the running application until the separate
+main adapter lands. Browser and byte-budget validation belong to that integrated
+stack. No browser, deploy, push or remote writes ran for this preparation.
