@@ -1,3 +1,4 @@
+import { createPagesController, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, repositoryReceipt, type ApiReceipt } from "./boot-api-response";
 import { startBootReads } from "./boot-reads";
 import { createHistoryController } from "./controllers/history-controller";
@@ -37,7 +38,7 @@ import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } 
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
-import { nativePageTemplate, newFilePath, newFolderPath, normalizeRoute, renamedPath, routeHeading, type Checked } from "./native-create";
+import { nativePageTemplate, newFilePath, newFolderPath, renamedPath, routeHeading, type Checked } from "./native-create";
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
@@ -53,14 +54,14 @@ import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
 import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
 import { withSiteSettings, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
-import { createPagePicker, type PagePickerItem } from "./components/page-picker";
+import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
-import { editNativeRedirects, groupRouteChanges, isRouteWithin, movedRoute, parentRoute, planPageMove, rewriteRouteLinks, routeFolder, routeSlug, type FileMove, type PageMovePlan, type RouteChange } from "./native-page-moves";
+import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type FileMove, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, pruneUnchanged, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
-import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget, type NativePageNode } from "./native-pages";
+import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
 import type { EditBarControl, EditBarModel } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
@@ -5258,230 +5259,63 @@ function mountCards() {
   });
 }
 
-// ---- The Pages tab's Rename, Duplicate and Delete. ----
+// Pages policy belongs to the controller; guarded writes remain host transactions.
+const pagesController = createPagesController({
+  site: () => nativeSite,
+  routeForPath: nativeRouteForPath,
+  source: nativeEffectiveSource,
+  files: nativeFiles,
+  baseFiles: () => nativeBaseFiles,
+  drafts: () => { const scope = draftScope(); return scope ? draftStore().list(scope) : []; },
+  hasDraftScope: () => Boolean(draftScope()),
+  scope: setupScope,
+  generation: () => generation,
+  indexScope: nativeTextIndexScopeKey,
+  exists: nativePathExists,
+  routeInfo: nativeRouteInfo,
+  pageLabel: nativePageLabelOf,
+  titles: nativeTitles,
+  address: nativeAddress,
+  writeMeta: (file, field, value, flush) => writeNativePageMeta(file, field, value, flush),
+  commitPage: commitNativePage,
+  operation: operation => applyNativeOperation(operation),
+  ensureIndex: ensureNativeTextIndex,
+  readRedirects: readNativeRedirects,
+  withMovedPageUrls,
+  pageLinks,
+  cardsLinkingTo: (route, excluding) => cards?.cardsLinkingTo(route, excluding),
+  confirmation: () => confirmDialog,
+  picker: () => pagePicker,
+  refreshMeta: () => pageStructure?.refreshMeta(),
+  refreshPages: renderPagesTree,
+  refreshLabel: updateCurrentPageLabel,
+  announce,
+  error: errorMessage,
+});
 
-// A page's title in its head, as the Page block's Title field sets it.
-async function retitleNativePage(file: string, title: string): Promise<string | undefined> {
-  if (!nativeSite || !nativeRouteForPath(file)) return "This page has no URL in the site.";
-  const error = await writeNativePageMeta(file, "title", title, false);
-  if (error) return error;
-  pageStructure?.refreshMeta();
-  renderPagesTree();
-  updateCurrentPageLabel();
-  return undefined;
+function retitleNativePage(file: string, title: string): Promise<string | undefined> { return pagesController.retitle(file, title); }
+function duplicateNativePage(file: string) { return pagesController.duplicate(file); }
+function removeNativePagesTarget(target: NativePagesTarget) { return pagesController.remove(target); }
+function nativeUrlPlan(file: string, value: string): UrlPlan { return pagesController.urlPlan(file, value); }
+function changeNativeUrl(file: string, value: string, keep: boolean, openingSources?: Map<string, string | undefined>): Promise<string | undefined> {
+  return pagesController.changeUrl(file, value, keep, openingSources);
 }
+function nativeDropProblem(source: NativePagesTarget, parent: string): string | undefined { return pagesController.dropProblem(source, parent); }
+function confirmNativeMove(source: NativePagesTarget, parent: string) { return pagesController.confirmMove(source, parent); }
+function moveNativePageTo(target: NativePagesTarget) { return pagesController.moveTo(target); }
 
-// A copy of a page beside it: `<slug>-copy/index.html` (then `-copy-2`, …),
-// its content as it is now, titled "… (copy)".
-async function duplicateNativePage(file: string) {
-  const site = nativeSite;
-  const route = nativeRouteForPath(file);
-  if (!site || !route) return;
-  const name = route === "/" ? "home" : routeSlug(route).replace(/\.html$/, "");
-  const parent = route === "/" ? "/" : parentRoute(route);
-  let target: Checked<NativeNewTarget> | undefined;
-  for (let n = 1; n < 100; n++) {
-    target = nativeNewTarget(parent, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: (r) => site.routes[r], exists: nativePathExists });
-    if (target.ok) break;
-  }
-  if (!target?.ok) { errorMessage(new Error(target?.error ?? "No name is free for the copy.")); return; }
-  const original = nativeEffectiveSource(file);
-  if (original === undefined) { errorMessage(new Error("The page could not be read.")); return; }
-  const label = nativeRouteInfo(route, site).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
-  const title = `${label} (copy)`;
-  const error = await commitNativePage({
-    file: target.value.file, route: target.value.route, title,
-    content: nativePageWithUrl(nativePageWithDetail(original, "title", title), nativeAddress(target.value.route)),
-    done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
-  });
-  if (error) errorMessage(new Error(error));
-}
-
-// Index loading fills source caches; draft mutations are independent evidence
-// that the target changed while its delete entry waited for that index.
-function deleteTargetDraftStamp(path: string, prefix?: string): string {
-  const scope = draftScope();
-  return JSON.stringify((scope ? draftStore().list(scope) : []).filter(draft => draft.path === path || (prefix && draft.path.startsWith(prefix)))
-    .sort((a, b) => a.path.localeCompare(b.path)));
-}
-
-// Delete in the Pages tab. A page with subpages asks whether they go too
-// ("Delete About and its 2 subpages", with everything in its folder) or
-// stay ("Delete only this page": its folder is then a URL with no page).
-async function removeNativePagesTarget(target: NativePagesTarget) {
-  const site = nativeSite;
-  if (!target.file || !site || !confirmDialog) return;
-  const scope = setupScope(), epoch = generation, indexScope = nativeTextIndexScopeKey();
-  const source = nativeEffectiveSource(target.file), fileList = nativeFiles().sort().join("\n");
-  const targetDrafts = deleteTargetDraftStamp(target.file, isFolderRoute(target.route) ? routeFolder(target.route) : undefined);
-  const stale = () => scope !== setupScope() || epoch !== generation || indexScope !== nativeTextIndexScopeKey()
-    || nativeSite?.routes[target.route] !== target.file || (source !== undefined && nativeEffectiveSource(target.file!) !== source) || nativeFiles().sort().join("\n") !== fileList
-    || deleteTargetDraftStamp(target.file!, isFolderRoute(target.route) ? routeFolder(target.route) : undefined) !== targetDrafts;
-  const indexed = await ensureNativeTextIndex();
-  if (stale()) { errorMessage(new Error("The repository or source changed meanwhile. Try again.")); return; }
-  if (indexed) { errorMessage(new Error(indexed)); return; }
-  const files = nativeFiles();
-  const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
-  const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== target.file);
-  const everything = [target.file, ...inside];
-  const onGitHub = (paths: string[]) => paths.some((path) => nativeBaseFiles.includes(path));
-  const links = pageLinks(everything, new Map(), "deleted");
-  const saveNote = (paths: string[]) => onGitHub(paths)
-    ? "It is removed from GitHub when you save. Until then, Restore brings it back."
-    : "It is not on GitHub yet, so this discards it.";
-  let paths = [target.file];
-  // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
-  const card = cards?.cardsLinkingTo(target.route, new Set(everything));
-  const cardOption = card ? { label: card.label, checked: true } : undefined;
-  // The card's edits and the deletes were computed from these sources: an
-  // agent or resync write while the dialog is open refuses, never overwritten.
-  const expectedSources = new Map([...everything, ...(card?.edits.keys() ?? [])].map((path) => [path, nativeEffectiveSource(path)] as const));
-  let removeCard = false;
-  if (target.subpages > 0) {
-    const count = `${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`;
-    const answer = await confirmDialog.choose({
-      title: `Delete ${target.label}?`,
-      notes: [
-        `${target.label} (${target.route}) has ${count}. Delete them too, with everything in ${folder}, or only this page: its subpages then stay at their URLs, under ${target.route} with no page of its own.`,
-        ...(links ? [links] : []),
-        saveNote(everything),
-      ],
-      actions: [
-        { label: "Delete only this page", value: "only" },
-        { label: `Delete ${target.label} and its ${count}`, value: "all" },
-      ],
-      option: cardOption,
-    });
-    if (!answer.value) { announce(`Cancelled deleting ${target.label}`); return; }
-    if (answer.value === "all") paths = everything;
-    removeCard = answer.option;
-  } else {
-    const question = {
-      title: `Delete the page ${target.label} (${target.file})?`,
-      notes: [...(links ? [links] : []), ...(inside.length ? [`Everything else in ${folder} goes with it.`] : []), saveNote(everything)],
-      action: "Delete",
-    };
-    const answer = cardOption
-      ? await confirmDialog.choose({ ...question, actions: [{ label: question.action, value: "confirm" }], option: cardOption })
-      : { value: (await confirmDialog.ask(question)) ? "confirm" : undefined, option: false };
-    if (answer.value !== "confirm") { announce(`Cancelled deleting ${target.file}`); return; }
-    if (inside.length) paths = everything;
-    removeCard = answer.option;
-  }
-  const parent = parentRoute(target.route);
-  const what = paths.length > 1 && target.subpages
-    ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
-    : `the page ${target.label}`;
-  if (scope !== setupScope() || epoch !== generation) { errorMessage(new Error("The repository changed meanwhile. Try again.")); return; }
-  // Unless only the page goes, its folder goes as the dialog listed it: a file
-  // added to it (or gone) while the dialog was open refuses, never left behind.
-  const listed = (list: string[]) => [...list].sort().join("\n");
-  if (paths.length > 1 || target.subpages === 0) {
-    const insideNow = folder === undefined ? [] : nativeFiles().filter((path) => path.startsWith(folder) && path !== target.file);
-    if (listed(insideNow) !== listed(inside)) { errorMessage(new Error("The repository or source changed meanwhile. Review the latest files and try again.")); return; }
-  }
-  const error = await applyNativeOperation({
-    expectedSources,
-    deletes: paths,
-    ...(removeCard && card ? { edits: card.edits } : {}),
-    done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
-    undone: `Undid deleting ${what}.`,
-    focus: { route: parent === "/" ? undefined : parent },
-  });
-  if (error) errorMessage(new Error(error));
-}
-
-// ---- Changing a page's URL, Move to… and dragging in the Pages tab. ----
-
-interface NativeUrlChange {
-  from: string;
-  to: string;
-  label: string;
-  move: PageMovePlan;
-  /** Files whose links change, by the path they have after the move. */
-  links: { path: string; from: string; text: string; count: number }[];
-  /** Whether every page, template and stylesheet was read (else the count is a lower bound). */
-  complete: boolean;
-  /** The moved routes on the live site: an old URL to keep working. */
-  redirect: string[];
-  /** The page itself is on the live site (not new in this browser). */
-  live: boolean;
-}
-
-// Whether the file is on GitHub at this path (not a new or moved draft).
-function onBranchHere(path: string) {
-  const scope = draftScope();
-  if (!nativeBaseFiles.includes(path)) return false;
-  const draft = scope ? draftStore().get(scope, path) : undefined;
-  return !draft || (draft.baseSha !== null && !draft.deleted);
-}
-
-const UNCHANGED_URL = "That is the page's URL now.";
-
-// Every HTML and CSS file of the site with its text as edited (undefined
-// when it was not read): where links to a page are looked for.
+// Shared file operations use the same pure source/draft policy as Pages.
 function nativeLinkSources(): Record<string, string | undefined> {
   const scope = draftScope();
-  const out: Record<string, string | undefined> = {};
-  for (const path of nativeFiles(scope)) if (isNativeTextFile(path)) out[path] = nativeEffectiveSource(path, scope);
-  return out;
+  return pageLinkSources(nativeFiles(scope), path => nativeEffectiveSource(path, scope));
 }
-
-// What changing the URL of the page `file` to the typed `value` does: the
-// files that move (the page, and for a folder page its whole folder), the
-// links that change, the old URLs that could redirect; or why it cannot.
-function planNativeUrlChange(file: string, value: string): Checked<NativeUrlChange> {
-  const site = nativeSite;
-  const from = nativeRouteForPath(file);
-  if (!site || !from || !draftScope()) return { ok: false, error: "This page has no URL in the site." };
-  const normalized = normalizeRoute(value);
-  if (!normalized.ok) return normalized;
-  const to = normalized.value;
-  if (to === from) return { ok: false, error: UNCHANGED_URL };
-  const planned = planPageMove({ files: nativeFiles(), routes: site.routes, from, to });
-  if (!planned.ok) return planned;
-  const move = planned.value;
-  const moved = new Map(move.moves.map((item) => [item.from, item.to]));
-  const links: NativeUrlChange["links"] = [];
-  let complete = true;
-  for (const [path, source] of Object.entries(nativeLinkSources())) {
-    if (source === undefined) { complete = false; continue; }
-    const rewritten = rewriteRouteLinks(source, from, to);
-    if (rewritten.count) links.push({ path: moved.get(path) ?? path, from: path, text: rewritten.text, count: rewritten.count });
-  }
-  const redirect = move.routes.filter(([route]) => onBranchHere(site.routes[route])).map(([route]) => route);
-  return { ok: true, value: { from, to, label: nativePageLabelOf(file), move, links, complete, redirect, live: onBranchHere(file) } };
+function onBranchHere(path: string) {
+  const scope = draftScope();
+  return pageOnBranchHere(path, nativeBaseFiles, scope ? draftStore().list(scope) : []);
 }
-
-// A change's summary, as the URL field and the confirmation say it.
-function describeUrlChange(change: NativeUrlChange) {
-  const { move } = change;
-  const subpages = move.routes.length - 1;
-  const others = move.moves.length - move.routes.length;
-  const along = [
-    subpages ? `its ${subpages} ${subpages === 1 ? "subpage" : "subpages"}` : "",
-    others > 0 ? `${others} other ${others === 1 ? "file" : "files"} in its folder` : "",
-  ].filter(Boolean).join(" and ");
-  const parts = [`Moves ${move.file} to ${move.target}${along ? ` with ${along}` : ""}`];
-  const count = change.links.reduce((sum, item) => sum + item.count, 0);
-  const least = change.complete ? "" : "at least ";
-  parts.push(count
-    ? `updates ${least}${count} ${count === 1 ? "link" : "links"} in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
-    : change.complete ? "no links to update" : "no links found in the files read");
-  return `${parts.join("; ")}.`;
-}
-
-function nativeUrlPlan(file: string, value: string): UrlPlan {
-  const planned = planNativeUrlChange(file, value);
-  if (!planned.ok) return planned.error === UNCHANGED_URL ? { ok: false, error: "", unchanged: true } : planned;
-  const change = planned.value;
-  return {
-    ok: true,
-    route: change.to,
-    message: describeUrlChange(change),
-    warnings: change.move.warnings,
-    redirect: change.redirect.length ? { checked: change.live, label: `Keep the old URL working (${change.from} redirects to ${change.to})` } : undefined,
-  };
+function deleteTargetDraftStamp(path: string, prefix?: string): string {
+  const scope = draftScope();
+  return pageDeleteDraftStamp(scope ? draftStore().list(scope) : [], path, prefix);
 }
 
 // `_redirects` as it is now: its draft, or the branch's file.
@@ -5494,120 +5328,6 @@ async function readNativeRedirects(): Promise<string | undefined> {
   const entry = await findEntry(NATIVE_REDIRECTS_PATH);
   if (epoch !== generation || scopeKey !== setupScope() || !repo) throw new Error("The repository changed while reading redirects.");
   return entry ? readFile(repo.full_name, entry.sha) : undefined;
-}
-
-// Changes the URL of the page `file` to `value` as one operation, all as
-// drafts: the files move (a folder page's whole folder along), every root
-// link to the old URL and under it, in every page, template and stylesheet,
-// points at the new one, and with `keep` the old URLs redirect there
-// (`_redirects`, which is also kept free of chains to the old URLs and of
-// redirects away from the new ones). The open page stays open where it
-// went. Undo right after takes it all back.
-async function changeNativeUrl(file: string, value: string, keep: boolean, openingSources?: Map<string, string | undefined>): Promise<string | undefined> {
-  const epoch = generation, scope = setupScope(), paths = JSON.stringify(nativeFiles().sort()), routes = JSON.stringify(nativeSite?.routes);
-  const expectedSources = new Map(openingSources ?? Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
-  const stale = () => epoch !== generation || scope !== setupScope() || paths !== JSON.stringify(nativeFiles().sort()) || routes !== JSON.stringify(nativeSite?.routes) ||
-    [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
-  const changed = "The repository or source changed while preparing the URL change. Review it and try again.";
-  if (stale()) return changed;
-  const indexed = await ensureNativeTextIndex();
-  if (stale()) return changed;
-  if (indexed) return indexed;
-  for (const [path, source] of Object.entries(nativeLinkSources())) if (!expectedSources.has(path)) expectedSources.set(path, source);
-  expectedSources.set(NATIVE_REDIRECTS_PATH, nativeEffectiveSource(NATIVE_REDIRECTS_PATH));
-  const planned = planNativeUrlChange(file, value);
-  if (!planned.ok) return planned.error === UNCHANGED_URL ? undefined : planned.error;
-  const change = planned.value;
-  const edits = new Map(change.links.map((item) => [item.path, item.text]));
-  const moved = new Map(change.move.moves.map((item) => [item.from, item.to]));
-  withMovedPageUrls(edits, change.move.routes.map(([from, to]) => ({ file: nativeSite!.routes[from], moved: moved.get(nativeSite!.routes[from]), from, to })));
-  let redirects: string | undefined;
-  try {
-    redirects = await readNativeRedirects();
-    if (stale()) return changed;
-  } catch (error) {
-    return error instanceof Error ? error.message : `${NATIVE_REDIRECTS_PATH} could not be read.`;
-  }
-  const redirected = keep ? change.redirect : [];
-  if (redirects !== undefined || redirected.length) {
-    const next = editNativeRedirects(redirects, change.from, change.to, redirected);
-    if (next !== (redirects ?? "")) edits.set(NATIVE_REDIRECTS_PATH, next);
-  }
-  const count = change.links.reduce((sum, item) => sum + item.count, 0);
-  const summary = count
-    ? `${count} ${count === 1 ? "link" : "links"} updated in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
-    : "no links to update";
-  if (stale()) return changed;
-  return applyNativeOperation({
-    expectedSources,
-    moves: change.move.moves,
-    edits,
-    done: `URL changed to ${change.to} — ${summary}${redirected.length ? `; ${change.from} redirects there` : ""}.`,
-    undone: `Undid changing the URL of ${change.label} to ${change.to}.`,
-    focus: { file: change.move.target },
-  });
-}
-
-// The rows of Move to…: the top level, then every folder URL of the site,
-// the page itself, its subpages and where it is now not chosen.
-function nativeMoveChoices(target: NativePagesTarget): PagePickerItem[] {
-  const site = nativeSite;
-  if (!site) return [];
-  const tree = buildNativePagesTree({ routes: site.routes, titles: nativeTitles(site), heading: (file) => firstHeadingText(nativeEffectiveSource(file)) });
-  const parent = parentRoute(target.route);
-  const items: PagePickerItem[] = [{ route: "/", label: "Top level", level: 1, disabled: parent === "/" ? "It is there now." : undefined }];
-  const walk = (page: NativePageNode, level: number) => {
-    const disabled = isRouteWithin(page.route, target.route) ? "It is this page or one of its subpages."
-      : page.route === parent ? "It is there now."
-      : !isFolderRoute(page.route) ? "A single-file page has no subpages." : undefined;
-    items.push({ route: page.route, label: page.file ? page.label : `${page.label} (no page)`, level, disabled });
-    for (const child of page.children) walk(child, level + 1);
-  };
-  for (const page of tree.children) walk(page, 2);
-  return items;
-}
-
-// Why a dragged page cannot go under `parent`, said as it is dragged.
-function nativeDropProblem(source: NativePagesTarget, parent: string): string | undefined {
-  if (!source.file || source.home) return "This page cannot move.";
-  if (isRouteWithin(parent, source.route)) return "A page cannot go under itself or its own subpages.";
-  if (parent === parentRoute(source.route)) return "It is already there.";
-  if (!isFolderRoute(parent)) return "A single-file page has no subpages.";
-  const to = movedRoute(parent, source.route);
-  const taken = nativeSite?.routes[to];
-  return taken ? `The URL ${to} is taken by ${taken}.` : undefined;
-}
-
-// Moves a page under `parent` ("/" the top level) after a confirmation that
-// says its new URL, what else moves, the links updated, and offers to keep
-// the old URL working: Move to… and a drop in the Pages tab.
-async function confirmNativeMove(source: NativePagesTarget, parent: string) {
-  if (!source.file || !confirmDialog) return;
-  const indexed = await ensureNativeTextIndex();
-  if (indexed) { announce(indexed); errorMessage(new Error(indexed)); return; }
-  const to = movedRoute(parent, source.route);
-  const planned = planNativeUrlChange(source.file, to);
-  if (!planned.ok) { announce(planned.error); errorMessage(new Error(planned.error)); return; }
-  const change = planned.value;
-  const answer = await confirmDialog.choose({
-    title: `Move ${change.label} to ${to}?`,
-    notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings],
-    actions: [{ label: "Move", value: "move" }],
-    option: change.redirect.length ? { label: `Keep the old URL working (${change.from} redirects to ${to})`, checked: change.live } : undefined,
-  });
-  if (!answer.value) { announce(`Cancelled moving ${change.label}`); return; }
-  const error = await changeNativeUrl(source.file, to, answer.option);
-  if (error) errorMessage(new Error(error));
-}
-
-async function moveNativePageTo(target: NativePagesTarget) {
-  if (!pagePicker || !target.file) return;
-  // The choices are labelled by page titles, which come with the site index.
-  const problem = await ensureNativeTextIndex();
-  if (problem) { errorMessage(new Error(problem)); return; }
-  const parent = await pagePicker.pick({ title: `Move ${target.label} to…`, items: nativeMoveChoices(target) });
-  if (parent === undefined) { announce(`Cancelled moving ${target.label}`); return; }
-  await confirmNativeMove(target, parent);
 }
 
 // ---- One undoable operation over several files. ----
