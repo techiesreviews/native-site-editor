@@ -4152,8 +4152,29 @@ function noteNativePainted() {
 // Titles loaded while a row is being used wait until that interaction ends.
 // The originating index and explorer must still be current when work resumes.
 let pendingNativePageTitles: { host: HTMLElement; live(): boolean } | undefined;
+let nativePageTitlePointer: { id: number } | undefined;
+// Capture before a row menu's outside-pointer listener or an input's blur.
+// The click may stop propagation, so observe it in capture but finish in a task
+// after that click's target handlers have completed (never after pointerdown/up).
+document.addEventListener("pointerdown", event => {
+  if (event.button === 0) nativePageTitlePointer = { id: event.pointerId };
+}, true);
+function finishNativePageTitlePointer() {
+  const pointer = nativePageTitlePointer;
+  if (pointer === undefined) return;
+  setTimeout(() => {
+    if (nativePageTitlePointer !== pointer) return;
+    nativePageTitlePointer = undefined;
+    flushPendingNativePageTitles();
+  }, 0);
+}
+document.addEventListener("click", finishNativePageTitlePointer, true);
+document.addEventListener("pointercancel", finishNativePageTitlePointer, true);
+document.addEventListener("dragend", finishNativePageTitlePointer, true);
+window.addEventListener("blur", finishNativePageTitlePointer);
+
 function pagesBusy(explorer: HTMLElement) {
-  return Boolean(pagesTree?.busy()) || explorer.matches(":popover-open") &&
+  return nativePageTitlePointer !== undefined || Boolean(pagesTree?.busy()) || explorer.matches(":popover-open") &&
     Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
 }
 function flushPendingNativePageTitles() {
