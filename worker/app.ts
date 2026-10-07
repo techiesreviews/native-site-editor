@@ -101,6 +101,16 @@ const readAuthorizationMaxAge = 60_000;
 function json(body: unknown, status = 200) {
   return Response.json(body, { status });
 }
+
+// Correlates boot reads without exposing the HttpOnly session credential.
+async function bootSessionHeaders(user: Session | null): Promise<Headers> {
+  const headers = new Headers();
+  if (user?.sessionId) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`boot:${user.sessionId}`));
+    headers.set("X-Editor-Session", [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""));
+  }
+  return headers;
+}
 // A blob's bytes (GET /api/blob?repo&sha&type): an image or font as the media
 // type its extension `type` names (shared/asset-types.ts), anything else as
 // plain bytes to download. A blob never changes, so the browser keeps it for
@@ -817,7 +827,7 @@ async function route(
       const account = id === current ? user : await loadSession(env, id);
       return account ? { login: account.login, avatar_url: account.avatar_url, current: id === current } : null;
     })).then((list) => list.filter((account) => account !== null)) : undefined;
-    return json({
+    return Response.json({
       configured: Boolean(app),
       user: user ? { login: user.login, avatar_url: user.avatar_url } : null,
       installUrl: app
@@ -827,7 +837,7 @@ async function route(
       // Setup without a private link (OWNER_GITHUB): the UI goes straight there.
       ownerSetupOpen: !app && Boolean(ownerLogin(env)),
       ...(user ? { accounts } : {}),
-    });
+    }, { headers: request.method === "GET" ? await bootSessionHeaders(user) : undefined });
   }
   if (path === "/api/publish") {
     if (request.method !== "POST")
@@ -941,9 +951,9 @@ async function route(
     }
     if (path === "/api/repositories") {
       const repositories = await github.repositories(user.login, url.searchParams.get("refresh") === "1" ? 0 : readAuthorizationMaxAge);
-      return Response.json(repositories, { headers: {
-        "X-Repository-Onboarding": github.repositoryOnboarding(),
-      } });
+      const headers = request.method === "GET" ? await bootSessionHeaders(user) : new Headers();
+      headers.set("X-Repository-Onboarding", github.repositoryOnboarding());
+      return Response.json(repositories, { headers });
     }
     // Create a site's owner choices: the user and organisations with an installation.
     if (path === "/api/owners") return json(await github.ownerInstallations(user.login));
