@@ -157,3 +157,23 @@ for (const first of ["styles/site.css", "index.html"]) {
     expect([await source(page, "index.html"), await source(page, "styles/site.css")]).toEqual([page0, css0]);
   });
 }
+
+// A grouped visual edit that ends where it began (xa → xaV → xa) still moves
+// the revision: Monaco's version is re-aliased so Undo keeps going.
+test("a grouped edit that returns to its text keeps Undo going", async ({ page, baseURL }) => {
+  await mount(page, baseURL);
+  await type(page, "typing.html", "a");
+  await settle(page);
+  await page.evaluate(async (editor) => {
+    const api = await import(editor);
+    api.replaceActiveRange({ path: "typing.html", start: 2, end: 2, expected: "", text: "V" }, true);
+    api.replaceActiveRange({ path: "typing.html", start: 2, end: 3, expected: "V", text: "" }, true);
+  }, editor);
+  expect(await source(page, "typing.html")).toBe("xa");
+  expect(await history(page, "undo", "typing.html")).toBeTruthy();
+  expect(await source(page, "typing.html")).toBe("xa");
+  expect(await history(page, "undo", "typing.html")).toBeTruthy();
+  expect(await source(page, "typing.html")).toBe("x");
+  expect(await history(page, "redo", "typing.html")).toBeTruthy();
+  expect(await source(page, "typing.html")).toBe("xa");
+});

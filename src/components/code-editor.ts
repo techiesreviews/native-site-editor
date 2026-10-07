@@ -248,16 +248,20 @@ function createSharedModel(host: PaneHost): SharedModel {
       if ((event.change === "dropped" || event.change === "forgotten") && !shared.views) shared.dispose();
       return;
     }
-    if (event.origin !== "typing" && model.getValue() !== event.text) {
+    if (event.origin !== "typing") {
       // A change from outside Monaco's undo stack: typing before it is one stop,
       // typing after it another (the store has already committed the first).
-      model.pushStackElement();
-      shared.applying = true;
-      try {
-        if (event.changes) model.applyEdits(event.changes.map((change) => ({
-          range: monaco.Range.fromPositions(model.getPositionAt(change.start), model.getPositionAt(change.end)), text: change.text })));
-        if (model.getValue() !== event.text) model.applyEdits([{ range: model.getFullModelRange(), text: event.text }]);
-      } finally { shared.applying = false; }
+      if (model.getValue() !== event.text) {
+        model.pushStackElement();
+        shared.applying = true;
+        try {
+          if (event.changes) model.applyEdits(event.changes.map((change) => ({
+            range: monaco.Range.fromPositions(model.getPositionAt(change.start), model.getPositionAt(change.end)), text: change.text })));
+          if (model.getValue() !== event.text) model.applyEdits([{ range: model.getFullModelRange(), text: event.text }]);
+        } finally { shared.applying = false; }
+      }
+      // Even when the text is back where it was (a grouped edit that returned
+      // to it), the revision moved: re-alias Monaco's version and resync typing.
       const known = shared.byRevision.get(event.revision);
       if (known !== undefined) shared.aliases.set(model.getAlternativeVersionId(), known);
       shared.typing?.sync(reported(shared));

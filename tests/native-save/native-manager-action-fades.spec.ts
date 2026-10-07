@@ -7,6 +7,9 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator("#explorer-toggle").click();
   await expect(page.locator("#explorer")).toBeVisible();
+  // The site index arrives after first paint and redraws the Pages rows with
+  // their titles; rows hovered or measured before that would be replaced.
+  await expect(page.locator(".pages-row .pages-label", { hasText: "About this project" }).first()).toBeAttached({ timeout: 30_000 });
 }
 type Hit = { inButton: boolean; inOverlay: boolean; inHost: boolean };
 // What a pointer would actually reach at a point, without moving the pointer there.
