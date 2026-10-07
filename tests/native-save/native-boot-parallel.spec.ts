@@ -43,3 +43,23 @@ test("a late boot repository receipt cannot replace a workspace opened by hash n
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(page.locator("#status")).toContainText("Up to date with main");
 });
+
+test("a synchronous repository-start failure after the boot handoff is shown", async ({ page, baseURL }) => {
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "disabled")!;
+    let failed = false;
+    Object.defineProperty(HTMLSelectElement.prototype, "disabled", {
+      ...descriptor,
+      set(value: boolean) {
+        if (!failed && value && this.id === "repository" && this.isConnected) {
+          failed = true;
+          throw new Error("Injected repository-start failure");
+        }
+        descriptor.set!.call(this, value);
+      },
+    });
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.getByRole("button", { name: "Retry connection", exact: true })).toBeVisible();
+  await expect(page.locator("#notice")).toContainText("Injected repository-start failure");
+});
