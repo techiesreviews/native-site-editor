@@ -52,6 +52,8 @@ export function createCommitHistory(options: {
   onScope(scope: "file" | "site"): void;
   onOpenFile(path: string, commit: HistoryCommit, head: string): void;
   isCurrent(): boolean;
+  /** An accepted restore may finish after the panel closes, within its original file/workspace. */
+  isRestoreCurrent?(): boolean;
   hasDraft(): boolean;
   onRestored(result: RestoreResult): Promise<void>;
   onExpired(): void;
@@ -156,7 +158,7 @@ export function createCommitHistory(options: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch: options.branch, path: options.path, target: commit.sha, expectedHead: head }),
       });
-      if (!active()) return;
+      if (disposed || !(options.isRestoreCurrent?.() ?? active())) return;
       await options.onRestored(result);
     } catch (error) {
       if (active()) message.textContent = error instanceof Error ? error.message : "Restore failed. Your files are unchanged.";

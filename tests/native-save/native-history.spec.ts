@@ -139,4 +139,36 @@ test("Whole site lists every commit; a commit unfolds its files, and a file open
   await items(page).nth(0).locator(".commit-history__file", { hasText: "styles/site.css" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(bar).toBeHidden();
+  // The editor remount replaces the toolbar; the same site History remains usable.
+  await panel(page).getByRole("button", { name: "Refresh history" }).click();
+  await expect(items(page)).toHaveCount(3);
+  await items(page).nth(1).locator(".commit-history__view").click();
+  await items(page).nth(1).locator(".commit-history__file", { hasText: "index.html" }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+});
+
+test("an accepted restore refreshes the workspace after History is closed by keyboard", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let accepted!: () => void;
+  const requested = new Promise<void>(resolve => { accepted = resolve; });
+  await page.route("**/api/restore?**", async route => {
+    const response = await route.fetch();
+    accepted();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.locator("#history-button").click();
+  await expect(items(page)).toHaveCount(2);
+  await items(page).nth(1).getByRole("button", { name: "Actions for Start the site" }).click();
+  await page.getByRole("menuitem", { name: "Restore this version…" }).click();
+  await panel(page).getByRole("button", { name: "Restore file" }).click();
+  await requested;
+  await page.locator("#history-button").focus();
+  await page.keyboard.press("Enter");
+  await expect(panel(page)).toBeHidden();
+  release();
+  await expect(page.locator("#status")).toContainText("Restored index.html in a new commit", { timeout: 30_000 });
+  await expect(heading(page)).toHaveText("A native browser preview", { timeout: 30_000 });
+  await expect(panel(page)).toBeHidden();
 });

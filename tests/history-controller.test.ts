@@ -8,22 +8,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 function fixture(empty = false) {
+  let path = "index.html", draft = false;
   let revision = 1, opened = false, destroyed = 0, mounted = 0, unsubscribed = 0, restored = 0, viewed = 0, files = 0;
   let resize: (() => void) | undefined;
   const style: Record<string, string> = {};
   const panel = { style, matches: () => opened, hidePopover: () => { opened = false; }, showPopover: () => { opened = true; }, replaceChildren: () => { mounted++; }, getBoundingClientRect: () => ({ width: 300 }) } as unknown as HTMLElement;
-  const anchor = { getBoundingClientRect: () => ({ bottom: 40, right: 700 }) } as HTMLElement;
+  let anchor = { getBoundingClientRect: () => ({ bottom: 40, right: 700 }) } as HTMLElement;
   const options: Parameters<typeof createCommitHistory>[0][] = [];
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<HistoryPorts["loadHistory"]>>>>[] = [];
   const module = { createCommitHistory: (value: Parameters<typeof createCommitHistory>[0]) => { options.push(value); return { root: {} as HTMLElement, destroy: () => { destroyed++; }, mark: () => {}, refresh: () => {} }; } } as unknown as Awaited<ReturnType<HistoryPorts["loadHistory"]>>;
   const controller = createHistoryController({
-    capture: () => { const own = revision; return { key: `${own}`, repo: "lex/site", branch: "main", path: "index.html", empty, isCurrent: () => own === revision, hasDraft: () => true, viewing: () => "commit" } satisfies HistoryContext; },
+    capture: () => { const own = revision, file = path; return { key: `${own}`, repo: "lex/site", branch: "main", path: file, empty, isCurrent: site => own === revision && (site || file === path), hasDraft: () => draft, viewing: () => "commit" } satisfies HistoryContext; },
     panel: () => panel, anchor: () => anchor, loadHistory: () => { const load = deferred<typeof module>(); loads.push(load); return load.promise; },
     emptyMessage: () => ({} as HTMLElement), viewport: () => ({ width: 800, height: 600 }),
     onResize: callback => { resize = callback; return () => { resize = undefined; unsubscribed++; }; },
     openFile: () => { files++; }, view: () => { viewed++; }, restored: async () => { restored++; }, expired: () => {}, onError: error => { throw error; },
   });
-  return { controller, loads, options, style, load: (index = 0) => loads[index].resolve(module), change: () => { revision++; }, resize: () => resize?.(), counters: () => ({ opened, destroyed, mounted, unsubscribed, restored, viewed, files }) };
+  return { controller, loads, options, style, load: (index = 0) => loads[index].resolve(module), change: () => { revision++; }, replaceAnchor: () => { anchor = { getBoundingClientRect: () => ({ bottom: 80, right: 600 }) } as HTMLElement; }, navigate: () => { path = "other.html"; }, edit: () => { draft = true; }, resize: () => resize?.(), counters: () => ({ opened, destroyed, mounted, unsubscribed, restored, viewed, files }) };
 }
 
 test("same-target loads deduplicate and preserve bounded placement and resize teardown", async () => {
@@ -70,4 +71,61 @@ test("scope switch rebuilds once and rejects the previous instance callbacks", a
   assert.equal(f.options[1].scope, "site"); assert.equal(f.counters().destroyed, 1); assert.equal(previous.isCurrent(), false);
   previous.onView({} as never, "head", false); assert.equal(f.counters().viewed, 0);
   f.controller.destroy();
+});
+
+
+test("site History survives toolbar replacement and cross-file navigation", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  f.options[0].onScope("site"); f.load(1); await new Promise<void>(resolve => setImmediate(resolve));
+  const site = f.options[1]; site.onOpenFile("other.html", {} as never, "head");
+  f.navigate(); f.replaceAnchor();
+  assert.equal(site.isCurrent(), true);
+  site.onOpenFile("third.html", {} as never, "head");
+  assert.equal(f.counters().files, 2);
+  f.controller.position(); assert.equal(f.style.top, "86px");
+  f.change(); assert.equal(site.isCurrent(), false);
+});
+
+test("file History survives a toolbar remount but refuses another file", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  f.replaceAnchor(); assert.equal(f.options[0].isCurrent(), true);
+  f.navigate(); assert.equal(f.options[0].isCurrent(), false);
+});
+
+test("closing hides presentation while accepted restore retains file completion ownership", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  const options = f.options[0];
+  const toggle = f.controller.open(); f.load(1); await toggle;
+  assert.equal(options.isCurrent(), false);
+  assert.equal(options.isRestoreCurrent?.(), true);
+  await options.onRestored({} as never); assert.equal(f.counters().restored, 1);
+  assert.equal(f.counters().opened, false);
+  f.navigate(); assert.equal(options.isRestoreCurrent?.(), false);
+  await options.onRestored({} as never); assert.equal(f.counters().restored, 1);
+});
+
+test("disposed or replaced workspace refuses accepted restore completion", async () => {
+  for (const invalidate of ["destroy", "workspace"] as const) {
+    const f = fixture(), first = f.controller.open(); f.load(); await first;
+    const options = f.options[0];
+    if (invalidate === "destroy") f.controller.destroy(); else f.change();
+    assert.equal(options.isRestoreCurrent?.(), false);
+    await options.onRestored({} as never); assert.equal(f.counters().restored, 0);
+  }
+});
+
+
+test("a draft made while a restore waits refuses completion on that source", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  const options = f.options[0]; f.controller.close(); f.edit();
+  assert.equal(options.isRestoreCurrent?.(), false);
+  await options.onRestored({} as never); assert.equal(f.counters().restored, 0);
+});
+
+test("reopening History does not revive callbacks from the closed presentation", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  const previous = f.options[0]; f.controller.close();
+  const next = f.controller.open(); f.load(1); await next;
+  assert.equal(previous.isCurrent(), false); assert.equal(previous.isRestoreCurrent?.(), false);
+  assert.equal(f.options[1].isCurrent(), true);
 });
