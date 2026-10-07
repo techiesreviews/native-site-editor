@@ -55,7 +55,11 @@ test("pages are routed by their paths, and root and relative links follow to the
   await frame(page).getByRole("link", { name: "All work", exact: true }).click();
   await page.getByRole("button", { name: "Address" }).click();
   const options = page.getByRole("listbox").getByRole("option");
-  await expect(options).toHaveText(["Routed by folders (/)", "Work (/work/)", "Fern & Kettle (/work/fern-and-kettle/)", "Notes (/work/notes.html)"]);
+  // Each page is named by its whole label, and shown as its title over its address.
+  await expect(options).toHaveCount(4);
+  expect(await options.evaluateAll((list) => list.map((option) => option.getAttribute("aria-label")))).toEqual(["Routed by folders (/)", "Work (/work/)", "Fern & Kettle (/work/fern-and-kettle/)", "Notes (/work/notes.html)"]);
+  await expect(options.locator(".field-suggestions__title")).toHaveText(["Routed by folders", "Work", "Fern & Kettle", "Notes"]);
+  await expect(options.locator(".field-suggestions__value")).toHaveText(["/", "/work/", "/work/fern-and-kettle/", "/work/notes.html"]);
   await page.keyboard.press("Escape");
 
   // A relative link (../), resolved against the page's URL.
