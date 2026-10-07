@@ -34,9 +34,12 @@ focused run recorded in the prior handoff.
 All **64 combined focused checks**, **32 smoke checks**, and the three-run byte
 gate pass. The byte median is **344 KB**, within 350 KB. Cold paint/usable
 medians are 1.165 s / 1.178 s, warm 0.783 s; timing targets still miss.
-A new full native-save run is running on frozen `1cc9cbc` (783 cases). The earlier
-**691 passed / 85 skipped** belongs only to `679f931`. Do not transfer that record
-to the new head.
+The full `1cc9cbc` run was deliberately interrupted to validate the three
+follow-ups together; it is not a passing full-suite result. Its log is preserved
+as `fixes-full-native-save.log`. The interrupted test and two subsequent attempts
+blocked by its lingering server are not product-failure evidence. The old
+fixture processes were stopped after checking their owning worktree.
+The earlier **691 passed / 85 skipped** belongs only to `679f931`.
 
 Logs live in the new candidate's `.scratch/p5-review/`. Previous failed tests,
 traces and screenshots remain in their originating worktrees. The two title
@@ -63,6 +66,33 @@ can delay titles; title refresh during a native page drag can replace its row.
 The drag issue already existed. These follow-ups are being investigated on
 separate worktrees; the reviewed head and full-suite source remain frozen.
 Review completion does not constitute approval.
+
+## Final follow-ups
+
+The final candidate is `build/p5-review-final` at immutable
+`ce7ec53ef713762c2690c94ac06ee60977339a53`, worktree
+`/home/ubulex/Projects/native-site-editor-p5-review-final`. It includes:
+
+- `b895484`: matched-pointer `pointerup` task fallback; Pages drag state counts
+  as busy, with refresh after drag end. Two new browser checks fail before the
+  patch (`72442da`) and pass after it. The original pointer-click checks stay.
+- `ce7ec53`: an accepted server restore that cannot safely apply locally now
+  announces completion only within the captured account/repository/branch/
+  generation. It does not reload sources or clear drafts. Normal accepted
+  restore completion and cross-workspace refusal stay guarded; unchanged results
+  do not claim a new commit. Two held-response browser cases verify History
+  remount feedback, no automatic snapshot load, and retention of a new draft.
+
+At this final head, type checks, **1,050 units**, production build and all
+**18 History/title browser checks** pass. The final byte gate and full native-save
+suite are running serially on port 5216. Logs live in this worktree's
+`.scratch/p5-review/final-*.log`. Browser suites use Chromium; pointer task ordering
+is not separately proved across other engines.
+
+Claude Opus 5.5 / medium is reviewing only `1cc9cbc..ce7ec53`; its records are
+in `.scratch/p5-review/claude-final-followup/` under the preparation workspace.
+The final candidate remains separate from the original frozen candidates and
+has not been merged, pushed or deployed.
 
 The original six reviews' ten denied calls were all recovered and audited;
 their conservative raw runner status is retained. The audit is in
