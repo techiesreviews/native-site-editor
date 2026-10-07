@@ -30,15 +30,17 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `759c888` | Phase 5 review-fix stack (`9d6cb00`) plus handoff docs | Full native-save 708 passed / 85 skipped / 0 failed on `9d6cb00`; byte gate 344 KB |
 | `c275489` | A component's parts share its chevron column; its rail runs through the chevron | check, 1,050 units, structure specs 105 passed / 2 skipped |
 | `8a02a54` | Every group has a rail through its parent's chevron: grey for elements, purple for a component's parts. Component chevrons sit in a purple ring filled with the row surface. `--depth` is now the row's visual column, set in `page-structure.ts` (parts keep their component's column; other children step in 4 px; groups carry `--rail`) | check, 1,050 units, structure specs 105 passed / 2 skipped |
+| `86f3f4b` | Per Lex's mockup: the component's own chevron stays plain; a part with its own chevron sits on the purple rail inside a same-purple ring (box-shadow, so the 14 px toggle and rail centring stay) | structure specs 105 passed / 2 skipped |
+| `d669e07` | Slice 8, code panes controller (below), fast-forwarded onto `86f3f4b` | check, 1,054 units, smoke 28 on `d669e07` |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
-chevron; grey lines for non-component groups; a purple circle around component
-chevrons. Each rail shows only the nearest parent's line (continuous ancestor
+chevron; grey lines for non-component groups; then a mockup: plain component
+chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
 lines stacked 4 px apart looked busy).
 
-## Slice 8: code panes controller (not yet merged)
+## Slice 8: code panes controller (merged as `d669e07`)
 
 Branch `build/p5-code-panes-controller`, head `ddd8ed4` (rebased onto
 `c275489`), worktree `/home/ubulex/Projects/native-site-editor-p5-code-panes`.
@@ -53,12 +55,19 @@ host (History coupling).
 - Claude review (`.scratch/p5-review/claude-code-panes/` in the root
   workspace): verified, no defects. Gaps: the master reveal/fold path needs the
   native-static group; reads-wait unit test is weak.
-- Native-static group: RESULT_PENDING.
+- Native-static group on `ddd8ed4`: 20 passed, 20 failed, 13 skipped. The
+  same group on its parent `c275489` fails the identical 20 (shared-authoring,
+  shared-link and shared-files lifecycle specs), so these predate slice 8;
+  probably drift in the root `.scratch/native-static-preview` fixture. All
+  master Code reveal/fold specs pass. Logs: slice 8 worktree
+  `.scratch/p5-review/code-panes-ddd8-native-static.log`, root
+  `.scratch/p5-review/baseline-c275489-native-static.log`. Investigating those
+  20 is open work.
 
 ## Next actions
 
-1. If native-static passes on `ddd8ed4`: rebase onto `dev` (`8a02a54`), merge
-   (fast-forward), push, `deploy:preview`, record here.
+1. Investigate the 20 pre-existing native-static failures (fixture drift or
+   product regression; compare against an older green run).
 2. Slice 9 (rest of boot), then 10 and 12–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
    gates.
