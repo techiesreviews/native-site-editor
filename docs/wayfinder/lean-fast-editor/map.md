@@ -68,7 +68,8 @@ focused structure, smoke and byte checks. Six read-only Claude review reports
 returned after the 13:00 Europe/Amsterdam start. All ten denied review calls were
 recovered and audited. History, slot-rail and page-move fixes are on a separate
 integration branch; title, startup and Monaco fixes are being checked before
-the next full suite and Claude review. The handoff records the partial results.
+the next full suite and Claude review. The [review-fix handoff](build/p5-review-fixes-handoff.md)
+pins the new candidate and records its validation and follow-up review.
 
 The following note records the earlier P1.4 slice:
 

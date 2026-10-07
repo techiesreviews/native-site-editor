@@ -58,16 +58,19 @@ requires combined validation. The original failure artifacts are preserved.
 
 Startup error ownership fix `61c1f94` has a deterministic failing-before proof
 and passes all three startup concurrency/late-response/error browser cases.
-Title pointer handling preserves the requested actions, but two title assertions
-need verification after reopening the Pages panel that navigation closes.
-Restoring Monaco's default drop contribution exposes an existing upstream
-standalone bulk-edit issue: a literal `$0` appears in dropped text. The restore
-has not passed and is not in the integration candidate. A narrow local fix is
-being investigated; the original exact-source assertion remains intact.
+Title pointer handling preserves the requested actions. Trace inspection showed
+both failing title assertions were checking the panel that navigation normally
+closes; its hidden selected item had already updated. Reopening it through the
+UI allows the unchanged title assertion; all eight title cases now pass.
+Restoring Monaco's default drop contribution exposed an existing upstream
+standalone bulk-edit issue: a literal `$0` appeared in dropped text. A narrow
+canonical plain-drop adapter resolves it. All twelve production editor checks
+now pass, including drop Undo/Redo and local draft recovery after reload.
 
-The new integration candidate has not yet passed the full suite or a follow-up
-Claude review. These partial results must not replace the frozen candidate's
-691-pass record below.
+The [review-fix handoff](p5-review-fixes-handoff.md) pins the updated combined
+head `1cc9cbc`. Its 1,048 units, build and 64 focused browser checks pass;
+full-suite validation remains pending and a follow-up Claude review is running.
+These results must not replace the original candidate's 691-pass record below.
 
 ## Frozen slices
 
