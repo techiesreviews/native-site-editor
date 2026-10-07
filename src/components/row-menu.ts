@@ -18,7 +18,7 @@ export interface MenuItem {
  */
 let noteIds = 0;
 
-export function createRowMenu(host: HTMLElement) {
+export function createRowMenu(host: HTMLElement, onClose?: () => void) {
   const element = node("div", "pages-menu row-menu");
   element.setAttribute("role", "menu");
   element.hidden = true;
@@ -34,6 +34,7 @@ export function createRowMenu(host: HTMLElement) {
     const target = opener;
     api.opener = opener = undefined;
     if (returnFocus && target?.isConnected) target.focus();
+    onClose?.();
   }
   function outside(event: PointerEvent) {
     if (!element.contains(event.target as Node) && !opener?.contains(event.target as Node)) close(false);

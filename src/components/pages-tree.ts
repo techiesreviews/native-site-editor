@@ -58,6 +58,8 @@ export function createPagesTree(options: {
   /** Creates it; resolves to an error message, or nothing when done (the caller renders the tree again). */
   create: (request: NativeNewRequest) => Promise<string | undefined>;
   announce: (text: string) => void;
+  /** A row interaction ended; the host may resume a deferred title refresh. */
+  onInteractionEnd?: () => void;
   /** Sets a page's title ("" removes it); resolves to an error message, or nothing when done. */
   retitle?: (file: string, title: string) => string | undefined | Promise<string | undefined>;
   /** Why titles cannot be edited here now, when they cannot: Rename is then disabled with that hint. */
@@ -109,7 +111,7 @@ export function createPagesTree(options: {
   // The row with the tab stop, by key.
   let active: string | undefined;
 
-  const menu = createRowMenu(root);
+  const menu = createRowMenu(root, () => options.onInteractionEnd?.());
 
   // ---- The row being created in place. ----
   interface Editing {
@@ -259,6 +261,7 @@ export function createPagesTree(options: {
     const { item, opener } = editing;
     editing = undefined;
     item.remove();
+    options.onInteractionEnd?.();
     if (!returnFocus) return;
     const target = typeof opener === "string" ? rowByKey(opener) : opener;
     if (target?.isConnected) target.focus();
@@ -381,11 +384,13 @@ export function createPagesTree(options: {
           if (error) options.announce(error);
           else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
           focusRow(key);
+          options.onInteractionEnd?.();
         });
         return;
       }
       if (!commit) options.announce(`Cancelled renaming ${before}`);
       focusRow(key);
+      options.onInteractionEnd?.();
     };
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") { event.preventDefault(); finish(true); }
@@ -405,6 +410,7 @@ export function createPagesTree(options: {
     input.remove();
     if (label) label.hidden = false;
     if (returnFocus) focusRow(key);
+    options.onInteractionEnd?.();
   }
 
   // ---- A URL changed in place, under its row. ----
@@ -450,6 +456,7 @@ export function createPagesTree(options: {
     changingUrl = undefined;
     form.remove();
     if (returnFocus) focusRow(key);
+    options.onInteractionEnd?.();
   }
 
   // ---- Dragging a page onto another (a subpage) or between rows (that level). ----
@@ -781,6 +788,8 @@ export function createPagesTree(options: {
       if (row) setActive(row);
       if (focus || hadFocus) focusRow(row?.dataset.key);
     },
+    /** A menu or in-place edit must finish before deferred titles replace rows. */
+    busy: () => Boolean(menu.isOpen() || editing || renaming || changingUrl),
     /** Whether a new row is being typed. */
     editing: () => Boolean(editing),
     /** Drops a new row being typed and closes the menu (the explorer closed). */

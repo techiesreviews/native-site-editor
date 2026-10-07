@@ -448,6 +448,7 @@ function mountWorkspace() {
     },
     create: createNativeNew,
     announce: (text) => { element("status").textContent = text; },
+    onInteractionEnd: flushPendingNativePageTitles,
     retitle: retitleNativePage,
     changed: (file) => Boolean(treeState().changes.get(file)),
     discard: (file) => void discardOneFile(file),
@@ -3952,6 +3953,7 @@ function adoptNativeBaseSources(
 }
 
 function deactivateNative() {
+  pendingNativePageTitles = undefined;
   disposeExplorerImages();
   mediaModule?.closeMediaPicker();
   nativeSite = undefined;
@@ -4244,6 +4246,27 @@ function noteNativePainted() {
   if (due.length) requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => due.forEach((waiter) => whenIdle(waiter.run)), 100)));
 }
 
+// Titles loaded while a row is being used wait until that interaction ends.
+// The originating index and explorer must still be current when work resumes.
+let pendingNativePageTitles: { host: HTMLElement; live(): boolean } | undefined;
+function pagesBusy(explorer: HTMLElement) {
+  return Boolean(pagesTree?.busy()) || explorer.matches(":popover-open") &&
+    Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
+}
+function flushPendingNativePageTitles() {
+  const pending = pendingNativePageTitles;
+  if (!pending) return;
+  // A menu action can open Rename or a URL editor in the same turn.
+  queueMicrotask(() => {
+    if (pendingNativePageTitles !== pending) return;
+    if (!pending.live() || pending.host !== element("explorer")) { pendingNativePageTitles = undefined; return; }
+    if (pagesBusy(pending.host)) return;
+    // render() closes row interactions itself: consume this work before rendering.
+    pendingNativePageTitles = undefined;
+    renderPagesTree();
+  });
+}
+
 async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, live: () => boolean) {
   // Read the editor's page data with the pages for shared sections.
   const files = nativeFiles(scope).filter((path) => isNativeTextFile(path) || path === EDITOR_PAGE_BUILDER_PATH).slice(0, 2000);
@@ -4277,11 +4300,10 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
     updateAgentContext();
     pageStructure?.refreshMeta();
     // An open Pages & files with a menu or a rename on a row keeps its rows
-    // until it closes; otherwise the titles show at once (the pane mounts
+    // until the interaction ends; otherwise titles show at once (the pane mounts
     // before the index is read, so Pages may well be open by now).
     const explorer = element("explorer");
-    const busy = explorer.matches(":popover-open") && Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
-    if (busy) explorer.addEventListener("toggle", () => renderPagesTree(), { once: true });
+    if (pagesBusy(explorer)) pendingNativePageTitles = { host: explorer, live };
     else renderPagesTree();
     updateCurrentPageLabel();
     componentTools?.refresh();
@@ -5208,6 +5230,7 @@ function updateExplorerTabs(reset = false) {
 // read each page's `<title>`, else its first heading, from its source.
 function renderPagesTree(focus?: { file?: string; route?: string }) {
   if (!pagesTree || !nativeSite || element("explorer-pages").hidden) return;
+  pendingNativePageTitles = undefined;
   const site = nativeSite;
   const scope = draftScope();
   // New pages are marked; a renamed or moved one is the same page.
