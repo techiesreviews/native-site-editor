@@ -119,3 +119,50 @@ test("titles arriving during a new subpage keep its typed title and refresh afte
   await expect(item(page, "Fern & Kettle")).toBeFocused();
   await expect(explorer(page)).toBeVisible();
 });
+
+async function pointerClick(page: Page, target: ReturnType<Page["locator"]>) {
+  const box = await target.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  // Drain pointerdown/blur microtasks before pointerup, reproducing a real gesture.
+  await page.evaluate(() => Promise.resolve());
+  await page.mouse.up();
+}
+
+for (const action of ["open page", "add subpage", "change URL"] as const) {
+  test(`pending titles preserve the pointer click that closes a row menu: ${action}`, async ({ page, baseURL }) => {
+    const titles = await holdPageTitles(page);
+    await openRouting(page, baseURL);
+    await item(page, "Notes").focus();
+    await page.keyboard.press("Shift+F10");
+    await titles.requested;
+    await titles.release();
+    await expect(item(page, "Fern and kettle")).toBeVisible();
+    if (action === "open page") {
+      await pointerClick(page, item(page, "Fern and kettle").locator(".pages-label"));
+      await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+      await expect(item(page, "Fern & Kettle")).toBeVisible();
+    } else {
+      const button = explorer(page).getByRole("button", { name: action === "add subpage" ? "Add subpage to Fern and kettle" : "Change the URL of Fern and kettle, /work/fern-and-kettle/", exact: true });
+      await pointerClick(page, button);
+      const input = explorer(page).getByRole("textbox", { name: action === "add subpage" ? "New subpage of Fern and kettle, title" : "URL of Fern and kettle", exact: true });
+      await expect(input).toBeFocused();
+      await input.press("Escape");
+      await expect(item(page, "Fern & Kettle")).toBeVisible();
+    }
+  });
+}
+
+test("pending titles preserve the pointer click that blurs an unchanged Rename", async ({ page, baseURL }) => {
+  const titles = await holdPageTitles(page);
+  await openRouting(page, baseURL);
+  await item(page, "Notes").focus();
+  await page.keyboard.press("F2");
+  await titles.requested;
+  await titles.release();
+  await expect(explorer(page).getByRole("textbox", { name: "Title of Notes", exact: true })).toBeFocused();
+  await pointerClick(page, item(page, "Fern and kettle").locator(".pages-label"));
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+  await expect(item(page, "Fern & Kettle")).toBeVisible();
+});
