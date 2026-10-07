@@ -1,7 +1,7 @@
 import { createMediaController } from "./controllers/media-controller";
 import { createPagesController, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
-import { readApiReceipt, repositoryReceipt, type ApiReceipt } from "./boot-api-response";
-import { startBootReads } from "./boot-reads";
+import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
+import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
 import { createHistoryController } from "./controllers/history-controller";
 import { batch } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
@@ -49,7 +49,7 @@ import type { createGetStarted, CreateChoice, CreateOutcome } from "./components
 import type { createStartSite } from "./components/start-site";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
-import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
+import { forgetSignedIn } from "./auto-signin";
 
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
 import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
@@ -307,7 +307,7 @@ function mountWorkspace() {
     accounts:
       info.accounts ??
       (info.user ? [{ ...info.user, current: true }] : []),
-    onOpen: () => void ensureRepositoryList(),
+    onOpen: () => void boot.ensureList(),
     onReload: () => void refreshRepositoryList(),
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
@@ -4268,16 +4268,10 @@ function openExplorer() {
 }
 
 let repositories: Repository[] = [];
-let repositoryListLoaded = false;
-let repositoryWorkspaceState: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
-let repositoryListRequest: Promise<void> | undefined;
-let repositoryOnboarding: "install" | "create" | undefined;
 // Unset until start() has read the session.
 let info: SessionInfo;
 // Paths whose drafts are edits of files GitHub deleted since they began.
 let deletedUpstream = new Set<string>();
-// This account's browser drafts, loading from IndexedDB (start()).
-let draftsLoaded: Promise<void> = Promise.resolve();
 let generation = 0;
 let fileGeneration = 0;
 
@@ -4386,9 +4380,6 @@ function options(
   );
 }
 
-/** Cancels the automatic continue to GitHub while its message is showing. */
-let cancelAutoSignIn: (() => void) | undefined;
-
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
@@ -4415,10 +4406,7 @@ function renderLogin(
   siteActions?.destroy();
   siteActions = undefined;
   repositories = [];
-  repositoryListLoaded = false;
-  repositoryWorkspaceState = "uninitialized";
-  repositoryListRequest = undefined;
-  repositoryOnboarding = undefined;
+  boot.reset();
   appStore.reset();
   repositoryIndex.clear();
   app.className = "login-page";
@@ -4441,12 +4429,12 @@ function renderLogin(
     loading.append(spinner, node("span", "", mode === "auto" ? "Signing you in with GitHub…" : "Checking your account…"));
     action.append(loading);
     if (mode === "auto")
-      action.append(button("Use the button instead", () => cancelAutoSignIn?.(), "text-link login-cancel"));
+      action.append(button("Use the button instead", () => boot.cancelAutoSignIn(), "text-link login-cancel"));
   } else if (mode === "error") {
     action.append(
       button(
         "Retry connection",
-        () => void start(),
+        () => void boot.start(),
         "button primary login-button",
       ),
     );
@@ -7468,7 +7456,7 @@ async function loadSnapshot(
           branch,
           ...(known ? { commit: known } : {}),
         }),
-      draftsLoaded,
+      boot.draftsReady(),
     ]);
     if (epoch !== generation) return;
     appStore.snapshot.value = result;
@@ -7669,7 +7657,7 @@ const setupEntry = createSetupEntryController({
   login: () => info.user?.login,
   ownerSetupUrl: () => info.ownerSetupUrl ?? undefined,
   repositoryCount: () => repositories.length,
-  connectionHint: () => connectionFromOnboarding(repositoryOnboarding),
+  connectionHint: () => connectionFromOnboarding(boot.onboarding()),
   connection: wizardConnection,
   readMemory: () => readWizard(localStorage),
   writeMemory: change => writeWizard(localStorage, change),
@@ -7822,7 +7810,7 @@ function wizardRepository(repository: Repository, committed: boolean, partial = 
 /** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
 async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
   const owner = (choice.owner ?? info.user?.login ?? "").toLowerCase();
-  const list = await fetchRepositoryList(true);
+  const list = await boot.fetchList(true);
   const repository = list.find((candidate) => candidate.owner.login.toLowerCase() === owner && candidate.name.toLowerCase() === choice.name.toLowerCase());
   if (!repository) return undefined;
   wizardCreated = repository;
@@ -7887,7 +7875,7 @@ async function finishWizard(repo: WizardRepo) {
   setupController.start(repo.id);
   history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
   // GitHub may not list a repository it has just made yet: the one made here is added.
-  const listed = await fetchRepositoryList(true).catch(() => repositories);
+  const listed = await boot.fetchList(true).catch(() => repositories);
   await loadRepositories(wizardCreated && !listed.some((known) => known.id === wizardCreated!.id) ? [...listed, wizardCreated] : listed);
 }
 
@@ -7895,7 +7883,6 @@ async function finishWizard(repo: WizardRepo) {
 // Coming back to the tab (from GitHub, where access was given or a
 // repository made) lists the repositories again.
 let waitingForRepositories = false;
-let openNewRepository = false;
 // The repository ids this browser last listed, kept (localStorage, as the
 // install page opens in another tab) to tell which one is new on return.
 const knownRepositoriesKey = () => `native-site-editor:repositories:${info.user?.login.toLowerCase() ?? ""}`;
@@ -7931,7 +7918,7 @@ document.addEventListener("visibilitychange", () => void checkNewRepositories())
 async function checkNewRepositories() {
   if (!waitingForRepositories || document.visibilityState !== "visible" || !content.querySelector(".get-started")) return;
   try {
-    const next = await fetchRepositoryList(true);
+    const next = await boot.fetchList(true);
     if (next.length && waitingForRepositories && content.querySelector(".get-started")) await loadRepositories(next);
   } catch {
     // Listed again on the next visit.
@@ -7997,7 +7984,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
 }
 
 async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }) {
-  repositoryWorkspaceState = "loading";
+  boot.loading();
   removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
@@ -8021,17 +8008,22 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
   clearError();
   status("Loading selected repositories…");
   try {
-    const result = prefetched ?? (await fetchRepositoryList(openNewRepository));
+    const result = prefetched ?? (await boot.fetchList(boot.refreshPending()));
     if (epoch !== generation) return;
     repositories = result;
-    repositoryListLoaded = true;
-    repositoryWorkspaceState = "ready";
+    boot.ready();
     repositoryMenu?.setRepositories(repositories);
     // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
-    const knownBefore = openNewRepository ? knownRepositories() ?? [] : undefined;
-    openNewRepository = false;
+    const knownBefore = boot.takeRefresh() ? knownRepositories() ?? [] : undefined;
     rememberRepositories(result);
-    if (!repositories.length) {
+    const plan = planRepositoryOpen({
+      list: repositories,
+      linked: readWorkspaceUrl(),
+      hashPresent: Boolean(location.hash),
+      knownBefore,
+      remembered: info.user ? readWorkspace(info.user.login) : undefined,
+    });
+    if (plan.kind === "empty") {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
       ]);
@@ -8049,8 +8041,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
     if (!setupEntry.active()) clearWizard(localStorage);
     repositoryOptions();
     repositorySelect.disabled = false;
-    const linked = readWorkspaceUrl();
-    if (location.hash && !linked) {
+    if (plan.kind === "invalid-link") {
       errorMessage(
         new Error(
           "This workspace link is invalid. Choose a repository to continue.",
@@ -8058,7 +8049,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
       );
       return;
     }
-    if (linked && !repositories.some((repo) => repo.id === linked.repoId)) {
+    if (plan.kind === "unavailable-link") {
       errorMessage(
         new Error(
           "The linked repository is not available to this GitHub account. Check repository access or choose another project.",
@@ -8066,25 +8057,9 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
       );
       return;
     }
-    // Back from giving the editor access: the one repository that is new opens.
-    if (knownBefore) {
-      const known = new Set(knownBefore);
-      const added = repositories.filter((repo) => !known.has(repo.id));
-      if (added.length === 1 && !linked) {
-        repositorySelect.value = String(added[0].id);
-        await chooseRepository();
-        return;
-      }
-    }
-    const previous =
-      linked ?? (info.user ? readWorkspace(info.user.login) : undefined);
-    const remembered =
-      previous && repositories.find((repo) => repo.id === previous.repoId);
-    if (remembered || repositories.length === 1) {
-      repositorySelect.value = String(
-        remembered ? remembered.id : repositories[0].id,
-      );
-      await chooseRepository(remembered ? previous : undefined);
+    if (plan.kind === "open") {
+      repositorySelect.value = String(plan.id);
+      await chooseRepository(plan.resume);
       return;
     }
     const panel = node("section", "welcome");
@@ -8101,7 +8076,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
     status("Connected to GitHub. Choose a project to start.");
   } catch (error) {
     if (epoch === generation) {
-      repositoryWorkspaceState = "failed";
+      boot.failed();
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
       ]);
@@ -8131,63 +8106,18 @@ function repositoryOptions() {
   ]);
 }
 
-/** Read the array endpoint and its onboarding hint without expanding the session. */
-async function fetchRepositoryList(refresh = false): Promise<Repository[]> {
-  const response = await apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined);
-  repositoryOnboarding = response.onboarding;
-  return response.value;
-}
-
-function repositoryWorkspaceNeedsRecovery() {
-  return repositoryWorkspaceState === "failed" || repositoryWorkspaceState === "uninitialized";
-}
-
-async function recoverRepositoryWorkspace(next: Repository[]) {
-  if (!repositoryWorkspaceNeedsRecovery()) return false;
-  await loadRepositories(next);
-  return true;
-}
-
-/** Opening the menu needs the full list; opening a remembered repository does not. */
-async function ensureRepositoryList() {
-  if (repositoryListLoaded && !repositoryWorkspaceNeedsRecovery()) return;
-  if (repositoryListRequest) return repositoryListRequest;
-  const menu = repositoryMenu;
-  const login = info.user?.login;
-  repositoryListRequest = (async () => {
-    try {
-      const next = await fetchRepositoryList();
-      if (menu !== repositoryMenu || login !== info.user?.login) return;
-      if (await recoverRepositoryWorkspace(next)) return;
-      repositories = next;
-      repositoryListLoaded = true;
-      rememberRepositories(next);
-      repositoryOptions();
-      repositorySelect.disabled = !next.length;
-      if (appStore.repository.value) repositorySelect.value = String(appStore.repository.value.id);
-      menu?.setRepositories(next);
-    } catch (error) {
-      if (menu === repositoryMenu) menu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
-      errorMessage(error);
-    } finally {
-      if (menu === repositoryMenu) repositoryListRequest = undefined;
-    }
-  })();
-  return repositoryListRequest;
-}
-
 // After a visit to GitHub's repository access page: list the repositories
 // again, keeping the open one open unless it is no longer available.
 async function refreshRepositoryList() {
   let next: Repository[];
   try {
-    next = await fetchRepositoryList(true);
+    next = await boot.fetchList(true);
   } catch (error) {
     errorMessage(error);
     return;
   }
-  if (await recoverRepositoryWorkspace(next)) return;
-  repositoryListLoaded = true;
+  if (await boot.recover(next)) return;
+  boot.listed();
   if (
     next.length === repositories.length &&
     next.every((repo, index) => repo.id === repositories[index].id)
@@ -8285,109 +8215,47 @@ const agentController = createAgentController<HTMLElement>({
   }),
 });
 
-async function start() {
-  const bootEpoch = generation;
-  let handoff: { epoch: number; session: SessionInfo } | undefined;
-  const bootSource = () => `${location.origin}${location.pathname}`;
-  const source = bootSource();
-  const current = () => generation === bootEpoch && bootSource() === source;
-  const reads = startBootReads({
-    readSession: () => apiResponse<SessionInfo>("session"),
-    readRepositories: async () => repositoryReceipt(await apiResponse<Repository[]>("repositories")),
-    scope: { source, epoch: bootEpoch },
-    isCurrent: scope => current() && scope.source === source && scope.epoch === bootEpoch,
-  });
-  try {
-    const sessionResponse = await reads.session;
-    if (!current()) return;
-    const session = sessionResponse.value;
-    // Back from installing the App while "Request user authorization during
-    // installation" is off: GitHub returns to the setup URL (this page) with an
-    // installation_id, which is never trusted. Sign in now; the authorization
-    // usually needs no click and completes the sign-in.
-    const returnedFromInstall = new URL(location.href);
-    if (!session.user && session.configured && (returnedFromInstall.searchParams.has("installation_id") || returnedFromInstall.searchParams.has("setup_action"))) {
-      location.replace("/auth/login");
-      return;
-    }
-    if (session.user) {
-      rememberSignedIn(storage("local"));
-      // Drafts are read synchronously once loaded (src/drafts.ts): they load
-      // alongside the repository's first reads, and nothing reads them
-      // before a snapshot is in (loadSnapshot waits for them).
-      draftsLoaded = draftStore().load(session.user.login).then(() => {
-        draftStore().onError = (message) => errorMessage(new Error(message));
-      });
-    }
-    info = session;
-    if (info.user) {
-      resumeWorkspaceLink();
-      mountWorkspace();
-      agentController.start();
-      // GitHub sends the user back here after the App was installed or its
-      // repositories changed: list them afresh, and tidy the address.
-      const returned = new URL(location.href);
-      const installed = returned.searchParams.has("installation_id") || returned.searchParams.has("setup_action");
-      if (installed) {
-        returned.searchParams.delete("installation_id");
-        returned.searchParams.delete("setup_action");
-        history.replaceState(null, "", returned);
-        openNewRepository = true;
-      }
-      const prefetched = installed ? undefined : await reads.takeRepositories(sessionResponse);
-      // Navigation or another boot won while the speculative list was arriving.
-      if (!current()) return;
-      if (prefetched) repositoryOnboarding = prefetched.value.onboarding;
-      await loadRepositories(installed ? undefined : prefetched?.value.repositories ?? info.repositories ?? undefined, {
-        // Capture at the increment, before setup callbacks can throw or navigate.
-        onStarted: epoch => { handoff = { epoch, session }; },
-      });
-    } else if (
-      autoSignInPlan({ configured: session.configured, hasSession: false, pathname: location.pathname, search: location.search, local: storage("local"), session: storage("session") }) === "auto"
-    ) {
-      // Signed in here before and the session ended: go on to GitHub, which completes
-      // the authorization silently. Once per tab session; the message stays readable
-      // for a moment and can be cancelled.
-      markAutoSignInTried(storage("session"));
-      renderLogin("auto");
-      const timer = setTimeout(() => {
-        cancelAutoSignIn = undefined;
-        retainWorkspaceLink();
-        location.assign("/auth/login");
-      }, AUTO_SIGNIN_DELAY_MS);
-      cancelAutoSignIn = () => {
-        clearTimeout(timer);
-        cancelAutoSignIn = undefined;
-        renderLogin();
-      };
-      return;
-    } else {
-      renderLogin();
-    }
-    const error = new URL(location.href).searchParams.get("error");
-    if (error) {
-      errorMessage(new Error(error));
-      const cleanUrl = new URL(location.href);
-      cleanUrl.searchParams.delete("error");
-      history.replaceState(null, "", cleanUrl);
-    }
-  } catch (error) {
-    const ownsFailure = handoff
-      ? generation === handoff.epoch && info === handoff.session && bootSource() === source
-      : current();
-    if (!ownsFailure) return;
-    renderLogin("error");
-    errorMessage(error);
-  }
-}
+const boot = createBootController({
+  generation: () => generation,
+  source: () => `${location.origin}${location.pathname}`,
+  url: () => location.href,
+  replaceUrl: (url) => history.replaceState(null, "", url),
+  redirect: (url) => location.replace(url),
+  assign: (url) => location.assign(url),
+  readSession: () => apiResponse<SessionInfo>("session"),
+  readRepositories: (refresh) => apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined),
+  loadDrafts: (login) => draftStore().load(login),
+  onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); },
+  session: () => info,
+  adoptSession: (session) => { info = session; },
+  enterWorkspace: () => {
+    resumeWorkspaceLink();
+    mountWorkspace();
+    agentController.start();
+  },
+  loadRepositories,
+  renderLogin,
+  retainLink: retainWorkspaceLink,
+  showError: errorMessage,
+  storage,
+  setTimer: (callback, ms) => setTimeout(callback, ms),
+  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  menu: () => repositoryMenu,
+  applyList: (next) => {
+    repositories = next;
+    rememberRepositories(next);
+    repositoryOptions();
+    repositorySelect.disabled = !next.length;
+    if (appStore.repository.value) repositorySelect.value = String(appStore.repository.value.id);
+  },
+});
+
 document.addEventListener("click", (event) => {
   if ((event.target as Element).closest?.('a[href="/auth/login"]'))
     retainWorkspaceLink();
 });
 // A fragment change before the session has loaded is not lost: once signed
 // in, the repositories load from the location as it is then.
-window.addEventListener("hashchange", () => {
-  if (info?.user) void loadRepositories();
-});
+window.addEventListener("hashchange", boot.onHashChange);
 renderLogin("loading");
-void start();
+void boot.start();
