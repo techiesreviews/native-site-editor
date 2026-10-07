@@ -4274,9 +4274,12 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
     // Titles, headings and templates of every page are known now.
     updateAgentContext();
     pageStructure?.refreshMeta();
-    // An open Pages & files keeps its rows (and any menu on one) until it closes.
+    // An open Pages & files with a menu or a rename on a row keeps its rows
+    // until it closes; otherwise the titles show at once (the pane mounts
+    // before the index is read, so Pages may well be open by now).
     const explorer = element("explorer");
-    if (explorer.matches(":popover-open")) explorer.addEventListener("toggle", () => renderPagesTree(), { once: true });
+    const busy = explorer.matches(":popover-open") && Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
+    if (busy) explorer.addEventListener("toggle", () => renderPagesTree(), { once: true });
     else renderPagesTree();
     updateCurrentPageLabel();
     componentTools?.refresh();
