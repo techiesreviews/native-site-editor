@@ -90,15 +90,27 @@ text index arrives `nativeSources()` gives `""` for other pages, and
 `nativeSharedFieldsRevision()` keys on those sources. When the index lands the
 revision moves, so Save shared / linked Edit are refused ("The page or its
 shared files changed. Select the element again."). A user acting within about
-a second of load hits it too. Logs: root `.scratch/p5-review/nsfix/`. Fix in
-progress on `build/p5-shared-index-fix` (worktree
-`/home/ubulex/Projects/native-site-editor-p5-shared-index-fix`): gate shared
-offers on the text index instead of waiting in tests.
+a second of load hits it too. Logs: root `.scratch/p5-review/nsfix/`.
+
+Fixed on `build/p5-shared-index-fix` (`101f2f6` + `22e84b4`, fast-forwarded
+onto dev): `nativeSharedRoot` and `nativeLinkedAncestor` offer nothing until
+`nativeTextIndexed`; the flag is part of `nativeSharedFieldsRevision`'s key,
+cleared at the start of `activateNativeSite`, and Structure repaints when the
+index lands. Nothing reads the index early (first paint unchanged). Gates on
+`22e84b4`: check, 1,067 units, native-static 40 passed / 13 skipped / 0 failed,
+shared-authoring 9, shared-structure 4, full native-save 708 / 85 / 0, budget
+344 KB. Two Opus reviews (root `.scratch/p5-review/claude-shared-index-fix*/`):
+the first found a skipped repaint and an early index read, both fixed.
+Known limit: after Save to GitHub the index is read again; until it lands,
+shared actions on rows already drawn are refused ("changed, select again").
+Not covered by a spec: a site read whole at boot (index lands with identical
+sources).
 
 ## Next actions
 
-1. Land the shared-index fix (target native-static 40 passed / 0 failed).
-2. Slices 10 and 12–15 per
+1. Slice 10 (preview and selection; plan: `preview-selection-controller.ts`,
+   about 170 lines) then 10b (attach the preview frame early, ticket 02).
+2. Slices and 12–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
    gates.
 3. Ticket 02 timing targets still miss (cold paint about 1.19 s against 1.0 s,
