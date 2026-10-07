@@ -2777,6 +2777,9 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   const tag = item.tag;
   if (tag !== "section" && tag !== "header" && tag !== "footer") return undefined;
   if (!nativeSite || versionView || nativeMasterEdit() || appStore.openFile.value !== path || !editorModule?.isMounted(path) || !Object.values(nativeSite.routes).includes(path)) return undefined;
+  // Shared sections span every page: until the text index has read them all, other pages look
+  // empty, so nothing is offered. Ask for the index now; Structure is drawn again once it lands.
+  if (!nativeTextIndexed) { wantNativeTextIndex(); return undefined; }
   const scope = draftScope(), painted = nativeStructurePaintedSources.get(item);
   if (!scope || painted === undefined || nativeEffectiveSource(path) !== painted) return undefined;
   const range = locateNativeElementRange(painted, item.node);
@@ -2960,6 +2963,8 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
 // The innermost whole section/header/footer around `node` that is a resolved linked copy (by its
 // exact range in the editor JSON), with its record's label; undefined otherwise.
 function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
+  // Links are resolved against every page, so only once the text index has read them all.
+  if (!nativeTextIndexed) { wantNativeTextIndex(); return undefined; }
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   const catalogs = nativeSharedCatalogs(docText);
   if (docText === undefined || !catalogs) return undefined;
@@ -4046,7 +4051,11 @@ function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnT
   if (deferred) afterNativePaint(request, release);
   else release();
   const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
-    if (done && live() && nativeTextIndexing === indexing) nativeTextIndexed = true;
+    if (done && live() && nativeTextIndexing === indexing) {
+      nativeTextIndexed = true;
+      // Structure held back its shared-section offers until every page was read.
+      repaintNativeStructure();
+    }
     return done;
   }, (error) => {
     if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
@@ -4162,13 +4171,11 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
   const sources = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
   const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
   if (!live() || nativeSite !== site) return false;
-  let sidecar = false;
   const loaded: string[] = [];
   for (const source of sources) {
     if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path)) continue;
     nativeBaseSources.set(source.path, contents[source.sha]);
     loaded.push(source.path);
-    if (source.path === EDITOR_PAGE_BUILDER_PATH && contents[source.sha] !== undefined) sidecar = true;
   }
   if (loaded.length) {
     // The page on show is drawn again only when what it shows was read
@@ -4191,8 +4198,6 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
     updateCurrentPageLabel();
     componentTools?.refresh();
   }
-  // Structure drew its rows while ownership could not be checked; draw them again now it can.
-  if (sidecar) repaintNativeStructure();
   return true;
 }
 
