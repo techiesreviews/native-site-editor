@@ -4159,7 +4159,10 @@ let nativePageTitlePointer: { id: number } | undefined;
 // Capture before a row menu's outside-pointer listener or an input's blur.
 // The click may stop propagation, so observe it in capture but finish in a task
 // after that click's target handlers have completed. Mouse pointerup also queues
-// a no-click fallback; touch/pen wait for their potentially delayed click.
+// a no-click fallback. Touch/pen wait for their potentially delayed click, but
+// only for a grace period: the gesture may end without a click, and the click
+// need not carry the same pointerId.
+const NATIVE_PAGE_TITLE_TAP_GRACE_MS = 1000;
 document.addEventListener("pointerdown", event => {
   if (event.button === 0) nativePageTitlePointer = { id: event.pointerId };
 }, true);
@@ -4174,7 +4177,15 @@ function finishNativePageTitlePointer(event?: Event) {
 }
 document.addEventListener("click", finishNativePageTitlePointer, true);
 document.addEventListener("pointerup", event => {
-  if (event.pointerType === "mouse") finishNativePageTitlePointer(event);
+  if (event.pointerType === "mouse") {
+    finishNativePageTitlePointer(event);
+    return;
+  }
+  const pointer = nativePageTitlePointer;
+  if (pointer?.id !== event.pointerId) return;
+  setTimeout(() => {
+    if (nativePageTitlePointer === pointer) finishNativePageTitlePointer();
+  }, NATIVE_PAGE_TITLE_TAP_GRACE_MS);
 }, true);
 document.addEventListener("pointercancel", finishNativePageTitlePointer, true);
 document.addEventListener("dragend", finishNativePageTitlePointer, true);
