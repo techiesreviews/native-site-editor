@@ -13,6 +13,7 @@ import {
   rememberWorkspace,
   type WorkspaceLocation,
 } from "./workspace-state";
+import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
 import { setupPrompt } from "./agent-prompts";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
@@ -41,8 +42,8 @@ import { createConfirmDialog } from "./components/confirm-dialog";
 import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
 import type { createGetStarted, CreateChoice, CreateOutcome } from "./components/get-started";
 import type { createStartSite } from "./components/start-site";
-import type { createSetupWizard, WizardCreateOutcome } from "./components/setup-wizard";
-import { clearWizard, connectionFromOnboarding, openingStep, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
+import type { WizardCreateOutcome } from "./components/setup-wizard";
+import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
 
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
@@ -4528,6 +4529,7 @@ function renderLogin(
   editorPalette = undefined;
   agentController.destroy();
   setupController.dispose();
+  setupEntry.remove();
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
@@ -4591,7 +4593,7 @@ function renderLogin(
     // thing left to do, which the Setup wizard's Connect step explains and
     // starts. Nothing leaves this page before that click.
     action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
-    if (mode === "ready") void openOwnerSetupWizard(info.ownerSetupUrl).catch(errorMessage);
+    if (mode === "ready") void setupEntry.openOwner(info.ownerSetupUrl).catch(errorMessage);
   } else {
     const disabled = button(
       "Continue with GitHub",
@@ -8107,9 +8109,6 @@ async function chooseRepository(resume?: WorkspaceLocation) {
 // from GitHub's install page without installing it (the worker sends a new
 // sign-in without the App to that page by itself). Its state is kept in
 // localStorage so it survives a reload.
-let wizard: ReturnType<typeof createSetupWizard> | undefined;
-/** The wizard was left in this page load: Get started shows instead. */
-let wizardDismissed = false;
 /** The repository the wizard made, for the editor to open at the end. */
 let wizardCreated: Repository | undefined;
 
@@ -8126,79 +8125,27 @@ async function wizardConnection(): Promise<Connection> {
   }
 }
 
-async function openWizard() {
-  if (wizard || !info.user) return;
-  wizardDismissed = false;
-  const login = info.user.login;
-  const { createSetupWizard } = await loadWizard();
-  if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
-  const memory = readWizard(localStorage);
-  // The repository endpoint says what is left to do; check installation access when its hint is unavailable.
-  const connection = connectionFromOnboarding(repositoryOnboarding) ?? (await wizardConnection());
-  if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
-  const step = openingStep(memory, connection);
-  const kept = writeWizard(localStorage, { step });
-  wizard = createSetupWizard({
-    login: info.user.login,
-    connected: connection === "installed",
-    step,
-    memory: kept,
-    connectUrl: "/auth/install",
+const setupEntry = createSetupEntryController({
+  login: () => info.user?.login,
+  ownerSetupUrl: () => info.ownerSetupUrl ?? undefined,
+  repositoryCount: () => repositories.length,
+  connectionHint: () => connectionFromOnboarding(repositoryOnboarding),
+  connection: wizardConnection,
+  readMemory: () => readWizard(localStorage),
+  writeMemory: change => writeWizard(localStorage, change),
+  clearMemory: () => clearWizard(localStorage),
+  loadWizard,
+  append: root => document.body.append(root),
+  actions: {
     loadOwners: () => api<OwnerInstallation[]>("owners"),
     create: createSiteInWizard,
     findRepository: findWizardRepository,
     loadPreview: wizardPreview,
-    agentPrompt: (choice, about) =>
-      setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }),
-    remember: (change) => void writeWizard(localStorage, change),
-    finish: (repo) => void finishWizard(repo),
-    exit: closeWizard,
-  });
-  document.body.append(wizard.root);
-  wizard.focus();
-}
-
-/**
- * The owner of a fresh editor, not signed in: the wizard on Connect GitHub, whose
- * button creates the editor's GitHub App. No browser memory is read or written, so
- * a remembered repository cannot skip the step and the user's own state stays.
- */
-async function openOwnerSetupWizard(ownerSetupUrl: string) {
-  const { createSetupWizard } = await loadWizard();
-  if (wizard || wizardDismissed || info.user || info.ownerSetupUrl !== ownerSetupUrl) return;
-  wizard = createSetupWizard({
-    login: "",
-    connected: false,
-    step: "connect",
-    connectUrl: ownerSetupUrl,
-    connectPurpose: "register-app",
-    loadOwners: async () => [],
-    create: async () => ({ ok: false, message: "Sign in first." }),
-    findRepository: async () => undefined,
-    agentPrompt: () => "",
-    remember: () => {},
-    finish: () => {},
-    exit: () => {
-      removeWizard();
-      wizardDismissed = true;
-    },
-  });
-  document.body.append(wizard.root);
-  wizard.focus();
-}
-
-function removeWizard() {
-  wizard?.destroy();
-  wizard = undefined;
-}
-
-/** Leaves the wizard: Get started for a signed-in account, the sign-in screen otherwise. */
-function closeWizard() {
-  removeWizard();
-  clearWizard(localStorage);
-  wizardDismissed = true;
-  if (info.user && !repositories.length) void showGetStarted().catch(errorMessage);
-}
+    agentPrompt: (choice, about) => setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }),
+    finish: repo => void finishWizard(repo),
+  },
+  onExit: () => { if (info.user && !repositories.length) void showGetStarted().catch(errorMessage); },
+});
 
 /** Create site: the repository, with its starting point already committed (POST /api/repositories). */
 async function createSiteInWizard(choice: CreateChoice): Promise<WizardCreateOutcome> {
@@ -8396,9 +8343,7 @@ function offerFinishStarter(repo: Repository, partial: { point: StartingPoint; c
 
 /** The last step: the editor opens on the new repository, and the Setup checklist takes over. */
 async function finishWizard(repo: WizardRepo) {
-  removeWizard();
-  clearWizard(localStorage);
-  wizardDismissed = true;
+  setupEntry.complete();
   setupController.start(repo.id);
   history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
   // GitHub may not list a repository it has just made yet: the one made here is added.
@@ -8549,18 +8494,18 @@ async function loadRepositories(prefetched?: Repository[]) {
       options(repositorySelect, [
         { value: "", label: "No selected repositories" },
       ]);
-      if (wizardDismissed) void showGetStarted().catch(errorMessage);
+      if (setupEntry.dismissed()) void showGetStarted().catch(errorMessage);
       else {
         // A new user: the Setup wizard, full screen, in place of Get started.
         content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
-        void openWizard().catch(errorMessage);
+        void setupEntry.open().catch(errorMessage);
       }
       return;
     }
     // A wizard that made a site and was interrupted: the checklist still follows it.
     const unfinished = readWizard(localStorage)?.repo;
     if (unfinished && repositories.some((repo) => repo.id === unfinished.id)) setupController.start(unfinished.id);
-    if (!wizard) clearWizard(localStorage);
+    if (!setupEntry.active()) clearWizard(localStorage);
     repositoryOptions();
     repositorySelect.disabled = false;
     const linked = readWorkspaceUrl();
