@@ -56,6 +56,8 @@ export function createCommitHistory(options: {
   isRestoreCurrent?(): boolean;
   hasDraft(): boolean;
   onRestored(result: RestoreResult): Promise<void>;
+  /** Successful server restore whose local application proof expired. */
+  onRestoreSkipped(result: RestoreResult): void;
   onExpired(): void;
   /** Show this commit's version (`latest`: the file's current one, to go back). */
   onView(commit: HistoryCommit, head: string, latest: boolean): void;
@@ -158,7 +160,13 @@ export function createCommitHistory(options: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch: options.branch, path: options.path, target: commit.sha, expectedHead: head }),
       });
-      if (disposed || !(options.isRestoreCurrent?.() ?? active())) return;
+      if (disposed || !(options.isRestoreCurrent?.() ?? active())) {
+        options.onRestoreSkipped(result);
+        if (active()) message.textContent = result.unchanged
+          ? "This file already matches that version; reload before saving."
+          : "File restored on GitHub; reload before saving.";
+        return;
+      }
       await options.onRestored(result);
     } catch (error) {
       if (active()) message.textContent = error instanceof Error ? error.message : "Restore failed. Your files are unchanged.";

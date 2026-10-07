@@ -1035,6 +1035,9 @@ const historyController = createHistoryController({
   openFile: (file, commit, head) => void openFileVersion(file, commit, head),
   view: (commit, head, latest) => latest ? endVersionView() : void viewVersion(commit, head),
   restored: async (path, result) => { endVersionView(false); await afterRestore(path, result); },
+  restoreSkipped: (path, result, hasDraft) => status(`${result.unchanged
+    ? "This file already matches that version; reload before saving."
+    : `Restored ${path} in a new commit; reload before saving.`}${hasDraft ? " Your draft was kept." : ""}`),
   expired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
   onError: errorMessage,
 });

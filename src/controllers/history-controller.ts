@@ -23,6 +23,7 @@ export interface HistoryPorts {
   openFile(path: string, commit: HistoryCommit, head: string): void;
   view(commit: HistoryCommit, head: string, latest: boolean): void;
   restored(path: string, result: RestoreResult): Promise<void>;
+  restoreSkipped(path: string, result: RestoreResult, hasDraft: boolean): void;
   expired(): void;
   onError(error: unknown): void;
 }
@@ -87,6 +88,9 @@ export function createHistoryController(ports: HistoryPorts) {
         hasDraft: () => live() && context.hasDraft(),
         onExpired: () => { if (live()) ports.expired(); },
         onRestored: async result => { if (restoreCurrent() && context.path) await ports.restored(context.path, result); },
+        onRestoreSkipped: result => {
+          if (context.path && context.isCurrent(true)) ports.restoreSkipped(context.path, result, context.hasDraft());
+        },
         onView: (commit, head, latest) => { if (live()) ports.view(commit, head, latest); },
         viewing: () => live() ? context.viewing() : undefined,
       };

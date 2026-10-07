@@ -14,6 +14,7 @@ function fixture(empty = false) {
   const style: Record<string, string> = {};
   const panel = { style, matches: () => opened, hidePopover: () => { opened = false; }, showPopover: () => { opened = true; }, replaceChildren: () => { mounted++; }, getBoundingClientRect: () => ({ width: 300 }) } as unknown as HTMLElement;
   let anchor = { getBoundingClientRect: () => ({ bottom: 40, right: 700 }) } as HTMLElement;
+  const skipped: { path: string; result: import("../shared/types.ts").RestoreResult; hasDraft: boolean }[] = [];
   const options: Parameters<typeof createCommitHistory>[0][] = [];
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<HistoryPorts["loadHistory"]>>>>[] = [];
   const module = { createCommitHistory: (value: Parameters<typeof createCommitHistory>[0]) => { options.push(value); return { root: {} as HTMLElement, destroy: () => { destroyed++; }, mark: () => {}, refresh: () => {} }; } } as unknown as Awaited<ReturnType<HistoryPorts["loadHistory"]>>;
@@ -22,9 +23,9 @@ function fixture(empty = false) {
     panel: () => panel, anchor: () => anchor, loadHistory: () => { const load = deferred<typeof module>(); loads.push(load); return load.promise; },
     emptyMessage: () => ({} as HTMLElement), viewport: () => ({ width: 800, height: 600 }),
     onResize: callback => { resize = callback; return () => { resize = undefined; unsubscribed++; }; },
-    openFile: () => { files++; }, view: () => { viewed++; }, restored: async () => { restored++; }, expired: () => {}, onError: error => { throw error; },
+    openFile: () => { files++; }, view: () => { viewed++; }, restored: async () => { restored++; }, restoreSkipped: (path, result, hasDraft) => { skipped.push({ path, result, hasDraft }); }, expired: () => {}, onError: error => { throw error; },
   });
-  return { controller, loads, options, style, load: (index = 0) => loads[index].resolve(module), change: () => { revision++; }, replaceAnchor: () => { anchor = { getBoundingClientRect: () => ({ bottom: 80, right: 600 }) } as HTMLElement; }, navigate: () => { path = "other.html"; }, edit: () => { draft = true; }, resize: () => resize?.(), counters: () => ({ opened, destroyed, mounted, unsubscribed, restored, viewed, files }) };
+  return { controller, loads, options, skipped, style, load: (index = 0) => loads[index].resolve(module), change: () => { revision++; }, replaceAnchor: () => { anchor = { getBoundingClientRect: () => ({ bottom: 80, right: 600 }) } as HTMLElement; }, navigate: () => { path = "other.html"; }, edit: () => { draft = true; }, resize: () => resize?.(), counters: () => ({ opened, destroyed, mounted, unsubscribed, restored, viewed, files }) };
 }
 
 test("same-target loads deduplicate and preserve bounded placement and resize teardown", async () => {
@@ -128,4 +129,33 @@ test("reopening History does not revive callbacks from the closed presentation",
   const next = f.controller.open(); f.load(1); await next;
   assert.equal(previous.isCurrent(), false); assert.equal(previous.isRestoreCurrent?.(), false);
   assert.equal(f.options[1].isCurrent(), true);
+});
+
+
+test("skipped accepted restores report within the same workspace after remount, draft or file navigation", async () => {
+  for (const invalidate of ["remount", "draft", "file"] as const) {
+    const f = fixture(), first = f.controller.open(); f.load(); await first;
+    const options = f.options[0];
+    if (invalidate === "remount") {
+      options.onScope("site"); f.load(1); await new Promise<void>(resolve => setImmediate(resolve));
+    } else if (invalidate === "draft") f.edit();
+    else f.navigate();
+    assert.equal(options.isRestoreCurrent?.(), false);
+    const result = { commit: "restored-head", branch: "main", url: "https://example.test/commit", unchanged: false };
+    options.onRestoreSkipped(result);
+    assert.deepEqual(f.skipped, [{ path: "index.html", result, hasDraft: invalidate === "draft" }]);
+    assert.equal(f.counters().restored, 0);
+  }
+});
+
+test("skipped restore feedback rejects another workspace and preserves unchanged result semantics", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  const options = f.options[0]; f.controller.destroy();
+  const result = { commit: "same-head", branch: "main", url: "https://example.test/commit", unchanged: true };
+  options.onRestoreSkipped(result);
+  assert.equal(f.skipped[0].result, result);
+  assert.equal(f.skipped[0].result.unchanged, true);
+  f.change(); options.onRestoreSkipped(result);
+  assert.equal(f.skipped.length, 1);
+  assert.equal(f.counters().restored, 0);
 });

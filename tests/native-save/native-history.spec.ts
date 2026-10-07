@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // A file's History lists its commits grouped by day, newest first: each with
 // its time, message and author, the current version marked. A commit's ⋯
@@ -172,3 +173,50 @@ test("an accepted restore refreshes the workspace after History is closed by key
   await expect(heading(page)).toHaveText("A native browser preview", { timeout: 30_000 });
   await expect(panel(page)).toBeHidden();
 });
+
+
+for (const withDraft of [false, true]) {
+  test(`a successful restore after History remount reports without applying${withDraft ? " and keeps the new draft" : ""}`, async ({ page, baseURL }) => {
+    let release!: () => void, accepted!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const requested = new Promise<void>(resolve => { accepted = resolve; });
+    await page.route("**/api/restore?**", async route => {
+      const response = await route.fetch();
+      accepted(); await gate; await route.fulfill({ response });
+    });
+    await page.locator("#history-button").click();
+    await expect(items(page)).toHaveCount(2);
+    await items(page).nth(1).getByRole("button", { name: "Actions for Start the site" }).click();
+    await page.getByRole("menuitem", { name: "Restore this version…" }).click();
+    await panel(page).getByRole("button", { name: "Restore file" }).click();
+    await requested;
+    // Rebuilding History expires local application ownership, not the server POST.
+    await panel(page).getByRole("tab", { name: "Whole site" }).click();
+    await expect(panel(page).getByRole("tab", { name: "Whole site" })).toHaveAttribute("aria-selected", "true");
+    await expect(items(page)).toHaveCount(3);
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toBeHidden();
+    let draft: string | undefined;
+    if (withDraft) {
+      const lines = page.locator("#content .view-lines").first();
+      if (!(await lines.isVisible())) await page.getByRole("separator", { name: "Resize code pane", exact: true }).click();
+      await expect(lines).toBeVisible();
+      await lines.click(); await page.keyboard.press("ControlOrMeta+End");
+      await page.keyboard.insertText("\n<!-- draft made while restore waited -->");
+      await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("draft made while restore waited");
+      draft = (await storedDraft(page, "index.html"))!.content;
+    }
+    let snapshots = 0;
+    page.on("request", request => { if (new URL(request.url()).pathname === "/api/snapshot") snapshots++; });
+    release();
+    await expect(page.locator("#status")).toContainText("Restored index.html in a new commit; reload before saving.", { timeout: 30_000 });
+    if (withDraft) {
+      await expect(page.locator("#status")).toContainText("Your draft was kept.");
+      expect((await storedDraft(page, "index.html"))?.content).toBe(draft);
+    } else expect(await storedDraft(page, "index.html")).toBeUndefined();
+    await expect(heading(page)).toHaveText("Edited on GitHub");
+    expect(snapshots).toBe(0);
+    // The server commit completed, while the active local source stayed untouched.
+    expect(await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text()).toContain("A native browser preview");
+  });
+}
