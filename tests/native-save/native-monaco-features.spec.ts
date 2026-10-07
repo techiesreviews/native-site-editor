@@ -380,3 +380,45 @@ test("the version compare is a read-only diff with both sides", async ({ page, b
   await expect(page.locator(`${HOST} .monaco-editor-overlaymessage`)).toContainText(/read-only/i);
   await expect(changed).toContainText("Edited on GitHub</h1>");
 });
+
+test("sticky scroll and Go to Symbol keep the document outline", async ({ page, baseURL }) => {
+  await open(page, baseURL, "components/components.js");
+  const body = Array.from({ length: 90 }, (_, index) => `  console.log(${index});`).join("\n");
+  await setSource(page, `function outer() {\n${body}\n}\nfunction target() { return 42; }`);
+  // The scope header stays visible when its first line leaves the viewport.
+  await page.keyboard.press("ControlOrMeta+Home");
+  await pane(page).hover();
+  await page.mouse.wheel(0, 550);
+  await expect(page.locator(`${HOST} .sticky-widget`)).toContainText("function outer", { timeout: 20_000 });
+  // Ctrl+Shift+O asks the JS worker for the same document's symbols.
+  await lines(page).click();
+  await page.keyboard.press("ControlOrMeta+Shift+o");
+  const quick = page.locator(`${HOST} .quick-input-widget`);
+  await expect(quick).toBeVisible();
+  await page.keyboard.insertText("target");
+  await expect(quick.locator(".quick-input-list")).toContainText("target", { timeout: 20_000 });
+  await page.keyboard.press("Enter");
+  await expect(quick).toBeHidden();
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" // selected symbol");
+  await expect(lines(page)).toContainText("function target() { return 42; } // selected symbol");
+});
+
+test("cursor undo and existing editing actions stay available", async ({ page, baseURL }) => {
+  await open(page, baseURL, "robots.txt");
+  await setSource(page, "first\nsecond");
+  await cursorTo(page, 1);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ControlOrMeta+u");
+  await page.keyboard.insertText("> ");
+  await expect.poll(() => source(page)).toBe("> first\nsecond");
+  // Platform-specific bindings still have their existing palette actions.
+  const quick = page.locator(`${HOST} .quick-input-widget`);
+  for (const action of ["Transpose Letters", "Move Selected Text Left", "Increase Editor Font Size", "Reindent Lines", "Convert Indentation to Spaces"]) {
+    await page.keyboard.press("F1");
+    await expect(quick).toBeVisible();
+    await page.keyboard.insertText(action);
+    await expect(quick.locator(".quick-input-list")).toContainText(action);
+    await page.keyboard.press("Escape");
+  }
+});

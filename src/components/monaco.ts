@@ -22,16 +22,12 @@
 // contribution alive, so only the build shows what ships. The monaco-lsp-client
 // re-export is omitted: the app never uses `monaco.lsp`.
 //
-// Dropped, unused by the code panes: anchor select, transpose and caret moves,
-// code lens (no provider), cursor undo, diff-editor breadcrumbs, document
-// symbols with Go to Symbol and sticky scroll (both need the outline model),
-// drop-into-editor, floating menu, font zoom, gpu, the indentation commands and
-// indent-on-paste (off by default; no indentation rules for our grammars),
-// inlay hints (off by default), inline completions and suggest-as-inline,
+// Dropped: anchor select, code lens (no provider), diff-editor breadcrumbs,
+// drop-into-editor, floating menu, gpu, inline completions and suggest-as-inline,
 // inline progress, in-place replace, insert final newline, inspect tokens,
-// iPad keyboard, word-part moves (macOS-only keys), linked editing (off by
+// iPad keyboard, linked editing (off by
 // default), long-lines helper, middle-click scroll, placeholder text,
-// quick-access help, minimap section headers (no minimap), semantic tokens (no
+// minimap section headers (no minimap), semantic tokens (no
 // provider for our languages), high-contrast toggle, force retokenize, and the
 // marker-selection context key.
 import * as monaco from "monaco-editor/editor/editor.api.js";
@@ -69,6 +65,13 @@ import "monaco-editor/editor/contrib/multicursor/browser/multicursor.js";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js";
 // Ctrl+Left/Right and Ctrl+Backspace/Delete by word.
 import "monaco-editor/editor/contrib/wordOperations/browser/wordOperations.js";
+// Preserve existing platform bindings and command-palette editing actions.
+import "monaco-editor/editor/contrib/wordPartOperations/browser/wordPartOperations.js";
+import "monaco-editor/editor/contrib/cursorUndo/browser/cursorUndo.js";
+import "monaco-editor/editor/contrib/caretOperations/browser/transpose.js";
+import "monaco-editor/editor/contrib/caretOperations/browser/caretOperations.js";
+import "monaco-editor/editor/contrib/indentation/browser/indentation.js";
+import "monaco-editor/editor/contrib/fontZoom/browser/fontZoom.js";
 // Ctrl+L, and Shift+Alt+Left/Right expand and shrink selection.
 import "monaco-editor/editor/contrib/lineSelection/browser/lineSelection.js";
 import "monaco-editor/editor/contrib/smartSelect/browser/smartSelect.js";
@@ -77,6 +80,13 @@ import "monaco-editor/editor/contrib/dnd/browser/dnd.js";
 // Ctrl+G go to line, and F1 / the context menu's Command Palette.
 import "monaco-editor/editor/standalone/browser/quickAccess/standaloneGotoLineQuickAccess.js";
 import "monaco-editor/editor/standalone/browser/quickAccess/standaloneCommandsQuickAccess.js";
+import "monaco-editor/editor/standalone/browser/quickAccess/standaloneHelpQuickAccess.js";
+import "monaco-editor/editor/standalone/browser/quickAccess/standaloneGotoSymbolQuickAccess.js";
+// Sticky scroll and inlay hints are enabled by Monaco's defaults. Document
+// symbols supply the outline service used by sticky scroll and Go to Symbol.
+import "monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js";
+import "monaco-editor/editor/contrib/stickyScroll/browser/stickyScrollContribution.js";
+import "monaco-editor/editor/contrib/inlayHints/browser/inlayHintsContribution.js";
 // Ctrl+M: Tab moves focus out of the editor (keyboard accessibility).
 import "monaco-editor/editor/contrib/toggleTabFocusMode/browser/toggleTabFocusMode.js";
 
