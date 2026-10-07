@@ -46,9 +46,11 @@ export async function effectiveSource(page: Page, baseURL: string | undefined, p
   return response.ok() ? response.text() : undefined;
 }
 
-// Monaco loads once the preview has painted and the browser is idle
-// (lean-fast-editor ticket 03), so a test that drives the mounted editor
-// directly waits for the open file's pane first.
+// The open file's source editor mounts once its file is read, before Monaco
+// (lean-fast-editor ticket 03). A test that drives the mounted editor or its
+// code directly waits for the open file's pane with its code shown: importing
+// the code editor brings Monaco and attaches its view at once.
 export async function editorMounted(page: Page, path = "index.html") {
   await expect.poll(() => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).isMounted(path), path), { timeout: 20_000 }).toBe(true);
+  await expect(page.locator(".code-editor .monaco-editor").first()).toBeAttached();
 }

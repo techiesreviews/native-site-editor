@@ -7,9 +7,9 @@
 // existing browser layer (src/drafts.ts `DraftStore`, IndexedDB with a
 // localStorage fallback) by its `DraftAccess` surface.
 //
-// Not wired in yet (handoff plan, phase 4d): src/components/code-editor.ts
-// still keeps its own Maps. The API below is shaped so that code can be
-// expressed in it:
+// Wired in by src/components/source-editor.ts (handoff plan, phase 4f), the
+// Monaco-free half of the code editor; src/components/code-editor.ts is the
+// Monaco view over it. The API maps onto that code:
 //
 // - `open` is mountCodeEditor's draft lookup (saved draft or GitHub source,
 //   a lost publish recognized on reopening, a conflict reported).
@@ -27,6 +27,11 @@
 //   `forget` and `release` are `dropDraft`, `forgetDraftModel` and the
 //   clean-model eviction on dispose; `markSaved` is `reconcilePublished`;
 //   `changed` / `unpersisted` are `changedFiles` / `hasUnpersistedEdits`.
+// - `write` is a host-owned text change outside the journals (a multi-file
+//   operation's own receipt, src/page-builder/native-operation-history.ts):
+//   the steps below it stay valid, and its undo restores the exact revision.
+// - `adopt` takes a draft record a host wrote for an open file with the same
+//   text (an operation's own draft write) as this store's own.
 //
 // History. Every history (a string; code-editor.ts's `historyScope`, e.g. a
 // page with its stylesheets) is one linear Undo/Redo journal. Each file has a
@@ -185,10 +190,12 @@ interface Entry extends FileState {
   leases: number;
 }
 type Snapshot = (FileState & { revision: number }) | null;
-type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean; companions: HistoryCompanion[] };
+/** The persisted records on either side of a step: Undo and Redo put back these very records (their identity proves no foreign write). */
+type Records = { before: SavedDraft | undefined; after: SavedDraft | undefined };
+type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean; companions: HistoryCompanion[]; records: Records };
 type ReceiptStep = { kind: "receipt"; id: number; label: string; files: { key: string; scope: DraftScope; path: string; before: Snapshot; after: Snapshot }[] };
 type ActionStep = { kind: "action"; id: number; label: string; undo: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
-type TypingState = { text: string; revision: number; version?: number };
+type TypingState = { text: string; revision: number; version?: number; record?: SavedDraft };
 /**
  * Typing committed from a pane. `at` is where Undo/Redo has it, from `start`
  * to `end`: one native stop at a time while its pane is open. The step is on
@@ -197,7 +204,7 @@ type TypingState = { text: string; revision: number; version?: number };
 type TypingStep = { kind: "typing"; id: number; label: string; key: string; session: Typing; start: TypingState; end: TypingState; at: TypingState; companions: HistoryCompanion[] };
 type Step = EditStep | TypingStep | ReceiptStep | ActionStep;
 type Journal = { undo: Step[]; redo: Step[] };
-type Typing = { history: string; label: string; start?: TypingState; version?: number; native?: NativeTyping; ended?: boolean };
+type Typing = { history: string; label: string; start?: TypingState; order?: number; version?: number; native?: NativeTyping; ended?: boolean };
 
 /** Applies non-overlapping changes; returns the new text and the changes that undo them (in the new text's offsets). */
 export function applyChanges(text: string, changes: readonly TextChange[]) {
@@ -248,7 +255,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   const running = new Set<string>();
   const holds = new Map<string, number>();
   const listeners = new Set<(event: DraftEvent) => void>();
-  let revisions = 0, steps = 0;
+  let revisions = 0, steps = 0, typingOrder = 0;
 
   const deliver = (event: DraftEvent) => { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } };
   // Events wait until a mutation (and its journal move) is complete, so a
@@ -286,20 +293,31 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     flags: entry.flags, revision: entry.revision, changed: isChanged(entry), persisted: entry.persisted,
   });
 
-  function persist(entry: Entry) {
+  let persisting = 0;
+  /** Writes the entry's draft; `preferred` (a step's own record) is written itself when it says the same. */
+  function persist(entry: Entry, preferred?: SavedDraft) {
     if (!persistence || entry.baseSha === undefined) { entry.persisted = false; return true; }
+    persisting++;
+    try { return persistEntry(entry, persistence, preferred); } finally { persisting--; }
+  }
+  const recordOf = (entry: Entry): SavedDraft => {
     const { account, repoId, repo, branch } = entry.scope;
-    const draft: SavedDraft = { ...entry.flags, account, repoId, repo, branch, version: 1, path: entry.path,
-      baseSha: entry.baseSha, original: entry.base, content: entry.text, updatedAt: now() };
+    return { ...entry.flags, account, repoId, repo, branch, version: 1, path: entry.path,
+      baseSha: entry.baseSha as string | null, original: entry.base, content: entry.text, updatedAt: now() };
+  };
+  function persistEntry(entry: Entry, persistence: DraftPersistence, preferred?: SavedDraft) {
+    const draft = recordOf(entry);
     const existing = persistence.get(entry.scope, entry.path);
     // A refresh that changes nothing keeps the exact record, so its identity proves no foreign write.
-    const ok = persistence.save(existing && sameRecord(existing, draft) ? existing : draft);
+    const ok = persistence.save(preferred && sameRecord(preferred, draft) ? preferred : existing && sameRecord(existing, draft) ? existing : draft);
     entry.record = persistence.get(entry.scope, entry.path);
     entry.persisted = ok;
     return ok;
   }
   function removeRecord(entry: { scope: DraftScope; path: string }) {
-    return persistence ? persistence.remove(entry.scope, entry.path) : true;
+    if (!persistence) return true;
+    persisting++;
+    try { return persistence.remove(entry.scope, entry.path); } finally { persisting--; }
   }
   /** The record is still the one this store wrote or read. */
   const ownsRecord = (entry: Entry) => !persistence || entry.baseSha === undefined || persistence.get(entry.scope, entry.path) === entry.record;
@@ -338,17 +356,21 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (!session?.start || !entry) return undefined;
     const start = session.start;
     session.start = undefined;
-    if (entry.text === start.text) {
-      // Typed and erased: no step, and the steps below stay valid.
+    if (entry.text === start.text && session.version === start.version) {
+      // No text or native undo movement: the steps below stay valid.
       entry.revision = start.revision;
       return undefined;
     }
-    const end: TypingState = { text: entry.text, revision: entry.revision, version: session.version };
+    const end: TypingState = { text: entry.text, revision: entry.revision, version: session.version, record: entry.record };
     const step: TypingStep = { kind: "typing", id: ++steps, label: label ?? session.label, key, session, start, end, at: end, companions: [] };
     pushStep(session.history, step);
     return step.id;
   }
-  const commitHistoryTyping = (history: string) => { for (const [key, session] of typing) if (session.history === history) commitTyping(key); };
+  const commitHistoryTyping = (history: string | undefined, extraKeys: readonly string[] = []) => {
+    const pending = [...typing].filter(([key, session]) => session.start && (session.history === history || extraKeys.includes(key)));
+    pending.sort((a, b) => a[1].order! - b[1].order!);
+    for (const [key] of pending) commitTyping(key);
+  };
 
   function beginTyping(scope: DraftScope, path: string, history?: string, options: TypingOptions = {}): TypingSession {
     const key = draftKey(scope, path);
@@ -361,9 +383,22 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       input: (text, version) => batch(() => {
         const entry = files.get(key);
         if (session.ended || !entry) return;
-        if (entry.text === text) { if (version !== undefined) session.version = version; return; }
+        if (entry.text === text && (version === undefined || version === session.version)) return;
+        // Switching panes closes the earlier pane's native undo group now,
+        // rather than letting settle timers decide their journal order.
+        for (const [otherKey, other] of typing) if (otherKey !== key && other.history === session.history && other.start) commitTyping(otherKey);
         const previous = entry.text;
-        session.start ??= { text: entry.text, revision: entry.revision, version: session.version };
+        if (!session.start) {
+          session.start = { text: entry.text, revision: entry.revision, version: session.version, record: entry.record };
+          session.order = ++typingOrder;
+        }
+        // Monaco destroys Redo on the first new keystroke, even if later
+        // keystrokes erase it. Mirror that immediately in the shared journal.
+        const found = journal(session.history);
+        const top = found.undo.at(-1);
+        const truncated = top?.kind === "typing" && top.at !== top.end;
+        if (truncated) top.end = top.at;
+        if (found.redo.length || truncated) { clearRedo(found); emitHistory(session.history); }
         if (version !== undefined) session.version = version;
         entry.text = text;
         entry.revision = ++revisions;
@@ -409,7 +444,9 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const key = draftKey(input.scope, input.path);
     const entry = files.get(key);
     if (!entry) return { ok: false, error: `${input.path} is not open in the draft store.` };
-    if (typing.get(key)?.start) commitTyping(key);
+    // Typing still open anywhere in this history (or in the file) is an earlier
+    // step: it is committed first, so the journal stays in the order things happened.
+    commitHistoryTyping(input.history ?? key, [key]);
     let applied: ReturnType<typeof applyChanges>;
     try {
       applied = input.changes ? applyChanges(entry.text, input.changes)
@@ -420,7 +457,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     }
     if (applied.text === entry.text) return { ok: true };
     const history = input.history ?? key;
-    const before = entry.revision, previous = entry.text;
+    const before = entry.revision, previous = entry.text, recordBefore = entry.record;
     entry.text = applied.text;
     entry.revision = ++revisions;
     persist(entry);
@@ -435,13 +472,15 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       last.changes = [diffRange(start, entry.text)];
       last.inverse = [diffRange(entry.text, start)];
       last.after = entry.revision;
+      last.records.after = entry.record;
       if (input.companion) last.companions.push(input.companion);
       clearRedo(found);
       emitHistory(history);
       return { ok: true, step: last.id };
     }
     const step: EditStep = { kind: "edit", id: ++steps, label: input.label ?? "Edit", key, changes: applied.changes, inverse: applied.inverse,
-      before, after: entry.revision, group: Boolean(input.group), companions: input.companion ? [input.companion] : [] };
+      before, after: entry.revision, group: Boolean(input.group), companions: input.companion ? [input.companion] : [],
+      records: { before: recordBefore, after: entry.record } };
     pushStep(history, step);
     return { ok: true, step: step.id };
   }
@@ -508,7 +547,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   function applyReceipt(history: string, label: string, changes: ReceiptFile[], record = true): StepResult {
     const keys = changes.map(change => draftKey(change.scope, change.path));
     if (new Set(keys).size !== keys.length) return { ok: false, error: "A file appears twice in one change." };
-    for (const key of keys) if (typing.get(key)?.start) commitTyping(key);
+    commitHistoryTyping(record ? history : undefined, keys);
     const entries = changes.map(change => load(change.scope, change.path));
     for (const [index, change] of changes.entries()) {
       const entry = entries[index];
@@ -580,7 +619,8 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     entry.text = next.text;
     entry.revision = next.revision;
     step.at = next;
-    persist(entry);
+    persist(entry, next.record);
+    if (next === target) target.record = entry.record;
     textEvent(entry, direction, [diffRange(previous, next.text)]);
     return undefined;
   }
@@ -644,11 +684,12 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
           const applied = applyChanges(entry.text, direction === "undo" ? step.inverse : step.changes);
           entry.text = applied.text;
           entry.revision = direction === "undo" ? step.before : step.after;
-          if (!persist(entry)) {
+          if (!persist(entry, step.records[direction === "undo" ? "before" : "after"])) {
             entry.text = previous.text; entry.revision = previous.revision; persist(entry);
             return { ok: false, error: persistence?.error ?? `Could not update ${entry.path}.` };
           }
           move(from, to);
+          step.records[direction === "undo" ? "before" : "after"] = entry.record;
           textEvent(entry, direction, applied.changes);
           const companions = direction === "undo" ? [...step.companions].reverse() : step.companions;
           for (const companion of companions) companion[direction]();
@@ -710,10 +751,10 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     emit({ type: "file", key, scope, path, change: "dropped" });
     return true;
   }
-  /** Forgets the entry, leaving the persisted record (forgetDraftModel: renamed, moved or deleted). */
-  function forget(scope: DraftScope, path: string) {
+  /** Forgets the entry, leaving the persisted record (forgetDraftModel: renamed, moved or deleted). Refused while retained unless forced. */
+  function forget(scope: DraftScope, path: string, force = false) {
     const key = draftKey(scope, path), entry = files.get(key);
-    if (!entry || entry.leases) return false;
+    if (!entry || entry.leases && !force) return false;
     typing.delete(key);
     files.delete(key);
     invalidate(key);
@@ -759,6 +800,75 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     return true;
   }
 
+  /**
+   * A host-owned text change outside the journals (an operation's own
+   * receipt): no step is recorded and no journal is cleared, so the steps
+   * below stay valid once the host puts the text back. `revision` restores
+   * the revision the text had (the host's undo); otherwise a new one is
+   * given. Returns the revision before and after, or undefined when the file
+   * is not open or is a typing pane's uncommitted text.
+   */
+  function write(scope: DraftScope, path: string, text: string, revision?: number) {
+    const key = draftKey(scope, path), entry = files.get(key);
+    if (!entry) return undefined;
+    if (typing.get(key)?.start) commitTyping(key);
+    const before = entry.revision, previous = entry.text;
+    if (previous === text && revision === undefined) return { before, after: before };
+    entry.text = text;
+    entry.revision = revision ?? ++revisions;
+    persist(entry);
+    if (previous !== text) textEvent(entry, "receipt", [diffRange(previous, text)]);
+    return { before, after: entry.revision };
+  }
+  /**
+   * The persisted record of an open file was written by a host for this very
+   * text (an operation's own draft write, a rename's flags): its base, flags
+   * and identity become this store's. A record with other text is left alone
+   * (another writer's; Undo over the file refuses).
+   */
+  function adopt(scope: DraftScope, path: string) {
+    if (persisting || !persistence) return false;
+    const entry = files.get(draftKey(scope, path));
+    if (!entry || entry.baseSha === undefined) return false;
+    const record = persistence.get(scope, path);
+    if (record === entry.record) return true;
+    if (!record) {
+      // Pruned as unchanged: the text is GitHub's.
+      if (entry.text !== entry.base && entry.baseSha !== null) return false;
+      entry.record = undefined;
+      return true;
+    }
+    if (record.deleted || record.content !== entry.text) return false;
+    const changedBase = record.original !== entry.base || record.baseSha !== entry.baseSha || !sameFlags(flagsOf(record), entry.flags);
+    Object.assign(entry, { base: record.original, baseSha: record.baseSha, flags: flagsOf(record), record, persisted: true });
+    if (changedBase) emit({ type: "file", key: entry.key, scope: entry.scope, path, change: "base" });
+    return true;
+  }
+  /** A journal holds a typing step of the file whose pane can still step through it. */
+  function hasTyping(scope: DraftScope, path: string) {
+    const key = draftKey(scope, path);
+    return [...journals.values()].some(found => [...found.undo, ...found.redo].some(step => step.kind === "typing" && step.key === key && !step.session.ended));
+  }
+  /** Writes again every changed file whose last write did not reach persistence. */
+  function retry() {
+    for (const entry of files.values()) if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry)) persist(entry);
+  }
+  /**
+   * The drafts of `scope` as Save sends them: the persisted records, with
+   * each changed file whose last write did not reach persistence as this
+   * store holds it (failed writes are tried again first).
+   */
+  function drafts(scope: DraftScope, list: () => readonly SavedDraft[]) {
+    retry();
+    const out = new Map(list().map(record => [record.path, record]));
+    const same = (other: DraftScope) => other.account.toLowerCase() === scope.account.toLowerCase() && other.repoId === scope.repoId && other.branch === scope.branch;
+    for (const entry of files.values())
+      if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry) && same(entry.scope)) out.set(entry.path, recordOf(entry));
+    return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
+  }
+  /** Any Undo or Redo step is held in memory (lost on reload). */
+  const hasHistory = () => [...journals.values()].some(found => found.undo.length + found.redo.length > 0);
+
   function clearHistory() {
     for (const [history, found] of journals) {
       for (const step of [...found.undo, ...found.redo]) disposeStep(step);
@@ -788,7 +898,13 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     retain,
     discard: (scope: DraftScope, path: string, history?: string) => batch(() => discard(scope, path, history)),
     drop: (scope: DraftScope, path: string, force = false) => batch(() => drop(scope, path, force)),
-    forget: (scope: DraftScope, path: string) => batch(() => forget(scope, path)),
+    forget: (scope: DraftScope, path: string, force = false) => batch(() => forget(scope, path, force)),
+    write: (scope: DraftScope, path: string, text: string, revision?: number) => batch(() => write(scope, path, text, revision)),
+    adopt,
+    hasTyping,
+    hasHistory,
+    retry,
+    drafts,
     markSaved,
     acceptBase,
     reload: (scope: DraftScope, path: string) => batch(() => reload(scope, path)),

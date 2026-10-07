@@ -144,6 +144,8 @@ test("Edit bar has no Effects generator and preserves authored effects CSS", asy
 test("page settings preserve named entities when changing another field", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.evaluate(async (modulePath) => {
+    // The code pane's Monaco view (models mirror the draft store) comes with code-editor.ts.
+    await import("/src/components/code-editor.ts");
     const { monaco } = await import(modulePath) as typeof import("../../src/components/monaco");
     const model = monaco.editor.getModels().find((item) => item.uri.path.endsWith("/index.html"));
     if (!model) throw new Error("The page source model was not mounted.");

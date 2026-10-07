@@ -237,7 +237,7 @@ test("a section move waiting for its page editor refuses a foreign draft written
   await undo(page); await expect.poll(() => source(page)).toBe(raced.changed);
 });
 
-test("a never-saved page's section move preserves a foreign draft written while its editor opens", async ({ page }) => {
+test("a never-saved page's section move applies at once, and a foreign draft written after it is preserved", async ({ page }) => {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
   await page.getByRole("button", { name: "+ New page", exact: true }).click();
@@ -262,22 +262,24 @@ test("a never-saved page's section move preserves a foreign draft written while 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(frame(page).locator("#new-first")).toBeVisible();
   const row = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first();
+  // The page's source editor mounts from its draft at once (no Monaco, no read):
+  // the move lands before anything else can write, and a draft another writer
+  // puts there afterwards is theirs. Undo refuses rather than overwrite it.
   const raced = await row.evaluate(async (element, { record, path }) => {
-    const editor = await import("/src/components/code-editor.ts");
+    const editor = await import("/src/components/source-editor.ts");
     const { draftStore } = await import("/src/drafts.ts");
     element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
-    const awaiting = document.querySelector("#current-page")?.getAttribute("data-path") === path && editor.getMountedSource(path) === undefined;
-    const changed = record!.content.replace('<section id="new-first">', '<section id="new-first" data-agent="during-new-open">');
+    const mounted = document.querySelector("#current-page")?.getAttribute("data-path") === path && editor.getMountedSource(path) !== undefined;
+    const before = editor.getMountedSource(path);
+    for (let waited = 0; editor.getMountedSource(path) === before && waited < 5000; waited += 20) await new Promise(resolve => setTimeout(resolve, 20));
+    const moved = editor.getMountedSource(path);
+    const changed = record!.content.replace('<section id="new-first">', '<section id="new-first" data-agent="after-move">');
     draftStore().save({ ...record!, content: changed, updatedAt: Date.now() } as import("../../src/drafts").SavedDraft);
-    return { awaiting, changed };
+    return { mounted, moved, changed };
   }, { record, path });
-  expect(raced.awaiting).toBe(true);
-  await expect(page.locator("#status")).toHaveText("The source changed while its editor opened. Select the section again before moving it.");
+  expect(raced.mounted).toBe(true);
+  expect(raced.moved?.indexOf('id="new-target"')).toBeLessThan(raced.moved!.indexOf('id="new-first"'));
   expect((await storedDraft(page, path))?.content).toBe(raced.changed);
-  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "new-first");
-  await expect(frame(page).locator("#new-first")).toHaveAttribute("data-agent", "during-new-open");
-  await page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section/ }).first().press("Alt+ArrowDown");
-  await expect(frame(page).locator("main > section").first()).toHaveAttribute("id", "new-target");
-  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), path)).toBe(true);
-  await expect.poll(() => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path)).toBe(raced.changed);
+  expect(await page.evaluate(async path => (await import("/src/components/source-editor.ts")).runVisualHistory("undo", path), path)).toBe(false);
+  expect((await storedDraft(page, path))?.content).toBe(raced.changed);
 });

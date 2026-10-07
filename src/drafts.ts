@@ -99,6 +99,12 @@ export class DraftStore {
   error: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
+  /**
+   * A record was saved or removed through this store (by any writer in this
+   * tab): src/components/source-editor.ts takes a host's write for an open
+   * file's very text as the draft store's own.
+   */
+  onWrite?: (scope: DraftScope, path: string) => void;
   /** Keys this tab committed, for other tabs to read again (a BroadcastChannel). */
   announce?: (keys: string[]) => void;
   /**
@@ -193,9 +199,14 @@ export class DraftStore {
       .sort((a, b) => a.path.localeCompare(b.path));
   }
   save(value: SavedDraft) {
+    const saved = this.put(value);
+    this.onWrite?.(value, value.path);
+    return saved;
+  }
+  private put(value: SavedDraft) {
     if (!value.deleted && ((value.baseSha !== null && value.content === value.original) ||
         (!value.opaque && !value.upload && this.baseline?.(value, value.path) === value.content)))
-      return this.remove(value, value.path);
+      return this.drop(value, value.path);
     const key = draftKey(value, value.path);
     this.deleted.delete(key);
     this.memory.set(key, value);
@@ -213,6 +224,11 @@ export class DraftStore {
     }
   }
   remove(scope: DraftScope, path: string) {
+    const removed = this.drop(scope, path);
+    this.onWrite?.(scope, path);
+    return removed;
+  }
+  private drop(scope: DraftScope, path: string) {
     const key = draftKey(scope, path);
     this.memory.delete(key);
     if (this.db) {

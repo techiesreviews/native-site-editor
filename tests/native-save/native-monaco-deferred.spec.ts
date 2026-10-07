@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { editorMounted, storedDraft, storedDrafts } from './drafts';
+import { publishButton } from './publish';
 
 // Monaco waits for the preview (lean-fast-editor ticket 03): no request for
 // the code editor or Monaco goes out before the preview's first paint, and
@@ -69,6 +70,9 @@ test('two quick text edits made before Monaco arrives land in order', async ({ p
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
   await typeHeading(page, 'AB');
   await typeHeading(page, 'C', false);
+  // The draft store has them while Monaco is still held.
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content).toContain('<h1 data-key="hero-title">ABC</h1>');
+  await expect(page.locator('.monaco-editor')).toHaveCount(0);
   release();
   await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content, { timeout: 20_000 }).toContain('<h1 data-key="hero-title">ABC</h1>');
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('ABC');
@@ -126,7 +130,7 @@ test('a file rename asked for before Monaco arrives never lands on the branch op
   const release = await holdEditor(page);
   await page.reload();
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('A native browser preview');
-  // Rename styles/sections.css in the Files tab; it waits for the editor.
+  // Rename styles/sections.css in the Files tab: it applies on main at once, without Monaco.
   const explorer = page.locator('#explorer');
   if (!(await explorer.isVisible())) await page.locator('#explorer-toggle').click();
   await explorer.getByRole('tab', { name: 'Files' }).click();
@@ -144,8 +148,45 @@ test('a file rename asked for before Monaco arrives never lands on the branch op
   await page.getByRole('menu', { name: 'Branches' }).getByRole('menuitemradio', { name: 'feature' }).click();
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toHaveText('Feature branch preview', { timeout: 30_000 });
   release();
-  // The editor arrives and the waiting rename is answered, never applied here.
+  // The editor arrives; the rename stays on main, never applied here.
   await editorMounted(page);
   await page.waitForTimeout(1000);
   expect((await storedDrafts(page)).filter((draft) => draft.branch === 'feature')).toEqual([]);
+});
+
+// Drafts, Undo and Save work from the draft store (lean-fast-editor ticket 03,
+// point 4): none of them waits for Monaco.
+const homeText = '<h1 data-key="hero-title">A native browser preview</h1>';
+test('an inline edit before Monaco loads is a draft at once, and Undo reverts it without Monaco', async ({ page, baseURL }) => {
+  const release = await holdEditor(page);
+  await page.goto(`${baseURL}/${hash}`);
+  const heading = page.frameLocator('.native-preview-frame').locator('.hero h1');
+  await expect(heading).toBeVisible();
+  await typeHeading(page, 'Drafted before Monaco');
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content).toContain('<h1 data-key="hero-title">Drafted before Monaco</h1>');
+  const undo = page.locator('#editor-toolbar-host .code-editor__undo');
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect(heading).toHaveText('A native browser preview');
+  // Back to GitHub's text: no draft is left.
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content ?? homeText).toContain(homeText);
+  await page.locator('#editor-toolbar-host .code-editor__redo').click();
+  await expect(heading).toHaveText('Drafted before Monaco');
+  await expect(page.locator('.monaco-editor')).toHaveCount(0);
+  release();
+});
+
+test('Save before Monaco loads commits the draft to GitHub', async ({ page, baseURL }) => {
+  const release = await holdEditor(page);
+  await page.goto(`${baseURL}/${hash}`);
+  const heading = page.frameLocator('.native-preview-frame').locator('.hero h1');
+  await expect(heading).toBeVisible();
+  await typeHeading(page, 'Saved before Monaco');
+  await expect(publishButton(page)).toBeEnabled();
+  await publishButton(page).click();
+  await expect(page.locator('.publish-menu__message')).toContainText('Saved to GitHub', { timeout: 30_000 });
+  await expect.poll(async () => (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text()).toContain('<h1 data-key="hero-title">Saved before Monaco</h1>');
+  await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content).toBeUndefined();
+  await expect(page.locator('.monaco-editor')).toHaveCount(0);
+  release();
 });

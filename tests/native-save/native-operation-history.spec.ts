@@ -205,29 +205,22 @@ test("a visual edit on a created page restores its owned draft identity before c
   await expect(frame(page).locator("main h1")).toHaveText("Owned visual heading");
 });
 
-test("an external draft replacement during awaited visual Undo is preserved and refused", async ({ page, baseURL }) => {
+test("an external draft replacement before visual Undo is preserved and refused", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible();
   await frame(page).locator(".hero h1").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("combobox", { name: "Heading level" }).selectOption("h2");
   await expect(frame(page).locator(".hero h2")).toBeVisible();
+  // Undo runs from the draft store at once; a draft another writer put there since is theirs.
   const result = await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
-    const { monaco } = await import("/src/components/monaco.ts");
     const store = (await import("/src/drafts.ts")).draftStore();
     const record = store.get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "index.html")!;
-    const model = monaco.editor.getModels().find(value => value.getValue() === editor.getMountedSource("index.html"))!;
-    const undo = model.undo.bind(model);
-    let foreign: typeof record;
-    model.undo = () => Promise.resolve(undo()).then(() => {
-      foreign = { ...record, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" };
-      store.save(foreign);
-    });
-    try {
-      const accepted = await editor.runVisualHistory("undo", "index.html");
-      const current = store.get(record, record.path);
-      return { accepted, exact: current === foreign!, content: current?.content, baseSha: current?.baseSha, mode: current?.mode };
-    } finally { model.undo = undo; }
+    const foreign = { ...record, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" as const };
+    store.save(foreign);
+    const accepted = await editor.runVisualHistory("undo", "index.html");
+    const current = store.get(record, record.path);
+    return { accepted, exact: current === foreign, content: current?.content, baseSha: current?.baseSha, mode: current?.mode };
   });
   expect(result).toEqual({ accepted: false, exact: true, content: "Foreign replacement bytes", baseSha: "foreign-base", mode: "100755" });
 });

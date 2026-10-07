@@ -54,7 +54,10 @@ export function createPublishMenu(options: {
   head?: () => string | undefined;
   /** GitHub refused some files as changed or deleted since their drafts began. */
   onRefused?: () => void;
+  /** The branch's drafts as Save sends them (the editor's draft store); the persisted ones by default. */
+  drafts?: () => SavedDraft[];
 }) {
+  const drafts = options.drafts ?? (() => draftStore().list(options.scope));
   // Publish commits the selected changes to the branch in one go; hovering it shows them.
   const pendingText = options.saveLabels ? "Saving to GitHub…" : "Publishing to GitHub…";
   const root = node("div", "publish-menu");
@@ -96,7 +99,7 @@ export function createPublishMenu(options: {
     !gone(change) && !unticked.has(change.path) && !(change.from !== undefined && unticked.has(change.from));
   function refresh(resetMessage = true) {
     if (pending) return;
-    records = listChanges(draftStore().list(options.scope));
+    records = listChanges(drafts());
     count.textContent = records.length ? String(records.length) : "";
     list.replaceChildren();
     for (const change of records) {
@@ -327,7 +330,7 @@ export function createPublishMenu(options: {
     return pre;
   }
   async function send() {
-    const chosen = listChanges(draftStore().list(options.scope)).filter(selected);
+    const chosen = listChanges(drafts()).filter(selected);
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
     if (pending) return;
     if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }

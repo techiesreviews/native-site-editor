@@ -58,7 +58,7 @@ import {
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
 import "../components/create-dialog.css";
 
-type CodeEditor = typeof import("../components/code-editor");
+type CodeEditor = typeof import("../components/source-editor");
 
 /** File operations stay bound to their original scope and exact created drafts. */
 export interface ComponentFileReceipt {
