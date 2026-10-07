@@ -33,7 +33,7 @@ const attached = new WeakMap<HTMLInputElement, FieldSuggestions>();
 
 // The last " · "-separated part shared by at least half of the titled entries
 // (and two of them): the site's name, as page titles carry it.
-function commonSuffix(entries: readonly FieldSuggestion[]) {
+export function suggestionSiteName(entries: readonly FieldSuggestion[]) {
   const counts = new Map<string, number>();
   let titled = 0;
   for (const entry of entries) {
@@ -46,6 +46,31 @@ function commonSuffix(entries: readonly FieldSuggestion[]) {
   }
   const [name, count] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
   return name && count >= 2 && count * 2 >= titled ? name : undefined;
+}
+
+/** An entry's title: its label without the value it repeats ("Title (/route/)") or the site's name it ends in. */
+export function suggestionTitle(entry: FieldSuggestion, siteName: string | undefined) {
+  let text = entry.label?.endsWith(` (${entry.value})`) ? entry.label.slice(0, -entry.value.length - 3) : entry.label;
+  if (!text || text === entry.value) return undefined;
+  if (siteName && text.endsWith(` · ${siteName}`)) text = text.slice(0, -siteName.length - 3);
+  return text;
+}
+
+/**
+ * A suggestion's two lines, the title (primary, truncated) over its address
+ * (small, muted, mono); an entry with no title is its address alone. Shared by
+ * the Structure fields' list and the edit bar's address list.
+ */
+export function suggestionLines(entry: FieldSuggestion, siteName: string | undefined): HTMLElement[] {
+  const named = suggestionTitle(entry, siteName);
+  const value = document.createElement("span");
+  value.className = named ? "field-suggestions__value" : "field-suggestions__value field-suggestions__value--only";
+  value.textContent = entry.value;
+  if (!named) return [value];
+  const top = document.createElement("span");
+  top.className = "field-suggestions__title";
+  top.textContent = named;
+  return [top, value];
 }
 
 /** The field's suggestions; attaching to a field that has them already updates their entries. */
@@ -75,13 +100,7 @@ export function attachFieldSuggestions(input: HTMLInputElement, entries: readonl
 
   // The site's name, when most titles end in it (" · Techies Reviews"): it is
   // dropped from each title it ends, unless it is all the title says.
-  let siteName = commonSuffix(all);
-  function title(entry: FieldSuggestion) {
-    let text = entry.label?.endsWith(` (${entry.value})`) ? entry.label.slice(0, -entry.value.length - 3) : entry.label;
-    if (!text || text === entry.value) return undefined;
-    if (siteName && text.endsWith(` · ${siteName}`)) text = text.slice(0, -siteName.length - 3);
-    return text;
-  }
+  let siteName = suggestionSiteName(all);
   function matches() {
     const typed = input.value === start ? "" : input.value.trim().toLowerCase();
     const seen = new Set<string>();
@@ -99,18 +118,9 @@ export function attachFieldSuggestions(input: HTMLInputElement, entries: readonl
       option.setAttribute("aria-selected", String(index === active));
       // Two lines: the page's title on top, its address under it. An entry
       // with no title of its own (an image's path) is its address alone.
-      const named = title(entry);
-      if (named) {
-        const top = document.createElement("span");
-        top.className = "field-suggestions__title";
-        top.textContent = named;
-        option.append(top);
-        option.title = `${named}\n${entry.value}`;
-      }
-      const value = document.createElement("span");
-      value.className = named ? "field-suggestions__value" : "field-suggestions__value field-suggestions__value--only";
-      value.textContent = entry.value;
-      option.append(value);
+      const lines = suggestionLines(entry, siteName);
+      option.append(...lines);
+      if (lines.length > 1) option.title = `${lines[0].textContent}\n${entry.value}`;
       return option;
     }));
     if (active >= 0) input.setAttribute("aria-activedescendant", `${list.id}-${active}`);
@@ -208,7 +218,7 @@ export function attachFieldSuggestions(input: HTMLInputElement, entries: readonl
   });
 
   const controller: FieldSuggestions = {
-    update(next) { all = [...next]; siteName = commonSuffix(all); if (opened) show(); },
+    update(next) { all = [...next]; siteName = suggestionSiteName(all); if (opened) show(); },
     get open() { return opened; },
     close,
     destroy() {

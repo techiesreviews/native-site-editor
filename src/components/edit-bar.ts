@@ -1,3 +1,4 @@
+import { suggestionLines, suggestionSiteName } from "./field-suggestions";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
@@ -522,6 +523,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const matches = (address.control.suggestions ?? []).filter((entry) =>
       (!typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed))
       && !seen.has(entry.value) && Boolean(seen.add(entry.value)));
+    const siteName = suggestionSiteName(address.control.suggestions ?? []);
     address.list.replaceChildren(...matches.map((entry) => {
       const option = button(entry.label, () => {
         if (openAddress !== address) return;
@@ -532,6 +534,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       option.setAttribute("role", "option");
       option.title = entry.label;
       option.tabIndex = -1;
+      // Two lines as in Structure's lists: the title over the muted address. The
+      // option keeps the whole label as its name.
+      option.setAttribute("aria-label", entry.label);
+      option.classList.add("field-suggestions-row");
+      option.replaceChildren(...suggestionLines(entry, siteName));
       if (entry.value === address.input.value.trim()) option.setAttribute("aria-selected", "true");
       return option;
     }));

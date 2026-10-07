@@ -617,3 +617,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A page as two lines (field-suggestions.ts): its title over its muted address. */
+.edit-bar__option.field-suggestions-row {
+  display: grid;
+  gap: 1px;
+  height: auto;
+  min-height: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  text-align: left;
+  white-space: normal;
+}
+.edit-bar__option[aria-selected="true"] .field-suggestions__title { font-weight: 600; }
