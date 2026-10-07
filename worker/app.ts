@@ -27,7 +27,7 @@ import { changeStatus } from "./change-status";
 import { publishHosts } from "./hosts";
 import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
-import { GitHub, HttpError } from "./github";
+import { GitHub, HttpError, type RepositoryCache } from "./github";
 import { requestFetch, startTiming, timed } from "./timing";
 import {
   configuredApp,
@@ -53,6 +53,9 @@ interface Session {
   login: string;
   avatar_url: string;
   expiresAt: number;
+  repositoryCache?: RepositoryCache;
+  sessionId?: string;
+  repositoryCacheGeneration?: number;
 }
 interface OAuthState {
   kind: "oauth";
@@ -93,6 +96,7 @@ async function config(env: Env) {
 // Editor read endpoints accept a selected-repository listing up to this old,
 // so the burst of reads after sign-in shares one membership check. Writes
 // always recheck; agents reuse a listing as long (worker/agent-context.ts).
+// A repository the user loses access to must stop authorizing reads within 60 seconds.
 const readAuthorizationMaxAge = 60_000;
 function json(body: unknown, status = 200) {
   return Response.json(body, { status });
@@ -206,7 +210,35 @@ async function loadSession(env: Env, id: string): Promise<Session | null> {
   const response = await store(env, id);
   if (!response.ok) return null;
   const value = (await response.json()) as StoredSession;
-  return value.kind === "user" && value.expiresAt > Date.now() ? value : null;
+  return value.kind === "user" && value.expiresAt > Date.now() ? { ...value, sessionId: id } : null;
+}
+
+function sessionGitHub(user: Session, env: Env, fetcher: typeof fetch) {
+  return new GitHub(user.token, fetcher, {
+    value: user.repositoryCache,
+    key: `${user.sessionId}\n${user.repositoryCacheGeneration ?? 0}`,
+    async save(value) {
+      if (!user.sessionId) return;
+      try {
+        const response = await env.SESSIONS.get(env.SESSIONS.idFromName(user.sessionId)).fetch(
+          new Request("https://session.internal/repository-cache", {
+            method: "PUT", body: JSON.stringify({ token: user.token, generation: user.repositoryCacheGeneration ?? 0, value: value ?? null }),
+          }),
+        );
+        if (response.status === 401) throw new HttpError(401, "Your GitHub session expired. Connect again.");
+        if (!response.ok) console.warn("Repository listing cache could not be persisted.");
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 401) throw error;
+        console.warn("Repository listing cache could not be persisted.");
+      }
+    },
+  });
+}
+async function invalidateRepositories(env: Env, id: string) {
+  const response = await env.SESSIONS.get(env.SESSIONS.idFromName(id)).fetch(
+    new Request("https://session.internal/repository-cache", { method: "DELETE" }),
+  );
+  if (!response.ok) throw new HttpError(502, "Could not switch accounts. Try again.");
 }
 
 // An isolate's first request is marked `cold` in its Server-Timing.
@@ -298,6 +330,7 @@ async function route(
     }
     const headers = new Headers();
     const next = rest[0];
+    if (next) await invalidateRepositories(env, next.id);
     headers.append(
       "Set-Cookie",
       next
@@ -321,11 +354,13 @@ async function route(
     const login = typeof data?.login === "string" ? data.login.toLowerCase() : "";
     for (const id of accountIds(request)) {
       const user = await loadSession(env, id);
-      if (user && user.login.toLowerCase() === login)
+      if (user && user.login.toLowerCase() === login) {
+        await Promise.all([...new Set([id, cookie(request, "session")].filter((value): value is string => Boolean(value)))].map((other) => invalidateRepositories(env, other)));
         return new Response(null, {
           status: 204,
           headers: { "Set-Cookie": setCookie(url, "session", id, sessionMaxAge(user)) },
         });
+      }
     }
     throw new HttpError(404, "That account's sign-in ended. Add it again.");
   }
@@ -482,7 +517,7 @@ async function route(
       throw new HttpError(403, "Invalid request origin.");
     if (path === "/api/agent/connect" && request.method === "POST") {
       const data = await requestJson(request, 4096);
-      const repo = await new GitHub(user.token, fetcher).authorizeRepository(
+      const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(
         user.login,
         data?.repo ?? "",
       );
@@ -777,36 +812,11 @@ async function route(
       session(request, env),
       timed(request, "config", config(env)),
     ]);
-    // A signed-in session also carries the selected repositories so the
-    // workspace opens in one round trip. A listing failure is not a session
-    // failure; the browser retries through /api/repositories and shows the error.
     const current = cookie(request, "session");
-    const github = user ? new GitHub(user.token, fetcher) : undefined;
-    const owners = user ? github!.ownerInstallations(user.login) : undefined;
-    const [repositories, accounts] = user
-      ? await Promise.all([
-          github!
-            .repositories(user.login, 0, owners)
-            .catch(() => null),
-          Promise.all(
-            accountIds(request).map(async (id) => {
-              const account = await loadSession(env, id);
-              return account
-                ? { login: account.login, avatar_url: account.avatar_url, current: id === current }
-                : null;
-            }),
-          ).then((list) => list.filter((account) => account !== null)),
-        ])
-      : [undefined, undefined];
-    // What a signed-in account with nothing to open still has to do: install
-    // the App ("install") or make its first site ("create"). Worked out here,
-    // not remembered, so a reload keeps it. Null when it has repositories
-    // (or the listing failed and nothing is known).
-    let onboarding: "install" | "create" | null = null;
-    if (user && Array.isArray(repositories) && repositories.length === 0) {
-      const installations = await owners!.catch(() => undefined);
-      if (installations) onboarding = installations.length ? "create" : "install";
-    }
+    const accounts = user ? await Promise.all(accountIds(request).map(async (id) => {
+      const account = id === current ? user : await loadSession(env, id);
+      return account ? { login: account.login, avatar_url: account.avatar_url, current: id === current } : null;
+    })).then((list) => list.filter((account) => account !== null)) : undefined;
     return json({
       configured: Boolean(app),
       user: user ? { login: user.login, avatar_url: user.avatar_url } : null,
@@ -816,7 +826,7 @@ async function route(
       ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
       // Setup without a private link (OWNER_GITHUB): the UI goes straight there.
       ownerSetupOpen: !app && Boolean(ownerLogin(env)),
-      ...(user ? { repositories, accounts, onboarding } : {}),
+      ...(user ? { accounts } : {}),
     });
   }
   if (path === "/api/publish") {
@@ -830,7 +840,7 @@ async function route(
     if (!user)
       throw new HttpError(401, "Connect GitHub to publish your changes.");
     const data = await requestJson(request, MAX_PUBLISH_REQUEST_BYTES);
-    const github = new GitHub(user.token, fetcher);
+    const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
@@ -844,7 +854,7 @@ async function route(
     const user = await session(request, env);
     if (!user) throw new HttpError(401, "Connect GitHub to publish your site.");
     return json(
-      await publishHosts(request, url, new GitHub(user.token, fetcher), user.login, fetcher, readAuthorizationMaxAge),
+      await publishHosts(request, url, sessionGitHub(user, env, fetcher), user.login, fetcher, readAuthorizationMaxAge),
     );
   }
   if (path === "/api/blob" && request.method !== "GET" && request.method !== "HEAD") {
@@ -856,7 +866,7 @@ async function route(
     const user = await session(request, env);
     if (!user)
       throw new HttpError(401, "Connect GitHub to publish your changes.");
-    const github = new GitHub(user.token, fetcher);
+    const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
@@ -874,7 +884,7 @@ async function route(
     const user = await session(request, env);
     if (!user) throw new HttpError(401, "Connect GitHub to restore this file.");
     const data = await requestJson(request, 4096);
-    const github = new GitHub(user.token, fetcher);
+    const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
@@ -885,7 +895,7 @@ async function route(
     const user = await session(request, env);
     if (!user)
       throw new HttpError(401, "Connect GitHub to browse your repositories.");
-    const github = new GitHub(user.token, fetcher);
+    const github = sessionGitHub(user, env, fetcher);
     // Get started: a new, empty repository on the signed-in account.
     if (path === "/api/repositories" && request.method === "POST") {
       if (request.headers.get("Origin") !== url.origin)
@@ -929,8 +939,12 @@ async function route(
         );
       }
     }
-    if (path === "/api/repositories")
-      return json(await github.repositories(user.login));
+    if (path === "/api/repositories") {
+      const repositories = await github.repositories(user.login, url.searchParams.get("refresh") === "1" ? 0 : readAuthorizationMaxAge);
+      return Response.json(repositories, { headers: {
+        "X-Repository-Onboarding": github.repositoryOnboarding(),
+      } });
+    }
     // Create a site's owner choices: the user and organisations with an installation.
     if (path === "/api/owners") return json(await github.ownerInstallations(user.login));
     // Start your site: the Starter site's files, named for the site.

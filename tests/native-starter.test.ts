@@ -1,3 +1,4 @@
+import { repositoryCacheRequest } from "./session-cache-fake";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -130,6 +131,8 @@ function environment(source?: string) {
       idFromName: (name) => name,
       get: (id) => ({
         fetch: async (request) => {
+          const cacheResponse = await repositoryCacheRequest(request, records, id);
+          if (cacheResponse) return cacheResponse;
           if (request.method === "PUT") { records.set(id, (await request.json()) as StoredSession); return new Response(null, { status: 204 }); }
           const value = records.get(id);
           return value ? Response.json(value) : new Response(null, { status: 404 });

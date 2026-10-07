@@ -1,3 +1,4 @@
+import { repositoryCacheRequest } from "./session-cache-fake";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";
@@ -17,6 +18,8 @@ function environment() {
       idFromName: (name) => name,
       get: (id) => ({
         fetch: async (request) => {
+          const cacheResponse = await repositoryCacheRequest(request, records, id);
+          if (cacheResponse) return cacheResponse;
           if (request.method === "PUT") { records.set(id, (await request.json()) as StoredSession); return new Response(null, { status: 204 }); }
           if (request.method === "DELETE") { records.delete(id); return new Response(null, { status: 204 }); }
           const value = records.get(id);
@@ -169,7 +172,7 @@ test("a sign-in GitHub sends to an alias address without a sign-in started there
 // Where a new sign-in goes: the worker decides after the session exists. An
 // account without the App goes straight on to GitHub's install page (a case
 // (a) return from that trip, or a sign-in that already ended one, is never
-// sent back); /api/session says what is left to do for an account with
+// sent back); /api/repositories reports what is left to do for an account with
 // nothing to open (onboarding: "install" | "create" | null).
 
 function account(options: { installed: boolean; repositories?: { id: number; name: string }[] }): typeof fetch {
@@ -210,7 +213,7 @@ test("(a) a new sign-in with no installation goes straight on to /auth/install, 
   assert.match(trip.headers.get("location")!, /github\.com\/apps\/test-editor\/installations\/new/);
 });
 
-test("(b) installed but no repositories, and (c) installed with repositories, go to the editor; /api/session says what is left", async () => {
+test("(b) installed but no repositories, and (c) installed with repositories, go to the editor; /api/repositories reports what is left", async () => {
   for (const [repositories, onboarding] of [
     [[], "create"],
     [[{ id: 7, name: "site" }], null],
@@ -219,8 +222,8 @@ test("(b) installed but no repositories, and (c) installed with repositories, go
     const fetcher = account({ installed: true, repositories: [...repositories] });
     const response = await signIn(env, fetcher);
     assert.equal(response.headers.get("location"), "/");
-    const info = await (await handle(get("/api/session", sessionCookie(response)), env, fetcher)).json();
-    assert.equal(info.onboarding, onboarding);
+    const listing = await handle(get("/api/repositories", sessionCookie(response)), env, fetcher);
+    assert.equal(listing.headers.get("X-Repository-Onboarding"), onboarding ?? "none");
   }
 });
 
@@ -228,15 +231,14 @@ test("an account without the App is told to install it by /api/session, and a fa
   const { env } = environment();
   const response = await signIn(env, account({ installed: true }));
   const cookie = sessionCookie(response);
-  const none = await (await handle(get("/api/session", cookie), env, account({ installed: false }))).json();
-  assert.equal(none.onboarding, "install");
+  const none = await handle(get("/api/repositories", cookie), env, account({ installed: false }));
+  assert.equal(none.headers.get("X-Repository-Onboarding"), "install");
   const broken: typeof fetch = async () => new Response("no", { status: 500 });
-  const unknown = await (await handle(get("/api/session", cookie), env, broken)).json();
-  assert.equal(unknown.onboarding, null);
-  assert.equal(unknown.repositories, null);
+  const unknown = await handle(get("/api/repositories?refresh=1", cookie), env, broken);
+  assert.equal(unknown.status, 502);
 });
 
-test("/api/session reuses one installation lookup for empty-account onboarding", async () => {
+test("/api/repositories reuses one installation lookup for empty-account onboarding", async () => {
   for (const installed of [false, true]) {
     const { env } = environment();
     const response = await signIn(env, account({ installed: true }));
@@ -246,9 +248,9 @@ test("/api/session reuses one installation lookup for empty-account onboarding",
       if (new URL(String(input)).pathname === "/user/installations") lookups++;
       return upstream(input, init);
     };
-    const info = await (await handle(get("/api/session", sessionCookie(response)), env, fetcher)).json();
-    assert.deepEqual(info.repositories, []);
-    assert.equal(info.onboarding, installed ? "create" : "install");
+    const listing = await handle(get("/api/repositories", sessionCookie(response)), env, fetcher);
+    assert.deepEqual(await listing.json(), []);
+    assert.equal(listing.headers.get("X-Repository-Onboarding"), installed ? "create" : "install");
     assert.equal(lookups, 1);
   }
 });
@@ -261,8 +263,8 @@ test("no loop: a sign-in that ends the install trip, with the App still missing 
     const fetcher = account({ installed: false });
     const response = await handle(get(`/auth/callback?code=c&state=${state}`, `${oauth}; ${pending}`), env, fetcher);
     assert.equal(response.headers.get("location"), "/");
-    const info = await (await handle(get("/api/session", sessionCookie(response)), env, fetcher)).json();
-    assert.equal(info.onboarding, "install", "the Connect GitHub step offers the retry");
+    const listing = await handle(get("/api/repositories", sessionCookie(response)), env, fetcher);
+    assert.equal(listing.headers.get("X-Repository-Onboarding"), "install", "the Connect GitHub step offers the retry");
   }
   // The stateless return hands on to a fresh login that remembers it was the install trip.
   {

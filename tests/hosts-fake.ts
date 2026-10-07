@@ -1,3 +1,4 @@
+import { repositoryCacheRequest } from "./session-cache-fake";
 // A fake GitHub (repositories, Pages, Actions secrets, deployments and
 // statuses) and a fake Cloudflare API for tests/hosts.test.ts, plus the worker
 // handler wired to them. The editor's own session is a record in memory.
@@ -254,6 +255,8 @@ export function editor(world: World) {
       idFromName: (name: string) => name,
       get: (key: string) => ({
         fetch: async (request: Request) => {
+          const cacheResponse = await repositoryCacheRequest(request, records, id);
+          if (cacheResponse) return cacheResponse;
           if (request.method === "PUT") {
             records.set(key, (await request.json()) as StoredSession);
             return new Response(null, { status: 204 });

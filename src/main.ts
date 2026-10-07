@@ -17,6 +17,7 @@ import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from 
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
+import { nativeBootExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -349,7 +350,8 @@ function mountWorkspace() {
     accounts:
       info.accounts ??
       (info.user ? [{ ...info.user, current: true }] : []),
-    onReload: () => void loadRepositories(),
+    onOpen: () => void ensureRepositoryList(),
+    onReload: () => void refreshRepositoryList(),
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
     onSignOut: disconnect,
@@ -475,7 +477,13 @@ function mountWorkspace() {
   let selectedGrid = "";
   nativePreview = createNativePreview(element("main"), {
     // The images of a page shown by following a link are read when it shows.
-    onRouteShown: (route) => { if (nativeSite) void loadNativeAssets(nativeRouteShownSources(route)); },
+    // A page the text index has not read yet is read when it shows.
+    onRouteShown: (route) => {
+      if (!nativeSite) return;
+      if (nativePreviewBehind) updateNativePreviewSources();
+      void loadNativeAssets(nativeRouteShownSources(route));
+      void loadNativeShownFiles(route);
+    },
     cards: {
       describe: (grid) => cards?.describe(grid),
       plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: "Open a native site first." },
@@ -510,6 +518,7 @@ function mountWorkspace() {
     onStructure: (structure) => {
       if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
       notePreviewPainted();
+      noteNativePainted();
       const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
       const proof = scope && editorModule?.captureFileModelState(scope, path);
       const capture = (item: NativeStructureItem) => {
@@ -615,6 +624,8 @@ function mountPalette() {
       }));
     },
     files: () => (nativeSite ? nativeFiles() : []),
+    // Pages are searched by their titles and headings: the text index.
+    ready: () => (nativeSite && !nativeTextIndexed ? ensureNativeTextIndex() : undefined),
     components: () => {
       if (!nativeSite) return [];
       const sources = nativeSources();
@@ -2414,6 +2425,8 @@ function prepareNativeTextEdit({ path, node, before, after, masterSession }: Nat
 // single <section>, read from their current source so a draft counts.
 function nativeSectionChoices(): InsertChoice[] {
   if (!nativeSite) return [];
+  // The Add panel lists every section component: their templates are the text index.
+  if (!nativeTextIndexed) wantNativeTextIndex();
   const sources = nativeSources();
   return Object.entries(nativeSite.components)
     .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
@@ -3273,7 +3286,11 @@ function nativeSettingsController() {
     async open404() {
       if (stale() || sourcesChanged() || !nativeSite) return changed;
       if (nativeSite.routes["/404.html"]) { await restoreFile(nativeSite.routes["/404.html"], generation); return undefined; }
-      let source = nativePageTemplate(nativeEffectiveSource(nativeSite.routes["/"]), "Page not found");
+      // Made from the home page's document, so that is read first.
+      const unread = await nativeSiteReadForCreate();
+      if (unread) return unread;
+      if (stale() || sourcesChanged() || !nativeSite) return changed;
+      let source = nativePageTemplate(nativeHomeTemplate(), "Page not found");
       source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
       source = upsertHeadTag(source, "robots", "noindex");
       source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
@@ -3451,6 +3468,7 @@ function nativePreviewSources() {
 
 function updateNativePreview() {
   if (!nativeSite || !nativePreview) return;
+  nativePreviewBehind = false;
   nativePreview.update({
     sources: nativePreviewSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
@@ -3463,11 +3481,26 @@ function updateNativePreview() {
 
 // A source edit: push new sources but never change the route, so an edit while
 // the preview is on About (with a different file open) does not snap it Home.
+// The preview holds sources older than the editor's (the text index read
+// pages it does not show): the next update or route shown brings them.
+let nativePreviewBehind = false;
+// Every file the page on show draws from: its page, templates and stylesheets.
+function nativeShownPaths() {
+  if (!nativeSite) return new Set<string>();
+  const site = nativeSite, scope = draftScope(), files = new Set(nativeFiles(scope));
+  const route = nativePreview?.route();
+  const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
+  const master = nativeOpenMaster();
+  const pages = [page, ...(currentPath ? [currentPath] : []), ...(master ? [master.pagePath] : [])];
+  return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path)).files, ...nativePageStyles()]);
+}
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
+  nativePreviewBehind = false;
   nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath(), masterEdit: nativeMasterEdit() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
+  void loadNativeShownFiles();
 }
 
 // Images and fonts that arrived after the page was drawn: the preview shows
@@ -3492,15 +3525,20 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
     try {
       const found: { path: string; sha: string }[] = [];
       const scope = draftScope();
-      for (const path of wanted) {
+      // A level's files are looked up together and read in one request.
+      const entries = await Promise.all(wanted.map((path) => {
         // A stylesheet drafted here (new, or moved) is its draft; one read with the site is there.
         const draft = scope ? draftStore().get(scope, path) : undefined;
-        if ((draft && !draft.deleted) || (!draft && nativeBaseSources.has(path))) { nativeStyleFiles.add(path); loaded = true; continue; }
-        const entry = draft?.deleted ? undefined : await findEntry(path);
-        if (!live()) return false;
-        if (entry) found.push({ path, sha: entry.sha });
+        if ((draft && !draft.deleted) || (!draft && nativeBaseSources.has(path))) return "held" as const;
+        return draft?.deleted ? undefined : findEntry(path);
+      }));
+      if (!live()) return false;
+      wanted.forEach((path, index) => {
+        const entry = entries[index];
+        if (entry === "held") { nativeStyleFiles.add(path); loaded = true; }
+        else if (entry) found.push({ path, sha: entry.sha });
         else nativeMissingStyleFiles.add(path);
-      }
+      });
       const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
       if (!live()) return false;
       for (const file of found) {
@@ -3513,6 +3551,70 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
     }
   }
   return loaded;
+}
+
+// Reads what the pages `pages` show that is not read yet (src/native-boot.ts):
+// the pages, the component templates they use with their stylesheets, and
+// the stylesheets they link with their imports, a level at a time, each
+// level in one request; `extra` comes with the first. Stylesheets read here
+// are taken up by readNativeStyleFiles and component stylesheets by
+// `nativeComponentStyles`. True when anything was read.
+const nativeShownRequests = new Set<string>();
+async function readNativeShownFiles(repo: string, site: NativeSite, pages: string[], live: () => boolean, extra: string[] = []) {
+  const scope = draftScope();
+  const held = (path: string) => nativeBaseSources.has(path) || Boolean(scope && draftStore().get(scope, path));
+  const fileSet = new Set(nativeFiles(scope));
+  const isFile = (path: string) => fileSet.has(path);
+  let loaded = false, first = true;
+  for (let round = 0; round < 20; round++) {
+    const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile);
+    for (const [tag, css] of shown.componentCss)
+      if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
+    for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
+    const wanted = [...new Set([...shown.files, ...(first ? extra : [])])].filter((path) =>
+      !held(path) && !nativeMissingStyleFiles.has(path) && !nativeShownRequests.has(path));
+    first = false;
+    if (!wanted.length) break;
+    wanted.forEach((path) => nativeShownRequests.add(path));
+    try {
+      const entries = await Promise.all(wanted.map((path) => findEntry(path)));
+      if (!live()) return false;
+      const found = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
+      // A linked stylesheet that is not in the branch is reported by the preview.
+      wanted.forEach((path, index) => { if (!entries[index] && /\.css$/i.test(path)) nativeMissingStyleFiles.add(path); });
+      const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
+      if (!live()) return false;
+      for (const file of found) {
+        if (nativeBaseSources.has(file.path) || contents[file.sha] === undefined) continue;
+        nativeBaseSources.set(file.path, contents[file.sha]);
+        loaded = true;
+      }
+      // Files that are not in the branch are not asked for again.
+      if (!found.length) break;
+    } finally {
+      wanted.forEach((path) => nativeShownRequests.delete(path));
+    }
+  }
+  return loaded;
+}
+
+// The page on show, before the text index has read the whole site: what it
+// shows that is not read yet (a page followed by a link, a component an
+// edit added) is read, and the preview drawn again.
+async function loadNativeShownFiles(route = nativePreview?.route()) {
+  if (!nativeSite || !currentRepo || !snapshot || nativeTextIndexed) return;
+  const site = nativeSite;
+  const request = nativeSourcesRequest;
+  const epoch = generation;
+  const live = () => epoch === generation && request === nativeSourcesRequest && nativeSite === site;
+  const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
+  let loaded = false;
+  try {
+    loaded = await readNativeShownFiles(currentRepo.full_name, site, [page], live);
+  } catch {
+    // The text index reads them again.
+  }
+  if (loaded && live()) updateNativePreviewSources();
 }
 
 async function loadNativeStyleFiles() {
@@ -3855,6 +3957,8 @@ function deactivateNative() {
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
   nativeTextIndexing = undefined;
+  nativeTextIndexed = false;
+  releaseNativeTextIndex = undefined;
   nativeAssets.clear();
   nativeMissingAssets.clear();
   nativeAssetRequests.clear();
@@ -3878,24 +3982,33 @@ async function loadNativeComponentStyles(tags: string[]) {
   if (!wanted.length) return;
   wanted.forEach((tag) => nativeComponentStyleRequests.add(tag));
   try {
-    const found: { tag: string; path: string; sha: string }[] = [];
+    const found: { tag?: string; path: string; sha: string }[] = [];
     const scope = draftScope();
+    const lookups: { tag?: string; path: string }[] = [];
     for (const tag of wanted) {
       const path = nativeComponentCssPath(site.components[tag]);
       // A stylesheet drafted here (new, or moved with its component) is its draft; a deleted one is missing.
       const draft = scope ? draftStore().get(scope, path) : undefined;
-      if (draft && !draft.deleted) { nativeComponentStyles.set(tag, path); continue; }
-      if (draft?.deleted) { nativeMissingComponentStyles.add(tag); continue; }
-      const entry = await findEntry(path);
-      if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
-      if (!entry) nativeMissingComponentStyles.add(tag);
-      else found.push({ tag, path, sha: entry.sha });
+      if ((draft && !draft.deleted) || (!draft && nativeBaseSources.has(path))) nativeComponentStyles.set(tag, path);
+      else if (draft?.deleted) nativeMissingComponentStyles.add(tag);
+      else lookups.push({ tag, path });
+      // A component the page made on the fly, before the text index read its template.
+      const template = site.components[tag];
+      if (!nativeBaseSources.has(template) && !(scope && draftStore().get(scope, template))) lookups.push({ path: template });
     }
-    const contents = await readFiles(repo, found.map((file) => file.sha));
+    // Looked up together, read in one request.
+    const entries = await Promise.all(lookups.map((lookup) => findEntry(lookup.path)));
+    if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
+    lookups.forEach((lookup, index) => {
+      const entry = entries[index];
+      if (entry) found.push({ ...lookup, sha: entry.sha });
+      else if (lookup.tag) nativeMissingComponentStyles.add(lookup.tag);
+    });
+    const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
     if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
     for (const file of found) {
-      nativeBaseSources.set(file.path, contents[file.sha]);
-      nativeComponentStyles.set(file.tag, file.path);
+      if (!nativeBaseSources.has(file.path)) nativeBaseSources.set(file.path, contents[file.sha]);
+      if (file.tag) nativeComponentStyles.set(file.tag, file.path);
     }
   } finally {
     wanted.forEach((tag) => nativeComponentStyleRequests.delete(tag));
@@ -3946,10 +4059,11 @@ function nativeFiles(scope = draftScope()): string[] {
 }
 
 // A repository with `index.html` at its root is a native site: its files
-// are listed, every page, component template and CSS file is read from the
-// current snapshot, and the native preview activates. All async steps are
-// guarded against a superseding navigation (`epoch`).
-async function activateNativeSite(repo: Repository, result: Snapshot, epoch: number) {
+// are listed, what the page on show (`openPath`, else the home page) needs
+// is read from the current snapshot, and the native preview activates; the
+// rest of the site follows after the first paint (the text index). All async
+// steps are guarded against a superseding navigation (`epoch`).
+async function activateNativeSite(repo: Repository, result: Snapshot, epoch: number, openPath?: string) {
   const request = ++nativeSourcesRequest;
   const live = () => epoch === generation && request === nativeSourcesRequest;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
@@ -3990,37 +4104,24 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   nativeMissingAssets.clear();
   nativeAssetRequests.clear();
   try {
-    // Required page, component and config sources render first; the rest of
-    // the repository's html/css link index follows in the background.
-    // A file drafted as new has no blob; its draft is its source.
-    const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : []);
-    // The site settings too, for new pages' addresses and the agent context.
+    // Only what the page on show needs renders first (src/native-boot.ts):
+    // the page, its stylesheets with their imports and the components it
+    // uses with theirs, a level at a time, each level's files in one read.
+    // The site settings come too, for new pages' addresses. Every other
+    // page and template is the text index, read after the first paint.
     const files = nativeFiles(scope);
-    const currentFile = currentPath && nativeSitePaths(site).includes(currentPath) ? currentPath : site.routes[nativeDefaultRoute(site)];
-    const primary = new Set([currentFile, ...nativePageStylesheets(nativeEffectiveSource(currentFile, scope) ?? "", currentFile), ...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : [])]);
-    // Each component's own stylesheet renders with the first update too, so
-    // the page never shows before its components are styled.
-    const componentCss = new Map<string, string>();
-    for (const [tag, template] of Object.entries(site.components)) {
-      const path = nativeComponentCssPath(template);
-      if (files.includes(path)) componentCss.set(path, tag);
-      else nativeMissingComponentStyles.add(tag);
-    }
-    const wanted = new Set([...nativeSitePaths(site), ...primary, ...componentCss.keys()]);
-    const sources: { path: string; sha: string }[] = [];
-    for (const path of wanted) {
-      if (drafted.has(path)) continue;
-      const entry = await findEntry(path);
-      if (!live()) return true;
-      if (entry) sources.push({ path, sha: entry.sha });
-      else if (nativeSitePaths(site).includes(path)) throw new Error(`The site's ${path} is missing from this branch.`);
-    }
-    const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
+    const opening = openPath && nativeSitePaths(site).includes(openPath) ? openPath : undefined;
+    const currentFile = opening ?? (currentPath && nativeSitePaths(site).includes(currentPath) ? currentPath : site.routes[nativeDefaultRoute(site)]);
+    // A component shown alone is drawn in the home page.
+    const shownPages = [...new Set([nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)], currentFile])];
+    // Small sites' component templates (with their stylesheets) come with the page in its first read.
+    const extras = nativeBootExtras(site, files, (path) => {
+      if (scope && draftStore().get(scope, path)) return 0;
+      const entry = entryAt(path);
+      return entry?.type === "blob" ? entry.size : undefined;
+    });
+    await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras]);
     if (!live()) return true;
-    for (const source of sources) nativeBaseSources.set(source.path, contents[source.sha]);
-    for (const [path, tag] of componentCss)
-      if (drafted.has(path) || nativeBaseSources.has(path)) nativeComponentStyles.set(tag, path);
-      else nativeMissingComponentStyles.add(tag);
     // The stylesheets the pages link, and the files those import, render
     // with the first update; one that cannot be read is reported by the
     // preview, not here.
@@ -4055,12 +4156,13 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     sources: nativeSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     assets: Object.fromEntries(nativeAssets),
-    route: nativeRouteForPath(currentPath) ?? nativeDefaultRoute(site),
+    // The page about to open shows at once (its file opens next).
+    route: nativeRouteForPath(currentPath ?? openPath) ?? nativeDefaultRoute(site),
     editableTemplatePath: nativeEditableTemplatePath(),
     masterEdit: nativeMasterEdit(),
   });
   updateAgentContext();
-  startNativeTextIndex(repo, site, scope, epoch, request);
+  startNativeTextIndex(repo, site, scope, epoch, request, true);
   return true;
 }
 
@@ -4068,44 +4170,117 @@ function nativeTextIndexScopeKey() {
   return currentRepo && snapshot && nativeSite ? `${currentRepo.full_name}\n${snapshot.branch}\n${snapshot.commit}\n${nativeSourcesRequest}` : "";
 }
 
-function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, epoch: number, request: number) {
+// The site's text index: every page, template and stylesheet (with the
+// editor's page data), so links, search, shared sections and agents see the
+// whole site. At boot (`deferred`) it is read once the preview has painted
+// and the browser is idle; anything that needs it sooner asks for it
+// (ensureNativeTextIndex, wantNativeTextIndex) and it is read at once.
+let releaseNativeTextIndex: (() => void) | undefined;
+let nativeTextIndexed = false;
+function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, epoch: number, request: number, deferred = false) {
   nativeTextIndexScope = nativeTextIndexScopeKey();
+  nativeTextIndexed = false;
   const commit = snapshot?.commit;
   const live = () => epoch === generation && request === nativeSourcesRequest && currentRepo?.full_name === repo.full_name && snapshot?.commit === commit && nativeSite === site;
-  nativeTextIndexing = indexNativeTextFiles(repo, site, scope, live).catch((error) => {
+  let release!: () => void;
+  const due = new Promise<void>((resolve) => { release = resolve; });
+  releaseNativeTextIndex = release;
+  if (deferred) afterNativePaint(request, release);
+  else release();
+  const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
+    if (done && live() && nativeTextIndexing === indexing) nativeTextIndexed = true;
+    return done;
+  }, (error) => {
     if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
     return false;
   });
+  nativeTextIndexing = indexing;
+}
+/** Starts the text index now, if it is waiting for the first paint. */
+function wantNativeTextIndex() {
+  releaseNativeTextIndex?.();
+}
+// The text index as a gate (src/native-boot.ts): waited for without being
+// asked for sooner, and only a complete read for the open repository,
+// branch and commit counts.
+const nativeTextIndexGate: SiteIndexGate = {
+  key: () => `${generation}\n${nativeTextIndexScopeKey()}`,
+  indexed: () => !nativeSite || nativeTextIndexed,
+  settled: () => (nativeTextIndexing ? nativeTextIndexing.catch(() => false) : Promise.resolve(nativeTextIndexed)),
+  ensure: () => ensureNativeTextIndex(),
+};
+
+// Work that waits for a native site's first paint (the runtime reporting the
+// page's structure), then for the browser to be idle. A preview that does
+// not paint (an error) holds nothing back for long.
+let nativePaintedRequest = -1;
+let nativePaintWaiters: { request: number; run: () => void }[] = [];
+const whenIdle = (run: () => void) => {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(() => run(), { timeout: 300 });
+  else setTimeout(run, 50);
+};
+function afterNativePaint(request: number, run: () => void) {
+  if (nativePaintedRequest === request) { whenIdle(run); return; }
+  nativePaintWaiters = nativePaintWaiters.filter((waiter) => waiter.request === nativeSourcesRequest);
+  nativePaintWaiters.push({ request, run });
+  setTimeout(run, 10_000);
+}
+function noteNativePainted() {
+  if (nativePaintedRequest === nativeSourcesRequest) return;
+  nativePaintedRequest = nativeSourcesRequest;
+  const due = nativePaintWaiters.filter((waiter) => waiter.request === nativePaintedRequest);
+  nativePaintWaiters = [];
+  // The runtime reports the structure just before the frame presents it:
+  // two frames and a beat later the page is on screen.
+  if (due.length) requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => due.forEach((waiter) => whenIdle(waiter.run)), 100)));
 }
 
 async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, live: () => boolean) {
   // Read the editor's page data with the pages for shared sections.
   const files = nativeFiles(scope).filter((path) => isNativeTextFile(path) || path === EDITOR_PAGE_BUILDER_PATH).slice(0, 2000);
-  const wanted = files.filter((path) => !nativeBaseSources.has(path) && !(scope && draftStore().get(scope, path)?.baseSha === null));
-  const sources: { path: string; sha: string }[] = [];
-  for (const path of wanted) {
+  const wanted = files.filter((path) => {
     const draft = scope ? draftStore().get(scope, path) : undefined;
-    if (draft?.baseSha === null || draft?.deleted) continue;
-    const entry = draft?.deleted ? undefined : await findEntry(path);
-    if (!live() || nativeSite !== site) return false;
-    if (entry) sources.push({ path, sha: entry.sha });
-  }
+    return !nativeBaseSources.has(path) && draft?.baseSha !== null && !draft?.deleted;
+  });
+  const entries = await Promise.all(wanted.map((path) => findEntry(path)));
+  if (!live() || nativeSite !== site) return false;
+  const sources = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
   const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
   if (!live() || nativeSite !== site) return false;
-  let loaded = false, sidecar = false;
+  let sidecar = false;
+  const loaded: string[] = [];
   for (const source of sources) {
     if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path)) continue;
     nativeBaseSources.set(source.path, contents[source.sha]);
-    loaded = true;
+    loaded.push(source.path);
     if (source.path === EDITOR_PAGE_BUILDER_PATH && contents[source.sha] !== undefined) sidecar = true;
   }
-  if (loaded) updateNativePreviewSources();
+  if (loaded.length) {
+    // The page on show is drawn again only when what it shows was read
+    // (a template, its stylesheets): other pages reach the preview with the
+    // next update, or when a link shows one (onRouteShown), so a text edit
+    // under way is not interrupted by a redraw.
+    const templates = new Set(Object.values(site.components));
+    const shown = nativeShownPaths();
+    if (loaded.some((path) => templates.has(path) || shown.has(path))) updateNativePreviewSources();
+    else { nativePreviewBehind = true; nativePreview?.choicesChanged(); }
+    // Titles, headings and templates of every page are known now.
+    updateAgentContext();
+    pageStructure?.refreshMeta();
+    // An open Pages & files keeps its rows (and any menu on one) until it closes.
+    const explorer = element("explorer");
+    if (explorer.matches(":popover-open")) explorer.addEventListener("toggle", () => renderPagesTree(), { once: true });
+    else renderPagesTree();
+    updateCurrentPageLabel();
+    componentTools?.refresh();
+  }
   // Structure drew its rows while ownership could not be checked; draw them again now it can.
   if (sidecar) repaintNativeStructure();
   return true;
 }
 
 async function ensureNativeTextIndex() {
+  wantNativeTextIndex();
   const before = nativeTextIndexScopeKey();
   if (nativeTextIndexing && nativeTextIndexScope !== before) {
     if (!currentRepo || !snapshot || !nativeSite) return "The repository changed meanwhile. Try again.";
@@ -4176,12 +4351,18 @@ function openExplorer() {
 }
 
 let repositories: Repository[] = [];
+let repositoryListLoaded = false;
+let repositoryWorkspaceState: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
+let repositoryListRequest: Promise<void> | undefined;
+let repositoryOnboarding: "install" | "create" | undefined;
 // Unset until start() has read the session.
 let info: SessionInfo;
 let currentRepo: Repository | undefined;
 let snapshot: Snapshot | undefined;
 // Paths whose drafts are edits of files GitHub deleted since they began.
 let deletedUpstream = new Set<string>();
+// This account's browser drafts, loading from IndexedDB (start()).
+let draftsLoaded: Promise<void> = Promise.resolve();
 let generation = 0;
 let fileGeneration = 0;
 
@@ -4339,6 +4520,10 @@ function renderLogin(
   siteActions?.destroy();
   siteActions = undefined;
   repositories = [];
+  repositoryListLoaded = false;
+  repositoryWorkspaceState = "uninitialized";
+  repositoryListRequest = undefined;
+  repositoryOnboarding = undefined;
   currentRepo = undefined;
   snapshot = undefined;
   repositoryIndex.clear();
@@ -5041,7 +5226,9 @@ interface NativeNewPlan extends NativeNewTarget {
   content: string;
   note?: string;
 }
-function planNativeNew(request: NativeNewRequest): Checked<NativeNewPlan> {
+// Typing in the Pages tab checks the target only; creating (`create`) needs
+// the home page's document read (nativeSiteReadForCreate) and makes the page from it.
+function planNativeNew(request: NativeNewRequest, create = false): Checked<NativeNewPlan> {
   const site = nativeSite;
   if (!site || !draftScope()) return { ok: false, error: "Open a native site first." };
   const title = request.title.trim();
@@ -5052,7 +5239,27 @@ function planNativeNew(request: NativeNewRequest): Checked<NativeNewPlan> {
     exists: nativePathExists,
   });
   if (!target.ok) return target;
-  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(target.value.route)) } };
+  const template = nativeHomeTemplate();
+  if (!create) return { ok: true, value: { ...target.value, title, content: "" } };
+  if (template === undefined) return { ok: false, error: NATIVE_HOME_UNREAD };
+  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, nativeAddress(target.value.route)) } };
+}
+
+// The home page's document, which new pages copy (its stylesheets, scripts,
+// header and footer): undefined while it is not read yet, so no page is made
+// from nothing. Creating a page reads the whole site first (it is read after
+// the first paint, and a page opened by its address may not be home).
+const NATIVE_HOME_UNREAD = "The home page is not read yet. Try again in a moment.";
+function nativeHomeTemplate() {
+  return nativeSite ? nativeEffectiveSource(nativeSite.routes["/"]) : undefined;
+}
+// The whole site read for the repository open now: an error message, or nothing.
+async function nativeSiteReadForCreate() {
+  const epoch = generation, scope = setupScope();
+  const problem = await ensureNativeTextIndex();
+  if (problem) return problem;
+  if (epoch !== generation || scope !== setupScope() || !nativeSite) return "The repository changed meanwhile. Try again.";
+  return nativeHomeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
 }
 
 // The address of the page at `route` on the live site, from
@@ -5092,7 +5299,10 @@ function nativePageLabelOf(file: string) {
 // and the page opened (the explorer closes). Undo in the editor right after
 // takes it back, as Discard changes on the new file does.
 async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
-  const planned = planNativeNew(request);
+  // The page is made from the home page's document, so that is read first.
+  const unread = await nativeSiteReadForCreate();
+  if (unread) return unread;
+  const planned = planNativeNew(request, true);
   if (!planned.ok) return planned.error;
   const plan = planned.value;
   const epoch = generation, scope = setupScope();
@@ -5122,6 +5332,10 @@ async function createNativeNew(request: NativeNewRequest): Promise<string | unde
 // A URL with subpages and no page of its own gets its page, `index.html` in
 // its folder, made like a new page.
 async function createNativeFolderPage(route: string) {
+  if (!nativeSite || !draftScope()) return;
+  // Made from the home page's document, so that is read first.
+  const unread = await nativeSiteReadForCreate();
+  if (unread) { errorMessage(new Error(unread)); return; }
   const site = nativeSite;
   if (!site || !draftScope()) return;
   const file = nativeRouteFile(route);
@@ -5130,7 +5344,7 @@ async function createNativeFolderPage(route: string) {
   if (scope && draftStore().get(scope, file)?.deleted) { undoFileChanges({ restore: [file] }); return; }
   if (site.routes[route] || nativePathExists(file)) { errorMessage(new Error(`The URL ${route} has a page already.`)); return; }
   const title = routeHeading(route);
-  const content = nativePageTemplate(nativeEffectiveSource(site.routes["/"]), title, nativeAddress(route));
+  const content = nativePageTemplate(nativeHomeTemplate(), title, nativeAddress(route));
   const error = await commitNativePage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
   if (error) errorMessage(new Error(error));
 }
@@ -5160,6 +5374,8 @@ function mountCards() {
     editor: () => editorModule,
     preview: () => nativePreview,
     ensureOpen: async (path) => {
+      // A card's page copies a sibling page or the home page: the site is read first.
+      if (await nativeSiteReadForCreate()) return false;
       if (currentPath === path && editorModule?.isMounted(path)) return true;
       const epoch = generation;
       await restoreFile(path, epoch, { linkDefaultStyle: false });
@@ -6525,7 +6741,10 @@ async function discardAllChanges() {
 // to GitHub and the code editor for Discard draft or Keep as new file.
 // Drafts that are GitHub's version now (a merge, a save elsewhere, an agent
 // writing the same text) are no change and go too, compared by blob SHA.
+// At boot it runs after the first paint (checkDeletedUpstream); every
+// draft's file is looked up at once, so folders listed for one serve all.
 async function findDeletedUpstream(epoch: number) {
+  if (epoch !== generation) return;
   deletedUpstream = new Set();
   const scope = draftScope();
   if (!scope) return;
@@ -6535,12 +6754,13 @@ async function findDeletedUpstream(epoch: number) {
   const entries = new Map<string, TreeEntry | undefined>();
   try {
     // New files are looked for only when the whole tree is at hand.
-    for (const draft of snapshot?.tree ? all : drafts) {
-      const entry = await findEntry(draft.path);
-      if (epoch !== generation) return;
-      entries.set(draft.path, entry);
-      if (!entry && draft.baseSha !== null) missing.add(draft.path);
-    }
+    const looked = snapshot?.tree ? all : drafts;
+    const found = await Promise.all(looked.map((draft) => findEntry(draft.path)));
+    if (epoch !== generation) return;
+    looked.forEach((draft, index) => {
+      entries.set(draft.path, found[index]);
+      if (!found[index] && draft.baseSha !== null) missing.add(draft.path);
+    });
   } catch {
     // Unknown: a save reports it instead.
     return;
@@ -6548,9 +6768,20 @@ async function findDeletedUpstream(epoch: number) {
   deletedUpstream = new Set(settleDeletedUpstream(draftStore(), scope, drafts, missing));
   const left = draftStore().list(scope).filter((draft) => entries.has(draft.path) && !deletedUpstream.has(draft.path));
   const dropped = await pruneUnchanged(draftStore(), scope, left, (path) => entries.get(path)).catch(() => []);
-  if (epoch !== generation || !dropped.length) return;
+  if (epoch !== generation) return;
   for (const path of dropped) editorModule?.forgetDraftModel(scope, path);
-  editorModule?.refreshDrafts();
+  if (dropped.length || deletedUpstream.size || missing.size) {
+    editorModule?.refreshDrafts();
+    renderFileTree();
+    if (nativeSite) updateNativePreviewSources();
+  }
+}
+// The boot's check, once per snapshot load (`epoch`): run after the first
+// paint, or at once by a file that is opened before then and needs it.
+let deletedUpstreamCheck: { epoch: number; done: Promise<void> } | undefined;
+function checkDeletedUpstream(epoch: number) {
+  if (deletedUpstreamCheck?.epoch !== epoch) deletedUpstreamCheck = { epoch, done: findDeletedUpstream(epoch).catch(() => undefined) };
+  return deletedUpstreamCheck.done;
 }
 
 // Discard draft (`keep` false) or Keep as new file, for an edit of a file
@@ -7091,6 +7322,12 @@ async function openEntry(
   try {
     const content = await readFile(currentRepo.full_name, entry.sha);
     if (epoch !== generation || selection !== fileGeneration) return;
+    // A page the text index has not read yet: its text is the branch's, so
+    // the preview draws it now, with what it shows (src/native-boot.ts).
+    if (nativeSite && isNativeTextFile(path) && !nativeBaseSources.has(path) && entryAt(path)?.sha === entry.sha) {
+      nativeBaseSources.set(path, content);
+      updateNativePreviewSources();
+    }
     await mountSource(
       path,
       content,
@@ -7310,7 +7547,12 @@ function updateAgentContext() {
 function agentRepository() {
   return currentRepo && snapshot && info.user ? { id: currentRepo.id, fullName: currentRepo.full_name } : undefined;
 }
-async function agentContext(): Promise<SharedContext | undefined> {
+// Agents see the whole site (its pages are read after the first paint):
+// the context waits for the complete index of the repository open then.
+function agentContext(): Promise<SharedContext | undefined> {
+  return withSiteIndexed(nativeTextIndexGate, buildAgentSiteContext);
+}
+async function buildAgentSiteContext(): Promise<SharedContext | undefined> {
   const scope = draftScope();
   if (!currentRepo || !snapshot || !scope) return undefined;
   const site = nativeSite;
@@ -7644,6 +7886,8 @@ async function restoreFile(
         return;
       }
       // An edit of a file GitHub deleted: opened to be settled.
+      if (saved && !saved.deleted) await checkDeletedUpstream(epoch);
+      if (epoch !== generation || selection !== fileGeneration) return;
       if (saved && !saved.deleted && deletedUpstream.has(path)) {
         if (!options.keepExplorer) explorerDropdown?.close();
         setCurrentPage(path);
@@ -7754,26 +7998,32 @@ async function loadSnapshot(
   );
   status(`Loading ${repo.name} / ${branch}…`);
   try {
-    const result = await (prefetched ??
-      api<Snapshot>("snapshot", {
-        repo: repo.full_name,
-        branch,
-        ...(known ? { commit: known } : {}),
-      }));
+    // The browser's drafts load alongside the snapshot (start()).
+    const [result] = await Promise.all([
+      prefetched ??
+        api<Snapshot>("snapshot", {
+          repo: repo.full_name,
+          branch,
+          ...(known ? { commit: known } : {}),
+        }),
+      draftsLoaded,
+    ]);
     if (epoch !== generation) return;
     snapshot = result;
     repositoryIndex.seed(repo, result);
     seeHead(result.commit);
-    await findDeletedUpstream(epoch);
-    if (epoch !== generation) return;
     updateAgentContext();
     updatePreview();
     // Start reading the file to reopen now, alongside the native site's files.
     const reopenEntry = reopen ? entryAt(reopen) : undefined;
     if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 1024 * 1024)
       void readFile(repo.full_name, reopenEntry.sha).catch(() => {});
-    const isNative = await activateNativeSite(repo, result, epoch);
+    const isNative = await activateNativeSite(repo, result, epoch, reopen);
     if (epoch !== generation) return;
+    // Drafts of files GitHub deleted or now holds are looked for once the
+    // page is on screen (a file opened before then that needs it waits).
+    if (isNative && nativeSite) afterNativePaint(nativeSourcesRequest, () => void checkDeletedUpstream(epoch));
+    else void checkDeletedUpstream(epoch);
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
     const open = reopen ?? (isNative ? nativeSite?.routes["/"] : undefined);
@@ -7962,8 +8212,8 @@ async function openWizard() {
   const { createSetupWizard } = await loadWizard();
   if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const memory = readWizard(localStorage);
-  // The session says what is left to do (and a reload keeps it); asked again only when it did not.
-  const connection = connectionFromOnboarding(info.onboarding) ?? (await wizardConnection());
+  // The repository endpoint says what is left to do; check installation access when its hint is unavailable.
+  const connection = connectionFromOnboarding(repositoryOnboarding) ?? (await wizardConnection());
   if (wizard || wizardDismissed || info.user?.login !== login || repositories.length) return;
   const step = openingStep(memory, connection);
   const kept = writeWizard(localStorage, { step });
@@ -8164,7 +8414,7 @@ function wizardRepository(repository: Repository, committed: boolean, partial = 
 /** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
 async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
   const owner = (choice.owner ?? info.user?.login ?? "").toLowerCase();
-  const list = await api<Repository[]>("repositories");
+  const list = await fetchRepositoryList(true);
   const repository = list.find((candidate) => candidate.owner.login.toLowerCase() === owner && candidate.name.toLowerCase() === choice.name.toLowerCase());
   if (!repository) return undefined;
   wizardCreated = repository;
@@ -8231,7 +8481,7 @@ async function finishWizard(repo: WizardRepo) {
   startSetupChecklist(repo.id);
   history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
   // GitHub may not list a repository it has just made yet: the one made here is added.
-  const listed = await api<Repository[]>("repositories").catch(() => repositories);
+  const listed = await fetchRepositoryList(true).catch(() => repositories);
   await loadRepositories(wizardCreated && !listed.some((known) => known.id === wizardCreated!.id) ? [...listed, wizardCreated] : listed);
 }
 
@@ -8275,7 +8525,7 @@ document.addEventListener("visibilitychange", () => void checkNewRepositories())
 async function checkNewRepositories() {
   if (!waitingForRepositories || document.visibilityState !== "visible" || !content.querySelector(".get-started")) return;
   try {
-    const next = await api<Repository[]>("repositories");
+    const next = await fetchRepositoryList(true);
     if (next.length && waitingForRepositories && content.querySelector(".get-started")) await loadRepositories(next);
   } catch {
     // Listed again on the next visit.
@@ -8341,6 +8591,7 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
 }
 
 async function loadRepositories(prefetched?: Repository[]) {
+  repositoryWorkspaceState = "loading";
   removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
@@ -8364,12 +8615,14 @@ async function loadRepositories(prefetched?: Repository[]) {
   clearError();
   status("Loading selected repositories…");
   try {
-    const result = prefetched ?? (await api<Repository[]>("repositories"));
+    const result = prefetched ?? (await fetchRepositoryList(openNewRepository));
     if (epoch !== generation) return;
     repositories = result;
+    repositoryListLoaded = true;
+    repositoryWorkspaceState = "ready";
     repositoryMenu?.setRepositories(repositories);
     // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
-    const knownBefore = openNewRepository ? knownRepositories() ?? (info.repositories ?? []).map((repo) => repo.id) : undefined;
+    const knownBefore = openNewRepository ? knownRepositories() ?? [] : undefined;
     openNewRepository = false;
     rememberRepositories(result);
     if (!repositories.length) {
@@ -8442,6 +8695,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     status("Connected to GitHub. Choose a project to start.");
   } catch (error) {
     if (epoch === generation) {
+      repositoryWorkspaceState = "failed";
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
       ]);
@@ -8471,16 +8725,72 @@ function repositoryOptions() {
   ]);
 }
 
+/** Read the array endpoint and its onboarding hint without expanding the session. */
+async function fetchRepositoryList(refresh = false): Promise<Repository[]> {
+  apiReadsInFlight++;
+  let response: Response, data: Repository[] & { error?: string };
+  try {
+    response = await fetchWithReadRetry(`/api/repositories${refresh ? "?refresh=1" : ""}`, { credentials: "same-origin", cache: "no-store" });
+    data = await response.json();
+  } finally {
+    apiReadsInFlight--;
+  }
+  if (!response.ok) throw new ApiError(response.status, data.error || "Could not load GitHub data.");
+  const hint = response.headers.get("X-Repository-Onboarding");
+  repositoryOnboarding = hint === "install" || hint === "create" ? hint : undefined;
+  return data as Repository[];
+}
+
+function repositoryWorkspaceNeedsRecovery() {
+  return repositoryWorkspaceState === "failed" || repositoryWorkspaceState === "uninitialized";
+}
+
+async function recoverRepositoryWorkspace(next: Repository[]) {
+  if (!repositoryWorkspaceNeedsRecovery()) return false;
+  await loadRepositories(next);
+  return true;
+}
+
+/** Opening the menu needs the full list; opening a remembered repository does not. */
+async function ensureRepositoryList() {
+  if (repositoryListLoaded && !repositoryWorkspaceNeedsRecovery()) return;
+  if (repositoryListRequest) return repositoryListRequest;
+  const menu = repositoryMenu;
+  const login = info.user?.login;
+  repositoryListRequest = (async () => {
+    try {
+      const next = await fetchRepositoryList();
+      if (menu !== repositoryMenu || login !== info.user?.login) return;
+      if (await recoverRepositoryWorkspace(next)) return;
+      repositories = next;
+      repositoryListLoaded = true;
+      rememberRepositories(next);
+      repositoryOptions();
+      repositorySelect.disabled = !next.length;
+      if (currentRepo) repositorySelect.value = String(currentRepo.id);
+      menu?.setRepositories(next);
+    } catch (error) {
+      if (menu === repositoryMenu) menu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
+      errorMessage(error);
+    } finally {
+      if (menu === repositoryMenu) repositoryListRequest = undefined;
+    }
+  })();
+  return repositoryListRequest;
+}
+
 // After a visit to GitHub's repository access page: list the repositories
 // again, keeping the open one open unless it is no longer available.
 async function refreshRepositoryList() {
   let next: Repository[];
   try {
-    next = await api<Repository[]>("repositories");
+    next = await fetchRepositoryList(true);
   } catch (error) {
     errorMessage(error);
     return;
   }
+  if (await recoverRepositoryWorkspace(next)) return;
+  repositoryListLoaded = true;
   if (
     next.length === repositories.length &&
     next.every((repo, index) => repo.id === repositories[index].id)
@@ -8638,10 +8948,12 @@ async function start() {
     }
     if (session.user) {
       rememberSignedIn(storage("local"));
-      // Drafts are read synchronously from here on: they load before
-      // anything can read them (src/drafts.ts).
-      await draftStore().load(session.user.login);
-      draftStore().onError = (message) => errorMessage(new Error(message));
+      // Drafts are read synchronously once loaded (src/drafts.ts): they load
+      // alongside the repository's first reads, and nothing reads them
+      // before a snapshot is in (loadSnapshot waits for them).
+      draftsLoaded = draftStore().load(session.user.login).then(() => {
+        draftStore().onError = (message) => errorMessage(new Error(message));
+      });
     }
     info = session;
     if (info.user) {

@@ -15,6 +15,63 @@ const repo: Repository = {
 };
 const reply = (data: unknown, status = 200) => Response.json(data, { status });
 
+for (const joinAge of [59_999, 60_000]) {
+  test(`session listing cannot authorize revoked access when a stalled refresh reaches its TTL (join at ${joinAge}ms)`, async (context) => {
+    let now = 1_000_000;
+    context.mock.method(Date, "now", () => now);
+    let installationReads = 0;
+    let release!: (response: Response) => void;
+    let saves = 0;
+    const fetcher: typeof fetch = async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/user/installations") {
+        installationReads++;
+        return reply({ installations: [
+          { id: 1, account: { type: "User", login: "lex" } },
+          { id: 2, account: { type: "Organization", login: "org" } },
+        ] });
+      }
+      if (path.includes("/2/") && installationReads === 1)
+        return new Promise<Response>((resolve) => { release = resolve; });
+      return reply({ repositories: path.includes("/1/") && installationReads === 1 ? [repo] : [] });
+    };
+    const client = () => new GitHub("token", fetcher, { key: "session", save: async () => { saves++; } });
+    const original = client().repositories("lex", 60_000);
+    const originalRejected = assert.rejects(original, (error: HttpError) => error.status === 503);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    now += joinAge;
+    const joined = client().authorizeRepository("lex", repo.full_name, 60_000);
+    const joinedRejected = assert.rejects(joined, (error: HttpError) => error.status === (joinAge < 60_000 ? 503 : 403));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(installationReads, joinAge < 60_000 ? 1 : 3, "only an unexpired refresh can be shared; missing access revalidates");
+    now = 1_060_000;
+    release(reply({ repositories: [] }));
+    await Promise.all([originalRejected, joinedRejected]);
+    assert.equal(saves, joinAge < 60_000 ? 0 : 2, "expired refresh never persists its partial old access");
+  });
+}
+
+test("session authorization fails closed when persisting a fresh listing crosses its TTL", async (context) => {
+  let now = 1_000_000;
+  context.mock.method(Date, "now", () => now);
+  let release!: () => void;
+  const store = {
+    key: "session",
+    save: async () => { await new Promise<void>((resolve) => { release = resolve; }); },
+  };
+  const fetcher: typeof fetch = async (input) => reply(String(input).includes("/repositories")
+    ? { repositories: [repo] }
+    : { installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
+  const github = new GitHub("token", fetcher, store);
+  const authorization = github.authorizeRepository("lex", repo.full_name, 60_000);
+  const rejected = assert.rejects(authorization, (error: HttpError) => error.status === 503);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  now += 60_000;
+  release();
+  await rejected;
+  assert.equal(github.repositoryOnboarding(), "install", "an expired saved listing is not published to the client");
+});
+
 test("installation repository reads run six at a time and merge in installation order", async () => {
   const pending = new Map<number, (response: Response) => void>();
   let active = 0;

@@ -484,6 +484,9 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
 // must not let the save land: the JSON is not written and the change stays.
 test("Update Intro refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
   await seedSavedSections(page, baseURL, ["intro"]);
+  // The current document loaded this repository before the seed. Reload so
+  // open() reads the seeded branch instead of the existing snapshot.
+  await page.reload();
   await open(page, baseURL);
   const sidecar = ".editor/page-builder.json";
   const addPanel = page.getByRole("dialog", { name: "Add to the page" });

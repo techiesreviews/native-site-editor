@@ -44,6 +44,8 @@ export interface EditorPaletteDeps {
   pages: () => PalettePage[];
   files: () => string[];
   components: () => PaletteComponent[];
+  /** While the site's pages are still being read: resolves once they are (the palette waits, showing "Loading…"). */
+  ready?: () => Promise<unknown> | undefined;
   currentPath: () => string | undefined;
   /** Native choices are separate from site components and never open templates. */
   nativeElements?: () => readonly AddChoice[];
@@ -532,7 +534,13 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
   }).catch((error) => { loading = undefined; cancelPending(); void handleChunkLoadFailure(error); deps.onError(error); });
   const openPalette = (scope: "all" | "go", toggle = false) => {
     if (disposed || otherModalOpen()) return;
-    if (palette) {
+    // The site's pages are searched once they are all read.
+    const ready = deps.ready?.();
+    if (palette && !ready) {
+      if (toggle) palette.toggle(scope); else palette.open(scope);
+      return;
+    }
+    if (palette?.root.open) {
       if (toggle) palette.toggle(scope); else palette.open(scope);
       return;
     }
@@ -577,7 +585,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
     host.append(root);
     root.showModal();
     input.focus();
-    void loadPanels().then(() => {
+    void Promise.all([loadPanels(), ready?.catch(() => undefined)]).then(() => {
       if (pending !== opening) return;
       const query = input.value;
       // The caret and selection made while loading carry over with the text.

@@ -280,6 +280,7 @@ test("a first commit that stops after index.html is finished from the editor, wi
   await page.getByRole("button", { name: "Open the editor" }).click();
 
   await page.getByRole("button", { name: "Finish adding the Starter site" }).click({ timeout: 30_000 });
+  await toFinishedStarter(page);
   await expect(page.locator("#finish-starter"), "no banner is left after Finish").toHaveCount(0);
   const panel = await (async () => { await showPublish(page); return page.locator("#publish-files"); })();
   await expect(panel).toContainText("styles/site.css");
@@ -334,17 +335,20 @@ test("the recovery banner belongs to its repository: switching away removes it, 
   await page.getByRole("button", { name: "Open the editor" }).click();
   const banner = page.locator("#finish-starter");
   await expect(banner).toBeVisible({ timeout: 30_000 });
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories`)).json()) as { id: number; name: string }[];
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
   const half = repos.find((repo) => repo.name === "half-site")!;
 
   // Another repository: the banner is gone, and nothing is drafted into it.
   await page.goto(`${baseURL}/#repo=501&branch=main`);
+  await expect(page.locator(".repository-menu__name")).toHaveText("native-demo");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await expect(banner).toHaveCount(0);
   // Back: it is offered again, and it works.
   await page.goto(`${baseURL}/#repo=${half.id}&branch=main`);
   await expect(banner).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Finish adding the Starter site" }).click();
+  await toFinishedStarter(page);
   await showPublish(page);
   await expect(page.locator("#publish-files")).toContainText("styles/site.css");
   // Finished: no banner is left, not even a fresh one from the reload, and it stays gone.
@@ -414,3 +418,8 @@ test("an editor with a private owner setup link keeps the locked sign-in, with n
   await expect(page.locator(".wizard")).toHaveCount(0);
   expect(handoffs).toEqual([]);
 });
+
+/** Finishing writes drafts and reloads the editor before announcing completion. */
+async function toFinishedStarter(page: Page) {
+  await expect(page.locator("#status")).toHaveText(/Added \d+ files as drafts\. Save to GitHub to keep them\./, { timeout: 30_000 });
+}
