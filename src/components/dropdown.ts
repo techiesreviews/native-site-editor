@@ -53,8 +53,14 @@ export function mountDropdown(options: {
     else if (pinned && isOpen()) close();
     else { open(); pinned = true; }
   }, { signal });
-  trigger.addEventListener("pointerenter", event => {
-    if (event.pointerType !== "mouse") return;
+  // Hover opens on the mouse moving over the trigger, not on `pointerenter`
+  // alone: a trigger that appears under a still pointer (a toolbar mounting
+  // late) would otherwise open itself and light-dismiss whatever was open.
+  let hovered = false;
+  trigger.addEventListener("pointerleave", () => { hovered = false; }, { signal });
+  trigger.addEventListener("pointermove", event => {
+    if (event.pointerType !== "mouse" || hovered) return;
+    hovered = true;
     if (!options.hoverDelay || isOpen()) { open(); return; }
     cancelClose();
     hovering = setTimeout(() => open(), options.hoverDelay);
