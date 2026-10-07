@@ -26,12 +26,13 @@ git diff aa9ad84..1fba778 -- src tests
 git diff 1fba778..77dcdfd -- src tests
 git diff 1fba778..cf9883f -- src tests
 git diff ac19da3..165645d -- src/components/page-structure.css
-git diff 963f569..bf5dec1 -- src shared worker vite-monaco-trim.ts vite.config.ts
+git diff bf5dec1..679f931 -- src/components/page-structure.css
+git diff 963f569..679f931 -- src shared worker vite-monaco-trim.ts vite.config.ts
 ```
 
 The `1fba778` range includes the palette revision fix as `05b90b7`; assess it
 separately rather than treating it as a Pages policy change. The final candidate
-is `bf5dec1f87bcd590358c72537823409bbab8c76a`, located in
+is `679f93125a9a2d8aa9002c89de8a20e8d9ebef97`, located in
 `/home/ubulex/Projects/native-site-editor-p5-review-candidate-two`. The isolated
 slice worktrees and notes are listed in the handoffs.
 
@@ -45,6 +46,9 @@ source receipts and one Undo step. Boot must adopt only the original session
 response and matching opaque server tag, refuse late generation/source changes,
 preserve installation-return refresh and settle signed-out speculation safely.
 The tag must never authenticate a request or expose a raw session/token.
+For the warm placeholder-image lookup before FCP, distinguish cached lookup
+timing from transferred network bytes. The handoff records the measurement
+limit; the existing negative body-size estimate cannot prove byte compliance.
 
 For Monaco, assess required service registrations, TypeScript/JavaScript
 intelligence, default features, keyboard commands, context menu, comparison and
@@ -56,7 +60,10 @@ For the requested compact indentation, compare the user screenshot
 with local demo evidence
 `/home/ubulex/.t3/userdata/browser-artifacts/browser-screenshot-localhost-muxxq21n-49d0f967.png`.
 Rows, drop markers and inline/shared controls should use 4 px per level and
-retain usable controls. This is local demo proof, not a deployed release.
+retain usable controls. Check the 4 px fallback for trees mounted without the
+application's parent class; the original full suite found three rich-slot
+failures, and the nine-case focused rerun passes after this CSS-only fix.
+This is local demo proof, not a deployed release.
 
 Return blocking findings first, with file/line and a concrete failing scenario,
 then nonblocking findings and a per-slice recommendation. State the reviewed

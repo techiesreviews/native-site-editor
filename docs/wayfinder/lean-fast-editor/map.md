@@ -63,7 +63,9 @@ The remaining split is recorded in [the controller plan](build/p5-controller-pla
 The [continuation review handoff](build/p5-second-batch-handoff.md) records the
 setup, History, palette, Pages and media controllers, guarded concurrent startup,
 the requested 4 px structure indentation, and their isolated regression fixes.
-Its second integration candidate is being validated before the 13:00 review.
+Its corrected second integration candidate passes focused structure, smoke and
+byte checks; a fresh full browser run is in progress. Six read-only Claude review
+scopes are scheduled to begin at 13:00 Europe/Amsterdam.
 
 The following note records the earlier P1.4 slice:
 

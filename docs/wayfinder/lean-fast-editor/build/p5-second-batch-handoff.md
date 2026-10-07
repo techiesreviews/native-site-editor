@@ -5,6 +5,17 @@ thread `7d475731-adb3-4c9c-9930-edfb1997bdad`. Review is reserved for Claude Opu
 5.5 at medium effort after 2026-10-07 13:00 Europe/Amsterdam. No Claude review,
 merge to `dev`, or deployment is claimed here.
 
+The user subsequently requested that the reviews start automatically at 13:00.
+A one-shot local runner is now scheduled for `2026-10-07T13:00:00+02:00`, with
+PID `2041862` and shell session `54252`. Its six sequential scopes are foundation
+and agent/title changes, controllers, concurrent boot, Monaco, compact structure
+and combined interactions. It verifies the frozen candidate before each call,
+pins `claude-opus-5-5` / medium, and records CLI exit/errors/permission denials
+and exact model usage. Scheduling is not review completion or approval.
+Live status and results are under
+`/home/ubulex/Projects/native-site-editor/.scratch/p5-review/claude-1300/`;
+`summary.md` gives the queue state, and `status.json` identifies any active job.
+
 ## Frozen slices
 
 The controller stack starts from the isolated title-refresh fix `49061eb`.
@@ -24,7 +35,8 @@ transactions in their existing host until its callers have narrow interfaces.
 | Pages normal-retitle guard fix | `build/p5-pages-retitle-fix` | `1fba778` | `77dcdfdcd71943d67c6e11727391498cba686331` |
 | Media/gallery controller, with required retitle fix | `build/p5-media-controller` | `1fba778` | `d5942510986128bf6d3bec90408483f57854728e` |
 | Compact Page Structure indentation | `ui/compact-structure-indent` | `ac19da3` | `165645d5fc44f9f54b08ed7ef5bb3d92b64ac61b` |
-| Second combined validation candidate | `build/p5-review-candidate-two` | `963f569` | `bf5dec1f87bcd590358c72537823409bbab8c76a` |
+| Standalone structure spacing fallback | `build/p5-compact-structure-fix` | `bf5dec1` | `679f93125a9a2d8aa9002c89de8a20e8d9ebef97` |
+| Corrected second combined validation candidate | `build/p5-review-candidate-two` | `963f569` | `679f93125a9a2d8aa9002c89de8a20e8d9ebef97` |
 
 Worktrees are under `/home/ubulex/Projects/`, named
 `native-site-editor-p5-setup-checklist`, `native-site-editor-p5-setup-entry`,
@@ -34,7 +46,8 @@ Worktrees are under `/home/ubulex/Projects/`, named
 `native-site-editor-p5-boot-parallel-adapter`,
 `native-site-editor-p5-pages-controller`, `native-site-editor-p5-pages-retitle-fix`,
 `native-site-editor-p5-media-controller`, `native-site-editor-compact-structure`
-and `native-site-editor-p5-review-candidate-two`. Slice notes live in
+and `native-site-editor-p5-review-candidate-two`. The standalone fallback worktree
+is `native-site-editor-p5-compact-structure-fix`. Slice notes live in
 each worktree's `docs/wayfinder/lean-fast-editor/build/` directory. Browser and
 build logs live in `.scratch/p5-review/`.
 
@@ -73,6 +86,9 @@ The user requested minimal Page Structure indentation. Its shared CSS spacing
 is now 4 px per depth, down from 16 px, for rows, drag markers, slot editors and
 shared-section controls. The same CSS commit is applied to the user's current
 workspace as `1ee54aa`; the isolated branch remains available for review.
+The follow-up `679f931` supplies the same 4 px default when the tree is mounted
+without the application's parent class. Its four CSS fallback changes are
+applied to the current workspace as `1d88e42`; no JavaScript or assertions changed.
 
 ## Evidence recorded so far
 
@@ -129,8 +145,8 @@ All checks use Node `24.21.0`. Browser suites run serially.
 - Media: `cf9883f` passes type checks, production build, 1,036 units, seven
   focused controller units and all 47 media/images/lazy browser checks. This
   tested worktree stayed frozen during that run. After it completed, the
-  required retitle fix was applied and rebuilt at `d594251`; smoke/budget is
-  passed on that updated head: 32 smoke checks and the 343 KB byte gate. Media
+  required retitle fix was applied and rebuilt at `d594251`; smoke and budget
+  pass on that updated head: 32 smoke checks and the 343 KB byte gate. Media
   product files are unchanged by the fix.
 - Compact structure: production build and 48 browser checks pass, covering
   nested rows, drag placement, slot actions, keyboard access and narrow layouts.
@@ -144,8 +160,21 @@ All checks use Node `24.21.0`. Browser suites run serially.
   as `f2c494c`, then merges the complete Monaco trim branch at `da7cc2b`.
   An initial attempt to cherry-pick only the final Monaco test commit hit
   missing-parent conflicts; it was aborted, and the whole branch merged cleanly.
-  All 11 production Monaco feature checks pass. The full native-save suite is
-  running; its final smoke and budget verification remains queued.
+  All 11 production Monaco feature checks pass. The full native-save run finished
+  with 688 passes, 85 skips and three failures in 30.8 minutes. All three are in
+  the rich-slot standalone harness: without the application's parent class, the
+  new spacing variable had no value, making padding and drag-marker calculations
+  invalid. This blocked a slot-selection button and left two drag markers with
+  no visible width. Artifacts are preserved in `candidate-first-failure/`.
+- Corrected `679f931`: four CSS `var()` fallbacks preserve 4 px spacing for bare
+  hosts. Type checks and production build pass; all nine rich-slot checks pass,
+  including the three previously failing cases. The candidate now fast-forwards
+  to this fix. All 67 focused structure checks and 32 smoke checks pass. The
+  three-run pre-paint byte median is 343 KB, within the 350 KB gate; cold paint
+  and usable medians are 1.194 s / 1.201 s, warm 0.781 s. These local timing
+  targets still miss 1.0 s / 0.4 s. A fresh full native-save run is now running
+  in shell session `90562`, with the `candidate-fixed-` log prefix. The initial
+  full run above must not be recorded as passing.
 
 The checklist timing median is cold 1.273 s / warm 0.897 s. A separate
 three-run waterfall on the first integration candidate measured cold usable
@@ -165,8 +194,10 @@ and setup ownership remain unchanged. Assess the boot tag and adoption gates
 separately from its future main adapter. Keep low-impact indentation separate
 from behavioral controller changes.
 
-The final second-batch candidate still needs its full native-save suite,
-production Monaco checks, smoke and byte/timing measurements. The native T3
+The corrected second-batch candidate still needs its full native-save result.
+Its focused structure, smoke and byte checks pass; timing targets remain open.
+Production Monaco checks passed before the
+CSS-only fallback, which does not change Monaco source or configuration. The native T3
 preview evidence above is a local demo, not signed-in remote or release proof.
 Continue with the [controller plan](p5-controller-plan.md); preserve
 the existing draft/history transactions and one main-file writer.
@@ -180,3 +211,14 @@ Persistent source caching is deferred: it would require accepted snapshot SHA,
 account/repo identity, drafts-first reads, and refusal after auth denial. Existing
 text reads already deduplicate/batch and parallelize each CSS dependency level.
 No extra cache or speculative snapshot implementation is included in this batch.
+
+The startup adapter's first warm waterfall also records a placeholder-image
+blob lookup at 730–732 ms, before iframe FCP at 736 ms. Runtime acknowledges a
+render from a single animation-frame callback, which can precede presentation;
+the host starts asset loading on that acknowledgement. This proves an early
+lookup, not image bytes transferred over the network: its very short duration
+under the latency profile and nonpositive reported body size suggest a cache
+hit. A negative body-size estimate cannot establish transferred bytes. Ticket
+02's no-image-bytes claim therefore needs cache-aware transfer measurement
+before asserting either a violation or compliance for this warm lookup. No
+render-ack or image-loading change was added to the frozen candidate.
