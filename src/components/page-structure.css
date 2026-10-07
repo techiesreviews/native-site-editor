@@ -84,7 +84,7 @@
 }
 .page-structure__drop {
   position: absolute;
-  left: calc(10px + var(--depth, 0) * var(--structure-indent));
+  left: calc(10px + var(--depth, 0) * var(--structure-indent, 4px));
   right: 12px;
   height: 2px;
   margin-top: -1px;
@@ -106,7 +106,7 @@
   align-items: center;
   gap: 4px;
   min-height: var(--size-control);
-  padding: 0 8px 0 calc(6px + var(--depth, 0) * var(--structure-indent));
+  padding: 0 8px 0 calc(6px + var(--depth, 0) * var(--structure-indent, 4px));
   border-radius: var(--radius);
   font-size: var(--type-base);
   line-height: 1.3;
@@ -262,7 +262,7 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  margin: 2px 4px 4px calc(6px + var(--depth, 0) * var(--structure-indent));
+  margin: 2px 4px 4px calc(6px + var(--depth, 0) * var(--structure-indent, 4px));
   padding: 6px 4px 6px 8px;
   border-left: 2px solid var(--component);
   border-radius: 0 var(--radius) var(--radius) 0;
@@ -301,7 +301,7 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--shared-linked .page-structure__kind { color: var(--component-text); max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-structure__row--native-shared .page-structure__action { color: var(--component-text); }
 .page-structure__row--native-shared .page-structure__action:hover { background: var(--component-surface); }
-.page-structure__shared-authoring { padding: 3px 6px 6px calc(10px + var(--depth) * var(--structure-indent)); }
+.page-structure__shared-authoring { padding: 3px 6px 6px calc(10px + var(--depth) * var(--structure-indent, 4px)); }
 .page-structure__row--shared-linked[aria-selected="true"] .page-structure__kind { color: var(--component-text); }
 .page-structure__row--shared-linked .page-structure__kind { display: inline-flex; align-items: center; gap: 6px; }
 .page-structure__shared-authoring .native-shared-authoring { --primary: var(--component); }
