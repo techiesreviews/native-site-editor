@@ -407,7 +407,7 @@ export function createPagesController(ports: PagesPorts) {
     const planned = planNativeUrlChange(source.file, to);
     if (!planned.ok) { ports.announce(planned.error); ports.error(new Error(planned.error)); return; }
     const change = planned.value;
-    const openingSources = new Map(Object.entries(nativeLinkSources()));
+    const openingSources = new Map(Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
     const answer = await ports.confirmation()!.choose({
       title: `Move ${change.label} to ${to}?`,
       notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings],

@@ -186,3 +186,21 @@ test("retitle refuses generation, scope or target-route drift after metadata wri
     assert.deepEqual(refreshes, []);
   }
 });
+
+test("reading a previously unread link source during confirmation adopts its current contents", async () => {
+  const f = fixture();
+  const path = "unread.html";
+  const content = '<head><title>Unread</title></head><body><a href="/about/">About</a></body>';
+  f.sources.set(path, content);
+  let loaded = false;
+  f.ports.source = file => file === path && !loaded ? undefined : f.sources.get(file);
+  f.ports.confirmation = () => ({ ask: async () => true, choose: async () => {
+    loaded = true;
+    return { value: "move", option: false };
+  } });
+  await f.controller.confirmMove(target, "/news/");
+  assert.deepEqual(f.errors, []);
+  assert.equal(f.operations.length, 1);
+  assert.equal(f.operations[0].expectedSources?.get(path), content);
+  assert.match(f.operations[0].edits?.get(path) ?? "", /href="\/news\/about\/"/);
+});
