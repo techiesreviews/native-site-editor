@@ -1,6 +1,7 @@
 import { createMediaController } from "./controllers/media-controller";
 import { createPagesController, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
+import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
 import { createHistoryController } from "./controllers/history-controller";
 import { batch } from "@preact/signals-core";
@@ -69,7 +70,6 @@ import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
-import { nativeComponentScopeSelection } from "./page-builder/native-component-selection";
 import { nativeElementSiblingMove } from "./page-builder/native-move-choices";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
@@ -427,8 +427,8 @@ function mountWorkspace() {
   codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
   cards = mountCards();
   // A selection inside a component's template gets Select card once the runtime says which card.
-  let selectedGrid = "";
   nativePreview = createNativePreview(element("main"), {
+    ...previewSelection.handlers(),
     // The images of a page shown by following a link are read when it shows.
     // A page the text index has not read yet is read when it shows.
     onRouteShown: (route) => {
@@ -443,21 +443,8 @@ function mountWorkspace() {
       addCard: (grid) => void cards?.addCard(grid),
       addPage: (grid, title) => cards?.addPage(grid, title) ?? Promise.resolve("Open a native site first."),
     },
-    onItemGrids: (report) => {
-      const key = JSON.stringify(report.selected && [report.selected.path, report.selected.parent, report.selected.index, report.selected.row]);
-      if (key === selectedGrid) return;
-      selectedGrid = key;
-      if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
-    },
-    onSelect: (selection) => void selectNativeSource(selection),
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
-    onTextSelection: (text) => {
-      const next = text && appStore.selection.value?.node ? { ...text, path: appStore.selection.value.path, node: appStore.selection.value.node } : undefined;
-      if (JSON.stringify(next) === JSON.stringify(nativeTextSelection)) return;
-      nativeTextSelection = next;
-      if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
-    },
     onFormat: (format) => nativeFormatActions[format]?.(),
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
@@ -584,7 +571,7 @@ const paletteController = createCommandPaletteController({
     insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
     editBar: () => (document.querySelector(".edit-bar[data-model]") ? nativeEditBarModel : undefined),
     select: (path, node) => nativePreview?.selectNode({ path, node }),
-    textSelected: () => Boolean(nativeTextSelection && !nativeTextSelection.caret && nativeTextSelection.text),
+    textSelected: () => { const text = previewSelection.textSelection(); return Boolean(text && !text.caret && text.text); },
     history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
     toggleCode: () => codePanes.heightResize()?.toggle(),
     codeHidden: () => element("main").classList.contains("code-collapsed"),
@@ -1470,18 +1457,45 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   if (reveal && top && top.path !== page) editorModule?.revealRange(top.path, top.start, top.end);
 }
 
-// A preview click that arrived before its file's editor was mounted; replayed
-// by `mountSource` once that file opens in the same generation.
-let pendingNativeSelection: { selection: NativePreviewSelection; epoch: number } | undefined;
-
-// Marks the selected element's start tag in its open source file.
-function markNativeElement(selection: NativePreviewSelection, reveal: boolean) {
-  if (!selection.path || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) return;
-  if (reveal) pendingNativeSelection = undefined;
-  const source = nativeEditableSource(selection.path);
-  const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
-  editorModule?.markElement(selection.path, tag, reveal);
-}
+const previewSelection = createPreviewSelectionController({
+  generation: () => generation,
+  scope: () => setupScope(),
+  store: appStore,
+  site: () => nativeSite,
+  sources: () => nativeSources(),
+  effectiveSource: (path) => nativeEffectiveSource(path),
+  editableSource: (path) => nativeEditableSource(path),
+  masterEdit: () => nativeMasterEdit(),
+  preview: () => nativePreview,
+  editor: () => editorModule,
+  componentTag: (path) => nativeComponentTagForPath(path),
+  editingScopePath: () => componentTools?.editingScope()?.path,
+  instanceContent: (source, node, tag) => nativeInstanceContent(source, node, tag),
+  locateTag: (source, node) => locateNativeElement(source, node),
+  tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,
+  openFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  renderEditBar: (selection) => renderNativeEditBar(selection),
+  linkStyles: (selection, reveal) => void linkNativeStyles(selection, reveal),
+  clearMoveAction: () => { nativeElementMoveAction = undefined; },
+  structureSelect: (target) => pageStructure?.select(target),
+  hideComponentTools: () => componentTools?.show(undefined),
+  agentContext: () => updateAgentContext(),
+  announce: (message) => announce(message),
+  setTimer: (callback, ms) => setTimeout(callback, ms),
+  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  beginReveal: () => {
+    const request = ++linkedStyleRequest;
+    fileGeneration++;
+    secondaryRequest++;
+    return request;
+  },
+  styleRequest: () => linkedStyleRequest,
+  clearStyles: () => {
+    nativeLinkedStyles = undefined;
+    linkedStyle = undefined;
+    void openDefaultLinkedStyle();
+  },
+});
 
 /** A fresh source appStore.snapshot.value for CSS code intelligence. */
 function nativeCssWorkspace(): CssWorkspace | undefined {
@@ -1543,8 +1557,6 @@ function wholeWrapper(inner: string, tags: string[]) {
   return { open, openEnd: openEnd + 1, closeAt, closeEnd: closeEnd + 1 };
 }
 
-// Text selected inside the selected element, bound to that element.
-let nativeTextSelection: (NativeTextSelection & { path: string; node: number[] }) | undefined;
 // What B, I and Link do for the current selection, for the keyboard shortcuts.
 let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
 // The edit bar last shown, whose controls the command palette offers while it shows.
@@ -1645,8 +1657,9 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   if (range?.close && nativeTextTags.has(selection.tag)) {
     const close = range.close;
     const inner = source.slice(range.tag.end, close.start);
-    const reported = nativeTextSelection && nativeTextSelection.path === path && node &&
-      nativeTextSelection.node.join(".") === node.join(".") ? nativeTextSelection : undefined;
+    const bound = previewSelection.textSelection();
+    const reported = bound && bound.path === path && node &&
+      bound.node.join(".") === node.join(".") ? bound : undefined;
     // The caret (reported only inside a link) is no text to format.
     const text = reported?.caret ? undefined : reported;
     const caret = reported?.caret ? reported : undefined;
@@ -2058,7 +2071,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
     }
   }
   nativeEditBarModel = model;
-  preview.showEditBar(model, rect, nativeTextSelection);
+  preview.showEditBar(model, rect, previewSelection.textSelection());
   componentTools?.show(selection);
 }
 
@@ -2592,18 +2605,6 @@ function registerNativeCopy(path: string, pageAfter: string, node: number[], ope
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 }
 
-function refuseNativeSelection(selection: NativePreviewSelection, message: string) {
-  pendingNativeInstanceSelection = undefined;
-  pendingNativeSelection = undefined;
-  nativeElementMoveAction = undefined;
-  appStore.selection.value = undefined;
-  if (appStore.openFile.value) editorModule?.markElement(appStore.openFile.value, undefined, false);
-  nativePreview?.clearSelection();
-  pageStructure?.select(undefined);
-  componentTools?.show(undefined);
-  if (selection.reason !== "refresh") announce(message);
-}
-
 /** Instance content uses the same text/inline boundary as native canvas typing. */
 function nativeInstanceContent(source: string, node: readonly number[], tag: string): boolean {
   const range = locateNativeElementRange(source, [...node]);
@@ -2618,102 +2619,11 @@ function nativeInstanceContent(source: string, node: readonly number[], tag: str
   return Boolean(template.content.textContent?.trim()) && [...template.content.querySelectorAll("*")].every(element => inline.test(element.localName));
 }
 
-async function selectNativeSource(selection: NativePreviewSelection) {
-  nativeElementMoveAction = undefined;
-  const sources = nativeSources();
-  // While a master is on show, only its own copy can be selected, from this session; the rest
-  // of the page is read-only until Done.
-  const masterAt = nativeMasterEdit();
-  // (A cleared selection has no path and always passes.)
-  if (selection.path && (masterAt || selection.masterSession !== undefined)) {
-    if (!masterAt || selection.masterSession !== masterAt.session || selection.path !== masterAt.masterPath || appStore.openFile.value !== masterAt.masterPath) {
-      refuseNativeSelection(selection, masterAt ? "The page is read-only while its master is open. Choose Done to edit it." : "That master is no longer open.");
-      return;
-    }
-  }
-  if (pendingNativeInstanceSelection) {
-    const pending = pendingNativeInstanceSelection;
-    pendingNativeInstanceSelection = undefined;
-    if (selection.path === pending.path && selection.node?.join(".") === pending.node.join(".") &&
-        (pending.epoch !== generation || pending.scope !== setupScope() || JSON.stringify(nativeSite?.components) !== pending.components || Object.entries(pending.sources).some(([path, source]) => sources[path] !== source))) {
-      refuseNativeSelection(selection, "The instance changed before it could be selected. Select it again."); return;
-    }
-  }
-  // A master is editor-private (not among the public sources): its bytes are its effective source.
-  const selectedSource = masterAt && selection.path === masterAt.masterPath ? nativeEffectiveSource(selection.path) : sources[selection.path];
-  if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== selectedSource) {
-    refuseNativeSelection(selection, "The source changed. Wait for the preview before selecting this element."); return;
-  }
-  const pagePath = nativeSite?.routes[nativePreview?.route() ?? ""];
-  if (selection.reason !== "refresh" && selection.path === pagePath) nativeSourceIntent = undefined;
-  const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : nativeEditableTemplatePath() ?? pagePath;
-  if (selection.path && scopePath && nativeSite && !masterAt) {
-    const mapped = nativeComponentScopeSelection(selection, scopePath, nativeSite.components, sources, (source, node) => locateNativeElementRange(source, [...node])?.tag.name, nativeInstanceContent);
-    if (!mapped) { refuseNativeSelection(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
-    if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
-      if (!mapped.node || sources[mapped.path] === undefined) { refuseNativeSelection(selection, "The instance is no longer available. Select it again."); return; }
-      pendingNativeInstanceSelection = { path: mapped.path, node: [...mapped.node],
-        sources: Object.fromEntries([selection.path, mapped.path, ...(selection.hostChain ?? (selection.host ? [selection.host] : [])).map(host => host.path)].filter((path): path is string => !!path).map(path => [path, sources[path]])),
-        components: JSON.stringify(nativeSite.components), epoch: generation, scope: setupScope() };
-      // Request the real host's own rect, matching rules and computed values.
-      nativePreview?.selectNode({ path: mapped.path, node: mapped.node });
-      return;
-    }
-  }
-  const reveal = selection.reason !== "refresh";
-  if (selection.path !== appStore.selection.value?.path || selection.node?.join(".") !== appStore.selection.value?.node?.join(".")) nativeSelectionEpoch++;
-  appStore.selection.value = selection.path ? selection : undefined;
-  for (const waiter of [...nativeSelectionWaiters]) waiter(selection);
-  // Agents see the selection (get_selection).
-  if (reveal) updateAgentContext();
-  pageStructure?.select(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
-  if (!selection.path) {
-    nativeElementMoveAction = undefined;
-    nativePreview?.hideEditBar();
-    componentTools?.show(undefined);
-  }
-  if (!reveal) {
-    if (!selection.path || appStore.openFile.value !== selection.path) {
-      nativePreview?.hideEditBar();
-      return;
-    }
-    markNativeElement(selection, false);
-    renderNativeEditBar(selection);
-    void linkNativeStyles(selection, false);
-    return;
-  }
-  if (appStore.openFile.value) editorModule?.markElement(appStore.openFile.value, undefined, false);
-  pendingNativeSelection = selection.path ? { selection, epoch: generation } : undefined;
-  const request = ++linkedStyleRequest;
-  fileGeneration++;
-  secondaryRequest++;
-  if (!selection.path) {
-    nativeLinkedStyles = undefined;
-    linkedStyle = undefined;
-    void openDefaultLinkedStyle();
-    return;
-  }
-  // The open master is selectable in its own session (checked above) though it is not a site page.
-  if (!appStore.snapshot.value || !nativeSite || !(nativeSitePaths(nativeSite).includes(selection.path) || masterAt?.masterPath === selection.path)) return;
-  const epoch = generation;
-  if (appStore.openFile.value !== selection.path) {
-    await restoreFile(selection.path, epoch, { linkDefaultStyle: false });
-    if (request !== linkedStyleRequest || epoch !== generation || appStore.openFile.value !== selection.path) return;
-  }
-  markNativeElement(selection, true);
-  renderNativeEditBar(selection);
-  void linkNativeStyles(selection, reveal);
-}
-
-let nativeSourceIntent: { path: string; epoch: number; scope: string } | undefined;
-let pendingNativeInstanceSelection: { path: string; node: number[]; sources: Record<string, string>; components: string; epoch: number; scope: string } | undefined;
 function recordNativeSourceIntent(path: string) {
-  nativeSourceIntent = nativeComponentTagForPath(path) ? { path, epoch: generation, scope: setupScope() } : undefined;
+  previewSelection.recordIntent(path);
 }
 function nativeEditableTemplatePath() {
-  const intent = nativeSourceIntent;
-  return intent && intent.epoch === generation && intent.scope === setupScope() && appStore.openFile.value === intent.path && editorModule?.isMounted(intent.path)
-    ? intent.path : componentTools?.editingScope()?.path;
+  return previewSelection.editableTemplatePath();
 }
 let nativeComponentFieldToken = 0;
 let nativeComponentFieldSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
@@ -2729,10 +2639,6 @@ function nativeComponentFieldsRevision() {
 }
 
 // ---- Shared native roots in Structure: Save shared, linked Edit and Disconnect ------------------
-// Callbacks waiting for the preview's own selection of a node (Structure's explicit Edit).
-// Counts changes of the selected element: a Save shared in flight refuses when the person selects another.
-let nativeSelectionEpoch = 0;
-const nativeSelectionWaiters = new Set<(selection: NativePreviewSelection) => void>();
 // What sharing reads, beyond the page: the file graph, editor JSON, private masters and every
 // loaded public source (pages and stylesheets), the scope, the open file and master session, and
 // the open page's model. Any change is a new revision; a replaced model (same bytes) is one too.
@@ -2909,9 +2815,9 @@ async function nativeSharedSubmit(choice: NativeSharedMetadata | string, key: st
   if (typeof choice === "string" && !offered.records.includes(choice)) return { error: "Choose a shared item offered for this selection." };
   const plan = typeof choice === "string" ? offered.link(choice) : offered.plan(choice);
   if ("error" in plan) return { error: plan.error };
-  const graph = [...plan.expectedFiles].sort().join("\n"), selected = nativeSelectionEpoch;
+  const graph = [...plan.expectedFiles].sort().join("\n"), selected = previewSelection.selectionEpoch();
   // A Cancel, a new revision (which drops every offered context), another selection or any change refuses the write.
-  const live = () => nativeSharedContexts.get(key) === offered && offered.current() && nativeSelectionEpoch === selected && nativeFiles().sort().join("\n") === graph;
+  const live = () => nativeSharedContexts.get(key) === offered && offered.current() && previewSelection.selectionEpoch() === selected && nativeFiles().sort().join("\n") === graph;
   nativeSharedInFlight.add(key);
   let error: string | undefined;
   try { error = await applyNativeOperation({ ...plan.operation, current: live }); }
@@ -2944,14 +2850,7 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
   if (!scope || !editorModule || !nativePreview || nativeMasterEdit() || appStore.openFile.value !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
   // The page model as Edit was pressed: the same proof is checked after the selection, never retaken.
   const proof = editorModule.captureFileModelState(scope, path, true);
-  const selected = new Promise<NativePreviewSelection | undefined>((resolve) => {
-    const timer = setTimeout(() => { nativeSelectionWaiters.delete(waiter); resolve(undefined); }, 5000);
-    const waiter = (selection: NativePreviewSelection) => {
-      if (selection.path !== path || selection.node?.join(".") !== node.join(".")) return;
-      clearTimeout(timer); nativeSelectionWaiters.delete(waiter); resolve(selection);
-    };
-    nativeSelectionWaiters.add(waiter);
-  });
+  const selected = previewSelection.waitFor(path, node, 5000);
   nativePreview.selectNode({ path, node });
   const selection = await selected;
   if (!selection || !proof.isCurrent() || selection.paintedSource !== painted || appStore.selection.value !== selection || masterRevision() !== revision || nativeMasterEdit() || appStore.openFile.value !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
@@ -6930,11 +6829,7 @@ async function mountSource(
   componentTools?.refresh();
   // Checked before the file-generation guard: handling that click is what
   // superseded this open.
-  const pending = pendingNativeSelection;
-  if (pending?.selection.path === path && appStore.openFile.value === path && editorModule?.isMounted(path)) {
-    pendingNativeSelection = undefined;
-    if (pending.epoch === generation) void selectNativeSource(pending.selection);
-  }
+  previewSelection.replayPending(path);
   if (epoch !== generation || selection !== fileGeneration || !info.user)
     return;
   rememberWorkspace(info.user.login, {
