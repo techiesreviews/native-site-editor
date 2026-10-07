@@ -175,14 +175,14 @@ test("a primary pointer release without click flushes titles, but another pointe
   const titles = await holdPageTitles(page);
   await openRouting(page, baseURL);
   await titles.requested;
-  await explorer(page).dispatchEvent("pointerdown", { pointerId: 71, button: 0, bubbles: true });
+  await explorer(page).dispatchEvent("pointerdown", { pointerId: 71, pointerType: "mouse", button: 0, bubbles: true });
   await titles.release();
   await expect(item(page, "Fern and kettle")).toBeVisible();
-  await explorer(page).dispatchEvent("pointerup", { pointerId: 72, button: 0, bubbles: true });
+  await explorer(page).dispatchEvent("pointerup", { pointerId: 72, pointerType: "mouse", button: 0, bubbles: true });
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(item(page, "Fern and kettle")).toBeVisible();
   // Scrollbar and cancelled gestures can release without a subsequent click.
-  await explorer(page).dispatchEvent("pointerup", { pointerId: 71, button: 0, bubbles: true });
+  await explorer(page).dispatchEvent("pointerup", { pointerId: 71, pointerType: "mouse", button: 0, bubbles: true });
   await expect(item(page, "Fern & Kettle")).toBeVisible();
 });
 
@@ -210,3 +210,26 @@ test("titles arriving during a native page drag preserve the source row and its 
   await expect(page.locator("#status")).toContainText("URL changed to /notes.html");
   await expect(item(page, "Fern & Kettle")).toBeVisible();
 });
+
+
+for (const pointerType of ["touch", "pen"] as const) {
+  test(`a delayed ${pointerType} click keeps the pending-title target until its action runs`, async ({ page, baseURL }) => {
+    const titles = await holdPageTitles(page);
+    await openRouting(page, baseURL);
+    const button = explorer(page).getByRole("button", { name: "Change the URL of Fern and kettle, /work/fern-and-kettle/", exact: true });
+    const original = await button.elementHandle();
+    await titles.requested;
+    await button.dispatchEvent("pointerdown", { pointerId: 81, pointerType, button: 0, bubbles: true });
+    await titles.release();
+    await button.dispatchEvent("pointerup", { pointerId: 81, pointerType, button: 0, bubbles: true });
+    // Model the browser's delayed tap/pen click in a later input task.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect(await original!.evaluate(element => element.isConnected)).toBe(true);
+    await expect(item(page, "Fern and kettle")).toBeVisible();
+    await original!.evaluate((element, type) => element.dispatchEvent(new PointerEvent("click", { pointerId: 81, pointerType: type, button: 0, bubbles: true })), pointerType);
+    const input = explorer(page).getByRole("textbox", { name: "URL of Fern and kettle", exact: true });
+    await expect(input).toBeFocused();
+    await input.press("Escape");
+    await expect(item(page, "Fern & Kettle")).toBeVisible();
+  });
+}
