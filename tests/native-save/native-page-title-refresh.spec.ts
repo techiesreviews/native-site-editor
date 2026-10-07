@@ -233,3 +233,32 @@ for (const pointerType of ["touch", "pen"] as const) {
     await expect(item(page, "Fern & Kettle")).toBeVisible();
   });
 }
+
+for (const pointerType of ["touch", "pen"] as const) {
+  test(`a ${pointerType} release without click flushes titles after a grace period`, async ({ page, baseURL }) => {
+    const titles = await holdPageTitles(page);
+    await openRouting(page, baseURL);
+    await titles.requested;
+    await explorer(page).dispatchEvent("pointerdown", { pointerId: 91, pointerType, button: 0, bubbles: true });
+    await titles.release();
+    // Another pointer's release does not schedule the fallback for this gesture.
+    await explorer(page).dispatchEvent("pointerup", { pointerId: 92, pointerType, button: 0, bubbles: true });
+    await explorer(page).dispatchEvent("pointerup", { pointerId: 91, pointerType, button: 0, bubbles: true });
+    // A tap's click may still be on its way, so the titles wait past the next frames.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(item(page, "Fern and kettle")).toBeVisible();
+    // Gestures under touch-action: none can end without any click at all.
+    await expect(item(page, "Fern & Kettle")).toBeVisible();
+  });
+}
+
+test("a cancelled touch gesture flushes titles", async ({ page, baseURL }) => {
+  const titles = await holdPageTitles(page);
+  await openRouting(page, baseURL);
+  await titles.requested;
+  await explorer(page).dispatchEvent("pointerdown", { pointerId: 93, pointerType: "touch", button: 0, bubbles: true });
+  await titles.release();
+  await expect(item(page, "Fern and kettle")).toBeVisible();
+  await explorer(page).dispatchEvent("pointercancel", { pointerId: 93, pointerType: "touch", button: 0, bubbles: true });
+  await expect(item(page, "Fern & Kettle")).toBeVisible();
+});
