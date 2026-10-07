@@ -196,3 +196,11 @@ watchEditorTheme(({ dark, colors }) => {
 };
 
 export { monaco };
+
+// Keep plain drops literal: Monaco 0.56 standalone bulk edits ignore snippet flags.
+// @ts-expect-error Monaco's internal JS modules have no declarations.
+import { StandaloneServices } from "monaco-editor/editor/standalone/browser/standaloneServices.js";
+// @ts-expect-error Monaco's internal JS modules have no declarations.
+import { IBulkEditService } from "monaco-editor/editor/browser/services/bulkEditService.js";
+import { installPlainDropAdapter } from "../monaco-drop-adapter";
+installPlainDropAdapter(StandaloneServices.get(IBulkEditService));
