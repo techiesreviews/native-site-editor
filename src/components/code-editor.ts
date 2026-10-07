@@ -135,6 +135,7 @@ interface SharedModel {
   byRevision: Map<number, number>;
   applying: boolean;
   stepping: boolean;
+  inputting: boolean;
   timer?: ReturnType<typeof setTimeout>;
   viewState: monaco.editor.ICodeEditorViewState | null;
   /** When a diff editor over this model last closed (its worker diff may still be on its way). */
@@ -196,7 +197,7 @@ function createSharedModel(host: PaneHost): SharedModel {
   const model = monaco.editor.createModel(host.text(), languageFor(host.path), monaco.Uri.parse(`inmemory://editor/${++serial}/${host.path}`));
   const shared: SharedModel = {
     key: host.key, scope: host.scope, path: host.path, stored: host.stored, model, views: 0,
-    aliases: new Map(), byRevision: new Map(), applying: false, stepping: false, viewState: null, diffClosed: 0,
+    aliases: new Map(), byRevision: new Map(), applying: false, stepping: false, inputting: false, viewState: null, diffClosed: 0,
     settle() {
       clearTimeout(shared.timer);
       shared.timer = undefined;
@@ -223,7 +224,9 @@ function createSharedModel(host: PaneHost): SharedModel {
   // Typing (and Monaco's own undo of uncommitted typing) goes to the store at once.
   const content = model.onDidChangeContent(() => {
     if (shared.applying || shared.stepping || !shared.typing) return;
-    shared.typing.input(model.getValue(), reported(shared));
+    shared.inputting = true;
+    try { shared.typing.input(model.getValue(), reported(shared)); }
+    finally { shared.inputting = false; }
     clearTimeout(shared.timer);
     shared.timer = setTimeout(() => shared.settle(), TYPING_SETTLE_MS);
   });
@@ -235,7 +238,9 @@ function createSharedModel(host: PaneHost): SharedModel {
       if (!shared.views && (!shared.stored || !store.hasTyping(shared.scope, shared.path))) { shared.dispose(); return; }
       // The journal moved (a step recorded, run or cleared): Monaco's open undo
       // group ends here too, so its stops never span two store steps.
-      if (event.history === shared.history) model.pushStackElement();
+      // input() may commit another pane or invalidate Redo. Its notification
+      // closes that pane's group, but must not split this pane after one key.
+      if (event.history === shared.history && !shared.inputting) model.pushStackElement();
       return;
     }
     if (event.key !== shared.key) return;

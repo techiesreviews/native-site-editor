@@ -432,7 +432,11 @@ test("review fix: a typing step keeps Monaco's undo stops, in order with visual 
   assert.equal(nativeCalls, 4);
   // Partly undone, then new typing: the step ends where it was, the pane's redo is gone.
   await store.undo("h"); await store.undo("h");
+  const historyEvents: string[] = [];
+  store.subscribe(event => { if (event.type === "history") historyEvents.push(event.history); });
   typing.input("xabZ", 6);
+  assert.deepEqual(historyEvents, ["h"]);
+  assert.equal(store.canRedo("h"), false);
   typing.commit();
   assert.equal(store.canRedo("h"), false);
   // With the pane closed, a typing step undoes whole.
@@ -519,6 +523,113 @@ test("review fix: an edit commits typing still open in another file of its histo
   assert.deepEqual([store.text(scope, "page.html"), store.text(scope, "site.css")], ["p", "cX"]);
   assert.equal((await store.undo("h")).ok, true);
   assert.deepEqual([store.text(scope, "page.html"), store.text(scope, "site.css")], ["p", "c"]);
+});
+
+test("review fix: typing erased in a pane whose undo stack moved stays a step, so Undo keeps stepping", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "x", baseSha: sha("a") });
+  // A pane double: versions are its undo stops, texts what each stop shows.
+  const texts = new Map<number, string>([[1, "x"], [2, "xa"], [3, "xab"], [4, "xa"]]);
+  let version = 1;
+  const stops = [1];
+  const typing = store.beginTyping(scope, "a.html", "h", { version, native: {
+    undo(expected) { if (version !== expected || stops.length < 2) return undefined; stops.pop(); version = stops.at(-1)!; return { text: texts.get(version)!, version }; },
+    redo() { return undefined; },
+  } });
+  const type = (to: number) => { version = to; stops.push(to); typing.input(texts.get(to)!, to); };
+  type(2); typing.commit();
+  type(3); type(4); typing.commit();
+  assert.equal(store.text(scope, "a.html"), "xa");
+  assert.equal((await store.undo("h")).ok, true);
+  // This double gives Backspace its own native stop, as Monaco may do.
+  assert.equal(store.text(scope, "a.html"), "xab");
+  for (let presses = 0; presses < 3 && store.text(scope, "a.html") !== "x"; presses++) assert.equal((await store.undo("h")).ok, true);
+  assert.equal(store.text(scope, "a.html"), "x");
+});
+
+test("new typing erases Redo immediately, even when typed text is erased before commit", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "x", baseSha: sha("a") });
+  let current = { text: "x", version: 1 };
+  const typing = store.beginTyping(scope, "a.html", "h", { version: 1, native: {
+    undo(expected) { if (current.version !== expected) return undefined; return current = { text: "x", version: 1 }; },
+    redo() { return undefined; },
+  } });
+  current = { text: "xa", version: 2 }; typing.input(current.text, current.version); typing.commit();
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(store.canRedo("h"), true);
+  current = { text: "xb", version: 3 }; typing.input(current.text, current.version);
+  assert.equal(store.canRedo("h"), false);
+  current = { text: "x", version: 4 }; typing.input(current.text, current.version);
+  assert.equal(store.canRedo("h"), false);
+  assert.notEqual(typing.commit(), undefined);
+  assert.equal(store.canRedo("h"), false);
+  assert.equal((await store.redo("h")).ok, false);
+  assert.equal((await store.undo("h")).ok, true);
+});
+
+test("truncating a partly undone native typing step emits history before settling", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "x", baseSha: sha("a") });
+  const typing = store.beginTyping(scope, "a.html", "h", { version: 1, native: {
+    undo(expected) { return expected === 3 ? { text: "xa", version: 2 } : undefined; },
+    redo() { return undefined; },
+  } });
+  typing.input("xa", 2); typing.input("xab", 3); typing.commit();
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(store.canRedo("h"), true);
+  const events: string[] = [];
+  store.subscribe(event => { if (event.type === "history") events.push(event.history); });
+  typing.input("xaZ", 4);
+  assert.equal(store.canRedo("h"), false);
+  assert.deepEqual(events, ["h"]);
+});
+
+test("review fix: pending typing in two panes and a later edit undo newest first, in either pane order", async () => {
+  for (const [first, second] of [["site.css", "page.html"], ["page.html", "site.css"]]) {
+    const { store } = setup();
+    store.open(scope, "page.html", { text: "p", baseSha: sha("a") });
+    store.open(scope, "site.css", { text: "c", baseSha: sha("b") });
+    // Session registration order must not determine keystroke order.
+    const panes = new Map(["page.html", "site.css"].map(path => [path, store.beginTyping(scope, path, "h", { version: 1 })]));
+    panes.get(first)!.input(store.text(scope, first) + "1", 2 + 10 * 0);
+    panes.get(second)!.input(store.text(scope, second) + "2", 2 + 10 * 1);
+    // Switching files commits the first pane immediately, before any timer.
+    assert.equal(panes.get(first)!.commit(), undefined);
+    store.edit({ scope, path: "page.html", history: "h", text: store.text(scope, "page.html") + "E" });
+    const states: string[] = [];
+    const snap = () => states.push(`${store.text(scope, "page.html")}|${store.text(scope, "site.css")}`);
+    snap();
+    for (let i = 0; i < 3; i++) { assert.equal((await store.undo("h")).ok, true); snap(); }
+    // Newest first: the edit, then the second pane's typing, then the first's.
+    const page = (path: string, typed: boolean) => (path === "page.html" ? "p" : "c") + (typed ? (path === first ? "1" : "2") : "");
+    const at = (pageTyped: boolean, cssTyped: boolean, edit: boolean) => `${page("page.html", pageTyped)}${edit ? "E" : ""}|${page("site.css", cssTyped)}`;
+    const firstIsPage = first === "page.html";
+    assert.deepEqual(states, [
+      at(true, true, true),
+      at(true, true, false),
+      firstIsPage ? at(true, false, false) : at(false, true, false),
+      at(false, false, false),
+    ]);
+  }
+});
+
+test("edit flushes its target and history's pending typing by first keystroke across histories", () => {
+  for (const first of ["page.html", "site.css"]) {
+    const { store } = setup();
+    store.open(scope, "page.html", { text: "p", baseSha: sha("a") });
+    store.open(scope, "site.css", { text: "c", baseSha: sha("b") });
+    const page = store.beginTyping(scope, "page.html", "page-history");
+    const css = store.beginTyping(scope, "site.css", "edit-history");
+    if (first === "page.html") { page.input("p1"); css.input("c1"); }
+    else { css.input("c1"); page.input("p1"); }
+    const histories: string[] = [];
+    store.subscribe(event => { if (event.type === "history") histories.push(event.history); });
+    store.edit({ scope, path: "page.html", history: "edit-history", text: "p1E" });
+    assert.deepEqual(histories, first === "page.html"
+      ? ["page-history", "edit-history", "edit-history"]
+      : ["edit-history", "page-history", "edit-history"]);
+  }
 });
 
 test("wiring: Save's drafts are the store's, including a change whose write keeps failing", () => {

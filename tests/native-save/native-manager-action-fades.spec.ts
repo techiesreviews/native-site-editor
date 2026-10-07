@@ -314,6 +314,9 @@ for (const scheme of ["light", "dark"] as const) {
     await explorer.getByRole("tab", { name: "Pages", exact: true }).click();
     const other = page.locator(".pages-row.row-action-host:not(.is-current)").filter({ has: page.locator(".pages-url") }).filter({ visible: true }).first();
     const current = page.locator(".pages-row.is-current").first();
+    // The text index replaces the initial route-labelled rows when titles
+    // arrive. Wait for that replacement before marking a row for pixel shots.
+    await expect(other.locator(".pages-label")).toHaveText("About this project");
     await other.hover();
     await fadeCheck(page, other, `${scheme} pages hover`);
     await current.hover();

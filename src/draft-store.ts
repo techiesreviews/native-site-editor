@@ -204,7 +204,7 @@ type TypingState = { text: string; revision: number; version?: number; record?: 
 type TypingStep = { kind: "typing"; id: number; label: string; key: string; session: Typing; start: TypingState; end: TypingState; at: TypingState; companions: HistoryCompanion[] };
 type Step = EditStep | TypingStep | ReceiptStep | ActionStep;
 type Journal = { undo: Step[]; redo: Step[] };
-type Typing = { history: string; label: string; start?: TypingState; version?: number; native?: NativeTyping; ended?: boolean };
+type Typing = { history: string; label: string; start?: TypingState; order?: number; version?: number; native?: NativeTyping; ended?: boolean };
 
 /** Applies non-overlapping changes; returns the new text and the changes that undo them (in the new text's offsets). */
 export function applyChanges(text: string, changes: readonly TextChange[]) {
@@ -255,7 +255,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   const running = new Set<string>();
   const holds = new Map<string, number>();
   const listeners = new Set<(event: DraftEvent) => void>();
-  let revisions = 0, steps = 0;
+  let revisions = 0, steps = 0, typingOrder = 0;
 
   const deliver = (event: DraftEvent) => { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } };
   // Events wait until a mutation (and its journal move) is complete, so a
@@ -356,8 +356,8 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (!session?.start || !entry) return undefined;
     const start = session.start;
     session.start = undefined;
-    if (entry.text === start.text) {
-      // Typed and erased: no step, and the steps below stay valid.
+    if (entry.text === start.text && session.version === start.version) {
+      // No text or native undo movement: the steps below stay valid.
       entry.revision = start.revision;
       return undefined;
     }
@@ -366,7 +366,11 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     pushStep(session.history, step);
     return step.id;
   }
-  const commitHistoryTyping = (history: string) => { for (const [key, session] of typing) if (session.history === history) commitTyping(key); };
+  const commitHistoryTyping = (history: string | undefined, extraKeys: readonly string[] = []) => {
+    const pending = [...typing].filter(([key, session]) => session.start && (session.history === history || extraKeys.includes(key)));
+    pending.sort((a, b) => a[1].order! - b[1].order!);
+    for (const [key] of pending) commitTyping(key);
+  };
 
   function beginTyping(scope: DraftScope, path: string, history?: string, options: TypingOptions = {}): TypingSession {
     const key = draftKey(scope, path);
@@ -379,9 +383,22 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       input: (text, version) => batch(() => {
         const entry = files.get(key);
         if (session.ended || !entry) return;
-        if (entry.text === text) { if (version !== undefined) session.version = version; return; }
+        if (entry.text === text && (version === undefined || version === session.version)) return;
+        // Switching panes closes the earlier pane's native undo group now,
+        // rather than letting settle timers decide their journal order.
+        for (const [otherKey, other] of typing) if (otherKey !== key && other.history === session.history && other.start) commitTyping(otherKey);
         const previous = entry.text;
-        session.start ??= { text: entry.text, revision: entry.revision, version: session.version, record: entry.record };
+        if (!session.start) {
+          session.start = { text: entry.text, revision: entry.revision, version: session.version, record: entry.record };
+          session.order = ++typingOrder;
+        }
+        // Monaco destroys Redo on the first new keystroke, even if later
+        // keystrokes erase it. Mirror that immediately in the shared journal.
+        const found = journal(session.history);
+        const top = found.undo.at(-1);
+        const truncated = top?.kind === "typing" && top.at !== top.end;
+        if (truncated) top.end = top.at;
+        if (found.redo.length || truncated) { clearRedo(found); emitHistory(session.history); }
         if (version !== undefined) session.version = version;
         entry.text = text;
         entry.revision = ++revisions;
@@ -429,8 +446,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (!entry) return { ok: false, error: `${input.path} is not open in the draft store.` };
     // Typing still open anywhere in this history (or in the file) is an earlier
     // step: it is committed first, so the journal stays in the order things happened.
-    if (typing.get(key)?.start) commitTyping(key);
-    commitHistoryTyping(input.history ?? key);
+    commitHistoryTyping(input.history ?? key, [key]);
     let applied: ReturnType<typeof applyChanges>;
     try {
       applied = input.changes ? applyChanges(entry.text, input.changes)
@@ -531,8 +547,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   function applyReceipt(history: string, label: string, changes: ReceiptFile[], record = true): StepResult {
     const keys = changes.map(change => draftKey(change.scope, change.path));
     if (new Set(keys).size !== keys.length) return { ok: false, error: "A file appears twice in one change." };
-    for (const key of keys) if (typing.get(key)?.start) commitTyping(key);
-    if (record) commitHistoryTyping(history);
+    commitHistoryTyping(record ? history : undefined, keys);
     const entries = changes.map(change => load(change.scope, change.path));
     for (const [index, change] of changes.entries()) {
       const entry = entries[index];
