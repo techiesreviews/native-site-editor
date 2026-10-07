@@ -59,21 +59,9 @@
   margin: 0;
   align-self: center;
 }
-/* A component's chevron sits in a purple ring, where its parts' rail begins. */
-.page-structure__row--component[aria-expanded] > .page-structure__toggle {
-  box-sizing: border-box;
-  border: 1px solid color-mix(in oklch, var(--component) 70%, transparent);
-  border-radius: 50%;
-  background: linear-gradient(var(--row-action-background), var(--row-action-background)), var(--row-action-base);
-  color: var(--component-text);
-}
-.page-structure__row--component[aria-expanded] > .page-structure__toggle::before {
-  width: 10px;
-  height: 10px;
-}
 /* A component's parts share its chevron column (page-structure.ts): their rail
-   is the component's purple, and a part's own chevron, sitting on that rail,
-   covers it with the row's surface. */
+   is the component's purple, and a part's own chevron sits on that rail in a
+   ring of the same purple, filled with the row's surface. */
 .page-structure__row--component + .page-structure__group > .page-structure__row::before {
   background: var(--component);
   opacity: 0.45;
@@ -81,6 +69,7 @@
 .page-structure__row--component + .page-structure__group > .page-structure__row[aria-expanded] > .page-structure__toggle {
   border-radius: 50%;
   background: linear-gradient(var(--row-action-background), var(--row-action-background)), var(--row-action-base);
+  box-shadow: 0 0 0 2px var(--row-action-base), 0 0 0 4px color-mix(in oklch, var(--component) 45%, var(--row-action-base));
 }
 .page-structure__row[data-slot]::after {
   content: attr(data-slot) / "";
