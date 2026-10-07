@@ -39,7 +39,7 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `260fa94` + `d0e98ca` | Slice 9, boot controller (below) | check, 1,067 units, boot-focused 69, smoke 32, full native-save 708 passed / 85 skipped / 0 failed; budget 345 KB |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix), `3e8e9915` (`043101e`, slice 10, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix), `3e8e9915` (`043101e`, slice 10), `88bd8546` (`44f7524`, Page Structure in-place editing, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
@@ -107,11 +107,45 @@ shared actions on rows already drawn are refused ("changed, select again").
 Not covered by a spec: a site read whole at boot (index lands with identical
 sources).
 
+## Page Structure in-place editing (merged as `44f7524`)
+
+Lex compared four looks on a prototype (`proto/structure-sidebar`, `d3df960`,
+not pushed: Current, Layers, Outline, Cards) and kept the Current tree with
+the Cards edit block. Branch `build/structure-card-editor`, 7 commits:
+
+- A row's text is edited in place: first click selects; a second click,
+  double-click, Enter, F2 or the pencil edits. No purple while editing; a ✓
+  ("Done") commits; Escape restores everything and leaves no undo entry. One
+  session per row edit spans the row text and the attached card's fields (URL,
+  image) as one undo group.
+- Fields are `<textarea rows="1">` with `field-sizing: content` (JS sizing only
+  without support). Shift+Enter inserts `<br>` in phrasing elements; only the
+  element's own `<br>`s are line boundaries; rewrites that would split tags are
+  refused.
+- Typing patches the preview element's text directly (`patch-text` runtime
+  message: text nodes and `<br>` only, never HTML), 3–15 ms per key; the full
+  source/draft update follows 150 ms after typing pauses. A patch that ends
+  without a confirmed write forces a render from the sources.
+- URL suggestions: own popover list (`field-suggestions.ts`) anchored under the
+  field, title over muted path; the edit bar's link list uses the same two-line
+  rows. Editing code, suggestions and the shared form load on demand.
+
+Gates: check, 1,092 units, targeted structure/edit-bar/lazy-panels/shared set
+169 passed / 27 skipped / 0 failed; full native-save on `2036281` 719 passed /
+85 skipped / 1 failed (`native-routing.spec` asserted the old one-line option
+text; fixed in `b58ee4d`, 4/4; product code unchanged after the full run).
+Budget 345.89 KB (dev 345.30). Three Opus reviews
+(root `.scratch/p5-review/claude-structure-card-editor{,-2,-3}/`): defects
+found in the first two were fixed; the third found none. Known limits: a
+change to an unrelated file mid-typing can briefly flicker the typed text
+until the next write; two edit-bar suggestions with the same title can refocus
+the first; `<br>` allowance does not list SVG/MathML or obsolete raw-text
+elements; the browser specs for live patching use a stub, not the real
+preview runtime.
+
 ## Next actions
 
-1. Land `build/structure-card-editor` (Page Structure in-place editing; Lex
-   approved the look) after its review fixes, then slice 10b (attach the
-   preview frame early, ticket 02). Watch `native-shared-link-host:82`
+1. Slice 10b (attach the preview frame early, ticket 02). Watch `native-shared-link-host:82`
    (one unexplained failure).
 2. Slices 11–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
