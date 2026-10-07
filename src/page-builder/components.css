@@ -59,15 +59,12 @@
   margin: 0;
   align-self: center;
 }
-/* A component's parts share its chevron column (page-structure.ts). The
-   component's chevron ring, its parts' rail and their chevrons' rings are the
-   component's purple. */
-.page-structure__row--component,
-.page-structure__row--component + .page-structure__group > .page-structure__row {
-  --structure-ring: color-mix(in oklch, var(--component) 45%, transparent);
+/* A component's chevron ring and the guide down its parts are purple. */
+.page-structure__row--component {
+  --structure-ring: color-mix(in oklch, var(--component) 60%, transparent);
 }
-.page-structure__row--component + .page-structure__group > .page-structure__row::before {
-  background: color-mix(in oklch, var(--component) 45%, transparent);
+.page-structure__row--component + .page-structure__group {
+  --structure-guide: color-mix(in oklch, var(--component) 60%, transparent);
 }
 .page-structure__row[data-slot]::after {
   content: attr(data-slot) / "";
