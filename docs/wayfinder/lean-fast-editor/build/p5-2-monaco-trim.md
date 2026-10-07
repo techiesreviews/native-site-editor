@@ -35,15 +35,35 @@ IntelliSense remains worker-backed; the TypeScript worker is unchanged.
 - Production browser tests: pending parent-coordinated run to avoid simultaneous
   browser servers. No browser test contracts were weakened.
 
+The first diagnostic browser run used:
+
+```sh
+PATH=/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin:$PATH ASE_TEST_PORT=5581 ASE_NATIVE_SAVE_DIST=1 npx playwright test --project=native-save native-monaco-features native-editor-features native-code-diff native-monaco-deferred
+```
+
+It matched 26 tests (there is no `native-code-diff` spec): 19 passed, 7 failed.
+All 9 new UI feature tests passed. The 7 failures were in older specs that
+import `/src/components/monaco.ts` or `/src/components/code-editor.ts`, or
+intercept source-module URLs to defer Monaco. The production fixture serves
+hashed build assets, so these source imports fail and the interceptions do not
+delay the production chunk. These contracts remain intact and require the
+development fixture. Evidence: `.scratch/p5-review/monaco-targeted.log`.
+
+This diagnostic run began against an earlier build and overlapped the final
+worker-import transform refinement. It is not acceptance evidence for the final
+code checkpoint `4882d82`. The parent coordinates a fresh production UI run and
+the existing source-dependent specs against the development fixture.
+
 New `native-monaco-features.spec.ts` covers editing keys and clipboard, drag and
 unusual line terminators, find/replace, CSS folding/brackets/comments/colors,
 CSS diagnostics/hover/suggestions, JS completion/signatures/hover/definition/
 references/rename/diagnostics/code actions, formatting/navigation/context menu,
 HTML links/completion/folding, and a read-only history diff.
 
-Run the new spec with `ASE_NATIVE_SAVE_DIST=1`, alongside
-`native-editor-features.spec.ts`, `native-monaco-deferred.spec.ts`, and existing
-Save/history regression coverage. Development pre-bundling can retain dropped
+Run the new spec with `ASE_NATIVE_SAVE_DIST=1` and production-compatible
+Save/history coverage. Run `native-editor-features.spec.ts` and
+`native-monaco-deferred.spec.ts` against the development fixture. Development
+pre-bundling can retain dropped
 contributions, so production browser coverage is required before acceptance.
 
 ## Remaining review risks
