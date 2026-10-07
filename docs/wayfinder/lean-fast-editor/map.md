@@ -76,6 +76,8 @@ title wait with a 1 s fallback and passes the full native-save suite (708 passed
 Claude review reports no defects. It is merged into `dev` (`759c888`) and
 deployed to the preview Worker (version `f87d2d31`), not to production. Startup
 timing targets (ticket 02) and the main-module split (ticket 08) remain open.
+Later work on `dev` (slice 8, structure rails) is in the
+[slices handoff](build/p5-slices-handoff.md).
 
 The following note records the earlier P1.4 slice:
 
